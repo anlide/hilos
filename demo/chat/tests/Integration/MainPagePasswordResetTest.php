@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
@@ -19,6 +18,7 @@ use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
@@ -395,7 +395,7 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
     {
         new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::REQUEST_PASSWORD_RESET,
+            HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET,
             new RequestPasswordResetActionDTO($email),
         );
     }
@@ -414,7 +414,7 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
     {
         $reply = new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::CONFIRM_PASSWORD_RESET,
+            HilosSignalConstants::HILOS_CONFIRM_PASSWORD_RESET,
             new ConfirmPasswordResetActionDTO($email, $code),
         );
         $this->assertInstanceOf(AuthFlowOutcome::class, $reply);
@@ -435,7 +435,7 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
     {
         $reply = new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::COMPLETE_PASSWORD_RESET,
+            HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET,
             new CompletePasswordResetActionDTO($password),
         );
         $this->assertInstanceOf(AuthFlowOutcome::class, $reply);

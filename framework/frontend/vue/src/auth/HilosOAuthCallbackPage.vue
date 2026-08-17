@@ -2,7 +2,7 @@
 the browser back to this static SPA route (/auth/callback?code=…&state=…); the app
 has already opened its single live connection (subscribed to the main page through
 the router fallback), so this view hands the code + signed state back as the
-`oauth_callback` action. The provider key rode session storage across the redirect,
+`hilos_oauth_callback` action. The provider key rode session storage across the redirect,
 since the callback URL carries only code + state.
 
 Unlike magic-link, the login completes asynchronously: the action ack means only
@@ -14,29 +14,39 @@ a generic error with a way back to sign-in; no provider detail is disclosed.
 Bootstrap classes only, no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
 import { inject, onMounted, ref, watch } from 'vue'
-import { hilosRouterKey, useSignal } from '@hilos/vue'
-
-import { currentUserId } from '../bootstrap/session'
 import {
-  armOAuthLink,
+  createOAuthLogin,
   describeOAuthError,
-  dispatchOAuthCallback,
-  subscribeOAuthFailure,
-  takeOAuthProvider,
-} from './oauthLogin'
-import {
   OAUTH_REASON_LINK_DUPLICATE,
   OAUTH_REASON_LINK_FAILED,
   OAUTH_REASON_LINK_OK,
   OAUTH_REASON_REAUTH_REQUIRED,
-} from './oauthSignals'
+  sessionUserId,
+  type HilosAuthContext,
+} from '@hilos/core'
+import { hilosRouterKey } from '../hilosRouterKey.js'
+import { useSignal } from '../useSignal.js'
 
-defineOptions({ name: 'OAuthCallback' })
+defineOptions({ name: 'HilosOAuthCallbackPage' })
+
+const props = defineProps<{
+  /** The project context the callback dispatches over. */
+  context: HilosAuthContext
+}>()
+
+// The framework OAuth client, bound to that context. The redirect state it reads
+// back (the stashed provider, the armed link) is the framework module's own, so
+// this route sees the trip the surface started.
+const oauth = createOAuthLogin(props.context)
+
+// Who the session belongs to now: a successful login resolves on this turning
+// non-null, which is the same fan-out the surface closes on (HIL-161).
+const currentUserId = sessionUserId(props.context.scopes)
 
 const injectedRouter = inject(hilosRouterKey)
 if (!injectedRouter) {
   throw new Error(
-    'OAuthCallback requires a provided router: app.provide(hilosRouterKey, router).',
+    'HilosOAuthCallbackPage requires a provided router: app.provide(hilosRouterKey, router).',
   )
 }
 // Hoist the guarded router into a non-optional local so its non-undefined type
@@ -60,8 +70,7 @@ const PROFILE_PATH = '/profile'
 // The messages shown when a profile link (HIL-401) does not succeed. A duplicate is
 // a distinct, non-sensitive outcome (the provider is tied to another account); any
 // other link failure is generic (no provider/network detail on the wire).
-const LINK_DUPLICATE_MESSAGE =
-  'That account is already linked to another user.'
+const LINK_DUPLICATE_MESSAGE = 'That account is already linked to another user.'
 const LINK_FAILED_MESSAGE = 'Could not link the account. Please try again.'
 
 // Client-side backstop past the backend exchange deadline (EXCHANGE_TTL_MS = 15s):
@@ -131,7 +140,7 @@ function reauthToLink(email: string, linkToken: string): void {
   }
   settled = true
   cleanup()
-  armOAuthLink(email, linkToken)
+  oauth.armOAuthLink(email, linkToken)
   router.navigate(HOME_PATH)
 }
 
@@ -139,7 +148,7 @@ onMounted(async () => {
   const params = new URLSearchParams(window.location.search)
   const code = params.get('code') ?? ''
   const state = params.get('state') ?? ''
-  const provider = takeOAuthProvider()
+  const provider = oauth.takeOAuthProvider()
   if (provider === '' || code === '' || state === '') {
     fail('This sign-in link is invalid or incomplete.')
 
@@ -153,7 +162,7 @@ onMounted(async () => {
       succeed()
     }
   })
-  unsubscribeFailure = subscribeOAuthFailure((data) => {
+  unsubscribeFailure = oauth.subscribeOAuthFailure((data) => {
     if (
       data.reason === OAUTH_REASON_REAUTH_REQUIRED &&
       data.email !== null &&
@@ -185,7 +194,7 @@ onMounted(async () => {
   }, CALLBACK_TIMEOUT_MS)
 
   try {
-    await dispatchOAuthCallback(provider, code, state)
+    await oauth.dispatchOAuthCallback(provider, code, state)
     // Accepted, working: the outcome arrives through the armed resolvers above.
   } catch (error) {
     fail(describeOAuthError(error))

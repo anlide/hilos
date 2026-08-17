@@ -9,19 +9,25 @@ import { computed, inject, ref, watch } from 'vue'
 import {
   HilosLayout,
   HilosLink,
+  HilosMagicLinkPage,
   HilosNotificationBell,
+  HilosOAuthCallbackPage,
   HilosView,
   hilosAdminViews,
   hilosRouterKey,
   useSignal,
 } from '@hilos/vue'
-import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
+import {
+  AUTH_MAGIC_LINK_PATH,
+  AUTH_OAUTH_CALLBACK_PATH,
+  HILOS_PAGE_ROUTES,
+  HilosPages,
+} from '@hilos/core'
 import type { AuthGate } from '@hilos/core'
 import type { Component } from 'vue'
 
 import AuthSurface from './auth/AuthSurface.vue'
-import MagicLink from './auth/MagicLink.vue'
-import OAuthCallback from './auth/OAuthCallback.vue'
+import { hilosAuthContext } from './auth/hilosAuthContext'
 import { connection } from './bootstrap/connection'
 import {
   currentUserIsAdmin,
@@ -94,16 +100,12 @@ const pages: Record<string, Component> = {
   [HilosPages.COMMUNICATIONS_DELIVERIES]: HilosCommunicationsDeliveries,
 }
 
-// The magic-link confirm route (HIL-283). It carries no page of its own — the
-// router falls it back to the main subscription so the confirm action routes —
-// so App swaps the relay view in for the routed outlet while the path matches,
-// then MagicLink navigates home once the session upgrades.
-const MAGIC_LINK_PATH = '/auth/magic'
-// The OAuth callback route (HIL-281): like the magic-link route it carries no
-// page of its own — the router falls it back to the main subscription so the
-// callback action routes — so App swaps the relay view in while the path matches,
-// then OAuthCallback navigates home once the session upgrades.
-const OAUTH_CALLBACK_PATH = '/auth/callback'
+// The magic-link confirm route (HIL-283) and the OAuth callback route (HIL-281).
+// Neither carries a page of its own — the router falls both back to the main
+// subscription so their actions route — so App swaps the framework relay view in
+// for the routed outlet while the path matches, and the relay navigates home once
+// the session upgrades. The paths come from @hilos/core (HIL-409): a mail client
+// and a provider enter them, so both halves have to agree on the strings.
 const router = inject(hilosRouterKey)
 if (!router) {
   throw new Error(
@@ -111,9 +113,9 @@ if (!router) {
   )
 }
 const currentPath = useSignal(router.currentPath)
-const isMagicRoute = computed(() => currentPath.value === MAGIC_LINK_PATH)
+const isMagicRoute = computed(() => currentPath.value === AUTH_MAGIC_LINK_PATH)
 const isOAuthCallbackRoute = computed(
-  () => currentPath.value === OAUTH_CALLBACK_PATH,
+  () => currentPath.value === AUTH_OAUTH_CALLBACK_PATH,
 )
 
 // The navbar profile entry: the current user's name links to the framework
@@ -276,8 +278,11 @@ watch(isImpersonating, (value) => {
         <i v-else class="bi bi-box-arrow-right" aria-hidden="true"></i>
       </button>
     </template>
-    <MagicLink v-if="isMagicRoute" />
-    <OAuthCallback v-else-if="isOAuthCallbackRoute" />
+    <HilosMagicLinkPage v-if="isMagicRoute" :context="hilosAuthContext" />
+    <HilosOAuthCallbackPage
+      v-else-if="isOAuthCallbackRoute"
+      :context="hilosAuthContext"
+    />
     <HilosView
       v-else
       :pages="pages"

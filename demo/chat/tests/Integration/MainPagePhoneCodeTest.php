@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Entity\Item\EventUserRegistration as EntityEventUserRegistration;
@@ -18,6 +17,7 @@ use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Database\Context\HilosDbContext;
@@ -310,7 +310,7 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         $reply = new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::CONFIRM_PHONE_CODE,
+            HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE,
             new ConfirmPhoneCodeActionDTO($phone, $code),
         );
         $this->assertInstanceOf(AuthFlowOutcome::class, $reply);

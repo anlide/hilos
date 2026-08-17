@@ -5,48 +5,54 @@
 // trip whose options arrive as a WS_USER signal, never as the action's own reply
 // ("client action = loading + signal, never fire-forget"):
 //
-//   options action ── ack means "accepted" ─────────────────────────────┐
-//        └ passkey_options signal → navigator.credentials.create/get     │
-//   confirm action ── ack means "done" ─────────────────────────────────┤
-//        ├ login: currentUser handshake fan-out (HIL-161) → session up   │
-//        └ register: plain ack (the credential is stored)                 │
+//   options action ── ack means "accepted" ────────────────────────────────┐
+//        └ hilos_passkey_options signal → navigator.credentials.create/get │
+//   confirm action ── ack means "done" ────────────────────────────────────┤
+//        ├ login: currentUser handshake fan-out (HIL-161) → session up     │
+//        └ register: plain ack (the credential is stored)                  │
 //
 // The options and confirm actions are correlated by holding the signed challenge
 // token from the options signal and handing it back on confirm; the ceremony
 // discriminator matches the signal to the in-flight request (single-flight — the
 // UI blocks a second ceremony while one runs).
+import { ActionError } from '../connection/actionLifecycle.js'
+import { type ProjectSignal } from '../protocol/parseSignal.js'
+import { type HilosAuthContext } from './authContext.js'
+import { type AuthFlowSubmitOutcome } from './authFlow.js'
 import {
-  ActionError,
+  AUTH_ACTION_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS,
+  AUTH_ACTION_PASSKEY_LOGIN_CONFIRM,
+  AUTH_ACTION_PASSKEY_REGISTER_CONFIRM,
+  AUTH_ACTION_PASSKEY_REGISTER_OPTIONS,
+} from './authProtocol.js'
+import {
   createPasskey,
   getPasskey,
   isPasskeySupported,
-  type AuthFlowSubmitOutcome,
   type PasskeyCreationOptions,
   type PasskeyRequestOptions,
-  type ProjectSignal,
-} from '@hilos/core'
-
-import { actions, connection } from '../bootstrap/connection'
+} from './passkey.js'
 import {
   PASSKEY_CEREMONY_LOGIN,
   PASSKEY_CEREMONY_REGISTER,
   PASSKEY_OPTIONS_SIGNAL,
   passkeyOptionsSignalSchema,
   type PasskeyOptionsSignalData,
-} from './passkeySignals'
+} from './passkeySignals.js'
 
-/** Backend action: mint register-ceremony options (PHP `ChatSignalConstants::PASSKEY_REGISTER_OPTIONS`). */
-const PASSKEY_REGISTER_OPTIONS_ACTION = 'passkey_register_options'
-
-/** Backend action: verify a register attestation (PHP `ChatSignalConstants::PASSKEY_REGISTER_CONFIRM`). */
-const PASSKEY_REGISTER_CONFIRM_ACTION = 'passkey_register_confirm'
-
-/** Backend action: verify a login assertion (PHP `ChatSignalConstants::PASSKEY_LOGIN_CONFIRM`). */
-const PASSKEY_LOGIN_CONFIRM_ACTION = 'passkey_login_confirm'
-
-/** Backend action: mint usernameless (discoverable) login-ceremony options (PHP `ChatSignalConstants::PASSKEY_DISCOVERABLE_LOGIN_OPTIONS`). */
-const PASSKEY_DISCOVERABLE_LOGIN_OPTIONS_ACTION =
-  'passkey_discoverable_login_options'
+/** The passkey ceremonies one context is bound to. */
+export interface HilosPasskeyCeremony {
+  /**
+   * Run the usernameless (discoverable) login ceremony (HIL-400).
+   *
+   * @param abort Aborted when the person cancels the parked external step.
+   */
+  runPasskeyDiscoverableLogin(
+    abort?: AbortSignal,
+  ): Promise<AuthFlowSubmitOutcome>
+  /** Run the register ceremony for the signed-in user (HIL-284/418). */
+  runPasskeyRegister(): Promise<AuthFlowSubmitOutcome>
+}
 
 /** Shown when the browser has no WebAuthn support. */
 const PASSKEY_UNSUPPORTED_MESSAGE = 'This browser does not support passkeys.'
@@ -66,6 +72,7 @@ const PASSKEY_FAILED_MESSAGE =
  * parked longest, and a cancel that only unsubscribed would leave the caller
  * awaiting a promise nothing will ever settle.
  *
+ * @param context The project auth context the wire dispatches over.
  * @param action The options action name.
  * @param payload The options action payload.
  * @param ceremony The ceremony discriminator the reply must carry.
@@ -73,6 +80,7 @@ const PASSKEY_FAILED_MESSAGE =
  * @returns The parsed options signal payload.
  */
 function requestOptions(
+  context: HilosAuthContext,
   action: string,
   payload: Record<string, string>,
   ceremony: string,
@@ -104,7 +112,7 @@ function requestOptions(
       }
     }
 
-    const unsubscribe = connection.on(
+    const unsubscribe = context.connection.on(
       'projectSignal',
       (signal: ProjectSignal) => {
         if (signal.type !== PASSKEY_OPTIONS_SIGNAL) {
@@ -122,7 +130,7 @@ function requestOptions(
       },
     )
     abort?.addEventListener('abort', onAbort)
-    actions.dispatch(action, payload).done.catch((error: unknown) => {
+    context.actions.dispatch(action, payload).done.catch((error: unknown) => {
       if (claim()) {
         reject(error)
       }
@@ -149,9 +157,11 @@ function requestOptions(
  * The Cancel that produces the signal is the waiting screen's own button
  * (HIL-423), which is where the machine parks a ceremony it started.
  *
+ * @param context The project auth context the wire dispatches over.
  * @param abort Aborted when the user cancels the parked external step.
  */
 export async function runPasskeyDiscoverableLogin(
+  context: HilosAuthContext,
   abort?: AbortSignal,
 ): Promise<AuthFlowSubmitOutcome> {
   if (!isPasskeySupported()) {
@@ -159,7 +169,8 @@ export async function runPasskeyDiscoverableLogin(
   }
   try {
     const options = await requestOptions(
-      PASSKEY_DISCOVERABLE_LOGIN_OPTIONS_ACTION,
+      context,
+      AUTH_ACTION_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS,
       {},
       PASSKEY_CEREMONY_LOGIN,
       abort,
@@ -171,7 +182,7 @@ export async function runPasskeyDiscoverableLogin(
     // The authenticator can still answer between the abort and this line; the
     // confirm is the point of no return, so it is the last place to check.
     abort?.throwIfAborted()
-    await actions.dispatch(PASSKEY_LOGIN_CONFIRM_ACTION, {
+    await context.actions.dispatch(AUTH_ACTION_PASSKEY_LOGIN_CONFIRM, {
       signedChallenge: options.signedChallenge,
       credentialId: assertion.credentialId,
       authenticatorData: assertion.authenticatorData,
@@ -195,21 +206,26 @@ export async function runPasskeyDiscoverableLogin(
  * The confirm carries this device's User-Agent, which is what names the key in
  * the profile (HIL-418) — the same thing a push subscription sends, and for the
  * same reason: a person recognizes their laptop, not a credential id.
+ *
+ * @param context The project auth context the wire dispatches over.
  */
-export async function runPasskeyRegister(): Promise<AuthFlowSubmitOutcome> {
+async function runPasskeyRegister(
+  context: HilosAuthContext,
+): Promise<AuthFlowSubmitOutcome> {
   if (!isPasskeySupported()) {
     return { ok: false, message: PASSKEY_UNSUPPORTED_MESSAGE }
   }
   try {
     const options = await requestOptions(
-      PASSKEY_REGISTER_OPTIONS_ACTION,
+      context,
+      AUTH_ACTION_PASSKEY_REGISTER_OPTIONS,
       {},
       PASSKEY_CEREMONY_REGISTER,
     )
     const attestation = await createPasskey(
       options.publicKeyOptions as unknown as PasskeyCreationOptions,
     )
-    await actions.dispatch(PASSKEY_REGISTER_CONFIRM_ACTION, {
+    await context.actions.dispatch(AUTH_ACTION_PASSKEY_REGISTER_CONFIRM, {
       signedChallenge: options.signedChallenge,
       attestationObject: attestation.attestationObject,
       clientDataJson: attestation.clientDataJson,
@@ -244,4 +260,22 @@ function describePasskeyError(error: unknown): string {
   }
 
   return PASSKEY_FAILED_MESSAGE
+}
+
+/**
+ * The passkey half of one sign-in surface and of the profile: the usernameless
+ * login the surface offers as an icon method, and the registration the profile's
+ * "Add a passkey" button runs (HIL-284/400/418).
+ *
+ * @param context The project auth context the wire dispatches over.
+ * @returns The bound ceremonies a surface and a profile view call.
+ */
+export function createPasskeyCeremony(
+  context: HilosAuthContext,
+): HilosPasskeyCeremony {
+  return {
+    runPasskeyDiscoverableLogin: (abort) =>
+      runPasskeyDiscoverableLogin(context, abort),
+    runPasskeyRegister: () => runPasskeyRegister(context),
+  }
 }

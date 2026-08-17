@@ -17,6 +17,7 @@ use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
@@ -267,7 +268,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
     private function register(ChatAgent $agent, string $acceptKey, string $email): void
     {
         $page = new MainPage($agent);
-        $page->onAction($acceptKey, ChatSignalConstants::REGISTER, new RegisterActionDTO($email, self::PASSWORD));
+        $page->onAction($acceptKey, HilosSignalConstants::HILOS_REGISTER, new RegisterActionDTO($email, self::PASSWORD));
 
         /** @var ObjectUserVerifications $verifications */
         $verifications = Hilos::$db->getObjectCollection(HilosDbContext::verifications);
@@ -286,7 +287,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
 
         $page->onAction(
             $acceptKey,
-            ChatSignalConstants::CONFIRM_REGISTER,
+            HilosSignalConstants::HILOS_CONFIRM_REGISTER,
             new ConfirmRegisterActionDTO($email, self::CODE),
         );
     }

@@ -112,28 +112,28 @@ final class MainPage extends AbstractPage
 
     public const array ACTIONS = [
         ChatSignalConstants::MESSAGE => MessageActionDTO::class,
-        ChatSignalConstants::DETECT_IDENTIFIER => DetectIdentifierActionDTO::class,
-        ChatSignalConstants::LOGIN => LoginActionDTO::class,
-        ChatSignalConstants::REGISTER => RegisterActionDTO::class,
-        ChatSignalConstants::REQUEST_PASSWORD_RESET => RequestPasswordResetActionDTO::class,
-        ChatSignalConstants::CONFIRM_PASSWORD_RESET => ConfirmPasswordResetActionDTO::class,
-        ChatSignalConstants::COMPLETE_PASSWORD_RESET => CompletePasswordResetActionDTO::class,
-        ChatSignalConstants::REQUEST_PHONE_CODE => RequestPhoneCodeActionDTO::class,
-        ChatSignalConstants::CONFIRM_PHONE_CODE => ConfirmPhoneCodeActionDTO::class,
-        ChatSignalConstants::REQUEST_MAGIC_LINK => RequestMagicLinkActionDTO::class,
-        ChatSignalConstants::CONFIRM_MAGIC_LINK => ConfirmMagicLinkActionDTO::class,
-        ChatSignalConstants::REQUEST_REGISTER_CONFIRM => RequestRegisterConfirmActionDTO::class,
-        ChatSignalConstants::CONFIRM_REGISTER => ConfirmRegisterActionDTO::class,
-        ChatSignalConstants::ABANDON_REGISTRATION => AbandonRegistrationActionDTO::class,
+        HilosSignalConstants::HILOS_DETECT_IDENTIFIER => DetectIdentifierActionDTO::class,
+        HilosSignalConstants::HILOS_LOGIN => LoginActionDTO::class,
+        HilosSignalConstants::HILOS_REGISTER => RegisterActionDTO::class,
+        HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET => RequestPasswordResetActionDTO::class,
+        HilosSignalConstants::HILOS_CONFIRM_PASSWORD_RESET => ConfirmPasswordResetActionDTO::class,
+        HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET => CompletePasswordResetActionDTO::class,
+        HilosSignalConstants::HILOS_REQUEST_PHONE_CODE => RequestPhoneCodeActionDTO::class,
+        HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE => ConfirmPhoneCodeActionDTO::class,
+        HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK => RequestMagicLinkActionDTO::class,
+        HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK => ConfirmMagicLinkActionDTO::class,
+        HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM => RequestRegisterConfirmActionDTO::class,
+        HilosSignalConstants::HILOS_CONFIRM_REGISTER => ConfirmRegisterActionDTO::class,
+        HilosSignalConstants::HILOS_ABANDON_REGISTRATION => AbandonRegistrationActionDTO::class,
         ChatSignalConstants::FILE_UPLOAD_INIT => FileUploadInitActionDTO::class,
         ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => AttachmentDraftDeleteActionDTO::class,
-        ChatSignalConstants::OAUTH_START => OAuthStartActionDTO::class,
-        ChatSignalConstants::OAUTH_CALLBACK => OAuthCallbackActionDTO::class,
-        ChatSignalConstants::LINK_OAUTH_AFTER_REAUTH => LinkOAuthAfterReauthActionDTO::class,
-        ChatSignalConstants::PASSKEY_REGISTER_OPTIONS => PasskeyRegisterOptionsActionDTO::class,
-        ChatSignalConstants::PASSKEY_REGISTER_CONFIRM => PasskeyRegisterConfirmActionDTO::class,
-        ChatSignalConstants::PASSKEY_LOGIN_CONFIRM => PasskeyLoginConfirmActionDTO::class,
-        ChatSignalConstants::PASSKEY_DISCOVERABLE_LOGIN_OPTIONS => PasskeyDiscoverableLoginOptionsActionDTO::class,
+        HilosSignalConstants::HILOS_OAUTH_START => OAuthStartActionDTO::class,
+        HilosSignalConstants::HILOS_OAUTH_CALLBACK => OAuthCallbackActionDTO::class,
+        HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH => LinkOAuthAfterReauthActionDTO::class,
+        HilosSignalConstants::HILOS_PASSKEY_REGISTER_OPTIONS => PasskeyRegisterOptionsActionDTO::class,
+        HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM => PasskeyRegisterConfirmActionDTO::class,
+        HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM => PasskeyLoginConfirmActionDTO::class,
+        HilosSignalConstants::HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS => PasskeyDiscoverableLoginOptionsActionDTO::class,
     ];
 
     // Sending a message requires a signed-in session: an anonymous visitor reads
@@ -149,9 +149,9 @@ final class MainPage extends AbstractPage
     // Uploads ride the message they draft, so the guard here is enough.
     public const array AUTH_ACTIONS = [
         ChatSignalConstants::MESSAGE,
-        ChatSignalConstants::LINK_OAUTH_AFTER_REAUTH,
-        ChatSignalConstants::PASSKEY_REGISTER_OPTIONS,
-        ChatSignalConstants::PASSKEY_REGISTER_CONFIRM,
+        HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH,
+        HilosSignalConstants::HILOS_PASSKEY_REGISTER_OPTIONS,
+        HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM,
     ];
 
     // Every anonymous-reachable door into an account is throttled (HIL-420), and the list
@@ -165,19 +165,19 @@ final class MainPage extends AbstractPage
     // is precisely what an enumerator wants, and this list is the whole of what keeps that
     // answer expensive (HIL-414).
     public const array THROTTLED_ACTIONS = [
-        ChatSignalConstants::DETECT_IDENTIFIER,
-        ChatSignalConstants::LOGIN,
-        ChatSignalConstants::REGISTER,
-        ChatSignalConstants::REQUEST_PASSWORD_RESET,
-        ChatSignalConstants::CONFIRM_PASSWORD_RESET,
-        ChatSignalConstants::COMPLETE_PASSWORD_RESET,
-        ChatSignalConstants::REQUEST_PHONE_CODE,
-        ChatSignalConstants::CONFIRM_PHONE_CODE,
-        ChatSignalConstants::REQUEST_MAGIC_LINK,
-        ChatSignalConstants::CONFIRM_MAGIC_LINK,
-        ChatSignalConstants::REQUEST_REGISTER_CONFIRM,
-        ChatSignalConstants::CONFIRM_REGISTER,
-        ChatSignalConstants::PASSKEY_LOGIN_CONFIRM,
+        HilosSignalConstants::HILOS_DETECT_IDENTIFIER,
+        HilosSignalConstants::HILOS_LOGIN,
+        HilosSignalConstants::HILOS_REGISTER,
+        HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET,
+        HilosSignalConstants::HILOS_CONFIRM_PASSWORD_RESET,
+        HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET,
+        HilosSignalConstants::HILOS_REQUEST_PHONE_CODE,
+        HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE,
+        HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK,
+        HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK,
+        HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM,
+        HilosSignalConstants::HILOS_CONFIRM_REGISTER,
+        HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM,
     ];
 
     public const array SIGNALS = [
@@ -351,14 +351,14 @@ final class MainPage extends AbstractPage
 
                 break;
 
-            case ChatSignalConstants::DETECT_IDENTIFIER:
+            case HilosSignalConstants::HILOS_DETECT_IDENTIFIER:
                 if (!$dto instanceof DetectIdentifierActionDTO) {
                     throw new InvalidActionPayloadException($action, DetectIdentifierActionDTO::class, $dto);
                 }
 
                 return $this->handleDetectIdentifier($dto);
 
-            case ChatSignalConstants::LOGIN:
+            case HilosSignalConstants::HILOS_LOGIN:
                 if (!$dto instanceof LoginActionDTO) {
                     throw new InvalidActionPayloadException($action, LoginActionDTO::class, $dto);
                 }
@@ -366,32 +366,32 @@ final class MainPage extends AbstractPage
 
                 break;
 
-            case ChatSignalConstants::REGISTER:
+            case HilosSignalConstants::HILOS_REGISTER:
                 if (!$dto instanceof RegisterActionDTO) {
                     throw new InvalidActionPayloadException($action, RegisterActionDTO::class, $dto);
                 }
 
                 return $this->handleRegister($dto);
 
-            case ChatSignalConstants::REQUEST_PASSWORD_RESET:
+            case HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET:
                 if (!$dto instanceof RequestPasswordResetActionDTO) {
                     throw new InvalidActionPayloadException($action, RequestPasswordResetActionDTO::class, $dto);
                 }
                 return $this->handleRequestPasswordReset($dto);
 
-            case ChatSignalConstants::CONFIRM_PASSWORD_RESET:
+            case HilosSignalConstants::HILOS_CONFIRM_PASSWORD_RESET:
                 if (!$dto instanceof ConfirmPasswordResetActionDTO) {
                     throw new InvalidActionPayloadException($action, ConfirmPasswordResetActionDTO::class, $dto);
                 }
                 return $this->handleConfirmPasswordReset($dto);
 
-            case ChatSignalConstants::COMPLETE_PASSWORD_RESET:
+            case HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET:
                 if (!$dto instanceof CompletePasswordResetActionDTO) {
                     throw new InvalidActionPayloadException($action, CompletePasswordResetActionDTO::class, $dto);
                 }
                 return $this->handleCompletePasswordReset($dto);
 
-            case ChatSignalConstants::REQUEST_PHONE_CODE:
+            case HilosSignalConstants::HILOS_REQUEST_PHONE_CODE:
                 if (!$dto instanceof RequestPhoneCodeActionDTO) {
                     throw new InvalidActionPayloadException($action, RequestPhoneCodeActionDTO::class, $dto);
                 }
@@ -399,39 +399,39 @@ final class MainPage extends AbstractPage
 
                 break;
 
-            case ChatSignalConstants::CONFIRM_PHONE_CODE:
+            case HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE:
                 if (!$dto instanceof ConfirmPhoneCodeActionDTO) {
                     throw new InvalidActionPayloadException($action, ConfirmPhoneCodeActionDTO::class, $dto);
                 }
                 return $this->handleConfirmPhoneCode($dto);
 
-            case ChatSignalConstants::REQUEST_MAGIC_LINK:
+            case HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK:
                 if (!$dto instanceof RequestMagicLinkActionDTO) {
                     throw new InvalidActionPayloadException($action, RequestMagicLinkActionDTO::class, $dto);
                 }
                 return $this->handleRequestMagicLink($dto);
 
-            case ChatSignalConstants::CONFIRM_MAGIC_LINK:
+            case HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK:
                 if (!$dto instanceof ConfirmMagicLinkActionDTO) {
                     throw new InvalidActionPayloadException($action, ConfirmMagicLinkActionDTO::class, $dto);
                 }
                 return $this->handleConfirmMagicLink($dto);
 
-            case ChatSignalConstants::REQUEST_REGISTER_CONFIRM:
+            case HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM:
                 if (!$dto instanceof RequestRegisterConfirmActionDTO) {
                     throw new InvalidActionPayloadException($action, RequestRegisterConfirmActionDTO::class, $dto);
                 }
 
                 return $this->handleRequestRegisterConfirm($dto);
 
-            case ChatSignalConstants::CONFIRM_REGISTER:
+            case HilosSignalConstants::HILOS_CONFIRM_REGISTER:
                 if (!$dto instanceof ConfirmRegisterActionDTO) {
                     throw new InvalidActionPayloadException($action, ConfirmRegisterActionDTO::class, $dto);
                 }
 
                 return $this->handleConfirmRegister($dto);
 
-            case ChatSignalConstants::ABANDON_REGISTRATION:
+            case HilosSignalConstants::HILOS_ABANDON_REGISTRATION:
                 if (!$dto instanceof AbandonRegistrationActionDTO) {
                     throw new InvalidActionPayloadException($action, AbandonRegistrationActionDTO::class, $dto);
                 }
@@ -454,7 +454,7 @@ final class MainPage extends AbstractPage
 
                 break;
 
-            case ChatSignalConstants::OAUTH_START:
+            case HilosSignalConstants::HILOS_OAUTH_START:
                 if (!$dto instanceof OAuthStartActionDTO) {
                     throw new InvalidActionPayloadException($action, OAuthStartActionDTO::class, $dto);
                 }
@@ -462,7 +462,7 @@ final class MainPage extends AbstractPage
 
                 break;
 
-            case ChatSignalConstants::OAUTH_CALLBACK:
+            case HilosSignalConstants::HILOS_OAUTH_CALLBACK:
                 if (!$dto instanceof OAuthCallbackActionDTO) {
                     throw new InvalidActionPayloadException($action, OAuthCallbackActionDTO::class, $dto);
                 }
@@ -470,7 +470,7 @@ final class MainPage extends AbstractPage
 
                 break;
 
-            case ChatSignalConstants::LINK_OAUTH_AFTER_REAUTH:
+            case HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH:
                 if (!$dto instanceof LinkOAuthAfterReauthActionDTO) {
                     throw new InvalidActionPayloadException($action, LinkOAuthAfterReauthActionDTO::class, $dto);
                 }
@@ -478,7 +478,7 @@ final class MainPage extends AbstractPage
 
                 break;
 
-            case ChatSignalConstants::PASSKEY_REGISTER_OPTIONS:
+            case HilosSignalConstants::HILOS_PASSKEY_REGISTER_OPTIONS:
                 if (!$dto instanceof PasskeyRegisterOptionsActionDTO) {
                     throw new InvalidActionPayloadException($action, PasskeyRegisterOptionsActionDTO::class, $dto);
                 }
@@ -486,7 +486,7 @@ final class MainPage extends AbstractPage
 
                 break;
 
-            case ChatSignalConstants::PASSKEY_REGISTER_CONFIRM:
+            case HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM:
                 if (!$dto instanceof PasskeyRegisterConfirmActionDTO) {
                     throw new InvalidActionPayloadException($action, PasskeyRegisterConfirmActionDTO::class, $dto);
                 }
@@ -494,7 +494,7 @@ final class MainPage extends AbstractPage
 
                 break;
 
-            case ChatSignalConstants::PASSKEY_LOGIN_CONFIRM:
+            case HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM:
                 if (!$dto instanceof PasskeyLoginConfirmActionDTO) {
                     throw new InvalidActionPayloadException($action, PasskeyLoginConfirmActionDTO::class, $dto);
                 }
@@ -502,7 +502,7 @@ final class MainPage extends AbstractPage
 
                 break;
 
-            case ChatSignalConstants::PASSKEY_DISCOVERABLE_LOGIN_OPTIONS:
+            case HilosSignalConstants::HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS:
                 if (!$dto instanceof PasskeyDiscoverableLoginOptionsActionDTO) {
                     throw new InvalidActionPayloadException($action, PasskeyDiscoverableLoginOptionsActionDTO::class, $dto);
                 }
@@ -1632,7 +1632,7 @@ final class MainPage extends AbstractPage
         );
 
         $this->sendToUser(
-            ChatSignalConstants::PASSKEY_OPTIONS,
+            HilosSignalConstants::HILOS_PASSKEY_OPTIONS,
             $connection->acceptKey,
             new PasskeyOptionsSignalData(
                 $connection->acceptKey,
@@ -1764,7 +1764,7 @@ final class MainPage extends AbstractPage
         ];
 
         $this->sendToUser(
-            ChatSignalConstants::PASSKEY_OPTIONS,
+            HilosSignalConstants::HILOS_PASSKEY_OPTIONS,
             $connection->acceptKey,
             new PasskeyOptionsSignalData(
                 $connection->acceptKey,

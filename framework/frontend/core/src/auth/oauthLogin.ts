@@ -6,11 +6,11 @@
 // signals (`oauthSignals`), never as the action's own reply. This is the "client
 // action = loading + signal, never fire-forget" pattern applied end to end:
 //
-//   click → oauth_start ── ack means "accepted" ─────────────────────────┐
-//        └ hilos_oauth_authorize → navigate to provider                  │
-//   provider → /auth/callback → oauth_callback ── ack means "working" ────┤
-//        ├ currentUser handshake fan-out (HIL-161) → success, go home     │
-//        └ hilos_oauth_result → failure, show error                       │
+//   click → hilos_oauth_start ── ack means "accepted" ───────────────────────┐
+//        └ hilos_oauth_authorize → navigate to provider                      │
+//   provider → /auth/callback → hilos_oauth_callback ── ack means "working" ─┤
+//        ├ currentUser handshake fan-out (HIL-161) → success, go home        │
+//        └ hilos_oauth_result → failure, show error                          │
 //
 // The provider key is stashed before the redirect and read back on return,
 // because the callback URL the provider (or the offline stub) bounces to carries
@@ -19,37 +19,87 @@
 // The stretch between the click and the navigation is cancelable (HIL-419): it is
 // the one part of an OAuth login that is still ours, and a Cancel landing inside it
 // stops the redirect for good rather than merely orphaning it.
-import { ActionError, subscribeSignal } from '@hilos/core'
-import type { ProjectSignal, ReadonlySignal } from '@hilos/core'
-
-import { actions, connection } from '../bootstrap/connection'
+import { ActionError } from '../connection/actionLifecycle.js'
+import { type ProjectSignal } from '../protocol/parseSignal.js'
+import { SIGNAL_HANDSHAKE_RESPONSE } from '../session/sessionScope.js'
+import { subscribeSignal, type ReadonlySignal } from '../state/signal.js'
+import { type HilosAuthContext } from './authContext.js'
+import {
+  AUTH_ACTION_LINK_OAUTH_AFTER_REAUTH,
+  AUTH_ACTION_LINK_OAUTH_START,
+  AUTH_ACTION_OAUTH_CALLBACK,
+  AUTH_ACTION_OAUTH_START,
+} from './authProtocol.js'
 import {
   OAUTH_AUTHORIZE_SIGNAL,
   OAUTH_RESULT_SIGNAL,
   oauthAuthorizeSignalSchema,
   oauthResultSignalSchema,
   type OAuthResultSignalData,
-} from './oauthSignals'
-
-/** Backend action: begin an OAuth redirect (PHP `ChatSignalConstants::OAUTH_START`). */
-const OAUTH_START_ACTION = 'oauth_start'
-
-/** Backend action: hand back the provider callback (PHP `ChatSignalConstants::OAUTH_CALLBACK`). */
-const OAUTH_CALLBACK_ACTION = 'oauth_callback'
-
-/** Backend action: redeem an email-collision link token after re-auth (PHP `ChatSignalConstants::LINK_OAUTH_AFTER_REAUTH`). */
-const LINK_OAUTH_AFTER_REAUTH_ACTION = 'link_oauth_after_reauth'
-
-/** Backend action: begin linking a provider to the signed-in account (PHP `ChatSignalConstants::LINK_OAUTH_START`). */
-const LINK_OAUTH_START_ACTION = 'link_oauth_start'
+} from './oauthSignals.js'
 
 /**
- * Backend signal: the session handshake response (PHP
- * `ChatSignalConstants::HANDSHAKE_RESPONSE`). Its arrival marks the point the
- * daemon has registered this connection against its session — the state the OAuth
- * callback op is built from server-side.
+ * The OAuth client one context is bound to, as a surface and the boot sequence
+ * see it. `describeOAuthError` is not here: it maps an error to a sentence and
+ * needs no context, so it stays a plain export.
  */
-const HANDSHAKE_RESPONSE_SIGNAL = 'handshake_response'
+export interface HilosOAuthLogin {
+  /**
+   * Begin an OAuth login for a provider (HIL-281).
+   *
+   * @param provider The provider key to authenticate with, e.g. `oauth:github`.
+   * @param signal Aborted when the person cancels before the browser leaves.
+   */
+  startOAuthLogin(provider: string, signal?: AbortSignal): Promise<void>
+  /**
+   * Begin linking a provider to the signed-in account (HIL-401).
+   *
+   * @param provider The provider key to link, e.g. `oauth:github`.
+   * @param signal Aborted when the person cancels before the browser leaves.
+   */
+  startOAuthLink(provider: string, signal?: AbortSignal): Promise<void>
+  /** Register the browser navigation off the authorize signal; call once at boot. */
+  bindOAuthAuthorizeRedirect(): () => void
+  /** Read and clear the provider a redirect was started for, on the return leg. */
+  takeOAuthProvider(): string
+  /**
+   * Hand the provider's callback back to the daemon, once the session is ready.
+   *
+   * @param provider The provider key the callback belongs to.
+   * @param code The authorization code the provider returned.
+   * @param state The signed state the provider returned.
+   */
+  dispatchOAuthCallback(
+    provider: string,
+    code: string,
+    state: string,
+  ): Promise<void>
+  /** Latch the session handshake the callback relay waits on; call once at boot. */
+  bindSessionReady(): () => void
+  /**
+   * Subscribe to the async OAuth failure signal for a callback route.
+   *
+   * @param handler Called with the (generic) failure payload when the login fails.
+   */
+  subscribeOAuthFailure(
+    handler: (data: OAuthResultSignalData) => void,
+  ): () => void
+  /**
+   * Arm the pending account-link a collision callback captured (HIL-282).
+   *
+   * @param email The colliding account email, to pre-fill the re-auth form.
+   * @param linkToken The signed capability token to redeem once re-authenticated.
+   */
+  armOAuthLink(email: string, linkToken: string): void
+  /** Read the armed pending link without consuming it, for the re-auth prompt. */
+  peekOAuthLink(): PendingOAuthLink | null
+  /**
+   * Register the replay that redeems an armed link when the session upgrades.
+   *
+   * @param userId The current-user signal whose turn to non-null carries the upgrade.
+   */
+  bindOAuthLinkReplay(userId: ReadonlySignal<number | null>): () => void
+}
 
 /**
  * Session-storage key holding the provider a redirect was started for, so the
@@ -113,46 +163,50 @@ function beginAttempt(provider: string, signal?: AbortSignal): void {
 
 /**
  * Begin an OAuth login for a provider: stash the provider for the return leg and
- * dispatch `oauth_start`. The resolved `done` is the "accepted" ack — the browser
+ * dispatch `hilos_oauth_start`. The resolved `done` is the "accepted" ack — the browser
  * is then navigated by the {@link bindOAuthAuthorizeRedirect} handler off the
  * authorize signal — so the caller keeps its loading state through the redirect;
  * a rejection (unknown provider, timeout, disconnect) surfaces inline instead.
  *
+ * @param context The project auth context the wire dispatches over.
  * @param provider The provider key to authenticate with, e.g. `oauth:github`.
  * @param signal Aborted when the person cancels before the browser leaves (HIL-419).
  */
 export function startOAuthLogin(
+  context: HilosAuthContext,
   provider: string,
   signal?: AbortSignal,
 ): Promise<void> {
   beginAttempt(provider, signal)
 
-  return actions
-    .dispatch(OAUTH_START_ACTION, { provider })
+  return context.actions
+    .dispatch(AUTH_ACTION_OAUTH_START, { provider })
     .done.then(() => undefined)
 }
 
 /**
  * Begin linking a provider to the signed-in account from the profile (HIL-401):
  * the link-mode analog of {@link startOAuthLogin}. It stashes the provider for the
- * return leg and dispatches `link_oauth_start`; the resolved `done` is the
+ * return leg and dispatches `hilos_link_oauth_start`; the resolved `done` is the
  * "accepted" ack (the browser is then navigated by {@link bindOAuthAuthorizeRedirect}
  * off the authorize signal, so the caller keeps its loading through the redirect),
  * while a rejection (unknown provider, timeout, disconnect) surfaces inline. The
  * callback returns on the same `/auth/callback` route, where a link outcome arrives
  * as an explicit result signal rather than a current-user update.
  *
+ * @param context The project auth context the wire dispatches over.
  * @param provider The provider key to link, e.g. `oauth:github`.
  * @param signal Aborted when the person cancels before the browser leaves (HIL-419).
  */
-export function startOAuthLink(
+function startOAuthLink(
+  context: HilosAuthContext,
   provider: string,
   signal?: AbortSignal,
 ): Promise<void> {
   beginAttempt(provider, signal)
 
-  return actions
-    .dispatch(LINK_OAUTH_START_ACTION, { provider })
+  return context.actions
+    .dispatch(AUTH_ACTION_LINK_OAUTH_START, { provider })
     .done.then(() => undefined)
 }
 
@@ -160,13 +214,14 @@ export function startOAuthLink(
  * Register the browser-navigation reaction to the authorize signal: on
  * `hilos_oauth_authorize`, leave for the provider's authorize URL — but only while
  * an attempt is live and uncanceled (HIL-419). Register it once at boot (before
- * the socket opens) so the reply to a later `oauth_start` lands. Returns an
+ * the socket opens) so the reply to a later `hilos_oauth_start` lands. Returns an
  * unsubscribe.
  *
+ * @param context The project auth context the wire dispatches over.
  * @returns Unsubscribe for the registered signal handler.
  */
-export function bindOAuthAuthorizeRedirect(): () => void {
-  return connection.on('projectSignal', (signal: ProjectSignal) => {
+function bindOAuthAuthorizeRedirect(context: HilosAuthContext): () => void {
+  return context.connection.on('projectSignal', (signal: ProjectSignal) => {
     if (signal.type !== OAUTH_AUTHORIZE_SIGNAL) {
       return
     }
@@ -193,7 +248,7 @@ export function bindOAuthAuthorizeRedirect(): () => void {
  *
  * @returns The stashed provider key, or an empty string when absent.
  */
-export function takeOAuthProvider(): string {
+function takeOAuthProvider(): string {
   const provider = sessionStorage.getItem(OAUTH_PROVIDER_STORAGE_KEY) ?? ''
   sessionStorage.removeItem(OAUTH_PROVIDER_STORAGE_KEY)
   attempt = null
@@ -219,19 +274,21 @@ export function takeOAuthProvider(): string {
  * Gating on session-ready closes both; a session that never establishes leaves this
  * pending, which the callback route's own timeout backstops.
  *
+ * @param context The project auth context the wire dispatches over.
  * @param provider The provider key the callback belongs to.
  * @param code The authorization code the provider returned.
  * @param state The signed state the provider returned.
  */
-export async function dispatchOAuthCallback(
+async function dispatchOAuthCallback(
+  context: HilosAuthContext,
   provider: string,
   code: string,
   state: string,
 ): Promise<void> {
   await whenSessionReady()
 
-  return actions
-    .dispatch(OAUTH_CALLBACK_ACTION, { provider, code, state })
+  return context.actions
+    .dispatch(AUTH_ACTION_OAUTH_CALLBACK, { provider, code, state })
     .done.then(() => undefined)
 }
 
@@ -253,11 +310,16 @@ const sessionReadyWaiters: Array<() => void> = []
  * later reconnect (the connection is re-registered before any re-handshake). A
  * no-op for every other signal. Returns an unsubscribe.
  *
+ * The signal name comes from {@link SIGNAL_HANDSHAKE_RESPONSE}, the one the
+ * framework's own session scope listens on: this is the same arrival read for a
+ * second purpose, not a second name that happens to match.
+ *
+ * @param context The project auth context the wire dispatches over.
  * @returns Unsubscribe for the registered signal handler.
  */
-export function bindSessionReady(): () => void {
-  return connection.on('projectSignal', (signal: ProjectSignal) => {
-    if (signal.type !== HANDSHAKE_RESPONSE_SIGNAL) {
+function bindSessionReady(context: HilosAuthContext): () => void {
+  return context.connection.on('projectSignal', (signal: ProjectSignal) => {
+    if (signal.type !== SIGNAL_HANDSHAKE_RESPONSE) {
       return
     }
     sessionReady = true
@@ -292,13 +354,15 @@ function whenSessionReady(): Promise<void> {
  * calls the moment it resolves (on failure, success, or timeout) so a late signal
  * cannot fire into a torn-down view.
  *
+ * @param context The project auth context the wire dispatches over.
  * @param handler Called with the (generic) failure payload when the login fails.
  * @returns Unsubscribe for the registered signal handler.
  */
-export function subscribeOAuthFailure(
+function subscribeOAuthFailure(
+  context: HilosAuthContext,
   handler: (data: OAuthResultSignalData) => void,
 ): () => void {
-  return connection.on('projectSignal', (signal: ProjectSignal) => {
+  return context.connection.on('projectSignal', (signal: ProjectSignal) => {
     if (signal.type !== OAUTH_RESULT_SIGNAL) {
       return
     }
@@ -329,7 +393,7 @@ export function describeOAuthError(error?: unknown): string {
  * the gate the instant the session upgrades — the replay ({@link bindOAuthLinkReplay})
  * must outlive it. Only ever one at a time; a new collision overwrites an old one.
  */
-interface PendingOAuthLink {
+export interface PendingOAuthLink {
   email: string
   linkToken: string
 }
@@ -343,7 +407,7 @@ let pendingLink: PendingOAuthLink | null = null
  * @param email The colliding account email, to pre-fill the re-auth form.
  * @param linkToken The signed capability token to redeem once re-authenticated.
  */
-export function armOAuthLink(email: string, linkToken: string): void {
+function armOAuthLink(email: string, linkToken: string): void {
   pendingLink = { email, linkToken }
 }
 
@@ -353,7 +417,7 @@ export function armOAuthLink(email: string, linkToken: string): void {
  *
  * @returns The armed pending link, or null when none is pending.
  */
-export function peekOAuthLink(): PendingOAuthLink | null {
+function peekOAuthLink(): PendingOAuthLink | null {
   return pendingLink
 }
 
@@ -363,11 +427,15 @@ export function peekOAuthLink(): PendingOAuthLink | null {
  * resolved `done` is the `::success` ack; a rejection is the generic backend
  * refusal (expired, foreign, or already-linked token).
  *
+ * @param context The project auth context the wire dispatches over.
  * @param token The signed link token captured by the collision callback.
  */
-export function dispatchLinkOAuthAfterReauth(token: string): Promise<void> {
-  return actions
-    .dispatch(LINK_OAUTH_AFTER_REAUTH_ACTION, { token })
+function dispatchLinkOAuthAfterReauth(
+  context: HilosAuthContext,
+  token: string,
+): Promise<void> {
+  return context.actions
+    .dispatch(AUTH_ACTION_LINK_OAUTH_AFTER_REAUTH, { token })
     .done.then(() => undefined)
 }
 
@@ -378,10 +446,12 @@ export function dispatchLinkOAuthAfterReauth(token: string): Promise<void> {
  * it survives the sign-in surface unmounting when the auth gate closes on the
  * upgrade. A no-op for a normal login (nothing armed). Returns an unsubscribe.
  *
+ * @param context The project auth context the wire dispatches over.
  * @param userId The current-user signal whose turn to non-null carries the upgrade.
  * @returns Unsubscribe for the registered signal subscription.
  */
-export function bindOAuthLinkReplay(
+function bindOAuthLinkReplay(
+  context: HilosAuthContext,
   userId: ReadonlySignal<number | null>,
 ): () => void {
   return subscribeSignal(userId, (id) => {
@@ -393,7 +463,7 @@ export function bindOAuthLinkReplay(
     // The user is already signed in as the matched account, so a rejected token
     // (expired, foreign, or already linked) leaves that session intact; the failure
     // is swallowed rather than surfaced, there being no re-auth surface left to show it.
-    dispatchLinkOAuthAfterReauth(token).catch(ignoreLinkFailure)
+    dispatchLinkOAuthAfterReauth(context, token).catch(ignoreLinkFailure)
   })
 }
 
@@ -403,4 +473,36 @@ export function bindOAuthLinkReplay(
  */
 function ignoreLinkFailure(): void {
   // Intentionally empty — see the doc comment.
+}
+
+/**
+ * The OAuth half of one sign-in surface: the two starts, the callback relay, the
+ * boot-time bindings, and the account-link handoff (HIL-281/282/401/419).
+ *
+ * What the redirect leaves behind — the attempt in flight, the latched session
+ * handshake, the armed link — stays at MODULE scope and not in this closure on
+ * purpose: the two ends of an OAuth trip are two different callers (a surface
+ * clicks, a boot-time binding navigates, a callback route arms, a replay redeems),
+ * and a per-closure copy would leave each of them talking to its own memory of a
+ * trip only one of them saw.
+ *
+ * @param context The project auth context the wire dispatches over.
+ * @returns The bound OAuth client the surfaces and the boot sequence call.
+ */
+export function createOAuthLogin(context: HilosAuthContext): HilosOAuthLogin {
+  return {
+    startOAuthLogin: (provider, signal) =>
+      startOAuthLogin(context, provider, signal),
+    startOAuthLink: (provider, signal) =>
+      startOAuthLink(context, provider, signal),
+    bindOAuthAuthorizeRedirect: () => bindOAuthAuthorizeRedirect(context),
+    takeOAuthProvider,
+    dispatchOAuthCallback: (provider, code, state) =>
+      dispatchOAuthCallback(context, provider, code, state),
+    bindSessionReady: () => bindSessionReady(context),
+    subscribeOAuthFailure: (handler) => subscribeOAuthFailure(context, handler),
+    armOAuthLink,
+    peekOAuthLink,
+    bindOAuthLinkReplay: (userId) => bindOAuthLinkReplay(context, userId),
+  }
 }

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Agents\DTO;
 
 use Demo\Chat\Agents\ChatAgent;
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Constants\HilosSignalConstants;
 
 /**
  * DismissSessionAckActionDTO - payload for dismissing a session's success ack (HIL-422).
@@ -28,7 +28,7 @@ final class DismissSessionAckActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::DISMISS_SESSION_ACK;
+        return HilosSignalConstants::HILOS_DISMISS_SESSION_ACK;
     }
 
     /**

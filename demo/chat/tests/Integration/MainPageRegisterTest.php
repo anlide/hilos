@@ -6,7 +6,6 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatCronConstants;
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Constants\PasswordPolicy;
 use Demo\Chat\Core\Router\ChatSignalRouter;
@@ -21,6 +20,7 @@ use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ValidationException;
@@ -745,7 +745,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
             ExecutionContext::setCurrentAcceptKey('abandon-ak');
             $reply = new MainPage($agent)->onAction(
                 'abandon-ak',
-                ChatSignalConstants::ABANDON_REGISTRATION,
+                HilosSignalConstants::HILOS_ABANDON_REGISTRATION,
                 new AbandonRegistrationActionDTO(),
             );
 
@@ -846,7 +846,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         $reply = new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::REGISTER,
+            HilosSignalConstants::HILOS_REGISTER,
             new RegisterActionDTO($email, $password),
         );
         $this->assertInstanceOf(AuthFlowOutcome::class, $reply);
@@ -868,7 +868,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         $reply = new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::REQUEST_REGISTER_CONFIRM,
+            HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM,
             new RequestRegisterConfirmActionDTO($email),
         );
         $this->assertInstanceOf(AuthFlowOutcome::class, $reply);
@@ -891,7 +891,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         $reply = new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::CONFIRM_REGISTER,
+            HilosSignalConstants::HILOS_CONFIRM_REGISTER,
             new ConfirmRegisterActionDTO($email, $code),
         );
         $this->assertInstanceOf(AuthFlowOutcome::class, $reply);

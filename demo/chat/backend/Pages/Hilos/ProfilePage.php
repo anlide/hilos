@@ -85,7 +85,7 @@ final class ProfilePage extends AbstractHilosProfilePage
         ChatSignalConstants::RENAME => RenameActionDTO::class,
         ChatSignalConstants::UNLINK_IDENTITY => UnlinkIdentityActionDTO::class,
         ChatSignalConstants::SET_PASSWORD => SetPasswordActionDTO::class,
-        ChatSignalConstants::LINK_OAUTH_START => LinkOAuthStartActionDTO::class,
+        HilosSignalConstants::HILOS_LINK_OAUTH_START => LinkOAuthStartActionDTO::class,
         ChatSignalConstants::ADD_SMS_REQUEST => RequestSmsAddCodeActionDTO::class,
         ChatSignalConstants::ADD_SMS_CONFIRM => ConfirmSmsAddCodeActionDTO::class,
         ChatSignalConstants::ADD_PASSWORD_REQUEST => RequestAddPasswordActionDTO::class,
@@ -149,7 +149,7 @@ final class ProfilePage extends AbstractHilosProfilePage
 
                 break;
 
-            case ChatSignalConstants::LINK_OAUTH_START:
+            case HilosSignalConstants::HILOS_LINK_OAUTH_START:
                 if (!$dto instanceof LinkOAuthStartActionDTO) {
                     throw new InvalidActionPayloadException($action, LinkOAuthStartActionDTO::class, $dto);
                 }

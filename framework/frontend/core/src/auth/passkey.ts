@@ -75,7 +75,7 @@ export interface PasskeyRequestOptions {
 }
 
 /**
- * The register confirm payload the backend `passkey_register_confirm` action
+ * The register confirm payload the backend `hilos_passkey_register_confirm` action
  * expects, all binary fields re-encoded base64url.
  */
 export interface PasskeyRegistrationResponse {
@@ -88,7 +88,7 @@ export interface PasskeyRegistrationResponse {
 }
 
 /**
- * The login confirm payload the backend `passkey_login_confirm` action expects,
+ * The login confirm payload the backend `hilos_passkey_login_confirm` action expects,
  * all binary fields re-encoded base64url.
  */
 export interface PasskeyAssertionResponse {
@@ -178,7 +178,7 @@ function decodeDescriptor(
  *
  * @param options The register options in the backend wire shape.
  * @param signal Aborts the ceremony and closes the device dialog (HIL-418).
- * @returns The base64url-encoded attestation response for `passkey_register_confirm`.
+ * @returns The base64url-encoded attestation response for `hilos_passkey_register_confirm`.
  * @throws DOMException When the user cancels or aborts it, the ceremony times out, or the authenticator rejects it.
  * @throws Error When the browser returns no credential.
  */
@@ -223,7 +223,7 @@ export async function createPasskey(
  *
  * @param options The login options in the backend wire shape.
  * @param signal Aborts the ceremony and closes the OS picker (HIL-418).
- * @returns The base64url-encoded assertion response for `passkey_login_confirm`.
+ * @returns The base64url-encoded assertion response for `hilos_passkey_login_confirm`.
  * @throws DOMException When the user cancels or aborts it, the ceremony times out, or no credential matches.
  * @throws Error When the browser returns no credential.
  */

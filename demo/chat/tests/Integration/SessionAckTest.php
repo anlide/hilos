@@ -6,7 +6,6 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Agents\DTO\DismissSessionAckActionDTO;
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
@@ -19,6 +18,7 @@ use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -441,7 +441,7 @@ final class SessionAckTest extends IntegrationTestCase
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::REGISTER,
+            HilosSignalConstants::HILOS_REGISTER,
             new RegisterActionDTO($email, self::PASSWORD),
         );
     }
@@ -460,7 +460,7 @@ final class SessionAckTest extends IntegrationTestCase
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::CONFIRM_REGISTER,
+            HilosSignalConstants::HILOS_CONFIRM_REGISTER,
             new ConfirmRegisterActionDTO($email, $code),
         );
     }
@@ -478,7 +478,7 @@ final class SessionAckTest extends IntegrationTestCase
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::REQUEST_PASSWORD_RESET,
+            HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET,
             new RequestPasswordResetActionDTO($email),
         );
     }
@@ -497,7 +497,7 @@ final class SessionAckTest extends IntegrationTestCase
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::CONFIRM_PASSWORD_RESET,
+            HilosSignalConstants::HILOS_CONFIRM_PASSWORD_RESET,
             new ConfirmPasswordResetActionDTO($email, $code),
         );
     }
@@ -515,7 +515,7 @@ final class SessionAckTest extends IntegrationTestCase
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::COMPLETE_PASSWORD_RESET,
+            HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET,
             new CompletePasswordResetActionDTO($password),
         );
     }
@@ -532,7 +532,7 @@ final class SessionAckTest extends IntegrationTestCase
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         $agent->onAgentAction(
             $acceptKey,
-            ChatSignalConstants::DISMISS_SESSION_ACK,
+            HilosSignalConstants::HILOS_DISMISS_SESSION_ACK,
             new DismissSessionAckActionDTO(),
         );
     }

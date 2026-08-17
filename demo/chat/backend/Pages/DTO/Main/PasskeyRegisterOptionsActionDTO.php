@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\DTO\Main;
 
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Constants\HilosSignalConstants;
 
 /**
  * PasskeyRegisterOptionsActionDTO - DTO for requesting WebAuthn registration options (HIL-284).
@@ -25,7 +25,7 @@ final class PasskeyRegisterOptionsActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::PASSKEY_REGISTER_OPTIONS;
+        return HilosSignalConstants::HILOS_PASSKEY_REGISTER_OPTIONS;
     }
 
     /**

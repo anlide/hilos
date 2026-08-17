@@ -7,17 +7,26 @@ then navigates home, where the now-authenticated main page renders. A missing or
 rejected token shows a generic error with a way back to sign-in — no token detail
 is disclosed. Bootstrap classes only, no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
+import { createAuthActions, type HilosAuthContext } from '@hilos/core'
 import { inject, onMounted, ref } from 'vue'
-import { hilosRouterKey } from '@hilos/vue'
 
-import { confirmMagicLink } from './authActions'
+import { hilosRouterKey } from '../hilosRouterKey.js'
 
-defineOptions({ name: 'MagicLink' })
+defineOptions({ name: 'HilosMagicLinkPage' })
+
+const props = defineProps<{
+  /** The project context the relay dispatches the confirm over. */
+  context: HilosAuthContext
+}>()
+
+// The framework wire, bound to that context: this relay dispatches the confirm the
+// sign-in surface itself never sends (its magic-link entry is request-only).
+const authActions = createAuthActions(props.context)
 
 const injectedRouter = inject(hilosRouterKey)
 if (!injectedRouter) {
   throw new Error(
-    'MagicLink requires a provided router: app.provide(hilosRouterKey, router).',
+    'HilosMagicLinkPage requires a provided router: app.provide(hilosRouterKey, router).',
   )
 }
 // Hoist the guarded router into a non-optional local so its non-undefined type
@@ -44,7 +53,7 @@ onMounted(async () => {
     return
   }
 
-  const outcome = await confirmMagicLink(email, token)
+  const outcome = await authActions.confirmMagicLink(email, token)
   if (outcome.ok) {
     router.navigate(HOME_PATH)
 
@@ -70,11 +79,7 @@ function goToSignIn(): void {
       role="status"
       data-id="auth-magic-verifying"
     >
-      <span
-        class="spinner-border"
-        role="status"
-        aria-hidden="true"
-      ></span>
+      <span class="spinner-border" role="status" aria-hidden="true"></span>
       <p class="mt-3">Signing you in…</p>
     </div>
 

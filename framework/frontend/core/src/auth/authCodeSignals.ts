@@ -13,7 +13,9 @@
 //
 // The name and the reason values are byte-equal to the backend
 // `HilosSignalConstants` / `AuthCodeResultSignalData` constants.
-import { z, type ProjectSignalSchemas } from '@hilos/core'
+import { z } from 'zod'
+
+import { type ProjectSignalSchemas } from '../protocol/parseSignal.js'
 
 /** Signal `type` for a code-request outcome (PHP `HilosSignalConstants::HILOS_AUTH_CODE_RESULT`). */
 export const AUTH_CODE_RESULT_SIGNAL = 'hilos_auth_code_result'

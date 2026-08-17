@@ -294,6 +294,102 @@ final class HilosSignalConstants
      */
     public const string COMMUNICATIONS_DELIVERY_RETRY = 'communications_delivery_retry';
 
+    // ── Hilos sign-in surface: guest commands (client → server) ──
+    /** Client → server: look an identifier up while it is typed (public, anonymous-reachable). */
+    public const string HILOS_DETECT_IDENTIFIER = 'hilos_detect_identifier';
+
+    /** Client → server: email+password login (public, anonymous-reachable). */
+    public const string HILOS_LOGIN = 'hilos_login';
+
+    /** Client → server: email+password registration (public, anonymous-reachable). */
+    public const string HILOS_REGISTER = 'hilos_register';
+
+    /** Client → server: submit the confirmation code that creates the reserved account (public, anonymous-reachable, HIL-415). */
+    public const string HILOS_CONFIRM_REGISTER = 'hilos_confirm_register';
+
+    /** Client → server: resend the confirmation code of a pending registration (public, anonymous-reachable, HIL-415). */
+    public const string HILOS_REQUEST_REGISTER_CONFIRM = 'hilos_request_register_confirm';
+
+    /** Client → server: request a password-reset code (public, anonymous-reachable). */
+    public const string HILOS_REQUEST_PASSWORD_RESET = 'hilos_request_password_reset';
+
+    /** Client → server: submit a password-reset code, without the new password (public, anonymous-reachable). */
+    public const string HILOS_CONFIRM_PASSWORD_RESET = 'hilos_confirm_password_reset';
+
+    /** Client → server: save the new password of an accepted recovery (public, anonymous-reachable, HIL-416). */
+    public const string HILOS_COMPLETE_PASSWORD_RESET = 'hilos_complete_password_reset';
+
+    /**
+     * Client → server: send a one-time login code to a phone over a chosen channel
+     * (public, anonymous-reachable, HIL-492).
+     *
+     * Named after the identifier and not the transport since the code stopped being an
+     * SMS by definition: the payload names the channel, and SMS is one entry of a
+     * registry the project composes.
+     */
+    public const string HILOS_REQUEST_PHONE_CODE = 'hilos_request_phone_code';
+
+    /** Client → server: submit a one-time login code for a phone (public, anonymous-reachable). */
+    public const string HILOS_CONFIRM_PHONE_CODE = 'hilos_confirm_phone_code';
+
+    /** Client → server: request an email magic-link sign-in token (public, anonymous-reachable). */
+    public const string HILOS_REQUEST_MAGIC_LINK = 'hilos_request_magic_link';
+
+    /** Client → server: submit an email magic-link sign-in token (public, anonymous-reachable). */
+    public const string HILOS_CONFIRM_MAGIC_LINK = 'hilos_confirm_magic_link';
+
+    /**
+     * Client → server: "not that address?" on a code screen (public, anonymous-reachable, HIL-486).
+     *
+     * Ends the registration this SESSION was waiting on, in every tab of it at once.
+     * It frees no address: the hold belongs to the identifier and other sessions may
+     * still be waiting on the same one, so a person walking away from a code screen
+     * cannot cancel somebody else's registration.
+     */
+    public const string HILOS_ABANDON_REGISTRATION = 'hilos_abandon_registration';
+
+    /** Client → server: begin an OAuth login by minting the provider authorize URL (public, anonymous-reachable). */
+    public const string HILOS_OAUTH_START = 'hilos_oauth_start';
+
+    /** Client → server: hand back the OAuth provider code+state after the redirect (public, anonymous-reachable). */
+    public const string HILOS_OAUTH_CALLBACK = 'hilos_oauth_callback';
+
+    /**
+     * Client → agent (page-independent): the person has read the success ack an auth
+     * flow left on this session, so clear it from every socket of the session (HIL-422).
+     */
+    public const string HILOS_DISMISS_SESSION_ACK = 'hilos_dismiss_session_ack';
+
+    // ── Hilos sign-in surface: WebAuthn ceremonies (client → server) ──
+    /**
+     * Client → server: request WebAuthn discoverable (usernameless) login options — no
+     * email, empty allowCredentials (public, anonymous-reachable, HIL-400).
+     */
+    public const string HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS = 'hilos_passkey_discoverable_login_options';
+
+    /** Client → server: submit a WebAuthn login assertion to sign in (public, anonymous-reachable, HIL-284). */
+    public const string HILOS_PASSKEY_LOGIN_CONFIRM = 'hilos_passkey_login_confirm';
+
+    /** Client → server: request WebAuthn registration options for the signed-in user (authenticated, HIL-284). */
+    public const string HILOS_PASSKEY_REGISTER_OPTIONS = 'hilos_passkey_register_options';
+
+    /** Client → server: submit a WebAuthn registration attestation to store a new passkey (authenticated, HIL-284). */
+    public const string HILOS_PASSKEY_REGISTER_CONFIRM = 'hilos_passkey_register_confirm';
+
+    // ── Hilos profile: OAuth account linking (client → server) ──
+    /** Client → server: begin linking an OAuth provider to the signed-in account (authenticated, HIL-401). */
+    public const string HILOS_LINK_OAUTH_START = 'hilos_link_oauth_start';
+
+    /** Client → server: redeem an OAuth link token after re-auth to link the account (authenticated, HIL-282). */
+    public const string HILOS_LINK_OAUTH_AFTER_REAUTH = 'hilos_link_oauth_after_reauth';
+
+    // ── Hilos sign-in surface: flow answers (server → client) ──
+    /** Server → client: a parked sign-in surface moves because the identifier it waits on resolved (HIL-415). */
+    public const string HILOS_AUTH_CONVERGE = 'hilos_auth_converge';
+
+    /** Server → client: WebAuthn publicKey options + signed challenge for a passkey ceremony (HIL-284). */
+    public const string HILOS_PASSKEY_OPTIONS = 'hilos_passkey_options';
+
     // ── Hilos OAuth login: async agent → initiating browser (WS_USER) ──
     /**
      * OAuth agent → initiating connection: the async login exchange failed or timed out.

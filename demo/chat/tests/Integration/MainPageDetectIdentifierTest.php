@@ -6,7 +6,6 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Auth\ChatAuthMethods;
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
@@ -18,6 +17,7 @@ use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\OAuth\OAuthProviderPreset;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
@@ -309,9 +309,9 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
      */
     public function testLookupIsPublicAndThrottled(): void
     {
-        $this->assertContains(ChatSignalConstants::DETECT_IDENTIFIER, MainPage::THROTTLED_ACTIONS);
-        $this->assertNotContains(ChatSignalConstants::DETECT_IDENTIFIER, MainPage::AUTH_ACTIONS);
-        $this->assertArrayHasKey(ChatSignalConstants::DETECT_IDENTIFIER, MainPage::ACTIONS);
+        $this->assertContains(HilosSignalConstants::HILOS_DETECT_IDENTIFIER, MainPage::THROTTLED_ACTIONS);
+        $this->assertNotContains(HilosSignalConstants::HILOS_DETECT_IDENTIFIER, MainPage::AUTH_ACTIONS);
+        $this->assertArrayHasKey(HilosSignalConstants::HILOS_DETECT_IDENTIFIER, MainPage::ACTIONS);
     }
 
     /**
@@ -396,7 +396,7 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         $reply = new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::DETECT_IDENTIFIER,
+            HilosSignalConstants::HILOS_DETECT_IDENTIFIER,
             DetectIdentifierActionDTO::fromArray(['identifier' => $identifier]),
         );
         $this->assertInstanceOf(IdentifierDetection::class, $reply);
@@ -417,7 +417,7 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::REGISTER,
+            HilosSignalConstants::HILOS_REGISTER,
             new RegisterActionDTO($email, self::PASSWORD),
         );
     }

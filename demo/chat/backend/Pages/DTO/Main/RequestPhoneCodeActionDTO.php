@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\DTO\Main;
 
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 use Hilos\Auth\CodeChannel\CodeChannel;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 
 /**
@@ -43,7 +43,7 @@ final class RequestPhoneCodeActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::REQUEST_PHONE_CODE;
+        return HilosSignalConstants::HILOS_REQUEST_PHONE_CODE;
     }
 
     /**

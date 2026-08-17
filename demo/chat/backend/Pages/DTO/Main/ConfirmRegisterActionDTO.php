@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\DTO\Main;
 
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 
 /**
@@ -43,7 +43,7 @@ final class ConfirmRegisterActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::CONFIRM_REGISTER;
+        return HilosSignalConstants::HILOS_CONFIRM_REGISTER;
     }
 
     /**

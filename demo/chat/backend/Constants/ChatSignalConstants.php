@@ -26,94 +26,8 @@ final class ChatSignalConstants
     /** @var string Client → server: delete one completed attachment draft */
     public const string ATTACHMENT_DRAFT_DELETE = 'attachment_draft_delete';
 
-    /** @var string Client → server: look an identifier up while it is typed (public, anonymous-reachable) */
-    public const string DETECT_IDENTIFIER = 'detect_identifier';
-
-    /** @var string Client → server: email+password login (public, anonymous-reachable) */
-    public const string LOGIN = 'login';
-
-    /** @var string Client → server: email+password registration (public, anonymous-reachable) */
-    public const string REGISTER = 'register';
-
-    /** @var string Client → server: request a password-reset code (public, anonymous-reachable) */
-    public const string REQUEST_PASSWORD_RESET = 'request_password_reset';
-
-    /** @var string Client → server: submit a password-reset code, without the new password (public, anonymous-reachable) */
-    public const string CONFIRM_PASSWORD_RESET = 'confirm_password_reset';
-
-    /** @var string Client → server: save the new password of an accepted recovery (public, anonymous-reachable, HIL-416) */
-    public const string COMPLETE_PASSWORD_RESET = 'complete_password_reset';
-
-    /**
-     * @var string Client → server: send a one-time login code to a phone over a chosen channel
-     *             (public, anonymous-reachable, HIL-492)
-     *
-     * Named after the identifier and not the transport since the code stopped being an
-     * SMS by definition: the payload names the channel, and SMS is one entry of a
-     * registry the project composes.
-     */
-    public const string REQUEST_PHONE_CODE = 'request_phone_code';
-
-    /** @var string Client → server: submit a one-time login code for a phone (public, anonymous-reachable) */
-    public const string CONFIRM_PHONE_CODE = 'confirm_phone_code';
-
-    /** @var string Client → server: request an email magic-link sign-in token (public, anonymous-reachable) */
-    public const string REQUEST_MAGIC_LINK = 'request_magic_link';
-
-    /** @var string Client → server: submit an email magic-link sign-in token (public, anonymous-reachable) */
-    public const string CONFIRM_MAGIC_LINK = 'confirm_magic_link';
-
-    /** @var string Client → server: resend the confirmation code of a pending registration (public, anonymous-reachable, HIL-415) */
-    public const string REQUEST_REGISTER_CONFIRM = 'request_register_confirm';
-
-    /** @var string Client → server: submit the confirmation code that creates the reserved account (public, anonymous-reachable, HIL-415) */
-    public const string CONFIRM_REGISTER = 'confirm_register';
-
-    /**
-     * @var string Client → server: "not that address?" on a code screen (public, anonymous-reachable, HIL-486)
-     *
-     * Ends the registration this SESSION was waiting on, in every tab of it at once.
-     * It frees no address: the hold belongs to the identifier and other sessions may
-     * still be waiting on the same one, so a person walking away from a code screen
-     * cannot cancel somebody else's registration.
-     */
-    public const string ABANDON_REGISTRATION = 'abandon_registration';
-
-    /** @var string Client → server: begin an OAuth login by minting the provider authorize URL (public, anonymous-reachable) */
-    public const string OAUTH_START = 'oauth_start';
-
-    /** @var string Client → server: hand back the OAuth provider code+state after the redirect (public, anonymous-reachable) */
-    public const string OAUTH_CALLBACK = 'oauth_callback';
-
-    /** @var string Client → server: redeem an OAuth link token after re-auth to link the account (authenticated, HIL-282) */
-    public const string LINK_OAUTH_AFTER_REAUTH = 'link_oauth_after_reauth';
-
-    /** @var string Client → server: begin linking an OAuth provider to the signed-in account (authenticated, HIL-401) */
-    public const string LINK_OAUTH_START = 'link_oauth_start';
-
-    /** @var string Client → server: request WebAuthn registration options for the signed-in user (authenticated, HIL-284) */
-    public const string PASSKEY_REGISTER_OPTIONS = 'passkey_register_options';
-
-    /** @var string Client → server: submit a WebAuthn registration attestation to store a new passkey (authenticated, HIL-284) */
-    public const string PASSKEY_REGISTER_CONFIRM = 'passkey_register_confirm';
-
-    /** @var string Client → server: submit a WebAuthn login assertion to sign in (public, anonymous-reachable, HIL-284) */
-    public const string PASSKEY_LOGIN_CONFIRM = 'passkey_login_confirm';
-
-    /**
-     * @var string Client → server: request WebAuthn discoverable (usernameless) login options — no
-     *     email, empty allowCredentials (public, anonymous-reachable, HIL-400)
-     */
-    public const string PASSKEY_DISCOVERABLE_LOGIN_OPTIONS = 'passkey_discoverable_login_options';
-
     /** @var string Client → agent: revert the authenticated session to anonymous (shell logout, page-independent) */
     public const string LOGOUT = 'logout';
-
-    /**
-     * @var string Client → agent (page-independent): the person has read the success ack an auth
-     *     flow left on this session, so clear it from every socket of the session (HIL-422)
-     */
-    public const string DISMISS_SESSION_ACK = 'dismiss_session_ack';
 
     /**
      * @var string Client → agent (page-independent): impersonating session reverts to its admin
@@ -147,12 +61,6 @@ final class ChatSignalConstants
 
     /** @var string Handshake response signal name */
     public const string HANDSHAKE_RESPONSE = 'handshake_response';
-
-    /** @var string Server → client: a parked sign-in surface moves because the identifier it waits on resolved (HIL-415) */
-    public const string AUTH_CONVERGE = 'auth_converge';
-
-    /** @var string Server → client: WebAuthn publicKey options + signed challenge for a passkey ceremony (HIL-284) */
-    public const string PASSKEY_OPTIONS = 'passkey_options';
 
     /** @var string Subscription page main signal name */
     public const string SUBSCRIPTION_PAGE_MAIN = 'subscription_page_main';

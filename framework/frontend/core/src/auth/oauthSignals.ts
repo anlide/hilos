@@ -4,7 +4,7 @@
 // names only, no connection import) so `bootstrap/connection` can merge the
 // schemas without a cycle through `oauthLogin`, which drives the flow over them.
 //
-// - `hilos_oauth_authorize` is the `oauth_start` reply: `action_success` carries
+// - `hilos_oauth_authorize` is the `hilos_oauth_start` reply: `action_success` carries
 //   no domain payload, so the provider authorize URL rides this signal instead,
 //   and the surface navigates the browser to it (the "client action = loading +
 //   signal, never fire-forget" pattern applied to the redirect start).
@@ -12,7 +12,9 @@
 //   signal of its own — it rides the current-user handshake fan-out (HIL-161).
 //
 // Both names are byte-equal to the backend `HilosSignalConstants` constants.
-import { z, type ProjectSignalSchemas } from '@hilos/core'
+import { z } from 'zod'
+
+import { type ProjectSignalSchemas } from '../protocol/parseSignal.js'
 
 /** Signal `type` for the OAuth start reply (PHP `HilosSignalConstants::HILOS_OAUTH_AUTHORIZE`). */
 export const OAUTH_AUTHORIZE_SIGNAL = 'hilos_oauth_authorize'

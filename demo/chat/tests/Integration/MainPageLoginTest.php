@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
@@ -14,6 +13,7 @@ use Demo\Chat\Pages\DTO\Main\RequestPasswordResetActionDTO;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
@@ -302,7 +302,7 @@ final class MainPageLoginTest extends IntegrationTestCase
     {
         new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::LOGIN,
+            HilosSignalConstants::HILOS_LOGIN,
             new LoginActionDTO($email, $password),
         );
     }
@@ -371,7 +371,7 @@ final class MainPageLoginTest extends IntegrationTestCase
     {
         new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::REQUEST_PASSWORD_RESET,
+            HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET,
             new RequestPasswordResetActionDTO($email),
         );
     }

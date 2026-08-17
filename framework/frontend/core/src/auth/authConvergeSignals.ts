@@ -12,12 +12,14 @@
 // completed. Nothing here is a reply to anything this browser asked for, which
 // is why it arrives as a signal and not on an ack.
 //
-// The name and the payload are byte-equal to the backend `ChatSignalConstants`
+// The name and the payload are byte-equal to the backend `HilosSignalConstants`
 // / `AuthConvergeSignalData` (`framework/backend/Auth/Flow/DTO`).
-import { z, type ProjectSignalSchemas } from '@hilos/core'
+import { z } from 'zod'
 
-/** Signal `type` for a converge (PHP `ChatSignalConstants::AUTH_CONVERGE`). */
-export const AUTH_CONVERGE_SIGNAL = 'auth_converge'
+import { type ProjectSignalSchemas } from '../protocol/parseSignal.js'
+
+/** Signal `type` for a converge (PHP `HilosSignalConstants::HILOS_AUTH_CONVERGE`). */
+export const AUTH_CONVERGE_SIGNAL = 'hilos_auth_converge'
 
 /**
  * The converge payload: the step and intent the surface moves to, and the

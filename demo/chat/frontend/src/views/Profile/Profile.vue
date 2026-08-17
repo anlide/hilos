@@ -9,7 +9,14 @@ only, no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
-import { hilosToasts, isPasskeySupported, threeWayMerge } from '@hilos/core'
+import {
+  createOAuthLogin,
+  createPasskeyCeremony,
+  describeOAuthError,
+  hilosToasts,
+  isPasskeySupported,
+  threeWayMerge,
+} from '@hilos/core'
 import {
   ConflictActions,
   ConflictHeader,
@@ -19,8 +26,7 @@ import {
   useSignal,
 } from '@hilos/vue'
 
-import { describeOAuthError, startOAuthLink } from '../../auth/oauthLogin'
-import { runPasskeyRegister } from '../../auth/passkeyCeremony'
+import { hilosAuthContext } from '../../auth/hilosAuthContext'
 import { connection } from '../../bootstrap/connection'
 import { currentUserId } from '../../bootstrap/session'
 import {
@@ -50,6 +56,12 @@ import { type IdentityItem } from './types/lists/IdentityItem'
 import { PASSWORD_MODE_ADDED } from '../../auth/passwordSignals'
 
 defineOptions({ name: 'ProfilePage' })
+
+// The framework auth wire, bound to this project's context: the profile links an
+// OAuth provider and registers a passkey through the same modules the sign-in
+// surface uses.
+const oauth = createOAuthLogin(hilosAuthContext)
+const passkeys = createPasskeyCeremony(hilosAuthContext)
 
 const NAME_MIN = 2
 const NAME_MAX = 64
@@ -83,7 +95,7 @@ const unlinkError = useSignal(unlinkIdentityError)
 
 // Link an account (HIL-401): the configured OAuth providers not yet attached to
 // this account. Linking is the redirect start pattern — the button dispatches
-// `link_oauth_start` and the browser leaves for the provider off the authorize
+// `hilos_link_oauth_start` and the browser leaves for the provider off the authorize
 // signal — so a started button stays loading through the redirect and only a
 // rejection clears it with an inline error. The provider drops off `providers`
 // (and its button vanishes) once the link lands and the identity list re-emits.
@@ -129,7 +141,7 @@ async function linkProvider(key: string): Promise<void> {
   linkPendingKey.value = key
   linkError.value = null
   try {
-    await startOAuthLink(key)
+    await oauth.startOAuthLink(key)
     // Accepted, working: the browser is navigated to the provider off the
     // authorize signal, so the button intentionally stays loading through it.
   } catch (caught) {
@@ -211,7 +223,7 @@ async function addPasskey(): Promise<void> {
   }
   passkeyPending.value = true
   passkeyError.value = null
-  const outcome = await runPasskeyRegister()
+  const outcome = await passkeys.runPasskeyRegister()
   passkeyPending.value = false
   if (outcome.ok) {
     hilosToasts.push('Passkey added. You can now sign in with it.', {

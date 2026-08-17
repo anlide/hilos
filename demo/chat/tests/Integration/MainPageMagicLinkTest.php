@@ -22,6 +22,7 @@ use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
@@ -535,7 +536,7 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         $reply = new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::REQUEST_MAGIC_LINK,
+            HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK,
             new RequestMagicLinkActionDTO($email),
         );
         $this->assertInstanceOf(AuthFlowOutcome::class, $reply);
@@ -562,7 +563,7 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         $reply = new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::CONFIRM_MAGIC_LINK,
+            HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK,
             new ConfirmMagicLinkActionDTO($email, $token),
         );
         $this->assertInstanceOf(AuthFlowOutcome::class, $reply);
@@ -583,7 +584,7 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         new MainPage($agent)->onAction(
             $acceptKey,
-            ChatSignalConstants::REGISTER,
+            HilosSignalConstants::HILOS_REGISTER,
             new RegisterActionDTO($email, self::PASSWORD),
         );
     }

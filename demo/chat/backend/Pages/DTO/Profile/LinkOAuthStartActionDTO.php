@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\DTO\Profile;
 
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 
 /**
@@ -36,7 +36,7 @@ final class LinkOAuthStartActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::LINK_OAUTH_START;
+        return HilosSignalConstants::HILOS_LINK_OAUTH_START;
     }
 
     /**

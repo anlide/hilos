@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\DTO\Main;
 
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Constants\HilosSignalConstants;
 
 /**
  * AbandonRegistrationActionDTO - DTO for "not that address?" on a code screen (HIL-486).
@@ -25,7 +25,7 @@ final class AbandonRegistrationActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::ABANDON_REGISTRATION;
+        return HilosSignalConstants::HILOS_ABANDON_REGISTRATION;
     }
 
     /**

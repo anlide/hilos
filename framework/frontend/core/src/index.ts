@@ -155,6 +155,92 @@ export {
 export { bootHilos, type BootHilosConfig } from './bootstrap/bootHilos.js'
 export { authAckToFlowPatch } from './auth/authAck.js'
 export {
+  createAuthActions,
+  toFlowPatch,
+  type HilosAuthActions,
+} from './auth/authActions.js'
+export {
+  createHilosAuthContext,
+  type HilosAuthContext,
+  type HilosOAuthProviderOption,
+} from './auth/authContext.js'
+export {
+  AUTH_CODE_RESULT_SIGNAL,
+  AUTH_CODE_REASON_SENT,
+  AUTH_CODE_REASON_CHANNEL_UNAVAILABLE,
+  AUTH_CODE_REASON_RATE_LIMITED,
+  AUTH_CODE_REASON_CAP_REACHED,
+  AUTH_CODE_REASON_SEND_FAILED,
+  authCodeResultSignalSchema,
+  AUTH_CODE_SIGNAL_SCHEMAS,
+  type AuthCodeResultSignalData,
+} from './auth/authCodeSignals.js'
+export {
+  AUTH_CONVERGE_SIGNAL,
+  authConvergeSignalSchema,
+  AUTH_CONVERGE_SIGNAL_SCHEMAS,
+  type AuthConvergeSignalData,
+} from './auth/authConvergeSignals.js'
+export {
+  AUTH_MAGIC_LINK_PATH,
+  AUTH_OAUTH_CALLBACK_PATH,
+} from './auth/authRoutes.js'
+export {
+  createOAuthLogin,
+  describeOAuthError,
+  type HilosOAuthLogin,
+  type PendingOAuthLink,
+} from './auth/oauthLogin.js'
+export {
+  OAUTH_AUTHORIZE_SIGNAL,
+  OAUTH_RESULT_SIGNAL,
+  OAUTH_REASON_REAUTH_REQUIRED,
+  OAUTH_REASON_LINK_OK,
+  OAUTH_REASON_LINK_DUPLICATE,
+  OAUTH_REASON_LINK_FAILED,
+  oauthAuthorizeSignalSchema,
+  oauthResultSignalSchema,
+  OAUTH_SIGNAL_SCHEMAS,
+  type OAuthAuthorizeSignalData,
+  type OAuthResultSignalData,
+} from './auth/oauthSignals.js'
+export {
+  createPasskeyCeremony,
+  type HilosPasskeyCeremony,
+} from './auth/passkeyCeremony.js'
+export {
+  PASSKEY_OPTIONS_SIGNAL,
+  PASSKEY_CEREMONY_REGISTER,
+  PASSKEY_CEREMONY_LOGIN,
+  passkeyOptionsSignalSchema,
+  PASSKEY_SIGNAL_SCHEMAS,
+  type PasskeyOptionsSignalData,
+} from './auth/passkeySignals.js'
+export {
+  AUTH_ACTION_DETECT_IDENTIFIER,
+  AUTH_ACTION_LOGIN,
+  AUTH_ACTION_REGISTER,
+  AUTH_ACTION_CONFIRM_REGISTER,
+  AUTH_ACTION_REQUEST_REGISTER_CONFIRM,
+  AUTH_ACTION_REQUEST_PASSWORD_RESET,
+  AUTH_ACTION_CONFIRM_PASSWORD_RESET,
+  AUTH_ACTION_COMPLETE_PASSWORD_RESET,
+  AUTH_ACTION_REQUEST_PHONE_CODE,
+  AUTH_ACTION_CONFIRM_PHONE_CODE,
+  AUTH_ACTION_REQUEST_MAGIC_LINK,
+  AUTH_ACTION_CONFIRM_MAGIC_LINK,
+  AUTH_ACTION_ABANDON_REGISTRATION,
+  AUTH_ACTION_OAUTH_START,
+  AUTH_ACTION_OAUTH_CALLBACK,
+  AUTH_ACTION_DISMISS_SESSION_ACK,
+  AUTH_ACTION_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS,
+  AUTH_ACTION_PASSKEY_LOGIN_CONFIRM,
+  AUTH_ACTION_PASSKEY_REGISTER_OPTIONS,
+  AUTH_ACTION_PASSKEY_REGISTER_CONFIRM,
+  AUTH_ACTION_LINK_OAUTH_START,
+  AUTH_ACTION_LINK_OAUTH_AFTER_REAUTH,
+} from './auth/authProtocol.js'
+export {
   createAuthGate,
   type AuthGate,
   type AuthGateOptions,

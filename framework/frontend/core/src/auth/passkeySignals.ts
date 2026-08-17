@@ -11,11 +11,13 @@
 // never fire-forget" pattern). The `ceremony` discriminator says which ceremony
 // (register / login) the options are for, so the driver matches the reply to its
 // in-flight request. The name is byte-equal to the backend
-// `ChatSignalConstants::PASSKEY_OPTIONS` constant.
-import { z, type ProjectSignalSchemas } from '@hilos/core'
+// `HilosSignalConstants::HILOS_PASSKEY_OPTIONS` constant.
+import { z } from 'zod'
 
-/** Signal `type` for the passkey options reply (PHP `ChatSignalConstants::PASSKEY_OPTIONS`). */
-export const PASSKEY_OPTIONS_SIGNAL = 'passkey_options'
+import { type ProjectSignalSchemas } from '../protocol/parseSignal.js'
+
+/** Signal `type` for the passkey options reply (PHP `HilosSignalConstants::HILOS_PASSKEY_OPTIONS`). */
+export const PASSKEY_OPTIONS_SIGNAL = 'hilos_passkey_options'
 
 /** Ceremony discriminator for a register reply (PHP `WebAuthnChallengeSigner::PURPOSE_REGISTER`). */
 export const PASSKEY_CEREMONY_REGISTER = 'register'

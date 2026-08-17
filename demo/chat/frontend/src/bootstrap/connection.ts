@@ -11,21 +11,23 @@
 //
 // `actions` is the requestId-correlated reply lifecycle: a modal submit calls
 // `actions.dispatch(...)` and closes on the returned handle's resolved `done`.
-import { createHilosConnection } from '@hilos/core'
+import {
+  AUTH_CODE_SIGNAL_SCHEMAS,
+  AUTH_CONVERGE_SIGNAL_SCHEMAS,
+  createHilosConnection,
+  OAUTH_SIGNAL_SCHEMAS,
+  PASSKEY_SIGNAL_SCHEMAS,
+} from '@hilos/core'
 
-import { AUTH_CODE_SIGNAL_SCHEMAS } from '../auth/authCodeSignals'
-import { AUTH_CONVERGE_SIGNAL_SCHEMAS } from '../auth/authConvergeSignals'
-import { OAUTH_SIGNAL_SCHEMAS } from '../auth/oauthSignals'
-import { PASSKEY_SIGNAL_SCHEMAS } from '../auth/passkeySignals'
 import { PASSWORD_SIGNAL_SCHEMAS } from '../auth/passwordSignals'
 
 export const { connection, actionErrors, actions } = createHilosConnection({
   url: import.meta.env.VITE_WS_URL,
-  // The project's own inbound signals: the OAuth login start-reply and
-  // failure/timeout (HIL-281), the passkey ceremony options (HIL-284), the
-  // profile set-password success (HIL-402), the phone code-request outcome
-  // (HIL-492) and the auth-converge step change (HIL-415) the daemon delivers
-  // WS_USER.
+  // The inbound signals this project mounts: the four auth ones the framework
+  // owns and declares — the OAuth login start-reply and failure/timeout
+  // (HIL-281), the passkey ceremony options (HIL-284), the phone code-request
+  // outcome (HIL-492), the auth-converge step change (HIL-415) — plus the
+  // project's own profile set-password success (HIL-402). All arrive WS_USER.
   projectSchemas: {
     ...AUTH_CODE_SIGNAL_SCHEMAS,
     ...AUTH_CONVERGE_SIGNAL_SCHEMAS,

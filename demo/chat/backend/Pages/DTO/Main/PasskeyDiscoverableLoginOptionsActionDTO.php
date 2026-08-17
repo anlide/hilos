@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\DTO\Main;
 
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Constants\HilosSignalConstants;
 
 /**
  * PasskeyDiscoverableLoginOptionsActionDTO - DTO for requesting usernameless WebAuthn login options (HIL-400).
@@ -26,7 +26,7 @@ final class PasskeyDiscoverableLoginOptionsActionDTO extends ChatActionPayloadDT
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::PASSKEY_DISCOVERABLE_LOGIN_OPTIONS;
+        return HilosSignalConstants::HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS;
     }
 
     /**

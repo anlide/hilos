@@ -1,10 +1,15 @@
-// The three seams the identifier-first flow machine delegates to this project
-// (HIL-423), and nothing else: `detectIdentifier` looks an identifier up
+// The wire of the framework's sign-in surface (HIL-409, lifted from the chat
+// demo's own copy written at HIL-423): `detectIdentifier` looks an identifier up
 // (HIL-414), `submitAuthFlow` dispatches the active step's form, and
-// `runAuthMethod` runs an icon method's ceremony (HIL-417/418/419). The machine
-// in @hilos/core owns the debounce, the race guards, pending, the error and the
-// resend gate; this file owns only the wire — which action a state maps to, and
-// how a reply reads back as an outcome.
+// `runAuthMethod` runs an icon method's ceremony (HIL-417/418/419) — the three
+// seams the flow machine delegates. The machine owns the debounce, the race
+// guards, pending, the error and the resend gate; this file owns only the wire —
+// which action a state maps to, and how a reply reads back as an outcome.
+//
+// Every dispatch rides the project's context (HIL-409) rather than an imported
+// singleton, which is what makes one copy of this file serve all three view
+// frameworks: what a deployment varies is the method registry it declares, never
+// a branch here.
 //
 // The map is a function of (step, intent, identifier kind, action) and NEVER of
 // a mode name — that is the whole point of the redesign, and the reason the old
@@ -23,25 +28,10 @@
 // taken address is a move to sign-in, not a transport error) has to be read off
 // a resolved dispatch, and a malformed one must not reach the machine as a half
 // outcome.
-import {
-  ActionError,
-  MAGIC_LINK_METHOD_KEY,
-  PASSKEY_FLOW_METHOD,
-  SMS_CODE_CHANNEL,
-  z,
-} from '@hilos/core'
-import type {
-  AuthFlowForm,
-  AuthFlowState,
-  AuthFlowSubmitOutcome,
-  AuthIntent,
-  AuthStep,
-  AuthSubmitAction,
-  IdentifierDetection,
-  ProjectSignal,
-} from '@hilos/core'
+import { z } from 'zod'
 
-import { actions, connection } from '../bootstrap/connection'
+import { ActionError } from '../connection/actionLifecycle.js'
+import { type ProjectSignal } from '../protocol/parseSignal.js'
 import {
   AUTH_CODE_REASON_CAP_REACHED,
   AUTH_CODE_REASON_CHANNEL_UNAVAILABLE,
@@ -49,51 +39,38 @@ import {
   AUTH_CODE_REASON_SENT,
   AUTH_CODE_RESULT_SIGNAL,
   authCodeResultSignalSchema,
-} from './authCodeSignals'
-import { startOAuthLogin } from './oauthLogin'
-import { runPasskeyDiscoverableLogin } from './passkeyCeremony'
-
-/** Backend action: live identifier lookup (PHP `ChatSignalConstants::DETECT_IDENTIFIER`). */
-const DETECT_IDENTIFIER_ACTION = 'detect_identifier'
-
-/** Backend action: email+password login (PHP `ChatSignalConstants::LOGIN`). */
-const LOGIN_ACTION = 'login'
-
-/** Backend action: email+password registration (PHP `ChatSignalConstants::REGISTER`). */
-const REGISTER_ACTION = 'register'
-
-/** Backend action: confirm a reserved registration (PHP `ChatSignalConstants::CONFIRM_REGISTER`). */
-const CONFIRM_REGISTER_ACTION = 'confirm_register'
-
-/** Backend action: re-send a pending registration's code (PHP `ChatSignalConstants::REQUEST_REGISTER_CONFIRM`). */
-const REQUEST_REGISTER_CONFIRM_ACTION = 'request_register_confirm'
-
-/** Backend action: send a phone login code over a channel (PHP `ChatSignalConstants::REQUEST_PHONE_CODE`). */
-const REQUEST_PHONE_CODE_ACTION = 'request_phone_code'
-
-/** Backend action: submit a phone login code (PHP `ChatSignalConstants::CONFIRM_PHONE_CODE`). */
-const CONFIRM_PHONE_CODE_ACTION = 'confirm_phone_code'
-
-/** Backend action: request an email magic-link (PHP `ChatSignalConstants::REQUEST_MAGIC_LINK`). */
-const REQUEST_MAGIC_LINK_ACTION = 'request_magic_link'
-
-/** Backend action: submit an email magic-link token (PHP `ChatSignalConstants::CONFIRM_MAGIC_LINK`). */
-const CONFIRM_MAGIC_LINK_ACTION = 'confirm_magic_link'
-
-/** Backend action: ask for a password-reset code (PHP `ChatSignalConstants::REQUEST_PASSWORD_RESET`). */
-const REQUEST_PASSWORD_RESET_ACTION = 'request_password_reset'
-
-/** Backend action: submit a password-reset code (PHP `ChatSignalConstants::CONFIRM_PASSWORD_RESET`). */
-const CONFIRM_PASSWORD_RESET_ACTION = 'confirm_password_reset'
-
-/** Backend action: save the new password of a recovery (PHP `ChatSignalConstants::COMPLETE_PASSWORD_RESET`). */
-const COMPLETE_PASSWORD_RESET_ACTION = 'complete_password_reset'
-
-/** Backend action: give up the registration this session started (PHP `ChatSignalConstants::ABANDON_REGISTRATION`). */
-const ABANDON_REGISTRATION_ACTION = 'abandon_registration'
-
-/** Backend action: clear the session's success announcement (PHP `ChatSignalConstants::DISMISS_SESSION_ACK`). */
-const DISMISS_SESSION_ACK_ACTION = 'dismiss_session_ack'
+} from './authCodeSignals.js'
+import { type HilosAuthContext } from './authContext.js'
+import {
+  MAGIC_LINK_METHOD_KEY,
+  PASSKEY_FLOW_METHOD,
+  SMS_CODE_CHANNEL,
+  type AuthFlowForm,
+  type AuthFlowState,
+  type AuthFlowSubmitOutcome,
+  type AuthIntent,
+  type AuthStep,
+  type AuthSubmitAction,
+  type IdentifierDetection,
+} from './authFlow.js'
+import {
+  AUTH_ACTION_ABANDON_REGISTRATION,
+  AUTH_ACTION_COMPLETE_PASSWORD_RESET,
+  AUTH_ACTION_CONFIRM_MAGIC_LINK,
+  AUTH_ACTION_CONFIRM_PASSWORD_RESET,
+  AUTH_ACTION_CONFIRM_PHONE_CODE,
+  AUTH_ACTION_CONFIRM_REGISTER,
+  AUTH_ACTION_DETECT_IDENTIFIER,
+  AUTH_ACTION_DISMISS_SESSION_ACK,
+  AUTH_ACTION_LOGIN,
+  AUTH_ACTION_REGISTER,
+  AUTH_ACTION_REQUEST_MAGIC_LINK,
+  AUTH_ACTION_REQUEST_PASSWORD_RESET,
+  AUTH_ACTION_REQUEST_PHONE_CODE,
+  AUTH_ACTION_REQUEST_REGISTER_CONFIRM,
+} from './authProtocol.js'
+import { startOAuthLogin } from './oauthLogin.js'
+import { runPasskeyDiscoverableLogin } from './passkeyCeremony.js'
 
 /** The key prefix every OAuth provider method carries, e.g. `oauth:github`. */
 const OAUTH_METHOD_PREFIX = 'oauth:'
@@ -179,6 +156,87 @@ interface PhoneCodeOutcome {
 }
 
 /**
+ * The wire of one sign-in surface: the three seams {@link createAuthFlow} takes,
+ * plus the dispatches a surface makes outside the machine's own steps.
+ *
+ * The three seams come first because they are the machine's contract; the rest are
+ * the surface's own errands — giving up a registration, relaying a link a mail
+ * client opened, watching a channel go unreachable — and they need the same
+ * connection and the same action lifecycle, so they are bound from the same
+ * context rather than reaching for singletons a project would have to expose.
+ */
+export interface HilosAuthActions {
+  /**
+   * Look an identifier up live, debounced by the machine (HIL-414).
+   *
+   * @param identifier The identifier as it stands in the field.
+   */
+  onDetect(identifier: string): Promise<IdentifierDetection>
+  /**
+   * Dispatch the active step's form, or a re-send of its code.
+   *
+   * @param action Whether this is the step's submit or a re-send.
+   * @param flow The current flow state (step, intent, identifier kind, channel).
+   * @param form The current form values.
+   */
+  onSubmit(
+    action: AuthSubmitAction,
+    flow: AuthFlowState,
+    form: AuthFlowForm,
+  ): Promise<AuthFlowSubmitOutcome>
+  /**
+   * Run an icon method's ceremony — its OAuth redirect or WebAuthn ceremony.
+   *
+   * @param key The chosen method key.
+   * @param form The current form values.
+   * @param signal Aborted when the person cancels the parked external step.
+   */
+  onMethodAction(
+    key: string,
+    form: AuthFlowForm,
+    signal: AbortSignal,
+  ): Promise<AuthFlowSubmitOutcome>
+  /** Give up the registration this session was waiting on (HIL-486). */
+  abandonRegistration(): Promise<AuthFlowSubmitOutcome>
+  /**
+   * Relay a magic-link token the /auth/magic route was opened with.
+   *
+   * @param email The account email carried in the link.
+   * @param token The one-time sign-in token carried in the link.
+   */
+  confirmMagicLink(email: string, token: string): Promise<AuthFlowSubmitOutcome>
+  /**
+   * Watch for a channel reporting it cannot reach the number being typed.
+   *
+   * @param handler Called with the channel key that reported itself unreachable.
+   */
+  subscribeCodeChannelUnavailable(
+    handler: (channel: string) => void,
+  ): () => void
+}
+
+/**
+ * Bind the surface's wire to one project context — the form
+ * {@link createHilosSettingsActions} established.
+ *
+ * @param context The project auth context every dispatch rides.
+ * @returns The bound wire a surface hands to {@link createAuthFlow} and calls.
+ */
+export function createAuthActions(context: HilosAuthContext): HilosAuthActions {
+  return {
+    onDetect: (identifier) => detectIdentifier(context, identifier),
+    onSubmit: (action, flow, form) =>
+      submitAuthFlow(context, action, flow, form),
+    onMethodAction: (key, form, signal) =>
+      runAuthMethod(context, key, form, signal),
+    abandonRegistration: () => abandonRegistration(context),
+    confirmMagicLink: (email, token) => confirmMagicLink(context, email, token),
+    subscribeCodeChannelUnavailable: (handler) =>
+      subscribeCodeChannelUnavailable(context, handler),
+  }
+}
+
+/**
  * Look an identifier up live — the machine's `onDetect` seam (HIL-414).
  *
  * The reply decides everything the surface reveals, so it is validated at the
@@ -189,21 +247,23 @@ interface PhoneCodeOutcome {
  * The identifier goes out UNTRIMMED, exactly as typed: the reply is matched back
  * to the field by this echo, so trimming here would orphan the answer.
  *
+ * @param context The project auth context the wire dispatches over.
  * @param identifier The identifier as it stands in the field.
  * @returns What is behind the identifier and what can be done with it.
  * @throws ActionError When the lookup fails, times out, or answers nothing.
  */
-export async function detectIdentifier(
+async function detectIdentifier(
+  context: HilosAuthContext,
   identifier: string,
 ): Promise<IdentifierDetection> {
-  const { reply } = await actions.dispatch(
-    DETECT_IDENTIFIER_ACTION,
+  const { reply } = await context.actions.dispatch(
+    AUTH_ACTION_DETECT_IDENTIFIER,
     { identifier },
     { replySchema: identifierDetectionSchema },
   ).done
   if (reply === undefined) {
     throw new ActionError(
-      DETECT_IDENTIFIER_ACTION,
+      AUTH_ACTION_DETECT_IDENTIFIER,
       'invalid-reply',
       'The identifier lookup answered nothing.',
     )
@@ -221,12 +281,14 @@ export async function detectIdentifier(
  * its registration are one code over a channel, so the email actions never see
  * one.
  *
+ * @param context The project auth context the wire dispatches over.
  * @param action Whether this is the step's submit or a re-send of its code.
  * @param flow The current flow state (step, intent, identifier kind, channel).
  * @param form The current form values.
  * @returns The outcome the machine applies (error inline, or the next step).
  */
-export function submitAuthFlow(
+function submitAuthFlow(
+  context: HilosAuthContext,
   action: AuthSubmitAction,
   flow: AuthFlowState,
   form: AuthFlowForm,
@@ -236,8 +298,8 @@ export function submitAuthFlow(
       // A phone never submits a form from this step — picking its channel IS the
       // send, and the machine dispatches that the moment one is picked.
       return flow.identifierKind === 'phone'
-        ? sendPhoneCode(flow, form)
-        : dispatchFlow(LOGIN_ACTION, {
+        ? sendPhoneCode(context, flow, form)
+        : dispatchFlow(context, AUTH_ACTION_LOGIN, {
             email: form.identifier,
             password: form.password,
           })
@@ -245,24 +307,24 @@ export function submitAuthFlow(
       // The terms screen is what sends: a registration dispatched NOTHING before
       // it, whichever way it is being made (HIL-417).
       return flow.identifierKind === 'phone'
-        ? sendPhoneCode(flow, form)
-        : dispatchFlow(REGISTER_ACTION, {
+        ? sendPhoneCode(context, flow, form)
+        : dispatchFlow(context, AUTH_ACTION_REGISTER, {
             email: form.identifier,
             password: form.password,
           })
     case 'code':
-      return submitCode(action, flow, form)
+      return submitCode(context, action, flow, form)
     case 'set_password':
       // The address is deliberately absent from the payload: the backend reads it
       // off the grant the accepted code left on this session, so a payload cannot
       // name an account other than the one whose mailbox was just proven.
-      return dispatchFlow(COMPLETE_PASSWORD_RESET_ACTION, {
+      return dispatchFlow(context, AUTH_ACTION_COMPLETE_PASSWORD_RESET, {
         password: form.newPassword,
       })
     case 'done':
       // Continue: the announcement is cleared on the server, the gate releases
       // the resume it was holding, and the surface closes.
-      return dispatchFlow(DISMISS_SESSION_ACK_ACTION, {})
+      return dispatchFlow(context, AUTH_ACTION_DISMISS_SESSION_ACK, {})
     case 'second_factor':
     case 'external':
       // Neither screen has a form to send: two-step verification is HIL-68/494
@@ -281,12 +343,14 @@ export function submitAuthFlow(
  * cancelling has to end the ceremony itself — a device dialog left open that a
  * late finger satisfies would raise a session the person just refused.
  *
+ * @param context The project auth context the wire dispatches over.
  * @param key The chosen method key.
  * @param form The current form values (a magic link reuses the typed address).
  * @param signal Aborted when the person cancels the parked external step.
  * @returns The outcome the machine applies.
  */
-export function runAuthMethod(
+function runAuthMethod(
+  context: HilosAuthContext,
   key: string,
   form: AuthFlowForm,
   signal: AbortSignal,
@@ -295,13 +359,15 @@ export function runAuthMethod(
     // Login-only today (HIL-417 is what lets a link register too) and an address
     // it cannot mail is answered exactly like one it can, so the screen it parks
     // on says the same thing either way.
-    return dispatchFlow(REQUEST_MAGIC_LINK_ACTION, { email: form.identifier })
+    return dispatchFlow(context, AUTH_ACTION_REQUEST_MAGIC_LINK, {
+      email: form.identifier,
+    })
   }
   if (key === PASSKEY_FLOW_METHOD.key) {
-    return runPasskeyDiscoverableLogin(signal)
+    return runPasskeyDiscoverableLogin(context, signal)
   }
   if (key.startsWith(OAUTH_METHOD_PREFIX)) {
-    return startOAuthProvider(key, signal)
+    return startOAuthProvider(context, key, signal)
   }
 
   return Promise.resolve({ ok: false })
@@ -319,9 +385,14 @@ export function runAuthMethod(
  * step by the time the ack lands, and a failure to forget something is nothing the
  * person can act on. What matters is that the server hears it, so the next handshake
  * does not put them back on the code screen.
+ *
+ * @param context The project auth context the wire dispatches over.
+ * @returns The outcome the machine applies once the server has been told.
  */
-export function abandonRegistration(): Promise<AuthFlowSubmitOutcome> {
-  return dispatchFlow(ABANDON_REGISTRATION_ACTION, {})
+function abandonRegistration(
+  context: HilosAuthContext,
+): Promise<AuthFlowSubmitOutcome> {
+  return dispatchFlow(context, AUTH_ACTION_ABANDON_REGISTRATION, {})
 }
 
 /**
@@ -332,15 +403,17 @@ export function abandonRegistration(): Promise<AuthFlowSubmitOutcome> {
  * the backend upgrades the session — the auth gate then closes any sign-in shown
  * — and mapping the generic failure otherwise.
  *
+ * @param context The project auth context the wire dispatches over.
  * @param email The account email carried in the link.
  * @param token The one-time sign-in token carried in the link.
  * @returns Whether the token signed the session in, with the reason when it did not.
  */
-export function confirmMagicLink(
+function confirmMagicLink(
+  context: HilosAuthContext,
   email: string,
   token: string,
 ): Promise<AuthFlowSubmitOutcome> {
-  return dispatchFlow(CONFIRM_MAGIC_LINK_ACTION, { email, token })
+  return dispatchFlow(context, AUTH_ACTION_CONFIRM_MAGIC_LINK, { email, token })
 }
 
 /**
@@ -354,13 +427,15 @@ export function confirmMagicLink(
  * Nothing is dimmed permanently — the caller clears its own dimmed set when the
  * number changes, since a different number is a different question.
  *
+ * @param context The project auth context the wire dispatches over.
  * @param handler Called with the channel key that reported itself unavailable.
  * @returns Unsubscribe for the registered signal handler.
  */
-export function subscribeCodeChannelUnavailable(
+function subscribeCodeChannelUnavailable(
+  context: HilosAuthContext,
   handler: (channel: string) => void,
 ): () => void {
-  return connection.on('projectSignal', (signal: ProjectSignal) => {
+  return context.connection.on('projectSignal', (signal: ProjectSignal) => {
     if (signal.type !== AUTH_CODE_RESULT_SIGNAL) {
       return
     }
@@ -405,12 +480,14 @@ export function toFlowPatch(
 /**
  * Dispatch what a code screen sends: the code itself, or another send of it.
  *
+ * @param context The project auth context the wire dispatches over.
  * @param action Whether this is the step's submit or a re-send.
  * @param flow The current flow state.
  * @param form The current form values.
  * @returns The outcome the machine applies.
  */
 function submitCode(
+  context: HilosAuthContext,
   action: AuthSubmitAction,
   flow: AuthFlowState,
   form: AuthFlowForm,
@@ -419,8 +496,8 @@ function submitCode(
     // A channel picked ON the code screen arrives here as a submit with nothing
     // typed yet — choosing one is always a send — and so does the resend link.
     return action === 'resend' || form.code.trim() === ''
-      ? sendPhoneCode(flow, form)
-      : dispatchFlow(CONFIRM_PHONE_CODE_ACTION, {
+      ? sendPhoneCode(context, flow, form)
+      : dispatchFlow(context, AUTH_ACTION_CONFIRM_PHONE_CODE, {
           phone: form.identifier,
           code: form.code,
         })
@@ -429,8 +506,10 @@ function submitCode(
     // The first send and every re-send travel one path: the key icon starts the
     // recovery locally and then asks for the code exactly as the link does.
     return action === 'resend'
-      ? dispatchFlow(REQUEST_PASSWORD_RESET_ACTION, { email: form.identifier })
-      : dispatchFlow(CONFIRM_PASSWORD_RESET_ACTION, {
+      ? dispatchFlow(context, AUTH_ACTION_REQUEST_PASSWORD_RESET, {
+          email: form.identifier,
+        })
+      : dispatchFlow(context, AUTH_ACTION_CONFIRM_PASSWORD_RESET, {
           email: form.identifier,
           code: form.code,
         })
@@ -440,8 +519,10 @@ function submitCode(
   // code (its passwordless way is the magic link, which parks on check_inbox), so
   // the login intent cannot reach this line with one.
   return action === 'resend'
-    ? dispatchFlow(REQUEST_REGISTER_CONFIRM_ACTION, { email: form.identifier })
-    : dispatchFlow(CONFIRM_REGISTER_ACTION, {
+    ? dispatchFlow(context, AUTH_ACTION_REQUEST_REGISTER_CONFIRM, {
+        email: form.identifier,
+      })
+    : dispatchFlow(context, AUTH_ACTION_CONFIRM_REGISTER, {
         email: form.identifier,
         code: form.code,
       })
@@ -451,18 +532,20 @@ function submitCode(
  * Ask the backend to send a code to a phone over the chosen channel, and resolve
  * only once it says what became of it (HIL-492).
  *
+ * @param context The project auth context the wire dispatches over.
  * @param flow The current flow state (the chosen channel and the intent to keep).
  * @param form The current form values (the number).
  * @returns The outcome, carrying the DELIVERED channel into the flow state.
  */
 async function sendPhoneCode(
+  context: HilosAuthContext,
   flow: AuthFlowState,
   form: AuthFlowForm,
 ): Promise<AuthFlowSubmitOutcome> {
   // Unset only before anything was picked, which the primary channel is the
   // answer to: it is the one the registry marks as reaching a stranger's number.
   const channel = flow.channelKey ?? SMS_CODE_CHANNEL.key
-  const outcome = await requestPhoneCode(form.identifier, channel)
+  const outcome = await requestPhoneCode(context, form.identifier, channel)
   if (!outcome.ok) {
     return { ok: false, message: outcome.message }
   }
@@ -503,11 +586,13 @@ async function sendPhoneCode(
  * and every later press is a silent no-op — the exact opposite of the recovery the
  * flow is designed around, which is the person pressing the button again.
  *
+ * @param context The project auth context the wire dispatches over.
  * @param phone The number the code is asked for.
  * @param channel The code channel key to send over (see `CodeChannelDescriptor`).
  * @returns What became of the request, and over which channel.
  */
 function requestPhoneCode(
+  context: HilosAuthContext,
   phone: string,
   channel: string,
 ): Promise<PhoneCodeOutcome> {
@@ -523,7 +608,7 @@ function requestPhoneCode(
       resolve(outcome)
     }
 
-    const unsubscribe = connection.on(
+    const unsubscribe = context.connection.on(
       'projectSignal',
       (signal: ProjectSignal) => {
         if (signal.type !== AUTH_CODE_RESULT_SIGNAL) {
@@ -549,8 +634,8 @@ function requestPhoneCode(
       })
     }, CODE_OUTCOME_TIMEOUT_MS)
 
-    actions
-      .dispatch(REQUEST_PHONE_CODE_ACTION, { phone, channel })
+    context.actions
+      .dispatch(AUTH_ACTION_REQUEST_PHONE_CODE, { phone, channel })
       .done.catch((error: unknown) => {
         settle({ ok: false, message: describeAuthError(error), channel })
       })
@@ -604,16 +689,18 @@ function describeCodeOutcome(reason: string): {
  * authorize signal — so the flow stays parked on the waiting screen rather than
  * moving anywhere; only a refusal has anything to say.
  *
+ * @param context The project auth context the wire dispatches over.
  * @param provider The provider method key, e.g. `oauth:github`.
  * @param signal Aborted when the person cancels before the browser leaves.
  * @returns The outcome the machine applies.
  */
 async function startOAuthProvider(
+  context: HilosAuthContext,
   provider: string,
   signal: AbortSignal,
 ): Promise<AuthFlowSubmitOutcome> {
   try {
-    await startOAuthLogin(provider, signal)
+    await startOAuthLogin(context, provider, signal)
 
     return { ok: true }
   } catch (error) {
@@ -630,16 +717,18 @@ async function startOAuthProvider(
  * sign-in, a confirmed code — has no reply to read and resolves as the success it
  * already is.
  *
+ * @param context The project auth context the wire dispatches over.
  * @param action The backend action name.
  * @param payload The action payload.
  * @returns The outcome the machine applies.
  */
 async function dispatchFlow(
+  context: HilosAuthContext,
   action: string,
   payload: Record<string, string>,
 ): Promise<AuthFlowSubmitOutcome> {
   try {
-    const { reply } = await actions.dispatch(action, payload, {
+    const { reply } = await context.actions.dispatch(action, payload, {
       replySchema: authFlowOutcomeSchema,
     }).done
     if (reply === undefined) {

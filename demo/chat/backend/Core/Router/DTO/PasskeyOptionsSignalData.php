@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Router\DTO;
 
-use Demo\Chat\Constants\ChatSignalConstants;
 use Hilos\BaseDTO;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
@@ -16,7 +16,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
  * The `passkey_*_options` page actions build the publicKey options and a signed
  * challenge token synchronously (CPU-only, no I/O), but the framework's
  * `action_success` carries no domain payload, so it cannot hand the options to the
- * browser. This signal ({@see ChatSignalConstants::PASSKEY_OPTIONS}) is delivered
+ * browser. This signal ({@see HilosSignalConstants::HILOS_PASSKEY_OPTIONS}) is delivered
  * WS_USER to the initiating connection's accept key instead; the client feeds
  * {@see $publicKeyOptions} to navigator.credentials.create/get and returns
  * {@see $signedChallenge} on confirm (the "client action = loading + signal, never

@@ -9,9 +9,8 @@ pending attachment chips, and runs a re-send lockout timer before the next
 submit. Rendered by HilosView when the navigator's route is the main page. -->
 <script setup lang="ts">
 import { computed, inject, nextTick, onUnmounted, ref, watch } from 'vue'
-import { useConnectionState, useSignal } from '@hilos/vue'
+import { hilosAuthGateKey, useConnectionState, useSignal } from '@hilos/vue'
 
-import { authGateKey } from '../../auth/authGateKey'
 import { connection } from '../../bootstrap/connection'
 import { currentUserId, currentUserName } from '../../bootstrap/session'
 import {
@@ -47,7 +46,7 @@ const isConnected = computed(() => connectionState.value === 'connected')
 // cannot send, so the composer is disabled until the session names a user (the
 // handshake response turns the current-user id non-null). The banner's CTA opens
 // the in-place sign-in surface through the auth gate — no 401 round-trip.
-const authGate = inject(authGateKey)
+const authGate = inject(hilosAuthGateKey)
 const isAuthenticated = computed(() => selfId.value !== null)
 
 function promptSignIn(): void {
@@ -555,7 +554,9 @@ onUnmounted(() => {
           type="text"
           class="form-control"
           :placeholder="
-            isAuthenticated ? 'Type your message...' : 'Sign in to send a message'
+            isAuthenticated
+              ? 'Type your message...'
+              : 'Sign in to send a message'
           "
           maxlength="500"
           :disabled="!isAuthenticated || !isConnected || isModerating"

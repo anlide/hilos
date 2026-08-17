@@ -89,7 +89,7 @@ final class ChatAgent extends AbstractAgent
 
     public const array AGENT_ACTIONS = [
         ChatSignalConstants::LOGOUT => LogoutActionDTO::class,
-        ChatSignalConstants::DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
+        HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
         ChatSignalConstants::IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
     ];
 
@@ -758,7 +758,7 @@ final class ChatAgent extends AbstractAgent
 
                 return;
 
-            case ChatSignalConstants::DISMISS_SESSION_ACK:
+            case HilosSignalConstants::HILOS_DISMISS_SESSION_ACK:
                 if (!$dto instanceof DismissSessionAckActionDTO) {
                     throw new InvalidActionPayloadException($action, DismissSessionAckActionDTO::class, $dto);
                 }
@@ -1017,7 +1017,7 @@ final class ChatAgent extends AbstractAgent
             }
 
             $this->sendToUser(
-                ChatSignalConstants::AUTH_CONVERGE,
+                HilosSignalConstants::HILOS_AUTH_CONVERGE,
                 $acceptKey,
                 new AuthConvergeSignalData($acceptKey, $identifier, AuthFlowStep::DONE, AuthFlowIntent::REGISTER),
             );
@@ -1057,7 +1057,7 @@ final class ChatAgent extends AbstractAgent
             }
 
             $this->sendToUser(
-                ChatSignalConstants::AUTH_CONVERGE,
+                HilosSignalConstants::HILOS_AUTH_CONVERGE,
                 $acceptKey,
                 new AuthConvergeSignalData(
                     $acceptKey,
@@ -1094,7 +1094,7 @@ final class ChatAgent extends AbstractAgent
             Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
 
             $this->sendToUser(
-                ChatSignalConstants::AUTH_CONVERGE,
+                HilosSignalConstants::HILOS_AUTH_CONVERGE,
                 $acceptKey,
                 new AuthConvergeSignalData(
                     $acceptKey,
@@ -1200,7 +1200,7 @@ final class ChatAgent extends AbstractAgent
             }
 
             $this->sendToUser(
-                ChatSignalConstants::AUTH_CONVERGE,
+                HilosSignalConstants::HILOS_AUTH_CONVERGE,
                 $waiter->acceptKey,
                 new AuthConvergeSignalData(
                     $waiter->acceptKey,
@@ -1254,7 +1254,7 @@ final class ChatAgent extends AbstractAgent
             $isSameSession = $parkedSessionToken === $sessionToken;
 
             $this->sendToUser(
-                ChatSignalConstants::AUTH_CONVERGE,
+                HilosSignalConstants::HILOS_AUTH_CONVERGE,
                 $acceptKey,
                 new AuthConvergeSignalData(
                     $acceptKey,
