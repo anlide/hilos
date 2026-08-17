@@ -65,6 +65,15 @@ class BackupRestoreCommand implements CommandInterface
     private const int MONITOR_POLL_SECONDS = 1;
 
     /**
+     * Accepted `--migration-index` values: a plain integer of zero or more.
+     *
+     * Matched as text rather than cast, because a cast turns every wrong answer into 0 - and 0
+     * is a level a schema archive may legitimately be restored at ("this database never
+     * migrated"), so it is the one value that must not double as "the operator typed nonsense".
+     */
+    private const string MIGRATION_INDEX_PATTERN = '/^\d+$/';
+
+    /**
      * Consecutive unanswered status polls after which the monitor gives up. The restore
      * itself lives in the agent and its child - the monitor abandoning it stops nothing.
      */
@@ -123,14 +132,23 @@ Description:
   printed before anything destructive runs. Ahead -> always refused, --force does not lift
   it (there is no downgrade path). Not recorded -> restored with a printed warning.
 
+  Migration level of a schema archive: a schema dump carries the migration table without
+  its rows, so the level travels as a marker written into the dump. An archive taken
+  before that marker existed records no level, and such a restore is refused rather than
+  guessed at - pass --migration-index=<N>, where N is the highest numeric prefix among
+  the migration files of this tree. --force does not lift that refusal: the option
+  delivers a missing fact, it does not overrule a gate. An archive that does record a
+  level cannot be overruled either - a differing --migration-index is refused.
+
 Usage:
-  php cli.php backup:restore <id> [--scope=<scope>] [--yes] [--force] [--cold]
+  php cli.php backup:restore <id> [--scope=<scope>] [--migration-index=<N>] [--yes] [--force] [--cold]
 
 Options:
-  --scope=<scope>    Scope of the stored backup (full | schema-seed | schema-only), default full
-  --yes              Confirm the destructive restore (required)
-  --force            Allow an unknown-environment archive into production
-  --cold             Run the engine synchronously here, without the daemon
+  --scope=<scope>       Scope of the stored backup (full | schema-seed | schema-only), default full
+  --migration-index=<N> Migration level for a schema archive that records none; schema scopes only
+  --yes                 Confirm the destructive restore (required)
+  --force               Allow an unknown-environment archive into production
+  --cold                Run the engine synchronously here, without the daemon
 
 Exit codes:
   0  restore completed (hot: reported by the agent; cold: engine returned)
@@ -148,7 +166,7 @@ HELP;
     /**
      * Runs the preflight and dispatches the restore to the hot or cold path.
      *
-     * @param array<string, mixed> $options Parsed options (scope, yes, force, cold)
+     * @param array<string, mixed> $options Parsed options (scope, migration-index, yes, force, cold)
      * @param list<string> $args Positional args (the backup id)
      * @return int Exit code (0 success, 1 refused/failed, 2 bad argument, 3 unconfigured)
      * @throws EnvException When the hot path needs daemon host/port env values and they are missing or invalid
@@ -184,6 +202,28 @@ HELP;
 
                 return ExitCode::INVALID_ARGUMENT;
             }
+        }
+
+        $migrationIndex = null;
+        if (isset($options[BackupConstants::MIGRATION_INDEX_OPTION])) {
+            // external-boundary: the operator's command line, checked on the very next lines
+            $raw = (string)$options[BackupConstants::MIGRATION_INDEX_OPTION];
+            if (preg_match(self::MIGRATION_INDEX_PATTERN, $raw) !== 1) {
+                echo "Error: --" . BackupConstants::MIGRATION_INDEX_OPTION
+                    . " takes a migration level (an integer of 0 or more), got: {$raw}\n";
+
+                return ExitCode::INVALID_ARGUMENT;
+            }
+            if ($scope === BackupScope::FULL) {
+                // Not a silent no-op: the operator named a number and must learn it meant nothing,
+                // rather than watch a restore go past it and believe it was honoured.
+                echo 'Error: a full archive carries its migration level in the rows of the migration'
+                    . ' table; --' . BackupConstants::MIGRATION_INDEX_OPTION
+                    . " applies to schema archives only\n";
+
+                return ExitCode::INVALID_ARGUMENT;
+            }
+            $migrationIndex = (int)$raw;
         }
 
         try {
@@ -238,8 +278,8 @@ HELP;
         }
 
         return isset($options[BackupConstants::COLD_OPTION])
-            ? $this->runCold($metadata, $root, $scope, $decision)
-            : $this->runHot($id, $scope, $decision);
+            ? $this->runCold($metadata, $root, $scope, $decision, $migrationIndex)
+            : $this->runHot($id, $scope, $decision, $migrationIndex);
     }
 
     /**
@@ -339,6 +379,7 @@ HELP;
      * @param string $root Backup storage root
      * @param BackupScope $scope Scope of the stored backup
      * @param RestoreEnvDecision $decision Recorded ENV guard verdict
+     * @param ?int $migrationIndex Migration level the operator named, or null when they named none
      * @return int Exit code (0 success, 1 failed)
      */
     private function runCold(
@@ -346,6 +387,7 @@ HELP;
         string $root,
         BackupScope $scope,
         RestoreEnvDecision $decision,
+        ?int $migrationIndex,
     ): int {
         $id = $metadata->id;
         echo "Restoring {$id} (scope={$scope->value}) cold, in this process\n";
@@ -362,6 +404,7 @@ HELP;
                 $id,
                 $scope,
                 $decision,
+                $migrationIndex,
                 static function (RestorePhase $phase) use ($estimatedSeconds, $startedAt): void {
                     echo '  ' . self::phaseLabel($phase->value) . '...' . self::remainingLabel(
                         $estimatedSeconds,
@@ -484,16 +527,28 @@ HELP;
      * @param string $id Backup id
      * @param BackupScope $scope Scope of the stored backup
      * @param RestoreEnvDecision $decision Recorded ENV guard verdict
+     * @param ?int $migrationIndex Migration level the operator named, or null when they named none
      * @return int Exit code (0 success, 1 refused/failed/silent daemon)
      * @throws EnvException When daemon host/port env values are missing or invalid
      */
-    private function runHot(string $id, BackupScope $scope, RestoreEnvDecision $decision): int
-    {
-        $reply = $this->sendCommand(BackupConstants::RESTORE_REQUEST_COMMAND, [
+    private function runHot(
+        string $id,
+        BackupScope $scope,
+        RestoreEnvDecision $decision,
+        ?int $migrationIndex,
+    ): int {
+        $payload = [
             BackupConstants::FIELD_BACKUP_ID => $id,
             BackupConstants::FIELD_SCOPE => $scope->value,
             BackupConstants::FIELD_DECISION => $decision->value,
-        ]);
+        ];
+        // Present only when the operator named one: the key's absence is what tells the agent
+        // to build a child argv without the option, rather than one carrying a null.
+        if ($migrationIndex !== null) {
+            $payload[BackupConstants::FIELD_MIGRATION_INDEX] = $migrationIndex;
+        }
+
+        $reply = $this->sendCommand(BackupConstants::RESTORE_REQUEST_COMMAND, $payload);
         if ($reply === null) {
             echo "Error: the daemon did not answer; start it, or restore with --cold\n";
 

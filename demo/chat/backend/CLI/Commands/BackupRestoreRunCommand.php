@@ -40,6 +40,15 @@ final class BackupRestoreRunCommand implements CommandInterface
     private const string DEFAULT_SCOPE = BackupScope::FULL->value;
 
     /**
+     * Accepted `--migration-index` values: a plain integer of zero or more.
+     *
+     * Checked here as well as in `backup:restore`, on this child's own boundary rule: argv is an
+     * external boundary whoever built it, and a cast would silently turn a malformed value into
+     * level 0 - a level a schema archive may legitimately be restored at.
+     */
+    private const string MIGRATION_INDEX_PATTERN = '/^\d+$/';
+
+    /**
      * Returns command name for CLI routing.
      *
      * @return string Command name (backup:restore-run, the framework-owned contract)
@@ -67,7 +76,8 @@ final class BackupRestoreRunCommand implements CommandInterface
     public function getHelp(): string
     {
         return <<<HELP
-Command: backup:restore-run <id> [--scope=full|schema-seed|schema-only] --decision=<decision>
+Command: backup:restore-run <id> [--scope=full|schema-seed|schema-only]
+         [--migration-index=<N>] --decision=<decision>
 
 Description:
   Verifies the stored archive's digest, unpacks it, and replays each connection dump
@@ -75,6 +85,9 @@ Description:
   recreated. Spawned by the backup agent supervisor under protected mode; run it
   directly only to debug the engine - the operator entry point with the ENV guard
   preflight is `backup:restore`.
+
+  --migration-index names the migration level of a schema archive that records none of
+  its own; the supervisor passes on what the operator gave `backup:restore`.
 
 Usage:
   php cli.php backup:restore-run <id> [--scope=full] --decision=allow
@@ -89,7 +102,8 @@ HELP;
      * Replays one backup and reports success or failure via the exit code.
      *
      * @param array<string, mixed> $options Parsed options; `--scope` selects the scope,
-     *     `--decision` carries the recorded ENV guard verdict
+     *     `--decision` carries the recorded ENV guard verdict, and `--migration-index` the
+     *     migration level of a schema archive that records none
      * @param list<string> $args Positional args; $args[0] is the backup id
      * @return int Exit code (0 on success, non-zero on failure)
      */
@@ -123,8 +137,26 @@ HELP;
             return ExitCode::ERROR;
         }
 
+        $migrationIndex = null;
+        if (isset($options[BackupConstants::MIGRATION_INDEX_OPTION])) {
+            // external-boundary: an option the supervisor may omit; the error below rejects a bad one
+            $migrationIndexRaw = (string)$options[BackupConstants::MIGRATION_INDEX_OPTION];
+            if (preg_match(self::MIGRATION_INDEX_PATTERN, $migrationIndexRaw) !== 1) {
+                fwrite(
+                    STDERR,
+                    'backup:restore-run takes --' . BackupConstants::MIGRATION_INDEX_OPTION
+                    . " as an integer of 0 or more, got: {$migrationIndexRaw}\n",
+                );
+
+                return ExitCode::ERROR;
+            }
+            $migrationIndex = (int)$migrationIndexRaw;
+        }
+
         try {
-            new BackupRestorer()->restore($id, $scope, $decision, static function (RestorePhase $phase): void {
+            new BackupRestorer()->restore($id, $scope, $decision, $migrationIndex, static function (
+                RestorePhase $phase,
+            ): void {
                 // Flushed line by line: the pipe buffers, and a phase that arrives when the run is
                 // over is a phase nobody was shown.
                 fwrite(STDOUT, BackupProgressMarker::statement($phase->value));

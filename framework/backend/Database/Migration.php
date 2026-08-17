@@ -100,6 +100,33 @@ class Migration
     }
 
     /**
+     * Declares a migration level as applied without replaying anything.
+     *
+     * The write counterpart of {@see getCurrentIndex()}, and the only caller today is a restore
+     * of a schema archive: such an archive brings the finished schema but an empty `migration`
+     * table, so without this row {@see migrateUp()} - here and at the next daemon startup, which
+     * calls the same method - would replay the whole history over a schema that already has it.
+     * One row is enough for both directions: they read MAX(`index`), not the list of rows.
+     *
+     * Idempotent on purpose: an archive that carried no `migration` table at all leaves the
+     * target's old rows in place, and failing over a duplicate key there would refuse a restore
+     * that is otherwise correct.
+     *
+     * @param int $index Migration level to record as applied
+     * @throws DatabaseException When the migration table cannot be created or the write fails
+     */
+    public static function recordAppliedLevel(int $index): void
+    {
+        self::initialize();
+
+        Database::sqlRun(
+            'INSERT INTO `migration` (`index`, `failed`) VALUES (?, 0)'
+            . ' ON DUPLICATE KEY UPDATE `failed` = 0',
+            [$index]
+        );
+    }
+
+    /**
      * @return list<int> Sorted unique migration indices
      */
     public static function getAvailableMigrations(): array

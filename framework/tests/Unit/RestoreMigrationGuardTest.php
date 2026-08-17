@@ -202,4 +202,105 @@ final class RestoreMigrationGuardTest extends TestCase
 
         $this->assertNull($result->migrationsBehind(), 'An archive ahead of the code is not behind it');
     }
+
+    public function testTheArchivesOwnMarkerIsTheLevel(): void
+    {
+        $result = RestoreMigrationGuard::resolveLevel(32, 32, null, 40, 0);
+
+        $this->assertSame(32, $result->level);
+        $this->assertNull($result->reason);
+    }
+
+    public function testAnOperatorSuppliesTheLevelAnArchiveDoesNotDeclare(): void
+    {
+        $result = RestoreMigrationGuard::resolveLevel(null, null, 32, 40, 0);
+
+        $this->assertSame(32, $result->level);
+        $this->assertNull($result->reason);
+    }
+
+    public function testAnOperatorRepeatingTheMarkerIsANoOp(): void
+    {
+        $result = RestoreMigrationGuard::resolveLevel(32, null, 32, 40, 0);
+
+        $this->assertSame(32, $result->level);
+        $this->assertNull($result->reason);
+    }
+
+    public function testAnOperatorMayNotOverruleTheArchivesOwnLevel(): void
+    {
+        // Lowering it would bring back exactly the replay over a finished schema this marker
+        // exists to stop, and raising it would skip migrations nobody applied.
+        $result = RestoreMigrationGuard::resolveLevel(32, null, 30, 40, 0);
+
+        $this->assertNull($result->level);
+        $this->assertNotNull($result->reason);
+        $this->assertStringContainsString('the archive records migration 32', $result->reason);
+        $this->assertStringContainsString('--migration-index says 30', $result->reason);
+    }
+
+    public function testADumpContradictingItsSidecarIsRefused(): void
+    {
+        // Both numbers are written in one run from one reading, so this is not two versions of
+        // the truth: one of the two files is not the one it claims to be.
+        $result = RestoreMigrationGuard::resolveLevel(32, 31, null, 40, 0);
+
+        $this->assertNull($result->level);
+        $this->assertNotNull($result->reason);
+        $this->assertStringContainsString('the archive contradicts its sidecar', $result->reason);
+        $this->assertStringContainsString('dump 32, sidecar 31', $result->reason);
+    }
+
+    public function testAnArchiveDeclaringNothingIsRefusedWithTheRecipe(): void
+    {
+        // The refusal has to be actionable: an operator holding an archive written before the
+        // marker existed can still restore it, but only by naming the level themselves.
+        $result = RestoreMigrationGuard::resolveLevel(null, null, null, 40, 2);
+
+        $this->assertNull($result->level);
+        $this->assertNotNull($result->reason);
+        $this->assertStringContainsString('connection 2:', $result->reason);
+        $this->assertStringContainsString('records no migration level', $result->reason);
+        $this->assertStringContainsString('--migration-index=<N>', $result->reason);
+        $this->assertStringContainsString('highest numeric prefix', $result->reason);
+    }
+
+    public function testALevelAheadOfTheCodeIsRefusedInTheGatesOwnWords(): void
+    {
+        $result = RestoreMigrationGuard::resolveLevel(null, null, 44, 40, 0);
+
+        $this->assertNull($result->level);
+        $this->assertNotNull($result->reason);
+        $this->assertStringContainsString('archive at migration 44', $result->reason);
+        $this->assertStringContainsString('code expects 40', $result->reason);
+        $this->assertStringContainsString('4 ahead', $result->reason);
+        $this->assertStringContainsString('no downgrade path', $result->reason);
+    }
+
+    public function testASidecarThatRecordedNoLevelContradictsNothing(): void
+    {
+        // Written before the field existed: "not recorded" is not a second opinion.
+        $result = RestoreMigrationGuard::resolveLevel(32, null, null, 40, 0);
+
+        $this->assertSame(32, $result->level);
+        $this->assertNull($result->reason);
+    }
+
+    public function testATreeListingNoMigrationsAcceptsTheLevelAsGiven(): void
+    {
+        // Nothing to compare against is not a reason to refuse, on the same precedent decide()
+        // allows an uncomparable archive by.
+        $result = RestoreMigrationGuard::resolveLevel(null, null, 44, null, 0);
+
+        $this->assertSame(44, $result->level);
+        $this->assertNull($result->reason);
+    }
+
+    public function testLevelZeroIsALevelAndNotAMissingOne(): void
+    {
+        $result = RestoreMigrationGuard::resolveLevel(0, 0, null, 40, 0);
+
+        $this->assertSame(0, $result->level);
+        $this->assertNull($result->reason);
+    }
 }

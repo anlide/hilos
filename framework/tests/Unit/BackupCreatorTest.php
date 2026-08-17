@@ -106,6 +106,28 @@ final class BackupCreatorTest extends TestCase
         $this->assertTrue($passes[1]['append']);
     }
 
+    public function testBothSchemaScopesStampTheMigrationLevelIntoTheDump(): void
+    {
+        // Both are broken the same way - the `migration` table is dumped without its rows - so
+        // both need the level to travel in the text instead.
+        $this->assertSame(7, BackupCreator::scopeMarkerIndex(BackupScope::SCHEMA_ONLY, 7));
+        $this->assertSame(7, BackupCreator::scopeMarkerIndex(BackupScope::SCHEMA_SEED, 7));
+    }
+
+    public function testAFullScopeDumpIsNotStamped(): void
+    {
+        // FULL dumps the rows of `migration` itself; a stamp there would be a second copy of the
+        // same number in the same file, free to disagree with the rows next to it.
+        $this->assertNull(BackupCreator::scopeMarkerIndex(BackupScope::FULL, 7));
+    }
+
+    public function testALevelZeroSchemaDumpIsStillStamped(): void
+    {
+        // "Never migrated" is a level, and the restore refusal stands on telling it from
+        // "this archive says nothing".
+        $this->assertSame(0, BackupCreator::scopeMarkerIndex(BackupScope::SCHEMA_ONLY, 0));
+    }
+
     public function testMeasureWorkDirSumsTheDumpFilesAndIgnoresSubdirectories(): void
     {
         // A successful run records a non-zero dumpBytes: the sum of the dump files in the work dir

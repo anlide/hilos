@@ -285,7 +285,8 @@ that is missing or unreadable, a sidecar that could not be read or paired, or a 
 that could not be written back.
 
 Restoring is an operator action too (HIL-274): `php cli.php backup:restore <id>
-[--scope=<scope>] --yes [--force] [--cold]`, framework-owned. The preflight runs in
+[--scope=<scope>] [--migration-index=<N>] --yes [--force] [--cold]`,
+framework-owned. The preflight runs in
 the CLI on both paths — archive resolution, a digest re-check, the environment
 matrix, and the explicit `--yes` a destructive operation requires. The matrix: a
 prod archive restores into prod as-is (disaster recovery); a prod archive into a
@@ -302,7 +303,13 @@ error, never a silent fallback to cold. The engine replays each `db-<index>.sql`
 into the connection of the same index — into that connection's *currently
 configured* database name — and re-verifies the digest immediately before its
 destructive steps. Tables absent from the dump are left in place; the
-migration-index gate is HIL-430. A hot restore also carries the live
+migration-index gate is HIL-430. A schema archive carries the migration table
+without its rows, so its level travels as a marker written into the dump
+(HIL-570) and the engine records that level before it migrates forward; an
+archive taken before the marker existed declares none, and such a restore is
+refused before the first import unless the operator names the level with
+`--migration-index=<N>` (schema scopes only, and `--force` does not lift it).
+A hot restore also carries the live
 authenticated sessions across the swap before it thaws the node (HIL-479), so the
 operator watching the restore is not logged out by it; a project whose runtime
 connections do not reach the session stage of the connection base

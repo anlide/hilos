@@ -246,6 +246,15 @@ final class BackupAgent extends AbstractAgent
     private ?RestoreEnvDecision $pendingRestoreDecision = null;
 
     /**
+     * Migration level the operator named for the accepted restore, or null when they named none.
+     *
+     * Null is not a level here but the absence of one, and it stays that way all the way into the
+     * child's argv: a schema archive that declares its own level needs nothing, and one that does
+     * not is refused by the engine unless this carries the answer.
+     */
+    private ?int $pendingRestoreMigrationIndex = null;
+
+    /**
      * Accept key of the connection that asked for the restore, or null when nobody is watching.
      *
      * It outlives the admission for the length of the run, because it is the only address the
@@ -794,7 +803,8 @@ final class BackupAgent extends AbstractAgent
      * hands it over, and turns the answer into a command reply. That reply is immediate -
      * accepted or refused - because the freeze and the restore outlive any command-channel wait.
      *
-     * @param CommandRequestDTO $data Command request carrying the backup id, scope and decision
+     * @param CommandRequestDTO $data Command request carrying the backup id, scope, decision and
+     *     optionally the migration level for a schema archive that declares none
      */
     private function handleRestoreRequest(CommandRequestDTO $data): void
     {
@@ -810,9 +820,16 @@ final class BackupAgent extends AbstractAgent
             return;
         }
 
+        // Optional by design: the CLI omits the key entirely when the operator named no level, and
+        // the value it does send was already validated there as an integer of zero or more.
+        $migrationIndex = isset($data->payload[BackupConstants::FIELD_MIGRATION_INDEX])
+            // external-boundary: the payload is the operator's command line, validated by the CLI preflight
+            ? (int)$data->payload[BackupConstants::FIELD_MIGRATION_INDEX]
+            : null;
+
         // No initiator: the requester is a CLI, not a browser connection, so the freeze has no
         // connection to keep alive and the run has nobody to report progress to.
-        $refusal = $this->admitRestore($id, $scope, $decision, null, null);
+        $refusal = $this->admitRestore($id, $scope, $decision, $migrationIndex, null, null);
         if ($refusal !== null) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $refusal));
 
@@ -849,6 +866,10 @@ final class BackupAgent extends AbstractAgent
             $data->backupId,
             $scope,
             $decision,
+            // The page has no way to name a migration level: there is no restore UI yet (HIL-276),
+            // and when there is, an archive that declares none is a refusal it must show rather
+            // than a number it may invent.
+            null,
             $data->initiatorAcceptKey,
             $data->initiatorUserId,
         );
@@ -882,6 +903,8 @@ final class BackupAgent extends AbstractAgent
      * @param string $id Backup id to restore
      * @param BackupScope $scope Scope the archive was captured under
      * @param RestoreEnvDecision $decision Recorded ENV guard verdict for this archive/target pair
+     * @param ?int $migrationIndex Migration level the operator named for a schema archive that
+     *     declares none, or null when they named none
      * @param ?string $initiator Accept key of the connection that asked, or null when unattended
      * @param ?int $initiatorUserId User id behind that connection, or null when unattended
      * @return ?string Refusal reason, or null when the restore was admitted
@@ -890,6 +913,7 @@ final class BackupAgent extends AbstractAgent
         string $id,
         BackupScope $scope,
         RestoreEnvDecision $decision,
+        ?int $migrationIndex,
         ?string $initiator,
         ?int $initiatorUserId,
     ): ?string {
@@ -918,6 +942,7 @@ final class BackupAgent extends AbstractAgent
         $this->pendingRestoreId = $id;
         $this->pendingRestoreScope = $scope;
         $this->pendingRestoreDecision = $decision;
+        $this->pendingRestoreMigrationIndex = $migrationIndex;
         $this->pendingRestoreTimeout = $timeoutSeconds;
         $this->pendingRestoreSince = microtime(true);
         $this->pendingRestoreInitiator = $initiator;
@@ -1265,6 +1290,7 @@ final class BackupAgent extends AbstractAgent
                     $id,
                     $scope,
                     $decision,
+                    $this->pendingRestoreMigrationIndex,
                 ),
             );
         } catch (Throwable $e) {
@@ -2463,6 +2489,7 @@ final class BackupAgent extends AbstractAgent
      * @param string $id Backup id to restore
      * @param BackupScope $scope Scope the archive was captured under
      * @param RestoreEnvDecision $decision Recorded ENV guard verdict the child acts on
+     * @param ?int $migrationIndex Migration level the operator named, or null when they named none
      * @return list<string> Child process argv (after the php binary)
      */
     public static function buildRestoreChildArgs(
@@ -2470,14 +2497,22 @@ final class BackupAgent extends AbstractAgent
         string $id,
         BackupScope $scope,
         RestoreEnvDecision $decision,
+        ?int $migrationIndex = null,
     ): array {
-        return [
+        $args = [
             $cliEntry,
             BackupConstants::RESTORE_RUN_COMMAND,
             $id,
             '--' . BackupConstants::SCOPE_OPTION . '=' . $scope->value,
             '--' . BackupConstants::FIELD_DECISION . '=' . $decision->value,
         ];
+        // Appended only when there is one: an option carrying nothing would have to mean "no
+        // level" to the child, and the child already reads its absence that way.
+        if ($migrationIndex !== null) {
+            $args[] = '--' . BackupConstants::MIGRATION_INDEX_OPTION . '=' . $migrationIndex;
+        }
+
+        return $args;
     }
 
     /**
@@ -2746,6 +2781,7 @@ final class BackupAgent extends AbstractAgent
         $this->pendingRestoreId = null;
         $this->pendingRestoreScope = null;
         $this->pendingRestoreDecision = null;
+        $this->pendingRestoreMigrationIndex = null;
         $this->pendingRestoreTimeout = 0.0;
         $this->pendingRestoreSince = 0.0;
         $this->pendingRestoreInitiator = null;

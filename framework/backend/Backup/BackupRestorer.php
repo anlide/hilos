@@ -67,6 +67,10 @@ final class BackupRestorer
      * @param string $id Backup id as minted by the create path
      * @param BackupScope $scope Scope the archive was captured under; also its storage subdirectory
      * @param RestoreEnvDecision $decision Recorded ENV guard verdict this run acts on
+     * @param ?int $migrationIndexOverride Migration level the operator named for a schema archive
+     *     that declares none; null when they named none. Ignored for {@see BackupScope::FULL},
+     *     which carries its level in the rows it imports - the CLI refuses the combination rather
+     *     than letting the engine invent a second refusal for it
      * @param ?Closure(RestorePhase): void $onPhase Observer told as each phase begins; the cold
      *     CLI prints them inline, the hot child runs unobserved (its supervisor reports coarsely)
      * @throws RestoreFailedException When any step refuses or fails; the raised failure says
@@ -78,6 +82,7 @@ final class BackupRestorer
         string $id,
         BackupScope $scope,
         RestoreEnvDecision $decision,
+        ?int $migrationIndexOverride = null,
         ?Closure $onPhase = null,
     ): void {
         if ($decision === RestoreEnvDecision::REFUSE) {
@@ -153,6 +158,12 @@ final class BackupRestorer
             usort($connections, static fn (BackupConnectionMeta $a, BackupConnectionMeta $b): int
                 => $a->index <=> $b->index);
 
+            // First of the two refusals that read the unpacked archive, because it judges the
+            // dump's form rather than its data: a schema archive that names no migration level
+            // cannot be restored correctly by anyone, so it is refused before the registry is
+            // even consulted.
+            $levels = $this->resolveMarkerLevels($scope, $connections, $workDir, $migrationIndexOverride);
+
             // The last refusal, and the only one that needs the archive open: the registry is
             // judged against the tables the dump declares, while the target database still
             // holds whatever it held. Every failure past this line leaves data behind.
@@ -180,7 +191,7 @@ final class BackupRestorer
                     $onPhase(RestorePhase::MIGRATING);
                 }
                 foreach ($connections as $connection) {
-                    $this->migrateConnection($connection);
+                    $this->migrateConnection($connection, $levels[$connection->index] ?? null);
                 }
 
                 if ($anonymizer !== null) {
@@ -378,8 +389,7 @@ final class BackupRestorer
      */
     private function importConnection(BackupConnectionMeta $connection, string $workDir): void
     {
-        $sqlPath = $workDir . '/'
-            . BackupCreator::SQL_FILE_PREFIX . $connection->index . BackupCreator::SQL_FILE_SUFFIX;
+        $sqlPath = self::dumpPath($connection->index, $workDir);
         if (!is_file($sqlPath)) {
             throw new RestoreFailedException(
                 "Archive carries no dump for connection {$connection->index}",
@@ -415,17 +425,27 @@ final class BackupRestorer
      * reading the same table: the import before this one talks to the database through the
      * mysql client, so a connection the caller never needed in PHP is still closed here.
      *
+     * A schema archive arrives with a level to declare first: it imported an empty `migration`
+     * table, so `migrateUp` would otherwise read level 0 and replay the whole history over the
+     * finished schema it just imported. A FULL archive brings the rows themselves and declares
+     * nothing.
+     *
      * @param BackupConnectionMeta $connection Restored connection to migrate
+     * @param ?int $level Migration level to record before migrating; null when the archive
+     *     imported the `migration` rows itself
      * @throws RestoreFailedException When the connection is not configured, cannot be opened,
      *     or a migration fails; the data is already imported at this point, so the run ends
      *     partially restored (HIL-436)
      */
-    private function migrateConnection(BackupConnectionMeta $connection): void
+    private function migrateConnection(BackupConnectionMeta $connection, ?int $level): void
     {
         try {
             Database::useConnection($connection->index);
             if (!Database::isConnected($connection->index)) {
                 Database::connect($connection->index);
+            }
+            if ($level !== null) {
+                Migration::recordAppliedLevel($level);
             }
             Migration::migrateUp();
         } catch (DatabaseException $failure) {
@@ -460,6 +480,71 @@ final class BackupRestorer
     }
 
     /**
+     * Resolves the migration level every connection of a schema archive is to be left at.
+     *
+     * Only schema archives are asked: a FULL archive imports the rows of `migration` itself, and
+     * an empty map leaves {@see migrateConnection()} declaring nothing. Every connection is
+     * resolved before any is imported, and one refusal ends the run - the rule
+     * {@see RestoreMigrationGuard} already lives by, because a half-compatible restore is the
+     * same unusable system, only harder to notice.
+     *
+     * @param BackupScope $scope Scope the archive was captured under
+     * @param list<BackupConnectionMeta> $connections Connections the archive carries
+     * @param string $workDir Temp workdir holding the extracted dump files
+     * @param ?int $override Migration level the operator named, or null when they named none
+     * @return array<int, int> Level to record, per connection index; empty for a FULL archive
+     * @throws RestoreFailedException When a dump file is unreadable, or a connection's level
+     *     cannot be resolved; nothing has been imported yet, so the database is intact
+     */
+    private function resolveMarkerLevels(
+        BackupScope $scope,
+        array $connections,
+        string $workDir,
+        ?int $override,
+    ): array {
+        if ($scope === BackupScope::FULL) {
+            return [];
+        }
+
+        $codeIndex = RestoreMigrationGuard::codeMigrationIndex();
+        $levels = [];
+        foreach ($connections as $connection) {
+            $resolved = RestoreMigrationGuard::resolveLevel(
+                ArchiveMigrationMarker::read(self::dumpPath($connection->index, $workDir)),
+                $connection->migrationIndex,
+                $override,
+                $codeIndex,
+                $connection->index,
+            );
+            if ($resolved->level === null) {
+                throw new RestoreFailedException(
+                    "Restore refused by the migration level check: {$resolved->reason}",
+                );
+            }
+
+            $levels[$connection->index] = $resolved->level;
+        }
+
+        return $levels;
+    }
+
+    /**
+     * Names one connection's dump file inside the extracted archive.
+     *
+     * Three steps read that file - the import, the marker, the schema the coverage gate is judged
+     * against - and the layout they read it by belongs to the create path
+     * ({@see BackupCreator::SQL_FILE_PREFIX}), so it is spelled once here rather than in each.
+     *
+     * @param int $index Connection index
+     * @param string $workDir Temp workdir holding the extracted dump files
+     * @return string Absolute path of that connection's `db-<index>.sql`
+     */
+    private static function dumpPath(int $index, string $workDir): string
+    {
+        return $workDir . '/' . BackupCreator::SQL_FILE_PREFIX . $index . BackupCreator::SQL_FILE_SUFFIX;
+    }
+
+    /**
      * Reads the tables every connection's dump file declares.
      *
      * @param list<BackupConnectionMeta> $connections Connections the archive carries
@@ -472,8 +557,7 @@ final class BackupRestorer
         $schemas = [];
         foreach ($connections as $connection) {
             $schemas[$connection->index] = ArchiveSchemaReader::read(
-                $workDir . '/'
-                . BackupCreator::SQL_FILE_PREFIX . $connection->index . BackupCreator::SQL_FILE_SUFFIX,
+                self::dumpPath($connection->index, $workDir),
             );
         }
 

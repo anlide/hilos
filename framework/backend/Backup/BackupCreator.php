@@ -18,6 +18,7 @@ use Hilos\Database\DatabaseConnectionConfig;
 use Hilos\Database\Migration;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\Exception\FilePermissionException;
+use Hilos\Fs\Exception\FileWriteException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
@@ -634,11 +635,16 @@ final class BackupCreator
      * Each connection's schema-seed data pass is restricted to the reference tables the
      * registry declares for that connection index.
      *
+     * The migration level is read BEFORE the dump, not after it: reading it is what creates the
+     * `migration` table ({@see Migration::initialize()}), so on a database that never migrated
+     * the old order dumped a schema with no `migration` in it - and left the marker nothing to
+     * attach to.
+     *
      * @param BackupScope $scope Backup scope
      * @param string $workDir Temp working directory receiving the sql files
      * @param BackupReferenceRegistry $references Reference-table registry queried per connection
      * @return list<BackupConnectionMeta> Captured connection metadata
-     * @throws BackupDumpFailedException When a connection cannot be dumped
+     * @throws BackupDumpFailedException When a connection cannot be dumped or stamped
      * @throws BackupException When a declared reference class cannot be resolved to a table
      */
     private function dumpAllConnections(BackupScope $scope, string $workDir, BackupReferenceRegistry $references): array
@@ -652,13 +658,40 @@ final class BackupCreator
 
             $config = Database::getConnectionConfig($index);
             $sqlPath = $workDir . '/' . self::SQL_FILE_PREFIX . $index . self::SQL_FILE_SUFFIX;
+            $migrationIndex = Migration::getCurrentIndex();
 
-            $this->dumpConnection($scope, $config, $sqlPath, $references->tablesForConnection($index));
+            $this->dumpConnection(
+                $scope,
+                $config,
+                $sqlPath,
+                $references->tablesForConnection($index),
+                self::scopeMarkerIndex($scope, $migrationIndex),
+            );
 
-            $connections[] = new BackupConnectionMeta($index, $config->database, Migration::getCurrentIndex());
+            $connections[] = new BackupConnectionMeta($index, $config->database, $migrationIndex);
         }
 
         return $connections;
+    }
+
+    /**
+     * Maps a scope to the migration level its dump files are stamped with, or null for no stamp.
+     *
+     * The scope-level counterpart of {@see scopeDumpPasses()}, and public for the same reason: it
+     * is the create side's whole decision about the marker, and pinning it takes no database.
+     * {@see BackupScope::FULL} is not stamped - it dumps the rows of `migration` itself, and a
+     * second copy of that number in the same file is the duplication this marker exists to avoid.
+     *
+     * @param BackupScope $scope Backup scope
+     * @param int $migrationIndex Migration level the connection is being dumped at
+     * @return ?int Level to stamp into the dump, or null when the scope carries its own
+     */
+    public static function scopeMarkerIndex(BackupScope $scope, int $migrationIndex): ?int
+    {
+        return match ($scope) {
+            BackupScope::FULL => null,
+            BackupScope::SCHEMA_ONLY, BackupScope::SCHEMA_SEED => $migrationIndex,
+        };
     }
 
     /**
@@ -695,17 +728,23 @@ final class BackupCreator
      * This is the per-driver seam: a future dumper abstraction would replace the body
      * while the caller contract (scope + config + target file) stays the same.
      *
+     * The migration marker is appended after the passes and is not one of them
+     * ({@see scopeDumpPasses()} stays a mysqldump vocabulary): it is a statement this engine
+     * writes itself, into the dump file and never into the live database.
+     *
      * @param BackupScope $scope Backup scope
      * @param DatabaseConnectionConfig $config Connection settings
      * @param string $sqlPath Output sql file for this connection
      * @param list<string> $referenceTables Reference tables this connection keeps under schema-seed
-     * @throws BackupDumpFailedException When a mysqldump pass exits non-zero
+     * @param ?int $migrationIndex Migration level to stamp into the dump, or null to leave it unstamped
+     * @throws BackupDumpFailedException When a mysqldump pass exits non-zero or the dump cannot be stamped
      */
     private function dumpConnection(
         BackupScope $scope,
         DatabaseConnectionConfig $config,
         string $sqlPath,
         array $referenceTables,
+        ?int $migrationIndex,
     ): void {
         $iniPath = $this->writeDefaultsIni($config);
 
@@ -727,6 +766,22 @@ final class BackupCreator
         } finally {
             // warning-suppressed: teardown of the credentials file, no-op when it is already gone
             @unlink($iniPath);
+        }
+
+        if ($migrationIndex === null) {
+            return;
+        }
+
+        // A dump that could not be stamped is a dump that must not be published: without the
+        // marker a restore of it refuses, so publishing it would only defer the failure.
+        try {
+            FsPath::append($sqlPath, ArchiveMigrationMarker::statement($migrationIndex));
+        } catch (FileWriteException $failure) {
+            throw new BackupDumpFailedException(
+                "Cannot stamp the migration marker into the dump: {$sqlPath}",
+                0,
+                $failure,
+            );
         }
     }
 

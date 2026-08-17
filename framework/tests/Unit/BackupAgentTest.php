@@ -90,6 +90,58 @@ final class BackupAgentTest extends TestCase
         $this->assertSame('--scope=schema-only', $args[3]);
     }
 
+    public function testRestoreChildArgsCarryNoMigrationIndexWhenNobodyNamedOne(): void
+    {
+        // The option's absence is the message: the child reads "no level named" from a missing
+        // option, so an argv carrying an empty one would say something else entirely.
+        $args = BackupAgent::buildRestoreChildArgs(
+            '/app/cli.php',
+            'id',
+            BackupScope::SCHEMA_ONLY,
+            RestoreEnvDecision::ALLOW,
+            null,
+        );
+
+        $this->assertSame(
+            [
+                '/app/cli.php',
+                BackupConstants::RESTORE_RUN_COMMAND,
+                'id',
+                '--scope=schema-only',
+                '--decision=' . RestoreEnvDecision::ALLOW->value,
+            ],
+            $args,
+        );
+    }
+
+    public function testRestoreChildArgsCarryTheMigrationIndexTheOperatorNamed(): void
+    {
+        $args = BackupAgent::buildRestoreChildArgs(
+            '/app/cli.php',
+            'id',
+            BackupScope::SCHEMA_ONLY,
+            RestoreEnvDecision::ALLOW,
+            3,
+        );
+
+        $this->assertSame('--' . BackupConstants::MIGRATION_INDEX_OPTION . '=3', $args[5]);
+    }
+
+    public function testALevelOfZeroReachesTheChildRatherThanBeingDroppedAsEmpty(): void
+    {
+        // "Never migrated" is a level a schema archive may legitimately be restored at, so it
+        // must not share the wire shape of "the operator named nothing".
+        $args = BackupAgent::buildRestoreChildArgs(
+            '/app/cli.php',
+            'id',
+            BackupScope::SCHEMA_ONLY,
+            RestoreEnvDecision::ALLOW,
+            0,
+        );
+
+        $this->assertSame('--' . BackupConstants::MIGRATION_INDEX_OPTION . '=0', $args[5]);
+    }
+
     public function testNothingIsMissingWhenBothCreateSettingsAreConfigured(): void
     {
         $missing = BackupAgent::missingCreateConfig('/app/data/backup', '/app/cli.php');

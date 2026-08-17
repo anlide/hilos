@@ -26,6 +26,16 @@ final class BackupConstants
     public const string SCOPE_OPTION = 'scope';
 
     /**
+     * `--migration-index` option name: the migration level to restore a schema archive at.
+     *
+     * Named here rather than in the command because three sides say it - the operator's CLI, the
+     * argv the supervisor builds for the restore child, and the refusal text that tells an
+     * operator to re-run with it ({@see RestoreMigrationGuard::resolveLevel()}). A refusal naming
+     * an option the parser no longer knows is worse than no recipe at all.
+     */
+    public const string MIGRATION_INDEX_OPTION = 'migration-index';
+
+    /**
      * Command-channel wire name routing a forced retention prune to {@see BackupAgent}
      * (test-only `test:backup:prune`, HIL-320). Declared on the agent's AGENT_COMMANDS.
      */
@@ -200,6 +210,15 @@ final class BackupConstants
      * CLI preflight recorded; the engine acts on it without re-deriving.
      */
     public const string FIELD_DECISION = 'decision';
+
+    /**
+     * Request payload key carrying the operator's {@see MIGRATION_INDEX_OPTION} value.
+     *
+     * Optional, and its absence is the message: the supervisor builds the restore child's argv
+     * without the option when the key is missing, so a run in which the operator named no level
+     * is indistinguishable from one started before the option existed.
+     */
+    public const string FIELD_MIGRATION_INDEX = 'migrationIndex';
 
     /** `--force` option: override the unknown-archive-env-into-prod refusal (HIL-269 envs). */
     public const string FORCE_OPTION = 'force';

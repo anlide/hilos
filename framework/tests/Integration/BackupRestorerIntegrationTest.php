@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
+use Hilos\Backup\ArchiveMigrationMarker;
 use Hilos\Backup\BackupConnectionMeta;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupCreator;
@@ -70,6 +71,12 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
     private const int ARCHIVE_MIGRATION_INDEX = 9000;
 
     /**
+     * Column the archive-level migration adds, and which a schema archive taken at that level
+     * therefore already carries. Replaying that migration over the archive is what fails.
+     */
+    private const string EARLY_COLUMN = 'early';
+
+    /**
      * Column the fixture migration adds; the proof that migrations ran after the import.
      * Read by the catalog fixtures below, one of which classifies it.
      */
@@ -107,7 +114,11 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
 
         $this->storeRoot = sys_get_temp_dir() . '/hilos-restore-it-' . getmypid();
         $this->removeTree($this->storeRoot);
-        mkdir($this->storeRoot . '/' . BackupScope::FULL->value, 0700, true);
+        // Every scope gets its directory: the store is laid out by scope, and the schema cases
+        // publish beside the full ones rather than into a store of their own.
+        foreach (BackupScope::cases() as $scope) {
+            mkdir($this->storeRoot . '/' . $scope->value, 0700, true);
+        }
 
         // The engine reads BACKUP_DIR off the env facade; a stub-backed accessor lets the
         // test point it at the fixture store (the BackupCreatorTest precedent).
@@ -147,7 +158,10 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
             // The migration table is shared with every other suite against this database, so
             // the fixture's row leaves with the fixture.
             Migration::initialize();
-            Database::sqlRun('DELETE FROM `migration` WHERE `index` = ?', [self::CODE_MIGRATION_INDEX]);
+            Database::sqlRun(
+                'DELETE FROM `migration` WHERE `index` IN (?, ?)',
+                [self::ARCHIVE_MIGRATION_INDEX, self::CODE_MIGRATION_INDEX],
+            );
         }
         parent::tearDown();
     }
@@ -213,6 +227,7 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
             self::BACKUP_ID,
             BackupScope::FULL,
             RestoreEnvDecision::ALLOW,
+            null,
             static function (RestorePhase $phase) use (&$phases): void {
                 $phases[] = $phase;
             },
@@ -240,6 +255,96 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
 
         $this->assertSame(self::CODE_MIGRATION_INDEX, Migration::getCurrentIndex());
+    }
+
+    public function testASchemaArchiveIsLeftAtTheLevelItsMarkerDeclares(): void
+    {
+        // A schema archive imports an empty `migration` table, so without the marker's level
+        // being recorded the restore would read level 0 and replay everything. Here that would
+        // not merely be wasteful, it would fail: the archive-level migration adds a column the
+        // imported schema already carries, so a green run IS the proof that it was skipped.
+        $this->listSchemaArchiveMigrations();
+        $this->publishFixtureBackup(
+            $this->schemaDumpSql(self::ARCHIVE_MIGRATION_INDEX),
+            self::ARCHIVE_MIGRATION_INDEX,
+            BackupScope::SCHEMA_ONLY,
+        );
+        Database::sql('DROP TABLE IF EXISTS `' . self::PROBE_TABLE . '`');
+
+        new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::SCHEMA_ONLY, RestoreEnvDecision::ALLOW);
+
+        $this->assertSame(self::CODE_MIGRATION_INDEX, Migration::getCurrentIndex());
+        $columns = $this->probeColumns();
+        $this->assertContains(self::EARLY_COLUMN, $columns, 'The archive brought this column itself');
+        $this->assertContains(self::MIGRATED_COLUMN, $columns, 'Only what is above the marker is applied');
+    }
+
+    public function testASchemaArchiveDeclaringNoLevelRefusesBeforeTheFirstImport(): void
+    {
+        // An archive written before the marker existed. It is restorable, but not silently: the
+        // level cannot be guessed, and guessing it wrong replays history over a finished schema.
+        $this->listSchemaArchiveMigrations();
+        $this->publishFixtureBackup(
+            $this->schemaDumpSql(null),
+            self::ARCHIVE_MIGRATION_INDEX,
+            BackupScope::SCHEMA_ONLY,
+        );
+        $this->raiseUntouchedProbe();
+
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::SCHEMA_ONLY, RestoreEnvDecision::ALLOW);
+            $this->fail('A schema archive with no migration level must refuse to restore');
+        } catch (RestoreFailedException $refusal) {
+            $this->assertStringContainsString('records no migration level', $refusal->getMessage());
+            $this->assertStringContainsString('--' . BackupConstants::MIGRATION_INDEX_OPTION, $refusal->getMessage());
+            $this->assertFalse($refusal->databaseTouched(), 'The refusal must come before the first import');
+        }
+
+        $this->assertSame([['7', 'untouched']], $this->probeRows(), 'Nothing may be imported over the refusal');
+    }
+
+    public function testTheOperatorsMigrationIndexClosesThatRefusal(): void
+    {
+        $this->listSchemaArchiveMigrations();
+        $this->publishFixtureBackup(
+            $this->schemaDumpSql(null),
+            self::ARCHIVE_MIGRATION_INDEX,
+            BackupScope::SCHEMA_ONLY,
+        );
+        Database::sql('DROP TABLE IF EXISTS `' . self::PROBE_TABLE . '`');
+
+        new BackupRestorer()->restore(
+            self::BACKUP_ID,
+            BackupScope::SCHEMA_ONLY,
+            RestoreEnvDecision::ALLOW,
+            self::ARCHIVE_MIGRATION_INDEX,
+        );
+
+        $this->assertSame(self::CODE_MIGRATION_INDEX, Migration::getCurrentIndex());
+        $this->assertContains(self::MIGRATED_COLUMN, $this->probeColumns());
+    }
+
+    public function testADumpContradictingItsSidecarRefusesTheRestore(): void
+    {
+        // Both numbers are written in one run from one reading, so a disagreement is not two
+        // versions of the truth - one of the two files was swapped, copied or corrupted.
+        $this->listSchemaArchiveMigrations();
+        $this->publishFixtureBackup(
+            $this->schemaDumpSql(self::ARCHIVE_MIGRATION_INDEX),
+            self::ARCHIVE_MIGRATION_INDEX - 1,
+            BackupScope::SCHEMA_ONLY,
+        );
+        $this->raiseUntouchedProbe();
+
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::SCHEMA_ONLY, RestoreEnvDecision::ALLOW);
+            $this->fail('A dump disagreeing with its sidecar must refuse to restore');
+        } catch (RestoreFailedException $refusal) {
+            $this->assertStringContainsString('contradicts its sidecar', $refusal->getMessage());
+            $this->assertFalse($refusal->databaseTouched());
+        }
+
+        $this->assertSame([['7', 'untouched']], $this->probeRows());
     }
 
     public function testRefusedDecisionNeverTouchesStorage(): void
@@ -510,11 +615,15 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
      *
      * @param string $dumpSql Contents of the connection-0 dump inside the archive
      * @param ?int $migrationIndex Migration level recorded for connection 0
+     * @param BackupScope $scope Scope the fixture claims to have been captured under
      * @return string Absolute path of the published archive
      */
-    private function publishFixtureBackup(string $dumpSql, ?int $migrationIndex = 0): string
-    {
-        $scopeDir = $this->storeRoot . '/' . BackupScope::FULL->value;
+    private function publishFixtureBackup(
+        string $dumpSql,
+        ?int $migrationIndex = 0,
+        BackupScope $scope = BackupScope::FULL,
+    ): string {
+        $scopeDir = $this->storeRoot . '/' . $scope->value;
         $workDir = $this->storeRoot . '/build';
         mkdir($workDir, 0700);
         file_put_contents(
@@ -522,7 +631,7 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
             $dumpSql,
         );
 
-        $base = BackupCreator::archiveBaseName(self::BACKUP_ID, 'test', BackupScope::FULL);
+        $base = BackupCreator::archiveBaseName(self::BACKUP_ID, 'test', $scope);
         $archivePath = $scopeDir . '/' . $base . BackupCreator::ARCHIVE_EXTENSION;
         exec(
             'tar -czf ' . escapeshellarg($archivePath) . ' -C ' . escapeshellarg($workDir) . ' .',
@@ -535,7 +644,7 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
             id: self::BACKUP_ID,
             createdAt: '2026-08-08T12:00:00+00:00',
             env: 'test',
-            scope: BackupScope::FULL,
+            scope: $scope,
             connections: [new BackupConnectionMeta(0, $this->databaseName(), $migrationIndex)],
             sizeBytes: (int)filesize($archivePath),
             durationSeconds: 1,
@@ -664,6 +773,58 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
                 . "` VARCHAR(32) NOT NULL DEFAULT '" . self::MIGRATED_VALUE . "'") . ";\n",
         );
         $this->fixtureMigrationListed = true;
+    }
+
+    /**
+     * Lists both migrations a schema-archive case needs: the one its schema already carries
+     * and the one above it.
+     *
+     * The lower file adds {@see EARLY_COLUMN}, which the schema fixture already declares, so
+     * replaying it fails on a duplicate column. That is deliberate: it is what makes "the level
+     * was recorded, so only what is above it ran" an assertion rather than a hope.
+     */
+    private function listSchemaArchiveMigrations(): void
+    {
+        $this->listFixtureMigration();
+        file_put_contents(
+            $this->storeRoot . '/migrations/' . self::MIGRATION_TRACK . '/'
+            . self::ARCHIVE_MIGRATION_INDEX . '_up.sql',
+            'ALTER TABLE `' . self::PROBE_TABLE . '` ADD COLUMN `' . self::EARLY_COLUMN
+            . "` VARCHAR(32) DEFAULT NULL;\n",
+        );
+    }
+
+    /**
+     * A schema-only dump of the probe table: structure, no rows, optionally stamped.
+     *
+     * @param ?int $markerLevel Level to stamp the dump with, or null for an unstamped archive
+     * @return string Dump SQL
+     */
+    private function schemaDumpSql(?int $markerLevel): string
+    {
+        $sql = 'DROP TABLE IF EXISTS `' . self::PROBE_TABLE . "`;\n"
+            . 'CREATE TABLE `' . self::PROBE_TABLE . "` (\n"
+            . "  `id` int NOT NULL,\n"
+            . "  `label` varchar(32) NOT NULL,\n"
+            . '  `' . self::EARLY_COLUMN . "` varchar(32) DEFAULT NULL,\n"
+            . "  PRIMARY KEY (`id`)\n"
+            . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n";
+
+        return $markerLevel === null ? $sql : $sql . ArchiveMigrationMarker::statement($markerLevel);
+    }
+
+    /**
+     * Raises the probe table with one row a refused restore must leave exactly as it is.
+     *
+     * @throws DatabaseException When the pre-state cannot be written
+     */
+    private function raiseUntouchedProbe(): void
+    {
+        Database::sql('DROP TABLE IF EXISTS `' . self::PROBE_TABLE . '`');
+        Database::sql(
+            'CREATE TABLE `' . self::PROBE_TABLE . '` (id INT PRIMARY KEY, label VARCHAR(32) NOT NULL)',
+        );
+        Database::sql('INSERT INTO `' . self::PROBE_TABLE . "` VALUES (7, 'untouched')");
     }
 
     /**

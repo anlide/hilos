@@ -241,6 +241,109 @@ final class BackupRestoreCommandTest extends TestCase
         $this->assertSame(BackupConstants::RESTORE_REQUEST_COMMAND, $probe->sent[0]['command']);
     }
 
+    public function testAMigrationIndexOnAFullArchiveIsAnArgumentError(): void
+    {
+        // Not a silent no-op: a FULL archive carries its level in the rows it imports, and an
+        // operator who named a number must learn it meant nothing.
+        $probe = new BackupRestoreCommandProbe();
+        $this->storeBackup('b1', 'archive payload');
+
+        $output = $this->runCommand($probe, ['b1'], [
+            BackupConstants::MIGRATION_INDEX_OPTION => '3',
+            BackupConstants::YES_OPTION => true,
+        ]);
+
+        $this->assertSame(ExitCode::INVALID_ARGUMENT, $output['code']);
+        $this->assertStringContainsString('schema archives only', $output['text']);
+        $this->assertSame([], $probe->sent, 'A rejected argument must never reach the daemon');
+    }
+
+    public function testANonIntegerMigrationIndexIsAnArgumentError(): void
+    {
+        // Refused as text rather than cast: a cast turns every wrong answer into level 0, which
+        // is a level a schema archive may legitimately be restored at.
+        $this->storeBackup('b1', 'archive payload', scope: BackupScope::SCHEMA_ONLY);
+
+        $output = $this->runCommand(args: ['b1'], options: [
+            BackupConstants::SCOPE_OPTION => BackupScope::SCHEMA_ONLY->value,
+            BackupConstants::MIGRATION_INDEX_OPTION => 'latest',
+            BackupConstants::YES_OPTION => true,
+        ]);
+
+        $this->assertSame(ExitCode::INVALID_ARGUMENT, $output['code']);
+        $this->assertStringContainsString('an integer of 0 or more', $output['text']);
+    }
+
+    public function testTheOperatorsMigrationIndexTravelsOnTheRestoreRequest(): void
+    {
+        $this->storeBackup('b1', 'archive payload', scope: BackupScope::SCHEMA_ONLY);
+        $probe = new BackupRestoreCommandProbe();
+        $probe->replies = [
+            CommandReplyDTO::ok('r1', [BackupConstants::FIELD_BACKUP_ID => 'b1']),
+            CommandReplyDTO::ok('r2', [
+                BackupConstants::FIELD_RESTORE_RUNNING => false,
+                BackupConstants::FIELD_RESTORE_OUTCOME => BackupStatus::SUCCESS->value,
+            ]),
+        ];
+
+        $output = $this->runCommand($probe, ['b1'], [
+            BackupConstants::SCOPE_OPTION => BackupScope::SCHEMA_ONLY->value,
+            BackupConstants::MIGRATION_INDEX_OPTION => '3',
+            BackupConstants::YES_OPTION => true,
+        ]);
+
+        $this->assertSame(ExitCode::SUCCESS, $output['code']);
+        $this->assertSame(3, $probe->sent[0]['payload'][BackupConstants::FIELD_MIGRATION_INDEX]);
+    }
+
+    public function testARestoreWithoutTheOptionCarriesNoMigrationIndexKey(): void
+    {
+        // The key's absence is the message the agent reads: a run in which nobody named a level
+        // must build a child argv without the option, not one carrying a null.
+        $this->storeBackup('b1', 'archive payload', scope: BackupScope::SCHEMA_ONLY);
+        $probe = new BackupRestoreCommandProbe();
+        $probe->replies = [
+            CommandReplyDTO::ok('r1', [BackupConstants::FIELD_BACKUP_ID => 'b1']),
+            CommandReplyDTO::ok('r2', [
+                BackupConstants::FIELD_RESTORE_RUNNING => false,
+                BackupConstants::FIELD_RESTORE_OUTCOME => BackupStatus::SUCCESS->value,
+            ]),
+        ];
+
+        $this->runCommand($probe, ['b1'], [
+            BackupConstants::SCOPE_OPTION => BackupScope::SCHEMA_ONLY->value,
+            BackupConstants::YES_OPTION => true,
+        ]);
+
+        $this->assertArrayNotHasKey(BackupConstants::FIELD_MIGRATION_INDEX, $probe->sent[0]['payload']);
+    }
+
+    public function testForceDoesNotLiftASchemaArchivesMissingMarker(): void
+    {
+        // --force is about an unknown environment; the missing level is not a verdict it may
+        // overrule, because the option delivers a fact rather than lifting a gate. A real tarball
+        // here on purpose: the refusal is only reachable once the archive actually unpacks.
+        $this->storeBackup(
+            'b1',
+            $this->schemaArchiveBytes(),
+            connections: [new BackupConnectionMeta(0, 'db', null)],
+            scope: BackupScope::SCHEMA_ONLY,
+        );
+        $probe = new BackupRestoreCommandProbe();
+
+        $output = $this->runCommand($probe, ['b1'], [
+            BackupConstants::SCOPE_OPTION => BackupScope::SCHEMA_ONLY->value,
+            BackupConstants::YES_OPTION => true,
+            BackupConstants::FORCE_OPTION => true,
+            BackupConstants::COLD_OPTION => true,
+        ]);
+
+        $this->assertSame(ExitCode::ERROR, $output['code']);
+        $this->assertStringContainsString('records no migration level', $output['text']);
+        $this->assertStringContainsString('--' . BackupConstants::MIGRATION_INDEX_OPTION, $output['text']);
+        $this->assertStringContainsString('The database was not touched', $output['text']);
+    }
+
     public function testMissingYesIsAnInvalidArgumentAfterAllChecksPass(): void
     {
         $this->storeBackup('b1', 'archive payload');
@@ -397,6 +500,38 @@ final class BackupRestoreCommandTest extends TestCase
         $code = $command->execute($options, $args);
 
         return ['code' => $code, 'text' => (string)ob_get_clean()];
+    }
+
+    /**
+     * Builds the bytes of a real schema archive whose dump declares no migration level.
+     *
+     * The other fixtures here are plain text, which is enough for every case that is answered
+     * before the archive is opened. The marker refusal is not one of those: it is reached after
+     * extract, so the fixture has to be a tarball the engine can actually unpack.
+     *
+     * @return string Archive bytes
+     */
+    private function schemaArchiveBytes(): string
+    {
+        $workDir = $this->root . '/build';
+        mkdir($workDir, 0700, true);
+        file_put_contents(
+            $workDir . '/' . BackupCreator::SQL_FILE_PREFIX . '0' . BackupCreator::SQL_FILE_SUFFIX,
+            "CREATE TABLE `migration` (\n  `index` int NOT NULL,\n  PRIMARY KEY (`index`)\n) ENGINE=InnoDB;\n",
+        );
+
+        $tarPath = $this->root . '/build.tar.gz';
+        exec(
+            'tar -czf ' . escapeshellarg($tarPath) . ' -C ' . escapeshellarg($workDir) . ' .',
+            $ignored,
+            $exitCode,
+        );
+        $this->assertSame(0, $exitCode, 'Fixture archive build must succeed');
+        $bytes = (string)file_get_contents($tarPath);
+        $this->removeTree($workDir);
+        unlink($tarPath);
+
+        return $bytes;
     }
 
     /**

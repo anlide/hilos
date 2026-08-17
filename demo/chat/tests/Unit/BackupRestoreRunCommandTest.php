@@ -68,6 +68,34 @@ final class BackupRestoreRunCommandTest extends TestCase
         $this->assertSame(ExitCode::ERROR, $code);
     }
 
+    public function testANonIntegerMigrationIndexFails(): void
+    {
+        // argv is an external boundary whoever built it, and a cast would turn nonsense into
+        // level 0 - a level a schema archive may legitimately be restored at.
+        $code = new BackupRestoreRunCommand()->execute(
+            [
+                BackupConstants::FIELD_DECISION => RestoreEnvDecision::ALLOW->value,
+                BackupConstants::MIGRATION_INDEX_OPTION => 'latest',
+            ],
+            ['2026-08-08_03-00-00'],
+        );
+
+        $this->assertSame(ExitCode::ERROR, $code);
+    }
+
+    public function testANegativeMigrationIndexFails(): void
+    {
+        $code = new BackupRestoreRunCommand()->execute(
+            [
+                BackupConstants::FIELD_DECISION => RestoreEnvDecision::ALLOW->value,
+                BackupConstants::MIGRATION_INDEX_OPTION => '-1',
+            ],
+            ['2026-08-08_03-00-00'],
+        );
+
+        $this->assertSame(ExitCode::ERROR, $code);
+    }
+
     public function testAFailureThatNeverTouchedTheDatabaseGetsItsOwnExitCode(): void
     {
         $code = BackupRestoreRunCommand::exitCodeFor(
