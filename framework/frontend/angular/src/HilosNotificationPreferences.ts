@@ -57,7 +57,7 @@ let preferencesSeq = 0
       @for (row of channels(); track row.channel) {
         <!-- A web-push channel ships its VAPID public key as the row's config;
         it renders the per-device toggle rather than the preference switch. -->
-        @if (row.config?.vapid_public; as vapidPublicKey) {
+        @if (row.config?.['vapid_public']; as vapidPublicKey) {
           <hilos-push-device-toggle
             [connection]="connection()"
             [channel]="row.channel"

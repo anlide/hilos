@@ -9,7 +9,9 @@
     "prebuild": "node ../../../framework/frontend/scripts/prebuild-sdk.mjs angular",
     "build": "ng build",
     "postbuild": "node -e \"require('fs').writeFileSync('dist/build-timestamp.txt', new Date().toISOString())\"",
-    "check": "tsc --noEmit -p tsconfig.dev.json"
+    "check": "npm run check:types && npm run check:templates",
+    "check:types": "tsc --noEmit -p tsconfig.dev.json",
+    "check:templates": "ng build --configuration development"
   },
   "dependencies": {
     "@angular/common": "^22.0.0",
