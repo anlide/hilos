@@ -11,11 +11,18 @@ import { uniquePhone, waitForSmsCode } from './sms'
 // auto-registration that no longer happens. The auth surface itself is exercised
 // end to end by auth.spec.ts; here it is only the means to a signed-in session.
 //
-// Registering takes two steps since HIL-415 — the submit only holds the address
-// and mails a code, and the account exists once that code comes back. register()
-// absorbs both, reading the code out of the delivered letter (helpers/mail.ts), so
-// a spec that just needs an account still asks for one in a single call. The steps
-// are also exported on their own, for the specs that are about the code step.
+// The surface is identifier-first since HIL-423: there is ONE field, and what it
+// reveals is decided by the live lookup rather than by a mode the spec picks. So a
+// helper types the identifier, waits for the reveal, and only then fills what
+// appeared — clicking a switcher that no longer exists was the old way in.
+//
+// Registering is three steps: the address and password, the terms screen (which is
+// what actually reserves the address and mails a code), and the code itself; and a
+// finished flow now ends on a panel with Continue rather than closing itself
+// (HIL-422), which is also what releases the gated page. register() absorbs all of
+// it, reading the code out of the delivered letter (helpers/mail.ts), so a spec
+// that just needs an account still asks for one in a single call. The steps are
+// also exported on their own, for the specs that are about them.
 
 /** A valid password (>= the 8-char minimum the surface and backend enforce). This same
  * value is the default password of the `test:user:seed` CLI (DEFAULT_PASSWORD in
@@ -96,11 +103,66 @@ async function waitAuthSettled(page: Page): Promise<void> {
  */
 async function waitRegisterSettled(page: Page): Promise<void> {
   await expect(async () => {
-    const onCodeStep =
-      (await page.getByTestId('auth-register-code').count()) > 0
+    const onCodeStep = (await page.getByTestId('auth-code').count()) > 0
     const failed = (await page.getByTestId('auth-error').count()) > 0
     expect(onCodeStep || failed).toBeTruthy()
   }).toPass()
+}
+
+/**
+ * Wait for a code submit to SETTLE: the flow reached its done screen, or the code
+ * was refused inline. A flow that ends by signing somebody in no longer closes the
+ * surface on its own (HIL-422) — it says what was achieved and waits for Continue —
+ * so the finished panel is what says the reply landed.
+ *
+ * @param page The page whose auth surface is submitting.
+ */
+async function waitDoneSettled(page: Page): Promise<void> {
+  await expect(async () => {
+    const done = (await page.getByTestId('auth-continue').count()) > 0
+    const failed = (await page.getByTestId('auth-error').count()) > 0
+    expect(done || failed).toBeTruthy()
+  }).toPass()
+}
+
+/**
+ * Type an identifier and wait for the live lookup to answer it with the password
+ * field (HIL-414).
+ *
+ * The identifier-first surface has one field and reveals the rest from the reply,
+ * so a spec cannot type a password that is not on screen yet: the field appearing
+ * IS the lookup having landed. Which password it is — the one an account signs in
+ * with or the one a new account is created with — is the reply's business, not
+ * this helper's.
+ *
+ * @param page The page with the auth surface mounted.
+ * @param identifier The email or phone to type into the single field.
+ * @param password The password to type once it is revealed.
+ */
+export async function enterIdentifierAndPassword(
+  page: Page,
+  identifier: string,
+  password: string,
+): Promise<void> {
+  await typeInto(page.getByTestId('auth-identifier'), identifier)
+  const passwordField = page.getByTestId('auth-password')
+  await expect(passwordField).toBeVisible()
+  await typeInto(passwordField, password)
+}
+
+/**
+ * Acknowledge a finished flow's panel, which is what closes the surface.
+ *
+ * Continue clears the announcement the session owes (HIL-422); the gate has been
+ * HOLDING its resume until then, so this is also the moment a gated page is let
+ * through. A spec that asserts the page behind the surface has to come through
+ * here first.
+ *
+ * @param page The page sitting on the done screen.
+ */
+export async function continueFromDone(page: Page): Promise<void> {
+  await clickSubmit(page.getByTestId('auth-continue'))
+  await waitAuthSettled(page)
 }
 
 /**
@@ -116,11 +178,16 @@ export async function submitRegistration(
   page: Page,
   email: string,
 ): Promise<void> {
-  await page.getByTestId('auth-to-register').click()
-  await expect(page.getByTestId('auth-heading')).toHaveText('Create your account')
-  await typeInto(page.getByTestId('auth-email'), email)
-  await typeInto(page.getByTestId('auth-password'), PASSWORD)
-  await typeInto(page.getByTestId('auth-confirm'), PASSWORD)
+  await enterIdentifierAndPassword(page, email, PASSWORD)
+  // Nothing was chosen: the lookup found no account for the address, so the one
+  // screen turned itself into a registration.
+  await expect(page.getByTestId('auth-heading')).toHaveText(
+    'Create your account',
+  )
+  // A local move to the terms screen — this dispatches nothing.
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await page.getByTestId('auth-consent-accept').check()
+  // Accepting the terms is what reserves the address and mails the code.
   await clickSubmit(page.getByTestId('auth-submit'))
   await waitRegisterSettled(page)
 }
@@ -138,9 +205,9 @@ export async function submitRegistrationCode(
   page: Page,
   code: string,
 ): Promise<void> {
-  await typeInto(page.getByTestId('auth-register-code'), code)
+  await typeInto(page.getByTestId('auth-code'), code)
   await clickSubmit(page.getByTestId('auth-submit'))
-  await waitAuthSettled(page)
+  await waitDoneSettled(page)
 }
 
 /**
@@ -153,18 +220,57 @@ export async function submitRegistrationCode(
 export async function register(page: Page, email: string): Promise<void> {
   await submitRegistration(page, email)
   await submitRegistrationCode(page, await readRegisterCode(email))
+  await continueFromDone(page)
 }
 
-/** Fill and submit the login form on the currently mounted surface (default mode). */
+/**
+ * Sign in on the currently mounted surface: type the address, wait for the lookup
+ * to reveal the password, submit.
+ *
+ * Signing in with a password leaves no announcement (SessionAck has no kind for
+ * it — nothing was achieved beyond arriving), so the surface simply closes.
+ *
+ * @param page The page with the auth surface mounted.
+ * @param email The address of an existing account.
+ * @param password The password to submit.
+ */
 export async function login(
   page: Page,
   email: string,
   password: string = PASSWORD,
 ): Promise<void> {
-  await typeInto(page.getByTestId('auth-email'), email)
-  await typeInto(page.getByTestId('auth-password'), password)
+  await enterIdentifierAndPassword(page, email, password)
   await clickSubmit(page.getByTestId('auth-submit'))
   await waitAuthSettled(page)
+}
+
+/**
+ * Sign in a FRESH number end to end: pick the SMS channel, accept the terms, read
+ * the texted code, confirm it, and acknowledge the finished panel.
+ *
+ * Written for a number with no account, which is what makes it linear: an unknown
+ * identifier means the register intent, and under that intent choosing a channel
+ * only STORES the choice — the terms screen is what sends. An existing number
+ * skips the terms, so this helper is not the way to sign one back in.
+ *
+ * @param page The page with the auth surface mounted.
+ * @param phone The fresh number to mint an account for.
+ */
+export async function signInByPhone(page: Page, phone: string): Promise<void> {
+  await typeInto(page.getByTestId('auth-identifier'), phone)
+  await clickSubmit(page.getByTestId('auth-channel-sms'))
+  await page.getByTestId('auth-consent-accept').check()
+  await clickSubmit(page.getByTestId('auth-submit'))
+
+  // The request is asynchronous for every channel (HIL-492): its ack means only
+  // "accepted", and the surface advances when the code agent signals that a code
+  // really went out. So the code field appearing is what says the code has been
+  // issued — and only then is there an artifact to read.
+  await expect(page.getByTestId('auth-code')).toBeVisible()
+  await typeInto(page.getByTestId('auth-code'), await waitForSmsCode(phone))
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await waitDoneSettled(page)
+  await continueFromDone(page)
 }
 
 /** Log out through the shell control and wait for the anonymous state to settle
@@ -246,18 +352,7 @@ export async function signUpWithVerifiedEmail(
   await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await page.getByTestId('message-signin').click()
-  await page.getByTestId('auth-to-sms').click()
-  await typeInto(page.getByTestId('auth-phone'), phone)
-  await clickSubmit(page.getByTestId('auth-submit'))
-
-  // The request is asynchronous for every channel (HIL-492): its ack means only
-  // "accepted", and the surface advances when the code agent signals that a code
-  // really went out. So the code field appearing is what says the code has been
-  // issued — and only then is there an artifact to read.
-  await expect(page.getByTestId('auth-sms-code')).toBeVisible()
-  await typeInto(page.getByTestId('auth-sms-code'), await waitForSmsCode(phone))
-  await clickSubmit(page.getByTestId('auth-submit'))
-  await waitAuthSettled(page)
+  await signInByPhone(page, phone)
 
   await expect(page.getByTestId('self-user')).toHaveText(phone)
   const userId = Number(await page.getByTestId('self-user-id').textContent())

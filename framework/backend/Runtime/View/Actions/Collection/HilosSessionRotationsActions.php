@@ -36,6 +36,7 @@ final class HilosSessionRotationsActions extends RtActions
      * @param string $sessionToken Session token the bearer receives on its next handshake
      * @param list<string> $acceptKeysToDrop Accept keys of the session's other connections
      * @param float $expiresAtMs Unix milliseconds after which the ticket is refused
+     * @param ?string $pendingAck Ack the initiating connection still owes, carried to the socket that presents the ticket
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -46,11 +47,12 @@ final class HilosSessionRotationsActions extends RtActions
         string $sessionToken,
         array $acceptKeysToDrop,
         float $expiresAtMs,
+        ?string $pendingAck = null,
     ): void {
         $this->ensureCanWrite();
 
         $this->addStateToCollection(
-            StateHilosSessionRotation::create($ticket, $sessionToken, $acceptKeysToDrop, $expiresAtMs),
+            StateHilosSessionRotation::create($ticket, $sessionToken, $acceptKeysToDrop, $expiresAtMs, $pendingAck),
         );
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Runtime;
 
+use Hilos\Auth\Session\SessionAck;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Hilos;
@@ -61,6 +62,18 @@ final class HilosSessionRotationsTest extends TestCase
         $this->assertSame(self::TICKET, $claimed->ticket);
         $this->assertSame(self::NEW_TOKEN, $claimed->sessionToken);
         $this->assertSame(['ak-second'], $claimed->acceptKeysToDrop);
+        // A login that owed no announcement announces its rotation exactly as before.
+        $this->assertNull($claimed->pendingAck);
+    }
+
+    public function testARotationCarriesTheAckTheInitiatingConnectionStillOwed(): void
+    {
+        $rotations = $this->mounted();
+        $rotations->actions->register(self::TICKET, self::NEW_TOKEN, [], $this->inMs(30), SessionAck::REGISTERED);
+
+        // The mark lives on a connection this rotation is about to end (HIL-423), so the row
+        // is the only place it can wait for the socket that replaces it.
+        $this->assertSame(SessionAck::REGISTERED, $rotations->claimable(self::TICKET)?->pendingAck);
     }
 
     public function testAnExpiredTicketYieldsNothingAlthoughItsRowIsStillThere(): void

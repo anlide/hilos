@@ -21,8 +21,8 @@ import {
   toLocal,
   bootHilos,
   createAuthGate,
-  createAuthSurface,
-  PASSWORD_AUTH_METHOD,
+  createAuthFlow,
+  PASSWORD_FLOW_METHOD,
   HILOS_PAGE_ROUTES,
   SIGNAL_TYPE_PAGE_RESPONSE,
 } from '../src/index.js'
@@ -47,8 +47,8 @@ it('exports the @hilos/core public surface', () => {
   expect(toLocal).toBeTypeOf('function')
   expect(bootHilos).toBeTypeOf('function')
   expect(createAuthGate).toBeTypeOf('function')
-  expect(createAuthSurface).toBeTypeOf('function')
-  expect(PASSWORD_AUTH_METHOD.modes).toContain('login')
+  expect(createAuthFlow).toBeTypeOf('function')
+  expect(PASSWORD_FLOW_METHOD.kind).toBe('identifier')
   expect(HILOS_PAGE_ROUTES).toBeTypeOf('object')
   expect(SIGNAL_TYPE_PAGE_RESPONSE).toBe('page_response')
 })

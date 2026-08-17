@@ -1,8 +1,8 @@
 // The identifier-first auth flow state machine (HIL-413): the framework-agnostic
 // "one identifier field, live account lookup, then the right next step" controller
 // behind the redesigned sign-in surface (HIL-412, mockup framework/guest). It
-// supersedes the mode-first {@link ./authSurface} controller — instead of a
-// login/register/recovery switcher, the user types a SINGLE identifier (email or
+// replaced the mode-first controller this module retired (HIL-423) — instead of
+// a login/register/recovery switcher, the user types a SINGLE identifier (email or
 // phone), the machine looks the account up live, and what happens next is a
 // function of the axes {@link AuthStep} × {@link AuthIntent} plus the chosen
 // method and code channel, NEVER a branch on mode names (hleb's defect: flow
@@ -32,9 +32,6 @@
 // (onMethodAction). Code channels (HIL-492) mirror that: a channel is a
 // descriptor plus a setting, never a surface edit. Change detection is
 // `Object.is` (signal.ts): replace objects on update, never mutate them.
-//
-// Not exported from the barrel (src/index.ts): the clean names collide with the
-// still-present authSurface until HIL-423 removes it and re-exports this module.
 
 import { toLocal } from '../session/serverClock.js'
 import { type PendingRegistration } from '../session/sessionScope.js'
@@ -146,8 +143,8 @@ export interface AuthMethodVisibility {
 
 /**
  * One enabled auth method as pure serializable DATA — the descriptor contract
- * that replaces authSurface's `AuthMethodDescriptor` and gates compatibility
- * with HIL-427 (backend-declared method sets). No behavior lives here: an icon
+ * that gates compatibility with HIL-427 (backend-declared method sets), which is
+ * why it holds no closure. No behavior lives here: an icon
  * method's ceremony is registered by `key` via
  * {@link AuthFlowOptions.onMethodAction}.
  */

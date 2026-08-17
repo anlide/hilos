@@ -7,6 +7,7 @@ import {
   ScopeManager,
   sessionImpersonatedByName,
   sessionImpersonating,
+  sessionPendingAck,
   sessionPendingRegistration,
   sessionUserId,
   sessionUserIsAdmin,
@@ -38,3 +39,11 @@ export const impersonatedByName = sessionImpersonatedByName(scopes)
  * another device — and nothing about it is kept in this tab.
  */
 export const pendingRegistration = sessionPendingRegistration(scopes)
+
+/**
+ * The announcement this connection still owes its person, or null when it owes
+ * none (HIL-422). What a finished auth flow leaves behind so the surface has
+ * something to say before it closes — and what holds the gate's resume while it
+ * stands, so the page is not un-gated over the sentence.
+ */
+export const pendingAck = sessionPendingAck(scopes)

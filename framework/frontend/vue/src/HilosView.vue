@@ -76,10 +76,22 @@ function onModalToggle(open: boolean): void {
   <component :is="props.authSurface" v-if="showAuthInPlace" />
   <ErrorPage v-else-if="pageError" :error="pageError" />
   <component :is="view" v-else-if="view && !pageLoading" />
+  <!-- No title of its own: the sign-in surface is identifier-first (HIL-423), so
+  what the screen is called changes with the step the person is on, and only the
+  surface knows that. It renders its own heading in the body. The dialog is still
+  NAMED — the name says what it is for, which does not change with the step, and
+  the mandated rule (docs/agents/frontend/accessibility.md) has every modal expose
+  role=dialog + aria-modal + an accessible name.
+
+  Never while the same surface is already shown IN PLACE: the gate opens the modal
+  for an ack as well as for a gated action (HIL-422), and on a 401'd page that
+  would draw a second copy of the surface over the first — two machines, two
+  subscriptions, and every control on screen twice. The gate's resume closes both
+  states in one move, so nothing is left holding a modal nobody can see. -->
   <HilosModal
-    v-if="props.authSurface && props.authGate"
+    v-if="props.authSurface && props.authGate && !showAuthInPlace"
     :model-value="modalOpen"
-    title="Sign in"
+    aria-label="Sign in"
     @update:model-value="onModalToggle"
   >
     <component :is="props.authSurface" />

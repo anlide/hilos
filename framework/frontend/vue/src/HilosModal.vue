@@ -27,6 +27,13 @@ const props = withDefaults(
     modelValue: boolean
     /** The default header title (overridable via the #header slot). */
     title?: string
+    /**
+     * The dialog's accessible name when it shows no title of its own — a
+     * surface whose heading changes with the step owns that heading in the
+     * body, and the name of the dialog still has to say what it is for.
+     * Ignored when `title` is set: a visible title names the dialog already.
+     */
+    ariaLabel?: string
     /** Close on the Escape key (through the confirm guard). */
     closeOnEsc?: boolean
     /** Close on a backdrop click (through the confirm guard). */
@@ -44,6 +51,7 @@ const props = withDefaults(
   }>(),
   {
     title: '',
+    ariaLabel: '',
     closeOnEsc: true,
     closeOnBackdrop: true,
     confirmOnClose: false,
@@ -131,7 +139,7 @@ function onOk(): void {
         tabindex="-1"
         role="dialog"
         aria-modal="true"
-        :aria-label="title || undefined"
+        :aria-label="title || ariaLabel || undefined"
         data-id="modal"
         @keydown.esc.prevent="modal.onEsc()"
         @keydown.tab="onTab"
@@ -141,7 +149,11 @@ function onOk(): void {
           <div class="modal-content">
             <div class="modal-header">
               <slot name="header">
-                <h5 class="modal-title mb-0">{{ title }}</h5>
+                <!-- No title, no heading: an empty one is a heading in the
+                accessibility tree that names nothing, and a dialog whose
+                heading lives in its body (the auth surface) has a title here
+                only by accident. -->
+                <h5 v-if="title" class="modal-title mb-0">{{ title }}</h5>
               </slot>
               <button
                 type="button"

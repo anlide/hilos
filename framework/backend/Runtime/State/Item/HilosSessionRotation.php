@@ -23,6 +23,14 @@ use Hilos\Runtime\State\Collection\HilosSessionRotations;
  * Rows are written once and never changed - a rotation is what it is - so there is no diff
  * to apply beyond the one an inbound sync brings, and they leave the collection in one of
  * two ways: burned by the exchange, or swept once their moment has passed.
+ *
+ * The row also carries the success ack the initiating connection still owed when the
+ * rotation was announced (HIL-423). An ack lives on the CONNECTION (HIL-422), and the
+ * rotation kills the connection that earned it: the browser comes back on a socket that
+ * owes nothing, and the sentence the person just earned is gone before it was read. The
+ * ticket is what mends that, and only the ticket - a socket that presents one is the same
+ * browser continuing the flow it started, whereas a bare reopened socket is a reload and
+ * still owes nothing.
  */
 final class HilosSessionRotation extends RtState
 {
@@ -33,6 +41,7 @@ final class HilosSessionRotation extends RtState
     public const string sessionToken = 'sessionToken';
     public const string acceptKeysToDrop = 'acceptKeysToDrop';
     public const string expiresAtMs = 'expiresAtMs';
+    public const string pendingAck = 'pendingAck';
 
     /** One-time ticket naming this rotation; also the row id. */
     private(set) string $ticket = '';
@@ -48,6 +57,9 @@ final class HilosSessionRotation extends RtState
     /** Unix milliseconds after which the ticket is no longer honoured. */
     private(set) float $expiresAtMs = 0.0;
 
+    /** Ack the initiating connection still owed when the rotation was announced, or null. */
+    private(set) ?string $pendingAck = null;
+
     /**
      * Builds a pending rotation row.
      *
@@ -55,6 +67,7 @@ final class HilosSessionRotation extends RtState
      * @param string $sessionToken Session token the bearer receives
      * @param list<string> $acceptKeysToDrop Accept keys dropped once the exchange happens
      * @param float $expiresAtMs Unix milliseconds after which the ticket stops being honoured
+     * @param ?string $pendingAck Ack the initiating connection still owed (a SessionAck value), or null
      * @return static Fresh rotation row
      */
     public static function create(
@@ -62,12 +75,14 @@ final class HilosSessionRotation extends RtState
         string $sessionToken,
         array $acceptKeysToDrop,
         float $expiresAtMs,
+        ?string $pendingAck = null,
     ): static {
         $instance = new static();
         $instance->ticket = $ticket;
         $instance->sessionToken = $sessionToken;
         $instance->acceptKeysToDrop = $acceptKeysToDrop;
         $instance->expiresAtMs = $expiresAtMs;
+        $instance->pendingAck = $pendingAck;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -83,6 +98,7 @@ final class HilosSessionRotation extends RtState
         $instance->sessionToken = (string)$row[self::sessionToken];
         $instance->acceptKeysToDrop = self::stringList($row[self::acceptKeysToDrop] ?? []);
         $instance->expiresAtMs = (float)($row[self::expiresAtMs] ?? 0.0);
+        $instance->pendingAck = self::stringOrNull($row[self::pendingAck] ?? null);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -108,6 +124,9 @@ final class HilosSessionRotation extends RtState
         }
         if (array_key_exists(self::expiresAtMs, $diff)) {
             $this->expiresAtMs = (float)$diff[self::expiresAtMs];
+        }
+        if (array_key_exists(self::pendingAck, $diff)) {
+            $this->pendingAck = self::stringOrNull($diff[self::pendingAck]);
         }
     }
 
@@ -148,7 +167,17 @@ final class HilosSessionRotation extends RtState
             self::sessionToken => $this->sessionToken,
             self::acceptKeysToDrop => $this->acceptKeysToDrop,
             self::expiresAtMs => $this->expiresAtMs,
+            self::pendingAck => $this->pendingAck,
         ];
+    }
+
+    /**
+     * @param mixed $value Raw row value
+     * @return ?string Value as a string, or null when the row carries none
+     */
+    private static function stringOrNull(mixed $value): ?string
+    {
+        return $value === null ? null : (string)$value;
     }
 
     /**

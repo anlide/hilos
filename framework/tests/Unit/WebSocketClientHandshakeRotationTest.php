@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Session\SessionRotationTicket;
 use Hilos\Auth\Session\SessionToken;
 use Hilos\Core\Daemon\ConnectionDropper;
@@ -30,6 +31,10 @@ use PHPUnit\Framework\TestCase;
  * ordinary handshake, because that is what an attacker replaying one gets. What they all
  * share is the erasure of the auxiliary cookie: presented once means spent once, and a
  * ticket that survived in the browser would be tried again on every reconnect.
+ *
+ * The trade carries one more thing than the token (HIL-423): the success ack the socket
+ * this rotation ends had not shown yet. It travels on the same terms as the token - only to
+ * the handshake that actually spent the ticket.
  */
 final class WebSocketClientHandshakeRotationTest extends TestCase
 {
@@ -89,6 +94,29 @@ final class WebSocketClientHandshakeRotationTest extends TestCase
         // one the worker opens now. A trade that moved only the first would hand out a cookie
         // for a session nobody authenticated.
         $this->assertSame(self::ROTATED_TOKEN, $this->queuedHandshake()->sessionToken);
+    }
+
+    public function testATradedTicketCarriesTheAckTheRotatedAwaySocketStillOwed(): void
+    {
+        $this->announceRotation(pendingAck: SessionAck::REGISTERED);
+
+        $this->handshakenProbe(SessionToken::mint(), self::TICKET);
+
+        // The socket that earned the announcement is the one this rotation ends, so the
+        // sentence rides the ticket to its replacement (HIL-423). Without it the browser
+        // comes back owing nothing and the surface closes over what it had to say.
+        $this->assertSame(SessionAck::REGISTERED, $this->queuedHandshake()->inheritedAck);
+    }
+
+    public function testAHandshakeThatTradesNoTicketInheritsNoAck(): void
+    {
+        $this->announceRotation(pendingAck: SessionAck::REGISTERED);
+
+        $this->handshakenProbe(SessionToken::mint());
+
+        // A socket that presented nothing is a reload, and a reload owes nothing (HIL-422)
+        // - the standing rotation belongs to a different socket entirely.
+        $this->assertNull($this->queuedHandshake()->inheritedAck);
     }
 
     public function testATradedTicketIsBurnedSoASecondHandshakeGetsNothing(): void
@@ -194,14 +222,19 @@ final class WebSocketClientHandshakeRotationTest extends TestCase
      *
      * @param list<string> $keysToDrop Accept keys of the session's other connections
      * @param float $expiresInSeconds Ticket lifetime from now; negative lands in the past
+     * @param ?string $pendingAck Ack the initiating connection still owed, or null for none
      */
-    private function announceRotation(array $keysToDrop = [], float $expiresInSeconds = 30): void
-    {
+    private function announceRotation(
+        array $keysToDrop = [],
+        float $expiresInSeconds = 30,
+        ?string $pendingAck = null,
+    ): void {
         Hilos::$rt?->hilosSessionRotations->actions->register(
             self::TICKET,
             self::ROTATED_TOKEN,
             $keysToDrop,
             (microtime(true) + $expiresInSeconds) * 1000,
+            $pendingAck,
         );
     }
 

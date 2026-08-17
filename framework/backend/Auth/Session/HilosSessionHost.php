@@ -21,6 +21,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
+use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Utils\Helpers\TimeHelper;
 use Random\RandomException;
 
@@ -240,6 +241,32 @@ trait HilosSessionHost
     final protected function connectionPendingAck(string $acceptKey): ?string
     {
         return Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey)?->pendingAck;
+    }
+
+    /**
+     * Hands a freshly registered connection the ack its rotation carried over (HIL-423).
+     *
+     * Called from the project's handshake handler, right after the connection row exists
+     * and before the response goes out; the value it returns is what that response has to
+     * state. Only a handshake that spent a rotation ticket carries one, which is the whole
+     * of the narrowing this leaf makes to HIL-422's rule: an ack still lives on the
+     * connection and a bare reopened socket still owes nothing, but the socket that
+     * replaces the one a login rotated away is the same browser mid-flow, not a reload,
+     * and it inherits what its predecessor had not shown yet.
+     *
+     * @param WebSocketHandshakeSignalDTO $data Handshake signal the daemon queued for this connection
+     * @return ?string Ack now standing on the connection, or null when there was none to inherit
+     */
+    final protected function inheritHandshakeAck(WebSocketHandshakeSignalDTO $data): ?string
+    {
+        $ack = $data->inheritedAck;
+        if ($ack === null) {
+            return null;
+        }
+
+        $this->markConnectionAck($data->acceptKey, $ack);
+
+        return $ack;
     }
 
     /**
@@ -505,6 +532,12 @@ trait HilosSessionHost
      * ticket is on the wire, or a browser fast enough to reconnect first would present a
      * ticket the master cannot find and lose the session.
      *
+     * The initiator's pending ack rides on the row (HIL-423). The rotation ends the very
+     * connection the ack was written on, so without this the sentence a flow just earned
+     * dies with the socket that earned it, and the surface closes on a person who never
+     * read it. The ticket is the one thing that says "the same browser, still in the flow
+     * it started" — which is why the ack travels with it and not with the token.
+     *
      * @param string $newToken Token the session was rotated onto
      * @param list<string> $keysToDrop Accept keys of the session's other connections
      * @param string $initiatorAcceptKey Accept key of the connection that logged in
@@ -519,6 +552,7 @@ trait HilosSessionHost
             $newToken,
             $keysToDrop,
             SessionRotationTicket::expiryFromNow(),
+            $this->connectionPendingAck($initiatorAcceptKey),
         );
 
         $this->sendToUser(

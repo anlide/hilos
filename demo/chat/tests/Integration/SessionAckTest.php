@@ -32,6 +32,7 @@ use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\HilosException;
+use Hilos\Runtime\View\Item\HilosSessionRotation;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -49,6 +50,11 @@ use Hilos\Utils\Helpers\RandomHelper;
  * socket at once, so the second tab does not ask again. And what a reload gets -
  * nothing, because the mark lives on the connection, which is the whole of how it
  * stays ephemeral without anything having to expire it.
+ *
+ * That last answer has exactly one exception, and it is here too (HIL-423): the socket a
+ * login's own token rotation replaces inherits what its predecessor owed, because it is
+ * the same browser still inside the flow rather than somebody coming back later. It is
+ * told so by the rotation ticket it traded, and by nothing else.
  *
  * Confirmation codes are only mailed, so the cases seed a known-code challenge the
  * same way the register and reset suites do.
@@ -123,6 +129,52 @@ final class SessionAckTest extends IntegrationTestCase
 
             $this->assertNull($this->ackOf('ack-reload-new'));
             $this->assertNotNull(Hilos::$rt->connections['ack-reload-new']?->userId);
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * The socket a login's rotation sends the browser back on inherits what it owed.
+     *
+     * The brother of the case above, and the only exception to it (HIL-423). The mark still
+     * lives on the connection — but the login ENDS the connection it was written on: the
+     * token rotates, the browser reconnects, and the sentence it just earned would be gone
+     * one frame before it could be read. What tells the two cases apart is the rotation
+     * ticket: presenting one means this socket replaces a named predecessor, whereas the
+     * reload above presents nothing and is a person coming back later.
+     *
+     * @throws HilosException When setup or registration handling fails
+     */
+    public function testTheSocketARotationSendsTheBrowserBackOnInheritsTheAck(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'ack-rotate-old');
+
+        try {
+            $this->register($agent, 'ack-rotate-old', $email);
+            $this->seedRegisterCode($email);
+            $this->confirm($agent, 'ack-rotate-old', $email, self::CODE);
+
+            // The announcement carries it out of the dying connection: this row is where the
+            // ack waits while the browser is between sockets.
+            $rotation = $this->announcedRotation();
+            $this->assertSame(SessionAck::REGISTERED, $rotation->pendingAck);
+            $this->drainHandshakeResponses();
+
+            // What the master hands the worker once the ticket is traded: the rotated token
+            // and the ack the row held.
+            $this->openSession($agent, 'ack-rotate-new', $rotation->sessionToken, $rotation->pendingAck);
+
+            $this->assertSame(SessionAck::REGISTERED, $this->ackOf('ack-rotate-new'));
+            $this->assertNotNull(Hilos::$rt->connections['ack-rotate-new']?->userId);
+            // Stated in the response as well as written to the row: the surface draws from
+            // the handshake, and a row nobody published is a mark nobody sees.
+            $this->assertSame(
+                SessionAck::REGISTERED,
+                $this->drainHandshakeResponses()['ack-rotate-new']?->pendingAck,
+            );
         } finally {
             $this->cleanUp();
         }
@@ -286,6 +338,20 @@ final class SessionAckTest extends IntegrationTestCase
     }
 
     /**
+     * Returns the one rotation the login just announced.
+     *
+     * @return HilosSessionRotation The pending rotation standing in the runtime store
+     */
+    private function announcedRotation(): HilosSessionRotation
+    {
+        foreach (Hilos::$rt->hilosSessionRotations as $rotation) {
+            return $rotation;
+        }
+
+        $this->fail('The login announced no rotation');
+    }
+
+    /**
      * Registers the runtime truth sources and returns a chat agent on a clean stand.
      *
      * @return ChatAgent Agent under test
@@ -321,11 +387,16 @@ final class SessionAckTest extends IntegrationTestCase
      * @param ChatAgent $agent Agent under test
      * @param string $acceptKey WebSocket accept key to open the connection under
      * @param ?string $sessionToken Token of a session to join, or null to open a new one
+     * @param ?string $inheritedAck Ack a traded rotation ticket carried over, as the master would pass it
      * @return string The session cookie token registered for the connection
      * @throws HilosException When the handshake fails
      */
-    private function openSession(ChatAgent $agent, string $acceptKey, ?string $sessionToken = null): string
-    {
+    private function openSession(
+        ChatAgent $agent,
+        string $acceptKey,
+        ?string $sessionToken = null,
+        ?string $inheritedAck = null,
+    ): string {
         $token = $sessionToken ?? RandomHelper::hex(16);
         $agent->onSignalHandshake(
             new WebSocketHandshakeSignalDTO(
@@ -335,6 +406,7 @@ final class SessionAckTest extends IntegrationTestCase
                 clientIp: '127.0.0.1',
                 queryParams: RequestQueryParams::empty(),
                 sessionToken: $token,
+                inheritedAck: $inheritedAck,
             ),
             '',
             '',
@@ -565,6 +637,16 @@ final class SessionAckTest extends IntegrationTestCase
         }
         foreach ($parkedRecovery as $acceptKey) {
             Hilos::$rt->hilosRecoveryWaiters->actions->release($acceptKey);
+        }
+
+        // Rotations outlive the connections that announced them (nothing here trades a
+        // ticket), so the store is emptied by hand or the next case finds a stranger's row.
+        $tickets = [];
+        foreach (Hilos::$rt->hilosSessionRotations as $rotation) {
+            $tickets[] = $rotation->ticket;
+        }
+        foreach ($tickets as $ticket) {
+            Hilos::$rt->hilosSessionRotations->actions->forget($ticket);
         }
 
         Hilos::$rt->connections->actions->clear();

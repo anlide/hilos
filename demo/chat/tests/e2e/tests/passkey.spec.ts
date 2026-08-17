@@ -83,10 +83,12 @@ test('signs in usernameless with a discoverable passkey — no email', async ({
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
   // DISCOVERABLE LOGIN (HIL-400): click the usernameless "Sign in with a passkey"
-  // action — no email is entered. The server returns empty allowCredentials, the
-  // authenticator returns its resident credential, and confirm resolves the
-  // account (user handle + credential id) and upgrades the session in place.
-  const discoverable = page.getByTestId('auth-passkey-discoverable')
+  // icon — no email is entered, which is exactly why it lives in the row that only
+  // shows while the identifier field is EMPTY (HIL-423). The server returns empty
+  // allowCredentials, the authenticator returns its resident credential, and
+  // confirm resolves the account (user handle + credential id) and upgrades the
+  // session in place.
+  const discoverable = page.getByTestId('auth-icon-passkey')
   await discoverable.scrollIntoViewIfNeeded()
   await expect(discoverable).toBeEnabled()
   await discoverable.click()

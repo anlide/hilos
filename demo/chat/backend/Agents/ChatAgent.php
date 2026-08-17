@@ -601,7 +601,9 @@ final class ChatAgent extends AbstractAgent
         $this->sendToUser(
             ChatSignalConstants::HANDSHAKE_RESPONSE,
             $data->acceptKey,
-            $this->handshakeResponse($session),
+            // A socket born of a login's token rotation owes what the socket it replaced
+            // still owed (HIL-423); every other handshake inherits null and says so.
+            $this->handshakeResponse($session)->withPendingAck($this->inheritHandshakeAck($data)),
         );
     }
 

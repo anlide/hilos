@@ -3,6 +3,8 @@ import { test, expect, type Locator } from '@playwright/test'
 import { mailsTo, readRegisterCode } from '../helpers/mail'
 import {
   clickSubmit,
+  continueFromDone,
+  enterIdentifierAndPassword,
   login,
   logout,
   nameFromEmail,
@@ -23,15 +25,17 @@ import { setTelegramReachable, waitForTelegramCode } from '../helpers/telegram'
 //   - the AUTHENTICATED-guarded profile page 401s an anonymous subscribe and the
 //     auth gate mounts the project sign-in surface IN PLACE (no redirect), then
 //     resumes the preserved subscription off the session upgrade — no navigation;
-//   - registering takes two steps (HIL-415): the submit only holds the address and
-//     mails one code, the code creates the account and signs the session in, and
-//     logout reverts the session to anonymous so the gated page re-gates;
-//   - login names which of the three ways it failed (HIL-414): the address has no
-//     account, the account has no password, or the password is wrong;
+//   - registering takes three steps (HIL-415/423): the address and its password,
+//     the terms screen that actually holds the address and mails one code, and the
+//     code that creates the account and signs the session in; logout reverts the
+//     session to anonymous so the gated page re-gates;
+//   - the surface is identifier-first (HIL-412/423): one field, and what it reveals
+//     is the live lookup's answer — an address with no account never gets a sign-in
+//     form to fail against, it gets the registration path;
 //   - the anonymous visitor reads the chat but the composer gates sending behind
 //     the same surface, opened as the auth-gate modal via the composer's Sign in button.
-// Recovery (HIL-365) has no reachable e2e leg yet — its surface entry renders a
-// placeholder — so it is left to the integration tests until the flow lands. The
+// Recovery's own e2e leg is HIL-426, which owns the new coverage of the reworked
+// flows; this file is the existing coverage brought onto the new surface. The
 // backend of each action is already covered by the Integration suite; this file
 // is the UI-driven, cross-surface flow. The register/login/logout helpers are
 // shared with the other specs that establish a session (helpers/session.ts).
@@ -128,7 +132,7 @@ test.fixme('signs in by OAuth provider redirect and callback (HIL-281)', async (
 
   // Redirect out to the provider (offline stub) and back through the callback; a
   // successful sign-in lands on the home path with the live session upgraded.
-  await page.getByTestId('auth-oauth-github').click()
+  await page.getByTestId('auth-icon-oauth-github').click()
   await expect(page).toHaveURL(/\/$/)
   await expect(page.getByTestId('message-input')).toBeEnabled()
   await expect(page.getByTestId('message-signin')).toHaveCount(0)
@@ -140,10 +144,12 @@ test.fixme('signs in by OAuth provider redirect and callback (HIL-281)', async (
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
 })
 
-test('names which of the three ways a sign-in failed', async ({ page }) => {
+test('answers a wrong password inline, and an unknown address with the registration path', async ({
+  page,
+}) => {
   const email = uniqueEmail()
 
-  // Seed a known account, then log out so the login path is exercised.
+  // Seed a known account, then log out so the sign-in path is exercised.
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await register(page, email)
@@ -153,18 +159,20 @@ test('names which of the three ways a sign-in failed', async ({ page }) => {
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
-  // Wrong password for a real email → says so, still gated.
+  // A known address reveals its password field and the wrong one is refused with
+  // the backend's own sentence, still gated.
   await login(page, email, 'a different password')
   await expect(page.getByTestId('auth-error')).toHaveText('Incorrect password')
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 
-  // Unknown email → a different sentence. The live lookup in front of this form
-  // already answers which addresses have accounts, so the login says which half
-  // of what was typed is wrong instead of leaving it to be guessed (HIL-414).
-  await login(page, uniqueEmail(), 'yet another password')
-  await expect(page.getByTestId('auth-error')).toHaveText(
-    'No account found for this email',
+  // An address with no account is never given a sign-in to fail: the lookup in
+  // FRONT of the form answers first, so the same screen becomes the registration
+  // (HIL-414) — which is why there is no "no account found" sentence any more.
+  await enterIdentifierAndPassword(page, uniqueEmail(), PASSWORD)
+  await expect(page.getByTestId('auth-heading')).toHaveText(
+    'Create your account',
   )
+  await expect(page.getByTestId('auth-error')).toHaveCount(0)
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 })
 
@@ -205,10 +213,10 @@ test('holds the address on submit and creates the account only on the mailed cod
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
-  // The submit reserves the address and mails one code — it registers nobody, so
-  // the page stays gated and the surface steps to the code screen.
+  // Accepting the terms reserves the address and mails one code — it registers
+  // nobody, so the page stays gated and the surface steps to the code screen.
   await submitRegistration(page, email)
-  await expect(page.getByTestId('auth-register-code')).toBeVisible()
+  await expect(page.getByTestId('auth-code')).toBeVisible()
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 
   const code = await readRegisterCode(email)
@@ -219,12 +227,18 @@ test('holds the address on submit and creates the account only on the mailed cod
   // account is left behind and nothing rolls back.
   await submitRegistrationCode(page, wrongCode)
   await expect(page.getByTestId('auth-error')).toBeVisible()
-  await expect(page.getByTestId('auth-register-code')).toBeVisible()
+  await expect(page.getByTestId('auth-code')).toBeVisible()
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 
-  // The delivered code creates the account and signs the session in, so the gate
-  // clears and the preserved profile subscription resumes in place.
+  // The delivered code creates the account and signs the session in — and the
+  // surface says so instead of vanishing (HIL-422). The gate holds the resume
+  // until that panel is acknowledged, which is why the profile is still gated
+  // here and comes through on Continue.
   await submitRegistrationCode(page, code)
+  await expect(page.getByTestId('auth-continue')).toBeVisible()
+  await expect(page.getByTestId('profile-name')).toHaveCount(0)
+
+  await continueFromDone(page)
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
 })
@@ -248,20 +262,26 @@ test('converges a second waiting tab onto the registration the first one confirm
   await gotoPage(second, '/')
   await expect(second.getByTestId('conn-state')).toHaveText('connected')
   await second.getByTestId('message-signin').click()
-  await expect(second.getByTestId('auth-register-code')).toBeVisible()
+  await expect(second.getByTestId('auth-code')).toBeVisible()
   await expect(second.getByTestId('auth-surface')).toContainText(email)
   expect(await mailsTo(email)).toHaveLength(1)
 
   // Tab A confirms. Tab B is not merely moved along: it really enters, resolving
-  // the self user of the account tab A just created.
+  // the self user of the account tab A just created. It gets no panel of its own,
+  // and that is the merged rule rather than a gap: the login rotates the session
+  // token and drops every socket but the initiator's (HIL-582), the sentence lives
+  // on the CONNECTION (HIL-422), and only the socket that trades the rotation
+  // ticket inherits one (HIL-423). Tab B comes back on the new token signed in and
+  // un-gated, which is exactly what it shows below.
   await submitRegistrationCode(page, await readRegisterCode(email))
+  await continueFromDone(page)
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await expect(second.getByTestId('self-user')).toHaveText(nameFromEmail(email))
   await expect(second.getByTestId('modal')).toBeHidden()
   await expect(second.getByTestId('message-input')).toBeEnabled()
 })
 
-test('answers a repeated submit of a held address with the code step and no second letter', async ({
+test('puts a held address back on its code step from the lookup alone', async ({
   page,
 }) => {
   const email = uniqueEmail()
@@ -271,16 +291,21 @@ test('answers a repeated submit of a held address with the code step and no seco
   await submitRegistration(page, email)
   await readRegisterCode(email)
 
-  // Back to the start and submit the same address again: the hold answers for it,
-  // so the person lands on the code step of the letter already sent.
-  await page.getByTestId('auth-to-login').click()
-  await submitRegistration(page, email)
-  await expect(page.getByTestId('auth-register-code')).toBeVisible()
+  // "Not that address?" drops what THIS SESSION remembers, but not the hold on the
+  // address itself — one session cannot free an address another is registering.
+  await page.getByTestId('auth-restart').click()
+  await expect(page.getByTestId('auth-identifier')).toBeVisible()
+
+  // So typing it again is answered by the hold: the lookup alone puts the person
+  // back on the code step of the letter already sent, with nothing submitted and
+  // no second letter mailed.
+  await typeInto(page.getByTestId('auth-identifier'), email)
+  await expect(page.getByTestId('auth-code')).toBeVisible()
   await expect(page.getByTestId('auth-error')).toHaveCount(0)
   expect(await mailsTo(email)).toHaveLength(1)
 })
 
-test('sends nothing for a resend pressed inside the cooldown', async ({
+test('offers a countdown instead of a resend while the cooldown holds', async ({
   page,
 }) => {
   const email = uniqueEmail()
@@ -290,13 +315,16 @@ test('sends nothing for a resend pressed inside the cooldown', async ({
   await submitRegistration(page, email)
   const code = await readRegisterCode(email)
 
-  await page.getByTestId('auth-resend').click()
+  // The gate is the backend's and it is armed by the send itself (HIL-421/486), so
+  // the screen cannot even offer a second letter yet: where the button would be,
+  // it counts down to when one becomes possible.
+  await expect(page.getByTestId('auth-resend-in')).toContainText(/\d+:\d{2}/)
+  await expect(page.getByTestId('auth-resend')).toHaveCount(0)
 
-  // The proof is the FIRST code still working: issuing a second one voids the one
-  // before it, so confirming with this one says no second code was minted — and
-  // since the confirm is answered after the resend on the same connection, the
-  // mailbox count is read once the resend has been decided.
+  // And the first code is still the live one — nothing was minted behind the
+  // countdown, so it still opens the account.
   await submitRegistrationCode(page, code)
+  await continueFromDone(page)
   await expect(page.getByTestId('profile-name')).toBeVisible()
   expect(await mailsTo(email)).toHaveLength(1)
 })
@@ -323,23 +351,26 @@ test('signs in with the code delivered over Telegram', async ({ page }) => {
   await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await page.getByTestId('message-signin').click()
-  await page.getByTestId('auth-to-sms').click()
-  await typeInto(page.getByTestId('auth-phone'), phone)
+  await typeInto(page.getByTestId('auth-identifier'), phone)
 
-  // Choosing the channel IS sending the code: there is no separate send button
-  // behind the icon.
-  await clickSubmit(page.getByTestId('auth-code-channel-telegram'))
+  // A number reveals its channels instead of a password: choosing one IS the send,
+  // and there is no separate send button behind the icon. For a number with no
+  // account the choice is only STORED — an account is never made by a click that
+  // never showed the terms — so the terms screen is what sends.
+  await clickSubmit(page.getByTestId('auth-channel-telegram'))
+  await page.getByTestId('auth-consent-accept').check()
+  await clickSubmit(page.getByTestId('auth-submit'))
 
   // The code screen opens on the agent's outcome signal, not on the click, and it
   // names the channel the code actually went over.
-  await expect(page.getByTestId('auth-sms-code')).toBeVisible()
-  await expect(page.getByTestId('auth-sms-sent-via')).toContainText('via Telegram')
-
-  await typeInto(
-    page.getByTestId('auth-sms-code'),
-    await waitForTelegramCode(phone),
+  await expect(page.getByTestId('auth-code')).toBeVisible()
+  await expect(page.getByTestId('auth-delivered-channel')).toContainText(
+    'Telegram',
   )
+
+  await typeInto(page.getByTestId('auth-code'), await waitForTelegramCode(phone))
   await clickSubmit(page.getByTestId('auth-submit'))
+  await continueFromDone(page)
 
   await expect(page.getByTestId('self-user')).toHaveText(phone)
 })
@@ -353,24 +384,32 @@ test('leaves a number that is not on Telegram free to sign in by SMS', async ({
   await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await page.getByTestId('message-signin').click()
-  await page.getByTestId('auth-to-sms').click()
-  await typeInto(page.getByTestId('auth-phone'), phone)
-  await clickSubmit(page.getByTestId('auth-code-channel-telegram'))
+  await typeInto(page.getByTestId('auth-identifier'), phone)
+  await clickSubmit(page.getByTestId('auth-channel-telegram'))
+  await page.getByTestId('auth-consent-accept').check()
+  await clickSubmit(page.getByTestId('auth-submit'))
 
-  // The refusal says so and dims the channel, and the code screen never opens:
-  // nothing was minted, so there is no code to enter.
+  // The refusal says so where the send was made from, and the code screen never
+  // opens: nothing was minted, so there is no code to enter.
   await expect(page.getByTestId('auth-error')).toBeVisible()
-  await expect(page.getByTestId('auth-code-channel-telegram')).toBeDisabled()
-  await expect(page.getByTestId('auth-sms-code')).toBeHidden()
+  await expect(page.getByTestId('auth-code')).toHaveCount(0)
+
+  // Back at the field the refused channel is dimmed — it is dimmed about this
+  // NUMBER, so it stays that way until the number is edited.
+  await page.getByTestId('auth-restart').click()
+  await expect(page.getByTestId('auth-channel-telegram')).toBeDisabled()
 
   // The whole point of probing before minting: SMS still has this number's first
   // code to give, because the refused channel spent no cooldown.
+  await clickSubmit(page.getByTestId('auth-channel-sms'))
+  await page.getByTestId('auth-consent-accept').check()
   await clickSubmit(page.getByTestId('auth-submit'))
-  await expect(page.getByTestId('auth-sms-code')).toBeVisible()
-  await expect(page.getByTestId('auth-sms-sent-via')).toContainText('via SMS')
+  await expect(page.getByTestId('auth-code')).toBeVisible()
+  await expect(page.getByTestId('auth-delivered-channel')).toContainText('SMS')
 
-  await typeInto(page.getByTestId('auth-sms-code'), await waitForSmsCode(phone))
+  await typeInto(page.getByTestId('auth-code'), await waitForSmsCode(phone))
   await clickSubmit(page.getByTestId('auth-submit'))
+  await continueFromDone(page)
 
   await expect(page.getByTestId('self-user')).toHaveText(phone)
 })
@@ -382,30 +421,33 @@ test('comes back to the phone code screen after a reload, and finishes there', a
 
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await page.getByTestId('auth-to-sms').click()
-  await typeInto(page.getByTestId('auth-phone'), phone)
+  await typeInto(page.getByTestId('auth-identifier'), phone)
+  await clickSubmit(page.getByTestId('auth-channel-sms'))
+  await page.getByTestId('auth-consent-accept').check()
   await clickSubmit(page.getByTestId('auth-submit'))
 
-  await expect(page.getByTestId('auth-sms-code')).toBeVisible()
+  await expect(page.getByTestId('auth-code')).toBeVisible()
   const code = await waitForSmsCode(phone)
 
   // The tab keeps nothing across a reload, so the step it comes back to is the one
   // the SERVER remembers: the code went out, so the session is still waiting on this
-  // number and is given its screen back rather than an empty phone field (HIL-486).
+  // number and is given its screen back rather than an empty identifier field
+  // (HIL-486).
   await page.reload()
   await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await expect(page.getByTestId('auth-sms-code')).toBeVisible()
-  await expect(page.getByTestId('auth-phone')).toHaveCount(0)
+  await expect(page.getByTestId('auth-code')).toBeVisible()
+  await expect(page.getByTestId('auth-identifier')).toHaveCount(0)
 
   // Down to the channel: which one carried the code is part of what is remembered,
   // because the screen has to name it and the click that chose it is gone.
-  await expect(page.getByTestId('auth-sms-sent-via')).toContainText('via SMS')
+  await expect(page.getByTestId('auth-delivered-channel')).toContainText('SMS')
   await expect(page.getByTestId('auth-expires-in')).toContainText(/\d+:\d{2}/)
 
   // And it is the same registration: the code texted before the reload is the one
   // this screen still accepts, and accepting it makes the account.
-  await typeInto(page.getByTestId('auth-sms-code'), code)
+  await typeInto(page.getByTestId('auth-code'), code)
   await clickSubmit(page.getByTestId('auth-submit'))
+  await continueFromDone(page)
   await expect(page.getByTestId('profile-name')).toBeVisible()
 })
 
@@ -416,7 +458,7 @@ test('counts the code down and comes back to it, still counting, after a reload'
 
   await gotoPage(page, '/profile')
   await submitRegistration(page, email)
-  await expect(page.getByTestId('auth-register-code')).toBeVisible()
+  await expect(page.getByTestId('auth-code')).toBeVisible()
 
   // The screen says how long the code it is asking for is still good for, and the
   // number moves on its own - a caption that never changed would satisfy every
@@ -432,7 +474,7 @@ test('counts the code down and comes back to it, still counting, after a reload'
   // Coming back to a FULL countdown would be the same defect as coming back to the
   // address field, so what is asserted is that it kept SHRINKING across the reload.
   await page.reload()
-  await expect(page.getByTestId('auth-register-code')).toBeVisible()
+  await expect(page.getByTestId('auth-code')).toBeVisible()
   await expect
     .poll(async () => remainingSeconds(countdown))
     .toBeLessThan(beforeReload)
@@ -440,6 +482,7 @@ test('counts the code down and comes back to it, still counting, after a reload'
   // And it is the same registration: the code mailed before the reload is the one
   // this screen still accepts.
   await submitRegistrationCode(page, await readRegisterCode(email))
+  await continueFromDone(page)
   await expect(page.getByTestId('profile-name')).toBeVisible()
 })
 

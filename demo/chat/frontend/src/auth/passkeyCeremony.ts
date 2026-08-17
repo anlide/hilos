@@ -20,7 +20,7 @@ import {
   createPasskey,
   getPasskey,
   isPasskeySupported,
-  type AuthSubmitOutcome,
+  type AuthFlowSubmitOutcome,
   type PasskeyCreationOptions,
   type PasskeyRequestOptions,
   type ProjectSignal,
@@ -146,15 +146,14 @@ function requestOptions(
  * window is for the methods that cannot be stopped (an OAuth popup already
  * redirected), not for this one.
  *
- * SCAFFOLD: nothing passes the signal yet — the Cancel that produces it is drawn
- * with the external-step waiting screen in HIL-423. The ceremony takes it now so
- * that view has only a button to add.
+ * The Cancel that produces the signal is the waiting screen's own button
+ * (HIL-423), which is where the machine parks a ceremony it started.
  *
  * @param abort Aborted when the user cancels the parked external step.
  */
 export async function runPasskeyDiscoverableLogin(
   abort?: AbortSignal,
-): Promise<AuthSubmitOutcome> {
+): Promise<AuthFlowSubmitOutcome> {
   if (!isPasskeySupported()) {
     return { ok: false, message: PASSKEY_UNSUPPORTED_MESSAGE }
   }
@@ -197,7 +196,7 @@ export async function runPasskeyDiscoverableLogin(
  * the profile (HIL-418) — the same thing a push subscription sends, and for the
  * same reason: a person recognizes their laptop, not a credential id.
  */
-export async function runPasskeyRegister(): Promise<AuthSubmitOutcome> {
+export async function runPasskeyRegister(): Promise<AuthFlowSubmitOutcome> {
   if (!isPasskeySupported()) {
     return { ok: false, message: PASSKEY_UNSUPPORTED_MESSAGE }
   }
