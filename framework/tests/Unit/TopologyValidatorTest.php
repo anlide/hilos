@@ -36,6 +36,7 @@ use Hilos\Database\Object\Objects;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\ProtectedMode\ProtectedModeStubConstants;
+use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -437,6 +438,43 @@ final class TopologyValidatorTest extends TestCase
         $this->expectExceptionMessage('PAGES[wrong_page] key must match');
 
         TopologyInitInvalidHilos::init();
+    }
+
+    /**
+     * A project that replaces the stub registry wholesale passes validation, and the registry the
+     * validator let through resolves to that project's words.
+     *
+     * The four cases after this one pin what the rule refuses; this one pins what it must let
+     * through, which {@see testValidTopologyPasses()} does not cover: that facade leaves
+     * PROTECTED_MODE_STUB alone, so the registry it validates green is the framework's own single
+     * entry, and a rule that refused every override would look just as green.
+     *
+     * Resolution is asserted next to validation because shape and words are separate questions:
+     * the rule only judges that the entries are well formed, while the case worth pinning is that
+     * an operation nobody registered falls back to the PROJECT's default and not to the
+     * framework's. Both steps take the registry through {@see HilosFacade::catalogConstantOf()},
+     * the seam the validator reads it with. What this test does NOT reach is
+     * {@see HilosFacade::protectedModeStubRegistry()}, the seam a live maintenance surface
+     * resolves through: that one answers off the mounted app class, and this fixture is a facade
+     * class the test never mounts.
+     */
+    public function testProtectedModeStubOverridePassesValidation(): void
+    {
+        TopologyProtectedModeStubOverrideHilos::validateTopology();
+
+        $registry = HilosFacade::catalogConstantOf(
+            TopologyProtectedModeStubOverrideHilos::class,
+            'PROTECTED_MODE_STUB',
+        );
+        $this->assertIsArray($registry);
+
+        $copy = ProtectedModeStubCopy::fromRegistry($registry, 'restore');
+        $this->assertSame('Restoring a backup', $copy->title);
+        $this->assertSame('The data is being restored.', $copy->message);
+
+        $copy = ProtectedModeStubCopy::fromRegistry($registry, 'reindex');
+        $this->assertSame('Project maintenance', $copy->title);
+        $this->assertSame('This project is briefly unavailable.', $copy->message);
     }
 
     public function testProtectedModeStubMissingDefaultEntryFails(): void
@@ -1854,6 +1892,37 @@ final class TopologyProtectedModeStubNumericKeyHilos extends HilosFacade
         7 => [
             ProtectedModeStubConstants::TITLE => 'Maintenance in progress',
             ProtectedModeStubConstants::MESSAGE => 'The application is briefly unavailable.',
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+/**
+ * Facade whose stub registry is replaced wholesale: the project's own default plus one operation.
+ *
+ * The words differ from the framework's default ({@see HilosFacade::PROTECTED_MODE_STUB}) on
+ * purpose - an override that never took effect would still resolve to sentences, and only
+ * different ones tell the two apart.
+ */
+final class TopologyProtectedModeStubOverrideHilos extends HilosFacade
+{
+    protected const array PROTECTED_MODE_STUB = [
+        ProtectedModeStubConstants::DEFAULT_OPERATION => [
+            ProtectedModeStubConstants::TITLE => 'Project maintenance',
+            ProtectedModeStubConstants::MESSAGE => 'This project is briefly unavailable.',
+        ],
+        'restore' => [
+            ProtectedModeStubConstants::TITLE => 'Restoring a backup',
+            ProtectedModeStubConstants::MESSAGE => 'The data is being restored.',
         ],
     ];
 
