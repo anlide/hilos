@@ -14,6 +14,7 @@ use Hilos\Tests\CodeStyle\Rule\MalformedInputMarkerRule;
 use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
+use Hilos\Tests\CodeStyle\Rule\RtStateMutationRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\SecretInQueryRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
@@ -239,6 +240,54 @@ final class RuleFixtureTest extends TestCase
                 'WIRE-KEY-CASE Bad/WireKeyCaseSamples.php:21 — field key \'default_kind\' is not camelCase; '
                     . 'one spelling has to serve PHP, the wire and TS '
                     . '(see docs/agents/code-style/cross-layer-field-names.md)',
+                'RT-STATE-MUTATE Runtime/State/Collection/StateMutateSubclass.php:25 — $this->states is written '
+                    . 'directly outside RtStates; go through add(), remove() or clear() '
+                    . '(see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/State/Collection/StateMutateSubclass.php:26 — $this->states is written '
+                    . 'directly outside RtStates; go through add(), remove() or clear() '
+                    . '(see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/State/Collection/StateMutateSubclass.php:27 — $this->states is written '
+                    . 'directly outside RtStates; go through add(), remove() or clear() '
+                    . '(see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:23 — add() mutates the backing '
+                    . 'RT state collection outside the base actions; call the base RtActions method instead '
+                    . '(see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:24 — remove() mutates the '
+                    . 'backing RT state collection outside the base actions; call the base RtActions method '
+                    . 'instead (see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:25 — clear() mutates the '
+                    . 'backing RT state collection outside the base actions; call the base RtActions method '
+                    . 'instead (see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:37 — add() mutates the backing '
+                    . 'RT state collection outside the base actions; call the base RtActions method instead '
+                    . '(see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:38 — unset() drops a key of '
+                    . 'the backing RT state collection outside the base actions; call the base RtActions method '
+                    . 'instead (see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:47 — add() mutates the backing '
+                    . 'RT state collection outside the base actions; call the base RtActions method instead '
+                    . '(see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:48 — remove() mutates the '
+                    . 'backing RT state collection outside the base actions; call the base RtActions method '
+                    . 'instead (see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:49 — clear() mutates the '
+                    . 'backing RT state collection outside the base actions; call the base RtActions method '
+                    . 'instead (see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:59 — add() mutates the backing '
+                    . 'RT state collection outside the base actions; call the base RtActions method instead '
+                    . '(see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:60 — remove() mutates the '
+                    . 'backing RT state collection outside the base actions; call the base RtActions method '
+                    . 'instead (see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:61 — clear() mutates the '
+                    . 'backing RT state collection outside the base actions; call the base RtActions method '
+                    . 'instead (see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:62 — a key of the backing RT '
+                    . 'state collection is written outside the base actions; call the base RtActions method '
+                    . 'instead (see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:63 — unset() drops a key of '
+                    . 'the backing RT state collection outside the base actions; call the base RtActions method '
+                    . 'instead (see docs/agents/runtime/rt-state.md)',
                 'EMPTY-STRING-SENTINEL WholeRoot/Playground/JudgedAnyway.php:22 — ?? \'\' turns a missing '
                     . 'value into an empty string; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',
@@ -315,6 +364,7 @@ final class RuleFixtureTest extends TestCase
             new CodeFqnRule($this->fixtureRoot()),
             new PhpDocFqnRule($this->fixtureRoot()),
             new RtStateReachRule(),
+            new RtStateMutationRule(),
             new ErrorSuppressionRule(),
             new RandomSourceRule(),
             new MalformedInputMarkerRule(),

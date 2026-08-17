@@ -176,6 +176,35 @@ state properties without falling back to `?RtState`. Never cast a nullable
 state key to string before deciding whether it is absent; `null` must not
 address the empty-string state key.
 
+Which rows a collection holds changes only through the base `RtActions` methods
+— `addStateToCollection()`, `removeStateFromCollection()`, `clearAllStates()`,
+and the item's `remove()`. They call `add()`, `remove()` or `clear()` on the
+backing collection, which announces the new membership itself, so the view cache
+and the outgoing RT sync both follow from one place. A caller that reaches past
+them — `getStateCollection()->remove($id)`, `unset($stateCollection[$id])`,
+`$stateCollection[$id] = $state` — writes the store and announces nothing, and
+every dependent view goes on showing the membership it already had.
+
+Four files change membership directly, and the list is closed:
+`Runtime/View/Actions/Collection/RtActions.php` and
+`Runtime/View/Actions/Item/RtActions.php` are the base methods themselves, while
+`Runtime/RtSyncApplicator.php` and `Runtime/RtSnapshot.php` apply a change this
+process did not decide — one that arrived from another worker, or from a
+snapshot handed over at startup — and announce nothing on purpose, because
+rebroadcasting it would send it back where it came from. The row array
+`$this->states` belongs to `RtStates` alone: a concrete collection narrows a
+lookup by reading it, and writing it is what `add()`, `remove()` and `clear()`
+are for.
+
+A detached copy is outside all of this. `HilosConnections::forUser()` builds one
+with `$stateCollection::init()` and fills it row by row, which is legal: the
+copy holds the same rows, is mounted under no collection name, and is therefore
+a read surface nobody subscribes to rather than a second write path into the
+same rows.
+
+Checked automatically: `RT-STATE-MUTATE`, see
+[automated-checks.md](../code-style/automated-checks.md).
+
 ## Reading from state
 
 Application code normally reads through the view item or collection:

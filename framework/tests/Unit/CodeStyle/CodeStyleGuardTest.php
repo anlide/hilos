@@ -16,6 +16,7 @@ use Hilos\Tests\CodeStyle\Rule\MalformedInputMarkerRule;
 use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
+use Hilos\Tests\CodeStyle\Rule\RtStateMutationRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\SecretInQueryRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
@@ -198,6 +199,7 @@ final class CodeStyleGuardTest extends TestCase
             new CodeFqnRule($this->repositoryRoot() . '/' . $root),
             new PhpDocFqnRule($this->repositoryRoot() . '/' . $root),
             new RtStateReachRule(),
+            new RtStateMutationRule(),
             new ErrorSuppressionRule(),
             new RandomSourceRule(),
             new MalformedInputMarkerRule(),

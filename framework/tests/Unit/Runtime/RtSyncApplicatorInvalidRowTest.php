@@ -105,7 +105,7 @@ final class RtSyncApplicatorInvalidRowTest extends TestCase
     public function testADiffRefusedAtItsOnlyFieldLeavesTheRowAsItWas(): void
     {
         $collection = $this->arrangeCollection();
-        $collection->add(InvalidRowTestState::create('7', 'Ada'));
+        $this->arrangeRow('7', 'Ada');
 
         ob_start();
         RtSyncApplicator::applyUpdated(new RtSyncUpdatedSignalData(
@@ -132,7 +132,7 @@ final class RtSyncApplicatorInvalidRowTest extends TestCase
         // it was, so the next local sync() re-sends the field rather than letting
         // a half-applied diff pass for agreed state.
         $collection = $this->arrangeCollection();
-        $collection->add(InvalidRowTestState::create('7', 'Ada'));
+        $this->arrangeRow('7', 'Ada');
 
         ob_start();
         RtSyncApplicator::applyUpdated(new RtSyncUpdatedSignalData(
@@ -156,7 +156,7 @@ final class RtSyncApplicatorInvalidRowTest extends TestCase
     public function testADiffThatOmitsAFieldStillMeansTheFieldDidNotChange(): void
     {
         $collection = $this->arrangeCollection();
-        $collection->add(InvalidRowTestState::create('7', 'Ada'));
+        $this->arrangeRow('7', 'Ada');
 
         RtSyncApplicator::applyUpdated(new RtSyncUpdatedSignalData(
             InvalidRowTestRtContext::ROWS,
@@ -185,6 +185,28 @@ final class RtSyncApplicatorInvalidRowTest extends TestCase
         $this->assertInstanceOf(RtStates::class, $collection);
 
         return $collection;
+    }
+
+    /**
+     * Seeds the row a diff case starts from, along the road such a row really arrives
+     * by: a well-formed create, which {@see self::testAWellFormedRowIsStillApplied()}
+     * pins as arriving whole. Putting it into the store by hand would arrange a row no
+     * process ever produces — one whose membership was never announced.
+     *
+     * @param string $id Row key to seed
+     * @param string $name Name the seeded row carries
+     */
+    private function arrangeRow(string $id, string $name): void
+    {
+        RtSyncApplicator::applyCreated(new RtSyncCreatedSignalData(
+            InvalidRowTestRtContext::ROWS,
+            $id,
+            [
+                InvalidRowTestState::id => $id,
+                InvalidRowTestState::name => $name,
+                InvalidRowTestState::seenAt => 0,
+            ],
+        ));
     }
 }
 
@@ -224,21 +246,6 @@ final class InvalidRowTestState extends RtState
     public string $name = '';
 
     public int $seenAt = 0;
-
-    /**
-     * @param string $id Row key
-     * @param string $name Row label
-     * @return static Fresh row
-     */
-    public static function create(string $id, string $name): static
-    {
-        $instance = new static();
-        $instance->id = $id;
-        $instance->name = $name;
-        $instance->markRtSyncBaseline();
-
-        return $instance;
-    }
 
     /**
      * @param array<string, mixed> $row Serialized runtime row

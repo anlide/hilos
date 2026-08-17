@@ -11,6 +11,7 @@ rule.
 | `CODE-FQN` | Executable code names a class by its imported short name, and a short name written there resolves to a class. Two halves under one id: a `T_NAME_FULLY_QUALIFIED` token anywhere in code, and a short name that resolves nowhere — judged in the positions where a miss is silent or distant: `catch`, `new`, `instanceof`, `extends`, `implements`, a static access, and a parameter, property or return type. A name resolves when it is imported, declared in this file, declared by a neighbour of the same directory, or known to the autoloader under this file's namespace. A backslash inside a string or a comment is out of scope by construction: neither tokenizes as a name. | [qualified-names.md](qualified-names.md) |
 | `PHPDOC-FQN` | A docblock names a class by an imported short name. Three classes of message under one id: a leading-backslash fully qualified name, a name partially qualified against the current namespace, and a short name that is neither imported nor declared in this namespace. The first covers the type position of `@throws`, `@param`, `@return`, `@var`, `@property`, `@property-read`, `@method`, `@extends`, `@implements` (generic arguments and array shapes included, read whole), and the `{@see ...}` / `{@link ...}` cross-references; the other two are read in the cross-references only, where a head is unambiguously a symbol rather than a type expression. A file's own constants and enum cases, a neighbour of its namespace, and a constant of the global namespace resolve without an import. | [phpdoc.md](phpdoc.md) rules 9 and 12 |
 | `RT-STATE-REACH` | `getStateCollection()`, `getStateItem()`, and `$this->stateCollection` are used only in files under `Database/` or `Runtime/`, whatever the caller's role. | [rt-state.md](../runtime/rt-state.md) |
+| `RT-STATE-MUTATE` | Which rows a backing RT state collection holds is changed only through the base actions. Five spellings are read on a recognized receiver — `add()`, `remove()`, `clear()`, `unset($collection[$id])` and `$collection[$id] = $state`, the last two because the store routes them into `add()` and `remove()` — and they are legal only in the four files the rule lists: the two base `RtActions`, the sync applicator and the snapshot. The store's own row array is the second road to the same place, so `$this->states` is written only by `RtStates`, and reading it is not judged. A receiver is recognized as `getStateCollection()` called on anything, `$this->stateCollection`, `$this->_stateCollection`, or a variable one of those is assigned to directly. No baseline and no in-comment marker: a fifth legal writer is a line in the rule, with its reason. Every root. | [rt-state.md](../runtime/rt-state.md) |
 | `ERROR-SUPPRESSION` | `@` silences a warning only under a `// warning-suppressed: <reason>` marker on the line directly above the call. Production roots only. | [error-suppression.md](error-suppression.md) |
 | `RANDOM-SOURCE` | A secret is drawn from `RandomHelper::secureBytes()` / `secureHex()`, which throw when the entropy source refuses. The tolerant `bytes()`, `hex()` and `integer()`, which fall back to `mt_rand()`, are callable only from a file the rule itself lists — an inventory of every caller, not a guess at which zones hold secrets. Production roots only. | [random-source.md](random-source.md) |
 | `MAGIC-REPEAT` | The same number is written twice or more in one file. Numbers inside a `const` declaration, inside the value of a keyed array entry — which is what takes a data catalog out of the rule, entry by entry — and the structural `0`, `1`, `2` are not counted. Production roots only. | [magic-values.md](magic-values.md) |
@@ -23,6 +24,26 @@ rule.
 | `DOC-ROUTE` | Every file of this catalog, at any depth, is mentioned by at least one `skills/*/SKILL.md`, or declines a route in itself and says why. A file that is both routed and declining is reported the same way. | [rule-authoring.md](../rule-authoring.md) |
 | `DOC-LINK` | A local reference in the agent docs names something that exists. In a skill wrapper both a markdown link and a backticked path count as one; in a document only a markdown link does. | [rule-authoring.md](../rule-authoring.md) |
 | `SECRET-IN-QUERY` | A query parameter is read only under a name the rule lists. It reads the by-key readers of `RequestQueryParams` — `getString()`, `requireString()`, `requireStringMatching()`, `has()` — and matches the text of the argument as written at the call site, because a token walk cannot resolve another class's constant. Two names are listed today, each with its reason; `toArray()` is out of scope. Every root. | [secret-in-query.md](../antipatterns/secret-in-query.md) |
+
+`RT-STATE-MUTATE` recognizes its receiver lexically, and three narrownesses
+follow from that. A collection that reaches the code some other way — as a method
+parameter, or out of a getter named something else — is invisible to the rule,
+and the aliases it does read are collected over the whole file rather than per
+scope, because `RtSnapshot` mutates its alias from inside a closure declared
+below the assignment; a file where one variable name means the collection in one
+method and something else in another is therefore judged by the name. The
+allowed places are paths relative to the scanned root, so a demo that gave itself
+a `Runtime/View/Actions/Collection/RtActions.php` would earn the same permission
+the framework's base actions have — no demo carries such a file today. And the
+rule judges membership only: writing a field of a row that is already in the
+collection is legal and is not read at all.
+
+The second road is recognized by the property name alone, which is where the rule
+reaches past its document: a class that is no state collection but keeps a
+`$this->states` of its own — a list of anything — is reported with the same
+sentence about `RtStates`. No such site exists in the scanned roots today, and
+the way out of a hit is either to rename that property, which the same convention
+asks for anyway, or to argue with the document.
 
 `MAGIC-REPEAT` is deliberately narrower than the document it enforces, and its
 green run must not be read as "the magic-value rule is satisfied". It counts
