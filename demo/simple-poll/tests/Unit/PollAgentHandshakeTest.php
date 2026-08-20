@@ -17,8 +17,9 @@ use PHPUnit\Framework\TestCase;
  * Unit tests for PollAgent handshake session token validation.
  *
  * The daemon resolves the token on the 101 and carries it on the DTO; the
- * worker rejects an empty or malformed token before any database access. The
- * durable find-or-register happy path is covered by the integration suite and e2e.
+ * worker rejects an empty or malformed token before any database access. What a
+ * valid token goes on to do - name the guest behind an anonymous session, or clear
+ * the name of one that gained an account - is covered by the integration suite and e2e.
  */
 final class PollAgentHandshakeTest extends TestCase
 {

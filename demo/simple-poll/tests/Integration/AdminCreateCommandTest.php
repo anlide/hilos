@@ -47,15 +47,20 @@ final class AdminCreateCommandTest extends IntegrationTestCase
     /**
      * A session that already carries a user has that user flagged, and nothing is minted.
      *
-     * This is today's visitor: the handshake registers everyone, so the operator pointing at
-     * his own browser must not end up with a second account he never asked for.
+     * The operator pointing the command at a browser that is already signed in must not end
+     * up with a second account he never asked for. Since HIL-611 a visitor's browser is not
+     * that case - it carries no user at all - but an account's browser still is, and so is
+     * the second run of the command on the same one.
      *
      * @throws HilosException On database failure
      */
     public function testASessionCarryingAUserHasThatUserFlagged(): void
     {
         $sessionToken = RandomHelper::hex(16);
-        $visitor = Hilos::$db->users->actions->registerGuest();
+        $visitor = Hilos::$db->users->actions->registerAdmin();
+        // Flagging is what is under test, so the row has to start without the flag; the
+        // only mint this demo has sets it (HIL-609).
+        $visitor->actions->setAdmin(false);
         Hilos::$db->sessions->actions->createAnonymous($sessionToken);
         Hilos::$db->sessions->findByToken($sessionToken)?->actions->bindUser((int)$visitor->id);
         $usersBefore = count(Hilos::$db->users->listAll());
@@ -72,9 +77,9 @@ final class AdminCreateCommandTest extends IntegrationTestCase
     /**
      * A session with no user leaves with a minted administrator bound to it.
      *
-     * Unreachable from a browser in this demo until the visitor moves behind the session
-     * (HIL-610/611), and the whole reason the command exists: on a fresh installation there
-     * is no row to flag and no login to make one.
+     * The ordinary case since HIL-611 - a visitor's browser carries no user - and the whole
+     * reason the command exists: on a fresh installation there is no row to flag and no
+     * login to make one.
      *
      * @throws HilosException On database failure
      */

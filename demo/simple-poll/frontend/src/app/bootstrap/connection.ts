@@ -13,4 +13,10 @@
 // the returned handle's resolved `done`.
 import { createHilosConnection } from '@hilos/core'
 
-export const { connection, actions } = createHilosConnection()
+import { GUEST_SIGNAL_SCHEMAS } from './guest'
+
+export const { connection, actions } = createHilosConnection({
+  // The one inbound signal this project mounts: the display name of a session
+  // that carries no account (HIL-611).
+  projectSchemas: { ...GUEST_SIGNAL_SCHEMAS },
+})

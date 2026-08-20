@@ -19,9 +19,9 @@ import { gotoPage } from '../helpers/page'
 //
 // Every wait is a web-first assertion on the id the emit replied with, so the
 // suite never sleeps and never guesses which row it is looking at. Each test runs
-// in its own browser context, whose session cookie the handshake maps to its own
-// durable user row, so a notification belongs to one recipient and the tests stay
-// isolated on the shared database.
+// in its own browser context, and each context is given an account of its own
+// (openJoined below), so a notification belongs to one recipient and the tests
+// stay isolated on the shared database.
 //
 // This demo activates NOTIFICATIONS without NOTIFICATION_DELIVERY, so the
 // coverage stops at the center and the toast: the channel and delivery halves
@@ -39,15 +39,19 @@ import { gotoPage } from '../helpers/page'
  * subscribe — which makes the page reporting `ready` proof that the daemon has
  * already processed the join.
  *
+ * A recipient has to be an ACCOUNT: a notification is addressed to a user id, and
+ * since HIL-611 a visitor has none. So the browser is granted one over the command
+ * channel, and the id comes from that reply rather than off the page - the id
+ * marker is empty for a guest, and this page stops being one only because of the
+ * grant. The grant also re-sends the handshake response, which is what makes the
+ * client join its group: the helper waits for the gear that same response draws.
+ *
  * @param page Page that has not opened the app yet.
- * @returns The visitor's durable user id.
+ * @returns The recipient's durable user id.
  */
 async function openJoined(page: Page): Promise<number> {
-  await gotoPage(page, '/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  const userId = await grantAdminToSelf(page)
   await expect(page.getByTestId('self-user')).not.toBeEmpty()
-  const userId = Number(await page.getByTestId('self-user-id').textContent())
-  expect(userId).toBeGreaterThan(0)
 
   return userId
 }
@@ -222,13 +226,13 @@ test('saving a setting raises a toast the close button dismisses', async ({
 // command channel, which proves the center but not that anything in this demo
 // ever raises a notification. There is no domain content here yet, so the first
 // event that does is an account-level one - an administrator renaming somebody -
-// and it needs two visitors, which in this demo means two browser contexts.
+// and it needs two accounts, which in this demo means two browser contexts.
 
 /**
  * Open a second visitor in a context of its own.
  *
- * Identity here is the session cookie the handshake maps to a user row, so two
- * pages of one context are one person. A context made off the browser fixture
+ * Identity here is the session cookie, so two pages of one context are one
+ * browser and one account. A context made off the browser fixture
  * inherits none of the project's `use` options - including the tolerance for the
  * self-signed certificate the test nginx serves - so they are passed on by hand.
  *
@@ -259,7 +263,7 @@ test('an administrator renaming somebody reaches the renamed visitor', async ({
   page,
   browser,
 }) => {
-  // This browser is the visitor about to be renamed; its socket joins the
+  // This browser is the account about to be renamed; its socket joins the
   // notification group first, so the row arrives over the live signal.
   const userId = await openJoined(page)
 

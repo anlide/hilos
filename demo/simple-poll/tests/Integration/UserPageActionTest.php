@@ -49,7 +49,7 @@ final class UserPageActionTest extends IntegrationTestCase
      */
     public function testUpdateActionRenamesUser(): void
     {
-        $user = Hilos::$db->users->actions->registerGuest();
+        $user = Hilos::$db->users->actions->registerAdmin();
         $userId = (int) $user->id;
         $originalName = (string) $user->name;
 

@@ -5,12 +5,11 @@ declare(strict_types=1);
 namespace Demo\SimplePoll\Agents;
 
 use Demo\SimplePoll\Constants\AgentType;
-use Demo\SimplePoll\Constants\PollNotificationType;
 use Demo\SimplePoll\Constants\PollSignalConstants;
+use Demo\SimplePoll\Core\Router\DTO\GuestIdentitySignalData;
 use Demo\SimplePoll\Database\PollDbContext;
 use Demo\SimplePoll\Hilos;
 use Demo\SimplePoll\Runtime\View\Context\PollRtContext;
-use Hilos\Auth\Session\Exception\SessionTokenExhaustedException;
 use Hilos\Auth\Session\HilosSessionHost;
 use Hilos\Auth\Session\SessionToken;
 use Hilos\Constants\CliCommands;
@@ -21,14 +20,11 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
-use Hilos\Notification\NotificationDraft;
-use Hilos\Notification\NotificationSeverity;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
-use Random\RandomException;
 
 /**
  * Monopolistic poll worker that owns the main page subscription and the
@@ -36,10 +32,10 @@ use Random\RandomException;
  *
  * Session identity is the framework's since HIL-408: the cookie resolves to a
  * `hilos_session` row through {@see HilosSessionHost}, and the socket is tracked
- * as a runtime connection of that session for presence. This demo carries NO
- * anonymous sessions — the framework keeps them as a capability for an end
- * project, but a session that reaches this agent without a user gets one
- * registered and bound on the spot, which is the whole of that decision in code.
+ * as a runtime connection of that session for presence. This demo DOES carry
+ * anonymous sessions (HIL-611): a `user` row means an account, minted only by
+ * {@see CliCommands::ADMIN_CREATE}, and a visitor without one is remembered by
+ * name alone in this demo's own `guest` table.
  */
 final class PollAgent extends AbstractAgent
 {
@@ -66,36 +62,29 @@ final class PollAgent extends AbstractAgent
     }
 
     /**
-     * Resolves the session token cookie to its session row, makes sure that
-     * session carries a user, tracks the socket as a runtime connection of the
-     * session, and replies with the current-user entity fragment in the
-     * session-scope payload form.
+     * Resolves the session token cookie to its session row, tracks the socket as a
+     * runtime connection of that session, names the visitor behind it, and replies
+     * with the current-user entity fragment in the session-scope payload form.
      *
-     * A session that arrives anonymous — a new cookie, or one whose authenticated
-     * session outlived its expiry and was downgraded by
-     * {@see HilosSessionHost::resolveHandshakeSession()} — has a guest registered
-     * for it and bound through {@see HilosSessionHost::authenticateSession()}. That
-     * is the demo's one project-side step, and the reason the anonymous state never
-     * reaches an RT row or the wire: it exists only between those two calls.
+     * The connection is registered with whatever user the session carries, `null`
+     * included (HIL-611). An anonymous session is the normal state of this demo,
+     * not a moment to be closed: nothing here mints a user, because the only thing
+     * a `user` row means now is an account, and the only way to one is
+     * {@see CliCommands::ADMIN_CREATE}.
      *
-     * The bind passes no initiating connection, so no token rotation happens. That
-     * is right rather than convenient: rotation defends a LOGIN against a cookie
-     * someone planted, and this demo has no login to defend.
-     *
-     * The connection is registered AFTER the bind, so the row is born carrying the
-     * real user and presence never flickers through an anonymous frame.
-     *
-     * Passing no initiator also settles what this handler can raise: minting is
-     * reached only through the rotation, so the token-mint failures the bind seam
-     * declares ({@see RandomException}, {@see SessionTokenExhaustedException})
-     * cannot arise here.
+     * What an anonymous session gets instead is a name of its own, found or minted
+     * in the `guest` table and sent BEFORE the handshake response, so the identity
+     * line on the page is never drawn empty. A session that does carry an account
+     * has its guest row dropped on the way past: that is how the row minted before
+     * an operator claimed this browser goes, and doing it here rather than inside
+     * the command keeps the cleanup on the path that is certain to run.
      *
      * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
      * @throws InvalidFormatException When the session token is not a 32-character lowercase hex string
      * @throws DuplicateValueException When a concurrent create already claimed a new token
-     * @throws HilosException On database or runtime failure while resolving the session or registering the connection
+     * @throws HilosException On database or runtime failure while resolving the session, naming the guest or registering the connection
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
@@ -107,16 +96,20 @@ final class PollAgent extends AbstractAgent
         SessionToken::ensureValid($sessionToken);
 
         $session = $this->resolveHandshakeSession($sessionToken);
-
         $userId = $session->userId;
-        if ($userId === null) {
-            $user = Hilos::$db->users->actions->registerGuest();
-            $userId = (int)$user->id;
-            $this->notifyAdminsOfNewUser($userId, $user->name);
-            $this->authenticateSession($sessionToken, $userId, null);
-        }
 
         Hilos::$rt->connections->actions->register($data->acceptKey, $userId, $sessionToken);
+
+        if ($userId === null) {
+            $guest = Hilos::$db->guests->actions->ensureForSession($sessionToken);
+            $this->sendToUser(
+                PollSignalConstants::GUEST_IDENTITY,
+                $data->acceptKey,
+                new GuestIdentitySignalData($guest->name),
+            );
+        } else {
+            Hilos::$db->guests->actions->deleteForSession($sessionToken);
+        }
 
         $this->sendToUser(
             PollSignalConstants::HANDSHAKE_RESPONSE,
@@ -131,11 +124,10 @@ final class PollAgent extends AbstractAgent
      * user table.
      *
      * The impersonator slots stay null: this demo has no impersonation, so the
-     * only identity a session can carry is its own. A session or user that is
-     * missing yields the anonymous response, which clears the frontend current
-     * user. In practice the handshake never sends one — every session that
-     * reaches the wire here has been bound to a user — but a hook that answered
-     * anything else for a missing row would be inventing an identity.
+     * only identity a session can carry is its own. A session with no user - the
+     * ordinary state of a visitor since HIL-611 - yields the anonymous response,
+     * which leaves the frontend without a current user; the guest name it shows
+     * instead travels on its own signal and is not an identity.
      *
      * @param ?Session $session Session to describe, or null for an anonymous response
      * @return HandshakeResponseSignalData Handshake response for the session
@@ -276,38 +268,4 @@ final class PollAgent extends AbstractAgent
         Hilos::$rt->connections->actions->clear();
     }
 
-    /**
-     * Tells every administrator that a new account appeared.
-     *
-     * This demo registers a user per new guest session, so the visitor stream is the
-     * notification stream - accepted as the price of showing the line alive. Nobody
-     * holds the admin flag: nothing is sent, and that is not an error. The emit is
-     * best-effort - the visitor is registered and served whatever happens to it.
-     *
-     * @param int $userId Newly registered user id
-     * @param string $userName Display name the registration assigned
-     */
-    private function notifyAdminsOfNewUser(int $userId, string $userName): void
-    {
-        try {
-            foreach (Hilos::$db->users->listAll() as $admin) {
-                if ($admin->id === null || $admin->id === $userId || !$admin->admin || $admin->block) {
-                    continue;
-                }
-
-                Hilos::$notify?->emit(new NotificationDraft(
-                    userId: $admin->id,
-                    type: PollNotificationType::USER_REGISTERED,
-                    title: 'New user joined: ' . $userName,
-                    severity: NotificationSeverity::INFO,
-                    data: [
-                        'userId' => $userId,
-                        'userName' => $userName,
-                    ],
-                ));
-            }
-        } catch (HilosException $e) {
-            $this->logAgentError("New-user notification failed for userId={$userId}: {$e->getMessage()}");
-        }
-    }
 }

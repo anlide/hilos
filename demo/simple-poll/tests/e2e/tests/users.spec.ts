@@ -3,9 +3,9 @@ import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant'
 import { gotoPage, PAGE_REFUSED } from '../helpers/page'
 
 // Hilos users admin e2e: /hilos/users renders the framework users table over the
-// live socket, the client's own self-registered row is present, search filters
-// the client viewport, a row links to the user detail page, and a modal rename
-// round-trips through the backend and re-renders with no document reload.
+// live socket, the client's own granted row is present, search filters the client
+// viewport, a row links to the user detail page, and a modal rename round-trips
+// through the backend and re-renders with no document reload.
 
 /** Open the users admin and wait for the live table's first row. */
 async function openUsers(page: Page): Promise<void> {
@@ -20,10 +20,10 @@ async function openUsers(page: Page): Promise<void> {
 test('refuses the users admin to a visitor without the grant', async ({
   page,
 }) => {
-  // The visitor here is not anonymous — the handshake maps the session cookie to
-  // a durable user row — it is a known user holding no grant. The access gate
-  // refuses the subscription outright rather than rendering an empty table, and
-  // the shell offers no way in: no gear to click.
+  // The visitor here is anonymous — since HIL-611 the handshake leaves the session
+  // without a user at all — and so holds no grant either. The access gate refuses
+  // the subscription outright rather than rendering an empty table, and the shell
+  // offers no way in: no gear to click.
   await gotoPage(page, '/hilos/users', PAGE_REFUSED)
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('nav-admin')).toHaveCount(0)
@@ -105,15 +105,15 @@ test('renames a user from the detail page and re-renders live', async ({
 test.fixme('shows the connected user as online with a live session', async ({
   page,
 }) => {
-  await gotoPage(page, '/hilos/users')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+  // Give this browser an account and take its id from the grant reply (HIL-611:
+  // a visitor has no user row, and the page publishes no id for one), then open
+  // its detail directly. Robust against how many users the shared DB has
+  // accumulated: the self row need not be on the first viewport page of
+  // /hilos/users (which shows only the first 10 by ascending id).
+  const userId = await grantAdminToSelf(page)
 
-  // The connected client self-registers as the newest user (highest id), so its
-  // own row sorts last under the id-ascending default; open that detail.
-  const selfOpen = page.locator('[data-id^="hilos-users-open-"]').last()
-  await expect(selfOpen).toBeVisible()
-  await selfOpen.click()
+  await gotoPage(page, `/hilos/user/${userId}`)
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
 
   // Regression: a connected user must render online with at least one live

@@ -43,7 +43,6 @@ THROWS-PROPAGATION demo/chat/backend/Tables/ModeratorPiece/DTO/ModeratorPieceDel
 THROWS-PROPAGATION demo/chat/backend/Tables/ModeratorPiece/DTO/ModeratorPieceUpdateActionDTO.php 3 # HIL-449
 THROWS-PROPAGATION demo/cluster/backend/Agents/WorkerAgent.php 1 # HIL-449
 THROWS-PROPAGATION demo/cluster/backend/Core/Daemon/ClusterDaemonManager.php 1 # HIL-449
-THROWS-PROPAGATION demo/simple-poll/backend/Agents/PollAgent.php 1 # HIL-449
 THROWS-PROPAGATION demo/simple-poll/backend/Database/View/Item/UserRename.php 2 # HIL-449
 THROWS-PROPAGATION demo/simple-poll/backend/Pages/Hilos/Users/UserPage.php 2 # HIL-449
 THROWS-PROPAGATION demo/simple-poll/backend/Runtime/State/Collection/Connections.php 2 # HIL-449
