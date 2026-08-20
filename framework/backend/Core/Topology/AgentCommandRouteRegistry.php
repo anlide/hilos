@@ -86,4 +86,38 @@ final class AgentCommandRouteRegistry
 
         return $dtoRoutes;
     }
+
+    /**
+     * Returns the agent-owned commands declared test-only.
+     *
+     * Only the config-array shape can carry the flag, so the two shorter shapes (a bare
+     * command name, a command mapped straight to its DTO class) declare a command that is
+     * not test-only. That is the intended default: a command becomes reachable on a
+     * production node unless it says otherwise, and saying otherwise is one line.
+     *
+     * @param array $agents Agent registry
+     * @return list<string> Command names flagged test-only, in declaration order
+     */
+    public static function testOnlyCommands(array $agents): array
+    {
+        $testOnlyCommands = [];
+        foreach ($agents as $agentType => $registryEntry) {
+            $agentClass = AgentRegistry::workerClass($registryEntry);
+            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
+                continue;
+            }
+
+            foreach ($agentClass::AGENT_COMMANDS as $key => $value) {
+                if (!is_string($key) || $key === '' || !is_array($value)) {
+                    continue;
+                }
+
+                if (($value[AgentCommandConfigKey::TEST_ONLY] ?? false) === true) {
+                    $testOnlyCommands[] = $key;
+                }
+            }
+        }
+
+        return $testOnlyCommands;
+    }
 }

@@ -8,6 +8,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 
@@ -93,6 +94,7 @@ HELP;
      * @param array<string, mixed> $options Parsed options: --accept-key
      * @param list<string> $args Positional args: [0] operation name
      * @return int Exit code (0 on success)
+     * @throws CommandException When the command name is not registered as test-only
      */
     protected function run(array $options, array $args): int
     {

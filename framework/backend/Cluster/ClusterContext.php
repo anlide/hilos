@@ -632,7 +632,7 @@ final class ClusterContext
 
     /**
      * Builds the rich, machine-readable cluster snapshot answered by the
-     * `cluster:test:inspect` command (HIL-325).
+     * `test:cluster:inspect` command (HIL-325).
      *
      * Reports this daemon's own view — membership, the local node's consensus
      * verdicts (leader / term / role / quorum) and lifecycle phase, and the

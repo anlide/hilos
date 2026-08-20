@@ -6,6 +6,7 @@ namespace Hilos;
 
 use Hilos\Auth\CodeChannel\CodeChannelRegistry;
 use Hilos\Cluster\ClusterContext;
+use Hilos\Constants\CommandConstants;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Catalog\CatalogProviderInterface;
@@ -55,6 +56,7 @@ use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use Hilos\Users\AdminAudience;
 
 /**
@@ -236,6 +238,8 @@ abstract class Hilos
      * binding to the project subclass, so `static::` there reads base constants
      * instead of the project override. Accessors that must resolve
      * project-overridden topology constants read {@see appClass()} instead.
+     *
+     * Captured by {@see initEnv()}, which every process spine runs before anything else.
      *
      * @var class-string<Hilos> Concrete project facade class, or the base when uninitialized
      */
@@ -617,6 +621,21 @@ abstract class Hilos
     }
 
     /**
+     * Returns the agent-owned commands this project declares test-only.
+     *
+     * Half of what {@see TestOnlyCommandRegistry} asks; the master's own three come from
+     * {@see CommandConstants::MASTER_TEST_ONLY_COMMANDS}. Like its neighbours it answers off
+     * `static::AGENTS`, so a bare `Hilos::` call-site reads the base facade's empty registry -
+     * framework callers resolve the project subclass through {@see appClass()} first.
+     *
+     * @return list<string> Command names flagged test-only by a registered agent
+     */
+    public static function getTestOnlyCommands(): array
+    {
+        return AgentCommandRouteRegistry::testOnlyCommands(static::AGENTS);
+    }
+
+    /**
      * Returns page-owned non-action signal routes declared by registered page classes.
      *
      * Empty signal name lists declare a type-wide route; non-empty lists declare
@@ -941,6 +960,14 @@ abstract class Hilos
      */
     public static function initEnv(?string $rootPath = null, bool $copyExample = true): void
     {
+        // The earliest point every process spine passes through while still naming the project
+        // facade, and therefore where {@see appClass()} has to be captured. Capturing it in
+        // init() alone was too late for the processes that never call it: the master daemon
+        // reaches it only through the project's Database::initialize(), and a CLI command
+        // marked DatabaseFreeCommand skips that connect entirely - so framework code asking a
+        // bare `Hilos::` question there read the base facade's empty registries.
+        static::$appClass = static::class;
+
         if (static::$env === null) {
             static::$env = static::createEnv();
         }

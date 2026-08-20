@@ -35,8 +35,12 @@ final class BackupVerifyCommandTest extends TestCase
 
     private string $root = '';
 
+    /** @var string|false APP_ENV the suite runs under, put back so this file does not decide what the next one reads */
+    private string|false $previousAppEnv = false;
+
     protected function setUp(): void
     {
+        $this->previousAppEnv = getenv('APP_ENV');
         parent::setUp();
         $this->previousEnv = Hilos::$env;
         Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
@@ -60,7 +64,7 @@ final class BackupVerifyCommandTest extends TestCase
         }
 
         Hilos::$env = $this->previousEnv;
-        putenv('APP_ENV');
+        $this->previousAppEnv === false ? putenv('APP_ENV') : putenv('APP_ENV=' . $this->previousAppEnv);
         putenv('BACKUP_DIR');
         parent::tearDown();
     }

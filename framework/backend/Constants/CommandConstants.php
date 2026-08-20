@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Constants;
 
+use Hilos\Core\Agent\Config\AgentCommandConfigKey;
+use Hilos\Socket\Command\TestOnlyCommandRegistry;
+
 /**
  * CommandConstants - CLI command-channel protocol constants.
  *
@@ -52,10 +55,40 @@ final class CommandConstants
     public const string COMMAND_CLUSTER_RELOAD = 'cluster:reload';
 
     /** @var string Test-only command: the daemon answers synchronously with a rich cluster/consensus/placement snapshot */
-    public const string COMMAND_CLUSTER_INSPECT = 'cluster:test:inspect';
+    public const string COMMAND_CLUSTER_INSPECT = 'test:cluster:inspect';
 
     /** @var string Test-only command: the master force-closes the live WebSocket connection with the given acceptKey */
-    public const string COMMAND_CONNECTION_DROP = 'connection:test:drop';
+    public const string COMMAND_CONNECTION_DROP = 'test:connection:drop';
+
+    /**
+     * The prefix every test-only command name carries on the wire.
+     *
+     * The human-readable half of the test-only contract, and the reason it exists at all: a
+     * flag in a registry is invisible to whoever reads a command name in a log line, a compose
+     * file, or a review diff. Topology validation sews the two halves together in both
+     * directions, so neither can be forgotten alone.
+     *
+     * @var string Wire-name prefix of a test-only command
+     */
+    public const string TEST_ONLY_PREFIX = 'test:';
+
+    /**
+     * The test-only commands the master answers itself, which therefore carry no flag anywhere else.
+     *
+     * Every other test-only command is declared by the agent that owns it, in its own
+     * AGENT_COMMANDS entry ({@see AgentCommandConfigKey::TEST_ONLY}). These three appear in
+     * no agent registry at all - they are handled in the master's own branches, because a
+     * freeze stops every agent but its initiator and because dropping a live socket is the
+     * master's own hand - so this is the one place that can declare them. The socket gate
+     * reads the union of both halves through {@see TestOnlyCommandRegistry}.
+     *
+     * @var list<string> Command names the master answers and refuses on a production-like node
+     */
+    public const array MASTER_TEST_ONLY_COMMANDS = [
+        self::COMMAND_CLUSTER_INSPECT,
+        CliCommands::PROTECTED_MODE_TEST_INSPECT,
+        self::COMMAND_CONNECTION_DROP,
+    ];
 
     /**
      * How often a CLI client looks for the reply while it waits, in microseconds.

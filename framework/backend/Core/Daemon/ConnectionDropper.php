@@ -22,7 +22,7 @@ use Hilos\Socket\SocketException;
  * ticket (HIL-582) drops the other connections of the session it just moved, after the new
  * cookie is on the wire: they reconnect carrying it and land back in their own session,
  * where dropping them any earlier would have sent them into a fresh anonymous one. The
- * other is the `connection:test:drop` command, used by e2e to exercise the reconnect
+ * other is the `test:connection:drop` command, used by e2e to exercise the reconnect
  * indicator and the orphan-reconcile that a real socket death triggers.
  */
 interface ConnectionDropper

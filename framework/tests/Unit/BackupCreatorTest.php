@@ -32,8 +32,12 @@ final class BackupCreatorTest extends TestCase
 {
     private ?EnvAccessor $previousEnv = null;
 
+    /** @var string|false APP_ENV the suite runs under, put back so this file does not decide what the next one reads */
+    private string|false $previousAppEnv = false;
+
     protected function setUp(): void
     {
+        $this->previousAppEnv = getenv('APP_ENV');
         parent::setUp();
         // recordFailure reads BACKUP_DIR (storage root) and APP_ENV (sidecar base name) off the
         // env facade; a stub-backed accessor lets the failure-record tests run without a live env.
@@ -45,7 +49,7 @@ final class BackupCreatorTest extends TestCase
     protected function tearDown(): void
     {
         Hilos::$env = $this->previousEnv;
-        putenv('APP_ENV');
+        $this->previousAppEnv === false ? putenv('APP_ENV') : putenv('APP_ENV=' . $this->previousAppEnv);
         putenv('BACKUP_DIR');
         parent::tearDown();
     }

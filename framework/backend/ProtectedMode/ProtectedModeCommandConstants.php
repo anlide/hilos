@@ -40,7 +40,7 @@ final class ProtectedModeCommandConstants
      *
      * The accept key the initiator may keep working through has no key of its own here:
      * the drive commands pass it as {@see CommandConstants::FIELD_ACCEPT_KEY}, the same
-     * field `connection:test:drop` already puts on this channel.
+     * field `test:connection:drop` already puts on this channel.
      */
     public const string FIELD_OPERATION = 'operation';
 

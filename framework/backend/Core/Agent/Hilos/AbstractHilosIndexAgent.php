@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent\Hilos;
 
 use DateTimeImmutable;
-use Hilos\Constants\AppEnv;
 use Hilos\Constants\CliCommands;
-use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\Cron\CronRule;
@@ -27,6 +26,7 @@ use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use Hilos\Users\AdminCommandConstants;
 use Throwable;
 
@@ -55,10 +55,13 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * index always has. Carries a plain payload, so it declares no inner DTO. Inherited by
      * every project agent, so a demo activates the command by extending this class alone.
      *
-     * Being inherited everywhere is also why the handler repeats the test-only refusal the
-     * CLI already performs: the route exists in every project, and the command socket
-     * authenticates nobody, so the CLI-side guard alone would leave the emit reachable on a
-     * production node by anyone who can open the port.
+     * Being inherited everywhere is also why the entry carries
+     * {@see AgentCommandConfigKey::TEST_ONLY}: the route exists in every project, and the
+     * command socket authenticates nobody, so the CLI-side guard alone would leave the emit
+     * reachable on a production node by anyone who can open the port. The refusal itself is
+     * no longer written here - the socket refuses the command before it is ever parked
+     * ({@see TestOnlyCommandRegistry}), and a handler that checked again would be a second
+     * copy of one verdict.
      *
      * The protected-mode trio (HIL-344, HIL-481) rides the same inheritance for the same reason -
      * chat, simple-todo and simple-poll get a freeze they can drive by extending this class
@@ -71,13 +74,14 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * {@see BrowserContext::isAdmin} - so every project that mounts those pages needs the same
      * lever, and the only project-specific part is the row it writes, which
      * {@see self::applyAdminGrant()} leaves to the project. Unlike its neighbours it is an
-     * operator command, so no test-only refusal guards it.
+     * operator command, so it carries no test-only flag and the socket lets it through on
+     * any environment.
      */
     public const array AGENT_COMMANDS = [
-        CliCommands::NOTIFICATION_TEST_EMIT,
-        CliCommands::PROTECTED_MODE_TEST_ENTER,
-        CliCommands::PROTECTED_MODE_TEST_LEAVE,
-        CliCommands::PROTECTED_MODE_TEST_OPEN,
+        CliCommands::NOTIFICATION_TEST_EMIT => [AgentCommandConfigKey::TEST_ONLY => true],
+        CliCommands::PROTECTED_MODE_TEST_ENTER => [AgentCommandConfigKey::TEST_ONLY => true],
+        CliCommands::PROTECTED_MODE_TEST_LEAVE => [AgentCommandConfigKey::TEST_ONLY => true],
+        CliCommands::PROTECTED_MODE_TEST_OPEN => [AgentCommandConfigKey::TEST_ONLY => true],
         CliCommands::ADMIN_GRANT,
         CliCommands::ADMIN_REVOKE,
     ];
@@ -233,15 +237,6 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      */
     private function handleNotificationEmit(CommandRequestDTO $data): void
     {
-        if (!$this->testOnlyCommandsAdmitted()) {
-            $this->replyToCommand(CommandReplyDTO::error(
-                $data->correlationId,
-                CliCommands::NOTIFICATION_TEST_EMIT . ' is test-only and refuses on a production-like environment',
-            ));
-
-            return;
-        }
-
         $notifier = Hilos::$notify;
         if ($notifier === null) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Notifications are not configured'));
@@ -304,34 +299,6 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
             NotificationCommandConstants::FIELD_NOTIFICATION_ID => $notificationId,
             NotificationCommandConstants::FIELD_QUEUED_CHANNELS => $queued,
         ]));
-    }
-
-    /**
-     * Whether this node's environment admits a test-only command at all.
-     *
-     * The agent-side half of the CLI's test-only refusal, and deliberately the SAME
-     * verdict, not a stricter one: it reads the same `APP_ENV` through the same catalog, so
-     * a node that never sets the variable is admitted here exactly as it is admitted in the
-     * CLI (the catalog answers `dev`). Demanding an explicitly set value instead would
-     * refuse on every demo stand, none of which sets it, and would leave the two halves of
-     * one contract disagreeing.
-     *
-     * What it does add is a floor under the unreadable case: a catalog or type error means
-     * the environment is unknown, and an unknown environment is not evidence of a test node.
-     * The two mistakes do not cost the same - refusing on a stand costs a puzzled error
-     * line, admitting on a production node sends real mail to a real person.
-     *
-     * @return bool True when APP_ENV resolves to a known, non-production-like environment
-     */
-    private function testOnlyCommandsAdmitted(): bool
-    {
-        try {
-            $appEnv = AppEnv::fromString(Hilos::$env?->string(EnvConstants::APP_ENV));
-        } catch (Throwable) {
-            return false;
-        }
-
-        return $appEnv !== null && !$appEnv->isProductionLike();
     }
 
     /**

@@ -12,8 +12,8 @@ use Hilos\Core\CLI\CliManager;
 /**
  * CLI - Entry point for the cluster demo CLI.
  *
- * Provides db:*, daemon:status, cluster:test:inspect (test-only), and help. The
- * multi-node harness drives cluster:test:inspect per node over the command channel.
+ * Provides db:*, daemon:status, test:cluster:inspect (test-only), and help. The
+ * multi-node harness drives test:cluster:inspect per node over the command channel.
  */
 
 CliApplication::run(

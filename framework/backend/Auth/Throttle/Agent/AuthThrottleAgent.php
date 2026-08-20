@@ -10,12 +10,11 @@ use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Auth\Throttle\ThrottleCommandConstants;
 use Hilos\Auth\Throttle\ThrottlePolicy;
 use Hilos\Auth\Throttle\ThrottleScope;
-use Hilos\Constants\AppEnv;
 use Hilos\Constants\CliCommands;
-use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Feature\HilosFeature;
@@ -70,10 +69,12 @@ final class AuthThrottleAgent extends AbstractAgent
      * The one thing this agent accepts from outside a running page: the test-only reset,
      * which empties both halves of the state. It travels the command channel rather than
      * being done in the CLI process because the counters are this agent's runtime
-     * collection, which no other process holds. Plain payload, so no inner DTO.
+     * collection, which no other process holds. No inner DTO - the config entry exists only
+     * to carry {@see AgentCommandConfigKey::TEST_ONLY}, which is what stops the socket from
+     * ever parking the command on a production-like node.
      */
     public const array AGENT_COMMANDS = [
-        CliCommands::THROTTLE_TEST_RESET,
+        CliCommands::THROTTLE_TEST_RESET => [AgentCommandConfigKey::TEST_ONLY => true],
     ];
 
     /** @var float Minimum seconds between counter sweeps, so onTick stays cheap */
@@ -177,23 +178,15 @@ final class AuthThrottleAgent extends AbstractAgent
     /**
      * Empties both halves of the throttle state and reports what each of them gave up.
      *
-     * Refused outright on a production-like environment: the CLI's own test-only guard
-     * protects the process that sends the command, not the agent that carries it out, and
-     * what this one command does is hand every blocked key its access back.
+     * Refused outright on a production-like environment, though not here: the command socket
+     * turns the request away before it is parked, so by the time this runs the environment
+     * has already been judged. What made that gate necessary is this handler's own reach -
+     * it hands every blocked key its access back.
      *
      * @param CommandRequestDTO $data Command request being answered
      */
     private function handleReset(CommandRequestDTO $data): void
     {
-        if (!$this->testOnlyCommandsAdmitted()) {
-            $this->replyToCommand(CommandReplyDTO::error(
-                $data->correlationId,
-                CliCommands::THROTTLE_TEST_RESET . ' is test-only and refuses on a production-like environment',
-            ));
-
-            return;
-        }
-
         try {
             $countersCleared = $this->attemptsView()?->actions->clear() ?? 0;
             $blocksCleared = $this->blocksCollection()?->clearAll() ?? 0;
@@ -210,25 +203,6 @@ final class AuthThrottleAgent extends AbstractAgent
             ThrottleCommandConstants::FIELD_COUNTERS_CLEARED => $countersCleared,
             ThrottleCommandConstants::FIELD_BLOCKS_CLEARED => $blocksCleared,
         ]));
-    }
-
-    /**
-     * Tells whether test-only commands may run on this environment.
-     *
-     * An environment that cannot be read at all counts as production: the guard has to fail
-     * towards refusing, or a misconfigured deployment would be the one place the reset works.
-     *
-     * @return bool True when the environment is not production-like
-     */
-    private function testOnlyCommandsAdmitted(): bool
-    {
-        try {
-            $appEnv = AppEnv::fromString(Hilos::$env?->string(EnvConstants::APP_ENV));
-        } catch (Throwable) {
-            return false;
-        }
-
-        return $appEnv !== null && !$appEnv->isProductionLike();
     }
 
     /**

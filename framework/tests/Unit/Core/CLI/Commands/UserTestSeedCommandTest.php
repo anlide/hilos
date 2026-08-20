@@ -21,8 +21,12 @@ final class UserTestSeedCommandTest extends TestCase
 {
     private ?EnvAccessor $previousEnv = null;
 
+    /** @var string|false APP_ENV the suite runs under, put back so this file does not decide what the next one reads */
+    private string|false $previousAppEnv = false;
+
     protected function setUp(): void
     {
+        $this->previousAppEnv = getenv('APP_ENV');
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
         putenv('APP_ENV=test');
         Hilos::$env = new EnvAccessor();
@@ -33,7 +37,7 @@ final class UserTestSeedCommandTest extends TestCase
         if ($this->previousEnv !== null) {
             Hilos::$env = $this->previousEnv;
         }
-        putenv('APP_ENV');
+        $this->previousAppEnv === false ? putenv('APP_ENV') : putenv('APP_ENV=' . $this->previousAppEnv);
     }
 
     public function testFixtureIdentifierIsOneBasedAndPaddedToCountWidth(): void

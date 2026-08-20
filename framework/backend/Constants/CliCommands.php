@@ -33,7 +33,7 @@ final class CliCommands
     public const string CLUSTER_RELOAD = 'cluster:reload';
 
     /** @var string Command: Inspect the daemon's cluster/consensus/placement state (test-only) */
-    public const string CLUSTER_TEST_INSPECT = 'cluster:test:inspect';
+    public const string CLUSTER_TEST_INSPECT = 'test:cluster:inspect';
 
     /** @var string Command: Show help information */
     public const string HELP = 'help';
@@ -84,7 +84,7 @@ final class CliCommands
     public const string BACKUP_TEST_RUN_SCHEDULE = 'test:backup:run-schedule';
 
     /** @var string Command: Force-close a live WebSocket connection by acceptKey (test-only) */
-    public const string CONNECTION_TEST_DROP = 'connection:test:drop';
+    public const string CONNECTION_TEST_DROP = 'test:connection:drop';
 
     /** @var string Command: Resolve an LLM profile and optionally probe its endpoint */
     public const string LLM_PING = 'llm:ping';

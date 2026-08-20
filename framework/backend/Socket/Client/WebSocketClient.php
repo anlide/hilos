@@ -318,7 +318,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws HandshakeFailedException When handshake validation fails
      * @throws SocketException When socket error occurs
      * @throws UnsupportedProtocolVersionException When protocol version is not 13
-     * @throws EnvException When the build timestamp env value cannot be read
+     * @throws EnvException When the build timestamp, cookie or environment env values cannot be read
      * @throws RandomException When the secure random source refuses this connection's secrets
      */
     private function handleHandshake(): void
@@ -629,6 +629,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @param string $name Cookie name
      * @param string $token Session token value
      * @return string Set-Cookie header line including the trailing separator
+     * @throws EnvException When the cookie max-age or the environment name cannot be read
      */
     private function buildSessionCookieHeader(string $name, string $token): string
     {
@@ -677,7 +678,11 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * honestly. What is gained is that Secure can no longer be off in production without
      * anyone saying so.
      *
+     * Since HIL-566 the read cannot answer "nothing": APP_ENV is a required catalog entry and
+     * a node without it refuses to start, so the missing case never reaches a live handshake.
+     *
      * @return bool True when the deployment is production-like (prod or staging)
+     * @throws EnvException When APP_ENV cannot be read
      */
     private static function cookiesAreSecured(): bool
     {

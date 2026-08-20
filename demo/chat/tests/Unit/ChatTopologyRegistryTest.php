@@ -33,6 +33,7 @@ use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Backup\BackupConstants;
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Mail\DTO\MailSendSignalData;
@@ -59,6 +60,7 @@ use Hilos\Core\Router\SignalSourceInterface;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use Closure;
+use Hilos\Socket\Command\TestOnlyCommandRegistry;
 
 /**
  * Guards the project-level chat topology registry.
@@ -364,6 +366,33 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::THROTTLE_TEST_RESET => AgentType::HILOS_AUTH_THROTTLE,
         ], Hilos::getCommandAgentRoutes());
         $this->assertSame([], Hilos::getCommandDtoRoutes());
+    }
+
+    /**
+     * The whole test-only registry as one installation sees it (HIL-566).
+     *
+     * Chat is where this is worth pinning: it is the only demo that mounts every framework
+     * agent that owns a test-only command AND adds one of its own, so its twelve is the full
+     * set. What the count guards is a name silently LEAVING the registry - an agent entry
+     * rewritten back to its bare list shape drops the flag without touching a route, and the
+     * route assertion above would still pass.
+     */
+    public function testTheTestOnlyRegistryHoldsEveryFlaggedCommandAndTheMastersOwn(): void
+    {
+        $this->assertSame([
+            ChatCommandConstants::ECHO,
+            CliCommands::NOTIFICATION_TEST_EMIT,
+            CliCommands::PROTECTED_MODE_TEST_ENTER,
+            CliCommands::PROTECTED_MODE_TEST_LEAVE,
+            CliCommands::PROTECTED_MODE_TEST_OPEN,
+            BackupConstants::PRUNE_COMMAND,
+            BackupConstants::SHIP_COMMAND,
+            BackupConstants::RUN_SCHEDULE_COMMAND,
+            CliCommands::THROTTLE_TEST_RESET,
+            CommandConstants::COMMAND_CLUSTER_INSPECT,
+            CliCommands::PROTECTED_MODE_TEST_INSPECT,
+            CommandConstants::COMMAND_CONNECTION_DROP,
+        ], TestOnlyCommandRegistry::commands());
     }
 
     public function testComputedAgentSignalIndexFieldsMatchBotAgentDeclaration(): void

@@ -95,12 +95,14 @@ Two properties are worth keeping when this code is touched:
   innermost of three (agent, then CLI, then the channel's held request), so the
   informative refusal is the one that fires first.
 
-There is deliberately **no production-environment refusal on the agent side**.
-The CLI half refuses (`TestOnlyCommand`), but the command socket authenticates
-nobody and e2e reaches it directly over TCP, since the Playwright runner has no
-PHP. That ungated socket path is an existing property of the command channel,
-shared with `setAdmin` and `connection:test:drop` — recorded here so it is not
-mistaken for an oversight and "fixed" at the cost of the e2e.
+There is deliberately **no production-environment refusal on the agent side**,
+and since HIL-566 there is no need for one: the socket itself refuses a
+test-only command before it parks anything, so the drive trio is gated on the
+path e2e actually takes — directly over TCP, since the Playwright runner has no
+PHP. What the socket still does not do is authenticate its caller, which is why
+`setAdmin` and the other unflagged commands remain reachable to anyone who can
+open `COMMAND_PORT`; that is an existing property of the channel, recorded here
+so it is not mistaken for something this gate closed.
 
 The snapshot never carries `initiatorAcceptKey`, and never a pass hash — only
 the count of outstanding passes. Both are the way through the lockdown, and the
@@ -293,7 +295,7 @@ The mode itself knows nothing about `APP_ENV`, and must not learn: knowing would
 make it useless for the disaster recovery it exists for.
 
 - A test driver command extends `TestOnlyCommand`, which refuses on a
-  production-like or empty `APP_ENV` (the same mechanism `cluster:test:inspect`
+  production-like or empty `APP_ENV` (the same mechanism `test:cluster:inspect`
   and the backup test commands use).
 - A real restore does not forbid production at all; it obeys the restore ENV
   matrix instead.

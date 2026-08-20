@@ -13,7 +13,7 @@ namespace Demo\Chat\Constants;
 final class ChatCommandConstants
 {
     /** @var string Echo command: routed to the chat agent, which echoes the request payload back */
-    public const string ECHO = 'echo';
+    public const string ECHO = 'test:command:echo';
 
     /** @var string Set-admin command: routed to the chat agent, which flips a user's admin flag */
     public const string SET_ADMIN = 'setAdmin';

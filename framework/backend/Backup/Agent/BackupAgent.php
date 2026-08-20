@@ -49,6 +49,7 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -131,7 +132,8 @@ final class BackupAgent extends AbstractAgent
     /**
      * Command-channel commands a CLI routes here, each driving the live agent so the runtime
      * index stays the mirror of storage (files=truth): a forced retention prune and a forced
-     * scheduled backup, both test-only (HIL-320), and a plain index refresh, which is NOT -
+     * scheduled backup, both carrying {@see AgentCommandConfigKey::TEST_ONLY} (HIL-320), and
+     * a plain index refresh, which is NOT -
      * the operator command `backup:verify` rewrites sidecars itself and then asks the agent to
      * catch up ({@see BackupConstants::REFRESH_HISTORY_COMMAND}). The restore pair (HIL-274)
      * is operator-facing too: request admits a run under protected mode, status snapshots the
@@ -144,9 +146,9 @@ final class BackupAgent extends AbstractAgent
      * may drive it ({@see ProtectedModeOperatorTrait}).
      */
     public const array AGENT_COMMANDS = [
-        BackupConstants::PRUNE_COMMAND,
-        BackupConstants::SHIP_COMMAND,
-        BackupConstants::RUN_SCHEDULE_COMMAND,
+        BackupConstants::PRUNE_COMMAND => [AgentCommandConfigKey::TEST_ONLY => true],
+        BackupConstants::SHIP_COMMAND => [AgentCommandConfigKey::TEST_ONLY => true],
+        BackupConstants::RUN_SCHEDULE_COMMAND => [AgentCommandConfigKey::TEST_ONLY => true],
         BackupConstants::REFRESH_HISTORY_COMMAND,
         BackupConstants::RESTORE_REQUEST_COMMAND,
         BackupConstants::RESTORE_STATUS_COMMAND,

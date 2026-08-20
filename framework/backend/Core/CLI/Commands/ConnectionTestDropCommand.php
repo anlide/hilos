@@ -23,7 +23,7 @@ use Throwable;
  * production-like env): e2e asserts on what a real dropped connection produces - the
  * header reconnect indicator flipping reconnecting->connected, and the master's
  * orphan-reconcile (presence decrement, subscription cleanup) firing on the dead socket.
- * The sockets live in the master, so this sends `connection:test:drop` over the command
+ * The sockets live in the master, so this sends `test:connection:drop` over the command
  * channel; the master finds the matching live client and closes it, then answers whether a
  * connection was actually dropped.
  */
@@ -35,7 +35,7 @@ class ConnectionTestDropCommand extends TestOnlyCommand
     /**
      * Returns command name for CLI routing.
      *
-     * @return string Command name (connection:test:drop)
+     * @return string Command name (test:connection:drop)
      */
     public function getName(): string
     {
@@ -60,7 +60,7 @@ class ConnectionTestDropCommand extends TestOnlyCommand
     public function getHelp(): string
     {
         return <<<HELP
-Command: connection:test:drop
+Command: test:connection:drop
 
 Description:
   Force-close the live WebSocket connection with the given acceptKey, simulating an
@@ -70,10 +70,10 @@ Description:
   indicator and the orphan-reconcile.
 
 Usage:
-  php cli.php connection:test:drop <acceptKey>
+  php cli.php test:connection:drop <acceptKey>
 
 Examples:
-  php cli.php connection:test:drop a1b2c3d4e5f6
+  php cli.php test:connection:drop a1b2c3d4e5f6
 HELP;
     }
 
@@ -123,7 +123,7 @@ HELP;
     }
 
     /**
-     * Sends connection:test:drop over the command channel and waits for the reply.
+     * Sends test:connection:drop over the command channel and waits for the reply.
      *
      * @param string $acceptKey Target connection identifier
      * @return ?CommandReplyDTO Reply, or null on timeout / transport failure

@@ -22,7 +22,7 @@ use Throwable;
  *
  * A test-only inspector (extends {@see TestOnlyCommand}, so it refuses on a
  * production-like env): the multi-node harness (HIL-185) runs it against each node
- * and asserts on the machine-readable reply. It sends `cluster:test:inspect` over the
+ * and asserts on the machine-readable reply. It sends `test:cluster:inspect` over the
  * command channel; the daemon answers synchronously with that node's own view —
  * membership, its consensus verdicts (leader / term / role / quorum) and lifecycle
  * phase, and the leader-tracked placements. It only reads state; it never forces any.
@@ -39,7 +39,7 @@ class ClusterTestInspectCommand extends TestOnlyCommand implements DatabaseFreeC
     /**
      * Returns command name for CLI routing.
      *
-     * @return string Command name (cluster:test:inspect)
+     * @return string Command name (test:cluster:inspect)
      */
     public function getName(): string
     {
@@ -64,7 +64,7 @@ class ClusterTestInspectCommand extends TestOnlyCommand implements DatabaseFreeC
     public function getHelp(): string
     {
         return <<<HELP
-Command: cluster:test:inspect
+Command: test:cluster:inspect
 
 Description:
   Print the running daemon's own view of the cluster as JSON: membership, this
@@ -74,7 +74,7 @@ Description:
   on each node deterministically.
 
 Usage:
-  php cli.php cluster:test:inspect
+  php cli.php test:cluster:inspect
 HELP;
     }
 
@@ -112,7 +112,7 @@ HELP;
     }
 
     /**
-     * Sends cluster:test:inspect over the command channel and waits for the reply.
+     * Sends test:cluster:inspect over the command channel and waits for the reply.
      *
      * @return ?CommandReplyDTO Reply, or null on timeout / transport failure
      * @throws EnvException When daemon host/port env values are missing or invalid

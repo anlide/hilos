@@ -35,6 +35,8 @@ final class AgentCommandRouteRegistryTest extends TestCase
             'plain_b' => 'list_agent',
             'typed' => 'dto_agent',
             'configured' => 'config_agent',
+            'configured_test_only' => 'config_agent',
+            'configured_not_test_only' => 'config_agent',
         ], AgentCommandRouteRegistry::routes($this->agents()));
     }
 
@@ -44,6 +46,11 @@ final class AgentCommandRouteRegistryTest extends TestCase
             'typed' => CommandRequestDTO::class,
             'configured' => CommandRequestDTO::class,
         ], AgentCommandRouteRegistry::dtoRoutes($this->agents()));
+    }
+
+    public function testTestOnlyCommandsReturnOnlyTheFlaggedCommand(): void
+    {
+        $this->assertSame(['configured_test_only'], AgentCommandRouteRegistry::testOnlyCommands($this->agents()));
     }
 
     public function testRoutesSkipNonAgentRegistryEntries(): void
@@ -83,6 +90,8 @@ final class CommandConfigRouteAgent extends AbstractAgent
 
     public const array AGENT_COMMANDS = [
         'configured' => [AgentCommandConfigKey::DTO => CommandRequestDTO::class],
+        'configured_test_only' => [AgentCommandConfigKey::TEST_ONLY => true],
+        'configured_not_test_only' => [AgentCommandConfigKey::TEST_ONLY => false],
     ];
 
     public function onStop(): void

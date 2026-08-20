@@ -21,7 +21,7 @@ agents whose only job is to keep their workers busy.
   The leader spreads the fleet over the slaves via the framework's node-selection
   policy (HIL-182) and re-places a lost node's share on failover (HIL-183).
   `ClusterDaemonManager` supplies only the placement *trigger*.
-- **Assertion surface:** the read-only `cluster:test:inspect` command (HIL-325),
+- **Assertion surface:** the read-only `test:cluster:inspect` command (HIL-325),
   run per node from the `cluster-cli` container.
 
 ## Running

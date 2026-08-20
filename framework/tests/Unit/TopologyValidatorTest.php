@@ -7,6 +7,8 @@ namespace Hilos\Tests\Unit;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Constants\CommandConstants;
+use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -326,6 +328,33 @@ final class TopologyValidatorTest extends TestCase
         $this->expectExceptionMessage('must implement ' . SignalDataInterface::class);
 
         TopologyBadCommandDtoHilos::validateTopology();
+    }
+
+    public function testAgentCommandTestOnlyFlagMustBeBool(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('AGENT_COMMANDS[flagged_command]');
+        $this->expectExceptionMessage(AgentCommandConfigKey::TEST_ONLY . '] must be a bool');
+
+        TopologyNonBoolTestOnlyHilos::validateTopology();
+    }
+
+    public function testAgentCommandNamedWithTheTestPrefixMustDeclareTheFlag(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('AGENT_COMMANDS[test:prefixed_without_flag]');
+        $this->expectExceptionMessage('does not declare ' . AgentCommandConfigKey::TEST_ONLY);
+
+        TopologyPrefixWithoutFlagHilos::validateTopology();
+    }
+
+    public function testAgentCommandDeclaringTheFlagMustCarryTheTestPrefix(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('AGENT_COMMANDS[flagged_without_prefix]');
+        $this->expectExceptionMessage('is not named with the ' . CommandConstants::TEST_ONLY_PREFIX . ' prefix');
+
+        TopologyFlagWithoutPrefixHilos::validateTopology();
     }
 
     public function testIndexedAgentSignalPassesValidation(): void
@@ -995,6 +1024,31 @@ final class TopologyBadCommandDtoAgent extends TopologyTestAgent
     ];
 }
 
+final class TopologyNonBoolTestOnlyAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'non_bool_test_only_agent';
+
+    public const array AGENT_COMMANDS = [
+        'flagged_command' => [AgentCommandConfigKey::TEST_ONLY => 'yes'],
+    ];
+}
+
+final class TopologyPrefixWithoutFlagAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'prefix_without_flag_agent';
+
+    public const array AGENT_COMMANDS = ['test:prefixed_without_flag'];
+}
+
+final class TopologyFlagWithoutPrefixAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'flag_without_prefix_agent';
+
+    public const array AGENT_COMMANDS = [
+        'flagged_without_prefix' => [AgentCommandConfigKey::TEST_ONLY => true],
+    ];
+}
+
 final class TopologyValidTable extends TableDefinition
 {
     /**
@@ -1394,6 +1448,66 @@ final class TopologyBadCommandDtoHilos extends HilosFacade
     public const array AGENTS = [
         TopologyBadCommandDtoAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => TopologyBadCommandDtoAgent::class,
+            AgentRegistryKey::DAEMON => TopologyBadCommandDtoAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyNonBoolTestOnlyHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyNonBoolTestOnlyAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyNonBoolTestOnlyAgent::class,
+            AgentRegistryKey::DAEMON => TopologyBadCommandDtoAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyPrefixWithoutFlagHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyPrefixWithoutFlagAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyPrefixWithoutFlagAgent::class,
+            AgentRegistryKey::DAEMON => TopologyBadCommandDtoAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyFlagWithoutPrefixHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyFlagWithoutPrefixAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyFlagWithoutPrefixAgent::class,
             AgentRegistryKey::DAEMON => TopologyBadCommandDtoAgentDaemon::class,
         ],
     ];

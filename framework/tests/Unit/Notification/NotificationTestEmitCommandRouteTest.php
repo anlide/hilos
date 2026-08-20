@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Notification;
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
+use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
@@ -20,17 +21,22 @@ use PHPUnit\Framework\TestCase;
  *
  * The route is declared on the abstract index agent, so it exists in every project and is
  * answered by whatever reaches the unauthenticated command socket - the CLI class that
- * normally sends it is not on the path. These tests pin the two refusals that need no
- * database: a production-like environment, and a command the agent does not own. The emit
- * itself needs real tables and is exercised by the audit run.
+ * normally sends it is not on the path. These tests pin what needs no database: that the route
+ * declares itself test-only (the socket refuses it on that declaration alone), and that a
+ * command the agent does not own is answered rather than dropped. The emit itself needs real
+ * tables and is exercised by the audit run.
  */
 final class NotificationTestEmitCommandRouteTest extends TestCase
 {
     /** @var ?EnvAccessor Env accessor to restore after the test */
     private ?EnvAccessor $previousEnv = null;
 
+    /** @var string|false APP_ENV the suite runs under, put back so this file does not decide what the next one reads */
+    private string|false $previousAppEnv = false;
+
     protected function setUp(): void
     {
+        $this->previousAppEnv = getenv('APP_ENV');
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
         Hilos::$sr = new SignalRouter();
     }
@@ -39,37 +45,23 @@ final class NotificationTestEmitCommandRouteTest extends TestCase
     {
         Hilos::$sr = null;
         Hilos::$env = $this->previousEnv;
-        putenv('APP_ENV');
+        $this->previousAppEnv === false ? putenv('APP_ENV') : putenv('APP_ENV=' . $this->previousAppEnv);
 
         parent::tearDown();
     }
 
-    public function testRefusesEmitOnAProductionLikeEnvironment(): void
+    /**
+     * The environment refusal itself moved to the socket (HIL-566), so what has to be pinned
+     * here is the DECLARATION that puts it there: drop the flag and the emit becomes reachable
+     * on a production node, and no test of this handler would notice, because the handler is
+     * exactly where the check stopped being written.
+     */
+    public function testTheEmitRouteDeclaresItselfTestOnly(): void
     {
-        putenv('APP_ENV=' . AppEnv::PROD->value);
-        Hilos::$env = new EnvAccessor();
-
-        $this->sendCommand(CliCommands::NOTIFICATION_TEST_EMIT);
-
-        $reply = $this->consumeReply();
-        self::assertFalse($reply->isOk(), 'A production-like node refuses the test-only emit');
-        self::assertStringContainsString('test-only', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
-    }
-
-    public function testRefusesEmitOnStagingToo(): void
-    {
-        // Staging counts as production-like, and it is the environment where a stray
-        // command would reach real addresses while looking harmless.
-        putenv('APP_ENV=' . AppEnv::STAGING->value);
-        Hilos::$env = new EnvAccessor();
-
-        $this->sendCommand(CliCommands::NOTIFICATION_TEST_EMIT);
-
-        $reply = $this->consumeReply();
-        self::assertFalse($reply->isOk(), 'Staging refuses the test-only emit');
-        // Asserted on the message, not merely on the failure: without the guard the emit
-        // would still fail here, on the missing notifier, and the test would prove nothing.
-        self::assertStringContainsString('test-only', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
+        self::assertSame(
+            [AgentCommandConfigKey::TEST_ONLY => true],
+            AbstractHilosIndexAgent::AGENT_COMMANDS[CliCommands::NOTIFICATION_TEST_EMIT] ?? null,
+        );
     }
 
     public function testAnswersAnUnownedCommandWithAnError(): void

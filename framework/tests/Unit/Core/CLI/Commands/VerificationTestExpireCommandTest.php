@@ -24,8 +24,12 @@ final class VerificationTestExpireCommandTest extends TestCase
     private ?EnvAccessor $previousEnv = null;
     private ?DbContext $previousDb = null;
 
+    /** @var string|false APP_ENV the suite runs under, put back so this file does not decide what the next one reads */
+    private string|false $previousAppEnv = false;
+
     protected function setUp(): void
     {
+        $this->previousAppEnv = getenv('APP_ENV');
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
         $this->previousDb = Hilos::$db;
         putenv('APP_ENV=test');
@@ -38,7 +42,7 @@ final class VerificationTestExpireCommandTest extends TestCase
             Hilos::$env = $this->previousEnv;
         }
         Hilos::$db = $this->previousDb;
-        putenv('APP_ENV');
+        $this->previousAppEnv === false ? putenv('APP_ENV') : putenv('APP_ENV=' . $this->previousAppEnv);
     }
 
     public function testRejectsUnknownType(): void

@@ -49,19 +49,22 @@ to run unless `APP_ENV` is non-production (same guard as `Seed::isProduction`). 
 is the marker: a reader sees `extends TestOnlyCommand` and knows the command must never run
 on prod. Subclasses implement `run()`.
 
-**A test-only command whose work happens in an agent has to refuse twice.** The CLI class
-guards the CLI process, but the command reaches the agent over the command socket, which
-authenticates nobody and whose route exists in every project — so the class is not on the
-path a stray caller takes. Such a handler repeats the `APP_ENV` verdict itself before doing
-anything; `AbstractHilosIndexAgent::handleNotificationEmit()` is the worked example.
+**The socket refuses a test-only command too, and a handler must not repeat it** (HIL-566).
+The CLI class guards the CLI process, but a stray caller does not use the CLI: the command
+socket authenticates nobody and the routes exist in every project. So `CommandClient` asks
+`TestOnlyCommandGate::admitted()` before it branches at all — above both the commands the
+master answers itself and the ones it parks for an agent — and answers a refusal with the
+same sentence the CLI class raises (`TestOnlyCommandOnProductionException::message()`). The
+connection stays open: the gate judges the command, not the caller.
 
-The protected-mode drive pair (`test:protected-mode:enter` / `:leave`, HIL-344) is the
-standing exception: it guards the CLI process and **not** the agent handler. That was the
-leaf's explicit decision — the socket path is left ungated, as it already is for `setAdmin`
-and `connection:test:drop` — and it is written down here rather than left to be inferred,
-so the next reader does not take it for an oversight. Weigh it before copying either way:
-the exposure is whoever can open `COMMAND_PORT`, and what it buys on a production node is a
-freeze of that node.
+**Declaring a test-only command means saying so twice, in two different languages.** The
+machine-readable half is `AgentCommandConfigKey::TEST_ONLY` in the same `AGENT_COMMANDS`
+entry that declares the route (the three commands the master answers itself have no agent
+entry and are listed in `CommandConstants::MASTER_TEST_ONLY_COMMANDS` instead). The
+human-readable half is the `test:` prefix on the wire name. Topology validation fails the
+daemon's start if either half is missing, because a flag alone is invisible on review and a
+prefix alone is a promise nothing keeps. `TestOnlyCommandRegistry` joins both halves, and it
+is the only thing the gate asks.
 
 A project registers its own commands by subclassing `CliManager` and overriding
 `registerProjectCommands()`, calling `addCommand()` for each; the project's `cli.php` then
@@ -108,7 +111,7 @@ connection failure.
 Marked today: `db:wait` (its poll *is* the connect, and it has to run before the server
 answers), `db:test:reset` (opens its own server-level connection, because it drops and
 recreates the database `DB_DATABASE` names), `help` (prints the registry it was handed),
-`cluster:test:inspect` (talks only to the local command socket, so the multi-node harness
+`test:cluster:inspect` (talks only to the local command socket, so the multi-node harness
 can inspect a network-partitioned node that cannot reach MySQL either),
 `test:notification:emit` (every row it causes is written by the agent that answers it, so
 the CLI process itself has nothing to read or write) and the protected-mode trio

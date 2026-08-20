@@ -8,6 +8,7 @@ use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalName;
@@ -19,8 +20,11 @@ use Hilos\HilosException;
 use Hilos\Socket\Client\Interface\CommandClientInterface;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Command\TestOnlyCommandGate;
+use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\SocketException;
+use Hilos\Utils\Logger;
 
 /**
  * CommandClient - daemon-side representation of a CLI command connection.
@@ -31,6 +35,10 @@ use Hilos\Socket\SocketException;
  * id and routed to its owning agent as a COMMAND_REQUEST signal; the daemon writes
  * the agent's COMMAND_REPLY back here through {@see writeReply()} once it arrives.
  * A held request that gets no reply within {@see HELD_TIMEOUT_SEC} is failed.
+ *
+ * Ahead of all of that stands the test-only gate: this is the only place a
+ * {@see CommandRequestDTO} enters the backend, so it is the only place from which a
+ * production node can refuse the commands that exist to manipulate a test one.
  */
 class CommandClient extends AbstractClient implements CommandClientInterface
 {
@@ -106,6 +114,22 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 $this->writeBuffer .= CommandReplyDTO::error(
                     $request->correlationId,
                     'Command request must carry a correlation id and a command name',
+                )->toJson() . "\n";
+                continue;
+            }
+
+            // The environment gate, and deliberately ABOVE every branch below it: three of
+            // the test-only commands are answered by the master itself and appear in no
+            // agent registry, while the rest are parked and leave as a signal - a gate
+            // placed after the split would have to be written twice and would still miss
+            // whichever half a later command lands in. What it judges is the command, not
+            // the connection: a `ping` and a test-only command down one socket get
+            // different answers.
+            if (TestOnlyCommandRegistry::isTestOnly($request->command) && !TestOnlyCommandGate::admitted()) {
+                Logger::warning("Refused test-only command {$request->command}: APP_ENV is production-like or unset");
+                $this->writeBuffer .= CommandReplyDTO::error(
+                    $request->correlationId,
+                    TestOnlyCommandOnProductionException::message($request->command),
                 )->toJson() . "\n";
                 continue;
             }

@@ -18,6 +18,7 @@ services:
       - ../data/logs:/var/log/hilos
     working_dir: /app
     environment:
+      - APP_ENV=dev
       - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
       - HTTP_STATUS_HOST=${HTTP_STATUS_HOST:-0.0.0.0}
       - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
@@ -82,6 +83,7 @@ services:
       - ../../../scripts:/hilos/scripts:ro
     working_dir: /app
     environment:
+      - APP_ENV=dev
       - TERM=xterm-256color
       - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
       - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
@@ -104,6 +106,7 @@ services:
       - ../../../framework:/hilos/framework:ro
     working_dir: /app
     environment:
+      - APP_ENV=dev
       - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
       - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}

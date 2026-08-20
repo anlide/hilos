@@ -20,7 +20,7 @@ use Throwable;
 /**
  * SCAFFOLD/EXAMPLE: exercises the async command round-trip end to end.
  *
- * Sends an `echo` command over the command socket channel; the daemon parks the
+ * Sends a `test:command:echo` command over the command socket channel; the daemon parks the
  * connection, routes it to the chat agent, and writes the agent's echoed reply
  * back. Proves the held-connection + agent-reply path (admin-grant transport A2)
  * with no grant logic. Test-only: refused on production.

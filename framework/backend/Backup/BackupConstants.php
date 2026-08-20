@@ -39,13 +39,13 @@ final class BackupConstants
      * Command-channel wire name routing a forced retention prune to {@see BackupAgent}
      * (test-only `test:backup:prune`, HIL-320). Declared on the agent's AGENT_COMMANDS.
      */
-    public const string PRUNE_COMMAND = 'backup:prune';
+    public const string PRUNE_COMMAND = 'test:backup:prune';
 
     /**
      * Command-channel wire name routing a forced scheduled backup to {@see BackupAgent}
      * (test-only `test:backup:run-schedule`, HIL-320). Declared on the agent's AGENT_COMMANDS.
      */
-    public const string RUN_SCHEDULE_COMMAND = 'backup:run-schedule';
+    public const string RUN_SCHEDULE_COMMAND = 'test:backup:run-schedule';
 
     /**
      * Command-channel wire name asking {@see BackupAgent} to re-mirror its runtime index
@@ -70,7 +70,7 @@ final class BackupConstants
      * Test-only for the same reason `test:backup:prune` is: the pass happens on its own on a
      * tick, and an integration run must not wait for one.
      */
-    public const string SHIP_COMMAND = 'backup:ship';
+    public const string SHIP_COMMAND = 'test:backup:ship';
 
     /** Reply key: number of backups the forced shipping pass copied off the machine. */
     public const string FIELD_SHIPPED_COUNT = 'shippedCount';

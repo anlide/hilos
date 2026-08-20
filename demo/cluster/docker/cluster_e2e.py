@@ -7,7 +7,7 @@ It assumes the stack is already up (via `cluster up`) and drives it: for each
 scenario it perturbs the cluster through the sibling `cluster` bash controller
 (docker kill -9 for node-down, docker network disconnect for partition, a SIGKILL
 of the daemon inside a live container for an internal crash), polls each node's
-`cluster:test:inspect` reply until the topology converges (bounded by a hard cap),
+`test:cluster:inspect` reply until the topology converges (bounded by a hard cap),
 and asserts the expected invariants against the machine-readable reply. Destructive
 scenarios restore the cluster and re-converge before the next.
 
@@ -160,7 +160,7 @@ def _inspect(subcmd, node):
 
 
 def inspect(node):
-    """Return a node's cluster:test:inspect reply as a dict, or None if unreachable."""
+    """Return a node's test:cluster:inspect reply as a dict, or None if unreachable."""
     return _inspect("inspect", node)
 
 

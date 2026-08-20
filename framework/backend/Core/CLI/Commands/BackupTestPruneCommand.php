@@ -9,6 +9,7 @@ use Hilos\Backup\BackupConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Environment\Exception\EnvException;
 
 /**
@@ -70,6 +71,7 @@ HELP;
      * @param array<string, mixed> $options Parsed options (unused)
      * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
+     * @throws CommandException When the command name is not registered as test-only
      */
     protected function run(array $options, array $args): int
     {

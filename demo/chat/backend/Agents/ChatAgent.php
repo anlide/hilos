@@ -32,6 +32,7 @@ use Hilos\Auth\Session\SessionToken;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\DuplicateValueException;
@@ -79,8 +80,10 @@ final class ChatAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
     ];
 
+    // The echo exists only to prove the command channel end to end, so it carries the
+    // test-only flag: a production node refuses it at the socket and never parks it.
     public const array AGENT_COMMANDS = [
-        ChatCommandConstants::ECHO,
+        ChatCommandConstants::ECHO => [AgentCommandConfigKey::TEST_ONLY => true],
         ChatCommandConstants::SET_ADMIN,
         ChatCommandConstants::IMPERSONATE_START,
         ChatCommandConstants::IMPERSONATE_STOP,
@@ -140,7 +143,7 @@ final class ChatAgent extends AbstractAgent
     /**
      * Handle a CLI command routed to the chat agent.
      *
-     * `echo` echoes the request payload back (the admin-grant transport probe).
+     * `test:command:echo` echoes the request payload back (the admin-grant transport probe).
      * `setAdmin`, `impersonateStart`, `impersonateStop`, and `accountMerge` each
      * dispatch to a dedicated handler that replies ok or with an error message.
      * Any other command name yields an error reply.

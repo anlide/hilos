@@ -29,8 +29,8 @@ final class CommandSignalRoutingTest extends TestCase
         $destinations = new CommandRoutingTestRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::DAEMON),
             new SignalType(SignalTypeConstants::COMMAND_REQUEST),
-            new SignalName('echo'),
-            new CommandRequestDTO('corr-1', 'echo', ['message' => 'hi']),
+            new SignalName('test:command:echo'),
+            new CommandRequestDTO('corr-1', 'test:command:echo', ['message' => 'hi']),
         ));
 
         $this->assertEquals([new AgentDestination('chat')], $destinations);
@@ -83,7 +83,7 @@ final class CommandRoutingTestHilos extends Hilos
      */
     public static function getCommandAgentRoutes(): array
     {
-        return ['echo' => 'chat'];
+        return ['test:command:echo' => 'chat'];
     }
 
     protected static function createDb(): DbContext

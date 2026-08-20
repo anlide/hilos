@@ -8,7 +8,7 @@ namespace Hilos\Cluster;
  * Wire keys for the cluster command-channel payloads.
  *
  * These name the fields of the `cluster:nodes` reply payload, and of the richer
- * `cluster:test:inspect` reply (HIL-325), so the CLI client and the daemon agree
+ * `test:cluster:inspect` reply (HIL-325), so the CLI client and the daemon agree
  * on the shape without magic strings.
  */
 final class ClusterCommandConstants

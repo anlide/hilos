@@ -30,8 +30,13 @@ use mysqli_sql_exception;
  * Database-free by contract: it opens its own server-level connection, because the
  * database named by DB_DATABASE is the one it drops and recreates — and on a fresh volume
  * does not exist yet.
+ *
+ * Test-only by contract too, and that is why it extends {@see TestOnlyCommand}: dropping the
+ * database is the most destructive thing this CLI can do, and until HIL-566 it was the one
+ * such command with no environment guard at all - `APP_ENV` only reached it through the seed
+ * step, long after the DROP had already run. It stays CLI-only and never reaches the wire.
  */
-class DbTestResetCommand implements CommandInterface, DatabaseFreeCommand
+class DbTestResetCommand extends TestOnlyCommand implements DatabaseFreeCommand
 {
     private const string DEFAULT_TEST_DATABASE = 'hilos_demo_test';
 
@@ -90,7 +95,7 @@ HELP;
      * @throws DatabaseRuntimeException When SET NAMES query fails
      * @throws DatabaseException When migration or seed execution fails
      */
-    public function execute(array $options, array $args): int
+    protected function run(array $options, array $args): int
     {
         $host = Hilos::$env[EnvConstants::DB_HOST];
         $port = Hilos::$env->int(EnvConstants::DB_PORT);

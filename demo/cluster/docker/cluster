@@ -5,14 +5,14 @@
 # fault switches the scenarios need — `docker kill -9` (node-down / failover),
 # `docker network disconnect` (partition / split-brain), and a SIGKILL of the daemon
 # inside a live container (crash recovery). Assertions live in the Python scenario
-# driver (cluster_e2e.py), which reads each node's `cluster:test:inspect` reply and
+# driver (cluster_e2e.py), which reads each node's `test:cluster:inspect` reply and
 # compares against the expected invariants.
 #
 # Usage:
 #   cluster up                 build + start mysql, the 5 nodes, and the cli container
 #   cluster down [--volumes]   stop and remove the stack (add --volumes to wipe the DB)
 #   cluster status             docker ps for the stack + a one-line inspect per node
-#   cluster inspect <node>     print a node's cluster:test:inspect JSON (m1..m3,s1,s2)
+#   cluster inspect <node>     print a node's test:cluster:inspect JSON (m1..m3,s1,s2)
 #   cluster kill <node>        docker kill -9 a node container (simulate node-down)
 #   cluster start <node>       (re)start a node container, reusing it as it is
 #   cluster recreate <node>    replace a node with a pristine container
@@ -72,16 +72,16 @@ cmd_down() {
 cmd_inspect() {
   local node="${1:-}"; valid_node "$node"
   docker exec -e HILOS_DAEMON_HOST="${NODE_IP[$node]}" cluster-cli \
-    php backend/Bootstrap/cli.php cluster:test:inspect
+    php backend/Bootstrap/cli.php test:cluster:inspect
 }
 
 # Inspect a node from INSIDE its own container over localhost. Needed when the node
 # is network-partitioned (unreachable from the shared cli container and from MySQL):
-# cluster:test:inspect is DB-free, so it still answers over the local command socket.
+# test:cluster:inspect is DB-free, so it still answers over the local command socket.
 cmd_inspect_local() {
   local node="${1:-}"; valid_node "$node"
   docker exec -e APP_ENV=test -e HILOS_DAEMON_HOST=127.0.0.1 "cluster-$node" \
-    php backend/Bootstrap/cli.php cluster:test:inspect
+    php backend/Bootstrap/cli.php test:cluster:inspect
 }
 
 cmd_status() {
@@ -136,7 +136,7 @@ for node, ip in nodes:
     try:
         r = subprocess.run(
             ["docker", "exec", "-e", "HILOS_DAEMON_HOST=" + ip, "cluster-cli",
-             "php", "backend/Bootstrap/cli.php", "cluster:test:inspect"],
+             "php", "backend/Bootstrap/cli.php", "test:cluster:inspect"],
             capture_output=True, text=True, timeout=15)
         i = r.stdout.find("{")
         d = json.loads(r.stdout[i:]) if i >= 0 else None

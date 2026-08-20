@@ -56,7 +56,7 @@ use Throwable;
  * refuses on a production-like env ({@see TestOnlyCommand}), but the command socket
  * authenticates nobody and e2e reaches it directly over TCP - Playwright has no PHP to run the
  * CLI with. That ungated socket path is an existing property of the command channel, shared
- * with `setAdmin` and `connection:test:drop`, and it is recorded here so the next reader does
+ * with `setAdmin` and `test:connection:drop`, and it is recorded here so the next reader does
  * not take its absence for an oversight and "fix" the e2e out of existence.
  */
 trait ProtectedModeTestDriverTrait

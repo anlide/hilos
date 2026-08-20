@@ -7,6 +7,7 @@ namespace Demo\Cluster\Agents;
 use Demo\Cluster\Constants\AgentType;
 use Hilos\Constants\CliCommands;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -45,9 +46,9 @@ final class WorkerAgent extends AbstractAgent
      * The inspector is not listed: it is answered by the master, not by an agent.
      */
     public const array AGENT_COMMANDS = [
-        CliCommands::PROTECTED_MODE_TEST_ENTER,
-        CliCommands::PROTECTED_MODE_TEST_LEAVE,
-        CliCommands::PROTECTED_MODE_TEST_OPEN,
+        CliCommands::PROTECTED_MODE_TEST_ENTER => [AgentCommandConfigKey::TEST_ONLY => true],
+        CliCommands::PROTECTED_MODE_TEST_LEAVE => [AgentCommandConfigKey::TEST_ONLY => true],
+        CliCommands::PROTECTED_MODE_TEST_OPEN => [AgentCommandConfigKey::TEST_ONLY => true],
     ];
 
     /** @var int Shortest synthetic job, in microseconds */

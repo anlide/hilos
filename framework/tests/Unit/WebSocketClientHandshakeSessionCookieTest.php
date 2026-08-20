@@ -139,11 +139,12 @@ final class WebSocketClientHandshakeSessionCookieTest extends TestCase
     }
 
     /**
-     * Every environment the enum names, plus the two values it does not.
+     * Every environment the enum names, plus the one value it does not.
      *
-     * An unrecognised name and an empty one are the cases the switch used to cover with
-     * its `false` default; they stay plain, because a deployment that cannot say what it
-     * is must not have its cookie dropped by a browser on plain http.
+     * An unrecognised name stays plain, because a deployment that cannot say what it is must
+     * not have its cookie dropped by a browser on plain http. The EMPTY name is no longer a
+     * case: since HIL-566 APP_ENV is a required catalog entry, so a node that names no
+     * environment refuses to start and never reaches a handshake to issue a cookie on.
      *
      * @return array<string, array{string, bool}> Case name to APP_ENV value and expected Secure
      */
@@ -157,7 +158,6 @@ final class WebSocketClientHandshakeSessionCookieTest extends TestCase
             'test is plain' => ['test', false],
             'an alias resolves like its canonical value' => ['production', true],
             'an unrecognised environment is plain' => ['nonsense', false],
-            'an empty environment is plain' => ['', false],
         ];
     }
 

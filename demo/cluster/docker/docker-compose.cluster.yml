@@ -3,7 +3,7 @@
 # One shared MariaDB (per-node schemas), five daemon nodes on a dedicated bridge
 # with static IPs — three masters (the consensus/master-set) and two data-plane
 # slaves (the placement targets) — and a long-lived CLI container the harness
-# `docker exec`s to run `cluster:test:inspect` against each node. Node role,
+# `docker exec`s to run `test:cluster:inspect` against each node. Node role,
 # identity, capabilities, master set, and timeouts all come from CLUSTER_* env, so
 # the same image is a master or a data-plane node purely by configuration.
 
@@ -18,10 +18,12 @@ x-node-base: &node-base
       condition: service_healthy
 
 x-node-env: &node-env
-  # No APP_ENV=test on the nodes on purpose: the daemon would then load tests/.env
-  # and its DB_DATABASE would override every node's per-schema value. The daemon
-  # needs no test mode — the cluster:test:inspect TestOnly gate is CLI-side, and
-  # only the cluster-cli container runs as APP_ENV=test.
+  # APP_ENV is required of every node (HIL-566), and the value has to be `dev`, not
+  # `test`: on `test` the daemon loads tests/.env, whose DB_DATABASE would override
+  # every node's per-schema value. `dev` is not production-like, so the nodes still
+  # admit the test-only commands this harness drives. Only the cluster-cli container
+  # runs as APP_ENV=test, and it has no per-schema database to lose.
+  APP_ENV: dev
   DB_HOST: cluster-mysql
   DB_PORT: "3306"
   DB_USERNAME: hilos
@@ -192,7 +194,7 @@ services:
       cluster-net:
         ipv4_address: 10.185.0.15
 
-  # Long-lived CLI container the harness `docker exec`s for cluster:test:inspect,
+  # Long-lived CLI container the harness `docker exec`s for test:cluster:inspect,
   # and the one-shot runner for composer/phpunit (profile cli, so it never joins a
   # cluster bring-up implicitly).
   cluster-cli:

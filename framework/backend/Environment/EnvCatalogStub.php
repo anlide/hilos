@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Environment;
 
-use Hilos\Constants\AppEnv;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
@@ -211,11 +210,11 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 8093,
                 emptyIsMissing: true,
             ),
-            EnvConstants::APP_ENV->name => self::entry(
-                EnvCatalogConstants::TYPE_STRING,
-                AppEnv::DEV->value,
-                emptyIsMissing: true,
-            ),
+            // Required, with no default on purpose (HIL-566): a node that never sets APP_ENV
+            // used to call itself `dev`, which is the one answer that opens every test-only
+            // command on a port that authenticates nobody. Refusing to start instead costs a
+            // named variable in each deployment and says exactly what is missing.
+            EnvConstants::APP_ENV->name => self::required(EnvCatalogConstants::TYPE_STRING),
             EnvConstants::HILOS_BUILD_TIMESTAMP->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,
                 'dev',
