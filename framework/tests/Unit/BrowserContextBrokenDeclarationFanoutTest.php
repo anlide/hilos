@@ -14,11 +14,14 @@ use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Daemon\Worker\ContainedFailure;
+use Hilos\Core\Daemon\Worker\WorkerTickUnit;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
@@ -40,9 +43,16 @@ use PHPUnit\Framework\TestCase;
  * So the fan-out traps it around ONE subscription. What is asserted is exactly that
  * blast radius: the healthy subscriber of the same flush still receives its rows, the
  * offending one receives nothing, and the flush itself completes.
+ *
+ * The trap was widened to any failure by HIL-574, which also moved the record out: the
+ * fan-out names the subscription that failed and the worker's tick writes it down, so
+ * the same failure is not described twice under two sets of rules.
  */
 final class BrowserContextBrokenDeclarationFanoutTest extends TestCase
 {
+    /** @var ?BrokenDeclarationFanoutContext Context the last arranged flush ran on */
+    private ?BrokenDeclarationFanoutContext $context = null;
+
     protected function tearDown(): void
     {
         Hilos::$rt = null;
@@ -66,6 +76,46 @@ final class BrowserContextBrokenDeclarationFanoutTest extends TestCase
         $this->assertSame(['ak-healthy'], $this->deliveredAcceptKeys());
     }
 
+    /**
+     * The boundary is not about broken declarations, it is about one subscription: a
+     * failure of another family - here the keyless row the worker-tick leaf was written
+     * for - costs its own subscriber and nobody else.
+     */
+    public function testAFailureOfAnotherFamilySilencesOnlyItsOwnSubscription(): void
+    {
+        $this->arrangeFlush(BrokenDeclarationFanoutContext::KEYLESS_ROW_PAGE);
+
+        $this->assertSame(['ak-healthy'], $this->deliveredAcceptKeys());
+    }
+
+    /**
+     * The fan-out writes nothing itself; it says which subscription failed and on what,
+     * and the worker's tick is what puts that in the journal and offers it to the project.
+     */
+    public function testTheFlushNamesTheSubscriptionThatFailed(): void
+    {
+        $contained = $this->arrangeFlush(BrokenDeclarationFanoutContext::KEYLESS_ROW_PAGE);
+
+        $this->assertCount(1, $contained);
+        $this->assertSame(WorkerTickUnit::BROWSER_SUBSCRIPTION, $contained[0]->unit);
+        $this->assertSame(
+            'page=' . BrokenDeclarationFanoutContext::KEYLESS_ROW_PAGE . ' acceptKey=ak-broken',
+            $contained[0]->address,
+        );
+        $this->assertInstanceOf(TableRowKeyMissingException::class, $contained[0]->failure);
+    }
+
+    /**
+     * A change set kept because the fan-out failed is the same frame again on the next
+     * tick, and on every tick after it.
+     */
+    public function testTheChangeSetIsDroppedEvenWhenASubscriptionFailed(): void
+    {
+        $this->arrangeFlush(BrokenDeclarationFanoutContext::KEYLESS_ROW_PAGE);
+
+        $this->assertFalse($this->context?->hasChanges());
+    }
+
     public function testTheBrokenDeclarationWouldOtherwiseReachTheWorker(): void
     {
         $this->expectException(PageInternalErrorException::class);
@@ -77,9 +127,10 @@ final class BrowserContextBrokenDeclarationFanoutTest extends TestCase
      * Subscribes one healthy connection and one to the named broken page, then flushes
      * a change both of them observe.
      *
-     * @param string $brokenPage Page whose declaration is broken
+     * @param string $brokenPage Page the flush is expected to fail on
+     * @return list<ContainedFailure> Subscriptions the flush contained a failure for
      */
-    private function arrangeFlush(string $brokenPage): void
+    private function arrangeFlush(string $brokenPage): array
     {
         Hilos::$sr = new SignalRouter();
         Hilos::$rt = new BrokenDeclarationFanoutRtContext();
@@ -95,9 +146,10 @@ final class BrowserContextBrokenDeclarationFanoutTest extends TestCase
             new WebSocketPageSubscribeSignalDTO('ak-broken', $brokenPage),
         );
 
-        $context = new BrokenDeclarationFanoutContext();
-        $context->record(SourceChange::rtUpdated(BrokenDeclarationFanoutRtContext::ROWS, '1', ['name' => 'Ada']));
-        $context->flushToSignalRouter();
+        $this->context = new BrokenDeclarationFanoutContext();
+        $this->context->record(SourceChange::rtUpdated(BrokenDeclarationFanoutRtContext::ROWS, '1', ['name' => 'Ada']));
+
+        return $this->context->flushToSignalRouter();
     }
 
     /**
@@ -118,18 +170,23 @@ final class BrowserContextBrokenDeclarationFanoutTest extends TestCase
 }
 
 /**
- * Serves three pages off one runtime collection: one declared correctly, one whose page
- * declaration names a non-signal, and one whose table joins a second source that names
- * no collection.
+ * Serves four pages off one runtime collection: one declared correctly, one whose page
+ * declaration names a non-signal, one whose table joins a second source that names no
+ * collection, and one whose rows are declared correctly and give up while being built.
  */
 final class BrokenDeclarationFanoutContext extends BrowserContext
 {
     public const string HEALTHY_PAGE = 'broken_fanout_healthy_page';
     public const string BROKEN_PAGE = 'broken_fanout_broken_page';
     public const string BROKEN_SOURCE_PAGE = 'broken_fanout_broken_source_page';
+    public const string KEYLESS_ROW_PAGE = 'broken_fanout_keyless_row_page';
 
     public const string HEALTHY_TABLE = 'healthyRows';
     public const string BROKEN_SOURCE_TABLE = 'brokenSourceRows';
+    public const string KEYLESS_ROW_TABLE = 'keylessRows';
+
+    /** Computed field that gives up the way a placeholder row reaching a window does */
+    public const string KEYLESS_FIELD = 'keylessField';
 
     private const string SIGNAL = 'broken_fanout_signal';
 
@@ -142,6 +199,40 @@ final class BrokenDeclarationFanoutContext extends BrowserContext
     private const array KEYLESS_SOURCE = [BrowserSourceKey::TYPE => BrowserSourceType::RT];
 
     /**
+     * Gives up on the keyless table's rows, the way a placeholder row that reached a
+     * window has no key to be addressed by.
+     *
+     * A computed field because that is where a fan-out runs code that can raise anything
+     * at all: an ordinary field read is swallowed by the projector, and the exception
+     * class here is the one the worker-tick leaf was written for.
+     *
+     * @param string $browserKey Browser table key
+     * @param string $field Computed field name
+     * @param int|string $rowKey Row key inside the table
+     * @param string $acceptKey Subscriber accept key
+     * @param array<string, string> $pageParams Current page subscription params
+     * @param array<string, mixed> $browserParams Resolved table params
+     * @param array<string, mixed> $sources Source fragments already built for the row
+     * @return mixed Never returns for the keyless table
+     * @throws TableRowKeyMissingException When the keyless table's row is being built
+     */
+    protected function computeBrowserField(
+        string $browserKey,
+        string $field,
+        int|string $rowKey,
+        string $acceptKey,
+        array $pageParams,
+        array $browserParams,
+        array $sources,
+    ): mixed {
+        if ($browserKey === self::KEYLESS_ROW_TABLE) {
+            throw new TableRowKeyMissingException(self::class);
+        }
+
+        return null;
+    }
+
+    /**
      * @param string $page Page name from the subscription mirror
      * @return ?BrowserPageConfig Test page metadata, or null when absent
      * @throws PageInternalErrorException When a page or source declaration is malformed
@@ -149,7 +240,7 @@ final class BrokenDeclarationFanoutContext extends BrowserContext
     protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {
         return match ($page) {
-            self::HEALTHY_PAGE, self::BROKEN_SOURCE_PAGE => BrowserPageConfig::fromArray([
+            self::HEALTHY_PAGE, self::BROKEN_SOURCE_PAGE, self::KEYLESS_ROW_PAGE => BrowserPageConfig::fromArray([
                 BrowserConfigKey::SIGNAL => self::SIGNAL,
             ]),
             self::BROKEN_PAGE => BrowserPageConfig::fromArray([
@@ -168,6 +259,7 @@ final class BrokenDeclarationFanoutContext extends BrowserContext
         return match ($page) {
             self::HEALTHY_PAGE, self::BROKEN_PAGE => BrowserPageBindings::fromArray([self::HEALTHY_TABLE => []]),
             self::BROKEN_SOURCE_PAGE => BrowserPageBindings::fromArray([self::BROKEN_SOURCE_TABLE => []]),
+            self::KEYLESS_ROW_PAGE => BrowserPageBindings::fromArray([self::KEYLESS_ROW_TABLE => []]),
             default => BrowserPageBindings::empty(),
         };
     }
@@ -187,6 +279,18 @@ final class BrokenDeclarationFanoutContext extends BrowserContext
         return match ($browserKey) {
             self::HEALTHY_TABLE => BrowserSourceConfig::fromArray([
                 BrowserTableConfigKey::ROWS => [$healthyRow],
+            ]),
+            // Declared correctly in every way; the computed field below is what gives up
+            // while the row is being built.
+            self::KEYLESS_ROW_TABLE => BrowserSourceConfig::fromArray([
+                BrowserTableConfigKey::ROWS => [
+                    [
+                        BrowserTableFieldKey::SOURCE => self::SOURCE,
+                        BrowserTableFieldKey::ROW_KEY => 'id',
+                        BrowserTableFieldKey::FIELDS => ['id', 'name'],
+                        BrowserTableFieldKey::COMPUTED => [self::KEYLESS_FIELD],
+                    ],
+                ],
             ]),
             // The first row source is well-formed, so the change is observed and the row
             // is built; the join below is what the build then trips over.

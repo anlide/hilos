@@ -33,11 +33,14 @@ use Throwable;
  * per exception class and server: the first {@see self::BURST_LINES} of a window are
  * written in full, the rest are counted, and the closing summary says how many were held
  * back. The error branch is never limited — the node breaking is exactly what the reader
- * came for. The limit lives here rather than in {@see Logger} because a limiter there
- * would quietly eat lines other subsystems count events by.
+ * came for. The counting itself is {@see RepeatedFailureWindows}, shared with the worker
+ * tick, which faces the same repetition for the same reason; the wording of both lines
+ * stays here, because a summary is written for the master's readers and not for every
+ * process that ever counts a repeat. The limit lives outside {@see Logger} because a
+ * limiter there would quietly eat lines other subsystems count events by.
  *
- * The counters are static fields of the master process, which is where both readers run;
- * no runtime collection and no lock is involved.
+ * The windows are one static instance of the master process, which is where both readers
+ * run; no runtime collection and no lock is involved.
  */
 class ClientReadFailureLog
 {
@@ -59,12 +62,8 @@ class ClientReadFailureLog
     /** Journal line closing a window: held-back count, exception class, server, window length */
     private const string SUMMARY_FORMAT = 'Suppressed %d more %s failures for %s in the last %d seconds';
 
-    /**
-     * Open windows by key, each holding when it opened and what it has seen.
-     *
-     * @var array<string, array{openedAt: float, written: int, held: int, failureClass: string, serverName: string}>
-     */
-    private static array $windows = [];
+    /** @var ?RepeatedFailureWindows Limiter for the warning branch, built on first use */
+    private static ?RepeatedFailureWindows $windows = null;
 
     /**
      * Writes the journal line for a client read that failed.
@@ -91,7 +90,12 @@ class ClientReadFailureLog
             return;
         }
 
-        if (self::admits($serverName, $failure, $now)) {
+        // Hand over what the limiter has finished counting before this failure is judged.
+        // A window that ran out is closed by the failure that replaces it, so its summary
+        // stands above the line that opens the next window rather than below it.
+        self::flushClosedWindows($now);
+
+        if (self::windows()->admits(self::windowKey($serverName, $failure), $now)) {
             Logger::warning($entry);
         }
     }
@@ -108,13 +112,8 @@ class ClientReadFailureLog
      */
     public static function flushClosedWindows(float $now): void
     {
-        foreach (self::$windows as $key => $window) {
-            if ($now - $window['openedAt'] < self::WINDOW_SECONDS) {
-                continue;
-            }
-
-            self::summarize($window);
-            unset(self::$windows[$key]);
+        foreach (self::windows()->closeExpired($now) as $closed) {
+            self::summarize($closed['key'], $closed['held']);
         }
     }
 
@@ -126,69 +125,53 @@ class ClientReadFailureLog
      */
     public static function reset(): void
     {
-        self::$windows = [];
+        self::windows()->reset();
     }
 
     /**
-     * Tells whether this failure is still written in full, and counts it either way.
+     * @return RepeatedFailureWindows Limiter of this process, created on first use
+     */
+    private static function windows(): RepeatedFailureWindows
+    {
+        return self::$windows ??= new RepeatedFailureWindows(self::BURST_LINES, self::WINDOW_SECONDS);
+    }
+
+    /**
+     * Names what counts as the same failure repeating.
      *
      * A window belongs to one exception class on one server, so a peer channel losing
      * links cannot silence the refusals a browser port is writing at the same time.
      *
      * @param string $serverName Name of the server the client belongs to
      * @param Throwable $failure Failure the read ended with
-     * @param float $now Current time, as the caller reads it
-     * @return bool True when the line is written rather than held back
+     * @return string Key the limiter counts this failure under
      */
-    private static function admits(string $serverName, Throwable $failure, float $now): bool
+    private static function windowKey(string $serverName, Throwable $failure): string
     {
-        $failureClass = get_class($failure);
-        $key = $failureClass . ' ' . $serverName;
-        $window = self::$windows[$key] ?? null;
-
-        if ($window === null || $now - $window['openedAt'] >= self::WINDOW_SECONDS) {
-            if ($window !== null) {
-                self::summarize($window);
-            }
-
-            self::$windows[$key] = [
-                'openedAt' => $now,
-                'written' => 1,
-                'held' => 0,
-                'failureClass' => $failureClass,
-                'serverName' => $serverName,
-            ];
-
-            return true;
-        }
-
-        if ($window['written'] < self::BURST_LINES) {
-            self::$windows[$key]['written']++;
-            return true;
-        }
-
-        self::$windows[$key]['held']++;
-
-        return false;
+        return get_class($failure) . ' ' . $serverName;
     }
 
     /**
      * Writes what a window held back, if it held anything back at all.
      *
-     * @param array{openedAt: float, written: int, held: int, failureClass: string, serverName: string} $window
-     *     Window being closed
+     * @param string $key Key of the closed window, as {@see self::windowKey()} built it
+     * @param int $held Number of lines the window held back
      */
-    private static function summarize(array $window): void
+    private static function summarize(string $key, int $held): void
     {
-        if ($window['held'] === 0) {
+        if ($held === 0) {
             return;
         }
 
+        // Back into the pair the window belongs to: a class name carries no space, so
+        // whatever follows the first one is the server, whether or not it has spaces too.
+        [$failureClass, $serverName] = explode(' ', $key, 2);
+
         Logger::warning(sprintf(
             self::SUMMARY_FORMAT,
-            $window['held'],
-            $window['failureClass'],
-            $window['serverName'],
+            $held,
+            $failureClass,
+            $serverName,
             (int)self::WINDOW_SECONDS
         ));
     }

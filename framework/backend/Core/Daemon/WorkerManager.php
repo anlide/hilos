@@ -23,8 +23,9 @@ use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
+use Hilos\Core\Daemon\Worker\ContainedFailure;
+use Hilos\Core\Daemon\Worker\WorkerTickUnit;
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Exception\ValidationException;
@@ -100,6 +101,7 @@ use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
+use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -107,6 +109,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Hilos\Utils\Logger;
+use Hilos\Utils\WorkerTickFailureLog;
 use Throwable;
 
 /**
@@ -195,12 +198,18 @@ abstract class WorkerManager extends BaseManager
      * messages, ticks worker-local agents, and drains queued signals until a
      * shutdown condition requests exit.
      *
+     * A tick is made of units of work - one daemon message, one agent, the project's
+     * hook, the signal dispatch, the analytics tick - and a failure that belongs to one
+     * of them is contained by {@see self::containFailure()}: written, handed to
+     * {@see self::onTickFailure()}, and the unit skipped, so the units around it keep
+     * ticking. The worker still leaves for the two things that mean it has nothing left
+     * to serve - a lost daemon connection and being orphaned - and for nothing else. The
+     * master answers the same question by leaving, and a worker deliberately does not:
+     * {@see WorkerServer::ensureMinWorkers()} raises a replacement on the next tick, so a
+     * cause that stays put is a crash loop rather than a failover, and every restart
+     * stops this worker's agents along the way.
+     *
      * @throws MissingRequiredParameterException When required signal functions are unavailable
-     * @throws InvalidArgumentException When a message read from the daemon carries invalid JSON or type
-     * @throws InvalidFormatException When a daemon frame's payload is not the object its DTO needs
-     * @throws TableRowKeyMissingException When a windowed table row is a placeholder and carries no key
-     * @throws FramePopOrderException When a frame resumed on the tick leaves the execution stack imbalanced
-     * @throws HilosException When a frame read from the daemon refuses to become a DTO
      */
     public function run(): void
     {
@@ -256,16 +265,19 @@ abstract class WorkerManager extends BaseManager
                         break;
                     }
                     $this->logError("Daemon client error: " . $e->getMessage());
+                } catch (Throwable $failure) {
+                    // A frame that never became a message. The socket itself is fine, so
+                    // this belongs to the message and not to the transport: contained like
+                    // any other unit, with the frames behind it still queued.
+                    $this->containFailure(WorkerTickUnit::DAEMON_MESSAGE, 'unparsed frame', $failure);
                 }
 
                 // Process messages from daemon queue
                 while (($message = $this->daemonClient->getNextMessage()) !== null) {
                     try {
                         $this->handleDaemonMessage($message);
-                    } catch (AgentCreationFailedException $e) {
-                        $this->logError("Failed to handle daemon message: " . $e->getMessage());
-                    } catch (PageSignalRouterNotFoundException $e) {
-                        $this->logError("Failed to route signal: " . $e->getMessage());
+                    } catch (Throwable $failure) {
+                        $this->containFailure(WorkerTickUnit::DAEMON_MESSAGE, $message->getType(), $failure);
                     } finally {
                         ExecutionContext::clear();
                     }
@@ -273,37 +285,64 @@ abstract class WorkerManager extends BaseManager
 
                 // Call tick method (only when connected)
                 $this->setCurrentAgentId(null);
-                $this->onTick();
+                try {
+                    $this->onTick();
+                } catch (Throwable $failure) {
+                    $this->containFailure(WorkerTickUnit::WORKER_TICK, 'onTick', $failure);
+                }
 
                 // Tick all agents
                 foreach ($this->agentManager->getAgents() as $agentId => $agent) {
                     $this->setCurrentAgentId($agent->getId());
-                    $agent->onTick();
-                    $this->releaseDeferredWork($agentId);
 
-                    // Check if agent requested stop
-                    if ($agent->shouldStop()) {
-                        try {
-                            $this->runAgentStopHook($agent);
-                        } catch (Throwable $e) {
-                            // A failing self-stop hook must not crash the worker loop;
-                            // truth sources are already unregistered in the hook's finally.
-                            Logger::logAgentError($agent->getId(), "Self-requested stop hook failed: {$e->getMessage()}");
+                    try {
+                        $agent->onTick();
+                        $this->releaseDeferredWork($agentId);
+
+                        // Check if agent requested stop
+                        if ($agent->shouldStop()) {
+                            try {
+                                $this->runAgentStopHook($agent);
+                            } catch (Throwable $failure) {
+                                // Contained one level in, not by the guard around the agent: the
+                                // stop was asked for by the agent itself, and the steps below are
+                                // what grant it. Letting the guard take them would leave an agent
+                                // that wants to be gone in the manager, asking again every tick.
+                                $this->containFailure(WorkerTickUnit::AGENT, $agent->getId(), $failure);
+                            }
+                            Logger::logAgentStop($agent->getId(), $agent->getType());
+                            Hilos::$ac?->closeAgentSession($agent->getType(), $agent->getIndex());
+                            $this->agentManager->removeAgent($agentId);
+                            Logger::info("Agent {$agentId} stopped (self-requested)");
+                            Logger::logAgentInfo($agentId, "Agent stopped (self-requested) on worker [workerIndex={$this->workerIndex}]");
+                            $this->notifyAgentStopped($agentId);
                         }
-                        Logger::logAgentStop($agent->getId(), $agent->getType());
-                        Hilos::$ac?->closeAgentSession($agent->getType(), $agent->getIndex());
-                        $this->agentManager->removeAgent($agentId);
-                        Logger::info("Agent {$agentId} stopped (self-requested)");
-                        Logger::logAgentInfo($agentId, "Agent stopped (self-requested) on worker [workerIndex={$this->workerIndex}]");
-                        $this->notifyAgentStopped($agentId);
+                    } catch (Throwable $failure) {
+                        // The agent stays in the manager: it is not a connection, dropping it
+                        // would lose the truth sources it owns and the work it had started, and
+                        // the decision to stop belongs to the agent and its owner, not here.
+                        $this->containFailure(WorkerTickUnit::AGENT, $agent->getId(), $failure);
                     }
                 }
 
                 // Dispatch accumulated signals (send to daemon)
                 $this->setCurrentAgentId(null);
-                $this->dispatchSignals();
-                Hilos::$ac?->tick();
+                try {
+                    $this->dispatchSignals();
+                } catch (Throwable $failure) {
+                    $this->containFailure(WorkerTickUnit::SIGNAL_DISPATCH, 'dispatchSignals', $failure);
+                }
+
+                try {
+                    Hilos::$ac?->tick();
+                } catch (Throwable $failure) {
+                    $this->containFailure(WorkerTickUnit::ANALYTICS, 'analytics tick', $failure);
+                }
             }
+
+            // Close the windows the contained-failure limiter has been counting in, so a
+            // stream of failures that stopped still reports how much it held back.
+            WorkerTickFailureLog::flushClosedWindows($this->workerIndex, $loopStartTime);
 
             // Outside the connected branch on purpose: a worker whose connect() is
             // still queued in an inherited listen backlog never gets here otherwise.
@@ -368,10 +407,14 @@ abstract class WorkerManager extends BaseManager
      *
      * Connection progress is polled by the main worker loop.
      *
+     * Protected because this is the seam a test overrides: it is the one step of
+     * {@see self::run()} that needs a real socket, and the containment the loop is built
+     * around cannot be exercised at all without putting a scripted client in its place.
+     *
      * @throws SocketException When connection setup fails
      * @throws EnvException When daemon connection environment values are missing or invalid
      */
-    private function connectToDaemon(): void
+    protected function connectToDaemon(): void
     {
         $this->daemonClient = new WorkerDaemonClient();
         $this->daemonClient->connect();
@@ -1738,6 +1781,29 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
+     * Worker-level hook called after the tick contained a failure of one of its units.
+     *
+     * The project's place to answer a failure the worker swallowed - raise a counter,
+     * tell an operator, stop offering a feature that keeps breaking. Empty by default,
+     * because the framework's own answer is the journal line, and that line is written
+     * before this hook runs and whatever this hook decides.
+     *
+     * Must not throw. A failure raised here is caught and written as a failure of the
+     * hook itself, so it cannot take down the tick - but it costs the project the very
+     * reaction it came here for.
+     *
+     * Named apart from {@see BaseManager::onException()} on purpose: that one answers a
+     * failure PHP could not place at all, and in a worker it asks the process to leave.
+     * This one is the opposite report - the failure was caught and life goes on.
+     *
+     * @param ContainedFailure $failure Failure the tick contained, the unit it belongs
+     *     to and where in that unit it happened
+     */
+    protected function onTickFailure(ContainedFailure $failure): void
+    {
+    }
+
+    /**
      * Drains queued worker signals and flushes browser deliveries.
      *
      * Processes all queued signals from SignalRouter and forwards them to daemon.
@@ -1758,8 +1824,52 @@ abstract class WorkerManager extends BaseManager
         // browser state. Phase 2 sends the WS_USER signals produced by flushes
         // in the same tick, instead of waiting for the next loop.
         $this->dispatchQueuedSignalsToDaemon();
-        Hilos::$browser?->flushToSignalRouter();
+        $containedByFanout = Hilos::$browser?->flushToSignalRouter() ?? [];
         $this->dispatchQueuedSignalsToDaemon();
+
+        // Written after both phases, not between them: a subscription that failed must
+        // not delay what the subscriptions around it collected for this same tick.
+        foreach ($containedByFanout as $contained) {
+            $this->containFailure($contained->unit, $contained->address, $contained->failure);
+        }
+    }
+
+    /**
+     * Contains a failure that belongs to one unit of the tick.
+     *
+     * Writes it, hands it to the project, and returns: the unit is skipped and the units
+     * around it keep ticking. The order is not an implementation detail. The line is
+     * written first and always, so a project that overrides the hook adds a reaction to
+     * the record rather than replacing it - an overridable record is how a guard becomes
+     * the silent place it was built to prevent.
+     *
+     * The hook runs under a guard of its own, because it is the project's code and can
+     * fail like any other; unguarded, its failure would take down the very tick this
+     * guard exists to keep alive. It is written as a failure of the hook and not of the
+     * unit, so the journal cannot be read as if the original failure happened twice.
+     *
+     * @param WorkerTickUnit $unit Unit of work whose failure is being contained
+     * @param string $address Which one of that unit failed, in the unit's own terms
+     * @param Throwable $failure Failure the unit ended with
+     */
+    private function containFailure(WorkerTickUnit $unit, string $address, Throwable $failure): void
+    {
+        $contained = new ContainedFailure($unit, $address, $failure);
+        WorkerTickFailureLog::write($this->workerIndex, $contained, microtime(true));
+
+        try {
+            $this->onTickFailure($contained);
+        } catch (Throwable $hookFailure) {
+            WorkerTickFailureLog::write(
+                $this->workerIndex,
+                new ContainedFailure(WorkerTickUnit::FAILURE_HOOK, 'onTickFailure', $hookFailure),
+                microtime(true)
+            );
+        }
+
+        // Whatever agent this unit was running under is not running any more. Left set,
+        // its id would sign the journal lines of every unit that follows in this tick.
+        $this->setCurrentAgentId(null);
     }
 
     /**

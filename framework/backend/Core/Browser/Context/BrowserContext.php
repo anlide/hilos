@@ -24,6 +24,8 @@ use Hilos\Core\Browser\Config\BrowserSourceKind;
 use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Daemon\Worker\ContainedFailure;
+use Hilos\Core\Daemon\Worker\WorkerTickUnit;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
@@ -373,19 +375,29 @@ abstract class BrowserContext
     /**
      * Drains browser source changes at the end of the worker tick.
      *
-     * @throws TableRowKeyMissingException When a mutated row is a placeholder and carries no key
+     * A subscription whose fan-out failed is handed back rather than written here. The
+     * worker's tick owns what a contained failure looks like in the journal and is the
+     * one that offers it to the project; a record kept in two places under two sets of
+     * rules is what let the master's two readers disagree about the same line.
+     *
+     * @return list<ContainedFailure> Subscriptions whose fan-out failed, in the order they failed
      * @throws InvalidArgumentException When a fanned-out signal cannot be named
      */
-    public function flushToSignalRouter(): void
+    public function flushToSignalRouter(): array
     {
         if ($this->changes->isEmpty()) {
-            return;
+            return [];
         }
 
-        $this->groupSourceChanges();
-        $this->emitBrowserSignals();
+        try {
+            $this->groupSourceChanges();
 
-        $this->changes = new SourceChangeSet();
+            return $this->emitBrowserSignals();
+        } finally {
+            // Dropped however the flush ended. A set held back because something threw is
+            // the same frame again on the next tick, and on every tick after that one.
+            $this->changes = new SourceChangeSet();
+        }
     }
 
     /**
@@ -477,14 +489,21 @@ abstract class BrowserContext
     /**
      * Emits browser signals produced from grouped DB/RT source changes in $this->changes.
      *
-     * @throws TableRowKeyMissingException When a mutated row is a placeholder and carries no key
+     * A row that refuses to be built no longer leaves this method: the guard below
+     * contains it per subscription. What is still raised comes from the second loop,
+     * where the collected payloads are queued.
+     *
+     * @return list<ContainedFailure> Subscriptions whose fan-out failed, in the order they failed
      * @throws InvalidArgumentException When a fanned-out signal cannot be named
      */
-    protected function emitBrowserSignals(): void
+    protected function emitBrowserSignals(): array
     {
         if (Hilos::$sr === null) {
-            return;
+            return [];
         }
+
+        /** @var list<ContainedFailure> $contained */
+        $contained = [];
 
         /** @var array<string, array<string, array<string, array<string, mixed>>>> $signalTables */
         $signalTables = [];
@@ -497,13 +516,21 @@ abstract class BrowserContext
                 $page = $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY];
                 try {
                     $this->addBrowserChange($signalTables, $guardAllows, $change, $page, $acceptKey, $subscription);
-                } catch (PageInternalErrorException $e) {
-                    // A declaration this connection subscribes to is broken. Loudly, and for
-                    // this subscription only: on the reactive path there is no catch between
-                    // here and WorkerApplication's exit, so a static mistake in one page's
+                } catch (Throwable $failure) {
+                    // Whatever this one subscription's rows failed on, and for this
+                    // subscription only: on the reactive path there is no catch between
+                    // here and WorkerApplication's exit, so one mistake in one page's
                     // config would take the worker down on every flush and crash-loop it
                     // through ensureMinWorkers, taking every other subscriber with it.
-                    Logger::error("Browser fan-out skipped a broken declaration: page={$page}, error={$e->getMessage()}");
+                    // Any failure and not only a broken declaration, because the blast
+                    // radius is the point and it does not depend on which exception the
+                    // row-building happened to reach. The line is not written here: it
+                    // belongs to the worker's tick, which is handed this list.
+                    $contained[] = new ContainedFailure(
+                        WorkerTickUnit::BROWSER_SUBSCRIPTION,
+                        "page={$page} acceptKey={$acceptKey}",
+                        $failure,
+                    );
                 }
             }
         }
@@ -526,6 +553,8 @@ abstract class BrowserContext
                 );
             }
         }
+
+        return $contained;
     }
 
     /**
