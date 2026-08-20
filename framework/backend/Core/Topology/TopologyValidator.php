@@ -36,6 +36,9 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
+use Hilos\Database\Pages\PageCatalogConstants;
+use Hilos\Database\Pages\PageCatalogProviderInterface;
+use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
@@ -63,6 +66,8 @@ final class TopologyValidator
     private const string SECTION_PAGE_DATA = 'PAGE_DATA';
 
     private const string SECTION_PROTECTED_MODE_STUB = 'PROTECTED_MODE_STUB';
+
+    private const string SECTION_PAGE_CATALOG = 'PAGE_CATALOG';
 
     /**
      * Validates topology constants declared by a Hilos facade subclass.
@@ -125,6 +130,10 @@ final class TopologyValidator
         $this->validateBrowserBindings($pages, $browserSources, $pageData, self::SECTION_PAGE_DATA, $errors);
         $this->validateProtectedModeStub(
             Hilos::catalogConstantOf($hilosClass, self::SECTION_PROTECTED_MODE_STUB),
+            $errors,
+        );
+        $this->validatePageCatalog(
+            Hilos::catalogConstantOf($hilosClass, self::SECTION_PAGE_CATALOG),
             $errors,
         );
 
@@ -1881,6 +1890,157 @@ final class TopologyValidator
         $unknownFields = array_diff(array_keys($entry), $copyFields);
         if ($unknownFields !== []) {
             $errors[] = "{$path} contains unknown entry fields: " . implode(', ', $unknownFields);
+        }
+    }
+
+    /**
+     * Validates the merged admin page catalog: every caption present, every parent and every
+     * dashboard item naming an entry, and no cycle in the tree.
+     *
+     * Judged here, at daemon start, rather than survived at runtime. The readers walk the tree
+     * without a net on purpose: a breadcrumb that skips a broken link, or a dashboard that drops
+     * a card it cannot name, hides the typo for as long as nobody reads the catalog next to the
+     * screen. Refusing to start says it once, immediately, with the key in the message.
+     *
+     * The registration of a page in PAGES is deliberately NOT required: a card pointing at a
+     * feature the project has not activated stays visible, which is what the frontend does today
+     * and what hiding-by-feature would have to change on purpose.
+     *
+     * Read through {@see Hilos::catalogConstantOf()} for the reason
+     * {@see validateProtectedModeStub()} is: the constant is protected, and `defined()` answers
+     * false from this scope.
+     *
+     * @param mixed $provider Page catalog provider class declared by the facade
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validatePageCatalog(mixed $provider, array &$errors): void
+    {
+        if (!$this->isExistingClassString($provider, self::SECTION_PAGE_CATALOG, $errors)) {
+            return;
+        }
+
+        if (!is_subclass_of($provider, PageCatalogProviderInterface::class)) {
+            $errors[] = self::SECTION_PAGE_CATALOG . " class {$provider} must implement "
+                . PageCatalogProviderInterface::class;
+            return;
+        }
+
+        /** @var class-string<PageCatalogProviderInterface> $provider */
+        $catalog = PageCatalogResolver::catalogOf($provider);
+        foreach ($catalog as $page => $entry) {
+            $this->validatePageCatalogEntry($catalog, (string)$page, $entry, $errors);
+        }
+
+        foreach (PageCatalogResolver::dashboardSectionsOf($provider) as $index => $section) {
+            $this->validatePageCatalogSection($catalog, $index, $section, $errors);
+        }
+    }
+
+    /**
+     * Validates one catalog entry: both its texts, its parent, and its way up to the root.
+     *
+     * The caption and the lead are judged together because both are read unconditionally when a
+     * page answers its subscription: an entry missing either one would pass startup and then warn
+     * on every subscription while putting a null caption on the wire.
+     *
+     * @param array<string, mixed> $catalog Merged page catalog
+     * @param string $page Page key the entry is filed under
+     * @param mixed $entry Catalog entry declared for that page
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validatePageCatalogEntry(array $catalog, string $page, mixed $entry, array &$errors): void
+    {
+        $path = self::SECTION_PAGE_CATALOG . "[{$page}]";
+        $texts = [PageCatalogConstants::CATALOG_ENTRY_LABEL, PageCatalogConstants::CATALOG_ENTRY_LEAD];
+        if (!is_array($entry)) {
+            $errors[] = "{$path} must be an array carrying " . implode(' and ', $texts);
+            return;
+        }
+
+        foreach ($texts as $field) {
+            $value = $entry[$field] ?? null;
+            if (!is_string($value) || $value === '') {
+                $errors[] = "{$path}[{$field}] must be a non-empty string";
+            }
+        }
+
+        $parent = $entry[PageCatalogConstants::CATALOG_ENTRY_PARENT] ?? null;
+        if ($parent === null) {
+            return;
+        }
+
+        if (!is_string($parent) || !array_key_exists($parent, $catalog)) {
+            $errors[] = "{$path}[" . PageCatalogConstants::CATALOG_ENTRY_PARENT . '] names no catalog entry';
+            return;
+        }
+
+        if ($this->pageCatalogWalkLoops($catalog, $page)) {
+            $errors[] = "{$path} sits in a parent cycle and never reaches the tree root";
+        }
+    }
+
+    /**
+     * Validates one dashboard section: both its texts, and every item it lists carrying an entry.
+     *
+     * The texts are judged for the reason the entry's are in {@see validatePageCatalogEntry()}:
+     * the dashboard reads them unconditionally when it builds its cards.
+     *
+     * @param array<string, mixed> $catalog Merged page catalog
+     * @param mixed $index Position of the section in the merged list
+     * @param mixed $section Section declared at that position
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validatePageCatalogSection(array $catalog, mixed $index, mixed $section, array &$errors): void
+    {
+        $path = self::SECTION_PAGE_CATALOG . ' dashboard section ' . (is_int($index) ? (string)$index : '?');
+        if (!is_array($section)) {
+            $errors[] = "{$path} must be an array";
+            return;
+        }
+
+        foreach ([PageCatalogConstants::SECTION_TITLE, PageCatalogConstants::SECTION_DESCRIPTION] as $field) {
+            $value = $section[$field] ?? null;
+            if (!is_string($value) || $value === '') {
+                $errors[] = "{$path}[{$field}] must be a non-empty string";
+            }
+        }
+
+        $items = $section[PageCatalogConstants::SECTION_ITEMS] ?? null;
+        if (!is_array($items)) {
+            $errors[] = "{$path} must carry an array of " . PageCatalogConstants::SECTION_ITEMS;
+            return;
+        }
+
+        foreach ($items as $page) {
+            if (!is_string($page) || !array_key_exists($page, $catalog)) {
+                $errors[] = "{$path} lists an item with no catalog entry";
+            }
+        }
+    }
+
+    /**
+     * Reports whether walking `parent` up from a page revisits a key instead of reaching a root.
+     *
+     * @param array<string, mixed> $catalog Merged page catalog
+     * @param string $page Page key to walk up from
+     * @return bool True when the walk meets a key it already passed
+     */
+    private function pageCatalogWalkLoops(array $catalog, string $page): bool
+    {
+        $seen = [$page => true];
+        $key = $page;
+        while (true) {
+            $entry = $catalog[$key] ?? null;
+            $key = is_array($entry) ? ($entry[PageCatalogConstants::CATALOG_ENTRY_PARENT] ?? null) : null;
+            if (!is_string($key) || !array_key_exists($key, $catalog)) {
+                return false;
+            }
+
+            if (isset($seen[$key])) {
+                return true;
+            }
+
+            $seen[$key] = true;
         }
     }
 

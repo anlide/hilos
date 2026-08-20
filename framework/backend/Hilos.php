@@ -38,6 +38,9 @@ use Hilos\Core\Topology\AgentSignalRouteRegistry;
 use Hilos\Core\Topology\PageSignalRouteRegistry;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Pages\PageCatalogProviderInterface;
+use Hilos\Database\Pages\PageCatalogResolver;
+use Hilos\Database\Pages\PageCatalogStub;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogStub;
 use Hilos\Environment\EnvAccessor;
@@ -82,6 +85,17 @@ abstract class Hilos
 
     /** @var class-string<CatalogProviderInterface> Settings catalog provider class. */
     protected const string SETTINGS_CATALOG = SettingsCatalogStub::class;
+
+    /**
+     * Page catalog provider class: the project's own admin page identity.
+     *
+     * The framework's own admin pages are carried by the framework catalog and need no
+     * declaration; the stub adds nothing, so a project that owns no admin pages leaves this
+     * alone.
+     *
+     * @var class-string<PageCatalogProviderInterface>
+     */
+    protected const string PAGE_CATALOG = PageCatalogStub::class;
 
     /** @var class-string<CatalogProviderInterface> LLM profile catalog provider class. */
     protected const string LLM_PROFILE_CATALOG = LlmProfileCatalogStub::class;
@@ -304,6 +318,23 @@ abstract class Hilos
     public static function getBackupCatalogClass(): ?string
     {
         return static::appClass()::BACKUP_CATALOG;
+    }
+
+    /**
+     * Returns the project's page catalog provider class.
+     *
+     * The framework half of the admin catalog is a constant nobody declares, so this names only
+     * the project's own entries; {@see PageCatalogResolver} merges the two.
+     *
+     * Resolved through {@see appClass()} for the same reason as {@see getBackupCatalogClass()}:
+     * every caller is framework code writing a bare `Hilos::getPageCatalogClass()`, which binds
+     * `static` to this base class and would read the stub however a project declared itself.
+     *
+     * @return class-string<PageCatalogProviderInterface> Page catalog provider class
+     */
+    public static function getPageCatalogClass(): string
+    {
+        return static::appClass()::PAGE_CATALOG;
     }
 
     /**

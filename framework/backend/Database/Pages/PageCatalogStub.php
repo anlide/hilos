@@ -5,35 +5,31 @@ declare(strict_types=1);
 namespace Hilos\Database\Pages;
 
 /**
- * PageCatalogStub - Stub-example of page catalog.
+ * PageCatalogStub - Stub-example of a project page catalog.
  *
- * Project code can extend this class and merge its own page tree.
+ * The framework default: a project that owns no admin pages of its own declares nothing, and
+ * both halves come back empty, leaving the framework catalog as the whole of it. A project that
+ * does own admin pages writes its own {@see PageCatalogProviderInterface} implementation rather
+ * than deriving from this one - there is nothing here to inherit, and the two halves it would
+ * inherit are empty by definition.
  *
  * @see PageCatalogConstants
  */
-class PageCatalogStub
+final class PageCatalogStub implements PageCatalogProviderInterface
 {
     /**
-     * Returns stub catalog array for example reference.
-     *
-     * @return array<string, array{
-     *     parent_id: ?string,
-     *     label: string,
-     *     path_template?: string,
-     *     hide_breadcrumb?: bool,
-     * }>
+     * @return array<string, array{label: string, lead: string, parent?: string, icon?: string}> No project pages
      */
-    public static function getCatalog(): array
+    public static function pages(): array
     {
-        return [
-            PageCatalogConstants::STUB_KEY_MAIN => [
-                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => null,
-                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Stub Main',
-            ],
-            PageCatalogConstants::STUB_KEY_CHILD => [
-                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageCatalogConstants::STUB_KEY_MAIN,
-                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Stub Child',
-            ],
-        ];
+        return [];
+    }
+
+    /**
+     * @return list<array{title: string, description: string, items: list<string>}> No project sections
+     */
+    public static function dashboardSections(): array
+    {
+        return [];
     }
 }

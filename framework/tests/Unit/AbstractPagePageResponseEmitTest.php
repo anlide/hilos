@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
@@ -14,18 +15,24 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Hilos;
+use Hilos\Pages\AbstractHilosDashboardPage;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the default AbstractPage::onSubscribe page_response emission.
+ * Unit tests for what the page_response frame of AbstractPage::onSubscribe carries: the page's
+ * own payload, the identity the catalog holds for it, and - on the dashboard - its cards.
  */
 final class AbstractPagePageResponseEmitTest extends TestCase
 {
     protected function setUp(): void
     {
         Hilos::$sr = new SignalRouter();
-        Hilos::$browser = null;
+        // Binds the base facade, whose page catalog provider adds nothing, so the identity a page
+        // gets here is the framework catalog and not whatever project fixture ran before. The
+        // base creates no browser context, so this clears the browser in the same call.
+        Hilos::initBrowser();
     }
 
     protected function tearDown(): void
@@ -88,6 +95,110 @@ final class AbstractPagePageResponseEmitTest extends TestCase
             $signal->data->data->toArray(),
         );
     }
+
+    /**
+     * A page the catalog knows answers with its heading, its lead and its breadcrumb, so the one
+     * subscription carries everything the page needs to draw itself.
+     */
+    public function testSubscribeCarriesTheCatalogIdentityOfTheSubscribedPage(): void
+    {
+        $page = new AbstractPagePageResponseEmitTestCatalogPage(new AbstractPagePageResponseEmitTestAgent());
+
+        $page->onSubscribe('ak-1', new PageRouteParams([]));
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+
+        $this->assertNotNull($signal);
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+        $this->assertSame(
+            [
+                PageResponseSignalData::page => HilosPageConstants::HILOS_LOGS_KEYS,
+                PageResponseSignalData::payload => [
+                    PagePayload::data => [
+                        PageCatalogConstants::WIRE_PAGE_LABEL => 'By key',
+                        PageCatalogConstants::WIRE_PAGE_LEAD => 'Log volume grouped by log key.',
+                        PageCatalogConstants::WIRE_PAGE_BREADCRUMB => [
+                            [
+                                PageCatalogConstants::WIRE_CRUMB_PAGE => HilosPageConstants::HILOS_DASHBOARD,
+                                PageCatalogConstants::WIRE_CRUMB_LABEL => 'Hilos',
+                            ],
+                            [
+                                PageCatalogConstants::WIRE_CRUMB_PAGE => HilosPageConstants::HILOS_LOGS,
+                                PageCatalogConstants::WIRE_CRUMB_LABEL => 'Logs',
+                            ],
+                            [
+                                PageCatalogConstants::WIRE_CRUMB_PAGE => HilosPageConstants::HILOS_LOGS_KEYS,
+                                PageCatalogConstants::WIRE_CRUMB_LABEL => 'By key',
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            $signal->data->data->toArray(),
+        );
+    }
+
+    /**
+     * The catalog fills what the page left unsaid and overwrites nothing: a page that wrote its
+     * own heading keeps it, which is the seam a detail page will use to put the name of its
+     * entity where the catalog holds a static caption.
+     */
+    public function testAPageKeepsAnIdentityKeyItWroteItself(): void
+    {
+        $page = new AbstractPagePageResponseEmitTestOwnLabelPage(new AbstractPagePageResponseEmitTestAgent());
+
+        $page->onSubscribe('ak-1', new PageRouteParams([]));
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+
+        $this->assertNotNull($signal);
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+
+        $data = $signal->data->data->toArray()[PageResponseSignalData::payload][PagePayload::data];
+
+        $this->assertSame('Russian', $data[PageCatalogConstants::WIRE_PAGE_LABEL]);
+        $this->assertSame(
+            'A single language: locale settings and status.',
+            $data[PageCatalogConstants::WIRE_PAGE_LEAD],
+        );
+    }
+
+    /**
+     * The dashboard is the one page that needs more of the catalog than its own entry, and the
+     * cards ride the same frame: each item arrives with the page key the frontend builds its URL
+     * from, plus the caption, lead and icon it is drawn with.
+     */
+    public function testTheDashboardCarriesItsCardsBesideItsOwnIdentity(): void
+    {
+        $page = new AbstractPagePageResponseEmitTestDashboardPage(new AbstractPagePageResponseEmitTestAgent());
+
+        $page->onSubscribe('ak-1', new PageRouteParams([]));
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+
+        $this->assertNotNull($signal);
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+
+        $data = $signal->data->data->toArray()[PageResponseSignalData::payload][PagePayload::data];
+        $sections = $data[PageCatalogConstants::WIRE_DASHBOARD_SECTIONS];
+
+        $this->assertSame('Hilos', $data[PageCatalogConstants::WIRE_PAGE_LABEL]);
+        $this->assertCount(5, $sections);
+        $this->assertSame('Access & identity', $sections[0][PageCatalogConstants::SECTION_TITLE]);
+        $this->assertSame(
+            [
+                PageCatalogConstants::WIRE_ITEM_PAGE => HilosPageConstants::HILOS_USERS,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Users',
+                PageCatalogConstants::CATALOG_ENTRY_LEAD =>
+                    'Application users and panel operators: presence, roles, and access.',
+                PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-people',
+            ],
+            $sections[0][PageCatalogConstants::SECTION_ITEMS][0],
+        );
+    }
 }
 
 /**
@@ -109,6 +220,34 @@ final class AbstractPagePageResponseEmitTestPayloadPage extends AbstractPage
 final class AbstractPagePageResponseEmitTestDefaultPage extends AbstractPage
 {
     public const string PAGE = 'probe_default';
+}
+
+/**
+ * Test page standing on a framework admin key, so the catalog holds an entry for it.
+ */
+final class AbstractPagePageResponseEmitTestCatalogPage extends AbstractPage
+{
+    public const string PAGE = HilosPageConstants::HILOS_LOGS_KEYS;
+}
+
+/**
+ * Test page writing its own heading over the static caption the catalog holds for it.
+ */
+final class AbstractPagePageResponseEmitTestOwnLabelPage extends AbstractPage
+{
+    public const string PAGE = HilosPageConstants::HILOS_I18N_LANGUAGE;
+
+    protected function buildPagePayload(PageRouteParams $params): ?PagePayload
+    {
+        return new PagePayload(data: [PageCatalogConstants::WIRE_PAGE_LABEL => 'Russian']);
+    }
+}
+
+/**
+ * Concrete stand-in for a project's dashboard page, which adds nothing of its own.
+ */
+final class AbstractPagePageResponseEmitTestDashboardPage extends AbstractHilosDashboardPage
+{
 }
 
 /**

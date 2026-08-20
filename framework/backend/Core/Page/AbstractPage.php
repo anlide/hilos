@@ -23,6 +23,8 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Database\Pages\PageCatalogConstants;
+use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
@@ -188,6 +190,12 @@ abstract class AbstractPage
      * sends no answer at all — the PageSubscriptionException becomes a
      * subscription_page_error, which the client waits on the same way.
      *
+     * The frame also carries the page's own identity - its heading, its lead and its breadcrumb -
+     * whenever the page catalog holds an entry for it, so one subscription answers with
+     * everything the page needs to draw itself. It is laid UNDER what the page built: a page that
+     * wrote an identity key of its own keeps it, which is how a detail page will one day put the
+     * name of its entity where the catalog holds a static caption.
+     *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params from page subscription
      * @throws PageSubscriptionException When browser snapshot rejects the subscription
@@ -196,12 +204,12 @@ abstract class AbstractPage
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        $payload = $this->buildPagePayload($params);
+        $payload = $this->withPageIdentity($this->buildPagePayload($params));
         Hilos::$browser?->subscribeSnapshot(static::PAGE, $acceptKey, $params);
         $this->sendToUser(
             SignalTypeConstants::PAGE_RESPONSE,
             $acceptKey,
-            new PageResponseSignalData(static::PAGE, $payload ?? new PagePayload()),
+            new PageResponseSignalData(static::PAGE, $payload),
         );
     }
 
@@ -502,6 +510,37 @@ abstract class AbstractPage
             signalType: new SignalType(SignalTypeConstants::WS_ALL_CONNECTED),
             signalName: new SignalName($signalName),
             signalData: new WebSocketSignalData(data: $data, excludeAcceptKey: $excludeAcceptKey),
+        );
+    }
+
+    /**
+     * Lays this page's catalog identity under the payload the page built.
+     *
+     * Union rather than merge, so a key the page already wrote wins over the catalog: the
+     * framework fills what the page left unsaid and overwrites nothing. A page the catalog does
+     * not know - a public footer page, a project page outside the admin tree - passes through
+     * unchanged, which is not an error but the ordinary case for most of a project's pages.
+     *
+     * @param ?PagePayload $payload Payload the page built, or null when it built none
+     * @return PagePayload Payload carrying the page identity the catalog holds
+     */
+    private function withPageIdentity(?PagePayload $payload): PagePayload
+    {
+        $payload ??= new PagePayload();
+        $identity = PageCatalogResolver::identity(static::PAGE);
+        if ($identity === null) {
+            return $payload;
+        }
+
+        return new PagePayload(
+            entities: $payload->entities,
+            data: $payload->data + [
+                PageCatalogConstants::WIRE_PAGE_LABEL => $identity[PageCatalogConstants::CATALOG_ENTRY_LABEL],
+                PageCatalogConstants::WIRE_PAGE_LEAD => $identity[PageCatalogConstants::CATALOG_ENTRY_LEAD],
+                PageCatalogConstants::WIRE_PAGE_BREADCRUMB => PageCatalogResolver::breadcrumb(static::PAGE),
+            ],
+            lists: $payload->lists,
+            tables: $payload->tables,
         );
     }
 

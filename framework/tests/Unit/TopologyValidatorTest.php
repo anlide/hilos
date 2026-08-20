@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentRegistry;
@@ -34,6 +35,8 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Pages\PageCatalogConstants;
+use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Object\Objects;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Hilos as HilosFacade;
@@ -557,6 +560,83 @@ final class TopologyValidatorTest extends TestCase
             [
                 'PROTECTED_MODE_STUB contains a non-string or empty operation key',
             ],
+        );
+    }
+
+    public function testPageCatalogEntryMissingATextOrNamingAnUnknownParentFails(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyPageCatalogBrokenHilos::validateTopology();
+            },
+            [
+                'PAGE_CATALOG[' . TopologyPageCatalogBrokenCatalog::NO_LABEL . ']['
+                    . PageCatalogConstants::CATALOG_ENTRY_LABEL . '] must be a non-empty string',
+                'PAGE_CATALOG[' . TopologyPageCatalogBrokenCatalog::LOST_PARENT . ']['
+                    . PageCatalogConstants::CATALOG_ENTRY_PARENT . '] names no catalog entry',
+                'PAGE_CATALOG[' . TopologyPageCatalogBrokenCatalog::NO_LEAD . ']['
+                    . PageCatalogConstants::CATALOG_ENTRY_LEAD . '] must be a non-empty string',
+            ],
+        );
+    }
+
+    public function testPageCatalogCycleFails(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyPageCatalogCycleHilos::validateTopology();
+            },
+            [
+                'PAGE_CATALOG[' . TopologyPageCatalogCycleCatalog::LEFT
+                    . '] sits in a parent cycle and never reaches the tree root',
+                'PAGE_CATALOG[' . TopologyPageCatalogCycleCatalog::RIGHT
+                    . '] sits in a parent cycle and never reaches the tree root',
+            ],
+        );
+    }
+
+    /**
+     * The index names the position in the MERGED list, so a project section is judged after the
+     * framework ones - which is also where the append order stops being a claim and starts being
+     * a fact this test would notice changing.
+     */
+    public function testPageCatalogSectionItemWithoutAnEntryFails(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyPageCatalogSectionHilos::validateTopology();
+            },
+            ['PAGE_CATALOG dashboard section 5 lists an item with no catalog entry'],
+        );
+    }
+
+    /**
+     * The dashboard reads a section's texts unconditionally when it builds its cards, so an
+     * untitled section is refused at startup rather than drawn with a blank heading.
+     */
+    public function testPageCatalogSectionWithoutTextsFails(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyPageCatalogSectionHilos::validateTopology();
+            },
+            [
+                'PAGE_CATALOG dashboard section 6[' . PageCatalogConstants::SECTION_TITLE
+                    . '] must be a non-empty string',
+                'PAGE_CATALOG dashboard section 6[' . PageCatalogConstants::SECTION_DESCRIPTION
+                    . '] must be a non-empty string',
+            ],
+        );
+    }
+
+    public function testPageCatalogNamingANonProviderFails(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyPageCatalogNotAProviderHilos::validateTopology();
+            },
+            ['PAGE_CATALOG class ' . TopologyTestDbContext::class . ' must implement '
+                . PageCatalogProviderInterface::class],
         );
     }
 
@@ -2607,5 +2687,180 @@ final class TopologyBrowserMountedHilos extends HilosFacade
     protected static function createDb(): DbContext
     {
         return new TopologyMountedDbContext();
+    }
+}
+
+
+/**
+ * Page catalog fixture with two defects: an entry with no caption, and one whose parent is a key
+ * the merged catalog does not carry.
+ */
+final class TopologyPageCatalogBrokenCatalog implements PageCatalogProviderInterface
+{
+    public const string NO_LABEL = 'broken_no_label';
+
+    public const string LOST_PARENT = 'broken_lost_parent';
+
+    public const string NO_LEAD = 'broken_no_lead';
+
+    /**
+     * @return array<string, array<string, mixed>> Pages of the broken fixture
+     */
+    public static function pages(): array
+    {
+        return [
+            self::NO_LABEL => [
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => '',
+                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'An entry nobody can name.',
+                PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            ],
+            self::LOST_PARENT => [
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Orphan',
+                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'An entry hanging off nothing.',
+                PageCatalogConstants::CATALOG_ENTRY_PARENT => 'no_such_page',
+            ],
+            self::NO_LEAD => [
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Mute',
+                PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            ],
+        ];
+    }
+
+    /**
+     * @return list<array{title: string, description: string, items: list<string>}> No sections
+     */
+    public static function dashboardSections(): array
+    {
+        return [];
+    }
+}
+
+final class TopologyPageCatalogBrokenHilos extends HilosFacade
+{
+    protected const string PAGE_CATALOG = TopologyPageCatalogBrokenCatalog::class;
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+/**
+ * Page catalog fixture whose two entries name each other as parent, so neither reaches the root.
+ */
+final class TopologyPageCatalogCycleCatalog implements PageCatalogProviderInterface
+{
+    public const string LEFT = 'cycle_left';
+
+    public const string RIGHT = 'cycle_right';
+
+    /**
+     * @return array<string, array<string, mixed>> Pages of the cyclic fixture
+     */
+    public static function pages(): array
+    {
+        return [
+            self::LEFT => [
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Left',
+                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Parent of the right one.',
+                PageCatalogConstants::CATALOG_ENTRY_PARENT => self::RIGHT,
+            ],
+            self::RIGHT => [
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Right',
+                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Parent of the left one.',
+                PageCatalogConstants::CATALOG_ENTRY_PARENT => self::LEFT,
+            ],
+        ];
+    }
+
+    /**
+     * @return list<array{title: string, description: string, items: list<string>}> No sections
+     */
+    public static function dashboardSections(): array
+    {
+        return [];
+    }
+}
+
+final class TopologyPageCatalogCycleHilos extends HilosFacade
+{
+    protected const string PAGE_CATALOG = TopologyPageCatalogCycleCatalog::class;
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+/**
+ * Page catalog fixture whose dashboard section lists a page that carries no entry.
+ */
+final class TopologyPageCatalogSectionCatalog implements PageCatalogProviderInterface
+{
+    /**
+     * @return array<string, array<string, mixed>> No pages
+     */
+    public static function pages(): array
+    {
+        return [];
+    }
+
+    /**
+     * @return list<array{title: string, description: string, items: list<string>}> One broken section
+     */
+    public static function dashboardSections(): array
+    {
+        return [
+            [
+                PageCatalogConstants::SECTION_TITLE => 'Nowhere',
+                PageCatalogConstants::SECTION_DESCRIPTION => 'A card pointing at a page nobody declared.',
+                PageCatalogConstants::SECTION_ITEMS => ['no_such_page'],
+            ],
+            [
+                PageCatalogConstants::SECTION_TITLE => '',
+                PageCatalogConstants::SECTION_DESCRIPTION => '',
+                PageCatalogConstants::SECTION_ITEMS => [HilosPageConstants::HILOS_USERS],
+            ],
+        ];
+    }
+}
+
+final class TopologyPageCatalogSectionHilos extends HilosFacade
+{
+    protected const string PAGE_CATALOG = TopologyPageCatalogSectionCatalog::class;
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyPageCatalogNotAProviderHilos extends HilosFacade
+{
+    protected const string PAGE_CATALOG = TopologyTestDbContext::class;
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
     }
 }
