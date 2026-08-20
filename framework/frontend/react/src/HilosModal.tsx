@@ -27,6 +27,13 @@ export interface HilosModalProps {
   open: boolean
   /** The default header title (overridable via `header`). */
   title?: string
+  /**
+   * The dialog's accessible name when it shows no title of its own — a surface
+   * whose heading changes with the step owns that heading in the body, and the
+   * name of the dialog still has to say what it is for. Ignored when `title` is
+   * set: a visible title names the dialog already.
+   */
+  ariaLabel?: string
   /** Close on the Escape key (through the confirm guard). Defaults to true. */
   closeOnEsc?: boolean
   /** Close on a backdrop click (through the confirm guard). Defaults to true. */
@@ -62,6 +69,7 @@ export interface HilosModalProps {
 export function HilosModal({
   open,
   title = '',
+  ariaLabel = '',
   closeOnEsc = true,
   closeOnBackdrop = true,
   confirmOnClose = false,
@@ -148,7 +156,7 @@ export function HilosModal({
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        aria-label={title || undefined}
+        aria-label={title || ariaLabel || undefined}
         data-id="modal"
         onKeyDown={(event) => onKeyDown(event, dialogRef.current)}
         onClick={(event) => {
@@ -160,7 +168,12 @@ export function HilosModal({
         <div className="modal-dialog modal-dialog-centered">
           <div className="modal-content">
             <div className="modal-header">
-              {header ?? <h5 className="modal-title mb-0">{title}</h5>}
+              {header ??
+                /* No title, no heading: an empty one is a heading in the
+                   accessibility tree that names nothing, and a dialog whose
+                   heading lives in its body (the auth surface) has a title here
+                   only by accident. */
+                (title ? <h5 className="modal-title mb-0">{title}</h5> : null)}
               <button
                 type="button"
                 className="btn-close"

@@ -67,15 +67,17 @@ export function HilosView({ pages, authSurface, authGate }: HilosViewProps) {
   // polling for an element that renders before the answer and disappears when
   // it lands.
   const pageState = pageError ? 'error' : pageLoading ? 'loading' : 'ready'
+  const showAuthInPlace =
+    !!pageError && pageError.httpCode === 401 && !!AuthSurface
 
+  // The same three-way choice the Vue peer makes in its template: the surface in
+  // place of a 401'd page, the error surface for any other denial, the mapped
+  // page otherwise. (`AuthSurface` is re-tested only so TypeScript narrows it.)
   let content: ReactNode
-  if (pageError) {
-    content =
-      pageError.httpCode === 401 && AuthSurface ? (
-        <AuthSurface />
-      ) : (
-        <ErrorPage error={pageError} />
-      )
+  if (showAuthInPlace && AuthSurface) {
+    content = <AuthSurface />
+  } else if (pageError) {
+    content = <ErrorPage error={pageError} />
   } else {
     content = View && !pageLoading ? <View /> : null
   }
@@ -84,10 +86,24 @@ export function HilosView({ pages, authSurface, authGate }: HilosViewProps) {
     <>
       <div data-id="hilos-page-state" data-state={pageState} hidden />
       {content}
-      {AuthSurface && authGate ? (
+      {/* No title of its own: the sign-in surface is identifier-first (HIL-423),
+          so what the screen is called changes with the step the person is on,
+          and only the surface knows that. It renders its own heading in the
+          body. The dialog is still NAMED — the name says what it is for, which
+          does not change with the step, and the mandated rule
+          (docs/agents/frontend/accessibility.md) has every modal expose
+          role=dialog + aria-modal + an accessible name.
+
+          Never while the same surface is already shown IN PLACE: the gate opens
+          the modal for an ack as well as for a gated action (HIL-422), and on a
+          401'd page that would draw a second copy of the surface over the first
+          — two machines, two subscriptions, and every control on screen twice.
+          The gate's resume closes both states in one move, so nothing is left
+          holding a modal nobody can see. */}
+      {AuthSurface && authGate && !showAuthInPlace ? (
         <HilosModal
           open={modalOpen}
-          title="Sign in"
+          ariaLabel="Sign in"
           onClose={() => authGate.dismiss()}
           actions={() => null}
         >

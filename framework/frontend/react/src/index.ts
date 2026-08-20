@@ -99,4 +99,17 @@ export {
   HilosViewportTable,
   type HilosViewportTableProps,
 } from './HilosViewportTable.js'
+export {
+  HilosAuthSurface,
+  type HilosAuthSurfaceProps,
+} from './auth/HilosAuthSurface.js'
+export {
+  HilosMagicLinkPage,
+  type HilosMagicLinkPageProps,
+} from './auth/HilosMagicLinkPage.js'
+export {
+  HilosOAuthCallbackPage,
+  type HilosOAuthCallbackPageProps,
+} from './auth/HilosOAuthCallbackPage.js'
+export { HilosAuthGateContext } from './auth/hilosAuthGateContext.js'
 export type { HilosTableColumn } from '@hilos/core'

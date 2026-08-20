@@ -61,6 +61,18 @@ describe('HilosModal', () => {
     expect(closes).toBe(1)
   })
 
+  it('names the dialog from ariaLabel when it carries no visible title', () => {
+    render(<HilosModal open ariaLabel="Sign in" />)
+    expect(byId('modal')?.getAttribute('aria-label')).toBe('Sign in')
+  })
+
+  it('renders no modal-title heading when there is no title', () => {
+    // An empty heading is a heading in the accessibility tree that names
+    // nothing (docs/agents/frontend/accessibility.md).
+    render(<HilosModal open ariaLabel="Sign in" />)
+    expect(document.querySelector('.modal-title')).toBeNull()
+  })
+
   it('raises a confirm step before closing a dirty modal, then discards', () => {
     let closes = 0
     render(
