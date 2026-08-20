@@ -63,7 +63,9 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
   `new self()` (`static-factories.md`).
 - A surviving `@` carries `// warning-suppressed: <what is checked instead>` on
   the line directly above the call, and the `ERROR-SUPPRESSION` guard fails
-  `test:framework:unit` without it (`error-suppression.md`).
+  `test:framework:unit` without it; the marker does not buy a file primitive the
+  right to owe an exception outside `Hilos\Fs\FsPath`, which the `FS-SEAM` guard
+  fails on in the same run (`error-suppression.md`).
 - A line is at most 150 characters wide, counted in characters and not in bytes;
   the `LINE-LENGTH` guard fails `test:framework:unit` on a wider one, and only a
   heredoc body is outside it (`line-length.md`).

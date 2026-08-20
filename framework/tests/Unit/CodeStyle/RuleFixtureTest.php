@@ -8,6 +8,7 @@ use Hilos\Tests\CodeStyle\CodeStyleRule;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
+use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
 use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\MalformedInputMarkerRule;
@@ -103,6 +104,15 @@ final class RuleFixtureTest extends TestCase
                     . 'above the call names no reason (see docs/agents/code-style/error-suppression.md)',
                 'ERROR-SUPPRESSION Bad/ErrorSuppressionSamples.php:29 — @ silences a warning with no '
                     . '`// warning-suppressed:` marker on the line above '
+                    . '(see docs/agents/code-style/error-suppression.md)',
+                'FS-SEAM Bad/FsSeamBypassSamples.php:28 — a file is opened under @ outside the Fs seam; '
+                    . 'read it through Hilos\Fs\FsPath instead '
+                    . '(see docs/agents/code-style/error-suppression.md)',
+                'FS-SEAM Bad/FsSeamBypassSamples.php:35 — a suppressed file_get_contents() turns its failure '
+                    . 'into an exception outside the Fs seam; call Hilos\Fs\FsPath and catch its Fs exception '
+                    . '(see docs/agents/code-style/error-suppression.md)',
+                'FS-SEAM Bad/FsSeamBypassSamples.php:50 — a suppressed unlink() turns its failure into an '
+                    . 'exception outside the Fs seam; call Hilos\Fs\FsPath and catch its Fs exception '
                     . '(see docs/agents/code-style/error-suppression.md)',
                 'LINE-LENGTH Bad/LineLengthSamples.php:15 — line is 158 characters, limit 150 '
                     . '(see docs/agents/code-style/line-length.md)',
@@ -366,6 +376,7 @@ final class RuleFixtureTest extends TestCase
             new RtStateReachRule(),
             new RtStateMutationRule(),
             new ErrorSuppressionRule(),
+            new FsSeamRule(),
             new RandomSourceRule(),
             new MalformedInputMarkerRule(),
             new SecretInQueryRule(),

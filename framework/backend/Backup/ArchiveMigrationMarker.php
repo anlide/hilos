@@ -7,6 +7,9 @@ namespace Hilos\Backup;
 use Hilos\Backup\Anonymization\ArchiveSchemaReader;
 use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Database\Migration;
+use Hilos\Fs\Exception\FileNotFoundException;
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsPath;
 
 /**
  * ArchiveMigrationMarker - the migration level a schema archive declares in its own dump text.
@@ -79,23 +82,15 @@ final class ArchiveMigrationMarker
      */
     public static function read(string $path): ?int
     {
-        if (!is_file($path)) {
-            throw new RestoreFailedException("Archive dump not found for the migration marker: {$path}");
-        }
-
-        // warning-suppressed: false becomes RestoreFailedException on the next line
-        $handle = @fopen($path, 'rb');
-        if ($handle === false) {
-            throw new RestoreFailedException("Cannot read the archive dump for the migration marker: {$path}");
-        }
-
         $level = null;
         try {
-            while (($line = fgets($handle)) !== false) {
+            foreach (FsPath::readLines($path) as $line) {
                 $level = self::levelOnLine($line) ?? $level;
             }
-        } finally {
-            fclose($handle);
+        } catch (FileNotFoundException $failure) {
+            throw new RestoreFailedException("Archive dump not found for the migration marker: {$path}", 0, $failure);
+        } catch (FsException $failure) {
+            throw new RestoreFailedException("Cannot read the archive dump for the migration marker: {$path}", 0, $failure);
         }
 
         return $level;

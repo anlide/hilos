@@ -51,6 +51,47 @@ final class FsPath
     }
 
     /**
+     * Read the file line by line, holding no more than one line at a time.
+     *
+     * The pair of {@see read()} for a file too large to bring into memory: the
+     * handle is opened and closed here, and the caller sees only strings. Each
+     * line is yielded exactly as `fgets()` returned it, trailing line ending
+     * included, because what the text means belongs to the reader.
+     *
+     * A generator body does not run until the first iteration, so both exceptions
+     * below arrive on the `foreach`, not on the call that creates it — the caller
+     * puts the `foreach` inside its `try`, not the assignment.
+     *
+     * @param string $path Absolute file path
+     * @return iterable<int, string> File lines in file order, each with its trailing line ending
+     *
+     * @throws FileNotFoundException If the file does not exist
+     * @throws FileReadException If the file cannot be opened, or the stream breaks before its end
+     */
+    public static function readLines(string $path): iterable
+    {
+        if (!is_file($path)) {
+            throw new FileNotFoundException("File not found: {$path}");
+        }
+        // warning-suppressed: false becomes FileReadException on the next line
+        $handle = @fopen($path, 'rb');
+        if ($handle === false) {
+            throw new FileReadException("Cannot read file: {$path}");
+        }
+
+        try {
+            while (($line = fgets($handle)) !== false) {
+                yield $line;
+            }
+            if (!feof($handle)) {
+                throw new FileReadException("Cannot read file to its end: {$path}");
+            }
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /**
      * Overwrite the file with the payload, creating it when absent.
      *
      * @param string $path Absolute file path

@@ -49,6 +49,47 @@ final class FsPathTest extends TestCase
         FsPath::read($this->root . DIRECTORY_SEPARATOR . 'absent.txt');
     }
 
+    public function testReadLinesYieldsLinesInFileOrderWithTheirEndings(): void
+    {
+        $path = $this->root . DIRECTORY_SEPARATOR . 'lines.txt';
+        file_put_contents($path, "first\nsecond\nlast");
+
+        $this->assertSame(["first\n", "second\n", 'last'], iterator_to_array(FsPath::readLines($path)));
+    }
+
+    public function testReadLinesYieldsNothingForAnEmptyFile(): void
+    {
+        $path = $this->root . DIRECTORY_SEPARATOR . 'empty.txt';
+        file_put_contents($path, '');
+
+        $this->assertSame([], iterator_to_array(FsPath::readLines($path)));
+    }
+
+    public function testReadLinesThrowsFileNotFoundOnTheFirstIteration(): void
+    {
+        $lines = FsPath::readLines($this->root . DIRECTORY_SEPARATOR . 'absent.txt');
+
+        $this->expectException(FileNotFoundException::class);
+
+        foreach ($lines as $line) {
+            $this->fail("A missing file yielded {$line}");
+        }
+    }
+
+    public function testReadLinesClosesTheHandleWhenTheCallerBreaks(): void
+    {
+        $path = $this->root . DIRECTORY_SEPARATOR . 'break.txt';
+        file_put_contents($path, "first\nsecond\nthird\n");
+        $openStreams = count(get_resources('stream'));
+
+        foreach (FsPath::readLines($path) as $line) {
+            $this->assertSame("first\n", $line);
+            break;
+        }
+
+        $this->assertSame($openStreams, count(get_resources('stream')));
+    }
+
     public function testWriteOverwritesExistingContents(): void
     {
         $path = $this->root . DIRECTORY_SEPARATOR . 'write.txt';

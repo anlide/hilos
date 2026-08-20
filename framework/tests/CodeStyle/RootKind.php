@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\CodeStyle;
 
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
+use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
 
@@ -14,10 +15,11 @@ use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
  * The kind states a property of the code, never the name of the directory holding
  * it: the rules withheld below judge code that runs for real, and a suite is
  * allowed what production is not — suppressing a warning while it arranges the
- * failure it is about to assert, repeating one number across a dozen assertions
- * where a constant would hide from the reader the very value under test, and
- * drawing throwaway tokens and names from the tolerant axis of the random helper,
- * which it also has to call in order to check it.
+ * failure it is about to assert, opening by hand the file whose refusal it stages
+ * rather than taking the seam that would raise on it, repeating one number across
+ * a dozen assertions where a constant would hide from the reader the very value
+ * under test, and drawing throwaway tokens and names from the tolerant axis of the
+ * random helper, which it also has to call in order to check it.
  *
  * A rule cannot tell the two apart on its own: it is handed the path relative to
  * the scanned root, so `framework/tests/Unit/X.php` reaches it as `Unit/X.php` and
@@ -29,7 +31,7 @@ enum RootKind
     /** Code that runs in production, or that decides a run of it, judged by every rule. */
     case Production;
 
-    /** A test suite, judged by every rule but the three a suite is allowed to break. */
+    /** A test suite, judged by every rule but the four a suite is allowed to break. */
     case Suite;
 
     /**
@@ -39,7 +41,12 @@ enum RootKind
      *
      * @var array<int, string>
      */
-    private const array PRODUCTION_ONLY_RULES = [ErrorSuppressionRule::ID, RandomSourceRule::ID, MagicRepeatRule::ID];
+    private const array PRODUCTION_ONLY_RULES = [
+        ErrorSuppressionRule::ID,
+        FsSeamRule::ID,
+        RandomSourceRule::ID,
+        MagicRepeatRule::ID,
+    ];
 
     /**
      * @param string $ruleId Id of the rule about to be applied

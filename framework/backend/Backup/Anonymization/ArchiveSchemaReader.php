@@ -7,6 +7,9 @@ namespace Hilos\Backup\Anonymization;
 use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\Exception\RestoreFailedException;
+use Hilos\Fs\Exception\FileNotFoundException;
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsPath;
 
 /**
  * ArchiveSchemaReader - reads the tables an archive's dump file declares.
@@ -56,23 +59,15 @@ final class ArchiveSchemaReader
      */
     public static function read(string $path): array
     {
-        if (!is_file($path)) {
-            throw new RestoreFailedException("Archive dump not found for schema reading: {$path}");
-        }
-
-        // warning-suppressed: false becomes RestoreFailedException on the next line
-        $handle = @fopen($path, 'rb');
-        if ($handle === false) {
-            throw new RestoreFailedException("Cannot read the archive dump for schema: {$path}");
-        }
-
         $reader = new self();
         try {
-            while (($line = fgets($handle)) !== false) {
+            foreach (FsPath::readLines($path) as $line) {
                 $reader->consume($line);
             }
-        } finally {
-            fclose($handle);
+        } catch (FileNotFoundException $failure) {
+            throw new RestoreFailedException("Archive dump not found for schema reading: {$path}", 0, $failure);
+        } catch (FsException $failure) {
+            throw new RestoreFailedException("Cannot read the archive dump for schema: {$path}", 0, $failure);
         }
 
         return $reader->tables;

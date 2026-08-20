@@ -87,6 +87,20 @@ directory name) calls the same layer, and a subsystem with paths of its own —
 Backup, for one — calls it directly and converts `FsException` into its own
 taxonomy at its boundary.
 
+The machine reads this class by two signs, and a marker legalizes neither of them.
+A file opened under `@` outside the seam is a hit whatever the next line does —
+the caller that needs one line at a time takes `FsPath::readLines()` rather than a
+handle of its own. A suppressed primitive addressed by a PATH — `fopen`,
+`file_get_contents`, `file_put_contents`, `rename`, `copy`, `unlink`, `rmdir`,
+`mkdir`, `chmod`, `touch`, `filesize`, `tempnam` and their kin — is a hit when its
+result is checked and the checking branch throws: the failure becomes an exception
+either way, so it belongs behind the seam. A result nobody examines is class D and
+stays legal, and the stream and socket primitives (`fwrite`, `fread`, `fclose`,
+`feof`, `stream_*`, `socket_*`) are not judged at all — they work over a descriptor
+rather than a path, which is where class B lives.
+
+**Checked automatically: `ERROR-SUPPRESSION`, `FS-SEAM`.**
+
 **D. Deliberate degrade and teardown.** Marker plus the documented outcome —
 `null`, a log line, or a no-op. `/proc` on a non-Linux host, unlinking a temp
 file while tearing down, a sidecar's `filesize()`.
@@ -117,9 +131,9 @@ $contents = (new FsFile($directory, $filename))->read();
 
 ## Validation
 
-`composer run test:framework:unit` runs the `ERROR-SUPPRESSION` guard over
-`framework/backend`, `demo/*/backend` and `scripts`. A hit reads
-`ERROR-SUPPRESSION <path>:<line> — <what is wrong> (see <doc>)`. Existing debt is
+`composer run test:framework:unit` runs the `ERROR-SUPPRESSION` and `FS-SEAM`
+guards over `framework/backend`, `demo/*/backend` and `scripts`. A hit reads
+`<rule id> <path>:<line> — <what is wrong> (see <doc>)`. Existing debt is
 recorded in `framework/tests/CodeStyle/baseline.txt`, one record per file with
 the leaf that owes its removal; the baseline only shrinks. See
 [automated-checks.md](automated-checks.md).

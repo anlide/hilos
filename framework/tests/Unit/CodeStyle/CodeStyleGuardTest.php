@@ -10,6 +10,7 @@ use Hilos\Tests\CodeStyle\RootKind;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
+use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
 use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\MalformedInputMarkerRule;
@@ -201,6 +202,7 @@ final class CodeStyleGuardTest extends TestCase
             new RtStateReachRule(),
             new RtStateMutationRule(),
             new ErrorSuppressionRule(),
+            new FsSeamRule(),
             new RandomSourceRule(),
             new MalformedInputMarkerRule(),
             new SecretInQueryRule(),

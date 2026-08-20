@@ -8,6 +8,7 @@ use Hilos\Tests\CodeStyle\RootKind;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
+use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
 use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
@@ -41,6 +42,7 @@ final class ScannedRootsTest extends TestCase
      */
     private const array PRODUCTION_ONLY_RULE_IDS = [
         ErrorSuppressionRule::ID,
+        FsSeamRule::ID,
         RandomSourceRule::ID,
         MagicRepeatRule::ID,
     ];
@@ -90,7 +92,7 @@ final class ScannedRootsTest extends TestCase
         }
     }
 
-    public function testASuiteIsJudgedByEveryRuleButTheThreeItIsAllowed(): void
+    public function testASuiteIsJudgedByEveryRuleButTheFourItIsAllowed(): void
     {
         foreach (self::PRODUCTION_ONLY_RULE_IDS as $ruleId) {
             $this->assertFalse(RootKind::Suite->allows($ruleId), $ruleId . ' judges production code only');
