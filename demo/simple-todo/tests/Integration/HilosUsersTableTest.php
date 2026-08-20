@@ -42,7 +42,10 @@ final class HilosUsersTableTest extends IntegrationTestCase
      */
     public function testRowFromUserMergesProfileAndOfflinePresence(): void
     {
-        $user = Hilos::$db->users->actions->registerGuest();
+        $user = Hilos::$db->users->actions->registerAdmin();
+        // The only mint this demo has makes administrators (HIL-609); the row under
+        // test is an ordinary one, so the flag comes straight back off.
+        $user->actions->setAdmin(false);
         $row = new HilosUsersTable()->rowFromUser(Hilos::$db->users[$user->id]);
 
         $this->assertSame((int) $user->id, $row->id);
@@ -60,7 +63,7 @@ final class HilosUsersTableTest extends IntegrationTestCase
      */
     public function testRowFromUserReflectsOnlinePresence(): void
     {
-        $user = Hilos::$db->users->actions->registerGuest();
+        $user = Hilos::$db->users->actions->registerAdmin();
         $userId = (int) $user->id;
         Hilos::$rt->connections->actions->register('todo-ak-a', $userId);
         Hilos::$rt->connections->actions->register('todo-ak-b', $userId);
@@ -78,7 +81,7 @@ final class HilosUsersTableTest extends IntegrationTestCase
      */
     public function testPresenceChangeBuildsUserRowUpdate(): void
     {
-        $user = Hilos::$db->users->actions->registerGuest();
+        $user = Hilos::$db->users->actions->registerAdmin();
         $userId = (int) $user->id;
         Hilos::$rt->connections->actions->register('todo-ak-a', $userId);
 

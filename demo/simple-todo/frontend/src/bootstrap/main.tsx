@@ -13,7 +13,12 @@ import { pageEntityTypes } from '../pages/entityTypes'
 import { appName, pageTitles } from '../pages/pageTitles'
 import { router } from '../pages/routes'
 import { connection } from './connection'
+import { bindGuestIdentity } from './guest'
 import { scopes } from './session'
+
+// Before bootHilos, which opens the socket: the guest identity is sent ahead of
+// the handshake response, so a listener attached after the boot would miss it.
+bindGuestIdentity(connection)
 
 const hilosRouter = bootHilos({
   connection,

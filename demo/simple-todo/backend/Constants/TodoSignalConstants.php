@@ -13,4 +13,7 @@ final class TodoSignalConstants
 {
     /** @var string Handshake response signal name */
     public const string HANDSHAKE_RESPONSE = 'handshake_response';
+
+    /** @var string Guest identity signal name - the display name of a session with no account */
+    public const string GUEST_IDENTITY = 'guest_identity';
 }

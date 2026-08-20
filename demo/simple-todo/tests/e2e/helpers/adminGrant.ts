@@ -118,7 +118,8 @@ export async function sessionToken(page: Page): Promise<string> {
 
 /**
  * Makes one browser session an administrator over the command channel, minting
- * its user when the session carries none.
+ * its user when the session carries none — which, since HIL-610, is every
+ * browser that has not been granted one before.
  *
  * @param token Session cookie token naming the browser session.
  * @returns The id of the user that is now an administrator.
@@ -139,11 +140,9 @@ export async function mintAdmin(token: string): Promise<number> {
  * grant first.
  *
  * The account is named by the SESSION cookie rather than by the page's
- * self-user-id marker (HIL-609). Both name the same person today — this demo's
- * handshake binds every visitor to a user row — but the marker only exists
- * because of that, and it goes away when the visitor moves behind the session
- * (HIL-610/611). The reply carries the id, so the specs calling this keep
- * getting one either way.
+ * self-user-id marker (HIL-609), which since HIL-610 is empty until a browser has
+ * an account — a visitor has no user row to publish an id from. The command reply
+ * carries the id, so this is also how a spec that needs one gets it.
  *
  * @param page Playwright page, in a browser context that has not opened the app yet.
  * @returns The granted account's durable user id.

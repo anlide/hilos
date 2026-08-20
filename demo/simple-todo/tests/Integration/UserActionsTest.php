@@ -23,7 +23,7 @@ final class UserActionsTest extends IntegrationTestCase
      */
     public function testRenameSucceeds(): void
     {
-        $user = Hilos::$db->users->actions->registerGuest();
+        $user = Hilos::$db->users->actions->registerAdmin();
         $userId = $user->id;
         $this->assertNotNull($userId);
 
@@ -41,7 +41,7 @@ final class UserActionsTest extends IntegrationTestCase
      */
     public function testRenameAcceptsSixtyFourCharacters(): void
     {
-        $user = Hilos::$db->users->actions->registerGuest();
+        $user = Hilos::$db->users->actions->registerAdmin();
         $userId = $user->id;
         $this->assertNotNull($userId);
 
@@ -58,7 +58,7 @@ final class UserActionsTest extends IntegrationTestCase
      */
     public function testRenameEmptyThrows(): void
     {
-        $user = Hilos::$db->users->actions->registerGuest();
+        $user = Hilos::$db->users->actions->registerAdmin();
         $dbUser = Hilos::$db->users[$user->id];
 
         $this->expectException(EmptyValueException::class);
@@ -74,7 +74,7 @@ final class UserActionsTest extends IntegrationTestCase
      */
     public function testRenameTooShortThrows(): void
     {
-        $user = Hilos::$db->users->actions->registerGuest();
+        $user = Hilos::$db->users->actions->registerAdmin();
         $dbUser = Hilos::$db->users[$user->id];
 
         $this->expectException(ValueTooShortException::class);
@@ -90,7 +90,7 @@ final class UserActionsTest extends IntegrationTestCase
      */
     public function testRenameTooLongThrows(): void
     {
-        $user = Hilos::$db->users->actions->registerGuest();
+        $user = Hilos::$db->users->actions->registerAdmin();
         $dbUser = Hilos::$db->users[$user->id];
 
         $this->expectException(ValueTooLongException::class);
@@ -106,7 +106,7 @@ final class UserActionsTest extends IntegrationTestCase
      */
     public function testRenameSameNameNoOp(): void
     {
-        $user = Hilos::$db->users->actions->registerGuest();
+        $user = Hilos::$db->users->actions->registerAdmin();
         $originalName = $user->name;
         $dbUser = Hilos::$db->users[$user->id];
 

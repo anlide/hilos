@@ -74,9 +74,9 @@ test('the shell exposes a skip link and marks the active nav item', async ({
   )
   await expect(page.locator('main#hilos-main-content')).toBeVisible()
 
-  // No admin entry for a plain visitor: the demo answers an admin identity now,
-  // and this visitor holds no grant, so the shell draws no way into a surface
-  // the page access gate would refuse anyway.
+  // No admin entry for a plain visitor: since HIL-610 a visitor carries no account
+  // at all, so the shell draws no way into a surface the page access gate would
+  // refuse anyway.
   await expect(page.getByTestId('nav-admin')).toHaveCount(0)
 
   // Granted, the same shell grows the entry — and marks it as the active nav

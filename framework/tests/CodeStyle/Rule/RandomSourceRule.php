@@ -70,6 +70,7 @@ final class RandomSourceRule implements CodeStyleRule
         'CLI/Commands/AbstractSetAdminCommand.php',
         'CLI/Commands/AccountMergeCommand.php',
         'CLI/Commands/EchoCommand.php',
+        'Database/Actions/Collection/GuestsActions.php',
         'Database/Actions/Collection/UsersActions.php',
     ];
 

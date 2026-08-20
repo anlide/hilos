@@ -10,11 +10,12 @@ test('websocket transport reaches connected', async ({ page }) => {
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 })
 
-// Session bootstrap e2e: the client-minted cookie rides the handshake, the
-// todo backend resolves an agent-local user and answers handshake_response,
-// the normalizer ingests it into the session scope, and the current user
-// renders through the React adapter.
-test('session bootstrap resolves the current user', async ({ page }) => {
+// Session bootstrap e2e: the daemon-issued cookie rides the handshake, the todo
+// backend resolves an anonymous session and names the visitor behind it on its
+// own `guest_identity` signal (HIL-610), and that name renders through the React
+// adapter. The framework handshake_response arrives right after and answers that
+// there is no account — which is why the line reads "Browsing as".
+test('session bootstrap names the visitor', async ({ page }) => {
   await gotoPage(page, '/')
-  await expect(page.getByTestId('self-user')).toHaveText(/^User\d{4}$/)
+  await expect(page.getByTestId('self-user')).toHaveText(/^Guest\d{4}$/)
 })
