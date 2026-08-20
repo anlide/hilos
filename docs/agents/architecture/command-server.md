@@ -101,3 +101,23 @@ admin → the gated pages open. See
 [page-access-control.md](page-access-control.md) for the gate the grant unlocks,
 and [../signals/routing.md](../signals/routing.md) for how `COMMAND_REQUEST` /
 `COMMAND_REPLY` are routed.
+
+### `admin:create` — the first administrator (HIL-609)
+
+The grant needs a user row that exists, and a fresh installation has none: the
+admin pages are shut, so there is nothing to register through and no id to name.
+`admin:create <sessionToken>` addresses a **session** instead — the value of the
+`hilos_session_token` cookie, read in DevTools — and makes it an administrator,
+minting the user row when the session carries none. Its two halves are
+`AdminCreateCommand` on the CLI and `HilosSessionHost::handleAdminCreateCommand()`
+on the agent, with `ensureAdminUser()` as the project seam that writes the row.
+
+It routes to the project's **session host** (the agent mixing in
+`HilosSessionHost`), not to `AbstractHilosIndexAgent` where the grant lands: the
+operation ends in `authenticateSession()`, and the session's runtime connections
+and handshake payload belong there. That is also why no reconnect is needed —
+the bind re-points the session's live sockets and re-sends them the handshake
+response, so the admin entry appears in the open tab. A project mounts the
+command by naming it in that agent's `AGENT_COMMANDS`; one that does not — the
+chat demo, which has a login of its own — never answers it, and the seam's
+refusing default is what lets it stay untouched.

@@ -11,19 +11,27 @@ use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\Exception\SessionTokenExhaustedException;
 use Hilos\Auth\Throttle\ThrottleGate;
 use Hilos\Auth\Verification\VerificationService;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\NotImplementedException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\View\Item\Session;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
+use Hilos\Users\AdminCommandConstants;
 use Hilos\Utils\Helpers\TimeHelper;
 use Random\RandomException;
+use Throwable;
 
 /**
  * Session-host seam graduated from the chat reference (HIL-361).
@@ -326,6 +334,103 @@ trait HilosSessionHost
      */
     protected function afterDeauthenticate(int $userId): void
     {
+    }
+
+    /**
+     * Makes one browser session an administrator - the agent half of
+     * {@see CliCommands::ADMIN_CREATE} (HIL-609).
+     *
+     * One path, taken whole every time: resolve the session by its token, take the user it
+     * carries or mint one through {@see self::ensureAdminUser()}, then authenticate the
+     * session onto that user. The four outcomes an operator can meet - a session with no
+     * user, a session carrying a visitor, a session that is already an administrator, a
+     * token naming no session - fall out of that one path rather than out of four branches,
+     * which would be four places to forget the re-point that makes the grant visible.
+     *
+     * {@see self::authenticateSession()} runs even when the flag was already set: it is what
+     * re-points the session's live connections and fans the handshake response out to every
+     * tab, so a fresh administrator is shown the way in without a reload. Re-binding the
+     * same user changes nothing else, so the repeat costs nothing.
+     *
+     * Whether a row was minted is read BEFORE the seam is called: once the session is bound
+     * nothing tells a mint from a grant, and that is the one thing the operator cannot infer
+     * for himself.
+     *
+     * Any failure - a project that never wired the seam, a token of the wrong shape, a
+     * refused write - becomes exactly one error reply, because a CLI parked on the command
+     * socket must learn the outcome rather than time out.
+     *
+     * The session is resolved with a plain lookup rather than through
+     * {@see self::resolveHandshakeSession()}, so the HIL-398 expiry downgrade does NOT run
+     * here and an expired session named by an operator is re-bound and slid forward rather
+     * than refused. That is deliberate and of a piece with the block flag this command also
+     * does not consult: those guards judge a BROWSER presenting a cookie by itself, and this
+     * is an operator naming a session on purpose. It grants nothing extra either - whoever
+     * reaches this unauthenticated socket can already {@see CliCommands::ADMIN_GRANT} any
+     * user id. In the walked operator path it cannot even arise: the browser handshakes
+     * first, so an expired session has already been downgraded to anonymous and arrives here
+     * carrying no user at all.
+     *
+     * @param CommandRequestDTO $data Command request carrying the session cookie token
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    final protected function handleAdminCreateCommand(CommandRequestDTO $data): void
+    {
+        // The command socket authenticates nobody, so the payload is whatever was typed at
+        // it; an absent token is refused by the shape check on the very next line.
+        // external-boundary: an operator's command line, refused a line below
+        $sessionToken = (string)($data->payload[AdminCommandConstants::FIELD_SESSION_TOKEN] ?? '');
+
+        try {
+            SessionToken::ensureValid($sessionToken);
+            $session = Hilos::$db->sessions->findByToken($sessionToken);
+            if ($session === null) {
+                $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'No session for that token'));
+
+                return;
+            }
+
+            $created = $session->userId === null;
+            $userId = $this->ensureAdminUser($session->userId);
+            $this->authenticateSession($sessionToken, $userId, null);
+        } catch (Throwable $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            AdminCommandConstants::FIELD_USER_ID => $userId,
+            AdminCommandConstants::FIELD_ADMIN => true,
+            AdminCommandConstants::FIELD_CREATED => $created,
+        ]));
+    }
+
+    /**
+     * Makes one user an administrator, minting the row when there is no user yet - the
+     * project's half of {@see self::handleAdminCreateCommand()}.
+     *
+     * A seam with a refusing default rather than an abstract method, the shape
+     * {@see AbstractHilosIndexAgent::applyAdminGrant()} uses: this trait is mixed into every
+     * session host, and an abstract method would break the projects that host sessions
+     * without ever mounting the command - the chat demo, which has a login of its own, is
+     * one. The refusal reaches the operator as the command's error reply.
+     *
+     * One seam rather than two, because the caller's question is one question: make this
+     * session's person an administrator. A project that answered "flag" and "mint" apart
+     * would own two ways of writing the same flag.
+     *
+     * The session bind is NOT the implementation's to do - the framework does it around this
+     * call. An implementation writes the row and nothing else.
+     *
+     * @param ?int $userId User the session carries, or null when it carries none
+     * @return int Id of the user that is now an administrator
+     * @throws NotImplementedException When the project has not wired the minting seam
+     * @throws HilosException Whatever the project's implementation raises, an unknown user among it
+     */
+    protected function ensureAdminUser(?int $userId): int
+    {
+        throw new NotImplementedException('Admin minting is not wired in this project');
     }
 
     /**

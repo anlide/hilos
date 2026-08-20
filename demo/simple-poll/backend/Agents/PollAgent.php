@@ -13,13 +13,18 @@ use Demo\SimplePoll\Runtime\View\Context\PollRtContext;
 use Hilos\Auth\Session\Exception\SessionTokenExhaustedException;
 use Hilos\Auth\Session\HilosSessionHost;
 use Hilos\Auth\Session\SessionToken;
+use Hilos\Constants\CliCommands;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
@@ -41,6 +46,14 @@ final class PollAgent extends AbstractAgent
     use HilosSessionHost;
 
     public const string AGENT_TYPE = AgentType::POLL;
+
+    // The operator path to the first administrator (HIL-609): this demo has no login, so
+    // nothing in the product can hand out the flag the admin pages ask for. It is declared
+    // here rather than on the index agent because the command ends in a session bind, and
+    // sessions are this agent's - it is the class mixing in HilosSessionHost.
+    public const array AGENT_COMMANDS = [
+        CliCommands::ADMIN_CREATE,
+    ];
 
     /**
      * Registers the user table and the connections runtime collection as this
@@ -200,6 +213,57 @@ final class PollAgent extends AbstractAgent
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
         Hilos::$rt->connections[$data->acceptKey]?->actions->unregister();
+    }
+
+    /**
+     * Routes a CLI command sent to this agent.
+     *
+     * {@see CliCommands::ADMIN_CREATE} is the only one mounted here; anything else gets an
+     * error reply rather than silence, because the socket parks the caller until it is
+     * answered.
+     *
+     * @param CommandRequestDTO $data Command request payload
+     * @param string $source Signal source (unused)
+     * @param string $name Signal name (unused)
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
+    {
+        if ($data->command === CliCommands::ADMIN_CREATE) {
+            $this->handleAdminCreateCommand($data);
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+    }
+
+    /**
+     * Makes one user an administrator, minting the row when the session carries none - this
+     * demo's half of {@see HilosSessionHost::handleAdminCreateCommand()}.
+     *
+     * The session bind around this call is the framework's; all that happens here is the
+     * user table, which is this worker's truth source.
+     *
+     * @param ?int $userId User the session carries, or null when it carries none
+     * @return int Id of the user that is now an administrator
+     * @throws ItemNotFoundForUpdateException When the id names no user row
+     * @throws HilosException On database failure while minting or flagging
+     */
+    protected function ensureAdminUser(?int $userId): int
+    {
+        if ($userId === null) {
+            return (int)Hilos::$db->users->actions->registerAdmin()->id;
+        }
+
+        $user = Hilos::$db->users[$userId] ?? null;
+        if ($user === null) {
+            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
+        }
+
+        $user->actions->setAdmin(true);
+
+        return $userId;
     }
 
     /**

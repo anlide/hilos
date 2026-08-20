@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { grantAdminToSelf } from '../helpers/adminGrant'
+import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant'
 import { gotoPage, PAGE_REFUSED } from '../helpers/page'
 
 // Hilos users admin e2e: /hilos/users renders the framework users table over the
@@ -164,4 +164,28 @@ test('a rename in one tab hangs as pending in another until applied', async ({
     /table-warning/,
   )
   await tabB.close()
+})
+
+test('a revoked admin loses the gear and the door', async ({ page }) => {
+  // Keeps the framework admin:grant / admin:revoke route walked end to end now
+  // that grantAdminToSelf drives admin:create instead (HIL-609): these two demos
+  // are the only e2e it has, since chat flips the flag through its own project
+  // command. Only the revoke is sent, and that covers the route rather than half
+  // of it — both wire names land on one handler and differ in nothing but the
+  // boolean in the payload, which the framework unit test pins separately.
+  const userId = await grantAdminToSelf(page)
+  await gotoPage(page, '/hilos/users')
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+
+  await setAdmin(userId, false)
+
+  // The revoke re-sends the handshake response to this user's live connections,
+  // so the entry goes away without a reload — the same path the grant appeared
+  // by, run backwards.
+  await expect(page.getByTestId('nav-admin')).toHaveCount(0)
+
+  // And the page itself is shut again, not merely unlinked: the access gate
+  // refuses the subscription on the next visit.
+  await gotoPage(page, '/hilos/users', PAGE_REFUSED)
+  await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
 })

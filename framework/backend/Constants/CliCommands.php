@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Constants;
 
+use Hilos\Auth\Session\HilosSessionHost;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
@@ -199,4 +200,21 @@ final class CliCommands
 
     /** @var string Command: Take the Hilos admin flag away from a user */
     public const string ADMIN_REVOKE = 'admin:revoke';
+
+    /**
+     * Make one browser session an administrator, minting its user when it has none (operator).
+     *
+     * The command {@see self::ADMIN_GRANT} needs and does not have: it flags a user row that
+     * already exists, and a fresh installation has no way to make the first one. This names a
+     * SESSION by its cookie token instead, so the operator can point at the browser in front
+     * of him rather than at an id he has no admin surface to look up.
+     *
+     * Routed to the project's session host - the agent mixing in {@see HilosSessionHost} -
+     * because the operation ends in a session bind, and the session's runtime connections and
+     * handshake payload belong there. A project mounts it by naming it in that agent's
+     * AGENT_COMMANDS; one that does not simply never answers it.
+     *
+     * @var string Command: Make a browser session an administrator
+     */
+    public const string ADMIN_CREATE = 'admin:create';
 }

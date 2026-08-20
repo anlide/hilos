@@ -44,4 +44,22 @@ final class UsersActionsTest extends IntegrationTestCase
         $this->assertNotNull($second->id);
         $this->assertNotSame($first->id, $second->id);
     }
+
+    /**
+     * Registering an administrator creates a user that already carries the flag.
+     *
+     * The whole point of the method: the admin pages open on a row that says admin, and on a
+     * fresh installation no row does. A mint that left the flag off would need a grant right
+     * behind it - and the id to grant is exactly what nobody can look up yet.
+     *
+     * @throws HilosException On database error
+     */
+    public function testRegisterAdminCreatesAdminUser(): void
+    {
+        $user = Hilos::$db->users->actions->registerAdmin();
+
+        $this->assertNotNull($user->id);
+        $this->assertStringStartsWith('Admin', $user->name);
+        $this->assertTrue($user->admin);
+    }
 }
