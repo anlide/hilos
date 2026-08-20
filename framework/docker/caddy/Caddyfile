@@ -56,24 +56,24 @@ status.chat.hilos {
 	reverse_proxy 127.0.0.1:8090
 }
 
-# --- simple-todo ---
-todo.hilos {
+# --- tasks ---
+tasks.hilos {
 	import demo
 	reverse_proxy 127.0.0.1:5174
 }
 
 # Daemon WebSocket over TLS (see the chat note above). VITE_WS_URL points here.
-ws.todo.hilos {
+ws.tasks.hilos {
 	import demo
 	reverse_proxy 127.0.0.1:8100
 }
 
-pma.todo.hilos {
+pma.tasks.hilos {
 	import demo
 	reverse_proxy 127.0.0.1:8081
 }
 
-status.todo.hilos {
+status.tasks.hilos {
 	import demo
 	reverse_proxy 127.0.0.1:8098
 }

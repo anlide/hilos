@@ -5,14 +5,14 @@ import { resolvePageTitle } from '../../src/routing/pageTitle.js'
 
 describe('resolvePageTitle', () => {
   it('titles a framework admin page from its catalog label', () => {
-    expect(resolvePageTitle(HilosPages.SETTINGS, {}, 'Hilos Todo')).toBe(
-      'Settings · Hilos Todo',
+    expect(resolvePageTitle(HilosPages.SETTINGS, {}, 'Hilos Tasks')).toBe(
+      'Settings · Hilos Tasks',
     )
   })
 
   it('titles a public footer page from its catalog label', () => {
-    expect(resolvePageTitle(HilosPages.ABOUT, {}, 'Hilos Todo')).toBe(
-      'About · Hilos Todo',
+    expect(resolvePageTitle(HilosPages.ABOUT, {}, 'Hilos Tasks')).toBe(
+      'About · Hilos Tasks',
     )
   })
 

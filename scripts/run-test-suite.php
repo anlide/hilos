@@ -8,7 +8,7 @@ declare(strict_types=1);
  *
  * The full run used to be a fixed sequence, and cost the sum of its parts even
  * though most of them do not touch each other: the cluster suite waits out grace
- * windows while the frontend checks burn CPU, and simple-todo plus simple-poll
+ * windows while the frontend checks burn CPU, and tasks plus simple-poll
  * together fit inside chat's e2e with two minutes to spare (HIL-527). What makes
  * that safe rather than merely faster is the graph — its edges say which steps
  * write the same tree, and its groups say which share a compose project.

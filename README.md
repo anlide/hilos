@@ -105,7 +105,7 @@ composer run install-deps
 - [simple-booking-system](demo/simple-booking-system/README.md) — Resource booking (rooms, equipment)
 - [simple-event-calendar](demo/simple-event-calendar/README.md) — Event calendar with synchronization
 - [simple-poll](demo/simple-poll/README.md) — Polls with real-time results display
-- [simple-todo](demo/simple-todo/README.md) — Todo list with cross-user synchronization
+- [tasks](demo/tasks/README.md) — Task list with cross-user synchronization
 
 **3/5 — Intermediate level**
 - [dkp-system](demo/dkp-system/README.md) — DKP system for guild in online game

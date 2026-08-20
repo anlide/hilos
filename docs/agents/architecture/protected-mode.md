@@ -77,7 +77,7 @@ Four test-only commands, and the split between them is the whole design:
 `ProtectedModeTestDriverTrait` carries the agent half. A trait, because its two
 carriers share no ancestor but `AbstractAgent`, and putting the commands there
 would hand a test-drive of the freeze to every agent of every project. The
-carriers are `AbstractHilosIndexAgent` (so chat, simple-todo and simple-poll get
+carriers are `AbstractHilosIndexAgent` (so chat, tasks and simple-poll get
 it by inheritance) and the cluster demo's `WorkerAgent` (that demo is headless
 and has no Hilos index, so without it the clustered entry path — the leader's
 quiesce round and a follower's fail-closed refusal — has no live carrier).

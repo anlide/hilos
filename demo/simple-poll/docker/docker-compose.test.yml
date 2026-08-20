@@ -146,7 +146,7 @@ services:
   # template as prod (test what you ship) and proxies /ws to the daemon. The
   # e2e runner reaches it in-network as https://poll-nginx-test; host ports are
   # only for manual inspection and default away from the chat test stack's
-  # 8086/8446 and the simple-todo test stack's 8087/8447.
+  # 8086/8446 and the tasks test stack's 8087/8447.
   poll-nginx-test:
     build:
       context: .

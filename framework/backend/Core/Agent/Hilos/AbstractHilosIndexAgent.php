@@ -64,7 +64,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * copy of one verdict.
      *
      * The protected-mode trio (HIL-344, HIL-481) rides the same inheritance for the same reason -
-     * chat, simple-todo and simple-poll get a freeze they can drive by extending this class
+     * chat, tasks and simple-poll get a freeze they can drive by extending this class
      * alone. The inspector is not among them: it is answered by the master, because a freeze
      * stops every agent but the initiator. The operator commands are not either: they belong to
      * the agent that runs real operations, and a command routes to exactly one agent type.

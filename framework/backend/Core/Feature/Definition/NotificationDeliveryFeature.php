@@ -16,7 +16,7 @@ use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
  * Delivery of stored notifications over channels, on top of NOTIFICATIONS.
  *
  * Split from {@see HilosFeature::NOTIFICATIONS} because that is where the real projects part:
- * the chat demo delivers over mail, SMS and push, while the poll and todo demos only store
+ * the chat demo delivers over mail, SMS and push, while the poll and tasks demos only store
  * notifications and show them in the interface. Storing without delivering is a whole,
  * working feature; delivering without storing is not, hence the dependency.
  *

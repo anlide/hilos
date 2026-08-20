@@ -108,7 +108,7 @@ goes to `auth-failed`.
 ### Current state: guest auth in the demos
 
 The session store and login flow above are the **target**. The three reference
-demos (chat, todo, poll) currently run a simplified **guest** model: the daemon
+demos (chat, tasks, poll) currently run a simplified **guest** model: the daemon
 mints an `httpOnly` cookie on the 101 upgrade when a connection has none and
 find-or-registers the user by it — no login, no password, and no separate
 hashed-token session store yet. The project `user` row, keyed by its session

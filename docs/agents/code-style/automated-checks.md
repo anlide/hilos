@@ -208,7 +208,7 @@ record.
 
 What the demos owe is what the last phase turned up, and it is frozen rather than
 paid: 127 lines in 51 files — 107 in 39 for `demo/chat`, 9 in 5 each for
-`demo/simple-poll` and `demo/simple-todo`, 2 in 2 for `demo/cluster`. Freezing
+`demo/simple-poll` and `demo/tasks`, 2 in 2 for `demo/cluster`. Freezing
 is what stops the debt growing, since a new unpropagated `@throws` fails the
 guard on the spot, and the records name HIL-449 as the leaf that pays it. What
 is left is the demos' own form, a call inside the showcase that does not

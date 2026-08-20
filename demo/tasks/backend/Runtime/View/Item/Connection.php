@@ -1,0 +1,22 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Demo\Tasks\Runtime\View\Item;
+
+use Demo\Tasks\Runtime\State\Item\Connection as StateConnection;
+use Hilos\Runtime\View\Item\HilosSessionConnection;
+
+/**
+ * Read-only runtime item for one connection state row.
+ *
+ * Nothing of this demo's own: the row is the framework session stage whole, so
+ * the base {@see HilosSessionConnection} exposes every field and the
+ * per-connection write actions. The class exists because a runtime collection is
+ * seen through a concrete item, not because there is anything left to say here.
+ *
+ * @extends HilosSessionConnection<StateConnection>
+ */
+final class Connection extends HilosSessionConnection
+{
+}

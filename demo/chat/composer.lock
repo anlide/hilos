@@ -12,7 +12,7 @@
             "dist": {
                 "type": "path",
                 "url": "/hilos",
-                "reference": "c2e16bd49050a3afe12f5f936b09a113a0ce409b"
+                "reference": "b5f64c26b108b4c5abed842c22ac18848b4a1f3c"
             },
             "require": {
                 "ext-ctype": "*",
@@ -71,13 +71,13 @@
                     "docker compose -f framework/docker/docker-compose.yml run --rm hilos-cli-test composer install --no-interaction"
                 ],
                 "test:framework:up": [
-                    "docker compose -f framework/docker/docker-compose.yml up -d mysql-framework-test"
+                    "docker compose -f framework/docker/docker-compose.yml up -d mysql-framework-test sshd-framework-test"
                 ],
                 "test:framework:down": [
-                    "docker compose -f framework/docker/docker-compose.yml rm -sf mysql-framework-test hilos-cli-test"
+                    "docker compose -f framework/docker/docker-compose.yml rm -sf mysql-framework-test sshd-framework-test hilos-cli-test"
                 ],
                 "test:framework:down-volumes": [
-                    "docker compose -f framework/docker/docker-compose.yml rm -sf mysql-framework-test hilos-cli-test && docker volume rm -f hilos-framework-mysql-test-data"
+                    "docker compose -f framework/docker/docker-compose.yml rm -sf mysql-framework-test sshd-framework-test hilos-cli-test && docker volume rm -f hilos-framework-mysql-test-data hilos-framework-ship-keys"
                 ],
                 "test:framework:unit": [
                     "docker compose -f framework/docker/docker-compose.yml run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml --testsuite unit"
@@ -92,7 +92,7 @@
                     "composer run test:framework:install-deps && composer run test:framework:up && composer run test:framework:phpunit && composer run test:framework:down"
                 ],
                 "test:framework:frontend:install": [
-                    "docker compose -f framework/docker/docker-compose.yml run --rm hilos-frontend-cli npm ci"
+                    "docker compose -f framework/docker/docker-compose.yml run --rm hilos-frontend-cli node scripts/npm-install-if-stale.mjs --ci"
                 ],
                 "test:framework:frontend:build": [
                     "docker compose -f framework/docker/docker-compose.yml run --rm hilos-frontend-cli npm run build"
@@ -110,18 +110,13 @@
                     "docker compose -f framework/docker/docker-compose.yml run --rm hilos-frontend-cli npm run format:check"
                 ],
                 "test:framework:frontend": [
-                    "composer run test:framework:frontend:check && composer run test:framework:frontend:unit && composer run test:framework:frontend:lint && composer run test:framework:frontend:format-check"
+                    "docker compose -f framework/docker/docker-compose.yml run --rm hilos-frontend-cli sh -c \"set -e; echo '--- frontend: check'; npm run check; echo '--- frontend: unit'; npm run test; echo '--- frontend: lint'; npm run lint; echo '--- frontend: format-check'; npm run format:check\""
+                ],
+                "test:suite": [
+                    "@php scripts/run-test-suite.php"
                 ],
                 "test:frontend:all": [
-                    "@test:framework:frontend:install",
-                    "@test:framework:frontend:build",
-                    "@test:framework:frontend",
-                    "cd demo/chat && composer run test:check",
-                    "cd demo/chat && composer run test:e2e-full",
-                    "cd demo/simple-todo && composer run test:check",
-                    "cd demo/simple-todo && composer run test:e2e-full",
-                    "cd demo/simple-poll && composer run test:check",
-                    "cd demo/simple-poll && composer run test:e2e-full"
+                    "@php scripts/run-test-suite.php frontend"
                 ],
                 "test:cluster:unit": [
                     "cd demo/cluster && composer run test:unit"

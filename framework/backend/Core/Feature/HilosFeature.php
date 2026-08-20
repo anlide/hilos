@@ -18,7 +18,7 @@ use Hilos\Hilos;
  * without anyone noticing.
  *
  * The line between one case and two is drawn where the real projects diverge: the chat demo
- * delivers notifications over channels while the poll and todo demos only store them, so
+ * delivers notifications over channels while the poll and tasks demos only store them, so
  * delivery is its own case. Everything else is taken whole or not at all.
  *
  * A case is a unit of activation, not a switch for turning behavior off at a running

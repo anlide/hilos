@@ -5,7 +5,7 @@
 #   docker compose -f docker-compose.local.yml -f docker-compose.preview.yml up -d
 # The framework/docker/preview script does this for you.
 #
-# Angular has no import.meta.env, so unlike chat/todo there is no VITE_WS_URL to
+# Angular has no import.meta.env, so unlike chat/tasks there is no VITE_WS_URL to
 # override: the app's same-origin /ws is proxied to the daemon by ng serve
 # (frontend/proxy.conf.json), and Caddy carries that socket over wss through the
 # single poll.hilos route. The *.hilos host-check is allowed in angular.json

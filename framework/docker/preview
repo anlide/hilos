@@ -14,7 +14,7 @@
 #   preview down [demo ...]    stop the demos and the DNS + proxy (default: all)
 #   preview status             show what is running and the URLs
 #
-# demo is one of: chat todo poll
+# demo is one of: chat tasks poll
 #
 # Host binding defaults to nova-lt's Tailscale IP; override for another host:
 #   HILOS_PREVIEW_BIND=<ip> HILOS_DEV_DNS_IP=<ip> preview up
@@ -24,8 +24,8 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 
 # demo key -> directory under demo/
-declare -A DEMO_DIR=([chat]=chat [todo]=simple-todo [poll]=simple-poll)
-ALL_DEMOS=(chat todo poll)
+declare -A DEMO_DIR=([chat]=chat [tasks]=tasks [poll]=simple-poll)
+ALL_DEMOS=(chat tasks poll)
 
 BIND="${HILOS_PREVIEW_BIND:-${HILOS_DEV_DNS_IP:-100.111.250.126}}"
 
@@ -122,12 +122,12 @@ cmd_status() {
       --format 'table {{.Names}}\t{{.Status}}' | tail -n +2 || true
   done
   echo
-  echo "URLs: https://home.hilos  https://chat.hilos  https://todo.hilos  https://poll.hilos"
+  echo "URLs: https://home.hilos  https://chat.hilos  https://tasks.hilos  https://poll.hilos"
 }
 
 case "${1:-}" in
   up)     shift; cmd_up "$@" ;;
   down)   shift; cmd_down "$@" ;;
   status) shift; cmd_status ;;
-  *)      die "usage: preview {up|down|status} [chat|todo|poll ...]" ;;
+  *)      die "usage: preview {up|down|status} [chat|tasks|poll ...]" ;;
 esac

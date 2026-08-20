@@ -115,7 +115,7 @@ looks suspiciously cheap, the guards' own log lines are the first place to check
 
 It is **not** part of the inner loop. The two-window coverage lives in chat's
 `moderator.spec.ts` (Vue; settings / bots / profile also carry two-tab tests) and
-the `users.spec.ts` of simple-todo (React) and simple-poll (Angular) — one
+the `users.spec.ts` of tasks (React) and simple-poll (Angular) — one
 representative path per view layer. The **a11y** coverage is the same kind of
 separate, rarely-run category — an `a11y.spec.ts` per demo asserting the
 accessibility tree over the live socket: table accessible names and `aria-sort`,

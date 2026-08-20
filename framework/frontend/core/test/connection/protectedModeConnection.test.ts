@@ -197,7 +197,7 @@ describe('the connection sends nothing while the freeze holds', () => {
     socket.sent.length = 0
 
     expect(connection.send('anything')).toBe(false)
-    expect(connection.sendAction('todo.add', {})).toBe(false)
+    expect(connection.sendAction('tasks.add', {})).toBe(false)
     expect(connection.subscribeToGroup('room-1')).toBe(false)
     expect(connection.sendBinary(new ArrayBuffer(4))).toBe(false)
     expect(socket.sent).toEqual([])

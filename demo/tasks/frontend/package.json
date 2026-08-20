@@ -1,0 +1,28 @@
+{
+  "name": "demo-tasks",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tasks demo — an end project that consumes the Hilos frontend SDK (@hilos/react); doubles as the React conformance demo.",
+  "scripts": {
+    "dev": "vite",
+    "prebuild": "node ../../../framework/frontend/scripts/prebuild-sdk.mjs react",
+    "build": "vite build && vite build --ssr scripts/prerenderEntry.tsx --outDir dist-prerender && node dist-prerender/prerenderEntry.js",
+    "preview": "vite preview",
+    "check": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@hilos/core": "file:../../../framework/frontend/core",
+    "@hilos/react": "file:../../../framework/frontend/react",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
+    "sass-embedded": "^1.83.0",
+    "typescript": "^6.0.3",
+    "vite": "^7.0.0"
+  }
+}

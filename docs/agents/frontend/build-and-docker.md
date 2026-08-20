@@ -58,7 +58,7 @@ container the env_file would feed ever exists.
 defaults. It is optional: every knob has a `:-default` in the compose file, so a
 fresh clone with no `docker/.env` publishes the demo's default host ports and
 needs no setup step. The same split holds across all three reference demos
-(simple-poll, simple-todo, chat); `docker/.env` is also where a host keeps other
+(simple-poll, tasks, chat); `docker/.env` is also where a host keeps other
 non-committable interpolation overrides (e.g. the chat demo's `LLM_LOCAL_URL`).
 
 ## Published ports bind to loopback (the bind-host knob)
@@ -137,7 +137,7 @@ Route components are resolved **statically** through the page registry:
 `createAppPageRouter` builds a page-key → path map from the pages declared in
 `@hilos/core`, and there is no dynamic `import()` anywhere in the source, so the
 bundler emits a single chunk (measured 2026-07-27: simple-poll ~596 KB, chat
-~336 KB, simple-todo similar). For demos this size a single chunk is the right
+~336 KB, tasks similar). For demos this size a single chunk is the right
 default; there is no per-page chunk and no chunk-fetch loading state.
 
 The build-version → forced-refresh check ([wire-protocol.md](wire-protocol.md))
@@ -263,7 +263,7 @@ machine (WSL2, docker, `node:22-bookworm-slim`):
 | | app build | typecheck | together |
 |---|---|---|---|
 | Angular (simple-poll) | 7.3–8.4s `ng build` | inside the build | **~8s** |
-| React (simple-todo) | 5.3s (2.60 + 1.91 + 0.76) | 3.0s `tsc` | **8.3s** |
+| React (tasks) | 5.3s (2.60 + 1.91 + 0.76) | 3.0s `tsc` | **8.3s** |
 | Vue (chat) | 5.8s (3.14 + 1.90 + 0.75) | 4.3s `vue-tsc` | **10.1s** |
 
 Full `npm run build`, SDK prebuild included: Angular 15.8s, React 10.3s,

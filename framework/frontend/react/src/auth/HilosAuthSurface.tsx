@@ -527,7 +527,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   }, [ack, auth])
 
   // Mount and unmount, in one effect. Its dependencies are the memos above, so
-  // it runs once per context and not once per render. demo/simple-todo mounts
+  // it runs once per context and not once per render. demo/tasks mounts
   // under StrictMode, so in dev it runs twice — safe precisely because every
   // action here is local (machine + subscriptions) and the cleanup is complete;
   // nothing on mount touches the wire.

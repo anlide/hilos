@@ -31,7 +31,7 @@ declare(strict_types=1);
 /** Demos carrying a tests/e2e suite, with their measured per-step durations. */
 $demos = [
     'chat' => ['check' => 17, 'php' => 32, 'e2e' => 233],
-    'simple-todo' => ['check' => 12, 'php' => 10, 'e2e' => 53],
+    'tasks' => ['check' => 12, 'php' => 10, 'e2e' => 53],
     'simple-poll' => ['check' => 14, 'php' => 10, 'e2e' => 57],
 ];
 

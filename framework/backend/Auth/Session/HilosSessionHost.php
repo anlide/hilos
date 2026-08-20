@@ -86,7 +86,7 @@ trait HilosSessionHost
      * Arms the schedule of the abandoned-registration sweep (HIL-612).
      *
      * Called from the owning agent's `onStart()`. The rule is held and ticked by the
-     * AGENT rather than routed through the daemon's cron: a project like simple-todo
+     * AGENT rather than routed through the daemon's cron: a project like tasks
      * names no cron-owning agent at all, and a rule that signalled would be shouting
      * into a socket nobody is holding.
      *

@@ -7,7 +7,7 @@
 # Port plan: the daemon binds fixed in-container ports (8090 status / 8091
 # worker comm / 8092 websocket, same as every demo — the nginx template proxies
 # /ws to :8092); only the host-side publishes shift per demo so the stacks run
-# side by side (chat holds 8090-8097, simple-todo 8098-8103, simple-poll takes
+# side by side (chat holds 8090-8097, tasks 8098-8103, simple-poll takes
 # 8104-8109 across this file and docker-compose.test.yml).
 #
 # Every ${...} below is compose *interpolation*, resolved before a container
@@ -21,7 +21,7 @@ name: hilos-simple-poll-local
 services:
   # MySQL: inside the network use poll-mysql-local:3306. From host use
   # localhost:${MYSQL_HOST_PORT} (default 33065 — 33060-33064 belong to
-  # chat-local, chat-test, the framework test stack, and simple-todo).
+  # chat-local, chat-test, the framework test stack, and tasks).
   poll-mysql-local:
     image: mariadb:11.4
     container_name: poll-mysql-local
@@ -215,7 +215,7 @@ services:
   # npm install first so a fresh checkout or an SDK re-vendor is picked up.
   # Native WSL2 filesystem events drive HMR — no polling
   # (docs/agents/frontend/build-and-docker.md). The host port defaults away
-  # from the chat demo's 5173 and the simple-todo demo's 5174 so the local
+  # from the chat demo's 5173 and the tasks demo's 5174 so the local
   # stacks can run side by side. Angular has no import.meta.env mechanism, so
   # instead of a VITE_WS_URL override the dev server proxies the app's
   # same-origin /ws to the daemon (frontend/proxy.conf.json).

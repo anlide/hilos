@@ -11,7 +11,7 @@ import { emitNotification } from '../helpers/notifications'
 import { gotoPage } from '../helpers/page'
 
 // Notification-center e2e for the poll demo (HIL-558), the Angular half of the
-// same coverage the chat and todo demos carry. A notification is emitted through
+// same coverage the chat and tasks demos carry. A notification is emitted through
 // the live daemon over its command channel (helpers/notifications.ts), so the row
 // is written and the in-app signal is fanned exactly as a product caller's emit
 // would do it — the browser is then asserted on what the server actually sent,

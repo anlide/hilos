@@ -1,7 +1,7 @@
 # New Hilos frontend: React
 
 Reference implementation:
-[demo/simple-todo/frontend](../../demo/simple-todo/frontend).
+[demo/tasks/frontend](../../demo/tasks/frontend).
 Common ground (containers, connection, e2e, stable ids) is in
 [README.md](README.md); this part covers only what is React-specific.
 

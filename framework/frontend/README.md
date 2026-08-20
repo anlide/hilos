@@ -3,7 +3,7 @@
 The framework frontend SDK as an npm workspace: the framework-agnostic core
 (`@hilos/core`) and the view layers — `@hilos/vue` (the canonical product
 layer), `@hilos/react` (the React adapter), and `@hilos/angular` (the Angular
-adapter). Consumer projects — the chat demo, the simple-todo React demo, and
+adapter). Consumer projects — the chat demo, the tasks React demo, and
 the simple-poll Angular demo — are not members of this workspace; they vendor
 the SDK. The normative spec lives under `docs/agents/frontend/`
 (`sdk-packaging.md`, `build-and-docker.md`, `multiframework-core.md`).

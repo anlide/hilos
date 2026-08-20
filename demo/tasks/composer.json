@@ -1,0 +1,104 @@
+{
+    "name": "anlide/hilos-demo-tasks",
+    "description": "Task list with synchronization demo project for Hilos v2 framework",
+    "type": "project",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Alexander Baranov",
+            "email": "alexander.baranov@anlide.online"
+        }
+    ],
+    "repositories": [
+        {
+            "type": "path",
+            "url": "/hilos",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
+    "require": {
+        "php": ">=8.4",
+        "anlide/hilos": "^2.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Demo\\Tasks\\": "backend/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Demo\\Tasks\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "hilos-frontend-reminder": "@php -r \"echo PHP_EOL . 'Hilos frontend: run npm install in the frontend container after composer changes, so the vendored SDK is not stale - see framework/frontend/README.md.' . PHP_EOL;\"",
+        "post-install-cmd": "@hilos-frontend-reminder",
+        "post-update-cmd": "@hilos-frontend-reminder",
+        "setup-env": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-frontend-cli-local sh -c \"cd /hilos/demo/tasks && cp -n .env.example .env || true; cp -n tests/.env.example tests/.env || true; ls -l .env tests/.env\"",
+        "install-deps": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-cli-local composer install",
+        "daemon-start": "docker compose -f docker/docker-compose.local.yml up -d",
+        "daemon-start-build": "docker compose -f docker/docker-compose.local.yml --profile full up -d --build",
+        "daemon-stop": "docker compose -f docker/docker-compose.local.yml stop",
+        "daemon-restart": "docker compose -f docker/docker-compose.local.yml restart tasks-daemon-local",
+        "daemon-status": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-cli-local php backend/Bootstrap/cli.php daemon:status",
+        "daemon-monitor": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-cli-local php backend/Bootstrap/cli.php daemon:monitor",
+        "cli": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-cli-local php backend/Bootstrap/cli.php",
+        "db:migration:up": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-cli-local php backend/Bootstrap/cli.php db:migration:up",
+        "db:migration:down": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-cli-local php backend/Bootstrap/cli.php db:migration:down",
+        "db:migration:status": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-cli-local php backend/Bootstrap/cli.php db:migration:status",
+        "db:migration:retry": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-cli-local php backend/Bootstrap/cli.php db:migration:retry",
+        "db:seed:apply": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-cli-local php backend/Bootstrap/cli.php db:seed:apply",
+        "db:schema:status": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-cli-local php backend/Bootstrap/cli.php db:schema:status",
+        "pma": "docker compose -f docker/docker-compose.local.yml up -d tasks-phpmyadmin-local && echo phpMyAdmin is running at http://localhost:8081",
+        "pma-stop": "docker compose -f docker/docker-compose.local.yml stop tasks-phpmyadmin-local",
+        "frontend:install": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-frontend-cli-local npm install",
+        "frontend:check": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-frontend-cli-local npm run check",
+        "frontend:build": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-frontend-cli-local npm run build",
+        "frontend:logs": "docker compose -f docker/docker-compose.local.yml logs -f tasks-frontend-local",
+        "test:install-deps": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm tasks-cli-test composer update phpunit/phpunit --no-interaction",
+        "test:up": "docker compose -f docker/docker-compose.test.yml up -d tasks-mysql-test",
+        "test:down": "docker compose -f docker/docker-compose.test.yml --profile \"*\" down",
+        "test:down-volumes": "docker compose -f docker/docker-compose.test.yml --profile \"*\" down -v",
+        "test:db-reset": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm tasks-cli-test php backend/Bootstrap/cli.php db:test:reset",
+        "test:db-wait": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm tasks-cli-test php backend/Bootstrap/cli.php db:wait",
+        "test:db-prepare": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm tasks-cli-test sh -c \"php backend/Bootstrap/cli.php db:wait && php backend/Bootstrap/cli.php db:test:reset\"",
+        "test:unit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm tasks-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite unit",
+        "test:integration": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm tasks-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite integration",
+        "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm tasks-cli-test php vendor/bin/phpunit -c tests/phpunit.xml",
+        "test:check": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm tasks-frontend-cli-test sh -c \"node ../../../framework/frontend/scripts/npm-install-if-stale.mjs && npm run check\"",
+        "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm tasks-frontend-cli-test sh -c \"node ../../../framework/frontend/scripts/npm-install-if-stale.mjs && npm run build\"",
+        "test:e2e-install": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm tasks-e2e-runner node ../../../../framework/frontend/scripts/npm-install-if-stale.mjs",
+        "test:e2e-check": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm tasks-e2e-runner npm run check",
+        "test:e2e-up": [
+            "@test:up",
+            "@test:db-prepare",
+            "docker compose -f docker/docker-compose.test.yml --profile e2e up -d --build tasks-daemon-test tasks-nginx-test"
+        ],
+        "test:e2e": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm tasks-e2e-runner npx playwright test",
+        "test:e2e-down": "@test:down",
+        "test:e2e-full": [
+            "@test:down",
+            "@test:up",
+            "@test:e2e-build",
+            "@test:e2e-install",
+            "@test:e2e-check",
+            "@test:e2e-up",
+            "@test:e2e",
+            "@test:e2e-down"
+        ],
+        "test:all": [
+            "@test:db-reset",
+            "@test:phpunit",
+            "@test:down",
+            "@test:e2e-full"
+        ]
+    },
+    "config": {
+        "process-timeout": 0
+    }
+}

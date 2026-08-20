@@ -7,7 +7,7 @@ minimal to full:
 
 | Project | Backend | Frontend | Role |
 |---|---|---|---|
-| [demo/simple-todo](../../demo/simple-todo) | minimal (1 agent, 1 page) | React | the smallest complete shape — copy this |
+| [demo/tasks](../../demo/tasks) | minimal (1 agent, 1 page) | React | the smallest complete shape — copy this |
 | [demo/simple-poll](../../demo/simple-poll) | minimal (1 agent, 1 page) | Angular | same shape, Angular toolchain |
 | [demo/chat](../../demo/chat) | full | Vue | every subsystem in real use |
 
@@ -47,7 +47,7 @@ demo/<name>/
 
 ## Minimal backend file set
 
-Namespace `Demo\<Name>\`, autoload root `backend/`. The simple-todo backend is
+Namespace `Demo\<Name>\`, autoload root `backend/`. The tasks backend is
 the canonical minimal set (~24 files); mirror it file by file:
 
 1. **Bootstrap** (`backend/Bootstrap/`): `docker.php` (container PID-1:
@@ -112,7 +112,7 @@ Calling `Hilos::init()` before migrations breaks first boot on an empty DB.
 ## Docker stacks
 
 Two compose files per project; every `container_name` is prefixed with the
-app key (`chat-…`, `poll-…`, `todo-…`) so it stays globally unique
+app key (`chat-…`, `poll-…`, `tasks-…`) so it stays globally unique
 (`container_name` and explicitly named volumes are docker-GLOBAL, not
 project-scoped — never reuse another project's).
 
@@ -141,13 +141,13 @@ registry of taken host ports:
 | chat local | 33060 | 8090/8091/8092 (+8093 legacy) | 8080 | 80/443 | 5173 |
 | chat test | 33061 | 8095/8096/8097 | — | 8086/8446 | — |
 | framework test | 33062 | — | — | — | — |
-| simple-todo local | 33063 | 8098/8099/8100 | 8081 | 81/444 | 5174 |
-| simple-todo test | 33064 | 8101/8102/8103 | — | 8087/8447 | — |
+| tasks local | 33063 | 8098/8099/8100 | 8081 | 81/444 | 5174 |
+| tasks test | 33064 | 8101/8102/8103 | — | 8087/8447 | — |
 | simple-poll local | 33065 | 8104/8105/8106 | 8082 | 82/445 | 5175 |
 | simple-poll test | 33066 | 8107/8108/8109 | — | 8088/8448 | — |
 
 A new project takes the next free block. Each local network also needs its own
-subnet (`172.26/16` chat, `172.27/16` todo, `172.28/16` poll, …) because the
+subnet (`172.26/16` chat, `172.27/16` tasks, `172.28/16` poll, …) because the
 cli reaches the daemon by a static IP (`HILOS_DAEMON_HOST`).
 
 **Worker pool.** The daemon pre-starts `WORKER_MIN_REGULAR` regular and
@@ -166,14 +166,14 @@ once. A project that mounts the SDK application shell (`HilosLayout`) gains a
 second monopolistic agent for free: the shell's gear subscribes the Hilos
 dashboard, owned by the monopolistic `hilos_index` agent (a concrete
 `AbstractHilosIndexAgent` + an `AbstractHilosDashboardPage`; see
-demo/simple-todo). The app agent plus the dashboard therefore needs
+demo/tasks). The app agent plus the dashboard therefore needs
 `WORKER_MIN_MONOPOLISTIC` ≥ 2 — which is also the catalog default. The demos pin
-it in compose regardless, so the pool is explicit: simple-todo and simple-poll
+it in compose regardless, so the pool is explicit: tasks and simple-poll
 use 2, chat 10 for its larger agent roster.
 
 ## Composer script lifecycle
 
-Mirror simple-todo's `composer.json` scripts: `setup-env` (copies BOTH
+Mirror the tasks demo's `composer.json` scripts: `setup-env` (copies BOTH
 `.env.example→.env` and `tests/.env.example→tests/.env`; runs in the node cli
 container to avoid the env_file chicken-and-egg), `install-deps`,
 `daemon-start[-build]/stop/restart/status`, `cli`, `db:migration:*`,
@@ -207,7 +207,7 @@ The frontend is an independent consumer of the Hilos SDK: it pulls
 - e2e runs against the BUILT artifact through the prod-parity nginx with a
   booted daemon: two-phase readiness in `global-setup.ts` (static HEAD, then a
   `/ws` upgrade-101 probe), then a `connected` assertion. Copy
-  `demo/simple-todo/tests/e2e/` wholesale.
+  `demo/tasks/tests/e2e/` wholesale.
 - The e2e package pins `@playwright/test` to the exact runner image version.
 
 How the DEV page reaches the daemon differs per framework — see

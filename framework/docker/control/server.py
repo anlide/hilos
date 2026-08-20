@@ -3,7 +3,7 @@
 
   GET  /api/status                          -> live status JSON
   POST /api/preview/up | /api/preview/down
-  POST /api/demo/<chat|todo|poll>/<start|stop|restart>
+  POST /api/demo/<chat|tasks|poll>/<start|stop|restart>
   POST /api/ollama/<start|stop|unload>
   POST /api/ollama/pull/<0.5b|3b>
 
@@ -32,9 +32,9 @@ PREVIEW = f"{REPO}/framework/docker/preview"
 CLUSTER = f"{REPO}/demo/cluster/docker/cluster"
 OLLAMA = "hilos-ollama-local"
 
-DEMOS = {"chat", "todo", "poll"}
+DEMOS = {"chat", "tasks", "poll"}
 DEMO_OPS = {"start", "stop", "restart"}
-DEMO_DIR = {"chat": "chat", "todo": "simple-todo", "poll": "simple-poll"}
+DEMO_DIR = {"chat": "chat", "tasks": "tasks", "poll": "simple-poll"}
 MODELS = {"0.5b": "qwen2.5:0.5b", "3b": "qwen2.5:3b"}
 
 _lock = threading.Lock()
