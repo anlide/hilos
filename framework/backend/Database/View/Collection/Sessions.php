@@ -79,4 +79,32 @@ final class Sessions extends DbCollection
 
         return $result;
     }
+
+    /**
+     * Lists the sessions waiting on one address's registration code (HIL-612).
+     *
+     * The reverse read of the pending-registration memory: who has to be told when an
+     * address resolves. Delegates to the object collection and wraps each row as a Db
+     * item; several is the normal answer, and an address nobody is registering yields
+     * an empty list.
+     *
+     * @param string $identifier Normalized identifier (empty string returns an empty list)
+     * @return list<Session> Session Db items waiting on it (empty when nobody is)
+     * @throws LogicException When the collection class constants are not configured
+     * @throws InvalidArgumentException When the loaded object type does not match the collection
+     * @throws DatabaseException When the identifier lookup or lazy session load fails
+     */
+    public function findAwaitingRegistration(string $identifier): array
+    {
+        $result = [];
+        foreach ($this->objectCollection->findAwaitingRegistration($identifier) as $objectSession) {
+            $item = $objectSession->id !== null ? $this->getItemForKey($objectSession->id) : null;
+            if ($item === null) {
+                continue;
+            }
+            $result[] = $item;
+        }
+
+        return $result;
+    }
 }

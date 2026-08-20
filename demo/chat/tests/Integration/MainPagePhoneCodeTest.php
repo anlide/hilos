@@ -226,7 +226,7 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
         try {
             $this->holdNumber('converge-ak', $phone);
             $this->holdNumber('waiting-ak', $phone);
-            Hilos::$db->registrationWaits->actions->hold($waitingToken, $phone);
+            Hilos::$db->sessions->findByToken($waitingToken)?->actions->holdPendingRegistration($phone);
             $this->seedKnownCode($phone);
             $this->drainConvergeSignals();
 
@@ -247,7 +247,7 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
             $this->assertSame(AuthFlowIntent::LOGIN, $converge->intent);
             $this->assertSame(AuthFlowOutcome::CODE_IDENTIFIER_TAKEN, $converge->code);
             $this->assertNull(
-                Hilos::$db->registrationWaits->findBySession($waitingToken),
+                Hilos::$db->sessions->findByToken($waitingToken)?->pendingRegistrationIdentifier,
                 'Nothing is left to wait on once the registration happened',
             );
         } finally {

@@ -918,6 +918,49 @@ final class MainPageRegisterTest extends IntegrationTestCase
     }
 
     /**
+     * Signing in forgets the registration the browser left unfinished.
+     *
+     * A person who starts a registration, then remembers an old account and signs into it
+     * instead, must land in that account - not back on the code screen of the address they
+     * walked away from. Until HIL-612 this held by accident: the wait was keyed by the
+     * cookie token, and the sign-in's rotation (HIL-582) orphaned it on a name nothing
+     * presented again. The memory travels with the row now, so the release is said out
+     * loud, and this case is what says it stayed said.
+     *
+     * @throws HilosException When setup or the sign-in fails
+     */
+    public function testSigningInForgetsTheRegistrationTheSessionLeftUnfinished(): void
+    {
+        $agent = $this->bootAgent();
+        $abandoned = $this->uniqueEmail();
+        $token = $this->openSession($agent, 'sign-in-wait-ak');
+
+        try {
+            $this->register($agent, 'sign-in-wait-ak', $abandoned);
+            $this->assertSame($abandoned, $this->waitOf($token), 'The registration opened a code screen');
+
+            // The account the person actually has, signed into instead of finishing.
+            $own = Hilos::$db->users->actions->createWithName('own');
+            $ownUserId = (int)$own->id;
+            Hilos::$db->identities->createPasswordIdentity($ownUserId, $this->uniqueEmail(), self::PASSWORD);
+
+            $agent->authenticateSession($token, $ownUserId, 'sign-in-wait-ak');
+
+            // The sign-in rotated the token (HIL-582): the row is the same one, and it
+            // answers to the name the connection was re-pointed onto.
+            $liveToken = Hilos::$rt->connections['sign-in-wait-ak']->sessionToken;
+            $this->assertNotSame($token, $liveToken, 'The sign-in rotates the token');
+            $this->assertSame($ownUserId, Hilos::$db->sessions->findByToken($liveToken)?->userId);
+            $this->assertNull(
+                $this->waitOf($liveToken),
+                'A signed-in browser is not handed back the code screen it walked away from',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
      * "Not that address?" forgets the wait and leaves this browser's hold standing.
      *
      * The asymmetry is the rule (HIL-415, Flow p.7), and HIL-608 kept it while replacing
@@ -1055,11 +1098,11 @@ final class MainPageRegisterTest extends IntegrationTestCase
      *
      * @param string $sessionToken Session token to ask about
      * @return ?string Identifier the session is waiting on, or null when it waits on nothing
-     * @throws HilosException When the wait lookup fails
+     * @throws HilosException When the session lookup fails
      */
     private function waitOf(string $sessionToken): ?string
     {
-        return Hilos::$db->registrationWaits->findBySession($sessionToken)?->identifier;
+        return Hilos::$db->sessions->findByToken($sessionToken)?->pendingRegistrationIdentifier;
     }
 
     /**

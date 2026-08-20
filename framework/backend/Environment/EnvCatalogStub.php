@@ -230,6 +230,11 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 730 * 24 * 60 * 60,
                 emptyIsMissing: true,
             ),
+            EnvConstants::HILOS_PENDING_REGISTRATION_SWEEP_CRON->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                '*/5 * * * *',
+                emptyIsMissing: true,
+            ),
             EnvConstants::HILOS_VERIFICATION_CODE_LENGTH->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 6, emptyIsMissing: true),
             EnvConstants::HILOS_VERIFICATION_TTL_SEC->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 900, emptyIsMissing: true),
             EnvConstants::HILOS_VERIFICATION_MAX_ATTEMPTS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 5, emptyIsMissing: true),

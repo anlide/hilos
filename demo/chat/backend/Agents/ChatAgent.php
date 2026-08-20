@@ -98,7 +98,8 @@ final class ChatAgent extends AbstractAgent
     ];
 
     /**
-     * Registers chat truth sources and records chat startup.
+     * Registers chat truth sources, arms the abandoned-registration sweep, and records
+     * chat startup.
      *
      * @throws HilosException On database or runtime startup failure
      */
@@ -117,6 +118,7 @@ final class ChatAgent extends AbstractAgent
         $this->registerRtTruthSource(ChatRtContext::registrationWaiters);
         $this->registerRtTruthSource(ChatRtContext::recoveryWaiters);
         $this->startSessionRotations();
+        $this->startPendingRegistrationSweep();
 
         Hilos::$db->events->actions->addChatStarted();
     }
@@ -126,17 +128,22 @@ final class ChatAgent extends AbstractAgent
      * surfaces whose connection is gone - parked on a registration code (HIL-415) or on
      * a password-recovery one (HIL-416).
      *
-     * The whole tick: walks over in-memory collections that hold one row per login in the
-     * last thirty seconds and one per sign-in surface parked on a confirmation code, so it
-     * is measured in microseconds and never touches the database or the network - which is
-     * what the tick rule requires of it. Each waiter walk is skipped outright while nobody
-     * is registering or recovering, which is almost always.
+     * Also clears, on its own schedule, the registrations nobody came back to finish
+     * (HIL-612) - the one part of this tick that reads the database, which is why it is
+     * behind a cron rule instead of running every pass.
+     *
+     * The rest of the tick walks over in-memory collections that hold one row per login in
+     * the last thirty seconds and one per sign-in surface parked on a confirmation code, so
+     * it is measured in microseconds and never touches the database or the network - which
+     * is what the tick rule requires of it. Each waiter walk is skipped outright while
+     * nobody is registering or recovering, which is almost always.
      *
      * @throws HilosException On runtime failure
      */
     public function onTick(): void
     {
         $this->sweepSessionRotations();
+        $this->sweepPendingRegistrations();
         $this->sweepRegistrationWaiters();
         $this->sweepRecoveryWaiters();
     }
@@ -601,7 +608,7 @@ final class ChatAgent extends AbstractAgent
             Hilos::$rt->userStates->actions->ensure($userId);
         }
 
-        $this->parkRegistrationWait($data->acceptKey, $session);
+        $this->parkPendingRegistration($data->acceptKey, $session);
         $this->sendToUser(
             ChatSignalConstants::HANDSHAKE_RESPONSE,
             $data->acceptKey,
@@ -1029,7 +1036,7 @@ final class ChatAgent extends AbstractAgent
             }
         }
 
-        Hilos::$db->registrationWaits->actions->releaseByIdentifier($identifier);
+        Hilos::$db->sessions->actions->releasePendingRegistrationFor($identifier);
 
         foreach ($parked as $acceptKey => $sessionToken) {
             Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
@@ -1145,7 +1152,9 @@ final class ChatAgent extends AbstractAgent
         // The durable memory goes next, still ahead of the first signal: the hold is
         // gone, so a tab reconnecting a second later must be told the identifier step by
         // the handshake, not parked again on a code screen this very sweep is closing.
-        Hilos::$db->registrationWaits->actions->releaseBySession($sessionToken);
+        // Cleared on THIS session's row alone, not on every session waiting on the
+        // address - the narrowing HIL-608 made, kept when the memory moved onto the row.
+        Hilos::$db->sessions->findByToken($sessionToken)?->actions->releasePendingRegistration();
 
         foreach (array_unique($acceptKeys) as $acceptKey) {
             Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
@@ -1204,10 +1213,11 @@ final class ChatAgent extends AbstractAgent
      *
      * TWO sources, because the runtime list is a projection and not the truth (HIL-486):
      * a socket is parked when its session handshakes, so the socket that ASKED for the
-     * code is not in it - it has not handshaken since. The durable waits close that gap;
-     * they name the sessions, and every live socket of such a session is waiting whether
-     * or not it was ever parked. Sessions with no live socket contribute nothing and cost
-     * nothing: their tabs are told at the handshake, by the step the response carries.
+     * code is not in it - it has not handshaken since. The session rows close that gap;
+     * they name the sessions waiting on the address, and every live socket of such a
+     * session is waiting whether or not it was ever parked. Sessions with no live socket
+     * contribute nothing and cost nothing: their tabs are told at the handshake, by the
+     * step the response carries.
      *
      * @param string $identifier Normalized identifier being converged
      * @return array<string, string> Session token by waiting connection accept key
@@ -1220,9 +1230,9 @@ final class ChatAgent extends AbstractAgent
             $parked[$waiter->acceptKey] = $waiter->sessionToken;
         }
 
-        foreach (Hilos::$db->registrationWaits->sessionTokensFor($identifier) as $sessionToken) {
-            foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
-                $parked[$acceptKey] = $sessionToken;
+        foreach (Hilos::$db->sessions->findAwaitingRegistration($identifier) as $session) {
+            foreach ($this->sessionConnectionKeys($session->token) as $acceptKey) {
+                $parked[$acceptKey] = $session->token;
             }
         }
 

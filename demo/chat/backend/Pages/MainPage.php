@@ -729,7 +729,7 @@ final class MainPage extends AbstractPage
             ->reserve(IdentityType::PASSWORD, $connection->sessionToken, $email, $dto->password);
 
         Hilos::$rt->hilosRegistrationWaiters->actions->park($connection->acceptKey, $email, $connection->sessionToken);
-        Hilos::$db->registrationWaits->actions->hold($connection->sessionToken, $email);
+        Hilos::$db->sessions->findByToken($connection->sessionToken)?->actions->holdPendingRegistration($email);
 
         if ($outcome->capReached) {
             return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, self::SEND_CAP_MESSAGE);
@@ -1408,7 +1408,7 @@ final class MainPage extends AbstractPage
         // resend leaves the person ON the code screen, so the converge still has to
         // reach them when somebody else redeems the address.
         Hilos::$rt->hilosRegistrationWaiters->actions->park($connection->acceptKey, $email, $connection->sessionToken);
-        Hilos::$db->registrationWaits->actions->hold($connection->sessionToken, $email);
+        Hilos::$db->sessions->findByToken($connection->sessionToken)?->actions->holdPendingRegistration($email);
 
         if ($outcome->capReached) {
             return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, self::SEND_CAP_MESSAGE);
@@ -1616,7 +1616,7 @@ final class MainPage extends AbstractPage
         }
         $connection = Hilos::$rt->selfConnection;
 
-        Hilos::$db->registrationWaits->actions->releaseBySession($connection->sessionToken);
+        Hilos::$db->sessions->findByToken($connection->sessionToken)?->actions->releasePendingRegistration();
         $this->agent->abandonRegistration($connection->sessionToken, $connection->acceptKey);
 
         return AuthFlowOutcome::moveTo(AuthFlowStep::IDENTIFIER, AuthFlowIntent::REGISTER);

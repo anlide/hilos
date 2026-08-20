@@ -25,6 +25,8 @@ use Hilos\HilosException;
  * @property-read string $createdAt Creation timestamp
  * @property-read string $lastSeenAt Last-seen timestamp
  * @property-read ?string $expiresAt Expiry timestamp, or null when open-ended
+ * @property-read ?string $pendingRegistrationIdentifier Address whose code this session is waiting on, or null when it waits on none
+ * @property-read ?string $pendingRegistrationSince Moment that wait was last written, or null when there is none
  * @property-read SessionActions $actions Actions for write operations on this session
  */
 final class Session extends DbItem
@@ -48,6 +50,8 @@ final class Session extends DbItem
             ObjectSession::createdAt => $this->_object->createdAt,
             ObjectSession::lastSeenAt => $this->_object->lastSeenAt,
             ObjectSession::expiresAt => $this->_object->expiresAt,
+            ObjectSession::pendingRegistrationIdentifier => $this->_object->pendingRegistrationIdentifier,
+            ObjectSession::pendingRegistrationSince => $this->_object->pendingRegistrationSince,
             default => parent::__get($name),
         };
     }

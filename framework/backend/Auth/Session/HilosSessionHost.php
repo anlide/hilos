@@ -12,15 +12,18 @@ use Hilos\Auth\Session\Exception\SessionTokenExhaustedException;
 use Hilos\Auth\Throttle\ThrottleGate;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
+use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\NotImplementedException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\View\Item\Session;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
@@ -60,6 +63,12 @@ trait HilosSessionHost
     /** @var int Times a rotation re-mints a token another session already holds before giving up */
     private const int TOKEN_MINT_ATTEMPTS = 3;
 
+    /** Name of the cron rule that clears abandoned registrations off session rows. */
+    private const string PENDING_REGISTRATION_SWEEP_RULE = 'hilos_sweep_pending_registrations';
+
+    /** @var ?CronRule Schedule of the abandoned-registration sweep, or null when it is switched off */
+    private ?CronRule $pendingRegistrationSweepRule = null;
+
     /**
      * Claims the rotation store for this agent and clears anything the last process left.
      *
@@ -71,6 +80,60 @@ trait HilosSessionHost
     final protected function startSessionRotations(): void
     {
         $this->registerRtTruthSource(StateHilosSessionRotation::RT_COLLECTION);
+    }
+
+    /**
+     * Arms the schedule of the abandoned-registration sweep (HIL-612).
+     *
+     * Called from the owning agent's `onStart()`. The rule is held and ticked by the
+     * AGENT rather than routed through the daemon's cron: a project like simple-todo
+     * names no cron-owning agent at all, and a rule that signalled would be shouting
+     * into a socket nobody is holding.
+     *
+     * An empty expression arms nothing, which is the whole switch a project needs -
+     * one that never registers anybody sweeps nothing and pays no tick for it.
+     *
+     * @throws EnvException When the schedule key is missing, outside the catalog, or of the wrong type
+     */
+    final protected function startPendingRegistrationSweep(): void
+    {
+        $expression = Hilos::$env?->string(EnvConstants::HILOS_PENDING_REGISTRATION_SWEEP_CRON);
+        if ($expression === null || trim($expression) === '') {
+            return;
+        }
+
+        $this->pendingRegistrationSweepRule = new CronRule(self::PENDING_REGISTRATION_SWEEP_RULE, $expression);
+    }
+
+    /**
+     * Clears the registrations nobody came back to finish (HIL-612).
+     *
+     * Called from the owning agent's `onTick()`; the rule inside decides whether this
+     * tick is the one. Unlike the event-driven releases - a code that came back, a
+     * "not that address?", an expiring hold - nothing here answers a person: this is
+     * what closes the case where the person simply left. Without it a browser returning
+     * days later would be served the code screen of a code that expired long ago.
+     *
+     * The age of the WAIT is the whole criterion, and the reservation table is
+     * deliberately not consulted: a project with no registration has no such table and
+     * must still be swept, and the guard is exact anyway - a resend restamps the wait on
+     * the same path that extends the hold.
+     *
+     * @throws HilosException On database or runtime failure
+     * @throws EnvException When the verification TTL key is missing, outside the catalog, or of the wrong type
+     */
+    final protected function sweepPendingRegistrations(): void
+    {
+        if ($this->pendingRegistrationSweepRule?->shouldRun() !== true) {
+            return;
+        }
+
+        $released = Hilos::$db?->sessions->actions->sweepStalePendingRegistrations(
+            Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_TTL_SEC),
+        );
+        if ($released !== null && $released > 0) {
+            $this->logAgentInfo("Pending registration sweep: cleared {$released} abandoned registration(s)");
+        }
     }
 
     /**
@@ -131,15 +194,15 @@ trait HilosSessionHost
      * the identifier field, not on a code screen for a code that can no longer be
      * confirmed.
      *
-     * TWO rows have to agree, and they answer different questions (HIL-608). The WAIT
-     * says this browser is sitting on a code screen: it is written by the flows that
-     * put it there and dropped by "not that address?", so a hold with no wait beside it
-     * is a registration nobody is watching a code field for - a mailed sign-in link,
-     * or an attempt its owner walked away from - and resuming either onto a code screen
-     * would ask for a code that was never issued. The HOLD says WHICH registration and
-     * until when, and the address is taken off it rather than off the wait, because a
-     * hold made on another address after the wait was written would otherwise be
-     * described with the wait's stale identifier.
+     * TWO records have to agree, and they answer different questions (HIL-608). The WAIT
+     * on the session row says this browser is sitting on a code screen: it is written by
+     * the flows that put it there and dropped by "not that address?", so a hold with no
+     * wait beside it is a registration nobody is watching a code field for - a mailed
+     * sign-in link, or an attempt its owner walked away from - and resuming either onto a
+     * code screen would ask for a code that was never issued. The HOLD says WHICH
+     * registration and until when, and the address is taken off it rather than off the
+     * wait, because a hold made on another address after the wait was written would
+     * otherwise be described with the wait's stale identifier.
      *
      * The channel is asked for a number only: a code sent to an address goes by mail
      * whatever else is registered, and naming a channel there would be inventing a
@@ -147,7 +210,7 @@ trait HilosSessionHost
      *
      * @param ?Session $session Session to describe, or null for an anonymous response
      * @return ?array{identifier: string, kind: string, channel: ?string, expiresAt: int} Step, or null when there is none
-     * @throws HilosException When a wait, reservation or verification query fails
+     * @throws HilosException When the reservation or verification query fails
      */
     private function pendingRegistrationFor(?Session $session): ?array
     {
@@ -155,7 +218,7 @@ trait HilosSessionHost
             return null;
         }
 
-        if (Hilos::$db?->registrationWaits->findBySession($session->token) === null) {
+        if ($session->pendingRegistrationIdentifier === null) {
             return null;
         }
 
@@ -205,15 +268,15 @@ trait HilosSessionHost
      *
      * @param string $acceptKey Accept key of the connection that just handshook
      * @param ?Session $session Session the connection resolved to, or null when it has none
-     * @throws HilosException When the wait lookup or the runtime write fails
+     * @throws HilosException When the runtime write fails
      */
-    final protected function parkRegistrationWait(string $acceptKey, ?Session $session): void
+    final protected function parkPendingRegistration(string $acceptKey, ?Session $session): void
     {
         if ($session === null) {
             return;
         }
 
-        $identifier = Hilos::$db?->registrationWaits->findBySession($session->token)?->identifier;
+        $identifier = $session->pendingRegistrationIdentifier;
         if ($identifier === null) {
             return;
         }
@@ -545,6 +608,16 @@ trait HilosSessionHost
             $session->actions->bindUser($userId);
         }
         $liveToken = $rotated ?? $sessionToken;
+
+        // This session belongs to somebody now, so whatever registration it left
+        // half-finished is over - by having just completed, or by having been abandoned
+        // for a sign-in. Before HIL-612 this fell out by accident: the wait was keyed by
+        // the token, and the rotation above orphaned it on a name nothing presented
+        // again. The memory moved onto the row and now travels with it, so the release
+        // has to be said out loud - and said HERE, above the handshake response built
+        // below, which would otherwise hand the freshly authenticated browser back the
+        // code screen it just left.
+        $session->actions->releasePendingRegistration();
 
         $this->afterAuthenticate($userId);
         if ($rotated !== null) {

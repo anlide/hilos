@@ -49,13 +49,12 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
     private const int EXISTING_USER_ID = 7;
 
     /**
-     * @var list<string> Framework tables this case needs. `hilos_registration_wait` is not
-     *     read by the command: the handshake response the bind fans out asks every session
-     *     whether it left a registration unfinished, so the table is reached whether the case
-     *     cares about it or not. `hilos_setting` is the one framework collection loaded
-     *     eagerly, so mounting the context reaches for it.
+     * @var list<string> Framework tables this case needs. `hilos_setting` is the one
+     *     framework collection loaded eagerly, so mounting the context reaches for it;
+     *     the unfinished registration the handshake response asks about is a column on
+     *     `hilos_session` since HIL-612 and needs no table of its own.
      */
-    private const array TABLES = ['hilos_session', 'hilos_setting', 'hilos_registration_wait'];
+    private const array TABLES = ['hilos_session', 'hilos_setting'];
 
     /** @var ?DbContext Database context to restore after the test */
     private ?DbContext $previousDb = null;

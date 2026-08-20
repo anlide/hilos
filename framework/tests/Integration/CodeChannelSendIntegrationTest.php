@@ -50,12 +50,13 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
         'hilos_user_verification',
         'hilos_identity',
         'hilos_registration_reservation',
-        'hilos_registration_wait',
+        'hilos_session',
     ];
 
     private const string ACCEPT_KEY = 'code-channel-test-accept-key';
 
-    private const string SESSION_TOKEN = 'code-channel-test-session-token';
+    /** Session token of the browser every case asks from, valid hex so a real row can carry it. */
+    private const string SESSION_TOKEN = 'c0de00000000000000000000000000a1';
 
     /** Owner of the identity the "number already has an account" case plants. */
     private const int EXISTING_USER_ID = 4242;
@@ -272,7 +273,7 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
 
         $phone = $this->uniquePhone();
         $channel = new CodeChannelTestChannel('joined', reachable: true);
-        $second = 'code-channel-test-second-session';
+        $second = 'c0de00000000000000000000000000b2';
 
         $this->request(new CodeChannelTestAgent($channel), $phone, 'joined');
         self::assertSame(AuthCodeResultSignalData::REASON_CODE_SENT, $this->takeResultReason());
@@ -289,11 +290,11 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
      *
      * @param string $sessionToken Session token to ask about
      * @return ?string Identifier the session is waiting on, or null when it waits on nothing
-     * @throws HilosException When the wait lookup fails
+     * @throws HilosException When the session lookup fails
      */
     private function waitOf(string $sessionToken): ?string
     {
-        return Hilos::$db?->registrationWaits->findBySession($sessionToken)?->identifier;
+        return Hilos::$db?->sessions->findByToken($sessionToken)?->pendingRegistrationIdentifier;
     }
 
     /**
@@ -302,7 +303,8 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
      * @param CodeChannelTestAgent $agent Agent under test, carrying its one channel
      * @param string $phone Number the code is asked for
      * @param string $channel Channel name the request names
-     * @throws HilosException When the agent's intake or tick raises
+     * @param string $sessionToken Session token the request speaks for
+     * @throws HilosException When the session seed, the agent's intake or its tick raises
      */
     private function request(
         CodeChannelTestAgent $agent,
@@ -310,6 +312,14 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
         string $channel,
         string $sessionToken = self::SESSION_TOKEN,
     ): void {
+        // The wait is a column on the session row since HIL-612, so the browser this
+        // request speaks for has to exist before the agent can remember anything about it -
+        // exactly as it does in production, where a socket only ever arrives with a
+        // session the master already resolved.
+        if (Hilos::$db?->sessions->findByToken($sessionToken) === null) {
+            Hilos::$db?->sessions->actions->createAnonymous($sessionToken);
+        }
+
         $agent->onSignalAgent(
             new AgentSignalData(new AuthCodeSendSignalData(
                 self::ACCEPT_KEY,
@@ -375,8 +385,9 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
  * A framework database context with nothing but the framework's own collections.
  *
  * The code path is framework-owned and every table it touches - the challenge, the
- * identity it asks about, the hold and the wait it writes - is a framework one, so the
- * smallest honest context for it is {@see HilosDbContext} with no project collections.
+ * identity it asks about, the hold, and the session row the wait is written onto - is a
+ * framework one, so the smallest honest context for it is {@see HilosDbContext} with no
+ * project collections.
  */
 final class CodeChannelTestDbContext extends HilosDbContext
 {

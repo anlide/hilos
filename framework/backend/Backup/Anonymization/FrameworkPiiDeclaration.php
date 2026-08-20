@@ -12,7 +12,6 @@ use Hilos\Database\Entity\Item\NotificationPreference;
 use Hilos\Database\Entity\Item\PasskeyCredential;
 use Hilos\Database\Entity\Item\PushSubscription;
 use Hilos\Database\Entity\Item\RegistrationReservation;
-use Hilos\Database\Entity\Item\RegistrationWait;
 use Hilos\Database\Entity\Item\Session;
 use Hilos\Database\Entity\Item\Setting;
 use Hilos\Database\Entity\Item\UserVerification;
@@ -81,7 +80,6 @@ final class FrameworkPiiDeclaration
                 UserVerification::class => AnonymizationStrategy::PURGE,
                 PasskeyCredential::class => AnonymizationStrategy::PURGE,
                 RegistrationReservation::class => AnonymizationStrategy::PURGE,
-                RegistrationWait::class => AnonymizationStrategy::PURGE,
                 AuthBlock::class => AnonymizationStrategy::PURGE,
                 PushSubscription::class => AnonymizationStrategy::PURGE,
                 Notification::class => [

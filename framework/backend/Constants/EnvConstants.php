@@ -270,6 +270,14 @@ enum EnvConstants
      */
     case HILOS_SESSION_COOKIE_MAX_AGE;
 
+    /**
+     * Cron schedule of the sweep that clears abandoned registrations off session
+     * rows (HIL-612). Five fields; default every five minutes. An EMPTY value
+     * builds no rule at all, which is how a project that never registers anybody
+     * pays nothing for the sweep.
+     */
+    case HILOS_PENDING_REGISTRATION_SWEEP_CRON;
+
     // ── User verification (email confirm / password recovery) ────────────────
 
     /**

@@ -635,14 +635,16 @@ class AuthCodeAgent extends AbstractAgent
      * Remembers, against the asking session, that it is waiting on a code (HIL-486).
      *
      * The durable half of the unfinished-registration memory: the runtime waiter list
-     * is a projection of these rows, so a browser that reloads is parked again at its
-     * handshake and given back the code screen it was on. Only a REGISTRATION is
-     * remembered - a code sent to a number that already has an account signs somebody
-     * in, and there is no half-finished registration to come back to.
+     * is a projection of the asking session's row, so a browser that reloads is parked
+     * again at its handshake and given back the code screen it was on. Only a
+     * REGISTRATION is remembered - a code sent to a number that already has an account
+     * signs somebody in, and there is no half-finished registration to come back to.
      *
-     * A failure to write is logged and swallowed, alone in this class: the code did go
-     * out, the person is owed that answer, and turning a delivered code into "send
-     * failed" over a memory row would be a worse lie than losing the row.
+     * A token with no session row writes nothing: the wait is memory ABOUT a session
+     * (HIL-612), and a request that names none has nowhere to keep it. A failure to
+     * write is logged and swallowed, alone in this class: the code did go out, the
+     * person is owed that answer, and turning a delivered code into "send failed" over
+     * a memory row would be a worse lie than losing the row.
      *
      * @param AuthCodeOperation $operation Operation whose code left a session waiting
      */
@@ -653,10 +655,8 @@ class AuthCodeAgent extends AbstractAgent
         }
 
         try {
-            Hilos::$db?->registrationWaits->actions->hold(
-                $operation->request->sessionToken,
-                $operation->request->identifier,
-            );
+            Hilos::$db?->sessions->findByToken($operation->request->sessionToken)
+                ?->actions->holdPendingRegistration($operation->request->identifier);
         } catch (Throwable $e) {
             $this->logAgentWarning($this->describe($operation) . ' left no wait behind: ' . $e->getMessage());
         }

@@ -17,7 +17,8 @@
 -- what makes the hold OWNED: a reservation is landed by the session that started
 -- it, so a letter answered in another browser can never land somebody else's
 -- password into the account it creates. The same question - "which registration
--- is this browser running" - is keyed the same way on hilos_registration_wait.
+-- is this browser running" - is answered the same way by the pending-registration
+-- columns of hilos_session.
 --
 -- No DB-level foreign key to the project `user` table: framework stubs never FK
 -- across the framework/project boundary, and here there is nothing to point at —

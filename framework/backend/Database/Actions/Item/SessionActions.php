@@ -133,6 +133,56 @@ final class SessionActions extends DbActions
     }
 
     /**
+     * Remembers that this session is waiting on an address's registration code (HIL-612).
+     *
+     * The durable half of the unfinished-registration memory: the handshake serves the
+     * code step from here, which is what lets a reloaded tab, a second tab and another
+     * device all come back to it. A second call re-points the same row rather than
+     * adding another - a person runs one registration at a time - and always restamps
+     * the moment, because a resend renews the wait exactly as the first send opened it.
+     *
+     * @param string $identifier Normalized identifier this session is waiting on
+     * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
+     * @throws HilosException On database error
+     */
+    public function holdPendingRegistration(string $identifier): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Session not found for holdPendingRegistration (id is null)');
+        }
+
+        $this->object->pendingRegistrationIdentifier = $identifier;
+        $this->object->pendingRegistrationSince = TimeHelper::getSqlDateTime();
+        $this->object->sync();
+    }
+
+    /**
+     * Forgets what this session was waiting on (HIL-612).
+     *
+     * The end of a flow as this session experienced it - its code came back, the person
+     * said it was the wrong address, or a login made the half-finished registration moot.
+     * It says nothing about the address itself: another session may still be waiting on
+     * the same one, and the hold on it is released elsewhere or not at all.
+     *
+     * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
+     * @throws HilosException On database error
+     */
+    public function releasePendingRegistration(): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Session not found for releasePendingRegistration (id is null)');
+        }
+
+        $this->object->pendingRegistrationIdentifier = null;
+        $this->object->pendingRegistrationSince = null;
+        $this->object->sync();
+    }
+
+    /**
      * Refreshes last-seen and expiry after activity on this session.
      *
      * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
