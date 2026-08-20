@@ -94,3 +94,29 @@ export async function gotoPage(
     expected ?? SETTLED,
   )
 }
+
+/**
+ * Open an auth return route and wait for its relay screen to be on screen.
+ *
+ * The return routes — `/auth/magic`, `/auth/callback` — are the one navigation
+ * {@link gotoPage} cannot serve: the app swaps `HilosView` out for the relay
+ * (App.vue), so the `hilos-page-state` marker that wrapper waits on is not in the
+ * DOM at all and the wait would time out on every call. What settles instead is
+ * the relay's own root, so this waits for that.
+ *
+ * The wait deliberately stops there, at "the screen is up". What the relay does
+ * next — hold, sign in, give up — is the behavior a spec calling this is about,
+ * and a wrapper that waited for one of those outcomes would decide it in advance.
+ *
+ * @param page The Playwright page.
+ * @param pathWithQuery Path and query of the return route, as the link carries it.
+ * @param relayId The `data-id` of the relay screen that owns the route.
+ */
+export async function gotoAuthReturn(
+  page: Page,
+  pathWithQuery: string,
+  relayId: string,
+): Promise<void> {
+  await page.goto(pathWithQuery)
+  await expect(page.getByTestId(relayId)).toBeAttached()
+}

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Verification;
 
+use Hilos\Auth\IdentifierMask;
 use Hilos\Auth\MagicLink\MagicLinkUrl;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\TimeConstants;
@@ -19,6 +20,7 @@ use Hilos\Database\Verification\VerificationType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Utils\Logger;
 use Random\RandomException;
 
 /**
@@ -501,6 +503,13 @@ class VerificationService
      * signal. It returns the consumed challenge so a caller can read its `userId`
      * when the flow needs it.
      *
+     * Every outcome is written to the log exactly once, here rather than in the
+     * flows above (HIL-607). This is the one place all of them pass through, so a
+     * line written here covers both halves of the magic-link letter and the
+     * registration and recovery codes alike, and cannot be forgotten by the next
+     * flow to be added. The silence toward the PERSON is unchanged — none of this
+     * reaches the wire.
+     *
      * @param string $type Verification type (see VerificationType)
      * @param string $identifier Normalized identifier
      * @param string $code Submitted plaintext code
@@ -515,22 +524,86 @@ class VerificationService
 
         $challenge = $collection->findActive($type, $identifier, $maxAttempts);
         if ($challenge === null) {
+            $this->logRejected(
+                $type,
+                $identifier,
+                $collection->describeInactive($type, $identifier, $maxAttempts),
+                0,
+                $maxAttempts,
+                null,
+            );
+
             return null;
         }
 
         $challenge->incrementAttempts();
 
         if (!$challenge->verifyCode($code)) {
-            if ($challenge->attempts >= $maxAttempts) {
+            $exhausted = $challenge->attempts >= $maxAttempts;
+            if ($exhausted) {
                 $challenge->consume();
             }
+            $this->logRejected(
+                $type,
+                $identifier,
+                $exhausted
+                    ? VerificationRejectReason::ATTEMPTS_EXHAUSTED
+                    : VerificationRejectReason::SECRET_MISMATCH,
+                $challenge->attempts,
+                $maxAttempts,
+                $challenge->id,
+            );
 
             return null;
         }
 
         $challenge->consume();
+        Logger::info(
+            'verification consume accepted: type=' . $type
+                . ' identifier=' . IdentifierMask::mask($identifier)
+                . ' attempts=' . $challenge->attempts . '/' . $maxAttempts
+                . ' id=' . (string)$challenge->id,
+        );
 
         return $challenge;
+    }
+
+    /**
+     * Writes the one line a refused consume leaves behind.
+     *
+     * The refusal is the half that used to leave nothing at all: a magic-link click
+     * that failed produced no row, no signal and no log entry, so the only way to
+     * tell a click that never arrived from one the backend turned down was to read
+     * the table by hand (HIL-607). Warning rather than error, because a stale link
+     * is an ordinary thing a person does, not a fault of the system.
+     *
+     * The identifier is masked and the submitted secret is not named at all — not
+     * the code, not the token, not its hash. What is written is what an operator
+     * can act on: which flow, roughly whose, why, how much budget was left, and the
+     * row to look at.
+     *
+     * @param string $type Verification type (see VerificationType)
+     * @param string $identifier Normalized identifier, masked before it is written
+     * @param string $reason Why the consume was refused (see VerificationRejectReason)
+     * @param int $attempts Attempts recorded against the challenge, or 0 when there was none
+     * @param int $maxAttempts Configured attempt ceiling
+     * @param ?int $verificationId Challenge row the refusal is about, or null when none was found
+     */
+    private function logRejected(
+        string $type,
+        string $identifier,
+        string $reason,
+        int $attempts,
+        int $maxAttempts,
+        ?int $verificationId,
+    ): void {
+        Logger::warning(
+            'verification consume rejected: type=' . $type
+                . ' identifier=' . IdentifierMask::mask($identifier)
+                . ' reason=' . $reason
+                . ' attempts=' . $attempts . '/' . $maxAttempts
+                . ' id=' . ($verificationId === null ? '-' : (string)$verificationId),
+        );
     }
 
     /**

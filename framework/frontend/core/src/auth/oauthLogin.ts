@@ -21,8 +21,8 @@
 // stops the redirect for good rather than merely orphaning it.
 import { ActionError } from '../connection/actionLifecycle.js'
 import { type ProjectSignal } from '../protocol/parseSignal.js'
-import { SIGNAL_HANDSHAKE_RESPONSE } from '../session/sessionScope.js'
 import { subscribeSignal, type ReadonlySignal } from '../state/signal.js'
+import { whenPageReady } from '../subscription/pageReadyGate.js'
 import { type HilosAuthContext } from './authContext.js'
 import {
   AUTH_ACTION_LINK_OAUTH_AFTER_REAUTH,
@@ -74,8 +74,6 @@ export interface HilosOAuthLogin {
     code: string,
     state: string,
   ): Promise<void>
-  /** Latch the session handshake the callback relay waits on; call once at boot. */
-  bindSessionReady(): () => void
   /**
    * Subscribe to the async OAuth failure signal for a callback route.
    *
@@ -265,14 +263,15 @@ function takeOAuthProvider(): string {
  *
  * The callback route loads cold from the provider's full-page redirect, so the
  * connection is still opening — and unregistered — when this fires;
- * {@link whenSessionReady} holds the dispatch until the daemon has registered the
- * connection against its session (the handshake response has landed). Transport
- * `connected` alone is not enough: a frame is dropped (not queued) before the
- * socket connects, and — the subtler race — a callback dispatched after `connected`
- * but before the handshake builds its op from a connection with no session yet, so
- * the completed login binds nothing back to this browser and the spinner hangs.
- * Gating on session-ready closes both; a session that never establishes leaves this
- * pending, which the callback route's own timeout backstops.
+ * {@link whenPageReady} holds the dispatch until a page subscription on it has
+ * been answered (HIL-607). Transport `connected` alone is not enough: a frame is
+ * dropped (not queued) before the socket connects, and — the subtler race — a
+ * callback dispatched after `connected` but before the handshake builds its op
+ * from a connection with no session yet, so the completed login binds nothing back
+ * to this browser and the spinner hangs. The page's answer closes both, and closes
+ * them strictly harder than the handshake this used to wait on: a page is only
+ * answered after the session that judges it. A connection that never answers
+ * leaves this pending, which the callback route's own timeout backstops.
  *
  * @param context The project auth context the wire dispatches over.
  * @param provider The provider key the callback belongs to.
@@ -285,67 +284,11 @@ async function dispatchOAuthCallback(
   code: string,
   state: string,
 ): Promise<void> {
-  await whenSessionReady()
+  await whenPageReady()
 
   return context.actions
     .dispatch(AUTH_ACTION_OAUTH_CALLBACK, { provider, code, state })
     .done.then(() => undefined)
-}
-
-/**
- * Whether the session handshake response has landed on this connection, i.e. the
- * daemon has registered it against its session. Latched by {@link bindSessionReady}
- * and read by {@link whenSessionReady}.
- */
-let sessionReady = false
-
-/** Resolvers parked by {@link whenSessionReady} before the handshake landed. */
-const sessionReadyWaiters: Array<() => void> = []
-
-/**
- * Latch the session-ready state from the handshake-response signal, so the OAuth
- * callback can hold its dispatch until the daemon has registered this connection
- * against its session (HIL-281). Register once at boot, before the socket opens,
- * so the first handshake response is never missed; the latch stays set across a
- * later reconnect (the connection is re-registered before any re-handshake). A
- * no-op for every other signal. Returns an unsubscribe.
- *
- * The signal name comes from {@link SIGNAL_HANDSHAKE_RESPONSE}, the one the
- * framework's own session scope listens on: this is the same arrival read for a
- * second purpose, not a second name that happens to match.
- *
- * @param context The project auth context the wire dispatches over.
- * @returns Unsubscribe for the registered signal handler.
- */
-function bindSessionReady(context: HilosAuthContext): () => void {
-  return context.connection.on('projectSignal', (signal: ProjectSignal) => {
-    if (signal.type !== SIGNAL_HANDSHAKE_RESPONSE) {
-      return
-    }
-    sessionReady = true
-    while (sessionReadyWaiters.length > 0) {
-      sessionReadyWaiters.shift()?.()
-    }
-  })
-}
-
-/**
- * Resolve once the session handshake has landed (the daemon has registered this
- * connection against its session). Resolves immediately when it already has;
- * otherwise parks until {@link bindSessionReady} latches the next handshake
- * response. A session that never establishes leaves this pending, which the
- * callback route's own timeout backstop resolves so the spinner cannot wedge.
- *
- * @returns A promise that settles when the session is first established.
- */
-function whenSessionReady(): Promise<void> {
-  if (sessionReady) {
-    return Promise.resolve()
-  }
-
-  return new Promise<void>((resolve) => {
-    sessionReadyWaiters.push(resolve)
-  })
 }
 
 /**
@@ -479,12 +422,12 @@ function ignoreLinkFailure(): void {
  * The OAuth half of one sign-in surface: the two starts, the callback relay, the
  * boot-time bindings, and the account-link handoff (HIL-281/282/401/419).
  *
- * What the redirect leaves behind — the attempt in flight, the latched session
- * handshake, the armed link — stays at MODULE scope and not in this closure on
- * purpose: the two ends of an OAuth trip are two different callers (a surface
- * clicks, a boot-time binding navigates, a callback route arms, a replay redeems),
- * and a per-closure copy would leave each of them talking to its own memory of a
- * trip only one of them saw.
+ * What the redirect leaves behind — the attempt in flight, the armed link —
+ * stays at MODULE scope and not in this closure on purpose: the two ends of an
+ * OAuth trip are two different callers (a surface clicks, a boot-time binding
+ * navigates, a callback route arms, a replay redeems), and a per-closure copy
+ * would leave each of them talking to its own memory of a trip only one of them
+ * saw.
  *
  * @param context The project auth context the wire dispatches over.
  * @returns The bound OAuth client the surfaces and the boot sequence call.
@@ -499,7 +442,6 @@ export function createOAuthLogin(context: HilosAuthContext): HilosOAuthLogin {
     takeOAuthProvider,
     dispatchOAuthCallback: (provider, code, state) =>
       dispatchOAuthCallback(context, provider, code, state),
-    bindSessionReady: () => bindSessionReady(context),
     subscribeOAuthFailure: (handler) => subscribeOAuthFailure(context, handler),
     armOAuthLink,
     peekOAuthLink,

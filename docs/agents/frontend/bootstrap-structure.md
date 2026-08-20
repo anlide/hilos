@@ -24,12 +24,27 @@ configures rather than re-implements:
 - `bindSessionScope` / `sessionUserName` — route the handshake response into the
   session scope and expose the current user.
 - `bootHilos({ connection, scopes, router, pageEntityTypes?, pageTitles?, appName? })`
-  — bind the session and page scopes, build the navigator, open the socket, apply
-  the URL, and return the navigator to provide to the view. `pageTitles` (the
-  project's page key → browser-tab title) and `appName` feed the navigator's
-  `currentTitle`, which the app shell binds to `document.title` and a page-change
-  live region (WCAG 2.4.2); framework admin and footer pages are titled from
-  their own catalogs, so a project lists only its own pages.
+  — bind the session scope, the page scope, and the page-ready gate, build the
+  navigator, open the socket, apply the URL, and return the navigator to provide
+  to the view. `pageTitles` (the project's page key → browser-tab title) and
+  `appName` feed the navigator's `currentTitle`, which the app shell binds to
+  `document.title` and a page-change live region (WCAG 2.4.2); framework admin
+  and footer pages are titled from their own catalogs, so a project lists only
+  its own pages.
+
+The page-ready gate is the part of that sequence a project never sees but a
+return route depends on. `bindPageReady` latches the first page answer — a
+`page_response` or a `subscription_page_error` alike — before the socket opens,
+and `whenPageReady` resolves once it has. A route entered by a full browser load
+(`/auth/magic`, `/auth/callback`) mounts its relay in the same tick the socket
+starts opening, and a frame sent before the socket connects is DROPPED, not
+queued: without the gate the relay reports that the server could not be reached
+for a request the server never received (HIL-607). What is waited on is the
+page's answer rather than the handshake, because an action is routed by the
+backend through the connection's page subscription — the readiness that matters
+is the one that subscription reports. The gate itself never times out; the relay
+screen showing the spinner owns the backstop, since it is the only layer that can
+say what to do next.
 
 ## Workflow
 

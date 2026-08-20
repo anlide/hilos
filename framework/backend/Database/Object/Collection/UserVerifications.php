@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Collection;
 
+use Hilos\Auth\Verification\VerificationRejectReason;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -74,6 +75,63 @@ final class UserVerifications extends Objects
         }
 
         return $active;
+    }
+
+    /**
+     * Names why a (type, identifier) pair has no active challenge.
+     *
+     * The companion of {@see findActive()}, for the caller that just got null from it
+     * and has to write down what happened (HIL-607). It asks no second question of the
+     * database: {@see hydrateByIdentity()} has already loaded every row for the pair
+     * and cached it, so this reads the same objects the failed lookup walked.
+     *
+     * Only INACTIVE rows are considered, and the newest of them answers — it is the
+     * challenge the person most likely just tried to spend. The order of the checks is
+     * from most specific to least, because the states overlap: a challenge that ran out
+     * of attempts is consumed by the service on the way out, so asking about
+     * consumption first would hide exhaustion forever. When no row explains the
+     * refusal — nothing was ever issued, or every row is somehow still active — the
+     * answer is {@see VerificationRejectReason::NO_CHALLENGE}, which is what an
+     * operator reading the log needs to be told: nothing here accounts for it.
+     *
+     * @param string $type Verification type (see VerificationType)
+     * @param string $identifier Normalized identifier (lowercased email)
+     * @param int $maxAttempts Attempt ceiling the caller judged activity by
+     * @return string Why there is no active challenge (see VerificationRejectReason)
+     * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function describeInactive(string $type, string $identifier, int $maxAttempts): string
+    {
+        if ($type === '' || $identifier === '') {
+            return VerificationRejectReason::NO_CHALLENGE;
+        }
+
+        $now = TimeHelper::getSqlDateTime();
+        $newest = null;
+        foreach ($this->hydrateByIdentity($type, $identifier) as $verification) {
+            if ($verification->isActive($now, $maxAttempts)) {
+                continue;
+            }
+            if ($newest === null || (int)$verification->id > (int)$newest->id) {
+                $newest = $verification;
+            }
+        }
+
+        if ($newest === null) {
+            return VerificationRejectReason::NO_CHALLENGE;
+        }
+        if ($newest->attempts >= $maxAttempts) {
+            return VerificationRejectReason::ATTEMPTS_EXHAUSTED;
+        }
+        if ($newest->consumedAt !== null) {
+            return VerificationRejectReason::CONSUMED;
+        }
+        if ($newest->expiresAt <= $now) {
+            return VerificationRejectReason::EXPIRED;
+        }
+
+        return VerificationRejectReason::NO_CHALLENGE;
     }
 
     /**

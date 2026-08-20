@@ -90,6 +90,7 @@ export {
   bindPageScope,
   PAGE_SIGNAL_SCHEMAS,
 } from './subscription/bindPageScope.js'
+export { bindPageReady, whenPageReady } from './subscription/pageReadyGate.js'
 export {
   bindTableViewport,
   type TableViewportAddress,

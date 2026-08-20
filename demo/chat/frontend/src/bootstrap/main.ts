@@ -15,21 +15,16 @@ import { router } from '../pages/routes'
 import { connection } from './connection'
 import { currentUserId, pendingAck, scopes } from './session'
 
-// The framework OAuth client, bound to this project's context. Its redirect and
-// session-ready state lives in the framework module, so the bindings registered
-// here answer the trips the surfaces start.
+// The framework OAuth client, bound to this project's context. Its redirect state
+// lives in the framework module, so the bindings registered here answer the trips
+// the surfaces start. The readiness the callback relay waits on is not among them:
+// since HIL-607 that is the shared page-ready gate, which bootHilos binds itself.
 const oauth = createOAuthLogin(hilosAuthContext)
 
 // The OAuth start reply (HIL-281): navigate the browser to the provider's
 // authorize URL when the daemon answers `hilos_oauth_start` with the authorize signal.
 // Registered before bootHilos opens the socket so the reply always has a handler.
 oauth.bindOAuthAuthorizeRedirect()
-
-// The OAuth callback's session-ready gate (HIL-281): latch the session handshake
-// so the /auth/callback relay holds its `hilos_oauth_callback` dispatch until the daemon
-// has registered this cold-loaded connection against its session. Registered
-// before bootHilos opens the socket so the first handshake response is never missed.
-oauth.bindSessionReady()
 
 // The OAuth email-collision link replay (HIL-282): once a collision re-auth
 // upgrades the session (currentUserId turns non-null) with a pending link armed,

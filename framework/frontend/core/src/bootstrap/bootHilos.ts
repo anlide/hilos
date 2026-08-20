@@ -25,6 +25,7 @@ import {
 } from '../session/sessionScope.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { bindPageScope } from '../subscription/bindPageScope.js'
+import { bindPageReady } from '../subscription/pageReadyGate.js'
 
 /** Configuration for {@link bootHilos}. */
 export interface BootHilosConfig {
@@ -67,10 +68,11 @@ export interface BootHilosConfig {
 }
 
 /**
- * Boot the application: bind the session scope and the page scope to the
- * connection, create the navigator over the page subscription, open the socket,
- * and apply the current URL. The session-token cookie must already be minted
- * (the project's session module does this at import) so it rides the handshake.
+ * Boot the application: bind the session scope, the page scope, and the
+ * page-ready gate to the connection, create the navigator over the page
+ * subscription, open the socket, and apply the current URL. The session-token
+ * cookie must already be minted (the project's session module does this at
+ * import) so it rides the handshake.
  *
  * @param config The connection, scopes, router, and optional overrides.
  * @returns The navigator the app provides to `HilosView` / `HilosLink`.
@@ -87,6 +89,11 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   const pages = bindPageScope(config.connection, config.scopes, {
     entityTypes: config.pageEntityTypes,
   })
+  // The page-ready gate (HIL-607): latch the first page answer so a relay route
+  // that loads cold — /auth/magic, /auth/callback — can hold its dispatch until
+  // the connection can carry one. Bound here, before the socket opens, so the
+  // first answer is never missed.
+  bindPageReady(config.connection)
   const hilosRouter = createHilosRouter(
     config.router,
     pages,

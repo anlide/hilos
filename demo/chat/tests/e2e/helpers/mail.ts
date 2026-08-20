@@ -36,6 +36,12 @@ const MAGIC_LINK_SUBJECT = 'Your sign-in link'
 const MAGIC_LINK_CODE_PATTERN =
   /Or enter this code on the page that asked for it:\s*(\d+)/
 
+// The other half of the same letter, anchored on its own line for the same
+// reason: the URL is the only thing on the letter that a loose match could pick
+// the code out of, and vice versa. Read as the letter offers it — whole — because
+// what the click has to reproduce is the address a mail client would open.
+const MAGIC_LINK_URL_PATTERN = /Use this link to sign in:\s*(\S+)/
+
 /** One intercepted message, as a spec reads it back. */
 export interface InterceptedMail {
   /** Subject line, which is how a wait picked this message out. */
@@ -134,6 +140,29 @@ export async function readMagicLinkCode(email: string): Promise<string> {
   }
 
   return code
+}
+
+/**
+ * Wait for the sign-in letter and return the link it carries beside the code.
+ *
+ * The companion of {@link readMagicLinkCode} for the person who CAN click: the
+ * half the code screen never exercises, and the half whose click reached no
+ * server at all until HIL-607. The URL comes back whole, host and all — it is
+ * built from `HILOS_MAGIC_LINK_URL`, which is not the stand's own base address,
+ * so a spec opens its path rather than the string itself.
+ *
+ * @param email The address the letter was sent to.
+ * @returns The sign-in URL as the letter spells it.
+ * @throws Error When the delivered letter carries no link.
+ */
+export async function readMagicLinkUrl(email: string): Promise<string> {
+  const mail = await waitForMailTo(email, MAGIC_LINK_SUBJECT)
+  const url = MAGIC_LINK_URL_PATTERN.exec(mail.text)?.[1]
+  if (url === undefined) {
+    throw new Error(`sign-in letter to ${email} carried no link to click`)
+  }
+
+  return url
 }
 
 /**

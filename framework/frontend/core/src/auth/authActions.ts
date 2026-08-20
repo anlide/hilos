@@ -32,6 +32,7 @@ import { z } from 'zod'
 
 import { ActionError } from '../connection/actionLifecycle.js'
 import { type ProjectSignal } from '../protocol/parseSignal.js'
+import { whenPageReady } from '../subscription/pageReadyGate.js'
 import {
   AUTH_CODE_REASON_CAP_REACHED,
   AUTH_CODE_REASON_CHANNEL_UNAVAILABLE,
@@ -404,16 +405,24 @@ function abandonRegistration(
  * the backend upgrades the session — the auth gate then closes any sign-in shown
  * — and mapping the generic failure otherwise.
  *
+ * The route loads cold from a click in an email client, so the connection is
+ * still opening when the relay view mounts; {@link whenPageReady} holds the
+ * dispatch until a page subscription has answered on it (HIL-607). Without the
+ * hold the frame is dropped, not queued, and the person is told the server could
+ * not be reached for a click the server never saw.
+ *
  * @param context The project auth context the wire dispatches over.
  * @param email The account email carried in the link.
  * @param token The one-time sign-in token carried in the link.
  * @returns Whether the token signed the session in, with the reason when it did not.
  */
-function confirmMagicLink(
+async function confirmMagicLink(
   context: HilosAuthContext,
   email: string,
   token: string,
 ): Promise<AuthFlowSubmitOutcome> {
+  await whenPageReady()
+
   return dispatchFlow(context, AUTH_ACTION_CONFIRM_MAGIC_LINK, { email, token })
 }
 

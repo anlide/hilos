@@ -3,6 +3,7 @@ import { test, expect, type Locator } from '@playwright/test'
 import {
   mailsTo,
   readMagicLinkCode,
+  readMagicLinkUrl,
   readRegisterCode,
 } from '../helpers/mail'
 import {
@@ -19,7 +20,7 @@ import {
   typeInto,
   uniqueEmail,
 } from '../helpers/session'
-import { gotoPage } from '../helpers/page'
+import { gotoAuthReturn, gotoPage } from '../helpers/page'
 import { uniquePhone, waitForSmsCode } from '../helpers/sms'
 import { setTelegramReachable, waitForTelegramCode } from '../helpers/telegram'
 
@@ -310,6 +311,84 @@ test('signs a member in by the code, on an address that already has an account',
   await clickSubmit(page.getByTestId('auth-submit'))
   await continueFromDone(page)
   await expect(page.getByTestId('profile-name')).toHaveText(nameFromEmail(email))
+})
+
+/**
+ * The path and query of a sign-in link, as the address bar should hold it.
+ *
+ * The letter carries an absolute URL built from `HILOS_MAGIC_LINK_URL`, which is
+ * the address a real deployment publishes and NOT the stand's own base — opening
+ * it verbatim would leave the stand entirely. Only the path and query belong to
+ * the click; the host is the deployment's business.
+ *
+ * @param url The sign-in URL exactly as the letter spells it.
+ * @returns Its path and query, for `gotoAuthReturn`.
+ */
+function returnPath(url: string): string {
+  const parsed = new URL(url)
+
+  return `${parsed.pathname}${parsed.search}`
+}
+
+test('signs a stranger in by clicking the link in the letter, from a cold load', async ({
+  page,
+}) => {
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+
+  // The other half of the letter (HIL-606 covers the code): this is the person
+  // whose mail is open on the same device, who just clicks.
+  await typeInto(page.getByTestId('auth-identifier'), email)
+  await expect(page.getByTestId('auth-password')).toBeVisible()
+  await page.getByTestId('auth-icon-magic-link').click()
+  await page.getByTestId('auth-consent-accept').check()
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await expect(page.getByTestId('auth-link-sent')).toBeVisible()
+
+  // The click itself: a full browser load of the return route, which is the
+  // condition the defect needed (HIL-607). The relay mounts while the socket is
+  // still opening, so the confirm has to wait for a connection that can carry it
+  // rather than be dropped and reported as an unreachable server.
+  await gotoAuthReturn(page, returnPath(await readMagicLinkUrl(email)), 'auth-magic')
+
+  // Home, signed in: the relay navigates on success and the session it upgraded
+  // is the one this tab is holding.
+  await expect(page.getByTestId('nav-logout')).toBeVisible()
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('profile-name')).toHaveText(nameFromEmail(email))
+
+  // One letter, whichever half was used — the click did not buy a second one.
+  expect(await mailsTo(email)).toHaveLength(1)
+})
+
+test('turns a tampered sign-in link down on its own screen', async ({
+  page,
+}) => {
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await typeInto(page.getByTestId('auth-identifier'), email)
+  await expect(page.getByTestId('auth-password')).toBeVisible()
+  await page.getByTestId('auth-icon-magic-link').click()
+  await page.getByTestId('auth-consent-accept').check()
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await expect(page.getByTestId('auth-link-sent')).toBeVisible()
+
+  // A token nobody minted. The point is WHICH screen answers: a refusal that
+  // reached the server looks like this, and a click that reached nobody used to
+  // look exactly the same — which is what made the defect invisible.
+  const tampered = new URL(await readMagicLinkUrl(email))
+  tampered.searchParams.set('token', 'not-the-token-that-was-mailed')
+  await gotoAuthReturn(page, returnPath(tampered.toString()), 'auth-magic')
+
+  await expect(page.getByTestId('auth-magic-error')).toBeVisible()
+  await expect(page.getByTestId('auth-magic-to-login')).toBeVisible()
+  // Nothing was signed in, and the letter is still the only one.
+  await expect(page.getByTestId('nav-logout')).toHaveCount(0)
+  expect(await mailsTo(email)).toHaveLength(1)
 })
 
 test('converges a second waiting tab onto the registration the first one confirms', async ({
