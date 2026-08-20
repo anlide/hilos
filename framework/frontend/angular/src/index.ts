@@ -18,6 +18,10 @@ export {
   type HilosTrackedAction,
 } from './hilosTrackedAction.js'
 export { HILOS_ROUTER } from './hilosRouterToken.js'
+export { HILOS_AUTH_GATE } from './auth/hilosAuthGateToken.js'
+export { HilosAuthSurface } from './auth/HilosAuthSurface.js'
+export { HilosMagicLinkPage } from './auth/HilosMagicLinkPage.js'
+export { HilosOAuthCallbackPage } from './auth/HilosOAuthCallbackPage.js'
 export { HilosLink } from './HilosLink.js'
 export { HilosView } from './HilosView.js'
 export { ErrorPage } from './ErrorPage.js'

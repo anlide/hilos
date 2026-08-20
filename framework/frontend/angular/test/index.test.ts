@@ -5,14 +5,18 @@ import {
   ConflictActions,
   ConflictHeader,
   ErrorPage,
+  HILOS_AUTH_GATE,
   HILOS_ROUTER,
   HilosAdminPage,
+  HilosAuthSurface,
   HilosBreadcrumb,
   HilosDashboardPage,
   HilosLayout,
   HilosLink,
+  HilosMagicLinkPage,
   HilosMaintenance,
   HilosModal,
+  HilosOAuthCallbackPage,
   HilosSettingsPage,
   HilosUserPage,
   HilosUsersPage,
@@ -26,6 +30,7 @@ import {
 it('exports the @hilos/angular public surface', () => {
   expect(connectionStateSignal).toBeTypeOf('function')
   expect(HILOS_ROUTER).toBeTypeOf('object')
+  expect(HILOS_AUTH_GATE).toBeTypeOf('object')
   expect(HilosLink).toBeTypeOf('function')
   expect(HilosView).toBeTypeOf('function')
   expect(ErrorPage).toBeTypeOf('function')
@@ -36,6 +41,9 @@ it('exports the @hilos/angular public surface', () => {
   expect(ConflictHeader).toBeTypeOf('function')
   expect(ConflictActions).toBeTypeOf('function')
   expect(HilosAdminPage).toBeTypeOf('function')
+  expect(HilosAuthSurface).toBeTypeOf('function')
+  expect(HilosMagicLinkPage).toBeTypeOf('function')
+  expect(HilosOAuthCallbackPage).toBeTypeOf('function')
   expect(HilosDashboardPage).toBeTypeOf('function')
   expect(HilosModal).toBeTypeOf('function')
   expect(HilosViewportTable).toBeTypeOf('function')

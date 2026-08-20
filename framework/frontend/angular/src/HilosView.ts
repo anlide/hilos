@@ -51,22 +51,43 @@ import { HILOS_ROUTER } from './hilosRouterToken.js'
       [attr.data-state]="pageState()"
       hidden
     ></div>
-    @if (pageError(); as error) {
-      @if (error.httpCode === 401 && authSurfaceType()) {
-        <ng-container [ngComponentOutlet]="authSurfaceType()" />
-      } @else {
-        <hilos-error-page [error]="error" />
-      }
+    @if (showAuthInPlace()) {
+      <ng-container [ngComponentOutlet]="authSurfaceType()" />
+    } @else if (pageError(); as error) {
+      <hilos-error-page [error]="error" />
     } @else if (!pageLoading()) {
       <ng-container [ngComponentOutlet]="view()" />
     }
-    @if (authSurfaceType() && authGate()) {
+    <!-- No title of its own: the sign-in surface is identifier-first (HIL-423),
+    so what the screen is called changes with the step the person is on, and only
+    the surface knows that. It renders its own heading in the body. The dialog is
+    still NAMED — the name says what it is for, which does not change with the
+    step, and the mandated rule (docs/agents/frontend/accessibility.md) has every
+    modal expose role=dialog + aria-modal + an accessible name.
+
+    Never while the same surface is already shown IN PLACE: the gate opens the
+    modal for an ack as well as for a gated action (HIL-422), and on a 401'd page
+    that would draw a second copy of the surface over the first — two machines,
+    two subscriptions, and every control on screen twice. The gate's resume closes
+    both states in one move, so nothing is left holding a modal nobody can see. -->
+    @if (authSurfaceType() && authGate() && !showAuthInPlace()) {
       <hilos-modal
         [open]="modalOpen()"
-        title="Sign in"
+        [ariaLabel]="'Sign in'"
         (cancel)="onModalDismiss()"
       >
-        <ng-container [ngComponentOutlet]="authSurfaceType()" />
+        <!-- Gated HERE and not by the modal's own @if around <ng-content/>:
+        Angular creates projected content in the view that DECLARES it, so an
+        outlet written as modal content would be built the moment this block
+        renders and would then live for the life of the page — one surface,
+        mounted at boot, with its countdown ticking and its auth_converge
+        subscription open, showing whatever screen the last sign-in left behind.
+        The Vue peer gets this from a slot behind v-if and the React one from a
+        modal that returns null while closed; on this side the open state has to
+        be read where the outlet is written. -->
+        @if (modalOpen()) {
+          <ng-container [ngComponentOutlet]="authSurfaceType()" />
+        }
         <ng-template #modalActions />
       </hilos-modal>
     }
@@ -102,6 +123,12 @@ export class HilosView {
   )
   protected readonly authSurfaceType = computed<Type<unknown> | null>(
     () => this.authSurface() ?? null,
+  )
+  // An anonymous 401 with a surface registered replaces the page with it, and
+  // then the modal must stand down: the same surface twice is two machines and
+  // two subscriptions racing over one sign-in.
+  protected readonly showAuthInPlace = computed<boolean>(
+    () => this.pageError()?.httpCode === 401 && !!this.authSurfaceType(),
   )
   // The core modal-open signal mirrored into an Angular signal: the effect
   // (re)subscribes when the gate input arrives or changes and cleans up on

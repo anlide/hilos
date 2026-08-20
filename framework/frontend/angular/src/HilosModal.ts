@@ -56,7 +56,7 @@ export interface ModalActionsContext {
         tabindex="-1"
         role="dialog"
         aria-modal="true"
-        [attr.aria-label]="title() || null"
+        [attr.aria-label]="title() || ariaLabel() || null"
         data-id="modal"
         (keydown)="onKeydown($event, dialog)"
         (click)="onClick($event, dialog)"
@@ -65,7 +65,13 @@ export interface ModalActionsContext {
           <div class="modal-content">
             <div class="modal-header">
               <ng-content select="[modalHeader]">
-                <h5 class="modal-title mb-0">{{ title() }}</h5>
+                <!-- No title, no heading: an empty one is a heading in the
+                accessibility tree that names nothing, and a dialog whose
+                heading lives in its body (the auth surface) has a title here
+                only by accident. -->
+                @if (title(); as heading) {
+                  <h5 class="modal-title mb-0">{{ heading }}</h5>
+                }
               </ng-content>
               <button
                 type="button"
@@ -151,6 +157,13 @@ export class HilosModal {
   readonly open = model(false)
   /** The default header title (overridable via `[modalHeader]`). */
   readonly title = input('')
+  /**
+   * The dialog's accessible name when it shows no title of its own — a surface
+   * whose heading changes with the step owns that heading in the body, and the
+   * name of the dialog still has to say what it is for. Ignored when `title` is
+   * set: a visible title names the dialog already.
+   */
+  readonly ariaLabel = input('')
   /** Close on the Escape key (through the confirm guard). */
   readonly closeOnEsc = input(true)
   /** Close on a backdrop click (through the confirm guard). */
