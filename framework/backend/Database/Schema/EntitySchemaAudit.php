@@ -24,8 +24,12 @@ use ReflectionClass;
  * through its own parameterized `information_schema` queries and compares by the
  * raw column type, deliberately bypassing {@see Schema::mysqlTypeToPhp()} — a
  * cross-dictionary comparison was the core lie of the removed `db:entity:diff`
- * command (HIL-478). Direction is Entity-to-schema: a table without an Entity is
- * not a finding.
+ * command (HIL-478). Both directions are audited, by separate entry points:
+ * {@see EntitySchemaAudit::audit()} goes Entity-to-schema, one Entity at a time
+ * across every axis, while {@see EntitySchemaAudit::auditTableCoverage()} goes
+ * schema-to-Entity and asks of every live table which Entity claims it. Only the
+ * second one sees a table nobody declared - the first cannot, having nothing to
+ * start from.
  *
  * All divergences for an entity are collected into a list so the caller reports
  * every problem at once instead of failing on the first.
@@ -42,7 +46,15 @@ final class EntitySchemaAudit
     private const string COL_NON_UNIQUE = 'NON_UNIQUE';
     private const string COL_CONSTRAINT_NAME = 'CONSTRAINT_NAME';
     private const string COL_REFERENCED_TABLE_NAME = 'REFERENCED_TABLE_NAME';
+    private const string COL_TABLE_NAME = 'TABLE_NAME';
     private const string COL_TABLE_COUNT = 'c';
+
+    /** `information_schema.TABLES.TABLE_TYPE` of a real table, as opposed to a view. */
+    private const string TABLE_TYPE_BASE = 'BASE TABLE';
+
+    /** PSR-4 location of the Entity classes the framework itself ships. */
+    private const string FRAMEWORK_ENTITY_DIR = '/Entity/Item';
+    private const string FRAMEWORK_ENTITY_NAMESPACE = 'Hilos\\Database\\Entity\\Item\\';
 
     /** `IS_NULLABLE` and `EXTRA` markers that make an unmapped column insert-safe. */
     private const string NULLABLE_YES = 'YES';
@@ -122,6 +134,108 @@ final class EntitySchemaAudit
         } finally {
             Database::useConnection($originalIndex);
         }
+    }
+
+    /**
+     * Every base table of the live schema on `$index`.
+     *
+     * Views are excluded by TABLE_TYPE: an Entity maps a table, and a view has no
+     * schema of its own to diverge from. Callers use the list two ways - as the set
+     * {@see EntitySchemaAudit::auditTableCoverage()} must account for, and as the
+     * answer to "does this installation create that table at all", which is how a
+     * demo skips a framework Entity whose subsystem it never activated.
+     *
+     * @param ?int $index Connection index (default: current)
+     * @return list<string> Table names, sorted by name
+     * @throws DatabaseException When the introspection query fails
+     */
+    public static function liveTables(?int $index = null): array
+    {
+        $index = $index ?? Database::getCurrentIndex();
+
+        $originalIndex = Database::getCurrentIndex();
+        Database::useConnection($index);
+
+        try {
+            Database::sql(
+                'SELECT ' . self::COL_TABLE_NAME
+                . ' FROM information_schema.TABLES'
+                . ' WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = ?'
+                . ' ORDER BY ' . self::COL_TABLE_NAME,
+                SqlParamCollection::fromArray([self::TABLE_TYPE_BASE]),
+            );
+
+            $tables = [];
+            foreach (Database::rows() as $row) {
+                $tables[] = (string) $row[self::COL_TABLE_NAME];
+            }
+            return $tables;
+        } finally {
+            Database::useConnection($originalIndex);
+        }
+    }
+
+    /**
+     * Every concrete Entity class the framework itself ships.
+     *
+     * Discovered rather than listed, so a demo auditing the framework's entities
+     * cannot fall behind a newly shipped one by saying nothing. The directory
+     * resolves through a demo's `vendor/anlide/hilos` symlink as well as from the
+     * framework tree itself.
+     *
+     * @return list<class-string<Entity>> Framework Entity classes, sorted by class name
+     */
+    public static function frameworkEntities(): array
+    {
+        return self::discoverEntities(
+            dirname(__DIR__) . self::FRAMEWORK_ENTITY_DIR,
+            self::FRAMEWORK_ENTITY_NAMESPACE,
+        );
+    }
+
+    /**
+     * Audit the live schema on `$index` the other way round: every base table must
+     * be claimed, either by an audited Entity or by a declaration that it has none.
+     *
+     * The framework's own unmapped tables ({@see FrameworkTablesWithoutEntity}) are
+     * subtracted for the caller; a project names its own through
+     * `$allowedTablesWithoutEntity` and by that admits it looked at them.
+     *
+     * @param list<class-string<Entity>> $entityClasses Entities whose _table counts as claimed
+     * @param list<string> $allowedTablesWithoutEntity Project tables that live outside the ORM on purpose
+     * @param ?int $index Connection index (default: current)
+     * @return list<EntitySchemaMismatch> One TABLE_UNMAPPED per unclaimed table, ordered by table name
+     * @throws DatabaseException When the introspection query fails
+     */
+    public static function auditTableCoverage(
+        array $entityClasses,
+        array $allowedTablesWithoutEntity = [],
+        ?int $index = null,
+    ): array {
+        $claimed = array_fill_keys(
+            [...FrameworkTablesWithoutEntity::tables(), ...$allowedTablesWithoutEntity],
+            true,
+        );
+        foreach ($entityClasses as $entityClass) {
+            $claimed[constant("{$entityClass}::" . Entity::META_TABLE)] = true;
+        }
+
+        $mismatches = [];
+        foreach (self::liveTables($index) as $table) {
+            if (isset($claimed[$table])) {
+                continue;
+            }
+
+            $mismatches[] = new EntitySchemaMismatch(
+                EntitySchemaAxis::TABLE_UNMAPPED,
+                null,
+                $table,
+                null,
+                'an Entity mapped to this table or a declared table without one',
+                'no Entity maps it',
+            );
+        }
+        return $mismatches;
     }
 
     /**

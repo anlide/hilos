@@ -79,7 +79,19 @@ Projects and demos wire their own Entities into the same auditor from their inte
 suite (see `demo/*/tests/Integration/EntitySchemaConsistencyTest.php`). For a framework
 table whose DDL the project carries in its own migrations, the INDEX axis is not
 checked: a project may add an index of its own for its own queries. It may extend the
-schema, not diverge from the metadata.
+schema, not diverge from the metadata. The framework Entities a project audits are not
+listed by hand: `EntitySchemaAudit::frameworkEntities()` discovers them all, and the one
+whose table this project never creates is skipped against `EntitySchemaAudit::liveTables()`.
+
+The audit runs in **both directions**, and the second one is what a hand-written list
+cannot give. `EntitySchemaAudit::auditTableCoverage()` asks the opposite question: every
+`BASE TABLE` of the live schema must be the table of an audited Entity, or a table
+declared to have none. The framework declares its own in
+`Hilos\Database\Schema\FrameworkTablesWithoutEntity` — `migration`, the analytics tables
+and the change-log tables all live outside the ORM. A project table that does the same
+is named in the `$allowedTablesWithoutEntity` argument; anything left over is a finding
+on the `table_unmapped` axis. Without this direction a table nobody mapped passes the
+suite in silence, which is exactly what it used to do (HIL-605).
 
 ### Who owns the value of a column with a DB-level DEFAULT
 

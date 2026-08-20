@@ -5,15 +5,24 @@ declare(strict_types=1);
 namespace Hilos\Database\Schema;
 
 /**
- * Axis of an Entity-vs-schema mismatch reported by {@see EntitySchemaAudit::audit()}.
+ * Axis of an Entity-vs-schema mismatch reported by {@see EntitySchemaAudit}.
  *
- * Each case names one independent way the Entity ORM metadata (_table, _columns,
- * _types, _primary, _indexes, _foreign) can diverge from the live table.
+ * Every case but one names an independent way the Entity ORM metadata (_table,
+ * _columns, _types, _primary, _indexes, _foreign) can diverge from the live
+ * table; those come from {@see EntitySchemaAudit::audit()}. TABLE_UNMAPPED runs
+ * the other direction — schema to Entity — and comes from
+ * {@see EntitySchemaAudit::auditTableCoverage()}.
  */
 enum EntitySchemaAxis: string
 {
     /** The Entity's _table does not exist in the current schema. */
     case TABLE = 'table';
+
+    /**
+     * A live table no audited Entity declares as its _table, absent from the
+     * list of tables allowed to live without one.
+     */
+    case TABLE_UNMAPPED = 'table_unmapped';
 
     /** keys(_types) and _columns disagree (a column has no type, or vice versa). */
     case META = 'meta';
