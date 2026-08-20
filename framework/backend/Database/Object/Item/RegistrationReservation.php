@@ -29,6 +29,7 @@ use Hilos\Database\SqlParamCollection;
  * @property-read ?int $id
  * @property string $type
  * @property string $identifier
+ * @property string $sessionToken
  * @property string $expiresAt
  */
 final class RegistrationReservation extends Object_
@@ -37,6 +38,7 @@ final class RegistrationReservation extends Object_
     public const string id = 'id';
     public const string type = 'type';
     public const string identifier = 'identifier';
+    public const string sessionToken = 'sessionToken';
     public const string expiresAt = 'expiresAt';
 
     /**
@@ -52,7 +54,7 @@ final class RegistrationReservation extends Object_
     /**
      * Magic getter for entity properties.
      *
-     * @param string $property Property name (id, type, identifier, expiresAt)
+     * @param string $property Property name (id, type, identifier, sessionToken, expiresAt)
      * @return mixed Property value
      * @throws DatabaseException When the property is not a known RegistrationReservation field
      */
@@ -62,6 +64,7 @@ final class RegistrationReservation extends Object_
             self::id => $this->entity->id,
             self::type => $this->entity->type,
             self::identifier => $this->entity->identifier,
+            self::sessionToken => $this->entity->session_token,
             self::expiresAt => $this->entity->expires_at,
             default => parent::__get($property),
         };
@@ -73,7 +76,7 @@ final class RegistrationReservation extends Object_
      * The `secret` has no setter here; it is written only through the reservation
      * layer's mint path ({@see RegistrationReservations::createReservation()}).
      *
-     * @param string $property Property name (type, identifier, expiresAt)
+     * @param string $property Property name (type, identifier, sessionToken, expiresAt)
      * @param mixed $value Value to set
      * @throws DatabaseException When the property cannot be set on a RegistrationReservation
      */
@@ -82,6 +85,7 @@ final class RegistrationReservation extends Object_
         match ($property) {
             self::type => $this->entity->type = (string)$value,
             self::identifier => $this->entity->identifier = (string)$value,
+            self::sessionToken => $this->entity->session_token = (string)$value,
             self::expiresAt => $this->entity->expires_at = (string)$value,
             default => parent::__set($property, $value),
         };
@@ -176,7 +180,7 @@ final class RegistrationReservation extends Object_
     /**
      * Converts the reservation to an associative array (never includes the secret).
      *
-     * @return array<string, mixed> Reservation data (id, type, identifier, expiresAt)
+     * @return array<string, mixed> Reservation data (id, type, identifier, sessionToken, expiresAt)
      */
     public function toArray(): array
     {
@@ -184,6 +188,7 @@ final class RegistrationReservation extends Object_
             self::id => $this->entity->id,
             self::type => $this->entity->type,
             self::identifier => $this->entity->identifier,
+            self::sessionToken => $this->entity->session_token,
             self::expiresAt => $this->entity->expires_at,
         ];
     }

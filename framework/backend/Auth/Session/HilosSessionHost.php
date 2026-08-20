@@ -126,10 +126,20 @@ trait HilosSessionHost
      *
      * The step the surface comes back to, served from the server rather than kept in
      * the tab: a reload, a second tab and another device all ask the same question at
-     * their handshake and get the same answer. A wait whose hold is gone answers null
-     * - the row is stale memory of a registration that completed or ran out, and the
-     * person belongs on the identifier field, not on a code screen for a code that
-     * can no longer be confirmed.
+     * their handshake and get the same answer. A session holding no live reservation
+     * answers null - its registration completed or ran out, and the person belongs on
+     * the identifier field, not on a code screen for a code that can no longer be
+     * confirmed.
+     *
+     * TWO rows have to agree, and they answer different questions (HIL-608). The WAIT
+     * says this browser is sitting on a code screen: it is written by the flows that
+     * put it there and dropped by "not that address?", so a hold with no wait beside it
+     * is a registration nobody is watching a code field for - a mailed sign-in link,
+     * or an attempt its owner walked away from - and resuming either onto a code screen
+     * would ask for a code that was never issued. The HOLD says WHICH registration and
+     * until when, and the address is taken off it rather than off the wait, because a
+     * hold made on another address after the wait was written would otherwise be
+     * described with the wait's stale identifier.
      *
      * The channel is asked for a number only: a code sent to an address goes by mail
      * whatever else is registered, and naming a channel there would be inventing a
@@ -145,26 +155,26 @@ trait HilosSessionHost
             return null;
         }
 
-        $identifier = Hilos::$db?->registrationWaits->findBySession($session->token)?->identifier;
-        if ($identifier === null) {
+        if (Hilos::$db?->registrationWaits->findBySession($session->token) === null) {
             return null;
         }
 
-        $reservation = new RegistrationReservationService()->findActive($identifier);
+        $reservation = new RegistrationReservationService()->findActiveForSession($session->token);
         if ($reservation === null) {
             return null;
         }
 
+        $identifier = $reservation->identifier;
         try {
             $kind = IdentifierDetector::kindOf($identifier);
         } catch (InvalidFormatException $e) {
-            // A wait is only ever written for an identifier this same classifier
+            // A hold is only ever written for an identifier this same classifier
             // accepted, so a row that no longer classifies is corrupt rather than
             // unusual. The session is told it has no step - which is the truthful
             // answer about a registration nobody can finish - and the row is named in
             // the log rather than taken out on the handshake, which every socket of
             // every session depends on.
-            $this->logAgentWarning('Registration wait carries an unusable identifier: ' . $e->getMessage());
+            $this->logAgentWarning('Registration hold carries an unusable identifier: ' . $e->getMessage());
 
             return null;
         }

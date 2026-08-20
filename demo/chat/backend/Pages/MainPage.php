@@ -85,6 +85,7 @@ use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Database\Database;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Object\Item\PasskeyCredential;
@@ -669,16 +670,21 @@ final class MainPage extends AbstractPage
      * Reserves an email for a new account and sends the code that will create it.
      *
      * The submit no longer registers anybody (HIL-415). It validates, then holds the
-     * address for a TTL and mails one confirmation code; the account appears when that
-     * code comes back to {@see handleConfirmRegister()}. What the surface is told back is
-     * where to go next, not whether a row was written:
-     * - the address is free, or already held by an earlier submit of the same address:
-     *   the code step, with the moment a re-send is allowed. The second case sends
-     *   NO second letter - all the sessions registering that address converge on the one
-     *   code that is already in the inbox;
+     * address for THIS BROWSER for a TTL and asks for one confirmation code; the account
+     * appears when that code comes back to {@see handleConfirmRegister()}. What the
+     * surface is told back is where to go next, not whether a row was written:
+     * - the address is free: the code step, with the moment a re-send is allowed. That
+     *   holds whether or not somebody else is registering the same address - this
+     *   browser gets a hold of its own (HIL-608) and the first to confirm wins the
+     *   account, while the send gate decides whether a second letter is owed;
      * - the address belongs to an account: not an error the person has to read and
      *   retype, but a move to the identifier step under the sign-in intent. Registration
      *   legitimately reveals a taken address (that is a login concern, not one here).
+     *
+     * The gate's verdict is passed on rather than hidden. A cooldown answers the honest
+     * seconds - it is the same letter, already in the inbox - and only the window cap
+     * refuses out loud. Silence here is what stranded the second person to start on a
+     * code screen with nothing coming.
      *
      * The connection is parked as a waiter before returning, so it is reachable by the
      * converge broadcast whoever confirms first ({@see ChatAgent::convergeRegistration()}).
@@ -719,18 +725,21 @@ final class MainPage extends AbstractPage
             );
         }
 
-        new RegistrationReservationService()->reserve(IdentityType::PASSWORD, $email, $dto->password);
+        $outcome = new RegistrationReservationService()
+            ->reserve(IdentityType::PASSWORD, $connection->sessionToken, $email, $dto->password);
 
         Hilos::$rt->hilosRegistrationWaiters->actions->park($connection->acceptKey, $email, $connection->sessionToken);
         Hilos::$db->registrationWaits->actions->hold($connection->sessionToken, $email);
 
-        $verifications = new VerificationService();
+        if ($outcome->capReached) {
+            return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, self::SEND_CAP_MESSAGE);
+        }
 
         return AuthFlowOutcome::moveTo(
             AuthFlowStep::CODE,
             AuthFlowIntent::REGISTER,
-            $verifications->resendAllowedAt(VerificationType::REGISTER_CONFIRM, $email),
-            $verifications->activeExpiresAt(VerificationType::REGISTER_CONFIRM, $email),
+            $outcome->resendAt(),
+            new VerificationService()->activeExpiresAt(VerificationType::REGISTER_CONFIRM, $email),
         );
     }
 
@@ -749,14 +758,24 @@ final class MainPage extends AbstractPage
      * method the framework knows: naming one the demo has no handler for would put a
      * button on the surface whose submit is refused.
      *
+     * The session goes with the question because the only hold that may show up in the
+     * answer is this browser's own (HIL-608): another browser registering the address
+     * does not take it, and reporting that would make this an oracle for who is signing
+     * up right now.
+     *
      * @param DetectIdentifierActionDTO $dto Parsed lookup payload (identifier)
      * @return IdentifierDetection What is behind the identifier and what can be done with it
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
      * @throws InvalidFormatException When the identifier is neither an email address nor a phone number
      * @throws HilosException When the identity or reservation lookup fails
      */
     private function handleDetectIdentifier(DetectIdentifierActionDTO $dto): IdentifierDetection
     {
-        return ChatAuthMethods::detector()->detect($dto->identifier);
+        if (Hilos::$rt->selfConnection === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+
+        return ChatAuthMethods::detector()->detect($dto->identifier, Hilos::$rt->selfConnection->sessionToken);
     }
 
     /**
@@ -767,9 +786,13 @@ final class MainPage extends AbstractPage
      * OAuth carries the address as a verified identity of another type (HIL-405), and
      * offering to register it would either fail at the identity write or quietly build a
      * second account for the same person; the surface sends them to sign-in instead, and
-     * the profile owns adding a password to an account that has none (HIL-406). A
-     * password identity counts whether or not it is verified, since it is one somebody
-     * signs in with either way.
+     * the profile owns adding a password to an account that has none (HIL-406).
+     *
+     * The pair it used to spell out is the framework's one definition of a taken address
+     * now ({@see Identities::findAccountIdByEmail()}, HIL-608), and this reads it
+     * rather than repeating it: while there were several spellings of the question they
+     * disagreed on an address carrying an unverified password identity, and the
+     * disagreement built a second account for the same person.
      *
      * @param string $email Lowercased submitted email
      * @return bool True when an account already holds the address
@@ -777,8 +800,7 @@ final class MainPage extends AbstractPage
      */
     private function emailBelongsToAccount(string $email): bool
     {
-        return Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email) !== null
-            || Hilos::$db->identities->findUserIdByVerifiedEmail($email) !== null;
+        return Hilos::$db->identities->findAccountIdByEmail($email) !== null;
     }
 
     /**
@@ -1078,15 +1100,15 @@ final class MainPage extends AbstractPage
      * registration needs the hold that was put on the number when the code went out
      * (HIL-486).
      *
-     * A missing hold is answered as such rather than as a bad code: the number was
-     * free when the person asked and is not held now, so either the wait ran out or
-     * somebody else took it — and "invalid code" would read as a typo they did not
-     * make. The hold landing into the account is what makes the registration
-     * single-use: the same code cannot register a second one.
+     * A missing hold OF THIS BROWSER is answered as such rather than as a bad code
+     * (HIL-608): the number was free when the person asked and this session is not
+     * holding it now, so either their wait ran out or somebody else registered it —
+     * and "invalid code" would read as a typo they did not make. Somebody else's hold
+     * is not this session's to land, which is the same rule the address obeys.
      *
-     * The converge is the last step, and it reaches every OTHER session waiting on
-     * this number — a second tab, another device — because the registration they were
-     * all waiting on has just happened, and only one of them typed the code.
+     * The converge is the last step, and it reaches every OTHER session that was on
+     * this number: the tabs of this browser come in with it, and the browsers that
+     * were racing it are told the number is taken.
      *
      * @param ConfirmPhoneCodeActionDTO $dto Parsed confirm payload (phone, code)
      * @return AuthFlowOutcome Where the surface goes next
@@ -1116,9 +1138,8 @@ final class MainPage extends AbstractPage
             return AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::LOGIN);
         }
 
-        $reservations = new RegistrationReservationService();
-        $reservation = $reservations->findActive($phone);
-        if ($reservation === null) {
+        $held = new RegistrationReservationService()->findActiveForSession($connection->sessionToken);
+        if ($held?->identifier !== $phone) {
             return AuthFlowOutcome::rejectTo(
                 AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
                 AuthFlowStep::IDENTIFIER,
@@ -1127,37 +1148,21 @@ final class MainPage extends AbstractPage
             );
         }
 
-        $user = Hilos::$db->users->actions->createWithName($phone);
-        $userId = (int)$user->id;
-
-        $reservations->confirmInto($reservation, $userId);
-
-        // Announce the new member exactly as the two email registrations do: the number
-        // is the third way into the same registration.
-        Hilos::$db->events->actions->addUserRegistered($userId);
-
-        // Before the sign-in: the surface closes on the session coming up, so the mark has
-        // to be on the sockets by the time that frame goes out (HIL-422).
-        $this->agent->markSessionAck($connection->sessionToken, SessionAck::REGISTERED);
-        $this->agent->authenticateSession($connection->sessionToken, $userId, $connection->acceptKey);
-
-        Hilos::$rt->hilosRegistrationWaiters->actions->release($connection->acceptKey);
-        $this->agent->convergeRegistration($phone, $userId, $connection->acceptKey);
-
-        return AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::REGISTER);
+        return $this->landRegistration($phone, $phone, $connection);
     }
 
     /**
      * Issues an email magic-link sign-in token, always answering generically.
      *
      * The passwordless login entry (HIL-283): login-only, so it resolves the
-     * account from a verified email identity (any type) through
-     * {@see Identities::findUserIdByVerifiedEmail()} and issues (throttled inside
-     * the service) a token bound to that user — no user or identity is ever
-     * created here. A free address is HELD by a reservation for the life of the
-     * link (HIL-417), so nobody else can take it while the letter is in flight;
-     * an address that already has an account is not, there being nothing left to
-     * reserve. The token is delivered as a clickable URL assembled by the framework
+     * account through the framework's one definition of a taken address
+     * ({@see Identities::findAccountIdByEmail()}) and issues (throttled inside
+     * the service) a token — no user or identity is ever created here. A free
+     * address is HELD by a reservation for the life of the link (HIL-417), and the
+     * hold is THIS BROWSER's since HIL-608: the letter may only finish the
+     * registration of whoever asked for it. An address that already has an account
+     * is not held, there being nothing left to register. The token is delivered as a
+     * clickable URL assembled by the framework
      * ({@see VerificationService::issue()}), which the /auth/magic route relays back.
      *
      * The answer is HONEST now, like every other send on this surface (HIL-421 sent
@@ -1170,14 +1175,19 @@ final class MainPage extends AbstractPage
      *
      * @param RequestMagicLinkActionDTO $dto Parsed request payload (email)
      * @return AuthFlowOutcome Moments the resend gate opens and the link dies, or the cap refusal
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
      * @throws EmptyValueException When the submitted address is empty
      * @throws HilosException When identity lookup, the hold, or token issuing fails
      * @throws RandomException When the platform CSPRNG cannot produce a token
      */
     private function handleRequestMagicLink(RequestMagicLinkActionDTO $dto): AuthFlowOutcome
     {
+        if (Hilos::$rt->selfConnection === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+
         $email = strtolower($dto->email);
-        $outcome = new MagicLinkService()->send($email);
+        $outcome = new MagicLinkService()->send($email, Hilos::$rt->selfConnection->sessionToken);
 
         if ($outcome->capReached) {
             return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, self::SEND_CAP_MESSAGE);
@@ -1282,18 +1292,22 @@ final class MainPage extends AbstractPage
      * would eventually mean that clicking a link and typing its code produce different
      * members - a difference nothing in the ceremony justifies.
      *
-     * Three answers, in this order. An account owns the address, and this session becomes
-     * that account - the hold it may still carry is dropped, since nobody is registering an
-     * address that already resolved. No account and a live hold is the registration
-     * finishing: a user, the identity the hold's type says (a magic-link one, secret-less),
-     * the "registered in chat" event, and a signed-in session. No account and no hold is a
-     * letter that outlived its hold, and the surface rolls back to the address field to
-     * start again - the one branch where a typed code also leaves the screen, because the
-     * address is not held any more and there is nothing left here to finish.
+     * TWO answers now, not three (HIL-608). An account owns the address, and this session
+     * becomes that account - the hold this browser may still carry on that very address is
+     * dropped, since nobody is registering an address that already resolved. Otherwise the
+     * letter finishes a registration: a user, the identity this browser's hold earns, the
+     * "registered in chat" event, and a signed-in session.
      *
-     * Only THIS session is signed in, whichever branch runs (Design p.4): the letter proves
-     * the address to whoever answered it, and that is the browser holding this connection.
-     * A tab left waiting on another device stays on its check-inbox screen.
+     * The third answer - "your registration expired, start again" - is gone, and its
+     * disappearance is the leaf's point. A live letter IS the proof of the inbox, so
+     * refusing it because the reader's own hold ran out (or because they never made one,
+     * having opened the link on a fresh tab) told a truthful person something untrue. They
+     * get an account with the mailed sign-in and nobody else's password.
+     *
+     * An address held by an UNVERIFIED password identity resolves to that account and the
+     * identity is marked verified here: answering its mail is exactly the proof it was
+     * waiting for, refusing would strand somebody who does not know the password, and
+     * registering a second account for one person is the defect this closes.
      *
      * @param string $email Lowercased address the ceremony proved
      * @param Connection $connection Live WebSocket connection this answer arrived on
@@ -1304,11 +1318,10 @@ final class MainPage extends AbstractPage
      */
     private function signInProvenAddress(string $email, Connection $connection): AuthFlowOutcome
     {
-        $reservations = new RegistrationReservationService();
-
-        $userId = Hilos::$db->identities->findUserIdByVerifiedEmail($email);
+        $userId = Hilos::$db->identities->findAccountIdByEmail($email);
         if ($userId !== null) {
-            $reservations->release($email);
+            Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email)?->markVerified();
+            $this->releaseOwnHoldOn($email, $connection->sessionToken);
 
             // Before the sign-in, so the identity and the news arrive in one frame (HIL-422).
             // Answering the letter is the whole of what this ending asks for, so "you are in"
@@ -1319,42 +1332,37 @@ final class MainPage extends AbstractPage
             return AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::LOGIN);
         }
 
-        $reservation = $reservations->findActive($email);
-        if ($reservation === null) {
-            return AuthFlowOutcome::rejectTo(
-                AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
-                AuthFlowStep::IDENTIFIER,
-                AuthFlowIntent::REGISTER,
-                self::RESERVATION_EXPIRED_MESSAGE,
-            );
+        return $this->landRegistration($email, $this->displayNameFromEmail($email), $connection);
+    }
+
+    /**
+     * Drops this browser's hold when it names the address that just resolved.
+     *
+     * The hold is the session's since HIL-608, so it is dropped only when it is about
+     * THIS address: a browser whose unfinished registration is on another address is
+     * still running it, and clearing that would take away a code screen nobody left.
+     *
+     * @param string $identifier Normalized identifier that just resolved to an account
+     * @param string $sessionToken Session cookie token of the browser that proved it
+     * @throws HilosException When the reservation lookup or delete fails
+     */
+    private function releaseOwnHoldOn(string $identifier, string $sessionToken): void
+    {
+        $reservations = new RegistrationReservationService();
+        if ($reservations->findActiveForSession($sessionToken)?->identifier === $identifier) {
+            $reservations->release($sessionToken);
         }
-
-        $user = Hilos::$db->users->actions->createWithName($this->displayNameFromEmail($email));
-        $userId = (int)$user->id;
-
-        $reservations->confirmInto($reservation, $userId);
-
-        // Announce the new member in the chat event stream, exactly as the code path
-        // does: the letter is the other way into the same registration.
-        Hilos::$db->events->actions->addUserRegistered($userId);
-
-        // Before the sign-in, so the identity and the news arrive in one frame (HIL-422).
-        // This ending is a registration, exactly as the code path's is, so it earns the
-        // same mark rather than the plain "you are in" the other branch leaves.
-        $this->agent->markSessionAck($connection->sessionToken, SessionAck::REGISTERED);
-        $this->agent->authenticateSession($connection->sessionToken, $userId, $connection->acceptKey);
-
-        return AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::REGISTER);
     }
 
     /**
      * Re-sends the confirmation code of a pending registration.
      *
      * The resend button on the code screen (HIL-415). It is not a second registration:
-     * the hold on the address is what decides whether there is anything to re-send, and
-     * when it is gone the surface is rolled back to the identifier step under a code of
-     * its own rather than told "no". A resend inside the cooldown sends nothing and
-     * answers with the seconds still to wait - the countdown the screen draws.
+     * THIS BROWSER's hold on the address is what decides whether there is anything to
+     * re-send (HIL-608), and when it is gone the surface is rolled back to the identifier
+     * step under a code of its own rather than told "no". A resend inside the cooldown
+     * sends nothing and answers with the seconds still to wait - the countdown the screen
+     * draws.
      *
      * The hold is pushed out only when a code actually went out, so a button mashed
      * inside the cooldown moves nothing. What stops the patient caller - the one that
@@ -1363,8 +1371,9 @@ final class MainPage extends AbstractPage
      * here rather than counting down, because no wait short enough to draw would bring
      * the button back.
      *
-     * Any waiting session may press it: the cooldown belongs to the address, not to the
-     * session, and pressing re-parks the presser so a converge reaches it either way.
+     * Any browser holding the address may press it: the cooldown belongs to the address,
+     * not to the session, so a second registering browser presses into the same countdown
+     * - and pressing re-parks the presser so a converge reaches it either way.
      *
      * @param RequestRegisterConfirmActionDTO $dto Parsed resend payload (email)
      * @return AuthFlowOutcome Where the surface goes next
@@ -1381,7 +1390,7 @@ final class MainPage extends AbstractPage
 
         $email = strtolower($dto->email);
         $reservations = new RegistrationReservationService();
-        if ($reservations->findActive($email) === null) {
+        if ($reservations->findActiveForSession($connection->sessionToken)?->identifier !== $email) {
             return AuthFlowOutcome::rejectTo(
                 AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
                 AuthFlowStep::IDENTIFIER,
@@ -1392,7 +1401,7 @@ final class MainPage extends AbstractPage
 
         $outcome = new VerificationService()->issue(VerificationType::REGISTER_CONFIRM, $email, null);
         if ($outcome->sent) {
-            $reservations->extendTo($email);
+            $reservations->extendTo($connection->sessionToken);
         }
 
         // Parked before the cap is answered, unlike the expired hold above: a capped
@@ -1426,6 +1435,12 @@ final class MainPage extends AbstractPage
      * to try again, while a hold that ran out is not their mistake at all and rolls the
      * surface back to the address field with a reason of its own.
      *
+     * The hold that has to be there is THIS BROWSER's, on THIS address (HIL-608). A code
+     * typed where no such hold stands lands nothing, whoever is registering the address
+     * elsewhere: the letter went to the inbox, so the person reading it can register the
+     * address in their own browser, but they cannot finish somebody else's attempt and
+     * inherit the password it chose.
+     *
      * The fourth is the address having become somebody's while it was held. The hold
      * keeps a SECOND registration off it, not an account arriving by another road - an
      * OAuth sign-in mints one from a verified email of its own type (HIL-405), and that
@@ -1436,8 +1451,9 @@ final class MainPage extends AbstractPage
      *
      * The user is minted only after the code verified, so a wrong code can never leave an
      * account behind; the credential moves from the reservation into the identity inside
-     * {@see RegistrationReservationService::confirmInto()} and never passes through here.
-     * Every other session parked on this address is then signed in and moved to done.
+     * {@see RegistrationReservationService::confirmProvenAddress()} and never passes
+     * through here. The other tabs of this browser are then signed in with it, and the
+     * browsers that were racing it are told the address is taken.
      *
      * @param ConfirmRegisterActionDTO $dto Parsed confirm payload (email, code)
      * @return AuthFlowOutcome Where the surface goes next
@@ -1456,8 +1472,7 @@ final class MainPage extends AbstractPage
 
         $email = strtolower($dto->email);
         $reservations = new RegistrationReservationService();
-        $reservation = $reservations->findActive($email);
-        if ($reservation === null) {
+        if ($reservations->findActiveForSession($connection->sessionToken)?->identifier !== $email) {
             return AuthFlowOutcome::rejectTo(
                 AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
                 AuthFlowStep::IDENTIFIER,
@@ -1481,24 +1496,98 @@ final class MainPage extends AbstractPage
             throw new ValidationException(self::INVALID_CODE_MESSAGE);
         }
 
-        $user = Hilos::$db->users->actions->createWithName($this->displayNameFromEmail($email));
-        $userId = (int)$user->id;
+        return $this->landRegistration($email, $this->displayNameFromEmail($email), $connection);
+    }
 
-        $reservations->confirmInto($reservation, $userId);
+    /**
+     * Mints the account a proven identifier earns, lands its hold and tells everyone else.
+     *
+     * The one ending the three proofs share - a typed registration code, a clicked link,
+     * a phone code - because what a proof buys is the same whichever arrived: an account,
+     * the identity this browser's hold earns, the "registered in chat" event, a signed-in
+     * session, and a word to every other browser that was on the identifier. Three copies
+     * of that order would eventually mean three different kinds of member (HIL-608).
+     *
+     * The mint and the landing go in ONE transaction. They are two writes about a person
+     * who does not exist yet, and the race this leaf opens - several browsers proving one
+     * address - is settled by the identity's unique key: the loser must leave no user
+     * behind, since the "registered" event has not gone out yet and an orphan account
+     * nobody can sign into would be the only trace of it. The loser is answered exactly as
+     * a taken address is, which is what it now is.
+     *
+     * @param string $identifier Normalized identifier the proof just settled (lowercased email or E.164)
+     * @param string $displayName Name the new account is created with
+     * @param Connection $connection Live WebSocket connection the proof arrived on
+     * @return AuthFlowOutcome The done step under the register intent, or the taken-address rollback
+     * @throws EmptyValueException When the display name is empty
+     * @throws InvalidFormatException When the proven identifier is neither an address nor a number
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws HilosException When the account, identity, event, converge or session write fails
+     */
+    private function landRegistration(string $identifier, string $displayName, Connection $connection): AuthFlowOutcome
+    {
+        // Read before the sign-in, which ROTATES it (HIL-582). Everything downstream names
+        // this browser by the token its holds and its waiters were written under, and the
+        // converge in particular tells the winner's own tabs from the browsers that lost
+        // by exactly that comparison.
+        $sessionToken = $connection->sessionToken;
 
-        // Announce the new member in the chat event stream. The notice moved here with
-        // the account itself: at the submit there was nobody to announce yet.
+        Database::transactionStart();
+        try {
+            $user = Hilos::$db->users->actions->createWithName($displayName);
+            $userId = (int)$user->id;
+            $losers = new RegistrationReservationService()
+                ->confirmProvenAddress($sessionToken, $identifier, $userId);
+            Database::transactionCommit();
+        } catch (DuplicateValueException) {
+            $this->endFailedLanding();
+
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_IDENTIFIER_TAKEN,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::LOGIN,
+                self::IDENTIFIER_TAKEN_MESSAGE,
+            );
+        } catch (HilosException $failure) {
+            $this->endFailedLanding();
+
+            throw $failure;
+        }
+
         Hilos::$db->events->actions->addUserRegistered($userId);
 
         // Before the sign-in: the surface closes on the session coming up, so the mark has
         // to be on the sockets by the time that frame goes out (HIL-422).
-        $this->agent->markSessionAck($connection->sessionToken, SessionAck::REGISTERED);
-        $this->agent->authenticateSession($connection->sessionToken, $userId, $connection->acceptKey);
+        $this->agent->markSessionAck($sessionToken, SessionAck::REGISTERED);
+        $this->agent->authenticateSession($sessionToken, $userId, $connection->acceptKey);
 
         Hilos::$rt->hilosRegistrationWaiters->actions->release($connection->acceptKey);
-        $this->agent->convergeRegistration($email, $userId, $connection->acceptKey);
+        $this->agent->convergeRegistration($identifier, $userId, $connection->acceptKey, $sessionToken, $losers);
 
         return AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::REGISTER);
+    }
+
+    /**
+     * Ends the landing transaction after a failure, whichever failure it was.
+     *
+     * Every way out of {@see landRegistration()} that is not a commit goes through here,
+     * because the connection under it belongs to the WORKER and outlives the action: the
+     * router answers the caller and keeps the worker running, so a transaction left open
+     * would quietly take in every later write that worker makes and would in the end be
+     * committed by an unrelated BEGIN - together with the orphan account that has no
+     * identity, which is the very thing this transaction exists to prevent.
+     *
+     * A rollback that fails on its own is dropped rather than reported: the caller is
+     * owed the failure that ended the landing, and a second one about the cleanup would
+     * take its place.
+     */
+    private function endFailedLanding(): void
+    {
+        try {
+            Database::transactionRollback();
+        } catch (HilosException) {
+            // Reporting the cleanup would replace the failure the caller is owed
+        }
     }
 
     /**
@@ -1508,11 +1597,13 @@ final class MainPage extends AbstractPage
      * memory and the parked sockets alike - so this session's tabs go to the
      * identifier field together, and a reconnect is answered with no step at all.
      *
-     * It deliberately does NOT free the identifier: the hold belongs to the address,
-     * other sessions may be waiting on the very same one, and a person who walked
-     * away from their own screen has said nothing about theirs (HIL-415 keeps the
-     * hold as the server's truth about an address). The hold runs out on its own,
-     * and the sweep tells whoever is still waiting.
+     * It deliberately does NOT free the hold, and the reason changed with the key
+     * (HIL-608). It used to be that the hold belonged to the address and other
+     * sessions might be waiting on it; the hold is this browser's own now, and
+     * keeping it is what the way BACK is built on - a person who returns to the same
+     * address is put back on their own code screen by the lookup alone, spending no
+     * second letter. Releasing it would delete the `pending` answer that screen
+     * stands on. The hold runs out on its own, and the sweep tells whoever is left.
      *
      * @return AuthFlowOutcome The identifier step, under the register intent
      * @throws ItemNotFoundForUpdateException When the acting connection has no session

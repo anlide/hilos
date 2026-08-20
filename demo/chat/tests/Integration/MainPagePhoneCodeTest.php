@@ -13,6 +13,7 @@ use Demo\Chat\Pages\DTO\Main\ConfirmPhoneCodeActionDTO;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Flow\AuthFlowIntent;
+use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Registration\RegistrationReservationService;
@@ -25,6 +26,9 @@ use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\HilosException;
+use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -67,7 +71,7 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
         $this->openSession($agent, 'register-ak');
 
         try {
-            $this->holdNumber($phone);
+            $this->holdNumber('register-ak', $phone);
             $this->seedKnownCode($phone);
 
             $outcome = $this->confirmCode($agent, 'register-ak', $phone);
@@ -90,7 +94,7 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
             );
 
             $this->assertNull(
-                new RegistrationReservationService()->findActive($phone),
+                $this->holdOf('register-ak'),
                 'The hold lands into the account rather than outliving it',
             );
             $this->assertSame($userId, Hilos::$rt->connections['register-ak']->userId);
@@ -174,7 +178,7 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
         $this->openSession($agent, 'wrong-ak');
 
         try {
-            $this->holdNumber($phone);
+            $this->holdNumber('wrong-ak', $phone);
             $this->seedKnownCode($phone);
 
             $refused = false;
@@ -186,7 +190,7 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
 
             $this->assertTrue($refused, 'A wrong code is a plain action failure');
             $this->assertNotNull(
-                new RegistrationReservationService()->findActive($phone),
+                $this->holdOf('wrong-ak'),
                 'A mistyped code must not free the number somebody is registering',
             );
             $this->assertNull(Hilos::$rt->connections['wrong-ak']->userId);
@@ -196,16 +200,22 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
     }
 
     /**
-     * The other session waiting on the number is signed in by the confirm it never made.
+     * The other device waiting on the number is told it is taken, not signed in.
      *
      * Two devices asked for a code on the same free number; one of them types it. The
-     * other is waiting on the durable memory of its own request - it never handshook
-     * again, so nothing parked it in the runtime list - and the converge has to reach
-     * it all the same, which is what makes that list a projection rather than the truth.
+     * other was registering the number too, and it lost - so it goes back to the
+     * identifier field under the sign-in intent, where the number now has an account it
+     * can prove by a code of its own. What it must NOT be is subscribed into an account
+     * somebody else proved, which is the capture HIL-608 closes on the number exactly as
+     * on the address.
+     *
+     * It is reached through the durable memory of its own request - it never handshook
+     * again, so nothing parked it in the runtime list - which is what makes that list a
+     * projection rather than the truth.
      *
      * @throws HilosException When setup or the request handling fails
      */
-    public function testConfirmConvergesTheOtherSessionWaitingOnTheNumber(): void
+    public function testConfirmTellsTheOtherDeviceTheNumberIsTaken(): void
     {
         $agent = $this->bootAgent();
         $phone = $this->uniquePhone();
@@ -214,20 +224,28 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
         ExecutionContext::setCurrentAcceptKey('converge-ak');
 
         try {
-            $this->holdNumber($phone);
+            $this->holdNumber('converge-ak', $phone);
+            $this->holdNumber('waiting-ak', $phone);
             Hilos::$db->registrationWaits->actions->hold($waitingToken, $phone);
             $this->seedKnownCode($phone);
+            $this->drainConvergeSignals();
 
             $outcome = $this->confirmCode($agent, 'converge-ak', $phone);
 
             $this->assertTrue($outcome->ok);
             $userId = Hilos::$db->identities->findByIdentity(IdentityType::SMS, $phone)?->userId;
             $this->assertNotNull($userId);
-            $this->assertSame(
-                $userId,
+            $this->assertNull(
                 Hilos::$rt->connections['waiting-ak']->userId,
-                'The session that was waiting on this number is signed into the account it was waiting for',
+                'The device that lost the number must not be signed into the winner account',
             );
+            $this->assertNull($this->holdOf('waiting-ak'), 'The losing hold is dropped rather than left to expire');
+
+            $converge = $this->drainConvergeSignals()['waiting-ak'] ?? null;
+            $this->assertNotNull($converge, 'The loser is told out loud');
+            $this->assertSame(AuthFlowStep::IDENTIFIER, $converge->step);
+            $this->assertSame(AuthFlowIntent::LOGIN, $converge->intent);
+            $this->assertSame(AuthFlowOutcome::CODE_IDENTIFIER_TAKEN, $converge->code);
             $this->assertNull(
                 Hilos::$db->registrationWaits->findBySession($waitingToken),
                 'Nothing is left to wait on once the registration happened',
@@ -235,6 +253,37 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
         } finally {
             $this->cleanUp();
         }
+    }
+
+    /**
+     * Reads the registration hold the browser behind a connection is leading.
+     *
+     * @param string $acceptKey Accept key whose session is asked about
+     * @return ?ObjectRegistrationReservation Live hold, or null when that browser holds none
+     * @throws HilosException When the reservation lookup fails
+     */
+    private function holdOf(string $acceptKey): ?ObjectRegistrationReservation
+    {
+        return new RegistrationReservationService()
+            ->findActiveForSession(Hilos::$rt->connections[$acceptKey]->sessionToken);
+    }
+
+    /**
+     * Empties the signal queue and returns the converge signals it held, by target.
+     *
+     * @return array<string, AuthConvergeSignalData> Converge payload by target accept key
+     */
+    private function drainConvergeSignals(): array
+    {
+        $converged = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
+            $payload = $signal->data instanceof WebSocketSignalData ? $signal->data->data : null;
+            if ($payload instanceof AuthConvergeSignalData) {
+                $converged[$payload->acceptKey] = $payload;
+            }
+        }
+
+        return $converged;
     }
 
     /**
@@ -321,12 +370,14 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
     /**
      * Holds a number the way the code agent does when it sends a code to a free one.
      *
+     * @param string $acceptKey Accept key whose browser is registering the number
      * @param string $phone Number being held
      * @throws HilosException When the reservation write fails
      */
-    private function holdNumber(string $phone): void
+    private function holdNumber(string $acceptKey, string $phone): void
     {
-        new RegistrationReservationService()->hold(IdentityType::SMS, $phone, null);
+        new RegistrationReservationService()
+            ->hold(IdentityType::SMS, Hilos::$rt->connections[$acceptKey]->sessionToken, $phone, null);
     }
 
     /**

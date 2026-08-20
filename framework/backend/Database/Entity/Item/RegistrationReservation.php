@@ -21,12 +21,15 @@ use Hilos\Database\PhpType;
  * for the account that does not exist yet.
  *
  * It is a table of its own rather than a column on `hilos_user_verification`
- * because holding an address needs UNIQUE(identifier), which a challenge table
- * can never carry - consumed and expired challenges legitimately pile up per
- * identifier. Uniqueness is on the identifier ALONE, not on (type, identifier)
- * as on `hilos_identity`: one address is one reservation and one code whatever
- * method reserved it, otherwise a password and a magic-link submit would hold
- * the same address and mail two codes for it.
+ * because holding a registration needs a UNIQUE key, which a challenge table can
+ * never carry - consumed and expired challenges legitimately pile up per
+ * identifier. That key is `session_token` (HIL-608): one browser leads one
+ * registration at a time, so a submit of another address evicts this browser's
+ * own previous hold, while `identifier` carries a plain index because several
+ * browsers may legitimately be registering the same address at once. It is what
+ * makes the hold OWNED - the reservation is landed by the session that started
+ * it, so a letter answered in another browser cannot land somebody else's
+ * password into the account it creates.
  *
  * The `secret` column (bcrypt hash of the chosen password; NULL for the methods
  * that carry no credential) is DB-only: it is intentionally absent from _columns
@@ -48,6 +51,7 @@ final class RegistrationReservation extends Entity
     public const string id = 'id';
     public const string type = 'type';
     public const string identifier = 'identifier';
+    public const string session_token = 'session_token';
     /** DB-only credential column (see @object-exclude); referenced by the confirm query, never ORM-mapped. */
     public const string secret = 'secret';
     public const string expires_at = 'expires_at';
@@ -58,6 +62,7 @@ final class RegistrationReservation extends Entity
         self::id,
         self::type,
         self::identifier,
+        self::session_token,
         self::expires_at,
     ];
 
@@ -65,16 +70,19 @@ final class RegistrationReservation extends Entity
         self::id => PhpType::INTEGER->value,
         self::type => PhpType::STRING->value,
         self::identifier => PhpType::STRING->value,
+        self::session_token => PhpType::STRING->value,
         self::expires_at => PhpType::DATETIME->value,
     ];
 
     public const array _indexes = [
-        'uk_reservation_identifier' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::identifier]],
+        'uk_reservation_session' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::session_token]],
+        'idx_reservation_identifier' => [Entity::INDEX_COLUMNS => [self::identifier]],
         'idx_reservation_expires' => [Entity::INDEX_COLUMNS => [self::expires_at]],
     ];
 
     public ?int $id = null;
     public string $type;
     public string $identifier;
+    public string $session_token;
     public string $expires_at;
 }

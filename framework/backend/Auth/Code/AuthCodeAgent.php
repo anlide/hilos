@@ -366,9 +366,11 @@ class AuthCodeAgent extends AbstractAgent
      * starts no registration, so a hold there would strand a number nobody is
      * registering behind a wait nobody can finish.
      *
-     * A hold that already stands is left alone by the service, and that is the racing
-     * second session: its code is refused by the send gate as a cooldown, which puts it
-     * on the code screen of the hold it joined rather than sending a second message.
+     * The hold is the ASKING BROWSER's, symmetric with the address (HIL-608): a second
+     * session asking for a code on the same number gets a hold of its own, its code is
+     * refused by the send gate as a cooldown, and the number goes to whoever confirms
+     * first. An asymmetry here would mean the capture is closed for mail and open for
+     * a number.
      *
      * @param AuthCodeOperation $operation Operation whose identifier is being held
      * @throws EmptyValueException When the identifier the request names is empty
@@ -385,7 +387,8 @@ class AuthCodeAgent extends AbstractAgent
         }
 
         $operation->registration = true;
-        new RegistrationReservationService()->hold(IdentityType::SMS, $identifier, null);
+        new RegistrationReservationService()
+            ->hold(IdentityType::SMS, $operation->request->sessionToken, $identifier, null);
     }
 
     /**

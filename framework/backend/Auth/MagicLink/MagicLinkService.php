@@ -25,11 +25,16 @@ use Random\RandomException;
  *
  * Passwordless email in a single ceremony: an address is asked for, a link goes to
  * it, and clicking that link ends with the person signed in - whether or not they
- * had an account when they asked. What makes that possible is that a FREE address
- * is held by a reservation at send time ({@see RegistrationReservationService::hold()},
- * type {@see IdentityType::MAGIC_LINK}, no credential), so the address cannot be
- * taken by someone else while the letter is in flight, and the account is minted
- * only once the link comes back.
+ * had an account when they asked. What makes that possible is that a FREE address is
+ * held by a reservation at send time ({@see RegistrationReservationService::hold()},
+ * type {@see IdentityType::MAGIC_LINK}, no credential), so this browser has a
+ * registration to finish when the link comes back, and the account is minted only
+ * then.
+ *
+ * The hold is THIS BROWSER's (HIL-608), not the address's: another browser asking
+ * for a link on the same address gets its own, and the first click wins the account.
+ * The one who loses is told the address is taken rather than signed into somebody
+ * else's registration.
  *
  * The token is issued with NO owning user, always, and that is the deliberate
  * difference from HIL-283's account-bound link: between the send and the click an
@@ -51,13 +56,19 @@ use Random\RandomException;
 final class MagicLinkService
 {
     /**
-     * Sends a sign-in link to an address, holding it first when it is free.
+     * Sends a sign-in link to an address, holding it for this browser when it is free.
      *
      * One path for both intents on purpose: the caller does not have to know
      * whether the address has an account, and neither does the letter - the same
      * link means "sign in" for a known address and "finish registering" for a free
-     * one. The hold is skipped for an address that already has an account, since
-     * there is nothing left to reserve.
+     * one. The hold is skipped for an address that already belongs to somebody
+     * ({@see ObjectIdentities::findAccountIdByEmail()}, the one definition of that since
+     * HIL-608), since there is nothing left to register.
+     *
+     * The session is asked for rather than looked up because the hold is OWNED: the
+     * link this send mails may only finish the registration of the browser that asked
+     * for it, and a hold with no name is what let a stranger's letter land somebody
+     * else's password.
      *
      * The answer is the send gate's own ({@see VerificationService::issue()}): sent,
      * held by the cooldown, or refused by the window cap. It says nothing about
@@ -65,22 +76,24 @@ final class MagicLinkService
      * caller may repeat it to the surface honestly.
      *
      * @param string $email Address to send the link to (normalized here)
+     * @param string $sessionToken Session cookie token of the browser asking for the link
      * @return VerificationSendOutcome Whether the link went out, and the seconds until the next may
      * @throws EmptyValueException When the normalized address is empty
      * @throws RandomException When the platform CSPRNG cannot produce a token
      * @throws DatabaseException When an identity, reservation or verification query fails
-     * @throws LogicException When a framework object collection is unavailable
+     * @throws LogicException When a framework object collection is unavailable, or a racing insert
+     *   left no hold to answer with
      * @throws EnvException When a reservation or verification env key is missing, outside the
      *   catalog, or of the wrong type
      * @throws ValidationException When the link cannot be delivered to the address
      * @throws InvalidArgumentException When the transport's send signal cannot be named or queued
      */
-    public function send(string $email): VerificationSendOutcome
+    public function send(string $email, string $sessionToken): VerificationSendOutcome
     {
         $identifier = mb_strtolower(trim($email));
 
-        if ($this->identities()->findUserIdByVerifiedEmail($identifier) === null) {
-            new RegistrationReservationService()->hold(IdentityType::MAGIC_LINK, $identifier, null);
+        if ($this->identities()->findAccountIdByEmail($identifier) === null) {
+            new RegistrationReservationService()->hold(IdentityType::MAGIC_LINK, $sessionToken, $identifier, null);
         }
 
         return new VerificationService()->issue(VerificationType::MAGIC_LINK, $identifier, null);

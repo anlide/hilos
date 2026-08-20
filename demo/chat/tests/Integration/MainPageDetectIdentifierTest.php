@@ -191,6 +191,34 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
     }
 
     /**
+     * Another browser's hold does not take the address: the lookup still reads it free.
+     *
+     * The oracle this closes (HIL-608): a hold belongs to the browser that made it, so
+     * reporting somebody else's would answer "is anyone registering this address right
+     * now" to whoever cares to type one. The person asking is simply offered the ways to
+     * register it, and races with the other browser for it.
+     *
+     * @throws HilosException When setup or lookup handling fails
+     */
+    public function testAnotherBrowsersHoldLeavesTheAddressFree(): void
+    {
+        $agent = $this->bootAgent();
+        $this->openSession($agent, 'holder-ak');
+        $email = $this->uniqueEmail();
+        $this->register($agent, 'holder-ak', $email);
+        $this->openSession($agent, 'onlooker-ak');
+
+        try {
+            $detection = $this->detect($agent, 'onlooker-ak', $email);
+
+            $this->assertSame(IdentifierDetection::STATUS_NONE, $detection->status);
+            $this->assertSame([AuthMethodKey::PASSWORD, AuthMethodKey::MAGIC_LINK], $detection->registerable);
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
      * A hold that has run out reads as free again, with no branch of its own.
      *
      * @throws HilosException When setup or lookup handling fails
@@ -270,8 +298,9 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
         $detector = new IdentifierDetector([AuthMethodKey::MAGIC_LINK]);
 
         try {
-            $taken = $detector->detect($email);
-            $free = $detector->detect($this->uniqueEmail());
+            $token = RandomHelper::hex(16);
+            $taken = $detector->detect($email, $token);
+            $free = $detector->detect($this->uniqueEmail(), $token);
 
             $this->assertSame([AuthMethodKey::MAGIC_LINK], $taken->methods);
             $this->assertNotContains(AuthMethodKey::PASSWORD, $taken->methods);

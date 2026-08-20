@@ -22,8 +22,11 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
+use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
@@ -35,10 +38,12 @@ use Hilos\Database\Entity\Item\UserVerification as EntityUserVerification;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrationReservations;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
+use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\HilosException;
+use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -107,8 +112,9 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
             $this->assertTrue($outcome->ok);
             $this->assertNull($outcome->step, 'A send moves the surface nowhere by itself');
 
-            $reservation = $this->reservations()->findActive($email);
+            $reservation = $this->holdOf('hold-ak');
             $this->assertNotNull($reservation, 'A free address is held for the life of the link');
+            $this->assertSame($email, $reservation->identifier);
             $this->assertSame(IdentityType::MAGIC_LINK, $reservation->type);
 
             $this->assertNotNull($this->activeChallenge(VerificationType::MAGIC_LINK, $email));
@@ -268,7 +274,7 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         $email = $this->uniqueEmail();
         $this->openSession($agent, 'raced-ak');
         $this->requestLink($agent, 'raced-ak', $email);
-        $this->assertNotNull($this->reservations()->findActive($email));
+        $this->assertNotNull($this->holdOf('raced-ak'));
         $userId = $this->seedPasswordlessAccount($email);
         $this->seedKnownToken($email);
 
@@ -285,11 +291,17 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
     }
 
     /**
-     * A link that outlived its hold rolls the surface back instead of registering.
+     * A link that outlived its hold still registers: the letter is the proof, not the hold.
+     *
+     * The answer HIL-608 removed, and the reason it removed it. "Your registration
+     * expired" was untrue about a letter that still opens: the person proved the inbox,
+     * and the only thing the missing hold takes from them is a credential they never
+     * chose. So they get the account with the mailed sign-in, exactly as a reader who
+     * opened the link on a browser that reserved nothing does.
      *
      * @throws HilosException When setup or the confirm handling fails
      */
-    public function testExpiredHoldRollsBackToTheIdentifierStep(): void
+    public function testLinkThatOutlivedItsHoldStillRegisters(): void
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
@@ -301,13 +313,18 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         try {
             $outcome = $this->clickLink($agent, 'expired-ak', $email, self::TOKEN);
 
-            $this->assertFalse($outcome->ok);
-            $this->assertSame(AuthFlowOutcome::CODE_RESERVATION_EXPIRED, $outcome->code);
-            $this->assertSame(AuthFlowStep::IDENTIFIER, $outcome->step);
+            $this->assertTrue($outcome->ok);
+            $this->assertSame(AuthFlowStep::DONE, $outcome->step);
             $this->assertSame(AuthFlowIntent::REGISTER, $outcome->intent);
 
-            $this->assertNull(Hilos::$db->identities->findByIdentity(IdentityType::MAGIC_LINK, $email));
-            $this->assertNull(Hilos::$rt->connections['expired-ak']->userId);
+            $identity = Hilos::$db->identities->findByIdentity(IdentityType::MAGIC_LINK, $email);
+            $this->assertNotNull($identity, 'The proven address earns the identity its letter names');
+            $this->assertTrue($identity->verified);
+            $this->assertNull(
+                Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email),
+                'A reader with no hold of their own inherits nobody password',
+            );
+            $this->assertNotNull(Hilos::$rt->connections['expired-ak']->userId);
         } finally {
             $this->cleanUp();
         }
@@ -434,6 +451,98 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
             $storedHash = $this->readIdentitySecret($email);
             $this->assertIsString($storedHash);
             $this->assertTrue(password_verify(self::PASSWORD, $storedHash));
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * A letter answered in another browser lands nothing of the browser that reserved.
+     *
+     * The capture HIL-608 closes, end to end (Design p.2). Session A submits an address it
+     * does not own with a password of its own choosing; the letter goes to the inbox, so it
+     * reaches the OWNER of the address, who answers it in their own browser. What they must
+     * get is an account of their own with no password at all - A's credential belongs to A's
+     * attempt and cannot ride somebody else's proof into somebody else's account. A is told
+     * the address is taken, which by then it truthfully is.
+     *
+     * @throws HilosException When setup or the confirm handling fails
+     */
+    public function testAStrangersHoldIsNotLandedByTheOwnersLetter(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'attacker-ak');
+        $this->register($agent, 'attacker-ak', $email);
+
+        $this->openSession($agent, 'owner-ak');
+        $this->requestLink($agent, 'owner-ak', $email);
+        $this->seedKnownToken($email);
+
+        try {
+            $this->drainConvergeSignals();
+
+            $outcome = $this->clickLink($agent, 'owner-ak', $email, self::TOKEN);
+
+            $this->assertTrue($outcome->ok);
+            $this->assertSame(AuthFlowIntent::REGISTER, $outcome->intent);
+
+            $this->assertNull(
+                Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email),
+                'The stranger password must not become a way into the account its owner just made',
+            );
+            $identity = Hilos::$db->identities->findByIdentity(IdentityType::MAGIC_LINK, $email);
+            $this->assertNotNull($identity, 'The address is proven, so it earns the identity of the letter');
+            $this->assertSame(Hilos::$rt->connections['owner-ak']->userId, $identity->userId);
+
+            $this->assertNull(
+                Hilos::$rt->connections['attacker-ak']->userId,
+                'The browser that reserved the address is signed into nothing',
+            );
+            $this->assertNull($this->holdOf('attacker-ak'), 'And keeps no hold on an address that now has an account');
+
+            $converge = $this->drainConvergeSignals()['attacker-ak'] ?? null;
+            $this->assertNotNull($converge, 'It is told the address is taken');
+            $this->assertSame(AuthFlowStep::IDENTIFIER, $converge->step);
+            $this->assertSame(AuthFlowIntent::LOGIN, $converge->intent);
+            $this->assertSame(AuthFlowOutcome::CODE_IDENTIFIER_TAKEN, $converge->code);
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * An address held by an unverified password identity is handed to whoever proves it.
+     *
+     * The third consequence of P-099, closed honestly (Flow p.11). Such an address used to
+     * fall between the two definitions of "taken": the magic-link send saw it free and the
+     * click built a SECOND account for the same person. Refusing would be a dead end -
+     * whoever proved the inbox does not know the password - so the account they cannot sign
+     * into by password becomes theirs by letter, and the identity that was waiting for a
+     * confirmation gets one.
+     *
+     * @throws HilosException When setup or the confirm handling fails
+     */
+    public function testAnAddressHeldByAnUnverifiedPasswordIsHandedToTheProver(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $userId = (int)Hilos::$db->users->actions->createWithName($this->localPart($email))->id;
+        Hilos::$db->identities->createPasswordIdentity($userId, $email, self::PASSWORD);
+        $this->openSession($agent, 'unverified-ak');
+        $this->requestLink($agent, 'unverified-ak', $email);
+        $this->seedKnownToken($email);
+
+        try {
+            $outcome = $this->clickLink($agent, 'unverified-ak', $email, self::TOKEN);
+
+            $this->assertTrue($outcome->ok);
+            $this->assertSame(AuthFlowIntent::LOGIN, $outcome->intent);
+            $this->assertSame($userId, $this->sessionOf('unverified-ak')?->userId, 'No second account for one person');
+
+            $identity = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email);
+            $this->assertNotNull($identity);
+            $this->assertTrue($identity->verified, 'Answering the mail is the proof the identity was waiting for');
         } finally {
             $this->cleanUp();
         }
@@ -760,7 +869,7 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
      *
      * @throws HilosException When setup or the confirm handling fails
      */
-    public function testCodeWithAnExpiredHoldRollsBackToTheIdentifierStep(): void
+    public function testCodeThatOutlivedItsHoldStillRegisters(): void
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
@@ -772,13 +881,14 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         try {
             $outcome = $this->submitCode($agent, 'code-expired-ak', $email, self::CODE);
 
-            $this->assertFalse($outcome->ok);
-            $this->assertSame(AuthFlowOutcome::CODE_RESERVATION_EXPIRED, $outcome->code);
-            $this->assertSame(AuthFlowStep::IDENTIFIER, $outcome->step);
+            $this->assertTrue($outcome->ok);
+            $this->assertSame(AuthFlowStep::DONE, $outcome->step);
             $this->assertSame(AuthFlowIntent::REGISTER, $outcome->intent);
 
-            $this->assertNull(Hilos::$db->identities->findByIdentity(IdentityType::MAGIC_LINK, $email));
-            $this->assertNull(Hilos::$rt->connections['code-expired-ak']->userId);
+            $identity = Hilos::$db->identities->findByIdentity(IdentityType::MAGIC_LINK, $email);
+            $this->assertNotNull($identity, 'Both halves of one letter end the same way');
+            $this->assertTrue($identity->verified);
+            $this->assertNotNull(Hilos::$rt->connections['code-expired-ak']->userId);
         } finally {
             $this->cleanUp();
         }
@@ -815,12 +925,13 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
      *
      * @param ChatAgent $agent Agent under test
      * @param string $acceptKey WebSocket accept key to open the session under
+     * @param ?string $sessionToken Token to reuse, opening a second socket of one browser, or null for a new browser
      * @return string The session cookie token registered for the connection
      * @throws HilosException When the handshake fails
      */
-    private function openSession(ChatAgent $agent, string $acceptKey): string
+    private function openSession(ChatAgent $agent, string $acceptKey, ?string $sessionToken = null): string
     {
-        $token = RandomHelper::hex(16);
+        $token = $sessionToken ?? RandomHelper::hex(16);
         $agent->onSignalHandshake(
             new WebSocketHandshakeSignalDTO(
                 headers: [],
@@ -1127,6 +1238,88 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         $secret = is_array($row) ? ($row[EntityIdentity::secret] ?? null) : null;
 
         return is_string($secret) ? $secret : null;
+    }
+
+    /**
+     * A browser waiting on a LINK is not resumed onto a registration code screen.
+     *
+     * The other half of what the wait row guards (HIL-608). Asking for a sign-in link
+     * holds the address, but writes no wait: there is no code field to come back to, and
+     * the letter's own companion code is a different challenge entirely. Answering the
+     * handshake with a register step would put the person in front of a field asking for
+     * a code nobody ever issued.
+     *
+     * @throws HilosException When setup or the request handling fails
+     */
+    public function testABrowserWaitingOnALinkIsNotResumedOntoACodeScreen(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $token = $this->openSession($agent, 'link-wait-ak');
+
+        try {
+            $this->requestLink($agent, 'link-wait-ak', $email);
+            $this->assertNotNull($this->holdOf('link-wait-ak'), 'A free address is held while the letter travels');
+
+            $this->drainHandshakeResponses();
+            $this->openSession($agent, 'link-wait-new', $token);
+
+            $this->assertNull(
+                $this->drainHandshakeResponses()['link-wait-new']?->pendingRegistration,
+                'A hold with no code screen behind it resumes nothing',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * Empties the signal queue and returns the handshake responses it held, by target.
+     *
+     * @return array<string, HandshakeResponseSignalData> Handshake payload by target accept key
+     */
+    private function drainHandshakeResponses(): array
+    {
+        $responses = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
+            $envelope = $signal->data instanceof WebSocketSignalData ? $signal->data : null;
+            $payload = $envelope?->data;
+            if ($payload instanceof HandshakeResponseSignalData) {
+                $responses[(string)$envelope?->targetAcceptKey] = $payload;
+            }
+        }
+
+        return $responses;
+    }
+
+    /**
+     * Empties the signal queue and returns the converge signals it held, by target.
+     *
+     * @return array<string, AuthConvergeSignalData> Converge payload by target accept key
+     */
+    private function drainConvergeSignals(): array
+    {
+        $converged = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
+            $payload = $signal->data instanceof WebSocketSignalData ? $signal->data->data : null;
+            if ($payload instanceof AuthConvergeSignalData) {
+                $converged[$payload->acceptKey] = $payload;
+            }
+        }
+
+        return $converged;
+    }
+
+    /**
+     * Reads the registration hold the browser behind a connection is leading.
+     *
+     * @param string $acceptKey Accept key whose session is asked about
+     * @return ?ObjectRegistrationReservation Live hold, or null when that browser holds none
+     * @throws HilosException When the reservation lookup fails
+     */
+    private function holdOf(string $acceptKey): ?ObjectRegistrationReservation
+    {
+        return $this->reservations()->findActiveForSession(Hilos::$rt->connections[$acceptKey]->sessionToken);
     }
 
     /**

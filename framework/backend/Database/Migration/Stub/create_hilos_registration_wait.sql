@@ -8,14 +8,17 @@
 -- it survives a closed tab and a restarted daemon.
 --
 -- Separate from `hilos_registration_reservation` because the two answer different
--- questions. The reservation holds the ADDRESS and there is one per address; the
--- wait names the SESSIONS watching that address and there are several — a desktop
--- and a phone can both be on the code screen for one registration. A column on the
--- reservation could only ever remember the first of them.
+-- questions. The reservation holds the credential and the deadline of ONE browser's
+-- attempt; the wait names the SESSIONS watching an address, and there are several —
+-- a desktop and a phone can both be on the code screen for one address, each with a
+-- reservation of its own since HIL-608. A column on the reservation could only ever
+-- remember the first of them.
 --
 -- UNIQUE is on the session, not on the pair: a person runs one registration at a
 -- time, so a new one evicts the previous row of that session rather than adding a
--- second the surface would then have to choose between.
+-- second the surface would then have to choose between. That is the same key the
+-- reservation carries, and deliberately so — two structures answering "which
+-- registration is this browser running" must not disagree about what identifies it.
 --
 -- `identifier` uses utf8mb4_bin so the address compares exactly, matching the
 -- reservation it shadows; the writing leaf lowercases it before insert.

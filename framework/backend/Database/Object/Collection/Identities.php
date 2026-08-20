@@ -462,6 +462,36 @@ final class Identities extends Objects
     }
 
     /**
+     * Resolves the account an email already belongs to, by any road (HIL-608).
+     *
+     * THE definition of "this address is taken", and the only one: a `password`
+     * identity whether or not it is verified (it is signed in with either way), or a
+     * verified identity of any other type. Every caller that used to spell the pair
+     * out for itself asks this instead - the registration submit, the confirm, the
+     * magic-link send, and the identifier lookup - because while there were several
+     * spellings they disagreed, and on an address carrying an UNVERIFIED password
+     * identity the disagreement built a second account for the same person.
+     *
+     * It sits between its two neighbours and is not either of them.
+     * {@see findUserIdByVerifiedEmail()} answers "who has PROVEN this address" and is
+     * what an email-proof flow signs in; {@see findUserIdByEmail()} answers "does any
+     * row mention it" and is for callers whose proof is the credential itself. This
+     * one answers "may a registration start here", which is the union of the first
+     * with the unverified password rows - the accounts that exist and can be signed
+     * into, though nobody has answered their mail.
+     *
+     * @param string $email Lowercased account email
+     * @return ?int Owning user id when the address is somebody's, or null when it is free
+     * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function findAccountIdByEmail(string $email): ?int
+    {
+        return $this->findByIdentity(IdentityType::PASSWORD, $email)?->userId
+            ?? $this->findUserIdByVerifiedEmail($email);
+    }
+
+    /**
      * Resolves the user id owning any identity for an email, verified or not (HIL-284).
      *
      * The verification-agnostic sibling of {@see findUserIdByVerifiedEmail()}, for
@@ -469,9 +499,12 @@ final class Identities extends Objects
      * email. Because email confirmation is not wired for password registration,
      * those accounts stay `verified = false`, so the verified-only resolver would
      * strand every such caller. Do NOT use this for email-proof flows (magic-link, OAuth email
-     * collision) — those must keep {@see findUserIdByVerifiedEmail()}. Only email
-     * identifiers can match (`sms`/`oauth` identifiers are a phone / `provider:subject`
-     * and never equal an email); no account resolves to null.
+     * collision) — those must keep {@see findUserIdByVerifiedEmail()}, and do NOT use it to
+     * ask whether an address is free — that is {@see findAccountIdByEmail()}, which counts a
+     * `password` row of any state but ignores an unverified row of another type. The three
+     * differ only in which rows they accept, which is exactly why each names the question it
+     * answers. Only email identifiers can match (`sms`/`oauth` identifiers are a phone /
+     * `provider:subject` and never equal an email); no account resolves to null.
      *
      * @param string $email Lowercased account email
      * @return ?int Owning user id of any email identity, or null when none

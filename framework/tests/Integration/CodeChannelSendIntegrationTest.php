@@ -229,7 +229,7 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
 
         self::assertSame(AuthCodeResultSignalData::REASON_CODE_SENT, $this->takeResultReason());
         self::assertNotNull(
-            new RegistrationReservationService()->findActive($phone),
+            new RegistrationReservationService()->findActiveForSession(self::SESSION_TOKEN),
             'A number nobody owns must be held while its code travels',
         );
         self::assertSame($phone, $this->waitOf(self::SESSION_TOKEN), 'The session must be left waiting on the number');
@@ -249,18 +249,20 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
 
         self::assertSame(AuthCodeResultSignalData::REASON_CODE_SENT, $this->takeResultReason());
         self::assertNull(
-            new RegistrationReservationService()->findActive($phone),
+            new RegistrationReservationService()->findActiveForSession(self::SESSION_TOKEN),
             'There is nothing left to reserve about a number somebody already owns',
         );
         self::assertNull($this->waitOf(self::SESSION_TOKEN), 'A sign-in leaves no unfinished registration behind');
     }
 
     /**
-     * A second session that joins a live code is remembered too, though it sent nothing.
+     * A second session racing a live code is remembered too, though no message went out.
      *
      * The cooldown arm is what a racing session gets, and it is the arm that puts it on
-     * the code screen of the hold it joined - so the memory has to be written there as
-     * well, or a reload would strand it on an empty form (HIL-486, Flow p.15).
+     * the code screen of the number it is racing for - so the memory has to be written
+     * there as well, or a reload would strand it on an empty form (HIL-486, Flow p.15).
+     * Its hold is its OWN since HIL-608; what it shares with the first session is the
+     * code, because the send gate belongs to the number.
      *
      * @throws HilosException When a reservation, wait or verification query fails
      */

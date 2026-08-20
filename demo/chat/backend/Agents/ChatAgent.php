@@ -45,6 +45,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Database\Database;
+use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
@@ -883,9 +884,11 @@ final class ChatAgent extends AbstractAgent
      * Handles chat-owned cron cleanup for persisted history, transient attachment state,
      * and expired registration holds.
      *
-     * The reservation sweep is the one that answers somebody: freeing a held address also
-     * means the sessions parked on its code step are waiting for a code that can no longer
-     * confirm anything, so each freed identifier is rolled back the moment its row goes.
+     * The reservation sweep is the one that answers somebody: an expired hold means the
+     * browser that made it is waiting for a code that can no longer confirm anything, so
+     * each freed hold rolls back its own session the moment its row goes. Its own, and not
+     * the address: since HIL-608 another browser may be registering the same address with
+     * a hold of its own, and that one is still good.
      *
      * @param SignalDataInterface $data Cron payload (unused)
      * @param string $source Framework signal source identifier (unused)
@@ -909,8 +912,11 @@ final class ChatAgent extends AbstractAgent
                 return;
 
             case ChatCronConstants::SWEEP_REGISTRATION_RESERVATIONS:
-                foreach (new RegistrationReservationSweeper()->sweep() as $identifier) {
-                    $this->rollBackRegistrationWaiters($identifier);
+                foreach (new RegistrationReservationSweeper()->sweep() as $freed) {
+                    $this->rollBackRegistrationWaiters(
+                        $freed[ObjectRegistrationReservation::sessionToken],
+                        $freed[ObjectRegistrationReservation::identifier],
+                    );
                 }
 
                 return;
@@ -974,18 +980,27 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Signs in every session parked on a confirmed identifier and moves it to done (HIL-415).
+     * Ends every browser's wait on a just-registered identifier, each in its own way (HIL-415).
      *
-     * The converge half of reserve-on-submit registration: one address holds one
-     * reservation and one code, so several sessions can legitimately be waiting on it -
-     * two tabs, two devices - and the first code to come back settles the address for all
-     * of them. Each waiter is signed into the account that was just created and told to
-     * move to the done step; then its row goes, because there is nothing left to wait for.
+     * The converge half of reserve-on-submit registration, and the place where the
+     * ownership rule becomes visible (HIL-608). Several sessions can legitimately have
+     * been waiting on one identifier, and they are NOT the same to it: the tabs of the
+     * browser that won are the same person finishing what they started, so they are
+     * signed into the new account and moved to the done step; every other browser was
+     * racing for the identifier and lost it, so it is told the address is taken and sent
+     * back to the identifier field under the sign-in intent - never subscribed into an
+     * account it has no claim to. That subscription, made to whoever happened to be
+     * parked, was the second door of the same capture the reservation key closed.
      *
      * A waiter whose connection is ALREADY signed in is moved but not re-bound: somebody
      * else's registration must never swap the account a person is sitting in. The
      * confirming connection is skipped entirely - its caller signed it in on the ordinary
      * path and answered it with the action reply.
+     *
+     * The losing SESSIONS are named as well as parked ones, because a browser can hold an
+     * identifier without ever having been parked on it: a magic-link ask writes a hold and
+     * no wait, and its check-your-inbox screen would otherwise sit there until the link it
+     * is waiting for turned out to be worthless.
      *
      * The durable waits are dropped HERE, and only after the waiting sockets have been
      * read off them (HIL-486): they are half of who is waiting, so a caller that cleared
@@ -994,13 +1009,26 @@ final class ChatAgent extends AbstractAgent
      *
      * @param string $identifier Normalized identifier that was just confirmed (lowercased email)
      * @param int $userId User the confirmation created
-     * @param string $initiatorAcceptKey Accept key of the connection that submitted the code
+     * @param string $initiatorAcceptKey Accept key of the connection that submitted the proof
+     * @param string $winnerSessionToken Session cookie token of the browser whose registration this was
+     * @param list<string> $losingSessionTokens Session tokens whose hold on the identifier was dropped
      * @throws HilosException On runtime, database, or session failure
      * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
      */
-    public function convergeRegistration(string $identifier, int $userId, string $initiatorAcceptKey): void
-    {
+    public function convergeRegistration(
+        string $identifier,
+        int $userId,
+        string $initiatorAcceptKey,
+        string $winnerSessionToken,
+        array $losingSessionTokens,
+    ): void {
         $parked = $this->parkedAcceptKeys($identifier);
+        foreach ($losingSessionTokens as $sessionToken) {
+            foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
+                $parked[$acceptKey] = $sessionToken;
+            }
+        }
+
         Hilos::$db->registrationWaits->actions->releaseByIdentifier($identifier);
 
         foreach ($parked as $acceptKey => $sessionToken) {
@@ -1009,12 +1037,27 @@ final class ChatAgent extends AbstractAgent
                 continue;
             }
 
+            if ($sessionToken !== $winnerSessionToken) {
+                $this->sendToUser(
+                    HilosSignalConstants::HILOS_AUTH_CONVERGE,
+                    $acceptKey,
+                    new AuthConvergeSignalData(
+                        $acceptKey,
+                        $identifier,
+                        AuthFlowStep::IDENTIFIER,
+                        AuthFlowIntent::LOGIN,
+                        AuthFlowOutcome::CODE_IDENTIFIER_TAKEN,
+                    ),
+                );
+
+                continue;
+            }
+
             if (Hilos::$rt->connections[$acceptKey]?->userId === null) {
                 // Marked before the session goes up, so the identity and the news that
-                // there is an account arrive in one frame (HIL-422). This waiter did not
-                // type the code — somebody else's confirmation signed it in — which is
-                // exactly why it is owed the sentence rather than a screen that changed
-                // under it.
+                // there is an account arrive in one frame (HIL-422). This tab did not
+                // type the code — another tab of the same browser did — which is exactly
+                // why it is owed the sentence rather than a screen that changed under it.
                 $this->markSessionAck($sessionToken, SessionAck::REGISTERED);
                 $this->authenticateSession($sessionToken, $userId, $acceptKey);
             }
@@ -1073,27 +1116,38 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Rolls every session parked on an expired identifier back to the identifier step (HIL-415).
+     * Rolls ONE browser's expired registration back to the identifier step (HIL-415).
      *
-     * What an expired hold owes the people waiting on it. The step goes BACK rather than
+     * What an expired hold owes the person waiting on it. The step goes BACK rather than
      * the code being refused: they are about to type a code into a registration that no
      * longer exists, and "invalid code" would read as their mistake. The reason travels
      * with the step so the surface can say what actually happened.
      *
-     * @param string $identifier Normalized identifier whose hold was just freed
+     * Only the owning session is rolled back (HIL-608). The identifier may still be held
+     * by another browser whose own code is perfectly good, and taking that browser off its
+     * code screen because a stranger's attempt ran out would be somebody else's timer
+     * ending this person's registration.
+     *
+     * @param string $sessionToken Session cookie token whose hold just expired
+     * @param string $identifier Normalized identifier that hold was on
      * @throws HilosException On runtime failure
      */
-    private function rollBackRegistrationWaiters(string $identifier): void
+    private function rollBackRegistrationWaiters(string $sessionToken, string $identifier): void
     {
-        // Read before the durable rows go, since they are half of who is waiting.
-        $parked = $this->parkedAcceptKeys($identifier);
+        // Read before the durable row goes, since the live sockets are found through it.
+        $acceptKeys = $this->sessionConnectionKeys($sessionToken);
+        foreach (Hilos::$rt->hilosRegistrationWaiters->forIdentifier($identifier) as $waiter) {
+            if ($waiter->sessionToken === $sessionToken) {
+                $acceptKeys[] = $waiter->acceptKey;
+            }
+        }
 
         // The durable memory goes next, still ahead of the first signal: the hold is
         // gone, so a tab reconnecting a second later must be told the identifier step by
         // the handshake, not parked again on a code screen this very sweep is closing.
-        Hilos::$db->registrationWaits->actions->releaseByIdentifier($identifier);
+        Hilos::$db->registrationWaits->actions->releaseBySession($sessionToken);
 
-        foreach (array_keys($parked) as $acceptKey) {
+        foreach (array_unique($acceptKeys) as $acceptKey) {
             Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
 
             $this->sendToUser(

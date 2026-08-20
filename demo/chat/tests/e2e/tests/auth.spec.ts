@@ -439,14 +439,16 @@ test('puts a held address back on its code step from the lookup alone', async ({
   await submitRegistration(page, email)
   await readRegisterCode(email)
 
-  // "Not that address?" drops what THIS SESSION remembers, but not the hold on the
-  // address itself — one session cannot free an address another is registering.
+  // "Not that address?" drops what THIS SESSION remembers, but not its hold. Since
+  // HIL-608 the hold belongs to this browser alone, and it survives for the sake of
+  // the return below: the way back to this very code screen is built on it.
   await page.getByTestId('auth-restart').click()
   await expect(page.getByTestId('auth-identifier')).toBeVisible()
 
-  // So typing it again is answered by the hold: the lookup alone puts the person
+  // So typing it again is answered by that hold: the lookup alone puts the person
   // back on the code step of the letter already sent, with nothing submitted and
-  // no second letter mailed.
+  // no second letter mailed. Only THIS browser's hold can answer that way — another
+  // browser typing the same address is offered the ways to register it.
   await typeInto(page.getByTestId('auth-identifier'), email)
   await expect(page.getByTestId('auth-code')).toBeVisible()
   await expect(page.getByTestId('auth-error')).toHaveCount(0)

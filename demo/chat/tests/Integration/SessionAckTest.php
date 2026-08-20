@@ -181,11 +181,16 @@ final class SessionAckTest extends IntegrationTestCase
     }
 
     /**
-     * A session converged into an account by somebody else's confirmation is marked too.
+     * A browser that lost the address is neither signed in nor marked (HIL-608).
+     *
+     * The mark says "you are in, and here is how you got there", so a browser that got
+     * nowhere must not carry one. It used to: the converge signed every session parked on
+     * the address into the new account and marked it REGISTERED, which is the capture
+     * itself wearing a friendly sentence.
      *
      * @throws HilosException When setup or registration handling fails
      */
-    public function testAConvergedSessionIsMarkedAsItIsSignedIn(): void
+    public function testALosingBrowserIsNeitherSignedInNorMarked(): void
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
@@ -198,11 +203,11 @@ final class SessionAckTest extends IntegrationTestCase
             $this->seedRegisterCode($email);
             $this->confirm($agent, 'ack-conv-first', $email, self::CODE);
 
-            $this->assertNotNull(
+            $this->assertNull(
                 Hilos::$rt->connections['ack-conv-second']?->userId,
-                'The waiting session is signed in by the confirmation it did not type',
+                'A browser that lost the address is signed into nothing',
             );
-            $this->assertSame(SessionAck::REGISTERED, $this->ackOf('ack-conv-second'));
+            $this->assertNull($this->ackOf('ack-conv-second'), 'And is told nothing about an account it never got');
         } finally {
             $this->cleanUp();
         }

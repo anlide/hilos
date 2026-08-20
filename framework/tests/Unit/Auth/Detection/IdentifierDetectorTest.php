@@ -32,6 +32,9 @@ final class IdentifierDetectorTest extends TestCase
     /** The project method set used wherever the assertion is not about the set itself. */
     private const array ENABLED = [AuthMethodKey::PASSWORD, AuthMethodKey::MAGIC_LINK, AuthMethodKey::SMS];
 
+    /** Any token will do: classification refuses, or the account lookup fails, before a hold is read. */
+    private const string SESSION_TOKEN = 'identifier-detector-test-session-token';
+
     /**
      * @return list<array{string}> Inputs that are neither an address nor a number
      */
@@ -84,7 +87,7 @@ final class IdentifierDetectorTest extends TestCase
     {
         $this->expectException(InvalidFormatException::class);
 
-        new IdentifierDetector(self::ENABLED)->detect($identifier);
+        new IdentifierDetector(self::ENABLED)->detect($identifier, self::SESSION_TOKEN);
     }
 
     /**
@@ -99,6 +102,6 @@ final class IdentifierDetectorTest extends TestCase
     {
         $this->expectException(LogicException::class);
 
-        new IdentifierDetector(self::ENABLED)->detect($identifier);
+        new IdentifierDetector(self::ENABLED)->detect($identifier, self::SESSION_TOKEN);
     }
 }

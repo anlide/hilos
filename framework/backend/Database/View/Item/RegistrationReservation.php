@@ -19,6 +19,7 @@ use Hilos\HilosException;
  * @property-read ?int $id
  * @property-read string $type
  * @property-read string $identifier
+ * @property-read string $sessionToken
  * @property-read string $expiresAt
  */
 final class RegistrationReservation extends DbItem
@@ -26,7 +27,7 @@ final class RegistrationReservation extends DbItem
     /**
      * Magic getter for reservation properties.
      *
-     * @param string $name Property name (id, type, identifier, expiresAt)
+     * @param string $name Property name (id, type, identifier, sessionToken, expiresAt)
      * @return mixed Property value
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
@@ -38,6 +39,7 @@ final class RegistrationReservation extends DbItem
             ObjectRegistrationReservation::id => $this->_object->id,
             ObjectRegistrationReservation::type => $this->_object->type,
             ObjectRegistrationReservation::identifier => $this->_object->identifier,
+            ObjectRegistrationReservation::sessionToken => $this->_object->sessionToken,
             ObjectRegistrationReservation::expiresAt => $this->_object->expiresAt,
             default => parent::__get($name),
         };

@@ -32,6 +32,12 @@ use Hilos\Hilos;
  * answering `pending` then would park a person who already has a way in on a code
  * screen for a registration that will never complete.
  *
+ * The hold it asks about is the ASKING BROWSER's, never anybody else's (HIL-608):
+ * a registration somebody else started does not take the address, and reporting it
+ * would turn this endpoint into an oracle for "is anyone signing up with this
+ * address right now" - a question the account lookup below is deliberately open
+ * about and this one has no reason to answer at all.
+ *
  * What a project ENABLES is an input, not a decision made here: the constructor
  * takes the method keys this project offers and every answer is intersected with
  * them, so a method switched off (or never wired) cannot be named to a surface
@@ -92,12 +98,13 @@ final class IdentifierDetector
      * Looks an identifier up and reports what the surface should offer for it.
      *
      * @param string $identifier Identifier as submitted; echoed back verbatim
+     * @param string $sessionToken Session cookie token of the asking browser, whose own hold may be reported
      * @return IdentifierDetection What is behind the identifier and what can be done with it
      * @throws InvalidFormatException When the identifier is neither an email address nor a phone number
      * @throws DatabaseException When an identity or reservation query fails
      * @throws LogicException When the identities or reservations object collection is unavailable
      */
-    public function detect(string $identifier): IdentifierDetection
+    public function detect(string $identifier, string $sessionToken): IdentifierDetection
     {
         $kind = self::kindOf($identifier);
         $normalized = $this->normalize($identifier, $kind);
@@ -107,7 +114,7 @@ final class IdentifierDetector
             return IdentifierDetection::owned($identifier, $normalized, $kind, $this->accountMethods($userId, $kind));
         }
 
-        if (new RegistrationReservationService()->findActive($normalized) !== null) {
+        if (new RegistrationReservationService()->findActiveForSession($sessionToken)?->identifier === $normalized) {
             return IdentifierDetection::held($identifier, $normalized, $kind);
         }
 
@@ -135,10 +142,11 @@ final class IdentifierDetector
     /**
      * Resolves the account behind a normalized identifier, or null when there is none.
      *
-     * An address is somebody's when it carries a `password` identity (verified or
-     * not - it is signed in with either way) or when it is a verified identity of
-     * any other type - the same pair a project asks before reserving an address for
-     * a registration. A number is somebody's when it carries an `sms` identity.
+     * An address is somebody's by the framework's one definition of that
+     * ({@see ObjectIdentities::findAccountIdByEmail()}, HIL-608) - the same question a
+     * project asks before starting a registration on it, and asked here through the
+     * same method so the two can no longer answer differently. A number is somebody's
+     * when it carries an `sms` identity.
      *
      * @param string $kind Classification (see IdentifierDetection::KIND_*)
      * @param string $normalized Identifier in its canonical form
@@ -154,8 +162,7 @@ final class IdentifierDetector
             return $identities->findByIdentity(IdentityType::SMS, $normalized)?->userId;
         }
 
-        return $identities->findByIdentity(IdentityType::PASSWORD, $normalized)?->userId
-            ?? $identities->findUserIdByVerifiedEmail($normalized);
+        return $identities->findAccountIdByEmail($normalized);
     }
 
     /**

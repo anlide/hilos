@@ -133,6 +133,25 @@ final class Identities extends DbCollection
     }
 
     /**
+     * Resolves the account an email already belongs to, by any road (HIL-608).
+     *
+     * THE definition of "this address is taken" on the read-facing side: delegates to
+     * the object collection's {@see ObjectIdentities::findAccountIdByEmail()} primitive,
+     * which counts a `password` identity whether or not it is verified and a verified
+     * identity of any other type. It is the question a registration submit asks before
+     * holding an address, and the one the identifier lookup asks about the same address -
+     * asked through one method so the two can no longer answer differently.
+     *
+     * @param string $email Lowercased account email
+     * @return ?int Owning user id when the address is somebody's, or null when it is free
+     * @throws DatabaseException On database error while resolving the identity
+     */
+    public function findAccountIdByEmail(string $email): ?int
+    {
+        return $this->objectCollection->findAccountIdByEmail($email);
+    }
+
+    /**
      * Resolves the user id owning any identity for an email, verified or not (HIL-284).
      *
      * Verification-agnostic sibling of {@see findUserIdByVerifiedEmail()}: delegates
