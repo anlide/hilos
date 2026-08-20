@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Auth;
 
 use Hilos\Auth\Verification\NotificationVerificationDeliverer;
+use Hilos\Auth\Verification\VerificationDeliverable;
 use Hilos\Auth\Verification\VerificationDeliverer;
 use Hilos\Database\Verification\VerificationType;
 use PHPUnit\Framework\TestCase;
@@ -24,8 +25,8 @@ final class NotificationVerificationDelivererTest extends TestCase
         $sms = new RecordingVerificationDeliverer();
         $router = new NotificationVerificationDeliverer($mail, $sms);
 
-        $router->deliver('+15551234567', VerificationType::SMS_LOGIN, '111');
-        $router->deliver('+15551234567', VerificationType::SMS_ADD, '222');
+        $router->deliver('+15551234567', VerificationType::SMS_LOGIN, VerificationDeliverable::code('111'));
+        $router->deliver('+15551234567', VerificationType::SMS_ADD, VerificationDeliverable::code('222'));
 
         self::assertSame([VerificationType::SMS_LOGIN, VerificationType::SMS_ADD], $sms->types);
         self::assertSame([], $mail->types);
@@ -37,8 +38,12 @@ final class NotificationVerificationDelivererTest extends TestCase
         $sms = new RecordingVerificationDeliverer();
         $router = new NotificationVerificationDeliverer($mail, $sms);
 
-        $router->deliver('user@example.com', VerificationType::REGISTER_CONFIRM, '333');
-        $router->deliver('user@example.com', VerificationType::MAGIC_LINK, 'token');
+        $router->deliver('user@example.com', VerificationType::REGISTER_CONFIRM, VerificationDeliverable::code('333'));
+        $router->deliver(
+            'user@example.com',
+            VerificationType::MAGIC_LINK,
+            VerificationDeliverable::magicLink('https://app.example/auth/magic?t=token', '135790'),
+        );
 
         self::assertSame([VerificationType::REGISTER_CONFIRM, VerificationType::MAGIC_LINK], $mail->types);
         self::assertSame([], $sms->types);
@@ -53,7 +58,7 @@ final class RecordingVerificationDeliverer implements VerificationDeliverer
     /** @var list<string> Verification types delivered through this double. */
     public array $types = [];
 
-    public function deliver(string $identifier, string $type, string $code): void
+    public function deliver(string $identifier, string $type, VerificationDeliverable $deliverable): void
     {
         $this->types[] = $type;
     }

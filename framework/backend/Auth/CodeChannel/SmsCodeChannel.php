@@ -6,6 +6,7 @@ namespace Hilos\Auth\CodeChannel;
 
 use Hilos\Auth\PhoneNumber;
 use Hilos\Auth\Verification\SmsVerificationDeliverer;
+use Hilos\Auth\Verification\VerificationDeliverable;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Verification\VerificationType;
@@ -100,6 +101,6 @@ final class SmsCodeChannel extends CodeChannel
      */
     public function handoff(string $identifier, string $type, string $code): void
     {
-        new SmsVerificationDeliverer()->deliver($identifier, $type, $code);
+        new SmsVerificationDeliverer()->deliver($identifier, $type, VerificationDeliverable::code($code));
     }
 }

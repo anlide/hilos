@@ -19,6 +19,7 @@ use Demo\Chat\Pages\DTO\Main\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Pages\DTO\Main\CompletePasswordResetActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmPasswordResetActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmMagicLinkActionDTO;
+use Demo\Chat\Pages\DTO\Main\ConfirmMagicLinkCodeActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmRegisterActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmPhoneCodeActionDTO;
 use Demo\Chat\Pages\DTO\Main\DetectIdentifierActionDTO;
@@ -42,6 +43,7 @@ use Demo\Chat\Core\Router\DTO\PasskeyOptionsSignalData;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
+use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Detection\IdentifierDetection;
@@ -122,6 +124,7 @@ final class MainPage extends AbstractPage
         HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE => ConfirmPhoneCodeActionDTO::class,
         HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK => RequestMagicLinkActionDTO::class,
         HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK => ConfirmMagicLinkActionDTO::class,
+        HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK_CODE => ConfirmMagicLinkCodeActionDTO::class,
         HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM => RequestRegisterConfirmActionDTO::class,
         HilosSignalConstants::HILOS_CONFIRM_REGISTER => ConfirmRegisterActionDTO::class,
         HilosSignalConstants::HILOS_ABANDON_REGISTRATION => AbandonRegistrationActionDTO::class,
@@ -175,6 +178,7 @@ final class MainPage extends AbstractPage
         HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE,
         HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK,
         HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK,
+        HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK_CODE,
         HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM,
         HilosSignalConstants::HILOS_CONFIRM_REGISTER,
         HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM,
@@ -416,6 +420,12 @@ final class MainPage extends AbstractPage
                     throw new InvalidActionPayloadException($action, ConfirmMagicLinkActionDTO::class, $dto);
                 }
                 return $this->handleConfirmMagicLink($dto);
+
+            case HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK_CODE:
+                if (!$dto instanceof ConfirmMagicLinkCodeActionDTO) {
+                    throw new InvalidActionPayloadException($action, ConfirmMagicLinkCodeActionDTO::class, $dto);
+                }
+                return $this->handleConfirmMagicLinkCode($dto);
 
             case HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM:
                 if (!$dto instanceof RequestRegisterConfirmActionDTO) {
@@ -1193,19 +1203,10 @@ final class MainPage extends AbstractPage
      * travels (an OAuth sign-up over the live hold), and a link sent to a stranger
      * still ends in a sign-in rather than a dead end.
      *
-     * Four answers, in this order. A token that does not open anything is answered
-     * first and under a code of its own, so the return screen offers a new link
-     * instead of accusing a typo nobody made. Then the address: an account owns it,
-     * and this session becomes that account - the hold it may still carry is dropped,
-     * since nobody is registering an address that already resolved. No account and a
-     * live hold is the registration finishing: a user, the identity the hold's type
-     * says (a magic-link one, secret-less), the "registered in chat" event, and a
-     * signed-in session. No account and no hold is a link that outlived its hold, and
-     * the surface rolls back to the address field to start again.
-     *
-     * Only THIS session is signed in, whichever branch runs (Design p.4): the link
-     * proves the address to whoever opened it, and that is the browser holding this
-     * connection. A tab left waiting on another device stays on its check-inbox screen.
+     * A token that does not open anything is answered first and under a code of its own,
+     * so the return screen offers a new link instead of accusing a typo nobody made. What
+     * a proven address then means - sign-in, or the registration finishing - is decided by
+     * {@see signInProvenAddress()}, shared with the code half of the same letter.
      *
      * @param ConfirmMagicLinkActionDTO $dto Parsed confirm payload (email, token)
      * @return AuthFlowOutcome Where the surface goes next
@@ -1231,6 +1232,78 @@ final class MainPage extends AbstractPage
             );
         }
 
+        return $this->signInProvenAddress($email, $connection);
+    }
+
+    /**
+     * Opens the letter's other half: signs the typed-in address in, registering it if needed.
+     *
+     * The same ceremony as {@see handleConfirmMagicLink()}, entered from the waiting screen
+     * instead of from a clicked link (HIL-606). Whoever proved the address gets the same
+     * ending, which is why the whole tail is shared: a person who typed six digits rather
+     * than clicking must not end up a different kind of member.
+     *
+     * The one difference is where a bad secret leaves the surface. A clicked link rolls back
+     * to the address field, because its reader arrived on an empty tab and has nowhere else
+     * to stand; a typed code refuses in place, because the person is still on the screen that
+     * asked for it and has most likely just mistyped - the field, the countdown and the
+     * resend button are all still right there.
+     *
+     * @param ConfirmMagicLinkCodeActionDTO $dto Parsed confirm payload (email, code)
+     * @return AuthFlowOutcome Where the surface goes next
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws EmptyValueException When the display name the new account is created with is empty
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws HilosException When verification, the account, identity, event, or session write fails
+     */
+    private function handleConfirmMagicLinkCode(ConfirmMagicLinkCodeActionDTO $dto): AuthFlowOutcome
+    {
+        if (Hilos::$rt->selfConnection === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $connection = Hilos::$rt->selfConnection;
+
+        $email = strtolower($dto->email);
+        if (!new MagicLinkService()->verifyCode($email, $dto->code)) {
+            return AuthFlowOutcome::refuse(
+                AuthFlowOutcome::CODE_MAGIC_LINK_INVALID,
+                self::MAGIC_LINK_INVALID_MESSAGE,
+            );
+        }
+
+        return $this->signInProvenAddress($email, $connection);
+    }
+
+    /**
+     * Signs this session in on an address the magic-link ceremony just proved.
+     *
+     * The shared ending of both halves of the letter (HIL-606). It is one method and not
+     * two copies because the branch it picks decides WHO the person becomes, and two copies
+     * would eventually mean that clicking a link and typing its code produce different
+     * members - a difference nothing in the ceremony justifies.
+     *
+     * Three answers, in this order. An account owns the address, and this session becomes
+     * that account - the hold it may still carry is dropped, since nobody is registering an
+     * address that already resolved. No account and a live hold is the registration
+     * finishing: a user, the identity the hold's type says (a magic-link one, secret-less),
+     * the "registered in chat" event, and a signed-in session. No account and no hold is a
+     * letter that outlived its hold, and the surface rolls back to the address field to
+     * start again - the one branch where a typed code also leaves the screen, because the
+     * address is not held any more and there is nothing left here to finish.
+     *
+     * Only THIS session is signed in, whichever branch runs (Design p.4): the letter proves
+     * the address to whoever answered it, and that is the browser holding this connection.
+     * A tab left waiting on another device stays on its check-inbox screen.
+     *
+     * @param string $email Lowercased address the ceremony proved
+     * @param Connection $connection Live WebSocket connection this answer arrived on
+     * @return AuthFlowOutcome Where the surface goes next
+     * @throws EmptyValueException When the display name the new account is created with is empty
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws HilosException When the account, identity, event, or session write fails
+     */
+    private function signInProvenAddress(string $email, Connection $connection): AuthFlowOutcome
+    {
         $reservations = new RegistrationReservationService();
 
         $userId = Hilos::$db->identities->findUserIdByVerifiedEmail($email);
@@ -1238,8 +1311,8 @@ final class MainPage extends AbstractPage
             $reservations->release($email);
 
             // Before the sign-in, so the identity and the news arrive in one frame (HIL-422).
-            // Following a link is the whole of what this ending asks for, so "you are in" is
-            // all there is to say about it.
+            // Answering the letter is the whole of what this ending asks for, so "you are in"
+            // is all there is to say about it.
             $this->agent->markSessionAck($connection->sessionToken, SessionAck::SIGNED_IN);
             $this->agent->authenticateSession($connection->sessionToken, $userId, $connection->acceptKey);
 
@@ -1262,7 +1335,7 @@ final class MainPage extends AbstractPage
         $reservations->confirmInto($reservation, $userId);
 
         // Announce the new member in the chat event stream, exactly as the code path
-        // does: the link is the other way into the same registration.
+        // does: the letter is the other way into the same registration.
         Hilos::$db->events->actions->addUserRegistered($userId);
 
         // Before the sign-in, so the identity and the news arrive in one frame (HIL-422).

@@ -30,20 +30,25 @@ use Hilos\Mail\Template\MailTemplateCatalogConstants;
  * already assembled: {@see VerificationService::issue()} builds the clickable URL from the
  * project's return address before it hands anything to a deliverer, so what lands in the
  * link param is the address the recipient clicks (HIL-417).
+ *
+ * That letter carries TWO params rather than one (HIL-606): the URL to click and the code
+ * to type. Which shape is being delivered is read off the {@see VerificationDeliverable}
+ * and not off the type, so the params can never describe a different letter than the one
+ * the service minted.
  */
 final class MailVerificationDeliverer implements VerificationDeliverer
 {
     /**
-     * Emails a plaintext verification code, resolving the template from the type.
+     * Emails a freshly issued challenge, resolving the template from the type.
      *
-     * @param string $identifier Normalized target email the code was issued for
+     * @param string $identifier Normalized target email the challenge was issued for
      * @param string $type Verification type (see VerificationType)
-     * @param string $code Plaintext code (or assembled magic-link URL) to deliver
+     * @param VerificationDeliverable $deliverable Plaintext content of the letter
      * @throws EnvException When the mail worker count is unreadable while sharding the address
-     * @throws ValidationException When the code was issued for a blank address
+     * @throws ValidationException When the challenge was issued for a blank address
      * @throws InvalidArgumentException When the mail send signal cannot be named or queued
      */
-    public function deliver(string $identifier, string $type, string $code): void
+    public function deliver(string $identifier, string $type, VerificationDeliverable $deliverable): void
     {
         $templateKey = $this->templateKeyFor($type);
         if ($templateKey === null) {
@@ -54,7 +59,7 @@ final class MailVerificationDeliverer implements VerificationDeliverer
             to: $identifier,
             shardKey: HilosMailer::shardKeyForAddress($identifier),
             templateKey: $templateKey,
-            params: $this->paramsFor($type, $code),
+            params: $this->paramsFor($deliverable),
         ));
     }
 
@@ -77,19 +82,26 @@ final class MailVerificationDeliverer implements VerificationDeliverer
     }
 
     /**
-     * Builds the template render params carrying the code under the type's param key.
+     * Builds the template render params from the shape of what is being delivered.
      *
-     * The magic-link template embeds a link, the code-carrying templates a code, so the
-     * secret is placed under the matching param key.
+     * A deliverable carrying a link is a magic-link letter and needs both of that
+     * template's params; anything else is one of the code-carrying templates and needs
+     * the one. The question is asked of the deliverable rather than of the type because
+     * the deliverable is what the mint actually produced - keyed on the type, a letter
+     * could be described by params for a secret nobody issued.
      *
-     * @param string $type Verification type (see VerificationType)
-     * @param string $code Plaintext code (or assembled magic-link URL)
-     * @return array<string, string> Single-entry render params for the resolved template
+     * @param VerificationDeliverable $deliverable Plaintext content of the letter
+     * @return array<string, string> Render params for the resolved template
      */
-    private function paramsFor(string $type, string $code): array
+    private function paramsFor(VerificationDeliverable $deliverable): array
     {
-        return $type === VerificationType::MAGIC_LINK
-            ? [MagicLinkMailTemplate::PARAM_LINK => $code]
-            : [AbstractVerificationCodeMailTemplate::PARAM_CODE => $code];
+        if ($deliverable->link === null) {
+            return [AbstractVerificationCodeMailTemplate::PARAM_CODE => $deliverable->code];
+        }
+
+        return [
+            MagicLinkMailTemplate::PARAM_LINK => $deliverable->link,
+            MagicLinkMailTemplate::PARAM_CODE => $deliverable->code,
+        ];
     }
 }

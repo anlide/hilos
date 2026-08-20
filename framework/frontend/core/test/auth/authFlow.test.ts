@@ -576,6 +576,14 @@ describe('screenKey — all thirteen screens', () => {
       [{ step: 'code', intent: 'register' }, 'confirm_identifier'],
       [{ step: 'code', intent: 'login' }, 'enter_code'],
       [{ step: 'code', intent: 'recovery' }, 'reset_code'],
+      [
+        { step: 'code', intent: 'register', methodKey: MAGIC_LINK_METHOD_KEY },
+        'check_inbox',
+      ],
+      [
+        { step: 'code', intent: 'login', methodKey: MAGIC_LINK_METHOD_KEY },
+        'check_inbox',
+      ],
       [{ step: 'second_factor', intent: 'login' }, 'two_step'],
       [{ step: 'set_password', intent: 'recovery' }, 'choose_password'],
       [{ step: 'external', methodKey: 'oauth:github' }, 'waiting_external'],
@@ -702,7 +710,7 @@ describe('registration: consent is a local step before anything is created', () 
       expect.any(AbortSignal),
     )
     expect(onSubmit).not.toHaveBeenCalled()
-    expect(flow.flow.get().step).toBe('external')
+    expect(flow.flow.get().step).toBe('code')
     expect(flow.screenKey.get()).toBe('check_inbox')
     expect(flow.resendAvailableAt.get()).toBe(Date.now() + 60 * SECOND_MS)
   })
@@ -739,8 +747,76 @@ describe('registration: consent is a local step before anything is created', () 
       expect.anything(),
       expect.any(AbortSignal),
     )
+    expect(flow.flow.get().step).toBe('code')
+    expect(flow.screenKey.get()).toBe('check_inbox')
+  })
+
+  it('a sent letter leaves the code field empty, whatever was in it before', async () => {
+    const flow = setup({ onMethodAction: vi.fn(async () => ({ ok: true })) })
+    await typeAndDetect(flow, 'a@b.com')
+    flow.setField('code', '999999')
+    await flow.chooseMethod(MAGIC_LINK_METHOD_KEY)
+    expect(flow.form.get().code).toBe('')
+    expect(flow.submittable.get()).toBe(false)
+  })
+
+  it('a send in flight still parks in external, where a cancel can end it', async () => {
+    let release: () => void = () => undefined
+    const sending = new Promise<AuthFlowSubmitOutcome>((resolve) => {
+      release = () => {
+        resolve({ ok: true })
+      }
+    })
+    const flow = setup({ onMethodAction: vi.fn(async () => sending) })
+    await typeAndDetect(flow, 'a@b.com')
+    const choosing = flow.chooseMethod(MAGIC_LINK_METHOD_KEY)
     expect(flow.flow.get().step).toBe('external')
     expect(flow.screenKey.get()).toBe('check_inbox')
+    release()
+    await choosing
+    expect(flow.flow.get().step).toBe('code')
+  })
+
+  it('a code the backend refuses leaves the waiting screen exactly where it is', async () => {
+    const onSubmit = vi.fn(async () => ({
+      ok: false,
+      code: 'magic_link_invalid',
+      message: 'That code did not work',
+    }))
+    const flow = setup({
+      onSubmit,
+      onMethodAction: vi.fn(async () => ({ ok: true })),
+    })
+    await typeAndDetect(flow, 'a@b.com')
+    await flow.chooseMethod(MAGIC_LINK_METHOD_KEY)
+    flow.setField('code', '000001')
+    await flow.submit()
+    expect(onSubmit).toHaveBeenCalledWith(
+      'submit',
+      expect.objectContaining({
+        step: 'code',
+        methodKey: MAGIC_LINK_METHOD_KEY,
+      }),
+      expect.objectContaining({ code: '000001' }),
+    )
+    expect(flow.flow.get().step).toBe('code')
+    expect(flow.screenKey.get()).toBe('check_inbox')
+    expect(flow.error.get()).toEqual({
+      message: 'That code did not work',
+      code: 'magic_link_invalid',
+    })
+  })
+
+  it('a refused send falls back to the identifier field, not the code step', async () => {
+    const flow = setup({
+      onMethodAction: async () => ({ ok: false, code: 'send_cap_reached' }),
+    })
+    await typeAndDetect(flow, 'a@b.com')
+    await flow.chooseMethod(MAGIC_LINK_METHOD_KEY)
+    expect(flow.flow.get()).toMatchObject({
+      step: 'identifier',
+      methodKey: null,
+    })
   })
 })
 

@@ -131,7 +131,7 @@ const SUBMIT_LABELS: Record<AuthFlowScreen, string> = {
   choose_password: 'Save password',
   two_step: 'Verify',
   waiting_external: '',
-  check_inbox: '',
+  check_inbox: 'Continue',
   done_registered: 'Continue',
   done_password_changed: 'Continue',
   done_signed_in: 'Continue',
@@ -986,8 +986,9 @@ onUnmounted(() => {
     </form>
 
     <!-- The one code screen, whichever code it is: confirming an address,
-    signing a number in, or proving a mailbox for a reset. What differs is the
-    heading, the line naming where the code went, and the way out. -->
+    signing a number in, proving a mailbox for a reset, or typing the digits that
+    came in a sign-in letter (HIL-606). What differs is the heading, the line
+    naming where the code went, and the way out. -->
     <form
       v-else-if="state.step === 'code'"
       novalidate
@@ -1016,6 +1017,20 @@ onUnmounted(() => {
       >
         Sent via {{ deliveredChannel }}.
       </p>
+
+      <!-- The letter went out with two ways back in it, so the screen says so
+      before it asks for one: the link is still the shorter road for whoever can
+      click it, and the field below is for whoever cannot. -->
+      <div
+        v-if="screenKey === 'check_inbox'"
+        class="alert alert-success small py-2"
+        role="status"
+        data-id="auth-link-sent"
+      >
+        <i class="bi bi-envelope-check me-1" aria-hidden="true" />
+        We've sent a sign-in link to <strong>{{ form.identifier }}</strong
+        >. Open it to continue.
+      </div>
 
       <div class="mb-3">
         <label class="form-label small fw-semibold" for="auth-code">Code</label>

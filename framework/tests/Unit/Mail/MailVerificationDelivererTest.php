@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Mail;
 
 use Hilos\Auth\Verification\MailVerificationDeliverer;
+use Hilos\Auth\Verification\VerificationDeliverable;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\AgentSignalData;
@@ -63,7 +64,11 @@ final class MailVerificationDelivererTest extends TestCase
         $router = new MailVerificationDelivererTestSignalRouter();
         Hilos::$sr = $router;
 
-        new MailVerificationDeliverer()->deliver('user@example.com', VerificationType::REGISTER_CONFIRM, '123456');
+        new MailVerificationDeliverer()->deliver(
+            'user@example.com',
+            VerificationType::REGISTER_CONFIRM,
+            VerificationDeliverable::code('123456'),
+        );
 
         self::assertCount(1, $router->captured);
         $signal = $router->captured[0];
@@ -94,7 +99,7 @@ final class MailVerificationDelivererTest extends TestCase
         ];
 
         foreach ($expected as $type => $templateKey) {
-            $deliverer->deliver('user@example.com', $type, '000000');
+            $deliverer->deliver('user@example.com', $type, VerificationDeliverable::code('000000'));
         }
 
         self::assertSame(array_values($expected), array_map(
@@ -103,18 +108,28 @@ final class MailVerificationDelivererTest extends TestCase
         ));
     }
 
-    public function testMagicLinkForwardsTokenAsLinkParam(): void
+    public function testMagicLinkForwardsBothHalvesOfTheLetter(): void
     {
         $router = new MailVerificationDelivererTestSignalRouter();
         Hilos::$sr = $router;
 
-        new MailVerificationDeliverer()->deliver('user@example.com', VerificationType::MAGIC_LINK, 'deadbeeftoken');
+        new MailVerificationDeliverer()->deliver(
+            'user@example.com',
+            VerificationType::MAGIC_LINK,
+            VerificationDeliverable::magicLink('https://app.example/auth/magic?t=deadbeef', '135790'),
+        );
 
         self::assertCount(1, $router->captured);
         $payload = $router->captured[0]['data']->data;
         self::assertInstanceOf(MailSendSignalData::class, $payload);
         self::assertSame(MailTemplateCatalogConstants::AUTH_MAGIC_LINK, $payload->templateKey);
-        self::assertSame([MagicLinkMailTemplate::PARAM_LINK => 'deadbeeftoken'], $payload->params);
+        self::assertSame(
+            [
+                MagicLinkMailTemplate::PARAM_LINK => 'https://app.example/auth/magic?t=deadbeef',
+                MagicLinkMailTemplate::PARAM_CODE => '135790',
+            ],
+            $payload->params,
+        );
     }
 
     public function testSmsTypeIsNoOp(): void
@@ -122,7 +137,11 @@ final class MailVerificationDelivererTest extends TestCase
         $router = new MailVerificationDelivererTestSignalRouter();
         Hilos::$sr = $router;
 
-        new MailVerificationDeliverer()->deliver('+15551234567', VerificationType::SMS_LOGIN, '654321');
+        new MailVerificationDeliverer()->deliver(
+            '+15551234567',
+            VerificationType::SMS_LOGIN,
+            VerificationDeliverable::code('654321'),
+        );
 
         self::assertCount(0, $router->captured);
     }

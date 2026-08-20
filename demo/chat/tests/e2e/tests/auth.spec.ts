@@ -1,6 +1,10 @@
 import { test, expect, type Locator } from '@playwright/test'
 
-import { mailsTo, readRegisterCode } from '../helpers/mail'
+import {
+  mailsTo,
+  readMagicLinkCode,
+  readRegisterCode,
+} from '../helpers/mail'
 import {
   clickSubmit,
   continueFromDone,
@@ -241,6 +245,71 @@ test('holds the address on submit and creates the account only on the mailed cod
   await continueFromDone(page)
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+})
+
+test('registers a stranger by the code that came with the sign-in link', async ({
+  page,
+}) => {
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+
+  // A free address: the lookup turns the one field into a registration, and the
+  // envelope beside the password is the passwordless way through it.
+  await typeInto(page.getByTestId('auth-identifier'), email)
+  await expect(page.getByTestId('auth-password')).toBeVisible()
+  await page.getByTestId('auth-icon-magic-link').click()
+
+  // Nothing is sent before the terms: accepting them is what mails the letter.
+  await page.getByTestId('auth-consent-accept').check()
+  await clickSubmit(page.getByTestId('auth-submit'))
+
+  // The screen the person asked for does not change under them — it grows a
+  // field (HIL-606). The link is still there to click; this spec is the person
+  // who cannot, because their mail is open on another device.
+  await expect(page.getByTestId('auth-heading')).toHaveText('Check your inbox')
+  await expect(page.getByTestId('auth-link-sent')).toBeVisible()
+  await expect(page.getByTestId('auth-code')).toBeVisible()
+
+  await typeInto(page.getByTestId('auth-code'), await readMagicLinkCode(email))
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await continueFromDone(page)
+  await expect(page.getByTestId('profile-name')).toHaveText(nameFromEmail(email))
+
+  // One letter, whichever half was used — the code did not buy a second one.
+  expect(await mailsTo(email)).toHaveLength(1)
+})
+
+test('signs a member in by the code, on an address that already has an account', async ({
+  page,
+}) => {
+  // A DIFFERENT account from the case above, and made the ordinary way: the send
+  // gate holds a second letter to one address for a minute, so a spec that asked
+  // twice for the same one would be waiting on a letter nobody mailed.
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await register(page, email)
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await logout(page)
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await typeInto(page.getByTestId('auth-identifier'), email)
+  await expect(page.getByTestId('auth-password')).toBeVisible()
+  await page.getByTestId('auth-icon-magic-link').click()
+
+  // An address that has an account is not held and shows no terms: the letter
+  // goes out on the click.
+  await expect(page.getByTestId('auth-heading')).toHaveText('Check your inbox')
+  await expect(page.getByTestId('auth-code')).toBeVisible()
+
+  await typeInto(page.getByTestId('auth-code'), await readMagicLinkCode(email))
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await continueFromDone(page)
+  await expect(page.getByTestId('profile-name')).toHaveText(nameFromEmail(email))
 })
 
 test('converges a second waiting tab onto the registration the first one confirms', async ({

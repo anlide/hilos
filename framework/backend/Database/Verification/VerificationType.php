@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Verification;
 
+use Hilos\Auth\MagicLink\MagicLinkService;
 use Hilos\Auth\Verification\VerificationService;
 
 /**
@@ -35,6 +36,13 @@ use Hilos\Auth\Verification\VerificationService;
  * that `user_id` and it verifies through {@see VerificationService::verify()} (the
  * handler asserts the resolved user matches the session user, then writes the
  * password identity on the now-proven email).
+ * `magic_link_code` is the companion of `magic_link` (HIL-606) — the six digits that
+ * ride in the same letter as the link, for the person who reads the mail on one device
+ * and stands on the sign-in screen on another. It is minted inside the SAME issue as
+ * the link and therefore passes no send gate of its own (one ceremony, one cooldown,
+ * one letter); its attempt ceiling IS its own, so guessing the code cannot spend the
+ * link's budget and vice versa. Whichever half is answered first consumes the other
+ * ({@see MagicLinkService::verifyCode()}), which is what the letter promises.
  * `identifier` is the target email (lowercased) for the email-based types.
  */
 final class VerificationType
@@ -44,6 +52,7 @@ final class VerificationType
     public const string EMAIL_CHANGE = 'email_change';
     public const string SMS_LOGIN = 'sms_login';
     public const string MAGIC_LINK = 'magic_link';
+    public const string MAGIC_LINK_CODE = 'magic_link_code';
     public const string SMS_ADD = 'sms_add';
     public const string EMAIL_ADD = 'email_add';
 
@@ -60,6 +69,7 @@ final class VerificationType
             self::EMAIL_CHANGE,
             self::SMS_LOGIN,
             self::MAGIC_LINK,
+            self::MAGIC_LINK_CODE,
             self::SMS_ADD,
             self::EMAIL_ADD,
         ];

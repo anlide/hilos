@@ -46,6 +46,10 @@ export const AUTH_ACTION_REQUEST_MAGIC_LINK = 'hilos_request_magic_link'
 /** Client→server: submit an email magic-link sign-in token (PHP `HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK`). */
 export const AUTH_ACTION_CONFIRM_MAGIC_LINK = 'hilos_confirm_magic_link'
 
+/** Client→server: submit the code that rode in the magic-link letter (PHP `HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK_CODE`). */
+export const AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE =
+  'hilos_confirm_magic_link_code'
+
 /** Client→server: give up the registration this session was waiting on (PHP `HilosSignalConstants::HILOS_ABANDON_REGISTRATION`). */
 export const AUTH_ACTION_ABANDON_REGISTRATION = 'hilos_abandon_registration'
 

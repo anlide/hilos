@@ -22,6 +22,7 @@ final class VerificationTypeTest extends TestCase
         self::assertSame('email_change', VerificationType::EMAIL_CHANGE);
         self::assertSame('sms_login', VerificationType::SMS_LOGIN);
         self::assertSame('magic_link', VerificationType::MAGIC_LINK);
+        self::assertSame('magic_link_code', VerificationType::MAGIC_LINK_CODE);
         self::assertSame('sms_add', VerificationType::SMS_ADD);
         self::assertSame('email_add', VerificationType::EMAIL_ADD);
     }
@@ -34,6 +35,7 @@ final class VerificationTypeTest extends TestCase
             VerificationType::EMAIL_CHANGE,
             VerificationType::SMS_LOGIN,
             VerificationType::MAGIC_LINK,
+            VerificationType::MAGIC_LINK_CODE,
             VerificationType::SMS_ADD,
             VerificationType::EMAIL_ADD,
         ];
@@ -50,6 +52,7 @@ final class VerificationTypeTest extends TestCase
                 VerificationType::EMAIL_CHANGE,
                 VerificationType::SMS_LOGIN,
                 VerificationType::MAGIC_LINK,
+                VerificationType::MAGIC_LINK_CODE,
                 VerificationType::SMS_ADD,
                 VerificationType::EMAIL_ADD,
             ],
@@ -83,6 +86,7 @@ final class VerificationTypeTest extends TestCase
         self::assertFalse(VerificationType::isSms(VerificationType::PASSWORD_RESET));
         self::assertFalse(VerificationType::isSms(VerificationType::EMAIL_CHANGE));
         self::assertFalse(VerificationType::isSms(VerificationType::MAGIC_LINK));
+        self::assertFalse(VerificationType::isSms(VerificationType::MAGIC_LINK_CODE));
         self::assertFalse(VerificationType::isSms(VerificationType::EMAIL_ADD));
     }
 

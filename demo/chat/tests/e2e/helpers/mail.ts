@@ -25,6 +25,17 @@ const MAILPIT_URL = process.env.MAILPIT_URL ?? 'http://mailpit-test:8025'
 /** The subject RegisterConfirmMailTemplate sends the registration code under. */
 const REGISTER_SUBJECT = 'Confirm your email address'
 
+/** The subject MagicLinkMailTemplate sends the sign-in letter under. */
+const MAGIC_LINK_SUBJECT = 'Your sign-in link'
+
+// The magic-link letter carries TWO secrets (HIL-606), and only one of them is
+// typed: the line that offers the code is what the read anchors on. A bare
+// digit-run match cannot be used here — the URL above it is hex, so any four
+// digits inside the token would answer first, and the spec would type a slice of
+// somebody's link into the code field and call the flow broken.
+const MAGIC_LINK_CODE_PATTERN =
+  /Or enter this code on the page that asked for it:\s*(\d+)/
+
 /** One intercepted message, as a spec reads it back. */
 export interface InterceptedMail {
   /** Subject line, which is how a wait picked this message out. */
@@ -106,6 +117,23 @@ export async function waitForMailCode(
  */
 export async function readRegisterCode(email: string): Promise<string> {
   return waitForMailCode(email, REGISTER_SUBJECT)
+}
+
+/**
+ * Wait for the sign-in letter and return the code it carries beside the link.
+ *
+ * @param email The address the letter was sent to.
+ * @returns The plaintext companion sign-in code.
+ * @throws Error When the delivered letter offers no code to type.
+ */
+export async function readMagicLinkCode(email: string): Promise<string> {
+  const mail = await waitForMailTo(email, MAGIC_LINK_SUBJECT)
+  const code = MAGIC_LINK_CODE_PATTERN.exec(mail.text)?.[1]
+  if (code === undefined) {
+    throw new Error(`sign-in letter to ${email} offered no code to type`)
+  }
+
+  return code
 }
 
 /**

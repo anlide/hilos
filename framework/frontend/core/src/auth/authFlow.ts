@@ -877,9 +877,10 @@ const DONE_SCREENS: Record<AuthIntent, AuthFlowScreen> = {
 
 /**
  * The derived semantic heading key — the one place the axes add up to a screen.
- * A parked magic link waits on `check_inbox` while every other ceremony waits
- * on `waiting_external`; the code and done screens split by intent
- * ({@link CODE_SCREENS}, {@link DONE_SCREENS}).
+ * A magic link waits on `check_inbox` through BOTH of its steps — the send in
+ * flight (`external`) and the code screen that follows it — while every other
+ * ceremony waits on `waiting_external`; the remaining code and done screens
+ * split by intent ({@link CODE_SCREENS}, {@link DONE_SCREENS}).
  *
  * @param flow The current flow state.
  */
@@ -890,7 +891,14 @@ export function screenKeyOf(flow: AuthFlowState): AuthFlowScreen {
     case 'consent':
       return 'terms'
     case 'code':
-      return CODE_SCREENS[flow.intent]
+      // The heading must not change under the person when the letter goes out
+      // (HIL-606): they asked for a letter and they are still waiting on it, so
+      // the screen stays `check_inbox` and merely grows a field. Every other
+      // code screen is named by its intent, which a magic link has no use for —
+      // one letter serves both signing in and registering.
+      return flow.methodKey === MAGIC_LINK_METHOD_KEY
+        ? 'check_inbox'
+        : CODE_SCREENS[flow.intent]
     case 'second_factor':
       return 'two_step'
     case 'set_password':
@@ -902,6 +910,22 @@ export function screenKeyOf(flow: AuthFlowState): AuthFlowScreen {
     case 'done':
       return DONE_SCREENS[flow.intent]
   }
+}
+
+/**
+ * Where a successful method send leaves the surface.
+ *
+ * The core decides this, not the backend (HIL-606): the answer to a send says
+ * only that a letter went out, and which screen that earns is a property of the
+ * METHOD. A magic link earns the code step, because its letter can also be
+ * answered by hand; every other method has nothing for the person to do but wait
+ * on the ceremony it started.
+ *
+ * @param methodKey The icon method whose send just succeeded.
+ * @returns The step to move to.
+ */
+function stepAfterMethodSend(methodKey: string): AuthStep {
+  return methodKey === MAGIC_LINK_METHOD_KEY ? 'code' : 'external'
 }
 
 /**
@@ -1297,7 +1321,13 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
             ),
           )
           if (outcome !== undefined && outcome.ok) {
-            flow.set({ ...flow.get(), step: 'external' })
+            // A foreign challenge's code must not make this screen submittable
+            // the moment it appears, which is what `startRecovery` clears it for.
+            form.set({ ...form.get(), code: '' })
+            flow.set({
+              ...flow.get(),
+              step: stepAfterMethodSend(methodKey),
+            })
           }
         } finally {
           if (ceremony === run) {
@@ -1368,7 +1398,16 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         applyOutcome(outcome)
         if (!outcome.ok) {
           flow.set({ ...state, step: 'identifier', methodKey: null })
+
+          return
         }
+        // The park in `external` held the flight, where a cancel can still end
+        // the ceremony; the send having landed, the method says where the person
+        // goes next. The code field is cleared first, for the same reason
+        // `startRecovery` clears it: a code left over from another challenge
+        // would make the screen submittable before anything was typed.
+        form.set({ ...form.get(), code: '' })
+        flow.set({ ...flow.get(), step: stepAfterMethodSend(key) })
       } finally {
         if (ceremony === run) {
           ceremony = null

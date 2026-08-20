@@ -68,7 +68,10 @@ final class MailDeliveryChannelAgentTest extends TestCase
             to: 'user@example.com',
             shardKey: 1,
             templateKey: MailTemplateCatalogConstants::AUTH_MAGIC_LINK,
-            params: [MagicLinkMailTemplate::PARAM_LINK => 'https://app.example/x'],
+            params: [
+                MagicLinkMailTemplate::PARAM_LINK => 'https://app.example/x',
+                MagicLinkMailTemplate::PARAM_CODE => '246802',
+            ],
         ));
 
         $agent->onTick();

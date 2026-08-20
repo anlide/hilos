@@ -19,6 +19,16 @@
 -- written and verified only inside the verification layer, so the hash never
 -- crosses the object, view, frontend, or cross-worker sync boundary.
 --
+-- ONE ceremony may hold TWO live rows, and magic-link sign-in is the case (HIL-606):
+-- the letter carries a clickable link (`magic_link`) and the same-letter code a person
+-- on another device types by hand (`magic_link_code`). They are two rows rather than one
+-- because they are two secrets with two attempt ceilings - guessing the six digits must
+-- not spend the link's budget - and because the type is what every lookup keys on.
+-- Answering either one consumes the other, so the letter stays single-use as promised.
+-- `magic_link_code` sits at the END of the ENUM rather than beside `magic_link`: appending
+-- is the only widening MySQL performs in place, and a fresh table built from this stub has
+-- to end up with the same member order as one that got there by ALTER.
+--
 -- `channel` is the delivery channel a phone code was explicitly sent over (HIL-492),
 -- and it is a free VARCHAR rather than an ENUM because the set of channels is a code
 -- registry a project composes, not a fixed list the schema can name. NULL means the
@@ -29,7 +39,7 @@
 CREATE TABLE `hilos_user_verification` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `user_id` INT UNSIGNED DEFAULT NULL,
-    `type` ENUM('register_confirm', 'password_reset', 'email_change', 'sms_login', 'magic_link', 'sms_add', 'email_add') NOT NULL,
+    `type` ENUM('register_confirm', 'password_reset', 'email_change', 'sms_login', 'magic_link', 'sms_add', 'email_add', 'magic_link_code') NOT NULL,
     `identifier` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     `channel` VARCHAR(32) DEFAULT NULL,
     `code_hash` VARCHAR(255) DEFAULT NULL,

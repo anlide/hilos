@@ -53,6 +53,13 @@ class VerificationService
      * says which rule refused, and the caller decides how loudly to say so. Only a
      * send that passes both voids the prior active challenge and mints a new one.
      *
+     * Magic-link sign-in mints TWO challenges from this one issue (HIL-606): the link
+     * itself, and the companion code that rides in the same letter for a person whose
+     * mail and sign-in screen are on different devices. The companion is minted AFTER
+     * the gate rather than through it, because one ceremony owes the recipient one
+     * letter and one cooldown - a second gate would refuse half a letter, and a resend
+     * would extend the halves apart.
+     *
      * @param string $type Verification type (see VerificationType)
      * @param string $identifier Normalized identifier (lowercased email)
      * @param ?int $userId Owning user id when known at issue time, else null
@@ -82,10 +89,18 @@ class VerificationService
 
         $collection->voidActive($type, $identifier, $this->maxAttempts());
 
-        $code = $this->generateSecret($type);
-        $collection->createChallenge($type, $identifier, $userId, $code, $this->ttlSeconds());
+        $secret = $this->generateSecret($type);
+        $collection->createChallenge($type, $identifier, $userId, $secret, $this->ttlSeconds());
 
-        $this->createDeliverer()->deliver($identifier, $type, $this->deliverableFor($type, $identifier, $code));
+        $companionCode = $type === VerificationType::MAGIC_LINK
+            ? $this->mintMagicLinkCode($collection, $identifier, $userId)
+            : null;
+
+        $this->createDeliverer()->deliver(
+            $identifier,
+            $type,
+            $this->deliverableFor($identifier, $secret, $companionCode),
+        );
 
         return VerificationSendOutcome::sent($cooldownSeconds);
     }
@@ -535,33 +550,88 @@ class VerificationService
     }
 
     /**
-     * What the deliverer is handed for a type: a clickable URL for the magic link,
-     * the bare code for everything else (HIL-417).
+     * What the deliverer is handed: a clickable URL plus its companion code for the
+     * magic link, the bare code for everything else (HIL-417, HIL-606).
      *
      * The link is assembled here, one level above the transport, because there are
      * two deliverers and both owe the recipient the same address - a URL built inside
      * the mail deliverer would leave the dev-stub log with a token nobody can click.
-     * What is STORED does not change: the challenge still carries the hash of the bare
-     * token, so verification is unaffected by how the token travelled.
+     * What is STORED does not change: each challenge still carries the hash of its own
+     * bare secret, so verification is unaffected by how either half travelled.
      *
-     * @param string $type Verification type (see VerificationType)
+     * The companion code is what says WHICH shape is being built: only a magic-link
+     * issue mints one, so its presence carries the branch the type used to carry.
+     * Asking it rather than re-testing the type keeps the letter and the params
+     * describing the same mint - a type-keyed branch could name a link this issue
+     * never assembled.
+     *
      * @param string $identifier Normalized identifier (lowercased email)
      * @param string $secret Freshly minted token or code
-     * @return string Value to deliver: the magic-link URL, or the secret unchanged
+     * @param ?string $companionCode Magic-link companion code, or null for every other type
+     * @return VerificationDeliverable What the transport delivers: a lone code, or link plus code
      * @throws EnvException When the magic-link return address is missing, outside the
      *   catalog, or not a string
      */
-    private function deliverableFor(string $type, string $identifier, string $secret): string
-    {
-        if ($type !== VerificationType::MAGIC_LINK) {
-            return $secret;
+    private function deliverableFor(
+        string $identifier,
+        string $secret,
+        ?string $companionCode,
+    ): VerificationDeliverable {
+        if ($companionCode === null) {
+            return VerificationDeliverable::code($secret);
         }
 
-        return MagicLinkUrl::build(
-            Hilos::$env->string(EnvConstants::HILOS_MAGIC_LINK_URL),
-            $identifier,
-            $secret,
+        return VerificationDeliverable::magicLink(
+            MagicLinkUrl::build(
+                Hilos::$env->string(EnvConstants::HILOS_MAGIC_LINK_URL),
+                $identifier,
+                $secret,
+            ),
+            $companionCode,
         );
+    }
+
+    /**
+     * Mints the companion code that rides in the magic-link letter (HIL-606).
+     *
+     * A challenge of its own ({@see VerificationType::MAGIC_LINK_CODE}) rather than a
+     * second column on the link's row, for two reasons that both cost data if ignored:
+     * the two secrets carry two attempt ceilings, so guessing the six digits must not
+     * spend the link's budget, and every lookup in this service keys on the type, so a
+     * second secret sharing a row could not be found, voided or consumed on its own.
+     *
+     * The prior companion is voided first, exactly as the link's own mint does, so a
+     * resend leaves one live code rather than a growing set. The owning user is copied
+     * from the link's issue: both halves prove the same address.
+     *
+     * @param ObjectUserVerifications $collection Verifications persistence primitives
+     * @param string $identifier Normalized identifier (lowercased email)
+     * @param ?int $userId Owning user id when known at issue time, else null
+     * @return string Plaintext companion code to put in the letter
+     * @throws EmptyValueException When identifier is empty
+     * @throws RandomException When the platform CSPRNG cannot produce a code
+     * @throws DatabaseException When a verification query fails
+     * @throws EnvException When a challenge env key is missing, outside the catalog,
+     *   or of the wrong type
+     * @throws InvalidArgumentException When a verification query is given an invalid order direction
+     */
+    private function mintMagicLinkCode(
+        ObjectUserVerifications $collection,
+        string $identifier,
+        ?int $userId,
+    ): string {
+        $collection->voidActive(VerificationType::MAGIC_LINK_CODE, $identifier, $this->maxAttempts());
+
+        $code = $this->generateCode();
+        $collection->createChallenge(
+            VerificationType::MAGIC_LINK_CODE,
+            $identifier,
+            $userId,
+            $code,
+            $this->ttlSeconds(),
+        );
+
+        return $code;
     }
 
     /**

@@ -11,6 +11,7 @@ use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Entity\Item\EventUserRegistration as EntityEventUserRegistration;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\DTO\Main\ConfirmMagicLinkActionDTO;
+use Demo\Chat\Pages\DTO\Main\ConfirmMagicLinkCodeActionDTO;
 use Demo\Chat\Pages\DTO\Main\RegisterActionDTO;
 use Demo\Chat\Pages\DTO\Main\RequestMagicLinkActionDTO;
 use Demo\Chat\Pages\DTO\Profile\ConfirmAddPasswordActionDTO;
@@ -50,22 +51,40 @@ use Hilos\Utils\Helpers\TimeHelper;
  * decides who is signed in from the state the address is in at that moment - an
  * existing account, a live hold finishing its registration, or neither.
  *
- * The token is only mailed (the dev-stub deliverer logs it), so every clicking case
- * seeds a challenge with a token it knows through the verifications object
+ * The same letter also carries a typed code (HIL-606), which is a challenge of its own
+ * with its own attempt ceiling: the cases below hold both halves to one rule - either
+ * one signs the same person in, either one kills the other on success, and neither is
+ * spent by the other's failures.
+ *
+ * The secrets are only mailed (the dev-stub deliverer logs them), so every answering
+ * case seeds a challenge with a secret it knows through the verifications object
  * collection - the same level HIL-415 and HIL-406 test their code flows at. Seeding
  * AFTER the send is deliberate: findActive() answers the newest challenge, so the
- * seeded token is the live one.
+ * seeded secret is the live one.
  *
  * Requires test DB to be reset before run (composer run test:db-reset).
  */
 final class MainPageMagicLinkTest extends IntegrationTestCase
 {
-    /** How far a moment answered by the backend may sit from the one this case computes, in ms. */
-    private const int MOMENT_DELTA_MS = 1000;
+    /**
+     * How far a moment answered by the backend may sit from the one this case computes, in ms.
+     *
+     * Generous on purpose. A case reads the clock on ONE side of the request and compares the
+     * moment the backend answered on the other, so the tolerance has to cover a whole send -
+     * two bcrypt hashes since the letter grew a companion code (HIL-606), plus the queries
+     * around them - on a box that may be running another suite in the next lane. At one second
+     * this went red on a parallel run while passing alone, which is a flake and not a finding.
+     *
+     * What the assertions are for survives the width: they read a moment one cooldown (60s) or
+     * one lifetime (900s) away, so a wrong rule misses by tens of seconds, not by five.
+     */
+    private const int MOMENT_DELTA_MS = 5000;
 
     private const string TEST_AGENT_ID = 'test-agent';
     private const string TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
     private const string WRONG_TOKEN = 'ffffffffffffffffffffffffffffffff';
+    private const string CODE = '135790';
+    private const string WRONG_CODE = '000001';
     private const string PASSWORD = 'correct horse battery';
     private const string PROFILE_PASSWORD = 'a-brand-new-secret';
     private const string EMAIL_ADD_CODE = '424242';
@@ -360,13 +379,13 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
             $held = $this->requestLink($agent, 'gate-ak', $email);
             $this->assertTrue($held->ok, 'A repeat inside the cooldown is not an error');
             $this->assertGreaterThan(TimeHelper::nowMs(), (int)$held->resendAt, 'It answers the moment still to wait for');
-            $this->assertSame(1, $this->sendRowCount($email), 'And nothing is mailed for it');
+            $this->assertSame(1, $this->challengeRowCount(VerificationType::MAGIC_LINK, $email), 'And nothing is mailed for it');
 
             for ($sent = 1; $sent < $cap; $sent++) {
                 $this->ageSendsOutOfTheCooldown($email, $cooldown + 1);
                 $this->assertTrue($this->requestLink($agent, 'gate-ak', $email)->ok, "Send {$sent} is under the cap");
             }
-            $this->assertSame($cap, $this->sendRowCount($email), 'The window is full');
+            $this->assertSame($cap, $this->challengeRowCount(VerificationType::MAGIC_LINK, $email), 'The window is full');
 
             $this->ageSendsOutOfTheCooldown($email, $cooldown + 1);
             $refused = $this->requestLink($agent, 'gate-ak', $email);
@@ -374,7 +393,7 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
             $this->assertFalse($refused->ok);
             $this->assertSame(AuthFlowOutcome::CODE_SEND_CAP_REACHED, $refused->code);
             $this->assertNull($refused->step, 'A cap refusal leaves the surface where it is');
-            $this->assertSame($cap, $this->sendRowCount($email), 'Nothing is minted past the cap');
+            $this->assertSame($cap, $this->challengeRowCount(VerificationType::MAGIC_LINK, $email), 'Nothing is minted past the cap');
         } finally {
             $this->cleanUp();
         }
@@ -463,6 +482,303 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
             $storedHash = $this->readIdentitySecret($email);
             $this->assertIsString($storedHash);
             $this->assertTrue(password_verify(self::PROFILE_PASSWORD, $storedHash));
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * One send mints BOTH halves of the letter, and one gate governs the pair.
+     *
+     * The property the whole design rests on (Design p.2): the code is a companion minted
+     * inside the link's own issue, so a person gets one letter with two ways back. A
+     * companion with a gate of its own would have let the second half be refused while the
+     * first went out - a letter promising a code it never carried.
+     *
+     * @throws HilosException When setup or the request handling fails
+     */
+    public function testOneSendMintsBothHalvesUnderOneGate(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'pair-ak');
+
+        try {
+            $this->requestLink($agent, 'pair-ak', $email);
+
+            $this->assertNotNull($this->activeChallenge(VerificationType::MAGIC_LINK, $email));
+            $this->assertNotNull(
+                $this->activeChallenge(VerificationType::MAGIC_LINK_CODE, $email),
+                'The letter carries a code as well as a link',
+            );
+
+            $held = $this->requestLink($agent, 'pair-ak', $email);
+
+            $this->assertTrue($held->ok, 'A repeat inside the cooldown is not an error');
+            $this->assertSame(
+                1,
+                $this->challengeRowCount(VerificationType::MAGIC_LINK, $email),
+                'The cooldown of the link mints no second link',
+            );
+            $this->assertSame(
+                1,
+                $this->challengeRowCount(VerificationType::MAGIC_LINK_CODE, $email),
+                'And no second code either: one gate, one letter',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * A resend re-issues both halves at once, and their lifetimes stay together.
+     *
+     * Flow p.8: the resend button is the same send action, so it cannot renew one half
+     * and leave the other - a letter whose code died before its link would look like a
+     * code that never worked.
+     *
+     * @throws HilosException When setup or the request handling fails
+     */
+    public function testAResendReissuesBothHalvesTogether(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $cooldown = Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC);
+        $this->openSession($agent, 'resend-ak');
+
+        try {
+            $this->requestLink($agent, 'resend-ak', $email);
+            $this->ageSendsOutOfTheCooldown($email, $cooldown + 1);
+
+            $resent = $this->requestLink($agent, 'resend-ak', $email);
+
+            $this->assertTrue($resent->ok);
+            $this->assertSame(2, $this->challengeRowCount(VerificationType::MAGIC_LINK, $email));
+            $this->assertSame(
+                2,
+                $this->challengeRowCount(VerificationType::MAGIC_LINK_CODE, $email),
+                'The companion is re-issued by the same press',
+            );
+            $this->assertEqualsWithDelta(
+                TimeHelper::nowMs() + $cooldown * TimeConstants::MS_PER_SECOND,
+                (int)$resent->resendAt,
+                self::MOMENT_DELTA_MS,
+                'And one cooldown covers the pair',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * The typed code on a free address builds the account, exactly as the click does.
+     *
+     * @throws HilosException When setup or the confirm handling fails
+     */
+    public function testCodeOnAFreeAddressRegistersAndSignsIn(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'code-register-ak');
+        $this->requestLink($agent, 'code-register-ak', $email);
+        $this->seedKnownCode($email);
+
+        try {
+            $outcome = $this->submitCode($agent, 'code-register-ak', $email, self::CODE);
+
+            $this->assertTrue($outcome->ok);
+            $this->assertSame(AuthFlowStep::DONE, $outcome->step);
+            $this->assertSame(AuthFlowIntent::REGISTER, $outcome->intent);
+
+            $identity = Hilos::$db->identities->findByIdentity(IdentityType::MAGIC_LINK, $email);
+            $this->assertNotNull($identity, 'The landed hold writes the magic-link identity');
+            $this->assertTrue($identity->verified, 'Typing the code proves the address just as clicking does');
+
+            $userId = $identity->userId;
+            $this->assertNotNull($userId);
+            $this->assertSame($this->localPart($email), Hilos::$db->users[$userId]?->name);
+            $this->assertSame(1, $this->registrationEventCount($userId), 'The new member is announced');
+
+            $this->assertSame($userId, $this->sessionOf('code-register-ak')?->userId);
+            $this->assertSame(0, $this->reservationRowCount($email), 'The hold is released on success');
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * The typed code on a taken address signs it in and creates nothing.
+     *
+     * @throws HilosException When setup or the confirm handling fails
+     */
+    public function testCodeOnATakenAddressSignsInWithoutCreatingAnAccount(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $userId = $this->seedPasswordlessAccount($email);
+        $this->openSession($agent, 'code-login-ak');
+        $this->requestLink($agent, 'code-login-ak', $email);
+        $this->seedKnownCode($email);
+
+        try {
+            $outcome = $this->submitCode($agent, 'code-login-ak', $email, self::CODE);
+
+            $this->assertTrue($outcome->ok);
+            $this->assertSame(AuthFlowStep::DONE, $outcome->step);
+            $this->assertSame(AuthFlowIntent::LOGIN, $outcome->intent);
+
+            $this->assertSame($userId, $this->sessionOf('code-login-ak')?->userId);
+            $this->assertSame(1, $this->identityRowCount($email), 'No second identity is written for a sign-in');
+            $this->assertSame(0, $this->registrationEventCount($userId), 'Nobody registered here');
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * Answering either half kills the other: the letter is single-use as it says.
+     *
+     * @throws HilosException When setup or the confirm handling fails
+     */
+    public function testAnsweringOneHalfVoidsTheOther(): void
+    {
+        $agent = $this->bootAgent();
+        $byCode = $this->uniqueEmail();
+        $byLink = $this->uniqueEmail();
+        $this->seedPasswordlessAccount($byCode);
+        $this->seedPasswordlessAccount($byLink);
+        $this->openSession($agent, 'mutual-ak');
+
+        try {
+            $this->requestLink($agent, 'mutual-ak', $byCode);
+            $this->seedKnownToken($byCode);
+            $this->seedKnownCode($byCode);
+
+            $this->assertTrue($this->submitCode($agent, 'mutual-ak', $byCode, self::CODE)->ok);
+            $this->assertNull(
+                $this->activeChallenge(VerificationType::MAGIC_LINK, $byCode),
+                'A code that signed someone in leaves no link to follow',
+            );
+            $this->assertFalse($this->clickLink($agent, 'mutual-ak', $byCode, self::TOKEN)->ok);
+
+            $this->requestLink($agent, 'mutual-ak', $byLink);
+            $this->seedKnownToken($byLink);
+            $this->seedKnownCode($byLink);
+
+            $this->assertTrue($this->clickLink($agent, 'mutual-ak', $byLink, self::TOKEN)->ok);
+            $this->assertNull(
+                $this->activeChallenge(VerificationType::MAGIC_LINK_CODE, $byLink),
+                'And a followed link leaves no code to type',
+            );
+            $this->assertFalse($this->submitCode($agent, 'mutual-ak', $byLink, self::CODE)->ok);
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * A code guessed to exhaustion does NOT take the link down with it.
+     *
+     * The reason the halves carry separate ceilings (Flow p.7): a stranger who types six
+     * digits at somebody else's address must not be able to spend a letter they never
+     * received. Only success crosses between the halves.
+     *
+     * @throws HilosException When setup or the confirm handling fails
+     */
+    public function testExhaustingTheCodeLeavesTheLinkAlive(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedPasswordlessAccount($email);
+        $this->openSession($agent, 'exhaust-ak');
+        $this->requestLink($agent, 'exhaust-ak', $email);
+        $this->seedKnownToken($email);
+        $this->seedKnownCode($email);
+
+        try {
+            for ($attempt = 0; $attempt < $this->maxAttempts(); $attempt++) {
+                $this->assertFalse($this->submitCode($agent, 'exhaust-ak', $email, self::WRONG_CODE)->ok);
+            }
+
+            $this->assertNull(
+                $this->activeChallenge(VerificationType::MAGIC_LINK_CODE, $email),
+                'The guessed-at code is spent',
+            );
+            $this->assertNotNull(
+                $this->activeChallenge(VerificationType::MAGIC_LINK, $email),
+                'The link the owner is holding is untouched',
+            );
+            $this->assertTrue($this->clickLink($agent, 'exhaust-ak', $email, self::TOKEN)->ok);
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * A code that opens nothing refuses in place, leaving the waiting screen up.
+     *
+     * The one branch where the halves answer differently (Flow p.5): a clicked link rolls
+     * back to the address field, while a mistyped code keeps the person on the screen that
+     * asked for it - the field, the countdown and the resend button are all still there.
+     *
+     * @throws HilosException When setup or the confirm handling fails
+     */
+    public function testUnusableCodeRefusesWithoutMovingTheSurface(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedPasswordlessAccount($email);
+        $this->openSession($agent, 'code-invalid-ak');
+        $this->requestLink($agent, 'code-invalid-ak', $email);
+        $this->seedKnownCode($email);
+
+        try {
+            $wrong = $this->submitCode($agent, 'code-invalid-ak', $email, self::WRONG_CODE);
+
+            $this->assertFalse($wrong->ok);
+            $this->assertSame(AuthFlowOutcome::CODE_MAGIC_LINK_INVALID, $wrong->code);
+            $this->assertNull($wrong->step, 'A mistyped code does not move the surface');
+            $this->assertNull($wrong->intent);
+            $this->assertNull(Hilos::$rt->connections['code-invalid-ak']->userId);
+
+            $this->assertTrue($this->submitCode($agent, 'code-invalid-ak', $email, self::CODE)->ok);
+            $reused = $this->submitCode($agent, 'code-invalid-ak', $email, self::CODE);
+
+            $this->assertFalse($reused->ok, 'A code is single-use');
+            $this->assertSame(AuthFlowOutcome::CODE_MAGIC_LINK_INVALID, $reused->code);
+            $this->assertNull($reused->step);
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * A code that outlived its hold rolls back, exactly as the click does.
+     *
+     * The exception to "a code refuses in place" (Flow p.6): the address is not held any
+     * more, so there is nothing on this screen left to finish.
+     *
+     * @throws HilosException When setup or the confirm handling fails
+     */
+    public function testCodeWithAnExpiredHoldRollsBackToTheIdentifierStep(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'code-expired-ak');
+        $this->requestLink($agent, 'code-expired-ak', $email);
+        $this->seedKnownCode($email);
+        $this->ageReservationOut($email);
+
+        try {
+            $outcome = $this->submitCode($agent, 'code-expired-ak', $email, self::CODE);
+
+            $this->assertFalse($outcome->ok);
+            $this->assertSame(AuthFlowOutcome::CODE_RESERVATION_EXPIRED, $outcome->code);
+            $this->assertSame(AuthFlowStep::IDENTIFIER, $outcome->step);
+            $this->assertSame(AuthFlowIntent::REGISTER, $outcome->intent);
+
+            $this->assertNull(Hilos::$db->identities->findByIdentity(IdentityType::MAGIC_LINK, $email));
+            $this->assertNull(Hilos::$rt->connections['code-expired-ak']->userId);
         } finally {
             $this->cleanUp();
         }
@@ -610,6 +926,53 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
     }
 
     /**
+     * Seeds the companion challenge with a code this test knows, newer than the mailed one.
+     *
+     * @param string $email Address the letter was sent to
+     * @throws HilosException When the challenge insert fails
+     */
+    private function seedKnownCode(string $email): void
+    {
+        // Void the mailed companion first, for the same reason seedKnownToken does:
+        // a burned seeded code must not fall back on one this test cannot know.
+        $this->verifications()->voidActive(VerificationType::MAGIC_LINK_CODE, $email, $this->maxAttempts());
+        $this->verifications()->createChallenge(
+            VerificationType::MAGIC_LINK_CODE,
+            $email,
+            null,
+            self::CODE,
+            self::TTL_SECONDS,
+        );
+    }
+
+    /**
+     * Types the letter's code into the waiting screen, through the main page.
+     *
+     * @param ChatAgent $agent Agent owning the page
+     * @param string $acceptKey Acting connection accept key
+     * @param string $email Address the letter was issued for
+     * @param string $code Code typed on the screen
+     * @return AuthFlowOutcome The outcome the surface is answered with
+     * @throws HilosException When the confirm handler rejects the action
+     */
+    private function submitCode(
+        ChatAgent $agent,
+        string $acceptKey,
+        string $email,
+        string $code,
+    ): AuthFlowOutcome {
+        ExecutionContext::setCurrentAcceptKey($acceptKey);
+        $reply = new MainPage($agent)->onAction(
+            $acceptKey,
+            HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK_CODE,
+            new ConfirmMagicLinkCodeActionDTO($email, $code),
+        );
+        $this->assertInstanceOf(AuthFlowOutcome::class, $reply);
+
+        return $reply;
+    }
+
+    /**
      * Seeds the add-password challenge the profile flow verifies, for one user.
      *
      * @param string $email Address being proven
@@ -692,16 +1055,17 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
     }
 
     /**
-     * Counts the links ever sent to an address, dead ones included.
+     * Counts the challenges of a type ever minted for an address, dead ones included.
      *
-     * @param string $email Address links were sent to
+     * @param string $type Verification type (see VerificationType)
+     * @param string $email Address the challenges were minted for
      * @return int Number of challenge rows
      * @throws HilosException When the count query fails
      */
-    private function sendRowCount(string $email): int
+    private function challengeRowCount(string $type, string $email): int
     {
         return EntityUserVerification::count([
-            EntityUserVerification::type => VerificationType::MAGIC_LINK,
+            EntityUserVerification::type => $type,
             EntityUserVerification::identifier => $email,
         ]);
     }

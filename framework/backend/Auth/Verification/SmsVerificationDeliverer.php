@@ -30,16 +30,19 @@ use Hilos\Sms\Template\SmsVerificationCodeTemplate;
 final class SmsVerificationDeliverer implements VerificationDeliverer
 {
     /**
-     * Texts a plaintext verification code, resolving the template from the type.
+     * Texts a freshly issued challenge, resolving the template from the type.
      *
-     * @param string $identifier Normalized target E.164 number the code was issued for
+     * Only the code half is read: an SMS type never carries a link, and the only types
+     * routed here are the SMS ones.
+     *
+     * @param string $identifier Normalized target E.164 number the challenge was issued for
      * @param string $type Verification type (see VerificationType)
-     * @param string $code Plaintext code to deliver
+     * @param VerificationDeliverable $deliverable Plaintext content of the message
      * @throws EnvException When the SMS worker count is unreadable while sharding the number
-     * @throws ValidationException When the code was issued for a blank number
+     * @throws ValidationException When the challenge was issued for a blank number
      * @throws InvalidArgumentException When the SMS send signal cannot be named or queued
      */
-    public function deliver(string $identifier, string $type, string $code): void
+    public function deliver(string $identifier, string $type, VerificationDeliverable $deliverable): void
     {
         $templateKey = $this->templateKeyFor($type);
         if ($templateKey === null) {
@@ -50,7 +53,7 @@ final class SmsVerificationDeliverer implements VerificationDeliverer
             to: $identifier,
             shardKey: HilosSmsSender::shardKeyForNumber($identifier),
             templateKey: $templateKey,
-            params: [SmsVerificationCodeTemplate::PARAM_CODE => $code],
+            params: [SmsVerificationCodeTemplate::PARAM_CODE => $deliverable->code],
         ));
     }
 

@@ -32,16 +32,16 @@ final class NotificationVerificationDeliverer implements VerificationDeliverer
     }
 
     /**
-     * Routes a code to the deliverer for its verification type.
+     * Routes a freshly issued challenge to the deliverer for its verification type.
      *
-     * @param string $identifier Normalized target the code was issued for
+     * @param string $identifier Normalized target the challenge was issued for
      * @param string $type Verification type (see VerificationType)
-     * @param string $code Plaintext code (or assembled magic-link URL) to deliver
+     * @param VerificationDeliverable $deliverable Plaintext content of the letter or message
      * @throws EnvException When the target deliverer cannot shard the address
      */
-    public function deliver(string $identifier, string $type, string $code): void
+    public function deliver(string $identifier, string $type, VerificationDeliverable $deliverable): void
     {
-        $this->delivererFor($type)->deliver($identifier, $type, $code);
+        $this->delivererFor($type)->deliver($identifier, $type, $deliverable);
     }
 
     /**

@@ -37,7 +37,18 @@ final class MailTemplateParamRefusalTest extends TestCase
             'no link' => [MailTemplateCatalogConstants::AUTH_MAGIC_LINK, []],
             'empty link' => [
                 MailTemplateCatalogConstants::AUTH_MAGIC_LINK,
-                [MagicLinkMailTemplate::PARAM_LINK => ''],
+                [
+                    MagicLinkMailTemplate::PARAM_LINK => '',
+                    MagicLinkMailTemplate::PARAM_CODE => '135790',
+                ],
+            ],
+            'link without its companion code' => [
+                MailTemplateCatalogConstants::AUTH_MAGIC_LINK,
+                [MagicLinkMailTemplate::PARAM_LINK => 'https://app.example/sign-in?t=abc'],
+            ],
+            'code without its link' => [
+                MailTemplateCatalogConstants::AUTH_MAGIC_LINK,
+                [MagicLinkMailTemplate::PARAM_CODE => '135790'],
             ],
             'notification without a title' => [
                 MailTemplateCatalogConstants::NOTIFICATION_GENERIC,

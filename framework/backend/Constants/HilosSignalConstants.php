@@ -339,6 +339,17 @@ final class HilosSignalConstants
     public const string HILOS_CONFIRM_MAGIC_LINK = 'hilos_confirm_magic_link';
 
     /**
+     * Client → server: submit the code that rode in the magic-link letter
+     * (public, anonymous-reachable, HIL-606).
+     *
+     * A door of its own rather than the token action given a shorter string: the link and
+     * the code are separate challenges with separate attempt ceilings, so one action would
+     * force the server to guess which secret it was handed and spend an attempt of both on
+     * every guess. Its payload names the code as such - { email, code }.
+     */
+    public const string HILOS_CONFIRM_MAGIC_LINK_CODE = 'hilos_confirm_magic_link_code';
+
+    /**
      * Client → server: "not that address?" on a code screen (public, anonymous-reachable, HIL-486).
      *
      * Ends the registration this SESSION was waiting on, in every tab of it at once.

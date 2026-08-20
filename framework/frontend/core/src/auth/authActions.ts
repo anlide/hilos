@@ -57,6 +57,7 @@ import {
   AUTH_ACTION_ABANDON_REGISTRATION,
   AUTH_ACTION_COMPLETE_PASSWORD_RESET,
   AUTH_ACTION_CONFIRM_MAGIC_LINK,
+  AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE,
   AUTH_ACTION_CONFIRM_PASSWORD_RESET,
   AUTH_ACTION_CONFIRM_PHONE_CODE,
   AUTH_ACTION_CONFIRM_REGISTER,
@@ -502,6 +503,21 @@ function submitCode(
           code: form.code,
         })
   }
+  if (flow.methodKey === MAGIC_LINK_METHOD_KEY) {
+    // The waiting screen of a magic link is a code screen too (HIL-606): the
+    // letter carries digits beside the URL for the person whose mail is open on
+    // another device. Its submit is a door of its own — the link and the code are
+    // separate challenges — while its resend is the ordinary send, which mints
+    // BOTH halves again under one cooldown.
+    return action === 'resend'
+      ? dispatchFlow(context, AUTH_ACTION_REQUEST_MAGIC_LINK, {
+          email: form.identifier,
+        })
+      : dispatchFlow(context, AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE, {
+          email: form.identifier,
+          code: form.code,
+        })
+  }
   if (flow.intent === 'recovery') {
     // The first send and every re-send travel one path: the key icon starts the
     // recovery locally and then asks for the code exactly as the link does.
@@ -515,9 +531,9 @@ function submitCode(
         })
   }
 
-  // Everything left is the registration confirmation: an EMAIL never signs in by
-  // code (its passwordless way is the magic link, which parks on check_inbox), so
-  // the login intent cannot reach this line with one.
+  // Everything left is the registration confirmation. An email that signs in by
+  // code does so through the magic-link branch above, on its own action; this one
+  // is the address proving itself for an account being made.
   return action === 'resend'
     ? dispatchFlow(context, AUTH_ACTION_REQUEST_REGISTER_CONFIRM, {
         email: form.identifier,

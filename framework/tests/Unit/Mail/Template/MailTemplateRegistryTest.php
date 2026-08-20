@@ -19,7 +19,8 @@ use PHPUnit\Framework\TestCase;
 /**
  * Tests that the registry resolves framework template keys to content and rejects unknown keys (HIL-197).
  *
- * The `auth.*` code templates embed the plaintext code, magic-link embeds the URL,
+ * The `auth.*` code templates embed the plaintext code, magic-link embeds the URL and its
+ * companion code,
  * `notification.generic` passes the already-localized title/body through, an unknown
  * key raises the domain exception, and a project catalog override resolves its own class.
  */
@@ -45,16 +46,21 @@ final class MailTemplateRegistryTest extends TestCase
         }
     }
 
-    public function testMagicLinkTemplateEmbedsLink(): void
+    public function testMagicLinkTemplateEmbedsBothHalvesOfTheLetter(): void
     {
         $content = new MailTemplateRegistry()->render(
             MailTemplateCatalogConstants::AUTH_MAGIC_LINK,
-            [MagicLinkMailTemplate::PARAM_LINK => 'https://app.example/sign-in?t=abc'],
+            [
+                MagicLinkMailTemplate::PARAM_LINK => 'https://app.example/sign-in?t=abc',
+                MagicLinkMailTemplate::PARAM_CODE => '135790',
+            ],
             null,
         );
 
         self::assertSame('Your sign-in link', $content->subject);
         self::assertStringContainsString('https://app.example/sign-in?t=abc', $content->text);
+        self::assertStringContainsString('135790', $content->text);
+        self::assertStringContainsString('the other stops working', $content->text);
     }
 
     public function testGenericNotificationPassesThroughTitleAndBody(): void

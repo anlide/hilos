@@ -7,13 +7,20 @@
 // What is asserted is exactly that: the surface renders, it offers no way in that
 // was not declared, and its submit path reaches the wire. The flow machine's own
 // behavior is covered by core's authFlow spec and is not re-tested here.
+//
+// One more registry is mounted below, the magic-link one (HIL-606), for the screen
+// that has no equivalent anywhere else: a waiting screen that also takes a code.
 import {
   ActionLifecycle,
+  AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE,
   AUTH_ACTION_DETECT_IDENTIFIER,
   AUTH_ACTION_LOGIN,
+  AUTH_ACTION_REQUEST_MAGIC_LINK,
   createHilosAuthContext,
   createSignal,
   DEFAULT_DETECT_DEBOUNCE_MS,
+  MAGIC_LINK_FLOW_METHOD,
+  MAGIC_LINK_METHOD_KEY,
   PASSWORD_FLOW_METHOD,
   PASSWORD_METHOD_KEY,
   ScopeManager,
@@ -77,6 +84,59 @@ function passwordOnlyContext(): {
       scopes: new ScopeManager(),
       actions,
       methods: [PASSWORD_FLOW_METHOD],
+      channels: [],
+      oauthProviders: [],
+      termsPath: '/terms',
+      privacyPath: '/privacy',
+    }),
+  }
+}
+
+/**
+ * A context offering the password and the magic link, the pair the letter screen
+ * needs: the lookup answers with an account that has both, so the icon shows.
+ *
+ * @returns The context to mount with, and the dispatch log to assert on.
+ */
+function magicLinkContext(): {
+  context: HilosAuthContext
+  dispatched: Dispatched
+} {
+  const dispatched: Dispatched = []
+  const connection = {
+    on: vi.fn().mockReturnValue(() => undefined),
+  } as unknown as HilosConnection
+  const actions = {
+    dispatch: (action: string, payload: Record<string, unknown>) => {
+      dispatched.push({ action, payload })
+      const identifier = String(payload['identifier'] ?? '')
+      const reply =
+        action === AUTH_ACTION_DETECT_IDENTIFIER
+          ? {
+              identifier,
+              normalized: identifier,
+              kind: 'email',
+              status: 'active',
+              methods: [PASSWORD_METHOD_KEY, MAGIC_LINK_METHOD_KEY],
+              registerable: [],
+            }
+          : undefined
+
+      return {
+        requestId: `req-${dispatched.length}`,
+        loading: createSignal(false),
+        done: Promise.resolve({ reply }),
+      } as unknown as ActionHandle
+    },
+  } as unknown as ActionLifecycle
+
+  return {
+    dispatched,
+    context: createHilosAuthContext({
+      connection,
+      scopes: new ScopeManager(),
+      actions,
+      methods: [PASSWORD_FLOW_METHOD, MAGIC_LINK_FLOW_METHOD],
       channels: [],
       oauthProviders: [],
       termsPath: '/terms',
@@ -154,6 +214,42 @@ describe('HilosAuthSurface', () => {
     expect(dispatched[1]?.payload).toMatchObject({
       email: 'someone@example.com',
       password: 'correct horse',
+    })
+  })
+
+  it('the letter screen keeps its heading and grows a code field', async () => {
+    vi.useFakeTimers()
+    const { context, dispatched } = magicLinkContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('someone@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+
+    await wrapper.find('[data-id="auth-icon-magic-link"]').trigger('click')
+    await flush(wrapper)
+
+    // Still the same screen the person asked for, now with a way to answer by
+    // hand: the heading, the plaque about the link, the field, and the resend.
+    expect(wrapper.text()).toContain('Check your inbox')
+    expect(wrapper.find('[data-id="auth-link-sent"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-resend"]').exists()).toBe(true)
+
+    await wrapper.find('[data-id="auth-code"]').setValue('135790')
+    await wrapper.find('form').trigger('submit')
+    await flush(wrapper)
+
+    expect(dispatched.map((call) => call.action)).toEqual([
+      AUTH_ACTION_DETECT_IDENTIFIER,
+      AUTH_ACTION_REQUEST_MAGIC_LINK,
+      AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE,
+    ])
+    expect(dispatched[2]?.payload).toMatchObject({
+      email: 'someone@example.com',
+      code: '135790',
     })
   })
 
