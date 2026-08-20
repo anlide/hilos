@@ -72,6 +72,7 @@ use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\DaemonWorkerSignalDTO;
 use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
@@ -487,6 +488,14 @@ abstract class WorkerManager extends BaseManager
                     ExecutionContext::setCurrentAcceptKey($data->signal->data->getAcceptKey());
                 }
                 $this->handleAgentMessage($data);
+                break;
+
+            case WorkerConstants::MESSAGE_DAEMON_WORKER_SIGNAL:
+                if (!$data instanceof DaemonWorkerSignalDTO) {
+                    Logger::error("onDaemonSignal - unexpected type: " . get_class($data));
+                    break;
+                }
+                $this->onDaemonSignal($data->signalName, $data->data);
                 break;
 
             case WorkerConstants::MESSAGE_DB_SYNC_CREATED:
@@ -1800,6 +1809,38 @@ abstract class WorkerManager extends BaseManager
      *     to and where in that unit it happened
      */
     protected function onTickFailure(ContainedFailure $failure): void
+    {
+    }
+
+    /**
+     * Worker-level hook called when the master addressed a signal to every worker of this node.
+     *
+     * The receiving half of {@see MasterSignalSender::sendToWorkers()}: project code on the
+     * master loop is not allowed to do the work it discovers, so it says what happened here,
+     * where the database and the project's own state are at hand. Empty by default - the
+     * framework sends nothing through this door itself, and a project that overrides nothing
+     * loses nothing.
+     *
+     * Off the master's loop is not off every loop: this runs on the worker's tick, so it is
+     * bound by the same bar as {@see onTick()} and every other signal handler - a blocking
+     * call here stalls this worker's agents and its WebSocket deliveries
+     * (docs/agents/antipatterns/blocking-in-ontick.md). Work that cannot finish promptly goes
+     * on a queue this worker drains an item per tick, or into a monopolistic agent.
+     *
+     * Every worker of the node gets the call, including the monopolistic ones, and the agents
+     * living inside them do not: an agent is addressed by name through
+     * {@see MasterSignalSender::sendToAgent()} and arrives at its own onSignalAgent().
+     *
+     * May throw. The call arrives inside the tick's guard, so a failure raised here is written
+     * as a contained failure of the DAEMON_MESSAGE unit and reaches {@see onTickFailure()} -
+     * the same treatment {@see onTick()} gets, and the reason there is no try/catch of its own
+     * around this call.
+     *
+     * @param string $signalName Signal name the master addressed the workers under
+     * @param SignalDataInterface $data Signal payload, rebuilt as the class the master sent
+     *     when this process knows it and as SignalData when it does not
+     */
+    protected function onDaemonSignal(string $signalName, SignalDataInterface $data): void
     {
     }
 

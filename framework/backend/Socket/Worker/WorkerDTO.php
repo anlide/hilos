@@ -15,6 +15,7 @@ use Hilos\Socket\Worker\Exception\UnknownWorkerMessageTypeException;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\DaemonWorkerSignalDTO;
 use Hilos\Socket\Worker\DTO\ProtectedModeReadyDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
@@ -95,6 +96,7 @@ abstract class WorkerDTO extends BaseDTO
             WorkerAgentStoppedDTO::MESSAGE_TYPE => WorkerAgentStoppedDTO::fromArray($data),
             WorkerAgentMessageDTO::MESSAGE_TYPE => WorkerAgentMessageDTO::fromArray($data),
             WorkerConstants::MESSAGE_DAEMON_AGENT_MESSAGE => DaemonAgentMessageDTO::fromArray($data),
+            DaemonWorkerSignalDTO::MESSAGE_TYPE => DaemonWorkerSignalDTO::fromArray($data),
             WorkerRegisteredDTO::MESSAGE_TYPE => WorkerRegisteredDTO::fromArray($data),
             AgentStartDTO::MESSAGE_TYPE => AgentStartDTO::fromArray($data),
             AgentStopDTO::MESSAGE_TYPE => AgentStopDTO::fromArray($data),

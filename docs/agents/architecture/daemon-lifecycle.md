@@ -150,6 +150,50 @@ All run on the master loop, so overrides must stay non-blocking, and a project t
 overrides `onLostLeadership` / `onQuorumLost` should call `parent::` first to keep the
 framework default.
 
+### Handing work out of the master (HIL-618)
+
+Every hook above runs on the master loop and must stay non-blocking, which leaves a
+project that discovers real work with nowhere to put it. `MasterSignalSender`, which
+`DaemonManager` implements, is that place — two doors a project daemon reaches through
+`$this`:
+
+- `sendToAgent(string $agentType, ?string $agentIndex, string $signalName, SignalDataInterface $data)`
+  — one named agent, wherever in the cluster it runs. Placement decides the route:
+  local worker link, or the peer channel when the agent is placed on another node.
+  It arrives as an ordinary `AGENT_SIGNAL` / `AgentSignalData` and is taken by the
+  agent's own `onSignalAgent()`.
+- `sendToWorkers(string $signalName, SignalDataInterface $data)` — every worker of
+  this node, monopolistic ones included, and strictly this node: "all workers of a
+  node" is addressed by naming the node. It lands on `WorkerManager::onDaemonSignal()`,
+  an empty `protected` hook the project overrides. Agents inside those workers are not
+  handed it — that is what `sendToAgent()` is for. The hook runs on the worker's tick,
+  so it must not block either: see
+  [worker-lifecycle.md](worker-lifecycle.md#message-types-from-daemon).
+
+Both doors put a frame in a socket write buffer and return. Three things to know
+before using them:
+
+- **Delivery to an agent STARTS a stopped agent.** The local path is the one the
+  router uses, and it starts an agent that is not running rather than dropping the
+  signal. There is no "do not start" flag; the protected-mode and cluster-leadership
+  gates on start apply as they always do. This is also the one place the call is more
+  than a buffered write: starting runs the project's agent-daemon factory synchronously
+  on the master loop, so that factory is master-loop code and is bound by the rule in
+  [heavy-work-in-master.md](../antipatterns/heavy-work-in-master.md) like everything
+  else there.
+- **Neither door reports delivery.** Both return `void` and swallow every failure,
+  because an exception escaping here would end `run()` and take the node down. A
+  refusal is written as `Master signal '<name>' to <addressee> dropped: <reason>` —
+  as an error normally, as info while the node is leaving.
+- **Order against the router's queue is not guaranteed.** These write to the socket
+  at once; `SignalRouter::queueSignal()` drains at the end of the loop iteration.
+
+**Use them only when the addressee is known by name and there is no route to declare.**
+The ordinary way to move a signal is still `queueSignal()`, which routes by sender —
+the signal's source and type decide where it goes, and a destination that changes with
+the topology stays a routing rule instead of becoming a call site. This facade is the
+imperative exception for the case routing cannot express.
+
 ## Consensus coordinator (HIL-339)
 
 A clustered **master** runs a self-written, raft-like coordinator

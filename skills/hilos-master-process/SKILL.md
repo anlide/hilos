@@ -13,6 +13,8 @@ read the canonical rule before changing master-process code.
 - Heavy work in the master: `docs/agents/antipatterns/heavy-work-in-master.md`
 - Event loop and what blocks it: `docs/agents/architecture/event-loop.md`
 - Blocking in handlers and ticks: `docs/agents/antipatterns/blocking-in-ontick.md`
+- The doors work leaves the master through:
+  `docs/agents/architecture/daemon-lifecycle.md` (Handing work out of the master)
 
 ## Workflow
 
@@ -21,7 +23,12 @@ read the canonical rule before changing master-process code.
    `$daemon->run()`) or a worker / monopolistic agent.
 2. On the master runtime path, do not add DB, file, network, or CPU-heavy work.
    Move it to the worker handshake, action, or signal handler, or a monopolistic
-   agent.
+   agent. **Move it with `MasterSignalSender`**, which `DaemonManager` implements:
+   `sendToAgent()` reaches one named agent, `sendToWorkers()` every worker of this
+   node, and both hand the work over instead of doing it. One caveat: delivering to a
+   stopped agent starts it, and that runs the project's agent-daemon factory on the
+   master loop, where this rule still applies. Prefer `SignalRouter::queueSignal()`
+   when the destination is a routing rule rather than a name.
 3. One-time bootstrap (before `$daemon->run()`) may read config and build
    artifacts.
 4. Do not offer a heavy-master option to the user, even a "simple" one.
@@ -29,6 +36,7 @@ read the canonical rule before changing master-process code.
 ## Hard Rules
 
 - Do not add DB, file, network, or CPU-heavy work to the master runtime path; use
-  a worker or a monopolistic agent.
+  a worker or a monopolistic agent, and hand the work over through
+  `MasterSignalSender`.
 - Do not propose heavy work in the master as a recommended option.
 - Never ship a heavy master in a demo — people copy demo code into real projects.

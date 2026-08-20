@@ -59,6 +59,9 @@ final class WorkerConstants
     /** @var string Daemon agent message signal (daemon -> worker) */
     public const string MESSAGE_DAEMON_AGENT_MESSAGE = 'daemon_agent_message';
 
+    /** @var string Project signal broadcast from the master to every worker of this node (daemon -> worker) */
+    public const string MESSAGE_DAEMON_WORKER_SIGNAL = 'daemon_worker_signal';
+
     /** @var string DB sync created (daemon/worker broadcast); canonical value in SignalTypeConstants */
     public const string MESSAGE_DB_SYNC_CREATED = SignalTypeConstants::DB_SYNC_CREATED;
 

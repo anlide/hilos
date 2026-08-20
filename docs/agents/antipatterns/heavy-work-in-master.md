@@ -53,6 +53,18 @@ that needs no I/O — a random token — and let the worker persist and verify i
   and signal handlers run in the worker, off the master's loop.
 - A monopolistic agent isolates long-running work with its own timing.
 - The master only mints in-memory values and moves bytes.
+- **The door out is named: `MasterSignalSender`** (HIL-618), implemented by
+  `DaemonManager`. `sendToAgent()` reaches one named agent, `sendToWorkers()`
+  every worker of this node; both put a frame in a write buffer and return. Master
+  code that discovers work says what happened through one of them and lets the
+  receiver do it. This rule and that facade are not in tension — the facade exists
+  so the work can leave. The facade does not exempt anything from this rule: sending
+  to a stopped agent starts it, and the project's agent-daemon factory then runs
+  right here, on the master loop.
+- Routing is still the ordinary way to move a signal: `SignalRouter::queueSignal()`
+  routes by sender, and the facade is for the case where the addressee is known by
+  name and there is no route to declare. See
+  [daemon-lifecycle.md](../architecture/daemon-lifecycle.md#handing-work-out-of-the-master-hil-618).
 
 ## Exceptions
 

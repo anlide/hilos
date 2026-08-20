@@ -36,6 +36,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Http\RootInfoHandler;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
 use Hilos\Core\Router\Destination\CommandReplyDestination;
@@ -101,6 +102,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\DaemonWorkerSignalDTO;
 use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
@@ -141,11 +143,15 @@ abstract class DaemonManager extends BaseManager implements
     LeadershipObserver,
     PlacementObserver,
     ConnectionDropper,
+    MasterSignalSender,
     ProtectedModeSnapshotSource,
     ProtectedModeAdmissionRecorder,
     ProtectedModeClientNotifier,
     RtSyncSink
 {
+    /** @var string How the master facade's log line names "every worker of this node" as an addressee */
+    private const string MASTER_SIGNAL_WORKERS_LABEL = 'workers';
+
     /** @var float Seconds between stuck-readiness log lines while the WebSocket server waits for startup agents */
     private const float READINESS_LOG_INTERVAL = 60.0;
 
@@ -704,6 +710,114 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         return false;
+    }
+
+    /**
+     * Sends a signal to one agent, wherever in the cluster it is running.
+     *
+     * Implements {@see MasterSignalSender}. Placement answers where the agent lives and the
+     * branch that follows is the one {@see dispatchSignals()} takes for a routed signal: a
+     * null answer (local, unplaced, or unknown) delivers over this node's worker link, a node
+     * id forwards over the peer channel. The branch matters rather than being a formality -
+     * delivering locally to an agent placed elsewhere would START a second copy of it here,
+     * which for a singleton agent is the one outcome placement exists to prevent.
+     *
+     * Nothing is raised out of here, whatever the delivery path decides: this runs on the
+     * master loop, where an escaping exception ends run() and takes the node down. A refusal
+     * is written instead, as an error normally and as info while the node is leaving - during
+     * shutdown workers are gone by design and the line is not news, exactly as
+     * {@see dispatchSignals()} treats the same case.
+     *
+     * @param string $agentType Agent type to address
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param string $signalName Signal name the receiving agent dispatches on
+     * @param SignalDataInterface $data Signal payload
+     */
+    public function sendToAgent(string $agentType, ?string $agentIndex, string $signalName, SignalDataInterface $data): void
+    {
+        // The type is always named here, so the id is always built - the cast records that,
+        // the same way {@see dispatchSignals()} takes the id as it comes for the same reason.
+        $agentId = (string)$this->agentManagerDaemon->buildAgentId($agentType, $agentIndex);
+        $agentLabel = "agent {$agentId}";
+        if ($signalName === '') {
+            $this->reportMasterSignalDropped($signalName, $agentLabel, 'empty signal name');
+
+            return;
+        }
+
+        try {
+            $signal = new SignalDTO(
+                new SignalSource(SignalSource::DAEMON),
+                new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+                new SignalName($signalName),
+                new AgentSignalData($data),
+                Hilos::$ac?->captureSignalMeta() ?? [],
+            );
+
+            $nodeId = Hilos::$cluster?->workerPlacement()?->nodeFor($agentType, $agentIndex);
+            if ($nodeId !== null) {
+                $this->forwardMasterSignalToNode($nodeId, $agentType, $agentIndex, $signal, $agentLabel);
+
+                return;
+            }
+
+            $workerServer = $this->findWorkerServer();
+            if ($workerServer === null) {
+                $this->reportMasterSignalDropped($signalName, $agentLabel, 'no worker server');
+
+                return;
+            }
+
+            $workerServer->sendSignalToAgent(
+                $agentType,
+                $agentIndex,
+                new DaemonAgentMessageDTO(
+                    agentId: $agentId,
+                    signal: $signal,
+                ),
+            );
+        } catch (Throwable $e) {
+            $this->reportMasterSignalDropped($signalName, $agentLabel, get_class($e) . ': ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Sends a signal to every worker of this node, including monopolistic ones.
+     *
+     * Implements {@see MasterSignalSender}. Writes one {@see DaemonWorkerSignalDTO} to each
+     * worker link and returns; the receiving side is {@see WorkerManager::onDaemonSignal()}.
+     * Agents living inside those workers are not handed the signal - {@see sendToAgent()} is
+     * how an agent is addressed.
+     *
+     * Failures are swallowed and written for the same reason as in {@see sendToAgent()}.
+     *
+     * @param string $signalName Signal name the receiving workers dispatch on
+     * @param SignalDataInterface $data Signal payload
+     */
+    public function sendToWorkers(string $signalName, SignalDataInterface $data): void
+    {
+        if ($signalName === '') {
+            $this->reportMasterSignalDropped($signalName, self::MASTER_SIGNAL_WORKERS_LABEL, 'empty signal name');
+
+            return;
+        }
+
+        try {
+            $workerServer = $this->findWorkerServer();
+            if ($workerServer === null) {
+                $this->reportMasterSignalDropped($signalName, self::MASTER_SIGNAL_WORKERS_LABEL, 'no worker server');
+
+                return;
+            }
+
+            $this->writeFrameToWorkers($workerServer, new DaemonWorkerSignalDTO($signalName, $data));
+        } catch (Throwable $e) {
+            $this->reportMasterSignalDropped(
+                $signalName,
+                self::MASTER_SIGNAL_WORKERS_LABEL,
+                get_class($e) . ': ' . $e->getMessage(),
+            );
+        }
     }
 
     /**
@@ -1430,7 +1544,7 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        $this->sendToWorkers($workerServer, $dto);
+        $this->writeFrameToWorkers($workerServer, $dto);
     }
 
     /**
@@ -1439,7 +1553,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param WorkerServer $workerServer Worker server instance
      * @param WorkerDTO $dto Frame to write to each worker link
      */
-    private function sendToWorkers(WorkerServer $workerServer, WorkerDTO $dto): void
+    private function writeFrameToWorkers(WorkerServer $workerServer, WorkerDTO $dto): void
     {
         foreach ($workerServer->getClients() as $client) {
             if ($client instanceof WorkerClient) {
@@ -1670,13 +1784,13 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         foreach (array_keys($held) as $stateId) {
-            $this->sendToWorkers($workerServer, new WorkerRtSyncDeletedMessageDTO(
+            $this->writeFrameToWorkers($workerServer, new WorkerRtSyncDeletedMessageDTO(
                 new RtSyncDeletedSignalData($collectionKey, (string)$stateId),
             ));
         }
 
         foreach ($rows as $stateId => $row) {
-            $this->sendToWorkers($workerServer, new WorkerRtSyncCreatedMessageDTO(
+            $this->writeFrameToWorkers($workerServer, new WorkerRtSyncCreatedMessageDTO(
                 new RtSyncCreatedSignalData($collectionKey, (string)$stateId, $row),
             ));
         }
@@ -1809,6 +1923,64 @@ abstract class DaemonManager extends BaseManager implements
         $this->findWorkerServer()?->deliverDbReHydrateComplete(
             new DbReHydrateCompleteDTO($verdict->agentId, $verdict->complete, $verdict->problems),
         );
+    }
+
+    /**
+     * Forwards a master-facade signal to the agent's host node over the peer channel.
+     *
+     * Split out of {@see sendToAgent()} so the remote branch reads as one step there. Delivery
+     * is best-effort, exactly as the routed cross-node path is: an unlinked node drops and is
+     * written, buffering for an offline node is out of scope.
+     *
+     * @param string $nodeId Id of the node hosting the target agent
+     * @param string $agentType Agent type to address
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param SignalDTO $signal Signal to deliver on the target node
+     * @param string $agentLabel Addressee as the log line names it
+     */
+    private function forwardMasterSignalToNode(
+        string $nodeId,
+        string $agentType,
+        ?string $agentIndex,
+        SignalDTO $signal,
+        string $agentLabel,
+    ): void {
+        $signalName = $signal->signalName->getName();
+        $peerServer = $this->findPeerServer();
+        if ($peerServer === null) {
+            $this->reportMasterSignalDropped($signalName, $agentLabel, "no peer server for node {$nodeId}");
+
+            return;
+        }
+
+        if (!$peerServer->sendSignalToNode($nodeId, $agentType, $agentIndex, $signal)) {
+            $this->reportMasterSignalDropped($signalName, $agentLabel, "no live link to node {$nodeId}");
+        }
+    }
+
+    /**
+     * Writes the one line a caller of the master facade ever gets about a failed delivery.
+     *
+     * The facade returns void on purpose, so this line is the whole report: it names the
+     * signal, who it was for, and why it did not arrive. The level drops to info while the
+     * node is leaving, because workers and links disappearing during shutdown is the design
+     * and not a fault - the same distinction {@see dispatchSignals()} already draws.
+     *
+     * @param string $signalName Signal name the caller addressed
+     * @param string $addressee Addressee, already spelled the way the line names it
+     * @param string $reason Why the signal did not arrive
+     */
+    private function reportMasterSignalDropped(string $signalName, string $addressee, string $reason): void
+    {
+        $line = "Master signal '{$signalName}' to {$addressee} dropped: {$reason}";
+
+        if ($this->shouldExit) {
+            Logger::info($line);
+
+            return;
+        }
+
+        Logger::error($line);
     }
 
     /**
