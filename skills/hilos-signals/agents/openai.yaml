@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos Signals"
   short_description: "Routing, page topology, DTOs, subscriptions, and delivery"
-  default_prompt: "Use $hilos-signals to add or trace a Hilos signal or page subscription route."
+  default_prompt: "Use $hilos-signals to add or trace a Hilos signal or page subscription route, or to decide which frame carries data a page needs to render."

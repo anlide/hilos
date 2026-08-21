@@ -74,6 +74,15 @@ Topic documents are referenced by filename; several are still being authored.
   subscribe. Every page signal carries its page key so the normalizer drops
   signals for a page the client has left. Group subscriptions are 0..N and
   survive navigation. See [wire-protocol.md](wire-protocol.md).
+- **One subscription answers everything the page renders.** The reply to a page
+  subscription is a single `page_response` frame carrying everything that page
+  needs for its first render. A second client→server action sent to fetch
+  missing data, a companion signal the client additionally waits for, or a
+  standalone catalog request used to draw the page is a **violation**; the data
+  is assembled on the backend in that page's `buildPagePayload()` /
+  `onSubscribe()`. Lazily opened modals, a scrolled-to table window, and
+  downloaded files are outside the rule; a table's *first* window is not. See
+  [signals/subscriptions.md](../signals/subscriptions.md).
 - **Auth seam: framework machinery, project credential.** The framework owns
   cookie mechanics, the session store, revocation, GC, the handshake protocol,
   and a default username/password login. The project plugs in a credential

@@ -102,6 +102,16 @@ Returning to A re-subscribes and re-streams fresh. This bounds memory without an
 LRU or ref-counting, and dissolves most "ragged stale data" problems:
 active-scope data is always fresh because it is always re-streamed.
 
+The page scope is filled by **one** answer. Everything the page needs for its
+first render arrives in the single `page_response` frame that replies to its
+subscription; a page does not fetch a missing piece with a second action, a
+companion signal, or a catalog request of its own. Data that genuinely belongs
+to several pages goes into the Group scope, which is subscribed separately and
+survives navigation. The rule, its three forbidden shapes, and the test for a
+legitimate exception are in
+[signals/subscriptions.md](../signals/subscriptions.md), "One subscription
+answers everything the page renders".
+
 ## Entity references and resolution
 
 A reference is a small value: `EntityRef = { type, id }`. It is resolved through

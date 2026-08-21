@@ -86,7 +86,11 @@ indirection to maintain.
   reactive read of each action's framework `action_error`. Inbound server
   signals are **not** handled here — they are ingested centrally by the SDK
   page-scope binder (`bindPageScope`, see [page-registry.md](page-registry.md)),
-  not per page.
+  not per page. An action fired on mount to obtain data the first render needs
+  is a violation, not a pattern: that data rides in the page's `page_response`
+  payload, assembled on the backend — see
+  [signals/subscriptions.md](../signals/subscriptions.md), "One subscription
+  answers everything the page renders".
 - **`…Error.ts` — optional.** Add it only when a page grows error-handling
   logic that is **not** tied to a single action (aggregation, classification, a
   page-level banner). A single action's `action_error` stays in `…Actions.ts`,
@@ -227,6 +231,10 @@ second page graduates to `src/types/`.
   parents, or render logic and wiring every key to a single shared component,
   instead of one module per page (see "Never a shared page map"). Mixing more
   than one page's content or render into a single file is a gross violation.
+- An action, a companion signal, or a standalone catalog request the page needs
+  before it can render — a second round trip for the first render. The page
+  subscription answers with everything the page renders; see
+  [signals/subscriptions.md](../signals/subscriptions.md).
 
 ## Example — the chat main page (Vue)
 

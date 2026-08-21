@@ -1,6 +1,6 @@
 ---
 name: hilos-signals
-description: Work with Hilos signal routing, SignalRouter declarations, page subscription topology, signal payload DTOs, page subscriptions, group subscriptions, sendToUser, sendToGroup, sendToAgent, client-server actions, server-client signals, and signal delivery debugging. Use when adding, changing, or tracing Hilos signal flow.
+description: Work with Hilos signal routing, SignalRouter declarations, page subscription topology, signal payload DTOs, page subscriptions, group subscriptions, sendToUser, sendToGroup, sendToAgent, client-server actions, server-client signals, and signal delivery debugging. Use when adding, changing, or tracing Hilos signal flow, and when a page needs one more piece of data to render and you are deciding which frame carries it.
 ---
 
 # Hilos Signals
@@ -12,7 +12,9 @@ Use this skill for every change that affects signal shape, route, subscription, 
 - Routing rules and tracing signal paths: `docs/agents/signals/routing.md`
 - App topology for page subscription routing:
   `docs/agents/app-topology.md`
-- Page/group subscriptions and send helpers: `docs/agents/signals/subscriptions.md`
+- Page/group subscriptions, send helpers, and the rule that one page
+  subscription answers with everything the page renders:
+  `docs/agents/signals/subscriptions.md`
 - Payload DTOs and agent-to-agent signals: `docs/agents/signals/dto-convention.md`
 - Page action handler style: `docs/agents/code-style/page-action-handlers.md`
 - Named signal handler style: `docs/agents/code-style/signal-handlers.md`
@@ -51,3 +53,6 @@ Use this skill for every change that affects signal shape, route, subscription, 
   `SignalRouter` reads page owners from `Hilos::getPageRoutes()`.
 - Do not hide subscription or delivery decisions inside unrelated business logic.
 - Preserve envelope metadata when DTOs cross worker and daemon boundaries.
+- Do not add a signal or an action a page waits for in order to draw its first
+  render. One page subscription answers in one `page_response`; data the page
+  is missing is read in its own `buildPagePayload()` / `onSubscribe()`.

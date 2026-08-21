@@ -1,6 +1,6 @@
 ---
 name: hilos-page-subscribe
-description: Work with Hilos page subscription params, page registration and routing, PageRouteParams accessors, AbstractPageSubscribeParamsDTO subclasses, onSubscribe/onUpdateSubscription signatures, template method dispatch in abstract pages, and subscription error signals. Use when adding or changing page route params or subscribe handlers.
+description: Work with Hilos page subscription params, page registration and routing, PageRouteParams accessors, AbstractPageSubscribeParamsDTO subclasses, onSubscribe/onUpdateSubscription signatures, template method dispatch in abstract pages, and subscription error signals. Use when adding or changing page route params or subscribe handlers, and when a page needs one more piece of data to render and you are deciding where that data comes from.
 ---
 
 # Hilos Page Subscribe Params
@@ -17,8 +17,10 @@ signals back to their source.
 - Subscribe handlers, `PageRouteParams` accessors, per-page DTO template:
   `docs/agents/code-style/page-action-handlers.md` (section
   "Subscribe handlers and route params")
-- Subscription lifecycle (`PAGE_SUBSCRIBE` / `PAGE_UPDATE_SUBSCRIPTION`):
-  `docs/agents/signals/subscriptions.md`
+- Subscription lifecycle (`PAGE_SUBSCRIBE` / `PAGE_UPDATE_SUBSCRIPTION`), and
+  the rule that one page subscription answers with everything the page renders
+  — read the section of that name before adding anything a page waits for on
+  top of its subscription reply: `docs/agents/signals/subscriptions.md`
 - `PageSubscriptionException` taxonomy and `@throws` style: use
   `$hilos-exception`
 
@@ -78,3 +80,7 @@ signals back to their source.
 - Once an abstract page introduces a typed subscribe DTO, keep its
   `onSubscribe()` / `onUpdateSubscription()` `final` so subclasses cannot
   bypass the parsed DTO.
+- Do not answer a page's first render with a second round trip: no extra
+  client→server action, no companion signal the client waits for alongside
+  `page_response`, no standalone catalog request. Read the foreign source in
+  that page's `buildPagePayload()` / `onSubscribe()` and send one frame.

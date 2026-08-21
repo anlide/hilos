@@ -1,6 +1,6 @@
 ---
 name: hilos-frontend-page-structure
-description: Organize frontend page files into one folder per page and place page types correctly. Use when creating, moving, or reviewing the files of a frontend page (view, selectors, actions, error handling), choosing a page folder or file name across the Vue/React/Angular demos, or deciding whether a TypeScript type belongs in src/types or a page's own types folder.
+description: Organize frontend page files into one folder per page and place page types correctly. Use when creating, moving, or reviewing the files of a frontend page (view, selectors, actions, error handling), choosing a page folder or file name across the Vue/React/Angular demos, or deciding whether a TypeScript type belongs in src/types or a page's own types folder. Use it too when a page also needs one more piece of data to render, before wiring anything that fetches it.
 ---
 
 # Hilos Frontend Page Module Structure
@@ -14,6 +14,9 @@ frontend page, or when you place a frontend TypeScript type. Start with
 - Page module structure (canonical rule): `docs/agents/frontend/page-module-structure.md`
 - The render-state rule — a page shows a placeholder until its subscription
   answers, never page content early: `docs/agents/frontend/core-and-connection.md`
+- What that one answer must contain — the page subscription replies with
+  everything the page renders, so a page never fetches a missing piece for its
+  first render: `docs/agents/signals/subscriptions.md`
 - Frontend routing matrix and overview: `docs/agents/frontend/README.md`
 - Entity store, scopes, and the normalizer boundary the types describe: `docs/agents/frontend/data-model.md`
 - The agnostic core and per-framework view adapters: `docs/agents/frontend/multiframework-core.md`
@@ -45,7 +48,13 @@ frontend page, or when you place a frontend TypeScript type. Start with
    or a surface built on an assumed outcome — early content races the reply and a
    second UI gets swapped mid-state. The auth-gate, not the page, owns the
    sign-in form (`core-and-connection.md`).
-7. A frontend FE↔BE contract change (signals, signal/action DTO payloads,
+7. That one answer is the whole answer. When the page also needs something the
+   payload does not carry, add it to what the backend sends — do not fire an
+   action on mount, wait for a companion signal, or request a catalog of your
+   own. Ask "would the page render complete without this?"; only a lazily
+   opened modal, a scrolled-to table window, or a downloaded file may arrive
+   later (`docs/agents/signals/subscriptions.md`).
+8. A frontend FE↔BE contract change (signals, signal/action DTO payloads,
    routes, DB/RT shapes) still passes the Contract approval gate in `agents.md`
    before implementation — this rule only governs file layout, not the wire.
 
@@ -57,3 +66,5 @@ frontend page, or when you place a frontend TypeScript type. Start with
 - Page-specific types live in the page's `types/` (list-row `…Item` view-models
   under `types/lists/`); domain entities and shared value types live in `src/types/`.
 - No barrel `index.ts` inside a page folder.
+- Nothing a page needs for its first render is fetched by the page itself; it
+  arrives in the one `page_response` that answers the subscription.

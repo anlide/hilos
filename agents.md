@@ -88,7 +88,7 @@ approval gate below.
 | File | Read when... |
 |---|---|
 | [signals/routing.md](docs/agents/signals/routing.md) | adding routing rules, tracing signal path, signal not arriving |
-| [signals/subscriptions.md](docs/agents/signals/subscriptions.md) | page/group subscriptions, sendToUser/sendToGroup |
+| [signals/subscriptions.md](docs/agents/signals/subscriptions.md) | page/group subscriptions, sendToUser/sendToGroup, a page needs one more piece of data to render |
 | [signals/dto-convention.md](docs/agents/signals/dto-convention.md) | creating signal payload DTOs, agent-to-agent signals |
 
 ## ORM
@@ -203,6 +203,7 @@ additional change in one of these surfaces, stop and ask again before editing it
 7. Internal backend API uses typed parameters, DTOs, value objects, or typed collections — unstructured arrays need a boundary or explicit reason; do not leave magic-string keys in internal structured arrays — use named constants at minimum, a value object preferably
 8. DB/RT `actions` are write APIs; put read-only helpers on collections, items, objects, or typed read APIs
 9. If a DB/RT item key is known, update/delete that one item through `Hilos::$db/$rt->collection[$key]->actions`, not through collection actions that accept the key
+10. A page subscription answers in **one** `page_response` with everything that page needs for its first render — no second action, companion signal, or standalone catalog request to draw it; assemble it in that page's `buildPagePayload()` / `onSubscribe()` (see [signals/subscriptions.md](docs/agents/signals/subscriptions.md))
 
 ## Project docs (existing)
 
