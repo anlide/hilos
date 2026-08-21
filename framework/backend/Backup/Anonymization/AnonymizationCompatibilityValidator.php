@@ -22,8 +22,8 @@ use Hilos\Database\DatabaseException;
  * column exists at all, that {@see AnonymizationStrategy::NULLIFY} has a nullable column to
  * write NULL into, that the `fake-*` family has the single primary key it derives from,
  * that the column's type holds characters when the strategy writes them, that the widest
- * value the strategy can write fits the column, and that a UNIQUE index does not end up
- * covered by a strategy that writes the same value over every row.
+ * value the strategy can write fits the column, and that no column of a UNIQUE index is
+ * touched by a strategy that writes the same value over every row.
  *
  * Every one of those is a refusal rather than an adjustment. A gate that quietly shortened
  * a mask or widened a column would be deciding, at restore time and without an operator,
@@ -166,9 +166,11 @@ final class AnonymizationCompatibilityValidator
         }
 
         if ($strategy === AnonymizationStrategy::HASH) {
-            if ($length < self::UNIQUE_HASH_MIN_LENGTH && $schema->uniqueIndexesCoveredBy([$column]) !== []) {
-                $problems[] = "{$where} is UNIQUE and takes [{$strategy->value}], which would be cut to "
-                    . "{$length} characters to fit; a UNIQUE index needs at least "
+            $touched = $schema->uniqueIndexesTouchedBy([$column]);
+            if ($length < self::UNIQUE_HASH_MIN_LENGTH && $touched !== []) {
+                $problems[] = "{$where} takes [{$strategy->value}] inside UNIQUE ["
+                    . implode(', ', array_keys($touched)) . "] and would be cut to {$length} "
+                    . 'characters to fit; a UNIQUE index needs at least '
                     . self::UNIQUE_HASH_MIN_LENGTH . ' of them';
             }
 
@@ -212,11 +214,12 @@ final class AnonymizationCompatibilityValidator
             return;
         }
 
-        foreach ($schema->uniqueIndexesCoveredBy($repeated) as $index) {
-            $problems[] = "connection {$connectionIndex}: {$schema->table} UNIQUE index [{$index}] is "
-                . 'covered whole by [' . AnonymizationStrategy::MASK->value . '] on ('
-                . implode(', ', $schema->uniqueIndexes[$index]) . '); one value over every row '
-                . 'cannot stay unique - use [' . AnonymizationStrategy::HASH->value . '] there';
+        foreach ($schema->uniqueIndexesTouchedBy($repeated) as $index => $touchedColumns) {
+            $problems[] = "connection {$connectionIndex}: {$schema->table} UNIQUE index [{$index}] on ("
+                . implode(', ', $schema->uniqueIndexes[$index]) . ') takes ['
+                . AnonymizationStrategy::MASK->value . '] on (' . implode(', ', $touchedColumns)
+                . '); one value over every row cannot keep the index unique - use ['
+                . AnonymizationStrategy::HASH->value . '] there';
         }
     }
 }

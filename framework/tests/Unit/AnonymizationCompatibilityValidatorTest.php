@@ -203,7 +203,7 @@ final class AnonymizationCompatibilityValidatorTest extends TestCase
         ]]);
 
         $this->expectException(AnonymizationConfigException::class);
-        $this->expectExceptionMessage('hilos_probe_email');
+        $this->expectExceptionMessage('UNIQUE index [hilos_probe_email] on (email) takes [mask] on (email)');
 
         AnonymizationCompatibilityValidator::validate(
             $registry,
@@ -218,11 +218,14 @@ final class AnonymizationCompatibilityValidatorTest extends TestCase
         );
     }
 
-    public function testAMaskOnPartOfAUniqueIndexPasses(): void
+    public function testAMaskOnPartOfAUniqueIndexIsRefused(): void
     {
         $registry = PiiRegistry::fromDeclarations([0 => [
             'hilos_probe' => ['login' => AnonymizationStrategy::MASK],
         ]]);
+
+        $this->expectException(AnonymizationConfigException::class);
+        $this->expectExceptionMessage('UNIQUE index [hilos_probe_pair] on (tenant, login) takes [mask] on (login)');
 
         AnonymizationCompatibilityValidator::validate(
             $registry,
@@ -235,8 +238,60 @@ final class AnonymizationCompatibilityValidatorTest extends TestCase
             ),
             self::maxKey(),
         );
+    }
 
-        $this->expectNotToPerformAssertions();
+    public function testTwoMaskedColumnsOfOneIndexAreOneFinding(): void
+    {
+        $registry = PiiRegistry::fromDeclarations([0 => [
+            'hilos_probe' => [
+                'first' => AnonymizationStrategy::MASK,
+                'last' => AnonymizationStrategy::MASK,
+            ],
+        ]]);
+
+        try {
+            AnonymizationCompatibilityValidator::validate(
+                $registry,
+                0,
+                self::probeSchemas(
+                    ['first' => false, 'last' => false],
+                    ['first' => 'varchar', 'last' => 'varchar'],
+                    ['first' => 64, 'last' => 64],
+                    ['hilos_probe_name' => ['first', 'last']],
+                ),
+                self::maxKey(),
+            );
+            $this->fail('A unique index a mask reaches into must be refused');
+        } catch (AnonymizationConfigException $refusal) {
+            $this->assertStringContainsString(
+                'UNIQUE index [hilos_probe_name] on (first, last) takes [mask] on (first, last)',
+                $refusal->getMessage(),
+            );
+            $this->assertSame(1, substr_count($refusal->getMessage(), 'UNIQUE index'));
+        }
+    }
+
+    public function testAMaskOnPartOfACompositePrimaryKeyIsRefused(): void
+    {
+        $registry = PiiRegistry::fromDeclarations([0 => [
+            'hilos_probe' => ['login' => AnonymizationStrategy::MASK],
+        ]]);
+
+        $this->expectException(AnonymizationConfigException::class);
+        $this->expectExceptionMessage('UNIQUE index [PRIMARY] on (id, login) takes [mask] on (login)');
+
+        AnonymizationCompatibilityValidator::validate(
+            $registry,
+            0,
+            self::probeSchemas(
+                ['login' => false],
+                ['login' => 'varchar'],
+                ['login' => 64],
+                [],
+                ['id', 'login'],
+            ),
+            self::maxKey(),
+        );
     }
 
     public function testAHashCutShorterThanAUniqueIndexNeedsIsRefused(): void
@@ -256,6 +311,28 @@ final class AnonymizationCompatibilityValidatorTest extends TestCase
                 ['email' => 'varchar'],
                 ['email' => 8],
                 ['hilos_probe_email' => ['email']],
+            ),
+            self::maxKey(),
+        );
+    }
+
+    public function testAHashCutShortInsideACompositeUniqueIndexIsRefused(): void
+    {
+        $registry = PiiRegistry::fromDeclarations([0 => [
+            'hilos_probe' => ['login' => AnonymizationStrategy::HASH],
+        ]]);
+
+        $this->expectException(AnonymizationConfigException::class);
+        $this->expectExceptionMessage('takes [hash] inside UNIQUE [hilos_probe_pair] and would be cut to 8');
+
+        AnonymizationCompatibilityValidator::validate(
+            $registry,
+            0,
+            self::probeSchemas(
+                ['tenant' => false, 'login' => false],
+                ['tenant' => 'int', 'login' => 'varchar'],
+                ['tenant' => null, 'login' => 8],
+                ['hilos_probe_pair' => ['tenant', 'login']],
             ),
             self::maxKey(),
         );
@@ -334,6 +411,8 @@ final class AnonymizationCompatibilityValidatorTest extends TestCase
      * @param array<string, string> $types The same columns to their types
      * @param array<string, ?int> $lengths The same columns to their character lengths
      * @param array<string, list<string>> $uniqueIndexes Unique indexes beside the primary key
+     * @param list<string> $primaryKey Primary key columns, in key order; the table declares it
+     *     under `PRIMARY` as the reader does
      * @return array<string, LiveTableSchema> The probe table, keyed as the reader keys it
      */
     private static function probeSchemas(
@@ -341,14 +420,15 @@ final class AnonymizationCompatibilityValidatorTest extends TestCase
         array $types,
         array $lengths,
         array $uniqueIndexes = [],
+        array $primaryKey = ['id'],
     ): array {
         return ['hilos_probe' => new LiveTableSchema(
             'hilos_probe',
             ['id' => false] + $nullability,
             ['id' => 'int'] + $types,
             ['id' => null] + $lengths,
-            ['id'],
-            ['PRIMARY' => ['id']] + $uniqueIndexes,
+            $primaryKey,
+            ['PRIMARY' => $primaryKey] + $uniqueIndexes,
         )];
     }
 

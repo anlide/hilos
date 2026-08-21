@@ -18,7 +18,8 @@ namespace Hilos\Backup\Anonymization;
  * else: whether it exists and may hold NULL ({@see AnonymizationStrategy::NULLIFY}), what
  * type it is and how many characters it takes (a substitution has to fit, and
  * {@see AnonymizationStrategy::HASH} truncates), the primary key the `fake-*` strategies
- * derive from, and the unique indexes a non-injective substitution would collide inside.
+ * derive from, and the unique indexes a non-injective substitution would collide inside
+ * the moment it touches one of their columns.
  */
 final class LiveTableSchema
 {
@@ -99,25 +100,27 @@ final class LiveTableSchema
     }
 
     /**
-     * Returns the unique indexes a rewrite of these columns would rewrite whole.
+     * Returns the unique indexes a rewrite of these columns would reach into.
      *
-     * An index only one of whose columns is rewritten keeps its other columns telling the
-     * rows apart, so a substitution that repeats itself still cannot collide there. An
-     * index every column of which is rewritten has nothing left of the original row, and
-     * that is the one a non-injective strategy breaks.
+     * One rewritten column is enough: a strategy that repeats itself collides inside an
+     * index the moment two rows shared the rest of its columns, and the pass meets that
+     * collision as a `1062` in the middle of an already restored database. The primary key
+     * is one of the indexes answered about, under its own name.
      *
      * @param list<string> $columns Columns the pass rewrites in this table
-     * @return list<string> Names of the unique indexes fully covered by them
+     * @return array<string, list<string>> Name of every touched unique index to the columns
+     *     of that index the rewrite reaches, in index order
      */
-    public function uniqueIndexesCoveredBy(array $columns): array
+    public function uniqueIndexesTouchedBy(array $columns): array
     {
-        $covered = [];
+        $touched = [];
         foreach ($this->uniqueIndexes as $index => $indexColumns) {
-            if (array_diff($indexColumns, $columns) === []) {
-                $covered[] = $index;
+            $shared = array_values(array_intersect($indexColumns, $columns));
+            if ($shared !== []) {
+                $touched[$index] = $shared;
             }
         }
 
-        return $covered;
+        return $touched;
     }
 }

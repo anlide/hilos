@@ -138,9 +138,11 @@ than adjusts — knowing them saves a restore, not a leak:
   `set` or numeric column is refused — `enum` and `set` hold characters but only
   the ones they list.
 - **A UNIQUE index must survive the pass.** `mask` writes one constant over every
-  row, so a column covering a UNIQUE index is refused for it; `hash` is refused on
-  a UNIQUE column narrower than 32 characters, because a shorter hash is a
-  collision the restore cannot afford.
+  row, so it is refused on any column of any UNIQUE index, the primary key
+  included — one column of the index left non-injective is all a `1062` needs, and
+  it arrives mid-pass over an already restored database. `hash` is refused for the
+  same reach whenever the column cuts it below 32 characters, not only when that
+  column makes up the index on its own.
 - **What is written has to fit.** The widest value a strategy can produce is
   measured against the column, and for the `fake-*` family against the largest
   primary key the table actually holds.

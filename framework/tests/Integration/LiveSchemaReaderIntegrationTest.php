@@ -106,18 +106,22 @@ final class LiveSchemaReaderIntegrationTest extends FrameworkIntegrationTestCase
     }
 
     /**
-     * A unique index counts as covered only once every one of its columns is rewritten.
+     * One column of a unique index is enough for the rewrite to reach into it.
      *
      * @throws DatabaseException When the read fails
      */
-    public function testReportsTheUniqueIndexesASetOfColumnsCoversWhole(): void
+    public function testReportsTheUniqueIndexesASetOfColumnsTouches(): void
     {
         $schema = LiveSchemaReader::read(DatabaseConnectionDefaults::PRIMARY_INDEX)[self::PROBE_TABLE];
 
         $this->assertSame(['tenant', 'login'], $schema->uniqueIndexes[self::PAIR_INDEX] ?? []);
-        $this->assertSame([], $schema->uniqueIndexesCoveredBy(['tenant']));
-        $this->assertSame([self::PAIR_INDEX], $schema->uniqueIndexesCoveredBy(['login', 'tenant']));
-        $this->assertSame(['PRIMARY'], $schema->uniqueIndexesCoveredBy(['id']));
+        $this->assertSame([self::PAIR_INDEX => ['tenant']], $schema->uniqueIndexesTouchedBy(['tenant']));
+        $this->assertSame([self::PAIR_INDEX => ['login']], $schema->uniqueIndexesTouchedBy(['login']));
+        $this->assertSame(
+            [self::PAIR_INDEX => ['tenant', 'login']],
+            $schema->uniqueIndexesTouchedBy(['login', 'tenant']),
+        );
+        $this->assertSame(['PRIMARY' => ['id']], $schema->uniqueIndexesTouchedBy(['id']));
 
         // A non-unique index is not one of them: repeating a value there collides with nothing.
         $this->assertArrayNotHasKey('hilos_fw_test_live_schema_note', $schema->uniqueIndexes);
