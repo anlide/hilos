@@ -2,17 +2,17 @@
 // URL against. The route engine and the framework admin catalog come from
 // @hilos/core, so this file only declares the tasks demo's own pages;
 // `createAppPageRouter` mounts the `hilos_*` admin pages under them.
-import { createAppPageRouter } from '@hilos/core'
+import { createAppPageRouter, type HilosRouteDeclaration } from '@hilos/core'
 
 import { PAGE_MAIN } from './keys'
 
 /**
- * The tasks demo's own pages keyed to the URL path template each answers. The
- * framework admin pages are merged in by `createAppPageRouter` rather than
- * restated here.
+ * The tasks demo's own pages keyed to the URL path template each answers and
+ * whether that page is an administrative surface. The framework admin pages are
+ * merged in by `createAppPageRouter` rather than restated here.
  */
-const APP_ROUTES: Record<string, string> = {
-  [PAGE_MAIN]: '/',
+const APP_ROUTES: Record<string, HilosRouteDeclaration> = {
+  [PAGE_MAIN]: { path: '/', admin: false },
 }
 
 /**

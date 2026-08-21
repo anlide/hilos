@@ -21,6 +21,7 @@ function router(): HilosRouter {
     currentRoute: createSignal<PageRouteMatch>({
       page: '',
       params: { userId: '1' },
+      admin: true,
     }),
     currentPath: createSignal(''),
     currentTitle: createSignal(''),

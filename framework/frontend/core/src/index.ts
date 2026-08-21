@@ -322,6 +322,7 @@ export {
 } from './protocol/pageError.js'
 export {
   createPageRouter,
+  type HilosRouteDeclaration,
   type PageRouter,
   type PageRouteMatch,
   type PageRouterOptions,
@@ -336,6 +337,7 @@ export {
 } from './routing/HilosRouter.js'
 export {
   HilosPages,
+  HILOS_ROUTE_DECLARATIONS,
   HILOS_PAGE_ROUTES,
   HILOS_FOOTER_LINKS,
   HILOS_ADMIN_PAGES,

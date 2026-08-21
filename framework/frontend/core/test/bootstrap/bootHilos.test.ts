@@ -60,7 +60,10 @@ function fakeNavigation(pathname: string): NavigationEnvironment {
 
 function boot(connection: ReturnType<typeof fakeConnection>) {
   const scopes = new ScopeManager()
-  const router = createAppPageRouter({ main: '/' }, { fallback: 'main' })
+  const router = createAppPageRouter(
+    { main: { path: '/', admin: false } },
+    { fallback: 'main' },
+  )
   const hilosRouter = bootHilos({
     connection: connection as unknown as HilosConnection,
     scopes,
@@ -108,7 +111,10 @@ describe('bootHilos', () => {
   it('resolves the current title from the project titles and app name', () => {
     const connection = fakeConnection()
     const scopes = new ScopeManager()
-    const router = createAppPageRouter({ main: '/' }, { fallback: 'main' })
+    const router = createAppPageRouter(
+      { main: { path: '/', admin: false } },
+      { fallback: 'main' },
+    )
     const hilosRouter = bootHilos({
       connection: connection as unknown as HilosConnection,
       scopes,

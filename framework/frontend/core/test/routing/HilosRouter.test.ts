@@ -10,7 +10,11 @@ import { type PageSubscriptionError } from '../../src/protocol/pageError.js'
 import { createSignal } from '../../src/state/signal.js'
 
 const router = createPageRouter(
-  { main: '/', dash: '/hilos', user: '/user/{id}' },
+  {
+    main: { path: '/', admin: false },
+    dash: { path: '/hilos', admin: true },
+    user: { path: '/user/{id}', admin: false },
+  },
   { fallback: 'main' },
 )
 
@@ -131,6 +135,7 @@ describe('createHilosRouter', () => {
     expect(navigator.currentRoute.get()).toEqual({
       page: 'user',
       params: { id: '42' },
+      admin: false,
     })
     expect(calls.at(-1)).toEqual({ page: 'user', params: { id: '42' } })
   })

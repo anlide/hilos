@@ -80,7 +80,11 @@ function mountShell(connection: HilosConnection) {
 describe('HilosMaintenance', () => {
   it('renders the copy the backend authored', () => {
     const wrapper = mount(HilosMaintenance, {
-      props: { status: FROZEN, connection: fakeConnection(FROZEN).connection },
+      props: {
+        status: FROZEN,
+        connection: fakeConnection(FROZEN).connection,
+        adminSurface: true,
+      },
     })
 
     const surface = wrapper.find('[data-id="maintenance"]')
@@ -98,6 +102,7 @@ describe('HilosMaintenance', () => {
       props: {
         status: FROZEN_WITHOUT_COPY,
         connection: fakeConnection(FROZEN_WITHOUT_COPY).connection,
+        adminSurface: true,
       },
     })
 
@@ -114,7 +119,11 @@ describe('HilosMaintenance', () => {
     // The frozen phases have no window to be let into, so a field there would
     // promise a way in that does not exist.
     const wrapper = mount(HilosMaintenance, {
-      props: { status: FROZEN, connection: fakeConnection(FROZEN).connection },
+      props: {
+        status: FROZEN,
+        connection: fakeConnection(FROZEN).connection,
+        adminSurface: true,
+      },
     })
 
     expect(wrapper.find('[data-id="maintenance-pass-form"]').exists()).toBe(
@@ -122,10 +131,36 @@ describe('HilosMaintenance', () => {
     )
   })
 
+  it('offers the code field on an administrative surface only', () => {
+    // The verification window is not a public announcement: a visitor holds no
+    // code, so on a public url he sees the same screen as in the active phase.
+    const onPublic = mount(HilosMaintenance, {
+      props: {
+        status: VERIFYING,
+        connection: fakeConnection(VERIFYING).connection,
+        adminSurface: false,
+      },
+    })
+    expect(onPublic.find('[data-id="maintenance-pass-form"]').exists()).toBe(
+      false,
+    )
+
+    const onAdmin = mount(HilosMaintenance, {
+      props: {
+        status: VERIFYING,
+        connection: fakeConnection(VERIFYING).connection,
+        adminSurface: true,
+      },
+    })
+    expect(onAdmin.find('[data-id="maintenance-pass-form"]').exists()).toBe(
+      true,
+    )
+  })
+
   it('presents the typed code through the connection', async () => {
     const { connection, presented } = fakeConnection(VERIFYING)
     const wrapper = mount(HilosMaintenance, {
-      props: { status: VERIFYING, connection },
+      props: { status: VERIFYING, connection, adminSurface: true },
     })
 
     await wrapper.find('[data-id="maintenance-pass"]').setValue('the-key')
@@ -139,6 +174,7 @@ describe('HilosMaintenance', () => {
       props: {
         status: REJECTED,
         connection: fakeConnection(REJECTED).connection,
+        adminSurface: true,
       },
     })
 

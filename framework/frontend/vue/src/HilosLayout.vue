@@ -59,6 +59,14 @@ const underMaintenance = computed(() => protectedMode.value.active)
 // router (tests, the hard-link fallback) there is no title to track.
 const router = inject(hilosRouterKey, undefined)
 const pageTitle = router ? useSignal(router.currentTitle) : undefined
+
+// The maintenance surface shows the verifier's code field only on an
+// administrative url, so the shell hands the route's surface type down to it.
+// Without a router there is no route and therefore no administrative surface
+// (tests, the hard-link fallback): the field then hides, which is the safe way
+// round — a missing field is fixed by typing the admin url, a field shown where
+// it should not be is the defect this closes.
+const currentRoute = router ? useSignal(router.currentRoute) : undefined
 watch(
   () => pageTitle?.value,
   (title) => {
@@ -177,6 +185,7 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
         v-if="underMaintenance"
         :status="protectedMode"
         :connection="props.connection"
+        :admin-surface="currentRoute?.admin ?? false"
       />
       <slot v-else />
     </main>

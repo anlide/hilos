@@ -41,7 +41,11 @@ describe('ErrorPage', () => {
 
 function routerWith(pageError: PageSubscriptionError | null): HilosRouter {
   return {
-    currentRoute: createSignal<PageRouteMatch>({ page: 'user', params: {} }),
+    currentRoute: createSignal<PageRouteMatch>({
+      page: 'user',
+      params: {},
+      admin: false,
+    }),
     currentPath: createSignal(''),
     currentTitle: createSignal(''),
     pageError: createSignal<PageSubscriptionError | null>(pageError),

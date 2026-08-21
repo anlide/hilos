@@ -23,6 +23,7 @@ import {
   createAuthGate,
   createAuthFlow,
   PASSWORD_FLOW_METHOD,
+  HILOS_ROUTE_DECLARATIONS,
   HILOS_PAGE_ROUTES,
   SIGNAL_TYPE_PAGE_RESPONSE,
 } from '../src/index.js'
@@ -49,6 +50,7 @@ it('exports the @hilos/core public surface', () => {
   expect(createAuthGate).toBeTypeOf('function')
   expect(createAuthFlow).toBeTypeOf('function')
   expect(PASSWORD_FLOW_METHOD.kind).toBe('identifier')
+  expect(HILOS_ROUTE_DECLARATIONS).toBeTypeOf('object')
   expect(HILOS_PAGE_ROUTES).toBeTypeOf('object')
   expect(SIGNAL_TYPE_PAGE_RESPONSE).toBe('page_response')
 })

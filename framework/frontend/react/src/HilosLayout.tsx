@@ -18,7 +18,11 @@
 // classes only and the shell carries no CSS of its own (styling-rules.md); the
 // status and admin icons are Bootstrap Icons (`bi-*`), shipped with the view
 // layer (src/index.ts) like Bootstrap.
-import type { ConnectionState, HilosConnection } from '@hilos/core'
+import type {
+  ConnectionState,
+  HilosConnection,
+  PageRouteMatch,
+} from '@hilos/core'
 import {
   HILOS_FOOTER_LINKS,
   HILOS_PAGE_ROUTES,
@@ -80,6 +84,16 @@ const ADMIN_HREF = HILOS_PAGE_ROUTES[HilosPages.DASHBOARD]
 // (tests, the hard-link fallback); the page title then stays empty.
 const NO_TITLE = createSignal('')
 
+// The same for the route: without a router there is no route and therefore no
+// administrative surface, so the maintenance surface hides the verifier's code
+// field. That is the safe way round — a missing field is fixed by typing the
+// admin url, a field shown where it should not be is the defect this closes.
+const NO_ROUTE = createSignal<PageRouteMatch>({
+  page: '',
+  params: {},
+  admin: false,
+})
+
 /**
  * The application shell: top navigation with the brand, the admin gear, the
  * live connection indicator, and the routed page content.
@@ -113,6 +127,7 @@ export function HilosLayout({
   // Without a router (tests, the hard-link fallback) the title stays empty.
   const router = useContext(HilosRouterContext)
   const pageTitle = useSignal(router?.currentTitle ?? NO_TITLE)
+  const currentRoute = useSignal(router?.currentRoute ?? NO_ROUTE)
   useEffect(() => {
     if (pageTitle) {
       document.title = pageTitle
@@ -197,7 +212,11 @@ export function HilosLayout({
         }`}
       >
         {underMaintenance ? (
-          <HilosMaintenance status={protectedMode} connection={connection} />
+          <HilosMaintenance
+            status={protectedMode}
+            connection={connection}
+            adminSurface={currentRoute.admin}
+          />
         ) : (
           children
         )}

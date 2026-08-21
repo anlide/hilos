@@ -1,14 +1,18 @@
-// The framework's own page catalog: the keys and cold-load URL templates of the
-// Hilos admin section (dashboard, i18n, daemon, logs, users, MCP/skills, SIL,
+// The framework's own page catalog: the keys and cold-load route declarations of
+// the Hilos admin section (dashboard, i18n, daemon, logs, users, MCP/skills, SIL,
 // communications, security, billing, change log) plus the public content pages
 // (about, terms, privacy, license) the application shell links in its footer
 // (HILOS_FOOTER_LINKS). These pages are framework functionality, so the
 // framework owns their identity and URL layout — a project mounts them by
-// merging HILOS_PAGE_ROUTES into its own route map rather than restating them,
-// and supplies the content component mapped to each key. Keys mirror PHP `HilosPageConstants` and the
-// templates mirror the framework rows of the page catalog; both must stay
-// byte-identical to their backend counterparts (the page key is the
-// subscription wire identity, the path is the canonical admin URL).
+// merging HILOS_ROUTE_DECLARATIONS into its own route map rather than restating
+// them, and supplies the content component mapped to each key. Keys mirror PHP
+// `HilosPageConstants` and the paths mirror the framework rows of the page
+// catalog; both must stay byte-identical to their backend counterparts (the page
+// key is the subscription wire identity, the path is the canonical admin URL).
+// Every declaration also states whether its page is an administrative surface,
+// which is what keeps a framework page out of the public half of the app.
+
+import { type HilosRouteDeclaration } from './PageRouter.js'
 
 /** Hilos admin page keys, mirroring PHP `HilosPageConstants`. */
 export const HilosPages = {
@@ -82,84 +86,177 @@ export const HilosPages = {
 } as const
 
 /**
- * Hilos admin page key → cold-load URL template, mirroring the framework rows
- * of the page catalog. `{name}` segments are route params captured at match
- * time. A project spreads this into its own route map to mount the admin.
+ * Hilos admin page key → route declaration, mirroring the framework rows of
+ * the page catalog. `{name}` segments are route params captured at match time,
+ * and `admin` states whether the page is an administrative surface — true for
+ * the admin section, false for the profile and the public footer pages. A
+ * project overlays this with its own declarations to mount the admin.
  */
-export const HILOS_PAGE_ROUTES: Record<string, string> = {
-  [HilosPages.DASHBOARD]: '/hilos',
-  [HilosPages.PROFILE]: '/profile',
-  [HilosPages.SETTINGS]: '/hilos/settings',
-  [HilosPages.ANALYTICS]: '/hilos/analytics',
-  [HilosPages.ROLES]: '/hilos/roles',
-  [HilosPages.OPERATIONS]: '/hilos/operations',
-  [HilosPages.BACKUP]: '/hilos/backup',
-  [HilosPages.GUARDIAN]: '/hilos/guardian',
-  [HilosPages.GUARDIAN_AGENT]: '/hilos/guardian/{agentId}',
-  [HilosPages.I18N]: '/hilos/i18n',
-  [HilosPages.I18N_LANGUAGES]: '/hilos/i18n/languages',
-  [HilosPages.I18N_COUNTRIES]: '/hilos/i18n/countries',
-  [HilosPages.I18N_ENTITIES]: '/hilos/i18n/entities',
-  [HilosPages.I18N_UI_PAGES]: '/hilos/i18n/ui-pages',
-  [HilosPages.I18N_GROUPS]: '/hilos/i18n/groups',
-  [HilosPages.I18N_ACTIONS]: '/hilos/i18n/actions',
-  [HilosPages.I18N_EMAILS]: '/hilos/i18n/emails',
-  [HilosPages.I18N_LANGUAGE]: '/hilos/i18n/languages/{languageId}',
-  [HilosPages.I18N_COUNTRY]: '/hilos/i18n/countries/{countryId}',
-  [HilosPages.I18N_UI_PAGE]: '/hilos/i18n/ui-pages/{uiPageId}',
-  [HilosPages.I18N_GROUP]: '/hilos/i18n/groups/{groupId}',
-  [HilosPages.I18N_ACTION]: '/hilos/i18n/actions/{actionId}',
-  [HilosPages.I18N_TRANSLATE_ENTITY]: '/hilos/i18n/translate/entity/{entityId}',
-  [HilosPages.I18N_TRANSLATE_UI_PAGE]:
-    '/hilos/i18n/translate/ui-page/{uiPageId}',
-  [HilosPages.I18N_TRANSLATE_UI_PAGE_ITEM]:
-    '/hilos/i18n/translate/ui-page/{uiPageId}/item/{itemId}',
-  [HilosPages.I18N_TRANSLATE_GROUP]: '/hilos/i18n/translate/group/{groupId}',
-  [HilosPages.I18N_TRANSLATE_GROUP_ITEM]:
-    '/hilos/i18n/translate/group/{groupId}/item/{itemId}',
-  [HilosPages.I18N_TRANSLATE_ACTION_ERROR]:
-    '/hilos/i18n/translate/action/{actionId}/error/{errorId}',
-  [HilosPages.I18N_TRANSLATE_EMAIL]: '/hilos/i18n/translate/email/{emailId}',
-  [HilosPages.CHANGE_LOG]: '/hilos/change-log',
-  [HilosPages.CHANGE_LOG_TABLES]: '/hilos/change-log/tables',
-  [HilosPages.CHANGE_LOG_TABLE]: '/hilos/change-log/tables/{tableId}',
-  [HilosPages.DAEMON]: '/hilos/daemon',
-  [HilosPages.DAEMON_WORKERS]: '/hilos/daemon/workers',
-  [HilosPages.DAEMON_AGENTS]: '/hilos/daemon/agents',
-  [HilosPages.DAEMON_CRON]: '/hilos/daemon/cron',
-  [HilosPages.DAEMON_WEBSOCKETS]: '/hilos/daemon/websockets',
-  [HilosPages.DAEMON_HTTP_SERVER]: '/hilos/daemon/http/{serverId}',
-  [HilosPages.LOGS]: '/hilos/logs',
-  [HilosPages.LOGS_KEYS]: '/hilos/logs/keys',
-  [HilosPages.LOGS_WORKERS]: '/hilos/logs/workers',
-  [HilosPages.LOGS_ROTATIONS]: '/hilos/logs/rotations',
-  [HilosPages.LOGS_VIEW]: '/hilos/logs/view',
-  [HilosPages.USERS]: '/hilos/users',
-  [HilosPages.USER]: '/hilos/user/{userId}',
-  [HilosPages.MCP_SKILLS]: '/hilos/mcp-skills',
-  [HilosPages.MCP_SKILLS_MCP]: '/hilos/mcp-skills/{mcpId}',
-  [HilosPages.MCP_SKILLS_MCP_LOGS]: '/hilos/mcp-skills/{mcpId}/logs',
-  [HilosPages.MCP_SKILLS_MCP_LOGS_VIEW]: '/hilos/mcp-skills/{mcpId}/logs/view',
-  [HilosPages.SIL]: '/hilos/sil',
-  [HilosPages.SIL_REQUESTS]: '/hilos/sil/requests',
-  [HilosPages.SIL_USER_HISTORY]: '/hilos/sil/users/{userId}',
-  [HilosPages.COMMUNICATIONS]: '/hilos/communications',
-  [HilosPages.COMMUNICATIONS_CHANNEL]: '/hilos/communications/{channelId}',
-  [HilosPages.COMMUNICATIONS_DELIVERIES]:
-    '/hilos/communications/{channelId}/deliveries',
-  [HilosPages.SECURITY]: '/hilos/security',
-  [HilosPages.SECURITY_2FA]: '/hilos/security/2fa',
-  [HilosPages.SECURITY_OAUTH]: '/hilos/security/oauth',
-  [HilosPages.SECURITY_OAUTH_PROVIDER]: '/hilos/security/oauth/{providerId}',
-  [HilosPages.BILLING]: '/hilos/billing',
-  [HilosPages.BILLING_PROVIDER]: '/hilos/billing/{providerId}',
-  [HilosPages.BILLING_PAYMENTS]: '/hilos/billing/{providerId}/payments',
-  [HilosPages.BILLING_REFUNDS]: '/hilos/billing/{providerId}/refunds',
-  [HilosPages.ABOUT]: '/about',
-  [HilosPages.TERMS]: '/terms',
-  [HilosPages.PRIVACY]: '/privacy',
-  [HilosPages.LICENSE]: '/license',
+export const HILOS_ROUTE_DECLARATIONS: Record<string, HilosRouteDeclaration> = {
+  [HilosPages.DASHBOARD]: { path: '/hilos', admin: true },
+  [HilosPages.PROFILE]: { path: '/profile', admin: false },
+  [HilosPages.SETTINGS]: { path: '/hilos/settings', admin: true },
+  [HilosPages.ANALYTICS]: { path: '/hilos/analytics', admin: true },
+  [HilosPages.ROLES]: { path: '/hilos/roles', admin: true },
+  [HilosPages.OPERATIONS]: { path: '/hilos/operations', admin: true },
+  [HilosPages.BACKUP]: { path: '/hilos/backup', admin: true },
+  [HilosPages.GUARDIAN]: { path: '/hilos/guardian', admin: true },
+  [HilosPages.GUARDIAN_AGENT]: {
+    path: '/hilos/guardian/{agentId}',
+    admin: true,
+  },
+  [HilosPages.I18N]: { path: '/hilos/i18n', admin: true },
+  [HilosPages.I18N_LANGUAGES]: { path: '/hilos/i18n/languages', admin: true },
+  [HilosPages.I18N_COUNTRIES]: { path: '/hilos/i18n/countries', admin: true },
+  [HilosPages.I18N_ENTITIES]: { path: '/hilos/i18n/entities', admin: true },
+  [HilosPages.I18N_UI_PAGES]: { path: '/hilos/i18n/ui-pages', admin: true },
+  [HilosPages.I18N_GROUPS]: { path: '/hilos/i18n/groups', admin: true },
+  [HilosPages.I18N_ACTIONS]: { path: '/hilos/i18n/actions', admin: true },
+  [HilosPages.I18N_EMAILS]: { path: '/hilos/i18n/emails', admin: true },
+  [HilosPages.I18N_LANGUAGE]: {
+    path: '/hilos/i18n/languages/{languageId}',
+    admin: true,
+  },
+  [HilosPages.I18N_COUNTRY]: {
+    path: '/hilos/i18n/countries/{countryId}',
+    admin: true,
+  },
+  [HilosPages.I18N_UI_PAGE]: {
+    path: '/hilos/i18n/ui-pages/{uiPageId}',
+    admin: true,
+  },
+  [HilosPages.I18N_GROUP]: {
+    path: '/hilos/i18n/groups/{groupId}',
+    admin: true,
+  },
+  [HilosPages.I18N_ACTION]: {
+    path: '/hilos/i18n/actions/{actionId}',
+    admin: true,
+  },
+  [HilosPages.I18N_TRANSLATE_ENTITY]: {
+    path: '/hilos/i18n/translate/entity/{entityId}',
+    admin: true,
+  },
+  [HilosPages.I18N_TRANSLATE_UI_PAGE]: {
+    path: '/hilos/i18n/translate/ui-page/{uiPageId}',
+    admin: true,
+  },
+  [HilosPages.I18N_TRANSLATE_UI_PAGE_ITEM]: {
+    path: '/hilos/i18n/translate/ui-page/{uiPageId}/item/{itemId}',
+    admin: true,
+  },
+  [HilosPages.I18N_TRANSLATE_GROUP]: {
+    path: '/hilos/i18n/translate/group/{groupId}',
+    admin: true,
+  },
+  [HilosPages.I18N_TRANSLATE_GROUP_ITEM]: {
+    path: '/hilos/i18n/translate/group/{groupId}/item/{itemId}',
+    admin: true,
+  },
+  [HilosPages.I18N_TRANSLATE_ACTION_ERROR]: {
+    path: '/hilos/i18n/translate/action/{actionId}/error/{errorId}',
+    admin: true,
+  },
+  [HilosPages.I18N_TRANSLATE_EMAIL]: {
+    path: '/hilos/i18n/translate/email/{emailId}',
+    admin: true,
+  },
+  [HilosPages.CHANGE_LOG]: { path: '/hilos/change-log', admin: true },
+  [HilosPages.CHANGE_LOG_TABLES]: {
+    path: '/hilos/change-log/tables',
+    admin: true,
+  },
+  [HilosPages.CHANGE_LOG_TABLE]: {
+    path: '/hilos/change-log/tables/{tableId}',
+    admin: true,
+  },
+  [HilosPages.DAEMON]: { path: '/hilos/daemon', admin: true },
+  [HilosPages.DAEMON_WORKERS]: { path: '/hilos/daemon/workers', admin: true },
+  [HilosPages.DAEMON_AGENTS]: { path: '/hilos/daemon/agents', admin: true },
+  [HilosPages.DAEMON_CRON]: { path: '/hilos/daemon/cron', admin: true },
+  [HilosPages.DAEMON_WEBSOCKETS]: {
+    path: '/hilos/daemon/websockets',
+    admin: true,
+  },
+  [HilosPages.DAEMON_HTTP_SERVER]: {
+    path: '/hilos/daemon/http/{serverId}',
+    admin: true,
+  },
+  [HilosPages.LOGS]: { path: '/hilos/logs', admin: true },
+  [HilosPages.LOGS_KEYS]: { path: '/hilos/logs/keys', admin: true },
+  [HilosPages.LOGS_WORKERS]: { path: '/hilos/logs/workers', admin: true },
+  [HilosPages.LOGS_ROTATIONS]: { path: '/hilos/logs/rotations', admin: true },
+  [HilosPages.LOGS_VIEW]: { path: '/hilos/logs/view', admin: true },
+  [HilosPages.USERS]: { path: '/hilos/users', admin: true },
+  [HilosPages.USER]: { path: '/hilos/user/{userId}', admin: true },
+  [HilosPages.MCP_SKILLS]: { path: '/hilos/mcp-skills', admin: true },
+  [HilosPages.MCP_SKILLS_MCP]: {
+    path: '/hilos/mcp-skills/{mcpId}',
+    admin: true,
+  },
+  [HilosPages.MCP_SKILLS_MCP_LOGS]: {
+    path: '/hilos/mcp-skills/{mcpId}/logs',
+    admin: true,
+  },
+  [HilosPages.MCP_SKILLS_MCP_LOGS_VIEW]: {
+    path: '/hilos/mcp-skills/{mcpId}/logs/view',
+    admin: true,
+  },
+  [HilosPages.SIL]: { path: '/hilos/sil', admin: true },
+  [HilosPages.SIL_REQUESTS]: { path: '/hilos/sil/requests', admin: true },
+  [HilosPages.SIL_USER_HISTORY]: {
+    path: '/hilos/sil/users/{userId}',
+    admin: true,
+  },
+  [HilosPages.COMMUNICATIONS]: { path: '/hilos/communications', admin: true },
+  [HilosPages.COMMUNICATIONS_CHANNEL]: {
+    path: '/hilos/communications/{channelId}',
+    admin: true,
+  },
+  [HilosPages.COMMUNICATIONS_DELIVERIES]: {
+    path: '/hilos/communications/{channelId}/deliveries',
+    admin: true,
+  },
+  [HilosPages.SECURITY]: { path: '/hilos/security', admin: true },
+  [HilosPages.SECURITY_2FA]: { path: '/hilos/security/2fa', admin: true },
+  [HilosPages.SECURITY_OAUTH]: { path: '/hilos/security/oauth', admin: true },
+  [HilosPages.SECURITY_OAUTH_PROVIDER]: {
+    path: '/hilos/security/oauth/{providerId}',
+    admin: true,
+  },
+  [HilosPages.BILLING]: { path: '/hilos/billing', admin: true },
+  [HilosPages.BILLING_PROVIDER]: {
+    path: '/hilos/billing/{providerId}',
+    admin: true,
+  },
+  [HilosPages.BILLING_PAYMENTS]: {
+    path: '/hilos/billing/{providerId}/payments',
+    admin: true,
+  },
+  [HilosPages.BILLING_REFUNDS]: {
+    path: '/hilos/billing/{providerId}/refunds',
+    admin: true,
+  },
+  [HilosPages.ABOUT]: { path: '/about', admin: false },
+  [HilosPages.TERMS]: { path: '/terms', admin: false },
+  [HilosPages.PRIVACY]: { path: '/privacy', admin: false },
+  [HilosPages.LICENSE]: { path: '/license', admin: false },
 }
+
+/**
+ * Hilos admin page key → cold-load URL template, derived from
+ * `HILOS_ROUTE_DECLARATIONS`. Its readers — the shell's admin gear and footer
+ * hrefs, breadcrumb path resolution, the demos' user-detail links, the
+ * prerender entries — resolve a page to its URL and ask nothing about the
+ * surface type, so the paths stay a map of their own rather than making every
+ * one of those call sites read a field it does not use.
+ */
+export const HILOS_PAGE_ROUTES: Record<string, string> = Object.fromEntries(
+  Object.entries(HILOS_ROUTE_DECLARATIONS).map(([page, declaration]) => [
+    page,
+    declaration.path,
+  ]),
+)
 
 /** A public framework page surfaced in the application footer. */
 export interface HilosFooterLink {

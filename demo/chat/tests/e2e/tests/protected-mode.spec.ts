@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-import { gotoPage } from '../helpers/page'
+import { gotoMaintenance, gotoPage } from '../helpers/page'
 import {
   enterProtectedMode,
   inspectProtectedMode,
@@ -27,6 +27,11 @@ const STUB_MESSAGE =
   ' It will come back on its own.'
 
 const OPERATION = 'e2e-freeze'
+
+// The framework dashboard, an administrative surface by its own route
+// declaration (HILOS_ROUTE_DECLARATIONS). Any admin url would do; this one needs
+// no route params.
+const ADMIN_URL = '/hilos'
 
 test.afterEach(async () => {
   // Unconditional, and an open rather than a leave: an enter can be refused and
@@ -69,6 +74,55 @@ test('a live window shows the maintenance stub while the mode is on', async ({
 
   await expect(page.getByTestId('maintenance')).toBeHidden()
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
+})
+
+test('the verification window offers its code field on an administrative url only', async ({
+  page,
+}) => {
+  // Both loads are cold, and deliberately so: the stub is painted from the
+  // welcome frame, before any subscription, so this is the frame where the
+  // verdict has to be right without a round trip.
+  await enterProtectedMode(OPERATION)
+  expect(await leaveProtectedMode()).toBe('verifying')
+
+  // A public url in the window looks exactly like the active phase. That is the
+  // point of the leaf: a visitor holds no code, and a field would announce to
+  // him that a window is open at all.
+  await gotoMaintenance(page, '/')
+  await expect(page.getByTestId('maintenance-title')).toHaveText(STUB_TITLE)
+  await expect(page.getByTestId('maintenance-pass-form')).toBeHidden()
+
+  // The same phase, the same freeze, an administrative url. The verifier types
+  // it: the shell drops brand, nav, gear and footer while the stub is up, so
+  // there is nothing on screen to click his way in with.
+  await gotoMaintenance(page, ADMIN_URL)
+  await expect(page.getByTestId('maintenance-pass-form')).toBeVisible()
+  await expect(page.getByTestId('maintenance-pass')).toBeVisible()
+  await expect(page.getByTestId('maintenance-pass-submit')).toBeVisible()
+})
+
+test('a public page live through the switch gains no code field', async ({
+  page,
+}) => {
+  await gotoPage(page, '/')
+  await expect(page.getByTestId('maintenance')).toBeHidden()
+
+  expect(await enterProtectedMode(OPERATION)).toBe('active')
+  await expect(page.getByTestId('maintenance')).toBeVisible()
+
+  expect(await leaveProtectedMode()).toBe('verifying')
+
+  // A second tab proves the window really is open to browsers right now, so the
+  // assertion below is about the surface type and not about a frame still in
+  // flight.
+  const verifierTab = await page.context().newPage()
+  await gotoMaintenance(verifierTab, ADMIN_URL)
+  await expect(verifierTab.getByTestId('maintenance-pass-form')).toBeVisible()
+  await verifierTab.close()
+
+  // The public page never navigated, so its route — and its verdict — never
+  // changed: the switch into the window adds nothing to it.
+  await expect(page.getByTestId('maintenance-pass-form')).toBeHidden()
 })
 
 test('a finished operation lands in the verification window, and only the open ends it', async () => {

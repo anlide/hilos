@@ -96,6 +96,30 @@ export async function gotoPage(
 }
 
 /**
+ * The maintenance surface the shell raises over every route while frozen.
+ */
+const MAINTENANCE = 'maintenance'
+
+/**
+ * Open a url while the node is under protected mode and wait for the stub.
+ *
+ * The freeze is the other navigation {@link gotoPage} cannot serve: the shell
+ * replaces the routed outlet with the maintenance surface, so the
+ * `hilos-page-state` marker that wrapper waits on is not in the DOM at all and
+ * the wait would time out on every call. What settles instead is the stub, which
+ * is painted from the welcome frame before any subscription — which is exactly
+ * what makes a cold load worth asserting on: the route, and so the surface type,
+ * is known before the socket answers.
+ *
+ * @param page The Playwright page.
+ * @param path Path to open, as the address bar would hold it.
+ */
+export async function gotoMaintenance(page: Page, path: string): Promise<void> {
+  await page.goto(path)
+  await expect(page.getByTestId(MAINTENANCE)).toBeVisible()
+}
+
+/**
  * Open an auth return route and wait for its relay screen to be on screen.
  *
  * The return routes — `/auth/magic`, `/auth/callback` — are the one navigation

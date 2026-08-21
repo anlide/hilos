@@ -25,7 +25,7 @@ view files, which live in `views/<Page>/`:
 | File | Holds | Required |
 |---|---|---|
 | `keys.ts` | the app's page-key constants | always |
-| `routes.ts` | the page-key → URL-template map and the `router` | always |
+| `routes.ts` | the page-key → route-declaration map and the `router` | always |
 | `entityTypes.ts` | per-slot canonical entity types for page payloads | only when page payloads carry entity slots |
 | `pageTitles.ts` | the page-key → browser-tab title map and the `appName` | recommended (an accessible document title) |
 
@@ -33,14 +33,27 @@ view files, which live in `views/<Page>/`:
   rows of the backend `PageConstants`. Each value is the subscription wire
   identity, so it must stay byte-for-byte equal to its backend page key. The
   framework `hilos_*` admin keys are **not** restated here — they come from
-  `@hilos/core` (`HilosPages` / `HILOS_PAGE_ROUTES`). `keys.ts` is the single
-  source of the page-key names: the app shell's page→view map and the router
-  both import from it.
+  `@hilos/core` (`HilosPages` / `HILOS_ROUTE_DECLARATIONS`). `keys.ts` is the
+  single source of the page-key names: the app shell's page→view map and the
+  router both import from it.
 - **`routes.ts` — the route registry.** The app's `APP_ROUTES` map (page key →
-  cold-load URL template, `{name}` marking a route param) and the exported
-  `router`. The router is built with `createAppPageRouter` (below), which mounts
-  the framework admin catalog under the app's routes — `routes.ts` never spreads
-  `HILOS_PAGE_ROUTES` by hand.
+  `HilosRouteDeclaration`) and the exported `router`. A declaration is
+  `{ path, admin }`: the cold-load URL template, `{name}` marking a route param,
+  and whether the page is an **administrative surface**. The router is built with
+  `createAppPageRouter` (below), which mounts the framework admin catalog under
+  the app's routes — `routes.ts` never spreads `HILOS_ROUTE_DECLARATIONS` by
+  hand.
+
+  **`admin` is required on every row and has no default.** It names the surface
+  *type*, not any one feature that reads it — say `admin`, never
+  `showsThePassForm`. An optional flag would make a forgotten row silently
+  public, which is the failure this declaration exists to prevent: the
+  protected-mode verifier's code field is shown only where `admin` is true, so a
+  missed row hides the field from the person who needs it. The address is not the
+  rule — a project is free to mount its admin outside `/hilos` — which is why the
+  verdict is declared per route rather than derived from the URL. The match the
+  router returns carries the flag as `PageRouteMatch.admin`, so a reader that
+  already knows the page needs no second lookup.
 - **`entityTypes.ts` — page payload entity types (optional).** The
   `pageEntityTypes` map from a wire slot key (its backend collection name) to
   the canonical entity type the normalizer dedupes it under
@@ -65,10 +78,16 @@ Three `@hilos/core` exports carry the half of the wiring that is identical in
 every project, so a project never restates it:
 
 - **`createAppPageRouter(appRoutes, { fallback })`** — builds the app's router
-  as the framework admin catalog (`HILOS_PAGE_ROUTES`) overlaid with the
-  project's routes (a project route wins on a key collision). `createPageRouter`
-  stays the pure, project-agnostic matching engine; a project always uses
-  `createAppPageRouter` so the admin section mounts the same way everywhere.
+  as the framework admin catalog (`HILOS_ROUTE_DECLARATIONS`) overlaid with the
+  project's declarations (a project route wins on a key collision, taking over
+  its `admin` flag along with its path). `createPageRouter` stays the pure,
+  project-agnostic matching engine; a project always uses `createAppPageRouter`
+  so the admin section mounts the same way everywhere. An unmatched path resolves
+  to the fallback page and carries **that page's** flag, so a typo in an
+  administrative url is not an administrative surface.
+  `HILOS_PAGE_ROUTES` remains the page-key → path map, derived from the
+  declarations, for the readers that only ever want a URL (the shell's gear and
+  footer hrefs, breadcrumb paths, the prerender entries).
 - **`PAGE_SIGNAL_SCHEMAS`** — the `{ page_response: pageResponseSchema }` map,
   ready to spread into the connection's `projectSchemas` so the parse boundary
   validates page payloads. The framework owns this schema; a project never
@@ -137,8 +156,10 @@ The three conformance demos exercise the registry at different sizes:
   spreading `PAGE_SIGNAL_SCHEMAS`.
 - Re-implementing the `projectSignal` → `ingestPageResponse` plumbing in a
   project (a hand-written `pageScope.ts`) instead of `bindPageScope`.
-- Spreading `HILOS_PAGE_ROUTES` into a route map by hand instead of using
-  `createAppPageRouter`.
+- Spreading `HILOS_ROUTE_DECLARATIONS` (or `HILOS_PAGE_ROUTES`) into a route map
+  by hand instead of using `createAppPageRouter`.
+- Declaring a route without saying whether it is administrative — or naming the
+  flag after the feature that reads it rather than after the surface type.
 - A barrel `index.ts` inside `pages/`.
 - A page key in `keys.ts` that diverges from its backend `PageConstants` value,
   or framework `hilos_*` keys restated in `keys.ts`.

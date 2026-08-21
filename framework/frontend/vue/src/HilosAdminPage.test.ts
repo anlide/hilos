@@ -8,7 +8,11 @@ import { hilosRouterKey } from './hilosRouterKey.js'
 
 function router(): HilosRouter {
   return {
-    currentRoute: createSignal<PageRouteMatch>({ page: '', params: {} }),
+    currentRoute: createSignal<PageRouteMatch>({
+      page: '',
+      params: {},
+      admin: false,
+    }),
     currentPath: createSignal(''),
     currentTitle: createSignal(''),
     pageError: createSignal(null),

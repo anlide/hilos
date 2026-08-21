@@ -89,6 +89,7 @@ describe('HilosMaintenance', () => {
       <HilosMaintenance
         status={FROZEN}
         connection={fakeConnection(FROZEN).connection}
+        adminSurface
       />,
     )
 
@@ -108,6 +109,7 @@ describe('HilosMaintenance', () => {
       <HilosMaintenance
         status={FROZEN_WITHOUT_COPY}
         connection={fakeConnection(FROZEN_WITHOUT_COPY).connection}
+        adminSurface
       />,
     )
 
@@ -127,16 +129,44 @@ describe('HilosMaintenance', () => {
       <HilosMaintenance
         status={FROZEN}
         connection={fakeConnection(FROZEN).connection}
+        adminSurface
       />,
     )
 
     expect(surface(container, 'maintenance-pass-form')).toBeNull()
   })
 
+  it('offers the code field on an administrative surface only', () => {
+    // The verification window is not a public announcement: a visitor holds no
+    // code, so on a public url he sees the same screen as in the active phase.
+    const onPublic = render(
+      <HilosMaintenance
+        status={VERIFYING}
+        connection={fakeConnection(VERIFYING).connection}
+        adminSurface={false}
+      />,
+    )
+    expect(surface(onPublic.container, 'maintenance-pass-form')).toBeNull()
+    cleanup()
+
+    const onAdmin = render(
+      <HilosMaintenance
+        status={VERIFYING}
+        connection={fakeConnection(VERIFYING).connection}
+        adminSurface
+      />,
+    )
+    expect(surface(onAdmin.container, 'maintenance-pass-form')).not.toBeNull()
+  })
+
   it('presents the typed code through the connection', () => {
     const { connection, presented } = fakeConnection(VERIFYING)
     const { container } = render(
-      <HilosMaintenance status={VERIFYING} connection={connection} />,
+      <HilosMaintenance
+        status={VERIFYING}
+        connection={connection}
+        adminSurface
+      />,
     )
     const field = surface(container, 'maintenance-pass') as HTMLInputElement
 
@@ -155,6 +185,7 @@ describe('HilosMaintenance', () => {
       <HilosMaintenance
         status={REJECTED}
         connection={fakeConnection(REJECTED).connection}
+        adminSurface
       />,
     )
 

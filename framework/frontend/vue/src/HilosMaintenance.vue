@@ -7,10 +7,13 @@ layout only and falls back to PROTECTED_MODE_FALLBACK_COPY when the state is
 known but no sentence arrived with it. It is a state, not a page: no links, no
 retry button — the mode lifts on its own and the core reloads the document. The
 one exception is the code field, shown only while the freeze says it accepts a
-pass: that phase is the verification window, and a verifier admitted by the code
-sees the whole product rather than this screen. Submitting reconnects with the
-key on the socket url (the core does that), because a client refused every
-outbound frame can only ask to be let in on the 101. -->
+pass AND the shell hands over an administrative surface: that phase is the
+verification window, and a verifier admitted by the code sees the whole product
+rather than this screen, while a visitor on a public url is not invited to fill
+in a key he was never given. The rule lives here, in the component that owns the
+field, rather than in the shell. Submitting reconnects with the key on the socket
+url (the core does that), because a client refused every outbound frame can only
+ask to be let in on the 101. -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { HilosConnection, ProtectedModeStatus } from '@hilos/core'
@@ -22,6 +25,12 @@ import {
 const props = defineProps<{
   status: ProtectedModeStatus
   connection: HilosConnection
+  /**
+   * Whether the url under the freeze names an administrative surface, as the
+   * shell reads it off the current route. Required, so a shell cannot forget to
+   * answer and silently hide the field from the verifier who needs it.
+   */
+  adminSurface: boolean
 }>()
 
 const title = computed(
@@ -58,7 +67,7 @@ function present(): void {
       {{ message }}
     </p>
     <form
-      v-if="status.acceptsPass"
+      v-if="status.acceptsPass && adminSurface"
       class="row justify-content-center w-100 mt-4 px-3"
       data-id="maintenance-pass-form"
       @submit.prevent="present"

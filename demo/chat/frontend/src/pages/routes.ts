@@ -3,7 +3,7 @@
 // The route engine and the framework admin catalog come from @hilos/core, so
 // this file only declares the chat's own pages; `createAppPageRouter` mounts the
 // `hilos_*` admin pages under them.
-import { createAppPageRouter } from '@hilos/core'
+import { createAppPageRouter, type HilosRouteDeclaration } from '@hilos/core'
 
 import {
   PAGE_MAIN,
@@ -15,17 +15,18 @@ import {
 } from './keys'
 
 /**
- * The chat's own pages keyed to the URL path template each answers. A `{name}`
- * segment is a route param captured at match time; the framework admin pages
- * are merged in by `createAppPageRouter` rather than restated here.
+ * The chat's own pages keyed to the URL path template each answers and whether
+ * that page is an administrative surface. A `{name}` segment is a route param
+ * captured at match time; the framework admin pages are merged in by
+ * `createAppPageRouter` rather than restated here.
  */
-const APP_ROUTES: Record<string, string> = {
-  [PAGE_MAIN]: '/',
-  [PAGE_USER]: '/user/{id}',
-  [PAGE_BOT]: '/bot/{id}',
-  [PAGE_ADMIN_USERS]: '/hilos/admin_users',
-  [PAGE_ADMIN_MODERATOR]: '/hilos/admin_moderator',
-  [PAGE_ADMIN_BOTS]: '/hilos/admin_bots',
+const APP_ROUTES: Record<string, HilosRouteDeclaration> = {
+  [PAGE_MAIN]: { path: '/', admin: false },
+  [PAGE_USER]: { path: '/user/{id}', admin: false },
+  [PAGE_BOT]: { path: '/bot/{id}', admin: false },
+  [PAGE_ADMIN_USERS]: { path: '/hilos/admin_users', admin: true },
+  [PAGE_ADMIN_MODERATOR]: { path: '/hilos/admin_moderator', admin: true },
+  [PAGE_ADMIN_BOTS]: { path: '/hilos/admin_bots', admin: true },
 }
 
 /**

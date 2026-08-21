@@ -29,6 +29,7 @@ import {
 import type {
   ConnectionState,
   HilosConnection,
+  PageRouteMatch,
   ProtectedModeStatus,
 } from '@hilos/core'
 import {
@@ -137,6 +138,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
           <hilos-maintenance
             [status]="protectedMode()"
             [connection]="connection()"
+            [adminSurface]="adminSurface()"
           />
         } @else {
           <ng-content />
@@ -219,6 +221,17 @@ export class HilosLayout {
   protected readonly pageTitle = this.router
     ? hilosSignal(this.router.currentTitle)
     : signal('')
+
+  // The maintenance surface shows the verifier's code field only on an
+  // administrative url, so the shell hands the route's surface type down to it.
+  // Without a router there is no route and therefore no administrative surface:
+  // the field then hides, which is the safe way round — a missing field is fixed
+  // by typing the admin url, a field shown where it should not be is the defect
+  // this closes.
+  private readonly currentRoute = this.router
+    ? hilosSignal(this.router.currentRoute)
+    : signal<PageRouteMatch>({ page: '', params: {}, admin: false })
+  protected readonly adminSurface = computed(() => this.currentRoute().admin)
 
   constructor() {
     // Read the connection input once it is bound and mirror its machine state;
