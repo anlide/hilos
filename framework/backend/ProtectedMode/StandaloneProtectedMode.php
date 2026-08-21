@@ -179,7 +179,18 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
             return;
         }
 
-        $this->runtimeView()?->actions->issuePass($data->passHash);
+        $view = $this->runtimeView();
+        if ($view === null) {
+            return;
+        }
+
+        $view->actions->issuePass($data->passHash);
+
+        // Zero-to-one and no other mint: the announcement says a code is standing, which the second
+        // one would say again to browsers already showing the field.
+        if (count($view->passHashes) === 1) {
+            $this->executor->announcePassIssued();
+        }
     }
 
     /**

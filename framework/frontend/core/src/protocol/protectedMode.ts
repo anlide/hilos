@@ -19,6 +19,7 @@ export const protectedModeBlockSchema = z.looseObject({
   title: z.string().nullish(),
   message: z.string().nullish(),
   acceptsPass: z.boolean().nullish(),
+  passIssued: z.boolean().nullish(),
 })
 
 export type ProtectedModeBlock = z.infer<typeof protectedModeBlockSchema>
@@ -36,6 +37,14 @@ export type ProtectedModeBlock = z.infer<typeof protectedModeBlockSchema>
  * this connection is simply inside it. A surface renders the code field on both
  * together; the reload on the way out waits for both to fall.
  *
+ * `passIssued` describes the node too, and is the narrower question: whether at
+ * least one code is standing, so the field has something it could take. The window
+ * opens before any code is minted, and between the two the field would be a lie —
+ * so the surface shows a sentence saying to wait instead. It is a second bit rather
+ * than a narrowed `acceptsPass` because that flag also decides when this client
+ * calls the mode over and when it drops a presented key; narrowed, it would reload
+ * an admitted verifier out of the window the moment nobody held a code.
+ *
  * `passRejected` is the one field the wire does not carry: the backend answers a
  * wrong pass by simply leaving the connection locked out, which is the only answer
  * a frozen node can give without an agent to compose one. The connection turns
@@ -48,6 +57,7 @@ export interface ProtectedModeStatus {
   readonly title: string | undefined
   readonly message: string | undefined
   readonly acceptsPass: boolean
+  readonly passIssued: boolean
   readonly passRejected: boolean
 }
 
@@ -58,6 +68,7 @@ export const PROTECTED_MODE_INACTIVE: ProtectedModeStatus = {
   title: undefined,
   message: undefined,
   acceptsPass: false,
+  passIssued: false,
   passRejected: false,
 }
 
@@ -88,6 +99,8 @@ export const PROTECTED_MODE_PASS_COPY = {
   prompt: 'Verifying this system? Enter the code you were given.',
   submit: 'Continue',
   rejected: 'That code was not accepted. Check it and try again.',
+  pending:
+    'No code has been issued yet - ask the operator running this maintenance for one.',
 } as const
 
 /**
@@ -111,6 +124,7 @@ export function toProtectedModeStatus(
     title: block.title ?? undefined,
     message: block.message ?? undefined,
     acceptsPass: block.acceptsPass ?? false,
+    passIssued: block.passIssued ?? false,
     passRejected: false,
   }
 }
@@ -133,6 +147,7 @@ export function isSameProtectedModeStatus(
     first.title === second.title &&
     first.message === second.message &&
     first.acceptsPass === second.acceptsPass &&
+    first.passIssued === second.passIssued &&
     first.passRejected === second.passRejected
   )
 }

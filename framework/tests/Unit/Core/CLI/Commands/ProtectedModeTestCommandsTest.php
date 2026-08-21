@@ -15,6 +15,7 @@ use Hilos\Core\CLI\Commands\ProtectedModeTestEnterCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestInspectCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestLeaveCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestOpenCommand;
+use Hilos\Core\CLI\Commands\ProtectedModeTestPassCommand;
 use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Environment\EnvAccessor;
@@ -26,7 +27,8 @@ use PHPUnit\Framework\TestCase;
  * branches that return before the command channel is opened, and the contracts each family
  * declares - database-free for all of them, test-only for the drive commands (HIL-344) and
  * emphatically NOT test-only for the operator ones (HIL-481), which exist to be run on the
- * production node a restore just froze.
+ * production node a restore just froze. The mint answers to one name of each kind (HIL-616),
+ * so both contracts are pinned on the same handler.
  *
  * Driving the mode itself needs a running daemon and is exercised by the e2e spec; what is
  * checked here is everything that must hold without one. Runs under a non-production APP_ENV
@@ -61,6 +63,7 @@ final class ProtectedModeTestCommandsTest extends TestCase
         self::assertSame(CliCommands::PROTECTED_MODE_TEST_ENTER, new ProtectedModeTestEnterCommand()->getName());
         self::assertSame(CliCommands::PROTECTED_MODE_TEST_LEAVE, new ProtectedModeTestLeaveCommand()->getName());
         self::assertSame(CliCommands::PROTECTED_MODE_TEST_OPEN, new ProtectedModeTestOpenCommand()->getName());
+        self::assertSame(CliCommands::PROTECTED_MODE_TEST_PASS, new ProtectedModeTestPassCommand()->getName());
         self::assertSame(CliCommands::PROTECTED_MODE_PASS, new ProtectedModePassCommand()->getName());
         self::assertSame(CliCommands::PROTECTED_MODE_OPEN, new ProtectedModeOpenCommand()->getName());
         self::assertSame(CliCommands::PROTECTED_MODE_CLOSE, new ProtectedModeCloseCommand()->getName());
@@ -77,6 +80,7 @@ final class ProtectedModeTestCommandsTest extends TestCase
             CliCommands::PROTECTED_MODE_TEST_ENTER,
             CliCommands::PROTECTED_MODE_TEST_LEAVE,
             CliCommands::PROTECTED_MODE_TEST_OPEN,
+            CliCommands::PROTECTED_MODE_TEST_PASS,
             CliCommands::PROTECTED_MODE_PASS,
             CliCommands::PROTECTED_MODE_OPEN,
             CliCommands::PROTECTED_MODE_CLOSE,
@@ -92,6 +96,7 @@ final class ProtectedModeTestCommandsTest extends TestCase
         self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModeTestEnterCommand());
         self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModeTestLeaveCommand());
         self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModeTestOpenCommand());
+        self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModeTestPassCommand());
         // The operator trio must be database-free for a harder reason than convenience: the
         // database a bootstrap connect would open is the very one the restore just rewrote.
         self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModePassCommand());
@@ -117,6 +122,15 @@ final class ProtectedModeTestCommandsTest extends TestCase
         // argument.
         self::assertStringNotContainsString('--', new ProtectedModeTestLeaveCommand()->getHelp());
         self::assertStringNotContainsString('--', new ProtectedModeTestOpenCommand()->getHelp());
+        self::assertStringNotContainsString('--', new ProtectedModeTestPassCommand()->getHelp());
+    }
+
+    public function testTheTestMintIsTestOnlyWhileTheOperatorsIsNot(): void
+    {
+        // The pair that makes the two names worth having: the same mint runs behind both, but
+        // only one of them may be reachable on a production node.
+        self::assertInstanceOf(TestOnlyCommand::class, new ProtectedModeTestPassCommand());
+        self::assertNotInstanceOf(TestOnlyCommand::class, new ProtectedModePassCommand());
     }
 
     public function testEnterRejectsAMissingOperationName(): void
@@ -152,6 +166,7 @@ final class ProtectedModeTestCommandsTest extends TestCase
             new ProtectedModeTestEnterCommand(),
             new ProtectedModeTestLeaveCommand(),
             new ProtectedModeTestOpenCommand(),
+            new ProtectedModeTestPassCommand(),
         ] as $command) {
             try {
                 $command->execute([], ['restore']);

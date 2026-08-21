@@ -45,6 +45,7 @@ final class ProtectedModeStateSignalDataTest extends TestCase
                 ProtectedModeStateSignalData::title => null,
                 ProtectedModeStateSignalData::message => null,
                 ProtectedModeStateSignalData::acceptsPass => false,
+                ProtectedModeStateSignalData::passIssued => false,
             ],
             $state->toArray(),
         );
@@ -60,5 +61,34 @@ final class ProtectedModeStateSignalDataTest extends TestCase
         $this->assertNull($restored->operation);
         $this->assertNull($restored->title);
         $this->assertNull($restored->message);
+    }
+
+    public function testTheTwoVerificationBitsTravelIndependently(): void
+    {
+        // The pair is the whole point of the leaf: the window can be open with nothing minted,
+        // and each half has to survive the round-trip without borrowing the other's value.
+        $open = ProtectedModeStateSignalData::fromArray(
+            (new ProtectedModeStateSignalData(active: true, acceptsPass: true))->toArray(),
+        );
+        $minted = ProtectedModeStateSignalData::fromArray(
+            (new ProtectedModeStateSignalData(active: true, acceptsPass: true, passIssued: true))->toArray(),
+        );
+
+        $this->assertTrue($open->acceptsPass);
+        $this->assertFalse($open->passIssued);
+        $this->assertTrue($minted->acceptsPass);
+        $this->assertTrue($minted->passIssued);
+    }
+
+    public function testAFrameWithoutTheSecondBitOffersNoField(): void
+    {
+        // Same fail-safe direction as the missing active flag: a payload that says nothing about
+        // minting must not put a field on the stub that can take nothing.
+        $restored = ProtectedModeStateSignalData::fromArray([
+            ProtectedModeStateSignalData::active => true,
+            ProtectedModeStateSignalData::acceptsPass => true,
+        ]);
+
+        $this->assertFalse($restored->passIssued);
     }
 }

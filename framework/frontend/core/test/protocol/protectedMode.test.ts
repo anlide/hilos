@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { parseSignal } from '../../src/protocol/parseSignal.js'
 import {
   PROTECTED_MODE_FALLBACK_COPY,
+  PROTECTED_MODE_PASS_COPY,
+  isSameProtectedModeStatus,
   toProtectedModeStatus,
 } from '../../src/protocol/protectedMode.js'
 
@@ -36,6 +38,7 @@ describe('the protected-mode block on the welcome', () => {
     }
     expect(result.signal.protectedMode).toEqual({
       acceptsPass: false,
+      passIssued: false,
       passRejected: false,
       active: true,
       operation: 'restore',
@@ -109,6 +112,7 @@ describe('the pushed protected_mode frame', () => {
     }
     expect(result.signal.state).toEqual({
       acceptsPass: false,
+      passIssued: false,
       passRejected: false,
       active: false,
       operation: undefined,
@@ -138,6 +142,49 @@ describe('the client-side pieces', () => {
   it('keeps a last-resort sentence for a freeze that arrived wordless', () => {
     expect(PROTECTED_MODE_FALLBACK_COPY.title).not.toBe('')
     expect(PROTECTED_MODE_FALLBACK_COPY.message).not.toBe('')
+  })
+})
+
+describe('the minted marker on the block', () => {
+  it('is read off the frame that carries it', () => {
+    const status = toProtectedModeStatus({
+      active: true,
+      acceptsPass: true,
+      passIssued: true,
+    })
+
+    expect(status.passIssued).toBe(true)
+  })
+
+  it('is false on an open window that has minted nothing', () => {
+    // The state the pair exists for: the phase takes a code from the moment it
+    // opens, and the codes are minted one by one afterwards.
+    const status = toProtectedModeStatus({ active: true, acceptsPass: true })
+
+    expect(status.acceptsPass).toBe(true)
+    expect(status.passIssued).toBe(false)
+  })
+
+  it('is compared, so a mint that landed while a tab slept is news', () => {
+    // isSameProtectedModeStatus decides whether a re-announced welcome is worth
+    // an event. Leave this bit out and a verifier who reconnects holding a code
+    // stays on the waiting sentence.
+    const open = toProtectedModeStatus({ active: true, acceptsPass: true })
+    const minted = toProtectedModeStatus({
+      active: true,
+      acceptsPass: true,
+      passIssued: true,
+    })
+
+    expect(isSameProtectedModeStatus(open, minted)).toBe(false)
+    expect(isSameProtectedModeStatus(minted, minted)).toBe(true)
+  })
+
+  it('has a sentence of its own for the empty window', () => {
+    expect(PROTECTED_MODE_PASS_COPY.pending).not.toBe('')
+    expect(PROTECTED_MODE_PASS_COPY.pending).not.toBe(
+      PROTECTED_MODE_PASS_COPY.prompt,
+    )
   })
 })
 

@@ -41,7 +41,10 @@ use JsonException;
  * landed learns about it instead of waiting for a refused subscription. `active` and
  * `deactivating` push nothing: the surface is already up and must stay up. The two verification
  * frames say `active: true` as well, and differ only in whether the surface may offer a code
- * field - the stub has to stay up for everyone who holds no pass.
+ * field - the stub has to stay up for everyone who holds no pass. {@see announcePassIssued()} is
+ * the one push that moves no phase: it re-sends the verification frame with the second bit raised
+ * when the first pass lands, so a verifier already looking at the stub gets the field without
+ * touching anything.
  *
  * Every phase this class writes is also left on disk through {@see ProtectedModeFreezeStore}, and
  * the lift removes it: the row is memory only, so a daemon restarted under a freeze would otherwise
@@ -130,8 +133,10 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         Hilos::$cluster?->protectedModeAgentFreezer()?->resumeAgentsForProtectedMode();
 
         // The stub stays up for everyone without a pass, so the frame still says active: what it
-        // adds is that this surface may now offer a code field. The initiator is left out for the
-        // same reason as on entry - it has been seeing the real app all along.
+        // adds is that this surface may now offer a code field. The window opens with nothing
+        // minted, so the surface says to wait rather than showing a field that can take nothing.
+        // The initiator is left out for the same reason as on entry - it has been seeing the real
+        // app all along.
         $copy = ProtectedModeStubCopy::forOperation($view->operation);
         Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState(
             new ProtectedModeStateSignalData(
@@ -140,6 +145,36 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
                 title: $copy->title,
                 message: $copy->message,
                 acceptsPass: true,
+                passIssued: false,
+            ),
+            $view->initiatorAcceptKey,
+        );
+    }
+
+    /**
+     * Pushes the same verification frame again, now saying a pass is standing.
+     *
+     * The only announcement the mode makes without moving a phase, and it exists because the
+     * verifier is normally already staring at the stub when the operator mints: the sentence turns
+     * into the field with nothing clicked and nothing reloaded. The copy and the initiator
+     * exclusion are the ones {@see enterVerifying()} used - the same frame, one bit later.
+     */
+    public function announcePassIssued(): void
+    {
+        $view = $this->runtimeView();
+        if ($view === null) {
+            return;
+        }
+
+        $copy = ProtectedModeStubCopy::forOperation($view->operation);
+        Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState(
+            new ProtectedModeStateSignalData(
+                active: true,
+                operation: $view->operation,
+                title: $copy->title,
+                message: $copy->message,
+                acceptsPass: true,
+                passIssued: true,
             ),
             $view->initiatorAcceptKey,
         );
@@ -184,6 +219,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
                 title: $copy->title,
                 message: $copy->message,
                 acceptsPass: false,
+                passIssued: false,
             ),
             $view->initiatorAcceptKey,
         );

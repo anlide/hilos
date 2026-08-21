@@ -4,13 +4,15 @@ import { gotoMaintenance, gotoPage } from '../helpers/page'
 import {
   enterProtectedMode,
   leaveProtectedMode,
+  mintProtectedModePass,
   openProtectedModeIfAny,
 } from '../helpers/protectedMode'
 
-// The Angular half of HIL-615: the verifier's code field belongs to
-// administrative surfaces and to nowhere else. Angular has no component test of
-// its own (`ng test` is blocked upstream), so this live run is where the view
-// package's binding of the route's surface type is actually proven.
+// The Angular half of HIL-615 and HIL-616: the verifier's code field belongs to
+// administrative surfaces and to nowhere else, and only once a code exists to type
+// into it. Angular has no component test of its own (`ng test` is blocked
+// upstream), so this live run is where the view package's binding of the route's
+// surface type and of the minted marker is actually proven.
 //
 // The whole node freezes for the duration, so this spec must never leave one
 // behind: the runner is serialized (CI=1 → workers: 1), and the teardown lifts
@@ -30,7 +32,7 @@ test.afterEach(async () => {
   await openProtectedModeIfAny()
 })
 
-test('the verification window offers its code field on an administrative url only', async ({
+test('the verification window waits for a code before it offers a field', async ({
   page,
 }) => {
   // Both loads are cold, and deliberately so: the stub is painted from the
@@ -44,14 +46,25 @@ test('the verification window offers its code field on an administrative url onl
   // him that a window is open at all.
   await gotoMaintenance(page, '/')
   await expect(page.getByTestId('maintenance-pass-form')).toBeHidden()
+  await expect(page.getByTestId('maintenance-pass-pending')).toBeHidden()
 
-  // The same phase, the same freeze, an administrative url. The verifier types
-  // it: the shell drops brand, nav, gear and footer while the stub is up, so
-  // there is nothing on screen to click his way in with.
+  // The same phase, the same freeze, an administrative url — and nothing minted
+  // yet. The verifier is told to wait rather than handed a box that can take
+  // nothing.
   await gotoMaintenance(page, ADMIN_URL)
+  await expect(page.getByTestId('maintenance-pass-pending')).toBeVisible()
+  await expect(page.getByTestId('maintenance-pass-form')).toBeHidden()
+
+  // The first mint reaches this page as a frame: the sentence becomes the field
+  // with nothing clicked and nothing navigated.
+  const urlBeforeTheMint = page.url()
+  await mintProtectedModePass()
+
   await expect(page.getByTestId('maintenance-pass-form')).toBeVisible()
   await expect(page.getByTestId('maintenance-pass')).toBeVisible()
   await expect(page.getByTestId('maintenance-pass-submit')).toBeVisible()
+  await expect(page.getByTestId('maintenance-pass-pending')).toBeHidden()
+  expect(page.url()).toBe(urlBeforeTheMint)
 })
 
 test('a public page live through the switch gains no code field', async ({
@@ -64,6 +77,7 @@ test('a public page live through the switch gains no code field', async ({
   await expect(page.getByTestId('maintenance')).toBeVisible()
 
   expect(await leaveProtectedMode()).toBe('verifying')
+  await mintProtectedModePass()
 
   // A second tab proves the window really is open to browsers right now, so the
   // assertion below is about the surface type and not about a frame still in
@@ -74,6 +88,8 @@ test('a public page live through the switch gains no code field', async ({
   await verifierTab.close()
 
   // The public page never navigated, so its route — and its verdict — never
-  // changed: the switch into the window adds nothing to it.
+  // changed: neither the switch into the window nor the mint inside it adds
+  // anything to it.
   await expect(page.getByTestId('maintenance-pass-form')).toBeHidden()
+  await expect(page.getByTestId('maintenance-pass-pending')).toBeHidden()
 })

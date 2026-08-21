@@ -166,6 +166,19 @@ final class CliCommands
     public const string PROTECTED_MODE_TEST_OPEN = 'test:protected-mode:open';
 
     /**
+     * Mint one pass into the verification window and print it, through the initiator (test-only).
+     *
+     * The test path's own mint, and it has to exist: the operator's {@see self::PROTECTED_MODE_PASS}
+     * belongs to the agent that runs real operations, and a freeze may only be driven by the agent
+     * the row records as its initiator - which on the test path is this driver's carrier. Both names
+     * are answered by the same handler and mint through the same request, so nothing about what a
+     * pass is differs between the two.
+     *
+     * @var string Command: Mint one pass into the verification window and print it (test-only)
+     */
+    public const string PROTECTED_MODE_TEST_PASS = 'test:protected-mode:pass';
+
+    /**
      * Mint one pass into the verification window and print it (operator).
      *
      * Not test-only: the three commands below are how a human ends a real destructive operation,

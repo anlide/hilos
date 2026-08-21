@@ -21,10 +21,11 @@ use Random\RandomException;
 /**
  * Drives the verification window from an operator's terminal, through the agent that froze the node.
  *
- * The three commands are what a human uses to end a destructive operation: mint a pass for a
- * verifier, open the system to everyone, or close it back for another attempt. They are NOT
+ * The three operator commands are what a human uses to end a destructive operation: mint a pass
+ * for a verifier, open the system to everyone, or close it back for another attempt. They are NOT
  * test-only - nothing else opens a system that a restore left frozen, because
- * {@see AbstractAgent::requestProtectedModeVerify()} deliberately replaced the automatic lift.
+ * {@see AbstractAgent::requestProtectedModeVerify()} deliberately replaced the automatic lift. A
+ * fourth name reaches the same handler for the test path's mint alone (see below).
  *
  * A trait rather than a base class for the reason {@see ProtectedModeTestDriverTrait} is one:
  * its carriers share no ancestor but {@see AbstractAgent}, and the freeze may only be driven by
@@ -36,7 +37,10 @@ use Random\RandomException;
  * and a project may hold two initiators: the one that runs real operations, and the test
  * driver's carrier. Sharing a name would hand the freeze of one to the other, which the
  * identity check would then refuse - so the test path has its own explicit open
- * ({@see CliCommands::PROTECTED_MODE_TEST_OPEN}) instead.
+ * ({@see CliCommands::PROTECTED_MODE_TEST_OPEN}) and its own mint
+ * ({@see CliCommands::PROTECTED_MODE_TEST_PASS}) instead. Different names, one handler: the mint
+ * below fires on either of them, so there is a single minting path, a single identity check and
+ * a single wait for the hash to land.
  *
  * **The reply is a verdict, not an acknowledgement.** Each command answers once the row has
  * really moved - the pass once its hash is on the row, open once the mode is inactive, close
@@ -55,6 +59,11 @@ use Random\RandomException;
  * pass with them. That is the accepted shape of a credential which lasts minutes and which
  * closing the window voids outright, and it is written down here because a docblock claiming
  * otherwise is what an operator would plan around.
+ *
+ * TODO(HIL-643): the circle of verifiers stays keys until HIL-643 replaces it with a user list
+ * managed from the admin surface - the owner's standing wish, deferred rather than declined. The
+ * marker sits here, beside the paragraph that explains what a pass is, so the next reader meets
+ * the decision instead of re-deriving it.
  */
 trait ProtectedModeOperatorTrait
 {
@@ -92,16 +101,33 @@ trait ProtectedModeOperatorTrait
     private ?string $protectedModeOperatorPass = null;
 
     /**
-     * Whether this command is one of the three this trait drives.
+     * Whether this command is one of the four this trait drives.
+     *
+     * The mint answers to two names: the operator's and the test path's. Which of them ever
+     * reaches a given carrier is decided by that carrier's AGENT_COMMANDS declaration, because a
+     * command routes to exactly one agent type per project - so recognizing both here costs
+     * nothing and duplicates no minting path.
      *
      * @param string $command Command-channel wire name
      * @return bool True when {@see handleProtectedModeOperatorCommand()} owns it
      */
     protected function isProtectedModeOperatorCommand(string $command): bool
     {
-        return $command === CliCommands::PROTECTED_MODE_PASS
+        return $this->isProtectedModePassCommand($command)
             || $command === CliCommands::PROTECTED_MODE_OPEN
             || $command === CliCommands::PROTECTED_MODE_CLOSE;
+    }
+
+    /**
+     * Whether this command asks for a mint, under either of the two names that do.
+     *
+     * @param string $command Command-channel wire name
+     * @return bool True when the command mints one pass
+     */
+    private function isProtectedModePassCommand(string $command): bool
+    {
+        return $command === CliCommands::PROTECTED_MODE_PASS
+            || $command === CliCommands::PROTECTED_MODE_TEST_PASS;
     }
 
     /**
@@ -166,7 +192,7 @@ trait ProtectedModeOperatorTrait
             return;
         }
 
-        if ($data->command === CliCommands::PROTECTED_MODE_PASS) {
+        if ($this->isProtectedModePassCommand($data->command)) {
             $this->mintProtectedModePass($data);
 
             return;

@@ -730,6 +730,10 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             // bit the two are one frame. That client would then either reload itself out of the
             // window or, taking the silence for admission, keep a dead key past the lift.
             protectedModeAcceptsPass: $this->protectedModePhaseIsVerifying(),
+            // The second bit of the same row: whether anything has been minted yet. Without it a
+            // verifier arriving mid-window would be handed a field before any code exists, which
+            // is the lie this pair was added to end.
+            protectedModePassIssued: $this->protectedModePassIssued(),
         );
         $message = [
             SignalPayloadConstants::FIELD_TYPE => SignalTypeConstants::HANDSHAKE,
@@ -768,6 +772,24 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     private function protectedModePhaseIsVerifying(): bool
     {
         return Hilos::$rt?->hilosProtectedModeRuntime?->phase === ProtectedModeRuntime::PHASE_VERIFYING;
+    }
+
+    /**
+     * Whether the verification window has at least one pass standing on its row.
+     *
+     * Both halves are stated rather than only the array test: the bit means "a code can be
+     * presented right now", and a row that left the window has already voided its hashes. Saying
+     * so twice costs one comparison and keeps the sentence in the code the sentence in the
+     * contract. Like every read on this path it is an in-memory lookup of the daemon-owned
+     * singleton on this master process - no database, no file, no socket.
+     *
+     * @return bool Whether a pass has been issued for the window in flight
+     */
+    private function protectedModePassIssued(): bool
+    {
+        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+
+        return $freeze?->phase === ProtectedModeRuntime::PHASE_VERIFYING && $freeze->passHashes !== [];
     }
 
     /**

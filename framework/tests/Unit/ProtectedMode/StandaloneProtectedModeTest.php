@@ -198,6 +198,36 @@ final class StandaloneProtectedModeTest extends TestCase
         $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
     }
 
+    public function testOnlyTheFirstPassIsAnnouncedToTheFrozenBrowsers(): void
+    {
+        // Zero-to-one is the only step that changes anything on a stub: it swaps the sentence
+        // saying nothing has been minted for the code field. A second mint would broadcast to
+        // every frozen browser to tell them what they are already showing.
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->enterVerifyingOnTheRuntimeRow();
+        $this->executor->calls = [];
+
+        $this->withDaemonTruthSource(function (): void {
+            $this->mode->requestPass(new ProtectedModePassSignalData(self::INITIATOR_TYPE, self::INITIATOR_INDEX, 'hash-a'));
+            $this->mode->requestPass(new ProtectedModePassSignalData(self::INITIATOR_TYPE, self::INITIATOR_INDEX, 'hash-b'));
+        });
+
+        $this->assertSame(['hash-a', 'hash-b'], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
+        $this->assertSame(['announcePassIssued'], $this->executor->calls);
+    }
+
+    public function testAPassRefusedOutsideTheWindowAnnouncesNothing(): void
+    {
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->executor->calls = [];
+
+        $this->mode->requestPass(new ProtectedModePassSignalData(self::INITIATOR_TYPE, self::INITIATOR_INDEX, 'hash-a'));
+
+        $this->assertSame([], $this->executor->calls);
+    }
+
     public function testTheInitiatorStampsTheProgressMarkOnTheRow(): void
     {
         $this->mode->requestEnable($this->enableData());
@@ -451,6 +481,11 @@ final class FakeStandaloneExecutor implements ProtectedModeExecutor
     public function enterVerifying(): void
     {
         $this->calls[] = 'enterVerifying';
+    }
+
+    public function announcePassIssued(): void
+    {
+        $this->calls[] = 'announcePassIssued';
     }
 
     public function reenterActive(): void

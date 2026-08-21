@@ -69,6 +69,17 @@ interface ProtectedModeExecutor
     public function enterVerifying(): void;
 
     /**
+     * Tells this node's locked-out connections that the verification window now has a code to take.
+     *
+     * Called at zero-to-one and nowhere else: the window opens saying nothing has been minted, and
+     * the first pass turns that sentence into the field with nothing clicked. Later mints announce
+     * nothing - the bit already says what they would say, and a frame per mint would broadcast to
+     * every frozen browser without changing anything on any of them. Nothing is written here: the
+     * row already holds the hash by the time this runs.
+     */
+    public function announcePassIssued(): void;
+
+    /**
      * Closes this node back from the verification window: writes phase active and stops the agents again.
      *
      * The mirror of {@see enterVerifying()}, and not the same thing as {@see enterActive()}: that

@@ -584,7 +584,7 @@ final class ClusterProtectedMode implements
                 return;
             }
 
-            $this->runtimeView()?->actions->issuePass($passHash);
+            $this->issuePassAndAnnounceFirst($passHash);
             return;
         }
 
@@ -596,7 +596,7 @@ final class ClusterProtectedMode implements
             return;
         }
 
-        $this->runtimeView()?->actions->issuePass($passHash);
+        $this->issuePassAndAnnounceFirst($passHash);
         $this->mesh->broadcastPass($passHash);
     }
 
@@ -724,6 +724,30 @@ final class ClusterProtectedMode implements
     private function phaseIs(string $expected): bool
     {
         return $this->runtimeView()?->phase === $expected;
+    }
+
+    /**
+     * Records a minted pass on this node's row and tells the locked-out browsers about the first one.
+     *
+     * Both ways a pass reaches the leader end here, and both owe the same announcement: the browsers
+     * frozen on this node are showing a stub that says nothing has been minted yet, and only the
+     * zero-to-one step makes that sentence false. A later mint changes nothing any of them display,
+     * so it is written to the row and left unannounced.
+     *
+     * @param string $passHash SHA-256 of the minted pass
+     */
+    private function issuePassAndAnnounceFirst(string $passHash): void
+    {
+        $view = $this->runtimeView();
+        if ($view === null) {
+            return;
+        }
+
+        $view->actions->issuePass($passHash);
+
+        if (count($view->passHashes) === 1) {
+            $this->executor->announcePassIssued();
+        }
     }
 
     /**

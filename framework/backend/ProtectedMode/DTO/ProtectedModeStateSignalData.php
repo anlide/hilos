@@ -34,6 +34,9 @@ final class ProtectedModeStateSignalData extends BaseDTO implements SignalDataIn
     /** Payload key: whether the surface may offer a code field right now. */
     public const string acceptsPass = 'acceptsPass';
 
+    /** Payload key: whether at least one pass is standing, so the field has something to take. */
+    public const string passIssued = 'passIssued';
+
     /**
      * @param bool $active Whether protected mode holds this node right now
      * @param ?string $operation Operation the freeze protects; null on the lift frame
@@ -46,6 +49,13 @@ final class ProtectedModeStateSignalData extends BaseDTO implements SignalDataIn
      *                          the verification window keeps the stub up for everyone without a
      *                          pass - a frame saying "not active" would take the surface down
      *                          for exactly the people it must stay up for.
+     * @param bool $passIssued Whether at least one pass is standing on the freeze row right now;
+     *                         false while the window is open but nothing has been minted, where the
+     *                         surface says so instead of offering a field that can take nothing. It
+     *                         rides beside `acceptsPass` rather than narrowing it because that flag
+     *                         also decides when the client calls the mode over and when it drops a
+     *                         presented pass - narrowed, it would reload an admitted verifier out of
+     *                         the window the instant nobody held a code
      */
     public function __construct(
         public readonly bool $active,
@@ -53,6 +63,7 @@ final class ProtectedModeStateSignalData extends BaseDTO implements SignalDataIn
         public readonly ?string $title = null,
         public readonly ?string $message = null,
         public readonly bool $acceptsPass = false,
+        public readonly bool $passIssued = false,
     ) {
     }
 
@@ -67,6 +78,7 @@ final class ProtectedModeStateSignalData extends BaseDTO implements SignalDataIn
             self::title => $this->title,
             self::message => $this->message,
             self::acceptsPass => $this->acceptsPass,
+            self::passIssued => $this->passIssued,
         ];
     }
 
@@ -86,6 +98,7 @@ final class ProtectedModeStateSignalData extends BaseDTO implements SignalDataIn
             title: $title === null ? null : (string)$title,
             message: $message === null ? null : (string)$message,
             acceptsPass: (bool)($data[self::acceptsPass] ?? false),
+            passIssued: (bool)($data[self::passIssued] ?? false),
         );
     }
 }

@@ -17,6 +17,7 @@ const REPLY_TIMEOUT_MS = 10_000
 const ENTER_COMMAND = 'test:protected-mode:enter'
 const LEAVE_COMMAND = 'test:protected-mode:leave'
 const OPEN_COMMAND = 'test:protected-mode:open'
+const PASS_COMMAND = 'test:protected-mode:pass'
 const INSPECT_COMMAND = 'test:protected-mode:inspect'
 
 /** This node's protected-mode state, as the master reports it. */
@@ -81,6 +82,27 @@ export async function openProtectedMode(): Promise<string> {
   const reply = await sendCommand(OPEN_COMMAND, {})
 
   return String(reply.phase ?? '')
+}
+
+/**
+ * Mints one pass into the driven verification window and returns the clear key.
+ *
+ * The test path's own name for a mint the operator's command owns in production:
+ * a command routes to exactly one agent type, that one belongs to the agent that
+ * runs real operations, and a freeze may only be driven by the agent the row
+ * records as its initiator — which here is the test driver's carrier. Behind both
+ * names is the same handler, so what comes back is a real pass on a real row.
+ *
+ * Resolves once the hash is on the row, so a caller may type the key on the next
+ * line without polling — and an assertion about the code field appearing is about
+ * a bit that is already true.
+ *
+ * @returns The clear pass, which exists nowhere else.
+ */
+export async function mintProtectedModePass(): Promise<string> {
+  const reply = await sendCommand(PASS_COMMAND, {})
+
+  return String(reply.pass ?? '')
 }
 
 /**

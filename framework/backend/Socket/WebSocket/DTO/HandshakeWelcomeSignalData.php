@@ -40,6 +40,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
     public const string PROTECTED_MODE_TITLE = 'title';
     public const string PROTECTED_MODE_MESSAGE = 'message';
     public const string PROTECTED_MODE_ACCEPTS_PASS = 'acceptsPass';
+    public const string PROTECTED_MODE_PASS_ISSUED = 'passIssued';
 
     /**
      * @param string $build Daemon build timestamp ('dev' when not configured)
@@ -54,6 +55,11 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
      *                                       surface may offer a code field", an admitted verifier -
      *                                       whose $protectedModeActive is false, like everybody's
      *                                       once the mode is over - as "the window is still open"
+     * @param bool $protectedModePassIssued Whether at least one pass is standing on the freeze row;
+     *                                      false whenever no freeze holds and whenever the window is
+     *                                      open but nothing has been minted yet. It tells a
+     *                                      connection arriving mid-window whether the surface has a
+     *                                      field to offer or only the sentence that says to wait
      */
     public function __construct(
         public readonly string $build,
@@ -63,6 +69,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
         public readonly ?string $protectedModeTitle = null,
         public readonly ?string $protectedModeMessage = null,
         public readonly bool $protectedModeAcceptsPass = false,
+        public readonly bool $protectedModePassIssued = false,
     ) {
     }
 
@@ -80,6 +87,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
                 self::PROTECTED_MODE_TITLE => $this->protectedModeTitle,
                 self::PROTECTED_MODE_MESSAGE => $this->protectedModeMessage,
                 self::PROTECTED_MODE_ACCEPTS_PASS => $this->protectedModeAcceptsPass,
+                self::PROTECTED_MODE_PASS_ISSUED => $this->protectedModePassIssued,
             ],
         ];
     }
@@ -87,8 +95,8 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
     /**
      * Restores the welcome from its wire payload.
      *
-     * The block and both of its flags are required, and a lowered flag is read as
-     * the answer it is: a welcome that does not say whether a freeze holds is not
+     * The block and all three of its flags are required, and a lowered flag is read
+     * as the answer it is: a welcome that does not say whether a freeze holds is not
      * a welcome saying none does. The three copy fields are null whenever no
      * freeze holds, so they are read as the optional text they are - and a value
      * of another type is refused rather than quietly dropped, which is what the
@@ -112,6 +120,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
             protectedModeTitle: self::optionalString($protectedMode, self::PROTECTED_MODE_TITLE),
             protectedModeMessage: self::optionalString($protectedMode, self::PROTECTED_MODE_MESSAGE),
             protectedModeAcceptsPass: self::requireBool($protectedMode, self::PROTECTED_MODE_ACCEPTS_PASS),
+            protectedModePassIssued: self::requireBool($protectedMode, self::PROTECTED_MODE_PASS_ISSUED),
         );
     }
 }

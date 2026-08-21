@@ -100,6 +100,21 @@ final class ProtectedModeAdmissionTest extends TestCase
 
         $this->assertTrue($block['active']);
         $this->assertTrue($block['acceptsPass']);
+        $this->assertTrue($block['passIssued']);
+    }
+
+    public function testAWindowWithNothingMintedSaysSoInsteadOfOfferingAField(): void
+    {
+        // The state the leaf was written from: the phase says "present your code" from the moment
+        // it opens, while the codes are minted one by one afterwards. The two bits part company
+        // here and nowhere else.
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, []);
+
+        $block = $this->protectedModeBlock($this->handshake(null));
+
+        $this->assertTrue($block['active']);
+        $this->assertTrue($block['acceptsPass']);
+        $this->assertFalse($block['passIssued']);
     }
 
     public function testAnAdmittedConnectionIsToldTheModeDoesNotHoldItButIsStillOn(): void
@@ -115,6 +130,7 @@ final class ProtectedModeAdmissionTest extends TestCase
         // the one a lifted mode sends: the verifier that reads it is inside a window still open,
         // and a client that could not tell would reload itself straight back out of it.
         $this->assertTrue($block['acceptsPass']);
+        $this->assertTrue($block['passIssued']);
     }
 
     public function testAFrozenPhaseOffersNoCodeField(): void
@@ -125,6 +141,9 @@ final class ProtectedModeAdmissionTest extends TestCase
 
         $this->assertTrue($block['active']);
         $this->assertFalse($block['acceptsPass']);
+        // A frozen phase voids its hashes on the way in, so neither bit survives the exit from
+        // the window - the field is gone because the window is, not because it emptied.
+        $this->assertFalse($block['passIssued']);
     }
 
     /**

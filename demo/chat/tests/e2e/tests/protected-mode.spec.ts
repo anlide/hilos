@@ -1,10 +1,12 @@
 import { test, expect } from '@playwright/test'
+import type { Page } from '@playwright/test'
 
 import { gotoMaintenance, gotoPage } from '../helpers/page'
 import {
   enterProtectedMode,
   inspectProtectedMode,
   leaveProtectedMode,
+  mintProtectedModePass,
   openProtectedMode,
   openProtectedModeIfAny,
 } from '../helpers/protectedMode'
@@ -76,7 +78,7 @@ test('a live window shows the maintenance stub while the mode is on', async ({
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 })
 
-test('the verification window offers its code field on an administrative url only', async ({
+test('the verification window waits for a code before it offers a field', async ({
   page,
 }) => {
   // Both loads are cold, and deliberately so: the stub is painted from the
@@ -85,20 +87,110 @@ test('the verification window offers its code field on an administrative url onl
   await enterProtectedMode(OPERATION)
   expect(await leaveProtectedMode()).toBe('verifying')
 
-  // A public url in the window looks exactly like the active phase. That is the
-  // point of the leaf: a visitor holds no code, and a field would announce to
-  // him that a window is open at all.
+  // A public url in the window looks exactly like the active phase, in both
+  // states of the window. That is HIL-615 untouched: a visitor holds no code, and
+  // a field would announce to him that a window is open at all.
   await gotoMaintenance(page, '/')
   await expect(page.getByTestId('maintenance-title')).toHaveText(STUB_TITLE)
   await expect(page.getByTestId('maintenance-pass-form')).toBeHidden()
+  await expect(page.getByTestId('maintenance-pass-pending')).toBeHidden()
 
-  // The same phase, the same freeze, an administrative url. The verifier types
-  // it: the shell drops brand, nav, gear and footer while the stub is up, so
-  // there is nothing on screen to click his way in with.
+  // The same phase, the same freeze, an administrative url — and no code minted
+  // yet. The verifier is told to wait rather than handed a box that can take
+  // nothing, which is the whole of HIL-616.
   await gotoMaintenance(page, ADMIN_URL)
+  await expect(page.getByTestId('maintenance-pass-pending')).toBeVisible()
+  await expect(page.getByTestId('maintenance-pass-form')).toBeHidden()
+
+  // A stamp on this document: the first mint must reach this page as a frame, so
+  // whatever is on screen afterwards has to be the same document that was there
+  // before it.
+  await page.evaluate(() => {
+    ;(window as Window & { hil616Stamp?: boolean }).hil616Stamp = true
+  })
+  const urlBeforeTheMint = page.url()
+
+  await mintProtectedModePass()
+
   await expect(page.getByTestId('maintenance-pass-form')).toBeVisible()
   await expect(page.getByTestId('maintenance-pass')).toBeVisible()
   await expect(page.getByTestId('maintenance-pass-submit')).toBeVisible()
+  await expect(page.getByTestId('maintenance-pass-pending')).toBeHidden()
+  expect(page.url()).toBe(urlBeforeTheMint)
+  expect(
+    await page.evaluate(
+      () => (window as Window & { hil616Stamp?: boolean }).hil616Stamp === true,
+    ),
+  ).toBe(true)
+
+  // A public url still shows neither, now that a code is standing: the surface
+  // type decides, not what the window holds.
+  const publicTab = await page.context().newPage()
+  await gotoMaintenance(publicTab, '/')
+  await expect(publicTab.getByTestId('maintenance-pass-form')).toBeHidden()
+  await expect(publicTab.getByTestId('maintenance-pass-pending')).toBeHidden()
+  await publicTab.close()
+})
+
+test('a wrong code leaves the connection frozen and says so', async ({
+  page,
+}) => {
+  // Testable for the first time: until a test could mint, there was no right key
+  // to contrast a wrong one with. A frozen node has no agent to compose a
+  // refusal, so what answers is the welcome that comes back still locking this
+  // connection out - and the client turns that silence into the message below.
+  await enterProtectedMode(OPERATION)
+  expect(await leaveProtectedMode()).toBe('verifying')
+  await mintProtectedModePass()
+
+  await gotoMaintenance(page, ADMIN_URL)
+  await presentCode(page, 'not-the-code-that-was-minted')
+
+  await expect(page.getByTestId('maintenance-pass-error')).toBeVisible()
+  await expect(page.getByTestId('maintenance')).toBeVisible()
+  await expect(page.getByTestId('maintenance-pass-form')).toBeVisible()
+})
+
+test('the minted code admits the verifier while everyone else keeps the stub', async ({
+  page,
+}) => {
+  await enterProtectedMode(OPERATION)
+  expect(await leaveProtectedMode()).toBe('verifying')
+  const pass = await mintProtectedModePass()
+  expect(pass).not.toBe('')
+
+  await gotoMaintenance(page, ADMIN_URL)
+  await presentCode(page, pass)
+
+  // The verifier sees the product; the freeze is still on for everybody else,
+  // which is what the window is for.
+  await expect(page.getByTestId('maintenance')).toBeHidden()
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+
+  const bystander = await page.context().newPage()
+  await gotoMaintenance(bystander, ADMIN_URL)
+  await expect(bystander.getByTestId('maintenance-pass-form')).toBeVisible()
+  await bystander.close()
+})
+
+test('leaving the window takes the field and the sentence away together', async ({
+  page,
+}) => {
+  // The open is the only exit the driven path has: closing back to a full freeze
+  // is an operator command, owned by the agent that runs real operations, and no
+  // test-only name for it exists yet.
+  await enterProtectedMode(OPERATION)
+  expect(await leaveProtectedMode()).toBe('verifying')
+  await mintProtectedModePass()
+
+  await gotoMaintenance(page, ADMIN_URL)
+  await expect(page.getByTestId('maintenance-pass-form')).toBeVisible()
+
+  expect(await openProtectedMode()).toBe('inactive')
+
+  await expect(page.getByTestId('maintenance')).toBeHidden()
+  await expect(page.getByTestId('maintenance-pass-form')).toBeHidden()
+  await expect(page.getByTestId('maintenance-pass-pending')).toBeHidden()
 })
 
 test('a public page live through the switch gains no code field', async ({
@@ -111,18 +203,21 @@ test('a public page live through the switch gains no code field', async ({
   await expect(page.getByTestId('maintenance')).toBeVisible()
 
   expect(await leaveProtectedMode()).toBe('verifying')
+  await mintProtectedModePass()
 
-  // A second tab proves the window really is open to browsers right now, so the
-  // assertion below is about the surface type and not about a frame still in
-  // flight.
+  // A second tab proves the window really is open to browsers right now and has a
+  // code standing, so the assertion below is about the surface type and not about
+  // a frame still in flight.
   const verifierTab = await page.context().newPage()
   await gotoMaintenance(verifierTab, ADMIN_URL)
   await expect(verifierTab.getByTestId('maintenance-pass-form')).toBeVisible()
   await verifierTab.close()
 
   // The public page never navigated, so its route — and its verdict — never
-  // changed: the switch into the window adds nothing to it.
+  // changed: neither the switch into the window nor the mint inside it adds
+  // anything to it.
   await expect(page.getByTestId('maintenance-pass-form')).toBeHidden()
+  await expect(page.getByTestId('maintenance-pass-pending')).toBeHidden()
 })
 
 test('a finished operation lands in the verification window, and only the open ends it', async () => {
@@ -135,6 +230,11 @@ test('a finished operation lands in the verification window, and only the open e
   expect(verifying.phase).toBe('verifying')
   expect(verifying.operation).toBe(OPERATION)
   expect(verifying.passCount).toBe(0)
+
+  // The count is the one place a number about the circle exists: the wire carries
+  // a boolean, so a browser learns that a code stands and never how many.
+  await mintProtectedModePass()
+  expect((await inspectProtectedMode()).passCount).toBe(1)
 
   await openProtectedMode()
 
@@ -170,3 +270,22 @@ test('entering twice is refused with a reason instead of timing out', async () =
   // the agent's pre-check this would be a mute timeout.
   await expect(enterProtectedMode(OPERATION)).rejects.toThrow(/already active/)
 })
+
+/**
+ * Types a code into the verifier's field and drives the submit button.
+ *
+ * @param page The Playwright page showing the maintenance surface.
+ * @param code The code to present.
+ */
+async function presentCode(page: Page, code: string): Promise<void> {
+  const field = page.getByTestId('maintenance-pass')
+  await field.fill('')
+  await field.pressSequentially(code, { delay: 10 })
+
+  const submit = page.getByTestId('maintenance-pass-submit')
+  await submit.scrollIntoViewIfNeeded()
+  await expect(submit).toBeVisible()
+  await expect(submit).toBeEnabled()
+  await submit.focus()
+  await submit.click()
+}

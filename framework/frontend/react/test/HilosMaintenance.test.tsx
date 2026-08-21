@@ -12,6 +12,7 @@ const FROZEN: ProtectedModeStatus = {
   title: 'Restoring a backup',
   message: 'The application will be back in a few minutes.',
   acceptsPass: false,
+  passIssued: false,
   passRejected: false,
 }
 
@@ -21,14 +22,18 @@ const FROZEN_WITHOUT_COPY: ProtectedModeStatus = {
   title: undefined,
   message: undefined,
   acceptsPass: false,
+  passIssued: false,
   passRejected: false,
 }
 
 /** The verification window: still locked out, but a code will open it. */
 const VERIFYING: ProtectedModeStatus = { ...FROZEN, acceptsPass: true }
 
+/** The same window once the operator minted a code. */
+const MINTED: ProtectedModeStatus = { ...VERIFYING, passIssued: true }
+
 /** The window, after a code that opened nothing. */
-const REJECTED: ProtectedModeStatus = { ...VERIFYING, passRejected: true }
+const REJECTED: ProtectedModeStatus = { ...MINTED, passRejected: true }
 
 // A minimal connection stub: the shell only reads the transport state and the
 // protected-mode state off it, and subscribes to both. `push` drives the freeze
@@ -138,35 +143,87 @@ describe('HilosMaintenance', () => {
 
   it('offers the code field on an administrative surface only', () => {
     // The verification window is not a public announcement: a visitor holds no
-    // code, so on a public url he sees the same screen as in the active phase.
+    // code, so on a public url he sees the same screen as in the active phase -
+    // neither the field nor the sentence that stands in for it.
     const onPublic = render(
       <HilosMaintenance
-        status={VERIFYING}
-        connection={fakeConnection(VERIFYING).connection}
+        status={MINTED}
+        connection={fakeConnection(MINTED).connection}
         adminSurface={false}
       />,
     )
     expect(surface(onPublic.container, 'maintenance-pass-form')).toBeNull()
+    expect(surface(onPublic.container, 'maintenance-pass-pending')).toBeNull()
     cleanup()
 
     const onAdmin = render(
       <HilosMaintenance
-        status={VERIFYING}
-        connection={fakeConnection(VERIFYING).connection}
+        status={MINTED}
+        connection={fakeConnection(MINTED).connection}
         adminSurface
       />,
     )
     expect(surface(onAdmin.container, 'maintenance-pass-form')).not.toBeNull()
   })
 
-  it('presents the typed code through the connection', () => {
-    const { connection, presented } = fakeConnection(VERIFYING)
+  it('says a code is not out yet instead of offering an empty field', () => {
+    // The window opens before the operator mints anything, and a field there
+    // would take nothing that could be typed into it.
     const { container } = render(
       <HilosMaintenance
         status={VERIFYING}
-        connection={connection}
+        connection={fakeConnection(VERIFYING).connection}
         adminSurface
       />,
+    )
+
+    expect(surface(container, 'maintenance-pass-form')).toBeNull()
+    expect(
+      surface(container, 'maintenance-pass-pending')?.textContent,
+    ).not.toBe('')
+  })
+
+  it('swaps the sentence for the field when the first code lands', () => {
+    // No navigation and no reload: the pushed frame alone turns the waiting
+    // sentence into the field the verifier is already looking for.
+    const { container, rerender } = render(
+      <HilosMaintenance
+        status={VERIFYING}
+        connection={fakeConnection(VERIFYING).connection}
+        adminSurface
+      />,
+    )
+
+    act(() => {
+      rerender(
+        <HilosMaintenance
+          status={MINTED}
+          connection={fakeConnection(MINTED).connection}
+          adminSurface
+        />,
+      )
+    })
+
+    expect(surface(container, 'maintenance-pass-form')).not.toBeNull()
+    expect(surface(container, 'maintenance-pass-pending')).toBeNull()
+  })
+
+  it('offers no waiting sentence on a freeze that admits nobody', () => {
+    const { container } = render(
+      <HilosMaintenance
+        status={FROZEN}
+        connection={fakeConnection(FROZEN).connection}
+        adminSurface
+      />,
+    )
+
+    expect(surface(container, 'maintenance-pass-pending')).toBeNull()
+  })
+
+  it('presents the typed code through the connection', () => {
+    const { connection, presented } = fakeConnection(MINTED)
+    const { container } = render(
+      <HilosMaintenance status={MINTED} connection={connection} adminSurface />,
     )
     const field = surface(container, 'maintenance-pass') as HTMLInputElement
 

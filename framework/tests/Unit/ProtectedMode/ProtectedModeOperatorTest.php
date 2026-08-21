@@ -30,6 +30,10 @@ use PHPUnit\Framework\TestCase;
  * to rely on: that a refusal states its reason instead of timing out, that success means the row
  * really moved, and above all that the minted pass reaches the terminal and nothing else - the
  * signal carries its hash, and the agent hands the clear value back only once the row confirms.
+ *
+ * The mint answers to a second name as well (HIL-616): the test path's, whose carrier is a
+ * different initiator. It is the same handler behind both, which is what these cases pin - a
+ * separate name must not become a separate set of rules.
  */
 final class ProtectedModeOperatorTest extends TestCase
 {
@@ -127,6 +131,53 @@ final class ProtectedModeOperatorTest extends TestCase
         $agent->onTick();
 
         $this->assertRefused($this->singleReply(), 'record the pass');
+    }
+
+    public function testTheTestNameMintsThroughTheVerySamePath(): void
+    {
+        // The whole reason a second name exists: a driven freeze is initiated by an agent the
+        // operator's command does not belong to, so the test path needs its own name - and must
+        // not get its own mint. Same request, same hash, same wait for the row.
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, []);
+        $agent = new OperatorTestAgent(null);
+
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_PASS));
+
+        $sent = $this->nextPassRequest();
+        $this->assertInstanceOf(ProtectedModePassSignalData::class, $sent);
+        $this->assertSame([], $this->replies(), 'The pass is not handed over before the row holds it.');
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, [$sent->passHash]);
+        $agent->onTick();
+
+        $reply = $this->singleReply();
+        $this->assertSame(CommandConstants::STATUS_OK, $reply->status);
+        $pass = (string)$reply->payload[ProtectedModeCommandConstants::FIELD_PASS];
+        $this->assertSame(hash(ProtectedModeAdmissionConstants::PASS_HASH_ALGO, $pass), $sent->passHash);
+    }
+
+    public function testTheTestNameIsRefusedOutsideTheWindowLikeTheOperatorName(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null, []);
+        $agent = new OperatorTestAgent(null);
+
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_PASS));
+
+        $this->assertRefused($this->singleReply(), StateProtectedModeRuntime::PHASE_VERIFYING);
+        $this->assertNull($this->nextPassRequest(), 'A refused pass must mint nothing at all.');
+    }
+
+    public function testTheTestNameIsRefusedFromAnAgentThatDidNotStartTheFreeze(): void
+    {
+        // Inheriting the identity check is the point of sharing the handler: a test name must
+        // not become a way around the one rule the freeze has.
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, 'somebody-else', null, []);
+        $agent = new OperatorTestAgent(null);
+
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_PASS));
+
+        $this->assertRefused($this->singleReply(), 'somebody-else');
+        $this->assertNull($this->nextPassRequest(), 'A refused pass must mint nothing at all.');
     }
 
     public function testAPassIsRefusedOutsideTheVerificationWindow(): void

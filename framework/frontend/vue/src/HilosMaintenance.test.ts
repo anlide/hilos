@@ -13,6 +13,7 @@ const FROZEN: ProtectedModeStatus = {
   title: 'Restoring a backup',
   message: 'The application will be back in a few minutes.',
   acceptsPass: false,
+  passIssued: false,
   passRejected: false,
 }
 
@@ -22,14 +23,18 @@ const FROZEN_WITHOUT_COPY: ProtectedModeStatus = {
   title: undefined,
   message: undefined,
   acceptsPass: false,
+  passIssued: false,
   passRejected: false,
 }
 
-/** The verification window: still locked out, but a code will open it. */
+/** The verification window at the moment it opens: no code has been minted yet. */
 const VERIFYING: ProtectedModeStatus = { ...FROZEN, acceptsPass: true }
 
+/** The same window once the operator minted a code: still locked out, but a code will open it. */
+const MINTED: ProtectedModeStatus = { ...VERIFYING, passIssued: true }
+
 /** The window, after a code that opened nothing. */
-const REJECTED: ProtectedModeStatus = { ...VERIFYING, passRejected: true }
+const REJECTED: ProtectedModeStatus = { ...MINTED, passRejected: true }
 
 // A minimal connection stub: the shell only reads the transport state and the
 // protected-mode state off it, and subscribes to both. `push` drives the freeze
@@ -133,22 +138,26 @@ describe('HilosMaintenance', () => {
 
   it('offers the code field on an administrative surface only', () => {
     // The verification window is not a public announcement: a visitor holds no
-    // code, so on a public url he sees the same screen as in the active phase.
+    // code, so on a public url he sees the same screen as in the active phase -
+    // neither the field nor the sentence that stands in for it.
     const onPublic = mount(HilosMaintenance, {
       props: {
-        status: VERIFYING,
-        connection: fakeConnection(VERIFYING).connection,
+        status: MINTED,
+        connection: fakeConnection(MINTED).connection,
         adminSurface: false,
       },
     })
     expect(onPublic.find('[data-id="maintenance-pass-form"]').exists()).toBe(
       false,
     )
+    expect(onPublic.find('[data-id="maintenance-pass-pending"]').exists()).toBe(
+      false,
+    )
 
     const onAdmin = mount(HilosMaintenance, {
       props: {
-        status: VERIFYING,
-        connection: fakeConnection(VERIFYING).connection,
+        status: MINTED,
+        connection: fakeConnection(MINTED).connection,
         adminSurface: true,
       },
     })
@@ -157,10 +166,64 @@ describe('HilosMaintenance', () => {
     )
   })
 
-  it('presents the typed code through the connection', async () => {
-    const { connection, presented } = fakeConnection(VERIFYING)
+  it('says a code is not out yet instead of offering an empty field', () => {
+    // The window opens before the operator mints anything, and a field there
+    // would take nothing that could be typed into it.
     const wrapper = mount(HilosMaintenance, {
-      props: { status: VERIFYING, connection, adminSurface: true },
+      props: {
+        status: VERIFYING,
+        connection: fakeConnection(VERIFYING).connection,
+        adminSurface: true,
+      },
+    })
+
+    expect(wrapper.find('[data-id="maintenance-pass-form"]').exists()).toBe(
+      false,
+    )
+    expect(
+      wrapper.find('[data-id="maintenance-pass-pending"]').text(),
+    ).not.toBe('')
+  })
+
+  it('swaps the sentence for the field when the first code lands', async () => {
+    // No navigation and no reload: the pushed frame alone turns the waiting
+    // sentence into the field the verifier is already looking for.
+    const wrapper = mount(HilosMaintenance, {
+      props: {
+        status: VERIFYING,
+        connection: fakeConnection(VERIFYING).connection,
+        adminSurface: true,
+      },
+    })
+
+    await wrapper.setProps({ status: MINTED })
+
+    expect(wrapper.find('[data-id="maintenance-pass-form"]').exists()).toBe(
+      true,
+    )
+    expect(wrapper.find('[data-id="maintenance-pass-pending"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('offers no waiting sentence on a freeze that admits nobody', () => {
+    const wrapper = mount(HilosMaintenance, {
+      props: {
+        status: FROZEN,
+        connection: fakeConnection(FROZEN).connection,
+        adminSurface: true,
+      },
+    })
+
+    expect(wrapper.find('[data-id="maintenance-pass-pending"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('presents the typed code through the connection', async () => {
+    const { connection, presented } = fakeConnection(MINTED)
+    const wrapper = mount(HilosMaintenance, {
+      props: { status: MINTED, connection, adminSurface: true },
     })
 
     await wrapper.find('[data-id="maintenance-pass"]').setValue('the-key')

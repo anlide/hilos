@@ -7,13 +7,16 @@
 // known but no sentence arrived with it. It is a state, not a page: no links,
 // no retry button — the mode lifts on its own and the core reloads the document.
 // The one exception is the code field, shown only while the freeze says it
-// accepts a pass AND the shell hands over an administrative surface: that phase
-// is the verification window, and a verifier admitted by the code sees the whole
-// product rather than this screen, while a visitor on a public url is not
-// invited to fill in a key he was never given. The rule lives here, in the
-// component that owns the field, rather than in the shell. Submitting reconnects
-// with the key on the socket url (the core does that), because a client refused
-// every outbound frame can only ask to be let in on the 101.
+// accepts a pass AND the shell hands over an administrative surface AND at least
+// one code has been minted: that phase is the verification window, and a verifier
+// admitted by the code sees the whole product rather than this screen, while a
+// visitor on a public url is not invited to fill in a key he was never given. The
+// window opens before any code exists, and until one does the same spot carries a
+// sentence saying so — the field would otherwise be a box that can take nothing.
+// The rule lives here, in the component that owns the field, rather than in the
+// shell. Submitting reconnects with the key on the socket url (the core does
+// that), because a client refused every outbound frame can only ask to be let in
+// on the 101.
 import {
   ChangeDetectionStrategy,
   Component,
@@ -47,7 +50,7 @@ import type { HilosConnection, ProtectedModeStatus } from '@hilos/core'
       <p class="text-body-secondary mb-0" data-id="maintenance-message">
         {{ message() }}
       </p>
-      @if (status().acceptsPass && adminSurface()) {
+      @if (status().acceptsPass && adminSurface() && status().passIssued) {
         <form
           class="row justify-content-center w-100 mt-4 px-3"
           data-id="maintenance-pass-form"
@@ -95,6 +98,13 @@ import type { HilosConnection, ProtectedModeStatus } from '@hilos/core'
             }
           </div>
         </form>
+      } @else if (status().acceptsPass && adminSurface()) {
+        <p
+          class="text-body-secondary small mt-4 mb-0"
+          data-id="maintenance-pass-pending"
+        >
+          {{ passCopy.pending }}
+        </p>
       }
     </div>
   `,

@@ -41,6 +41,7 @@ use Hilos\Core\CLI\Commands\ProtectedModeTestEnterCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestInspectCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestLeaveCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestOpenCommand;
+use Hilos\Core\CLI\Commands\ProtectedModeTestPassCommand;
 use Hilos\Core\CLI\Commands\StatusCommand;
 use Hilos\Core\CLI\Commands\ThrottleTestResetCommand;
 use Hilos\Core\CLI\Commands\UserTestSeedCommand;
@@ -126,6 +127,7 @@ class CliManager
         $this->commands[CliCommands::PROTECTED_MODE_TEST_ENTER] = new ProtectedModeTestEnterCommand();
         $this->commands[CliCommands::PROTECTED_MODE_TEST_LEAVE] = new ProtectedModeTestLeaveCommand();
         $this->commands[CliCommands::PROTECTED_MODE_TEST_OPEN] = new ProtectedModeTestOpenCommand();
+        $this->commands[CliCommands::PROTECTED_MODE_TEST_PASS] = new ProtectedModeTestPassCommand();
         $this->commands[CliCommands::PROTECTED_MODE_PASS] = new ProtectedModePassCommand();
         $this->commands[CliCommands::PROTECTED_MODE_OPEN] = new ProtectedModeOpenCommand();
         $this->commands[CliCommands::PROTECTED_MODE_CLOSE] = new ProtectedModeCloseCommand();

@@ -25,8 +25,10 @@ use PHPUnit\Framework\TestCase;
  * leaves the initiator out (it drives the operation and must keep seeing the real app), while the
  * lift frame leaves nobody out (after a restore the initiator's data is as stale as everyone
  * else's). The two phases in between say nothing, because the surface is already up and must stay
- * up. With no notifier registered the executor is inert, the same way it already is with no
- * runtime row mounted.
+ * up. The verification window adds two frames of its own and one announcement that moves no
+ * phase at all - the first minted pass, which turns the waiting sentence on the stub into the
+ * code field without the verifier touching anything. With no notifier registered the executor is
+ * inert, the same way it already is with no runtime row mounted.
  */
 final class DaemonProtectedModeExecutorNotifyTest extends TestCase
 {
@@ -145,9 +147,50 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         // only that the stub may now ask for a code.
         $this->assertTrue($state->active);
         $this->assertTrue($state->acceptsPass);
+        // Open, and empty: nothing has been minted yet, so the surface says to wait instead of
+        // offering a field that could take nothing.
+        $this->assertFalse($state->passIssued);
         $this->assertSame('restore', $state->operation);
         $this->assertNotNull($state->title);
         $this->assertSame('accept-7', $excluded);
+    }
+
+    public function testTheFirstMintTurnsTheSentenceIntoTheField(): void
+    {
+        $this->executor->enterActivating($this->freeze(), 'accept-7');
+        $this->executor->enterActive();
+        $this->executor->enterVerifying();
+        Hilos::$rt?->hilosProtectedModeRuntime?->actions->issuePass('hash-a');
+        $this->notifier->frames = [];
+
+        $this->executor->announcePassIssued();
+
+        $this->assertCount(1, $this->notifier->frames);
+        [$state, $excluded] = $this->notifier->frames[0];
+        $this->assertTrue($state->active);
+        $this->assertTrue($state->acceptsPass);
+        $this->assertTrue($state->passIssued);
+        $this->assertSame('restore', $state->operation);
+        $this->assertNotNull($state->title);
+        // The same exclusion the entry and the window pushes make: the initiator has been looking
+        // at the real app all along and a frame reaching it would read as a lift.
+        $this->assertSame('accept-7', $excluded);
+    }
+
+    public function testTheMintAnnouncementMovesNoPhaseAndWritesNoPass(): void
+    {
+        $this->executor->enterActivating($this->freeze(), 'accept-7');
+        $this->executor->enterActive();
+        $this->executor->enterVerifying();
+        Hilos::$rt?->hilosProtectedModeRuntime?->actions->issuePass('hash-a');
+
+        $this->executor->announcePassIssued();
+
+        $this->assertSame(
+            StateProtectedModeRuntime::PHASE_VERIFYING,
+            Hilos::$rt?->hilosProtectedModeRuntime?->phase,
+        );
+        $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
     }
 
     public function testClosingBackFromTheWindowTakesTheCodeFieldAway(): void
@@ -174,6 +217,9 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         [$state, $excluded] = $this->notifier->frames[0];
         $this->assertTrue($state->active);
         $this->assertFalse($state->acceptsPass);
+        // Both bits fall together on the way out: the field is gone because the window is, not
+        // because it ran out of codes.
+        $this->assertFalse($state->passIssued);
         $this->assertSame('accept-7', $excluded);
     }
 

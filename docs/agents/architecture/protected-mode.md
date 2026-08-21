@@ -65,7 +65,7 @@ past the agent. The precedent is the backup test commands, which ride
 
 ### The Test Tool That Obligation Produced
 
-Four test-only commands, and the split between them is the whole design:
+Five test-only commands, and the split between them is the whole design:
 
 | Command | Answered by | Why there |
 |---|---|---|
@@ -73,6 +73,7 @@ Four test-only commands, and the split between them is the whole design:
 | `test:protected-mode:enter <operation> [--accept-key=<k>]` | the initiator agent | it calls `requestProtectedModeEnable()` — the one entry, unchanged |
 | `test:protected-mode:leave` | the initiator agent | the driven operation is over: it calls `requestProtectedModeVerify()` and lands in the verification window, where a real one lands too |
 | `test:protected-mode:open` | the initiator agent | the explicit lift, authorized by initiator identity exactly as in production |
+| `test:protected-mode:pass` | the initiator agent | mints one code into the driven window and prints it, so a test has something to type into the verifier's field (HIL-616) |
 
 `ProtectedModeTestDriverTrait` carries the agent half. A trait, because its two
 carriers share no ancestor but `AbstractAgent`, and putting the commands there
@@ -124,11 +125,41 @@ driver's carrier — and a freeze may only be driven by the agent the row names.
 shared name would hand one initiator's freeze to the other, and the identity
 check would then refuse it. Hence the two ladders, same shape, different owners.
 
+The mint answers to **two** names — `protected-mode:pass` and
+`test:protected-mode:pass` — and that is not a hole in the rule above but the
+rule applied: which of the two ever reaches a given carrier is decided by that
+carrier's `AGENT_COMMANDS`, so each name still has exactly one owner per project.
+What is shared is the handler, deliberately: one minting path, one identity
+check, one wait for the hash to land. A second implementation of "what a pass is"
+is the thing worth avoiding, not a second name.
+
 The pass is minted from the secure half of `RandomHelper` and never falls back to
 the pseudorandom one: a guessable pass is indistinguishable from a real one to
 everything downstream. Only its SHA-256 travels to the daemon and only the hash
 is stored, so the clear value exists in the operator's terminal and nowhere else
 — it cannot be read back out of a log, a snapshot or a later reply.
+
+### Two Bits Reach The Browser, And They Answer Different Questions (HIL-616)
+
+`acceptsPass` says the verification window is **open**. `passIssued` says at
+least one code is **standing**, so the field has something it could take. The
+window opens before anything is minted, and between the two moments a code field
+would be a box that accepts nothing — so on an administrative surface the stub
+carries a sentence saying to wait, and swaps it for the field the instant the
+first code lands. The push that does the swapping is the same `PROTECTED_MODE`
+frame every phase change sends, fired once at zero-to-one; later mints announce
+nothing, because the bit already says what they would say.
+
+The second bit exists rather than a narrowed first one because `acceptsPass`
+carries two more jobs on the client: it decides when the mode is called over
+(`createHilosConnection`) and when a presented key is dropped (`HilosConnection`).
+Narrowed to "a code exists", it would reload an admitted verifier out of the
+window the moment nobody held a code, and throw away his key on the way.
+
+**A count never leaves the master.** The wire carries a boolean: how many people
+the operator invited is his business and tells a visitor nothing he needs. The
+count stays where it already was, in the test-only snapshot
+(`test:protected-mode:inspect`), which also never carries a hash.
 
 ## The Freeze Is Also The Window For Repairing What The Operation Broke
 

@@ -416,6 +416,65 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([], $this->mesh->calls);
     }
 
+    public function testTheLeaderAnnouncesOnlyTheFirstPassAndFansEveryOneOnward(): void
+    {
+        // Two things are being separated here: every pass reaches the followers, because a
+        // verifier may land on any node, while only the first one is announced to the browsers
+        // this node already holds - it is the step that swaps their waiting sentence for a field.
+        $this->mesh->followers = [];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->withDaemonTruthSource(function (): void {
+            $this->coordinator->onPass('node-b', 'hash-a');
+            $this->coordinator->onPass('node-b', 'hash-b');
+        });
+
+        $this->assertSame(['hash-a', 'hash-b'], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
+        $this->assertSame(['announcePassIssued'], $this->executor->calls);
+        $this->assertSame([['broadcastPass', 'hash-a'], ['broadcastPass', 'hash-b']], $this->mesh->calls);
+    }
+
+    public function testAFollowerAnnouncesTheFirstPassItIsToldOfAndFansNothingOnward(): void
+    {
+        // The other end of the same broadcast: a follower records what the leader minted and owes
+        // its own frozen browsers the same one announcement, but has nobody to pass it to.
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->withDaemonTruthSource(function (): void {
+            $this->coordinator->onPass('node-x', 'hash-a');
+            $this->coordinator->onPass('node-x', 'hash-b');
+        });
+
+        $this->assertSame(['hash-a', 'hash-b'], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
+        $this->assertSame(['announcePassIssued'], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testAPassArrivingOutsideTheWindowIsRecordedNowhereAndAnnouncedToNobody(): void
+    {
+        $this->mesh->followers = [];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onPass('node-b', 'hash-a');
+
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
     public function testLeaderDropsAProgressMarkFromANodeThatDoesNotOwnTheFreeze(): void
     {
         // Same authorization the release is given: a node that did not ask for the freeze could
@@ -632,6 +691,19 @@ final class ClusterProtectedModeTest extends TestCase
     }
 
     /**
+     * Opens the verification window on this node's row, the phase a pass may be minted into.
+     */
+    private function openTheVerificationWindowOnTheRuntimeRow(): void
+    {
+        $view = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($view === null) {
+            $this->fail('The protected mode runtime row is not mounted.');
+        }
+
+        $this->withDaemonTruthSource(static fn() => $view->actions->enterVerifying());
+    }
+
+    /**
      * Runs a write with the daemon registered as the runtime truth source, and drops it after.
      *
      * The row refuses a write from anyone else, and the registration is process-wide, so it is
@@ -830,6 +902,11 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
     public function enterVerifying(): void
     {
         $this->calls[] = 'enterVerifying';
+    }
+
+    public function announcePassIssued(): void
+    {
+        $this->calls[] = 'announcePassIssued';
     }
 
     public function reenterActive(): void

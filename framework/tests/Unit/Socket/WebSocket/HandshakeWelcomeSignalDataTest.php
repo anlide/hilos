@@ -33,6 +33,7 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
                     HandshakeWelcomeSignalData::PROTECTED_MODE_TITLE => null,
                     HandshakeWelcomeSignalData::PROTECTED_MODE_MESSAGE => null,
                     HandshakeWelcomeSignalData::PROTECTED_MODE_ACCEPTS_PASS => false,
+                    HandshakeWelcomeSignalData::PROTECTED_MODE_PASS_ISSUED => false,
                 ],
             ],
             $welcome->toArray(),
@@ -92,6 +93,7 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
             HandshakeWelcomeSignalData::PROTECTED_MODE => [
                 HandshakeWelcomeSignalData::PROTECTED_MODE_ACTIVE => false,
                 HandshakeWelcomeSignalData::PROTECTED_MODE_ACCEPTS_PASS => false,
+                HandshakeWelcomeSignalData::PROTECTED_MODE_PASS_ISSUED => false,
             ],
         ]);
 
@@ -113,6 +115,7 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
             HandshakeWelcomeSignalData::PROTECTED_MODE => [
                 HandshakeWelcomeSignalData::PROTECTED_MODE_ACTIVE => true,
                 HandshakeWelcomeSignalData::PROTECTED_MODE_ACCEPTS_PASS => false,
+                HandshakeWelcomeSignalData::PROTECTED_MODE_PASS_ISSUED => false,
                 HandshakeWelcomeSignalData::PROTECTED_MODE_TITLE => 42,
             ],
         ]);
@@ -139,6 +142,57 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
             HandshakeWelcomeSignalData::BUILD => 'dev',
             HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
             HandshakeWelcomeSignalData::PROTECTED_MODE => 'not-an-array',
+        ]);
+    }
+
+    public function testWelcomeCarriesBothVerificationBits(): void
+    {
+        // A connection arriving mid-window learns two different things from the same block:
+        // that the window is open at all, and whether it has a code to take yet.
+        $welcome = new HandshakeWelcomeSignalData(
+            build: 'dev',
+            sessionCookieName: 'hilos_session_token',
+            protectedModeActive: true,
+            protectedModeAcceptsPass: true,
+            protectedModePassIssued: true,
+        );
+
+        $restored = HandshakeWelcomeSignalData::fromArray($welcome->toArray());
+
+        $this->assertTrue($restored->protectedModeAcceptsPass);
+        $this->assertTrue($restored->protectedModePassIssued);
+    }
+
+    public function testWelcomeInsideAnEmptyWindowSaysNothingIsMinted(): void
+    {
+        $welcome = new HandshakeWelcomeSignalData(
+            build: 'dev',
+            sessionCookieName: 'hilos_session_token',
+            protectedModeActive: true,
+            protectedModeAcceptsPass: true,
+        );
+
+        $restored = HandshakeWelcomeSignalData::fromArray($welcome->toArray());
+
+        $this->assertTrue($restored->protectedModeAcceptsPass);
+        $this->assertFalse($restored->protectedModePassIssued);
+    }
+
+    public function testWelcomeFromArrayRefusesABlockWithoutTheMintedFlag(): void
+    {
+        // Read as absent it would default to "nothing minted", which is the safe direction on a
+        // stub but the wrong one for a verifier holding a key: he would be shown the sentence
+        // that says to wait while the field he needs is one bit away.
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(HandshakeWelcomeSignalData::PROTECTED_MODE_PASS_ISSUED);
+
+        HandshakeWelcomeSignalData::fromArray([
+            HandshakeWelcomeSignalData::BUILD => 'dev',
+            HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
+            HandshakeWelcomeSignalData::PROTECTED_MODE => [
+                HandshakeWelcomeSignalData::PROTECTED_MODE_ACTIVE => true,
+                HandshakeWelcomeSignalData::PROTECTED_MODE_ACCEPTS_PASS => true,
+            ],
         ]);
     }
 }

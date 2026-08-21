@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\Config\AgentCommandConfigKey;
+use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\Cron\CronRule;
@@ -44,6 +45,7 @@ use Throwable;
  */
 abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
 {
+    use ProtectedModeOperatorTrait;
     use ProtectedModeTestDriverTrait;
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_INDEX;
@@ -63,11 +65,14 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * ({@see TestOnlyCommandRegistry}), and a handler that checked again would be a second
      * copy of one verdict.
      *
-     * The protected-mode trio (HIL-344, HIL-481) rides the same inheritance for the same reason -
-     * chat, tasks and simple-poll get a freeze they can drive by extending this class
-     * alone. The inspector is not among them: it is answered by the master, because a freeze
-     * stops every agent but the initiator. The operator commands are not either: they belong to
-     * the agent that runs real operations, and a command routes to exactly one agent type.
+     * The protected-mode quartet (HIL-344, HIL-481, HIL-616) rides the same inheritance for the
+     * same reason - chat, tasks and simple-poll get a freeze they can drive by extending this
+     * class alone. The inspector is not among them: it is answered by the master, because a
+     * freeze stops every agent but the initiator. The operator commands are not either: they
+     * belong to the agent that runs real operations, and a command routes to exactly one agent
+     * type. The fourth name is the test path's mint: it is answered by the operator trait this
+     * class also carries, because a driven window otherwise has no way to produce the code its
+     * maintenance screen now asks for - and the operator's own three names stay where they are.
      *
      * The admin grant pair (HIL-553) rides it for a third reason on top of those: the flag it
      * writes is a framework contract - the Hilos pages ask for it through
@@ -82,6 +87,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
         CliCommands::PROTECTED_MODE_TEST_ENTER => [AgentCommandConfigKey::TEST_ONLY => true],
         CliCommands::PROTECTED_MODE_TEST_LEAVE => [AgentCommandConfigKey::TEST_ONLY => true],
         CliCommands::PROTECTED_MODE_TEST_OPEN => [AgentCommandConfigKey::TEST_ONLY => true],
+        CliCommands::PROTECTED_MODE_TEST_PASS => [AgentCommandConfigKey::TEST_ONLY => true],
         CliCommands::ADMIN_GRANT,
         CliCommands::ADMIN_REVOKE,
     ];
@@ -111,6 +117,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
         parent::onTick();
 
         $this->tickProtectedModeTestDriver();
+        $this->tickProtectedModeOperator();
 
         if ($this->deliveryLogPruneRule !== null && $this->deliveryLogPruneRule->shouldRun()) {
             $this->pruneDeliveryLog();
@@ -132,6 +139,12 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     {
         if ($this->isProtectedModeTestCommand($data->command)) {
             $this->handleProtectedModeTestCommand($data);
+
+            return;
+        }
+
+        if ($this->isProtectedModeOperatorCommand($data->command)) {
+            $this->handleProtectedModeOperatorCommand($data);
 
             return;
         }

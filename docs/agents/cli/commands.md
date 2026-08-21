@@ -114,10 +114,10 @@ recreates the database `DB_DATABASE` names), `help` (prints the registry it was 
 `test:cluster:inspect` (talks only to the local command socket, so the multi-node harness
 can inspect a network-partitioned node that cannot reach MySQL either),
 `test:notification:emit` (every row it causes is written by the agent that answers it, so
-the CLI process itself has nothing to read or write) and the protected-mode trio
-`test:protected-mode:inspect` / `:enter` / `:leave` (the inspector reads in-memory state and
-has to answer on a frozen node, which is exactly where a connect would hang; the drive pair
-writes nothing from this process). Everything else keeps the full connect plus
+the CLI process itself has nothing to read or write) and the protected-mode family
+`test:protected-mode:inspect` / `:enter` / `:leave` / `:open` / `:pass` (the inspector reads
+in-memory state and has to answer on a frozen node, which is exactly where a connect would
+hang; the drive commands write nothing from this process, and the mint's row is the agent's). Everything else keeps the full connect plus
 `Hilos::init()`.
 
 Because the whole registry is now constructed *before* the connect, a command constructor
