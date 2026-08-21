@@ -25,9 +25,8 @@ use PHPUnit\Framework\TestCase;
  *
  * The command is exercised over a real storage tree (sidecars plus archives in a temp
  * backup root), because its whole job is to compare what a sidecar promises with what the
- * filesystem holds. The daemon is never up here, so the index-refresh round-trip always
- * degrades to its warning path - which is exactly the production behaviour under a stopped
- * daemon, and is asserted as such.
+ * filesystem holds. Nothing is asked of a daemon: the sweep stamps its verdict into the
+ * sidecar and stops there, and the daemon picks the rewrite up by watching storage (HIL-528).
  */
 final class BackupVerifyCommandTest extends TestCase
 {
@@ -77,6 +76,10 @@ final class BackupVerifyCommandTest extends TestCase
 
         $this->assertSame(ExitCode::SUCCESS, $output['code']);
         $this->assertStringContainsString('checked 1: ok 1, mismatch 0, skipped 0', $output['text']);
+        // Silence is the outcome (HIL-528): the sweep stamps the sidecar and says nothing about
+        // a daemon. It used to apologize for a poke that had not landed, and the operator read
+        // a warning on a run that had gone perfectly.
+        $this->assertStringNotContainsString('warning', $output['text']);
 
         // Verification leaves a trace, or the admin list could never show when a backup was checked.
         $stored = $this->storedSidecar('b1', BackupScope::FULL);
@@ -211,18 +214,6 @@ final class BackupVerifyCommandTest extends TestCase
 
         $this->assertSame(ExitCode::SUCCESS, $output['code']);
         $this->assertStringContainsString('No stored backups', $output['text']);
-    }
-
-    public function testTheOperatorIsWarnedWhenTheDaemonDoesNotRefreshTheIndex(): void
-    {
-        $this->storeBackup('b1', BackupScope::FULL, 'archive payload');
-
-        $output = $this->runCommand();
-
-        // No daemon is running in a unit test, which is the same case as a stopped daemon in
-        // production: the verdict is already on disk, so this costs a warning, not the run.
-        $this->assertSame(ExitCode::SUCCESS, $output['code']);
-        $this->assertStringContainsString('warning', $output['text']);
     }
 
     public function testTheCommandIsAnOperatorCommandNotATestFixture(): void

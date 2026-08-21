@@ -33,17 +33,15 @@ use Hilos\Hilos;
  * the file we wrote?", and is the only way to ask that question before HIL-274 puts a gate in
  * front of a restore. Hashing happens in THIS process, never in the monopoly backup agent - a
  * multi-gigabyte hash on the daemon loop would block backup creation and page actions for
- * minutes. The agent is asked afterwards for the cheap part only: re-mirroring its index.
+ * minutes.
  *
  * Storage is the truth (files=truth): the sweep reads sidecars off disk, and the verification is
- * stamped back into the sidecar it came from. A daemon that does not answer costs the operator
- * nothing but a warning - the result is already on disk, and the index catches up on the next
- * rescan or restart.
+ * stamped back into the sidecar it came from. Nothing is announced to the daemon afterwards - it
+ * watches storage itself (HIL-528) and picks the rewritten sidecars up, whether or not this
+ * command could have reached it.
  */
 class BackupVerifyCommand implements CommandInterface
 {
-    use CommandChannelClientTrait;
-
     /** Digest characters shown when a mismatch prints both sides; the full 64 would drown the line. */
     private const int DIGEST_PREVIEW = 12;
 
@@ -82,10 +80,10 @@ Description:
   they were written. Without an id every stored backup is checked; --scope narrows the
   sweep. An archive whose size already disagrees is reported without being hashed. A
   backup written before checksums existed carries no digest and is skipped, which is not
-  an error. Each ok/mismatch is stamped back into the sidecar, and the running daemon is
-  asked to refresh its backup index, so an open admin list learns of the result without
-  waiting for the next rescan or restart - it arrives like any other row change, behind
-  the list's Apply gate.
+  an error. Each ok/mismatch is stamped back into the sidecar, and the running daemon
+  notices the rewrite on its own, so an open admin list learns of the result without
+  waiting for a restart - it arrives like any other row change, behind the list's Apply
+  gate.
 
 Summary line:
   checked N: ok N, mismatch N, skipped N, unverified N
@@ -173,7 +171,6 @@ HELP;
     private function verifyAll(string $root, array $targets, array $anomalies): int
     {
         $verifier = new BackupVerifier();
-        $stamped = 0;
         $counts = [
             BackupVerifyOutcome::OK->value => 0,
             BackupVerifyOutcome::MISMATCH->value => 0,
@@ -206,7 +203,6 @@ HELP;
 
             try {
                 $this->stamp($root, $metadata, $result->outcome);
-                $stamped++;
             } catch (BackupException $e) {
                 // The check itself still holds, so the sweep goes on - but a store whose
                 // sidecars cannot be rewritten must not report a clean run.
@@ -228,10 +224,6 @@ HELP;
             $counts[BackupVerifyOutcome::NO_DIGEST->value],
             $unverified,
         );
-
-        if ($stamped > 0) {
-            $this->askAgentToRefresh();
-        }
 
         return $counts[BackupVerifyOutcome::MISMATCH->value] > 0 || $unverified > 0
             ? ExitCode::ERROR
@@ -372,29 +364,6 @@ HELP;
         $verifiedAt = new DateTimeImmutable('now', new DateTimeZone('UTC'))->format(DateTimeInterface::ATOM);
 
         new BackupCreator()->recordVerification($metadata, $root, $outcome, $verifiedAt);
-    }
-
-    /**
-     * Asks the running daemon to re-mirror its backup index from the rewritten sidecars.
-     *
-     * Best effort by design: files are the truth and the verdicts are already in them, so a
-     * daemon that is down or slow costs the operator a warning, not the run.
-     *
-     * Provisional: HIL-528 lets the daemon watch storage itself, and this call goes with it.
-     */
-    private function askAgentToRefresh(): void
-    {
-        try {
-            $reply = $this->sendCommand(BackupConstants::REFRESH_HISTORY_COMMAND, []);
-        } catch (EnvException $e) {
-            echo "warning: cannot reach the daemon ({$e->getMessage()}); the index will catch up later\n";
-
-            return;
-        }
-
-        if ($reply === null || !$reply->isOk()) {
-            echo "warning: the daemon did not refresh its backup index; it will catch up on the next rescan\n";
-        }
     }
 
     /**

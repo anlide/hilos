@@ -30,6 +30,14 @@ RUN docker-php-ext-install -j$(nproc) \
     pdo \
     pdo_mysql
 
+# ext-inotify is optional for the framework (composer suggest): the filesystem watch
+# falls back to polling without it. The test image installs it so the suite exercises
+# BOTH engines for real instead of only the fallback.
+RUN pecl channel-update pecl.php.net \
+ && yes "" | pecl install -o -f inotify \
+ && rm -f /usr/local/etc/php/conf.d/docker-php-ext-inotify.ini \
+ && echo "extension=inotify" > /usr/local/etc/php/conf.d/30-inotify.ini
+
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /hilos

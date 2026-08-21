@@ -50,6 +50,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentCommandConfigKey;
+use Hilos\Core\Agent\DirectoryWatchTrait;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -114,6 +115,7 @@ use Throwable;
  */
 final class BackupAgent extends AbstractAgent
 {
+    use DirectoryWatchTrait;
     use ProtectedModeOperatorTrait;
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_BACKUP;
@@ -131,14 +133,18 @@ final class BackupAgent extends AbstractAgent
 
     /**
      * Command-channel commands a CLI routes here, each driving the live agent so the runtime
-     * index stays the mirror of storage (files=truth): a forced retention prune and a forced
-     * scheduled backup, both carrying {@see AgentCommandConfigKey::TEST_ONLY} (HIL-320), and
-     * a plain index refresh, which is NOT -
-     * the operator command `backup:verify` rewrites sidecars itself and then asks the agent to
-     * catch up ({@see BackupConstants::REFRESH_HISTORY_COMMAND}). The restore pair (HIL-274)
-     * is operator-facing too: request admits a run under protected mode, status snapshots the
+     * index stays the mirror of storage (files=truth): a forced retention prune, a forced
+     * shipping pass and a forced scheduled backup, all three carrying
+     * {@see AgentCommandConfigKey::TEST_ONLY} (HIL-320). The restore pair (HIL-274) is
+     * operator-facing: request admits a run under protected mode, status snapshots the
      * restore runtime row for the CLI monitor. All carry plain payloads, so none declares an
      * inner DTO.
+     *
+     * **No command asks this agent to re-read storage, and that is deliberate (HIL-528).** It
+     * watches the storage tree itself ({@see DirectoryWatchTrait}), so a writer that rewrites
+     * a sidecar - `backup:verify`, an operator's own hand, a future job - is noticed whether
+     * or not it knows how to reach the daemon. A per-writer poke would be a second path to
+     * the same place, correct only for the writers that remembered to use it.
      *
      * The protected-mode trio (HIL-481) is operator-facing as well, and lands here rather than
      * anywhere else for one reason: a restore is the destructive operation this framework
@@ -149,7 +155,6 @@ final class BackupAgent extends AbstractAgent
         BackupConstants::PRUNE_COMMAND => [AgentCommandConfigKey::TEST_ONLY => true],
         BackupConstants::SHIP_COMMAND => [AgentCommandConfigKey::TEST_ONLY => true],
         BackupConstants::RUN_SCHEDULE_COMMAND => [AgentCommandConfigKey::TEST_ONLY => true],
-        BackupConstants::REFRESH_HISTORY_COMMAND,
         BackupConstants::RESTORE_REQUEST_COMMAND,
         BackupConstants::RESTORE_STATUS_COMMAND,
         CliCommands::PROTECTED_MODE_PASS,
@@ -347,9 +352,15 @@ final class BackupAgent extends AbstractAgent
     private ?string $pendingInitiator = null;
 
     /**
-     * Registers truth sources, rebuilds the runtime backup index, and loads the schedule.
+     * Takes storage under watch, registers truth sources, rebuilds the runtime backup index,
+     * and loads the schedule.
      *
-     * No-ops entirely when disabled: no scan, and no cron rules, so scheduling is off.
+     * No-ops entirely when disabled: nothing is watched, no scan, and no cron rules, so
+     * scheduling is off.
+     *
+     * The watch is taken BEFORE the first scan for the reason the discard-then-scan ordering
+     * exists at all: a scan that runs before storage is watched loses whatever lands between
+     * the two, and nothing would ask for it again until the periodic pass.
      *
      * @throws BackupScheduleException When the project backup schedule is malformed
      * @throws EnvException When a backup env value is missing or cannot be read as its type
@@ -376,6 +387,7 @@ final class BackupAgent extends AbstractAgent
         $this->registerRtTruthSource(StateBackupRuntime::RT_ITEM);
         $this->registerRtTruthSource(StateRestoreRuntime::RT_ITEM);
 
+        $this->watchDirectories($this->watchedBackupDirectories());
         $this->refreshHistory();
 
         $this->schedule = BackupSchedule::fromCatalog();
@@ -396,6 +408,10 @@ final class BackupAgent extends AbstractAgent
      * a log line and nothing else. It is also why it runs after the create poll rather than before
      * - a backup that just finished is a candidate this same tick.
      *
+     * The storage watch is asked last but one, ahead of the schedule, so that a scheduled fire
+     * admitted on this very tick weighs its free space ({@see admitBySpace()}) against an index
+     * that already knows about whatever changed on disk.
+     *
      * @throws ProcessException When the running child cannot be polled, read or terminated
      * @throws EnvException When a backup env value is missing or cannot be read as its type
      * @throws HilosException Whatever finishing a restore that ended on this tick raises
@@ -413,6 +429,9 @@ final class BackupAgent extends AbstractAgent
 
         $this->expireStaleRehydrate();
         $this->tickProtectedModeOperator();
+        if ($this->directoryRescanDue()) {
+            $this->refreshHistory();
+        }
         $this->checkSchedule();
     }
 
@@ -476,6 +495,7 @@ final class BackupAgent extends AbstractAgent
                 $this->completeRestore(false, ['backup agent stopped before every process re-read']);
             }
         }
+        $this->closeDirectoryWatch();
         $this->resetRun();
         $this->clearRuntime();
     }
@@ -511,12 +531,12 @@ final class BackupAgent extends AbstractAgent
      * Handles the command-channel commands routed here.
      *
      * The test-only pair (HIL-320) forces a time-based path that would otherwise wait out
-     * the clock: prune forces a retention rotation, run-schedule forces a scheduled backup
-     * by name. Refresh re-mirrors the index for `backup:verify`. The restore pair (HIL-274)
-     * admits a restore run and snapshots its progress. Driving the live agent (rather than
-     * mutating storage from the CLI) keeps the runtime index consistent with truth. The
-     * protected-mode trio (HIL-481) is how an operator ends the window a finished restore left
-     * the system in. Every branch answers exactly once via {@see replyToCommand()}.
+     * the clock: prune forces a retention rotation, run-schedule forces a scheduled backup by
+     * name. The restore pair (HIL-274) admits a restore run and snapshots its progress. Driving
+     * the live agent (rather than mutating storage from the CLI) keeps the runtime index
+     * consistent with truth. The protected-mode trio (HIL-481) is how an operator ends the
+     * window a finished restore left the system in. Every branch answers exactly once via
+     * {@see replyToCommand()}.
      *
      * @param CommandRequestDTO $data Command request payload
      * @param string $source Signal source (unused)
@@ -546,11 +566,6 @@ final class BackupAgent extends AbstractAgent
 
             case BackupConstants::RUN_SCHEDULE_COMMAND:
                 $this->handleRunScheduleCommand($data);
-
-                return;
-
-            case BackupConstants::REFRESH_HISTORY_COMMAND:
-                $this->handleRefreshHistoryCommand($data);
 
                 return;
 
@@ -726,28 +741,6 @@ final class BackupAgent extends AbstractAgent
         } catch (Throwable $e) {
             return 'transfer could not be polled: ' . $e->getMessage();
         }
-    }
-
-    /**
-     * Re-mirrors the runtime index from storage and replies with the row count it now holds.
-     *
-     * Asked for by an operator command that changed sidecars on disk itself (`backup:verify`
-     * stamps a verification into them). The agent is the single writer of the index, so the
-     * catch-up has to happen here; the expensive part - hashing gigabytes - already happened in
-     * the CLI process, and this is only the cheap rescan.
-     *
-     * Provisional: HIL-528 replaces the poke with filesystem watching, which covers every writer
-     * instead of only the ones that know to ask.
-     *
-     * @param CommandRequestDTO $data Command request (no payload fields consumed)
-     */
-    private function handleRefreshHistoryCommand(CommandRequestDTO $data): void
-    {
-        $this->refreshHistory();
-
-        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
-            BackupConstants::FIELD_HISTORY_COUNT => count($this->indexRows()),
-        ]));
     }
 
     /**
@@ -2865,19 +2858,72 @@ final class BackupAgent extends AbstractAgent
 
     /**
      * Rescans the storage tree and brings the runtime index in line with it.
+     *
+     * The one place the index is rebuilt, called from six of them - start, the watch's own
+     * verdict on a tick, a forced prune, a keep change, a finished run and a refused one -
+     * which is why the watch ordering lives INSIDE it rather than around each caller.
+     *
+     * **Discard first, scan second, reconcile the watch last.** Discarding says "everything
+     * reported so far is about to be observed by this very scan", so the agent's own writes do
+     * not buy a second pass; a foreign write that lands before the discard is caught by the
+     * scan itself and one that lands after it is still queued for the next tick, so no ordering
+     * loses a change and the worst case is one redundant scan. Reconciling afterwards is what
+     * puts a scope directory created since the last pass under watch - they are made lazily
+     * ({@see BackupCreator}), so the watched set is state rather than a one-off decision.
+     *
+     * The log line is written only when something moved, because the periodic pass runs every
+     * few minutes forever: an unconditional line would bury the interesting one under hundreds
+     * of identical ones a day.
      */
     private function refreshHistory(): void
     {
+        $this->discardDirectoryChanges();
+
         $result = new BackupHistoryScanner()->scan(Hilos::$env->string(EnvConstants::BACKUP_DIR));
         $changes = $this->historiesView()?->actions->syncToScan($result->metadatas) ?? 0;
         $this->reportAnomalies($result);
 
-        $this->logAgentInfo(sprintf(
-            'Backup index synced: %d entries, %d changed, %d anomalies',
-            count($result->metadatas),
-            $changes,
-            count($result->anomalies),
-        ));
+        if ($changes > 0 || $result->anomalies !== []) {
+            $this->logAgentInfo(sprintf(
+                'Backup index synced: %d entries, %d changed, %d anomalies',
+                count($result->metadatas),
+                $changes,
+                count($result->anomalies),
+            ));
+        }
+
+        $this->watchDirectories($this->watchedBackupDirectories());
+    }
+
+    /**
+     * The storage directories whose changes this agent has to notice.
+     *
+     * The backup root and one directory per {@see BackupScope} under it. The root is in the
+     * set because scope directories are created lazily ({@see BackupCreator}) - the first
+     * archive of a scope creates its directory, and only a watch on the root reports that.
+     * A scope directory that is not there yet is left out rather than created: the watch is an
+     * observer, and a directory this agent made just to look at it would be indistinguishable
+     * from storage a writer had prepared.
+     *
+     * @return list<string> Absolute paths of the directories to watch, root first
+     * @throws EnvException When the backup root is missing or cannot be read as a string
+     */
+    private function watchedBackupDirectories(): array
+    {
+        $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+        if ($root === '' || !is_dir($root)) {
+            return [];
+        }
+
+        $directories = [$root];
+        foreach (BackupScope::cases() as $scope) {
+            $directory = $root . DIRECTORY_SEPARATOR . $scope->value;
+            if (is_dir($directory)) {
+                $directories[] = $directory;
+            }
+        }
+
+        return $directories;
     }
 
     /**

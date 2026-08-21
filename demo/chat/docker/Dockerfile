@@ -53,6 +53,15 @@ RUN pecl channel-update pecl.php.net \
  && echo "extension=event" > /usr/local/etc/php/conf.d/30-event.ini
 
 # -----------------------------------------------------------
+# Install PECL "inotify" extension
+# - Kernel-backed filesystem watching for Hilos\Fs\Watch
+# - Optional by design: without it the watch polls directory mtimes instead
+# -----------------------------------------------------------
+RUN yes "" | pecl install -o -f inotify \
+ && rm -f /usr/local/etc/php/conf.d/docker-php-ext-inotify.ini \
+ && echo "extension=inotify" > /usr/local/etc/php/conf.d/30-inotify.ini
+
+# -----------------------------------------------------------
 # Install Composer (copied from the official Composer image)
 # -----------------------------------------------------------
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer

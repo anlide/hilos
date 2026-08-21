@@ -43,6 +43,7 @@ Both exceptions are about `git commit` only. The push ban has none.
 | [architecture/llm-routing.md](docs/agents/architecture/llm-routing.md) | choosing an LLM provider or adding an agent that talks to an LLM: named-profile routing, provider decoupled from credentials, env-default+settings-override resolution, the reserved worker/node placement seam |
 | [architecture/protected-mode.md](docs/agents/architecture/protected-mode.md) | freezing a node for a destructive operation: the unconditional freeze row and its RtContext boundary, the agent-only entry with CLI as trigger, fail-closed guards, what null means to the RT readers |
 | [architecture/backup-anonymization.md](docs/agents/architecture/backup-anonymization.md) | declaring a project's PII registry, classifying a new table or column, choosing an anonymization strategy, reading a refusal from the coverage or compatibility gate |
+| [architecture/filesystem-watch.md](docs/agents/architecture/filesystem-watch.md) | making an agent notice a change on disk it did not make itself: the one door over inotify and polling, the discard-then-read ordering, the coalescing window and the periodic backstop |
 
 ## Framework Development
 
