@@ -31,6 +31,10 @@ export interface NavigablePages {
   readonly pageLoading: ReadonlySignal<boolean>
   /** Clear the current page's subscription error without leaving the page. */
   clearPageError(): void
+  /** Draw a 403 on the current page and drop what it was showing. */
+  denyCurrentPage(): void
+  /** Return the current page to its just-navigated state: no error, waiting. */
+  awaitPageAnswer(): void
 }
 
 /**
@@ -86,6 +90,23 @@ export interface HilosRouter {
    * is set.
    */
   clearPageError(): void
+  /**
+   * Draw a 403 on the current page and drop what it was showing, without
+   * navigating and without asking the server anything. The access reaction calls
+   * it when the visitor loses the admin marker on an administrative surface, so
+   * privileged rows do not survive one frame while the server's own verdict is
+   * still on the wire (HIL-621); that verdict rules, and a page_response for the
+   * current page clears what was drawn here.
+   */
+  denyCurrentPage(): void
+  /**
+   * Return the current page to the state a navigation leaves it in: error
+   * cleared, waiting for the subscription's answer. The access reaction calls it
+   * when the visitor gains the admin marker while a 403 is displayed, so the page
+   * shows what it shows on navigation rather than a refusal that no longer
+   * applies (HIL-621). No frame is sent - the server re-decides on its own.
+   */
+  awaitPageAnswer(): void
   /**
    * Navigate to `pathname` in place: push a history entry, swap the route
    * signal, and re-subscribe the page over the live socket.
@@ -146,6 +167,8 @@ export function createHilosRouter(
     pageError: pages.pageError,
     pageLoading: pages.pageLoading,
     clearPageError: () => pages.clearPageError(),
+    denyCurrentPage: () => pages.denyCurrentPage(),
+    awaitPageAnswer: () => pages.awaitPageAnswer(),
     navigate: (pathname) => {
       env.pushState(pathname)
       apply(pathname)

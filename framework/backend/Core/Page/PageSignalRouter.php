@@ -13,7 +13,9 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
+use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
@@ -132,6 +134,81 @@ class PageSignalRouter
         }
 
         $this->runPageSubscribeFrame($data, $source, $name);
+    }
+
+    /**
+     * Re-judges one live page subscription after the acting user's rights changed (HIL-621).
+     *
+     * The receiving end of {@see PageAccessReassessment}. It runs the identical frame a
+     * subscribe runs, so allow answers with a full page_response and deny answers with the
+     * subscription error the same verdict would have produced at subscribe - one path, one
+     * shape on the wire, and nothing new for the client to receive.
+     *
+     * What it deliberately does NOT do is re-subscribe. The subscription itself is unchanged;
+     * only the answer to it is. That is why the frame never passes through
+     * {@see DaemonManager::updateSubscriptions}: a real re-subscribe would rewrite the
+     * registry entry, drop this connection's table viewports and bill the person an extra
+     * page visit, none of which a re-decision means.
+     *
+     * {@see self::parkUntilIdentified} is not called either, and for the same kind of reason:
+     * a subscribe has to wait to learn who sent it, while this frame exists BECAUSE that
+     * answer is known - it was the change of that very identity's rights that queued it.
+     *
+     * @param WebSocketPageSubscribeSignalDTO $data Signal data, shaped exactly like the subscribe it re-judges
+     * @param string $source Signal source
+     * @param string $name Signal name (page name fallback)
+     * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     */
+    public function dispatchPageAccessReassess(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void
+    {
+        $page = $data->page ?? $name;
+        if ($page === '' || !$this->subscribedToPage($data->acceptKey, $page)) {
+            // The tab navigated away, or closed, between the grant and this frame. There is
+            // nothing to re-decide, and answering would push a page the client left.
+            return;
+        }
+
+        $pageInstance = $this->resolvePage($page);
+        if ($pageInstance === null) {
+            return;
+        }
+
+        if ($pageInstance::ACCESS_LEVEL === PageAccessLevel::PUBLIC && !$this->accessCanTurnOnIdentity($page)) {
+            // A page whose verdict cannot depend on who is asking answers the same thing it
+            // answered a moment ago. Sending it anyway would push a full page answer into
+            // every open chat tab of the person on every grant: harmless frames, pure noise.
+            return;
+        }
+
+        $this->runPageSubscribeFrame($data, $source, $name);
+    }
+
+    /**
+     * Whether a PUBLIC page can still refuse a particular person through its own guards.
+     *
+     * The non-throwing twin of {@see BrowserContext::pageAccessDependsOnIdentity}, in the
+     * shape the browser fan-out already uses to re-check a guard. A page
+     * whose declaration is malformed cannot be shown to be identity-independent, so it is
+     * re-judged like any other and {@see self::runPageSubscribeFrame} answers the broken
+     * declaration exactly as a fresh subscribe answers it. Letting the exception out
+     * instead would take the worker down on every admin grant, and with it every other
+     * connection it serves.
+     *
+     * Any throwable and not only the subscription family, because the blast radius is the
+     * point and it does not depend on which exception a project's page-config hook happened
+     * to reach: the subscribe path contains all of them here too, and there is no catch
+     * between this frame and the worker's message loop.
+     *
+     * @param string $page Page the re-decision is addressed to
+     * @return bool Whether the page declares at least one browser guard
+     */
+    private function accessCanTurnOnIdentity(string $page): bool
+    {
+        try {
+            return Hilos::$browser?->pageAccessDependsOnIdentity($page) === true;
+        } catch (Throwable) {
+            return true;
+        }
     }
 
     /**

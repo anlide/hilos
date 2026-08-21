@@ -51,6 +51,8 @@ function routerWith(pageError: PageSubscriptionError | null): HilosRouter {
     pageError: createSignal<PageSubscriptionError | null>(pageError),
     pageLoading: createSignal(false),
     clearPageError: () => {},
+    denyCurrentPage: () => {},
+    awaitPageAnswer: () => {},
     navigate: () => {},
     start: () => {},
     stop: () => {},

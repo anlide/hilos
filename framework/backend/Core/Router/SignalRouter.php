@@ -863,6 +863,10 @@ class SignalRouter
 
         $page = match ($signalType) {
             SignalTypeConstants::PAGE_SUBSCRIBE => $data instanceof WebSocketPageSubscribeSignalDTO ? $data->page : null,
+            // A re-decision goes exactly where the subscribe it re-judges went: same page,
+            // same owning agent, same resolution. It carries the subscribe payload for that
+            // reason and not out of convenience ({@see PageAccessReassessment}).
+            SignalTypeConstants::PAGE_ACCESS_REASSESS => $data instanceof WebSocketPageSubscribeSignalDTO ? $data->page : null,
             SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => $data instanceof WebSocketPageUpdateSubscriptionSignalDTO ? $data->page : null,
             SignalTypeConstants::TABLE_VIEWPORT => $data instanceof WebSocketTableViewportSignalDTO ? $data->page : null,
             // Unsubscribe carries the page in the signal name, which SignalDTO

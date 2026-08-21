@@ -18,6 +18,8 @@ function router(): HilosRouter {
     pageError: createSignal(null),
     pageLoading: createSignal(false),
     clearPageError: () => {},
+    denyCurrentPage: () => {},
+    awaitPageAnswer: () => {},
     navigate: () => {},
     start: () => {},
     stop: () => {},

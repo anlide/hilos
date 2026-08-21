@@ -23,6 +23,9 @@ import {
 } from '../state/normalizer.js'
 import { createSignal, type ReadonlySignal } from '../state/signal.js'
 
+/** The page status the auth gate owns: only its resume takes this one down. */
+const UNAUTHORIZED = 401
+
 /**
  * The slice of HilosConnection the manager touches; a test double only has to
  * implement these three members.
@@ -145,6 +148,49 @@ export class PageSubscription {
     this.pageErrorSignal.set(null)
   }
 
+  /**
+   * Draw a 403 on the current page and drop what it was showing, without asking
+   * the server anything (HIL-621). The client has just learned it lost the admin
+   * marker while standing on an administrative surface, and privileged rows must
+   * not survive one frame while the server's own verdict is on the wire.
+   *
+   * The page scope is re-opened rather than left alone, so the rows are GONE and
+   * not merely hidden behind an error surface — a view that reads the scope
+   * directly would otherwise keep rendering them.
+   *
+   * The server rules, not this: its answer lands a moment later and either
+   * confirms the denial or replaces it with the page's data
+   * ({@link ingestPageResponse} clears the error). A no-op when no page is
+   * subscribed.
+   */
+  denyCurrentPage(): void {
+    const pageKey = this.current?.pageKey
+    if (pageKey === undefined) {
+      return
+    }
+    this.refuse({
+      page: pageKey,
+      httpCode: 403,
+      errorCode: 'forbidden',
+      message: 'Access forbidden',
+    })
+  }
+
+  /**
+   * Put the current page back into the state a navigation leaves it in: no error,
+   * waiting for the subscription's answer (HIL-621). The client has just learned
+   * it gained the admin marker while a 403 was on screen, and the page it is
+   * about to be handed is not the one it is displaying.
+   *
+   * No frame is sent. The subscription is already live and the server re-decides
+   * it on its own; asking again from here would mean the judged party initiates
+   * the verdict.
+   */
+  awaitPageAnswer(): void {
+    this.pageErrorSignal.set(null)
+    this.pageLoadingSignal.set(true)
+  }
+
   /** Leave to no page: drops the page scope and tells the backend. */
   unsubscribe(): void {
     if (!this.current) {
@@ -168,6 +214,24 @@ export class PageSubscription {
    * any other page is dropped — the late-signal guard of wire-protocol.md —
    * and the return value reports which happened.
    *
+   * Data for the current page clears its standing error — with one exception,
+   * the 401. This is the visible half of live-promotion
+   * (page-access-control.md): the subscription is kept alive after a denial, so
+   * the guard passing later — user #10 is created under the 404 the client is
+   * looking at, or the admin grant lands — arrives as a page_response and must
+   * replace the error surface with the page. It is also what makes a
+   * client-drawn 403 safe: an answer with data overrules it (HIL-621).
+   *
+   * A 401 is not a denial waiting to be overruled by data: it is the auth gate
+   * holding the page while the person identifies themselves, and it comes down
+   * by {@link clearPageError} from the gate's own resume, never by an answer.
+   * The gate postpones that resume while the session owes an ack (HIL-422) — the
+   * sentence a finished sign-in has left to say — and a page_response landing in
+   * that window would otherwise pull the surface out from under the panel and
+   * show the page nobody has acknowledged yet. The data itself is still ingested,
+   * which is exactly why the resume needs no round trip: the page is already in
+   * the scope when the error is lifted off it.
+   *
    * @param pageKey The page key the signal carried.
    * @param payload The page's scope-shaped payload.
    * @param options Binding-local entity-type overrides for this page's slots.
@@ -182,6 +246,9 @@ export class PageSubscription {
       return false
     }
     ingest(scope, payload, options)
+    if (this.pageErrorSignal.get()?.httpCode !== UNAUTHORIZED) {
+      this.pageErrorSignal.set(null)
+    }
     this.pageLoadingSignal.set(false)
 
     return true
@@ -199,10 +266,33 @@ export class PageSubscription {
     if (error.page !== this.current?.pageKey) {
       return false
     }
-    this.pageErrorSignal.set(error)
-    this.pageLoadingSignal.set(false)
+    this.refuse(error)
 
     return true
+  }
+
+  /**
+   * Show a refusal for the current page and drop what the page was holding.
+   *
+   * One rule for both refusals — the server's ({@link handleSubscriptionError})
+   * and the one the client draws ahead of it ({@link denyCurrentPage}): a page
+   * that is refused holds no data. Hiding the rows behind the error surface is
+   * not enough, because the page scope is the most specific layer of entity
+   * resolution: a users-table row carrying `admin: true` outranks the session's
+   * own `admin: false` for as long as it sits there, and a refused subscription
+   * receives no fan-out to correct it — so the stale copy would never be
+   * replaced, only left where the shell can still read it (HIL-621).
+   *
+   * Before the re-decision existed, every refusal arrived moments after a
+   * subscribe, when the page scope had just been opened and was empty; this
+   * re-open was a no-op then and stays one now for every one of those paths.
+   *
+   * @param error The page, HTTP status, code, and message to show.
+   */
+  private refuse(error: PageSubscriptionError): void {
+    this.pageErrorSignal.set(error)
+    this.pageLoadingSignal.set(false)
+    this.scopes.openPage(error.page)
   }
 
   /**

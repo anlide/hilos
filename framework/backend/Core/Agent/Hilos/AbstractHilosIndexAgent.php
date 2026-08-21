@@ -14,6 +14,7 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\NotImplementedException;
+use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\TableNotActivatedException;
@@ -201,6 +202,11 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
 
             return;
         }
+
+        // The second half of the operation, and not an extra courtesy: the project has just
+        // told this user's connections that the flag changed, and every page they have open
+        // is still answering the verdict it was subscribed with (HIL-621).
+        PageAccessReassessment::forUser($userId);
 
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
             AdminCommandConstants::FIELD_USER_ID => $userId,

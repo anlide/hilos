@@ -57,6 +57,7 @@ function fakePages() {
   const pageError = createSignal<PageSubscriptionError | null>(null)
   const pageLoading = createSignal(false)
   let cleared = 0
+  const calledOnPages: string[] = []
   const pages: NavigablePages = {
     subscribe: (page, params = {}) => {
       calls.push({ page, params })
@@ -69,9 +70,17 @@ function fakePages() {
       cleared += 1
       pageError.set(null)
     },
+    denyCurrentPage: () => calledOnPages.push('deny'),
+    awaitPageAnswer: () => calledOnPages.push('await'),
   }
 
-  return { pages, calls, pageError, clearedCount: () => cleared }
+  return {
+    pages,
+    calls,
+    pageError,
+    clearedCount: () => cleared,
+    calledOnPages,
+  }
 }
 
 describe('createHilosRouter', () => {
@@ -203,5 +212,20 @@ describe('createHilosRouter', () => {
     // Resume in place: no re-subscribe, and history tracking is untouched.
     expect(calls.length).toBe(subscribesBefore)
     expect(isPopAttached()).toBe(true)
+  })
+
+  it('passes the access re-decision controls to the page subscription', () => {
+    const { env } = fakeEnvironment('/')
+    const { pages, calls, calledOnPages } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+    navigator.start()
+    const subscribesBefore = calls.length
+
+    navigator.denyCurrentPage()
+    navigator.awaitPageAnswer()
+
+    expect(calledOnPages).toEqual(['deny', 'await'])
+    // Neither is a navigation: the subscription is not re-sent.
+    expect(calls.length).toBe(subscribesBefore)
   })
 })

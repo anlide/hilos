@@ -86,6 +86,7 @@ export {
   PageSubscription,
   type PageSubscriptionConnection,
 } from './subscription/PageSubscription.js'
+export { bindAccessReaction } from './subscription/bindAccessReaction.js'
 export {
   bindPageScope,
   PAGE_SIGNAL_SCHEMAS,

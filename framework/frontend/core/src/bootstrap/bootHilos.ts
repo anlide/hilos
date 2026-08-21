@@ -21,9 +21,11 @@ import {
   bindSessionScope,
   SIGNAL_HANDSHAKE_RESPONSE,
   sessionUserId,
+  sessionUserIsAdmin,
   type SessionScopeOptions,
 } from '../session/sessionScope.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
+import { bindAccessReaction } from '../subscription/bindAccessReaction.js'
 import { bindPageScope } from '../subscription/bindPageScope.js'
 import { bindPageReady } from '../subscription/pageReadyGate.js'
 
@@ -100,6 +102,14 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
     config.navigationEnvironment ?? browserNavigationEnvironment(),
     (pageKey) =>
       resolvePageTitle(pageKey, config.pageTitles ?? {}, config.appName ?? ''),
+  )
+  // A rights change reaches the open tab (HIL-621): the handshake response the
+  // grant re-sends moves this marker, and the page on screen is judged again -
+  // here by its surface type, on the server by the whole access verdict. Bound
+  // beside the handshake reaction below because both read the same answer.
+  bindAccessReaction(
+    hilosRouter,
+    sessionUserIsAdmin(config.scopes, config.session),
   )
   // The page subscribe is held until the session answers: the connection's
   // identity is established by the handshake and reaches the other workers on

@@ -40,6 +40,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -225,6 +226,11 @@ final class ChatAgent extends AbstractAgent
         // reaches the user only on their next reload, and until then they are an
         // admin who is shown no way in — the same silence a revoke would leave.
         $this->broadcastHandshakeResponseToUser($userId);
+        // The other half of the same duty (HIL-621): the shell now knows what it may
+        // show, and every page this user has open is still answering the verdict it
+        // was subscribed with. Chat routes its own setAdmin command, so the framework
+        // handler never runs and this call cannot be inherited from it.
+        PageAccessReassessment::forUser($userId);
 
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
             ChatCommandConstants::FIELD_USER_ID => $userId,

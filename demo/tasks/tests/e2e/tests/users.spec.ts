@@ -164,6 +164,29 @@ test('a rename in one tab hangs as pending in another until applied', async ({
   await tabB.close()
 })
 
+test('opens the refused users admin the moment the grant lands', async ({
+  page,
+}) => {
+  // HIL-621 acceptance, the promotion half. The visitor is sitting on the
+  // refusal - not on a page they navigated to after being granted - and the grant
+  // has to reach that open page on its own. Before this, a granted visitor kept
+  // reading the 403 until they reloaded.
+  const userId = await grantAdminToSelf(page)
+  await setAdmin(userId, false)
+  await gotoPage(page, '/hilos/users', PAGE_REFUSED)
+  await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
+
+  await setAdmin(userId, true)
+
+  // No navigation between the grant and these assertions: the server re-decides
+  // the subscription this tab already holds and answers it with the page.
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+  await expect(
+    page.locator('[data-id^="hilos-users-open-"]').first(),
+  ).toBeVisible()
+  await expect(page.getByTestId('page-error')).toHaveCount(0)
+})
+
 test('a revoked admin loses the gear and the door', async ({ page }) => {
   // Keeps the framework admin:grant / admin:revoke route walked end to end now
   // that grantAdminToSelf drives admin:create instead (HIL-609): these two demos

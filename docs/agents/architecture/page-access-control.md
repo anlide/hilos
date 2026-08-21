@@ -217,10 +217,85 @@ This rules out both tearing the subscription down and a static "guard passed" ta
 set once at subscribe. The guard is re-evaluated dynamically on each delivery
 (above), so the instant it passes, delivery resumes.
 
-The backend half ships today: the moment a guard passes, the fan-out delivers
-again. Making the promotion *visible* also needs the frontend to clear the error
-view when real data arrives — that frontend piece is not yet wired, so a promoted
-page still needs a navigate/refresh to drop the error view until it is.
+Both halves ship today. On the backend, the moment a guard passes, the fan-out
+delivers again. On the frontend, a `page_response` for the current page clears the
+error view (`PageSubscription.ingestPageResponse`), so the promoted page replaces
+the error surface where the visitor is standing, with no navigate and no refresh.
+
+**The 401 is the one status data does not lift.** It is not a denial waiting to be
+overruled — it is the auth gate holding the page while the person identifies
+themselves, and it comes down by `HilosRouter.clearPageError` from the gate's own
+resume (`createAuthGate`), never by an answer. The gate postpones that resume
+while the session owes an ack (HIL-422), and an answer clearing the 401 inside
+that window would pull the sign-in surface out from under the panel and show a
+page nobody has acknowledged. The payload is ingested all the same, which is why
+the resume costs no round trip: the page is already in the scope when the error is
+lifted off it.
+
+## Re-deciding an OPEN page when rights change
+
+Live-promotion answers "the guard starts passing". It does not answer the moment
+the *verdict itself* changes: the access verdict is reached once, at subscribe,
+and afterwards only re-checked as a gate on delivery. So a revoke used to leave
+privileged content on screen and a grant used to leave a 403 there, both until the
+person reloaded. Re-deciding closes that (HIL-621).
+
+**The announcement is part of the operation.** The sweep is started where the
+rights are WRITTEN, next to the handshake re-send that already tells the user's
+tabs what they may now show:
+
+- the framework starts it itself in `AbstractHilosIndexAgent::handleAdminGrant`,
+  right after the project's `applyAdminGrant` returns, so every project mounting
+  the framework grant gets it by inheritance;
+- a project routing its own grant command starts it there — the chat demo's
+  `ChatAgent::handleSetAdmin` is the worked example.
+
+`PageAccessReassessment::forUser($userId)` walks the live page subscriptions, reads
+each accept key through `BrowserContext::connectionIdentity`, and queues one
+`page_access_reassess` frame per page that user has open. Each frame is routed
+exactly like the subscribe it re-judges — to the page's own agent, by the same
+page→agent resolution — and answered by the same code, so allow sends a full
+`page_response` and deny sends the `subscription_page_error` the same verdict would
+have produced at subscribe. One path, one shape on the wire.
+
+What the sweep WALKS is the subscription mirror of the worker it is called in — the
+same worker-local mirror the browser fan-out uses — so it reaches the pages served
+by agents in that worker. Delivery is global, enumeration is not: start the sweep
+from the agent that writes the rights, and expect it to cover the pages that
+agent's worker serves.
+
+**A re-decision is not a re-subscribe.** The frame never passes through
+`DaemonManager::updateSubscriptions`, because a real re-subscribe carries three
+side effects that have no place here: the registry entry would be rewritten, the
+connection's table viewports would be dropped ("a (re)subscribe reloads the page"),
+and the visit would be billed again in analytics. The subscription does not change;
+only the answer to it does.
+
+**Pages a rights change cannot move are skipped** — PUBLIC level and no browser
+guards. Otherwise granting admin would push a full page answer into every open chat
+tab of that person: harmless frames, pure noise.
+
+**The frontend reacts ahead, the server's answer rules.** `bindAccessReaction`
+watches the admin marker the handshake response carries. Losing it while the
+current route is administrative draws the 403 and drops the page data at once —
+stale privileged rows must not survive one frame while the server's verdict is on
+the wire. Gaining it while a 403 is displayed returns the page to its
+just-navigated state. The client sends nothing: it never rules on access, and a
+403 it drew wrongly is overruled by the first `page_response` that arrives. The
+surface test is the route's own `admin` marker, which states surface *type* rather
+than required rights, which is why it is deliberately not the only defense.
+
+Order does not matter and is not synchronized. Handshake before the answer: the
+client shows waiting and the answer ends it. Answer before the handshake: the data
+cleared the error by itself. A server 403 landing on a 403 the client already drew
+is the same state. All four orders converge, so there is no queue and no frame
+version.
+
+**The limit, written down rather than engineered away.** A rights change nobody
+announced — a flag written straight into the database, or a future grant path that
+forgets the call — is not noticed. Detecting it would mean re-deciding every live
+subscription's verdict on every tick: a cost paid always, against a case that is
+code which already owes the announcement.
 
 ## The cross-agent guard rule
 
@@ -242,8 +317,17 @@ source for the `SOURCE` the guard reads.
 ## Frontend
 
 The `subscription_page_error` signal is consumed at the core level and renders a
-full-page error view (by `httpCode`) in place of the page, cleared on navigate.
-Demos need no change — the error view lives in the SDK outlet.
+full-page error view (by `httpCode`) in place of the page, cleared on navigate and
+by the next `page_response` for that page. Demos need no change — the error view
+lives in the SDK outlet, and `bindAccessReaction` is wired by `bootHilos`.
+
+**A refused page holds no data**, whoever refused it: the page scope is re-opened
+along with the error, not merely covered by it. That matters because the page scope
+is the most specific layer of entity resolution — a users-table row carrying
+`admin: true` outranks the session's own `admin: false` — and a refused subscription
+receives no fan-out to correct the copy it is holding. Before the re-decision every
+refusal arrived moments after a subscribe, onto a page scope that had just been
+opened and was empty, so this costs those paths nothing.
 
 Granting the flag an `ACCESS` guard checks (e.g. making a user admin) is a
 control-plane operation — see [command-server.md](command-server.md). For the

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Constants;
 
+use Hilos\Core\Page\PageAccessReassessment;
+
 /**
  * SignalTypeConstants - Signal type constants.
  *
@@ -22,6 +24,19 @@ final class SignalTypeConstants
 
     /** @var string Page subscribe signal type */
     public const string PAGE_SUBSCRIBE = 'page_subscribe';
+
+    /**
+     * Page access re-decision signal type (server-internal, never reaches a browser).
+     *
+     * Carries a live subscription back through the subscribe verdict after the acting
+     * user's rights changed, so an open page stops showing what the person may no longer
+     * see - or starts showing what they now may. It is deliberately NOT a page_subscribe:
+     * the subscription itself does not change, only the answer to it
+     * ({@see PageAccessReassessment}).
+     *
+     * @var string
+     */
+    public const string PAGE_ACCESS_REASSESS = 'page_access_reassess';
 
     /** @var string Page unsubscribe signal type */
     public const string PAGE_UNSUBSCRIBE = 'page_unsubscribe';

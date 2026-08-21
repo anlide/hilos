@@ -53,6 +53,34 @@ test('refuses the backup page to a signed-in non-admin', async ({ page }) => {
   await expect(page.locator('[data-id^="hilos-backup-restore-"]')).toHaveCount(0)
 })
 
+test('shuts the open backup page the moment the admin flag is revoked', async ({
+  page,
+}) => {
+  // HIL-621 acceptance. Everything above this test asks the question at
+  // subscribe time; this one asks it of a page that is ALREADY open. The verdict
+  // used to be reached once and then only re-checked as a gate on delivery, so a
+  // revoke left the archive list readable until the person reloaded.
+  const { userId } = await signUp(page)
+  await setAdmin(userId, true)
+  await gotoPage(page, '/hilos/backup')
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+
+  await setAdmin(userId, false)
+
+  // No gotoPage and no reload between the revoke and these assertions - that is
+  // the whole point. The page shows the same 403 a fresh subscribe would have
+  // answered with, and the archive list is gone rather than hidden behind it.
+  // This is the losing half, which the client draws ahead of the server. The
+  // gaining half needs the server's answer to pass at all, and is covered in
+  // demo/tasks/tests/e2e/tests/users.spec.ts.
+  const error = page.getByTestId('page-error')
+  await expect(error).toBeVisible()
+  await expect(error).toHaveAttribute('data-error-code', '403')
+  await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-backup-create')).toHaveCount(0)
+  await expect(page.locator('[data-id^="hilos-backup-restore-"]')).toHaveCount(0)
+})
+
 test('creates a backup, shows it as a completed row, and deletes it', async ({
   page,
 }) => {

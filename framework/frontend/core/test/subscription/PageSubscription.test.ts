@@ -260,6 +260,135 @@ describe('holding the subscribe until the session answers', () => {
   })
 })
 
+describe('reacting to a rights change on the open page', () => {
+  it('a page_response for the current page clears a standing error', () => {
+    const scopes = new ScopeManager()
+    const pages = new PageSubscription(fakeConnection(), scopes)
+    pages.releaseOnSession()
+    pages.subscribe('hilos_backup')
+    pages.handleSubscriptionError({
+      page: 'hilos_backup',
+      httpCode: 403,
+      errorCode: 'forbidden',
+      message: 'Access forbidden',
+    })
+
+    const applied = pages.ingestPageResponse('hilos_backup', {
+      data: { archives: 3 },
+    })
+
+    expect(applied).toBe(true)
+    expect(pages.pageError.get()).toBeNull()
+    expect(scopes.page()?.data.signal('archives').get()).toBe(3)
+  })
+
+  it('a page_response leaves the 401 the auth gate is holding', () => {
+    const scopes = new ScopeManager()
+    const pages = new PageSubscription(fakeConnection(), scopes)
+    pages.releaseOnSession()
+    pages.subscribe('profile')
+    pages.handleSubscriptionError({
+      page: 'profile',
+      httpCode: 401,
+      errorCode: 'unauthorized',
+      message: 'Authentication required',
+    })
+
+    const applied = pages.ingestPageResponse('profile', {
+      data: { name: 'Ada' },
+    })
+
+    // The sign-in surface stays on screen: a 401 is the gate's, and only its
+    // resume lifts it — postponed while the session owes an ack (HIL-422), so a
+    // page_response landing in that window must not un-gate the page.
+    expect(applied).toBe(true)
+    expect(pages.pageError.get()?.httpCode).toBe(401)
+    expect(pages.pageLoading.get()).toBe(false)
+    // The data is ingested all the same, which is why clearing the error later
+    // needs no round trip.
+    expect(scopes.page()?.data.signal('name').get()).toBe('Ada')
+
+    pages.clearPageError()
+
+    expect(pages.pageError.get()).toBeNull()
+  })
+
+  it('denyCurrentPage draws a 403 and empties the page scope', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const pages = new PageSubscription(connection, scopes)
+    pages.releaseOnSession()
+    pages.subscribe('hilos_backup')
+    pages.ingestPageResponse('hilos_backup', { data: { archives: 3 } })
+    const sentBefore = connection.sent.length
+
+    pages.denyCurrentPage()
+
+    expect(pages.pageError.get()).toEqual({
+      page: 'hilos_backup',
+      httpCode: 403,
+      errorCode: 'forbidden',
+      message: 'Access forbidden',
+    })
+    expect(pages.pageLoading.get()).toBe(false)
+    // The rows are gone, not hidden behind the error surface.
+    expect(scopes.page()?.data.signal('archives').get()).toBeUndefined()
+    // The subscription is untouched and nothing is asked of the server.
+    expect(pages.pageKey()).toBe('hilos_backup')
+    expect(connection.sent.length).toBe(sentBefore)
+  })
+
+  it('awaitPageAnswer clears the error and raises loading', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.releaseOnSession()
+    pages.subscribe('hilos_users')
+    pages.handleSubscriptionError({
+      page: 'hilos_users',
+      httpCode: 403,
+      errorCode: 'forbidden',
+      message: 'Access forbidden',
+    })
+    const sentBefore = connection.sent.length
+
+    pages.awaitPageAnswer()
+
+    expect(pages.pageError.get()).toBeNull()
+    expect(pages.pageLoading.get()).toBe(true)
+    expect(connection.sent.length).toBe(sentBefore)
+  })
+
+  it('a refusal from the server empties the page scope too', () => {
+    const scopes = new ScopeManager()
+    const pages = new PageSubscription(fakeConnection(), scopes)
+    pages.releaseOnSession()
+    pages.subscribe('hilos_users')
+    pages.ingestPageResponse('hilos_users', { data: { rows: 4 } })
+
+    pages.handleSubscriptionError({
+      page: 'hilos_users',
+      httpCode: 403,
+      errorCode: 'forbidden',
+      message: 'Access denied',
+    })
+
+    // A refused page holds no data, whoever refused it: the page scope is the
+    // most specific layer of entity resolution, so a row left there outranks the
+    // session's own copy and no fan-out arrives to correct it.
+    expect(scopes.page()?.data.signal('rows').get()).toBeUndefined()
+    expect(pages.pageError.get()?.httpCode).toBe(403)
+  })
+
+  it('denyCurrentPage does nothing when no page is subscribed', () => {
+    const pages = new PageSubscription(fakeConnection(), new ScopeManager())
+    pages.releaseOnSession()
+
+    pages.denyCurrentPage()
+
+    expect(pages.pageError.get()).toBeNull()
+  })
+})
+
 describe('pageLoading', () => {
   it('is raised by a subscribe and lowered by an empty answer', () => {
     const connection = fakeConnection()

@@ -148,6 +148,29 @@ abstract class BrowserContext
     }
 
     /**
+     * Whether a page's verdict can turn on who is behind the connection (HIL-621).
+     *
+     * Asked by {@see PageSignalRouter::dispatchPageAccessReassess} to skip the pages a
+     * rights change cannot possibly move. The declared ACCESS_LEVEL is the caller's half
+     * of the question; this is the other half - the page's own browser guards, which are
+     * where a PUBLIC page can still refuse a particular person.
+     *
+     * A page with no browser config declares no guards and answers false, which is the
+     * whole point: without this the sweep would push a full page answer into every open
+     * chat tab of the person on every grant.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @return bool Whether the page declares at least one browser guard
+     * @throws PageInternalErrorException When a page or source declaration is malformed
+     */
+    public function pageAccessDependsOnIdentity(string $page): bool
+    {
+        $pageConfig = $this->pageConfig($page);
+
+        return $pageConfig !== null && $pageConfig->guardConfigs() !== [];
+    }
+
+    /**
      * Sends a full browser snapshot for one page subscription.
      *
      * The snapshot uses the same page/table browser config as incremental

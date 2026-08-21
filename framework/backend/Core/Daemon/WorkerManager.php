@@ -1214,6 +1214,18 @@ abstract class WorkerManager extends BaseManager
                 }
                 break;
 
+            case SignalTypeConstants::PAGE_ACCESS_REASSESS:
+                if ($signalData instanceof WebSocketPageSubscribeSignalDTO) {
+                    // Only the frame, and none of the subscribe's bookkeeping: the previous
+                    // page is not being replaced, the agent is not being told of a new
+                    // subscriber, and the mirror already holds this exact subscription. A
+                    // re-decision changes the answer, not the subscription (HIL-621).
+                    $this->getPageSignalRouter($agentId, $agent)->dispatchPageAccessReassess($signalData, $source, $name);
+                } else {
+                    Logger::error("onSignalPageAccessReassess - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+
             case SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION:
                 if ($signalData instanceof WebSocketPageUpdateSubscriptionSignalDTO) {
                     $agent->onSignalPageUpdateSubscription($signalData, $source, $name);
