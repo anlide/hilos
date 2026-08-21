@@ -8,7 +8,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Browser\Context\BrowserContext;
-use Hilos\Core\Daemon\Worker\ContainedFailure;
+use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\Worker\WorkerTickUnit;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Source\SourceChange;

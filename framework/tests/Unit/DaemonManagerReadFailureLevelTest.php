@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
+use Hilos\Core\Daemon\ContainedFailureSink;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidJsonException;
 use Hilos\Core\Router\SignalRouter;
@@ -164,6 +165,13 @@ final class DaemonManagerReadFailureLevelTestServer implements ServerInterface
 {
     /** @var array<int, ClientInterface> Clients the manager handed back, in order */
     public array $removedClients = [];
+
+    /**
+     * @param ContainedFailureSink $sink Master seam this server would report through
+     */
+    public function setContainedFailureSink(ContainedFailureSink $sink): void
+    {
+    }
 
     public function onTick(): void
     {

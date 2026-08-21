@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Utils;
 
+use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\MalformedInput;
+use Hilos\Socket\Client\ClientInterface;
+use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Server\AbstractServer;
 use Hilos\Socket\SocketException;
 use Throwable;
@@ -56,6 +59,9 @@ class ClientReadFailureLog
     /** Reader name for the event loop's read handler */
     public const string READER_EVENT_LOOP = 'client read handler';
 
+    /** Address of a connection whose accept key is already minted: server and key */
+    private const string KEYED_ADDRESS_FORMAT = '%s acceptKey=%s';
+
     /** Journal line for one failed read: reader, server, exception class, file, line, message */
     private const string ENTRY_FORMAT = 'Error in %s for %s: %s in %s:%d - %s';
 
@@ -64,6 +70,31 @@ class ClientReadFailureLog
 
     /** @var ?RepeatedFailureWindows Limiter for the warning branch, built on first use */
     private static ?RepeatedFailureWindows $windows = null;
+
+    /**
+     * Names one connection the way a contained failure addresses it.
+     *
+     * Lives beside the journal line for the reason the line does: both readers of a client
+     * report the same failure, and an address built twice is an address that eventually
+     * differs, leaving the project unable to tell one connection's storm from two.
+     *
+     * A WebSocket connection past its handshake carries the accept key, which is what a
+     * project has to hold on to - it is the same identifier presence, subscriptions and
+     * {@see DaemonManager::dropWebSocketConnection()} know a connection by. Before the
+     * handshake there is no key to name, and the server is all the address there is.
+     *
+     * @param string $serverName Name of the server the connection belongs to
+     * @param ClientInterface $client Connection the failure belongs to
+     * @return string Address for the {@see ContainedFailure} card of this connection
+     */
+    public static function connectionAddress(string $serverName, ClientInterface $client): string
+    {
+        if (!$client instanceof WebSocketClient || $client->acceptKey === '') {
+            return $serverName;
+        }
+
+        return sprintf(self::KEYED_ADDRESS_FORMAT, $serverName, $client->acceptKey);
+    }
 
     /**
      * Writes the journal line for a client read that failed.

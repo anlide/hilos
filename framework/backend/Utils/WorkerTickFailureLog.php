@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Utils;
 
-use Hilos\Core\Daemon\Worker\ContainedFailure;
+use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\MalformedInput;
 

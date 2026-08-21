@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Browser\Context\BrowserContext;
-use Hilos\Core\Daemon\Worker\ContainedFailure;
+use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeSet;
 use Hilos\Core\Table\Mutation\TableMutationType;

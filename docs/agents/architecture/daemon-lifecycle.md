@@ -194,6 +194,57 @@ the signal's source and type decide where it goes, and a destination that change
 the topology stays a routing rule instead of becoming a call site. This facade is the
 imperative exception for the case routing cannot express.
 
+### Answering a contained failure (HIL-619)
+
+The master swallows what belongs to one connection so the node keeps serving the rest.
+`onContainedFailure(ContainedFailure $failure)` on `DaemonManager` is where the project
+hears about it — one empty `protected` hook for all four guards, because the master is
+one process and a project should not have to override four places to count one thing.
+
+The card is `Hilos\Core\Daemon\ContainedFailure`: the unit, the address, the failure.
+It is the same card the worker's `onTickFailure()` takes (HIL-574); only the enumeration
+of units differs, and the two are held together by `FailureUnit`. The master's units are
+`MasterFailureUnit`:
+
+| Unit | What failed | Address |
+|---|---|---|
+| `CONNECTION` | one live connection, read by its server's tick or by the loop's read callback | server name, plus ` acceptKey=<key>` once a WebSocket connection is past its handshake |
+| `CONNECTION_ACCEPT` | an incoming connection the server could not accept | server name |
+| `LOOP_ITERATION` | one iteration of the main loop, after which the node leaves | `daemon loop` |
+
+A fourth case, `FAILURE_HOOK`, names the hook itself as a guarded unit, but no card ever
+carries it to the hook: the only reader of a card is the hook, and handing it its own
+failure is the loop the guard exists to prevent. That one is written and stops there.
+
+Four things the contract fixes:
+
+- **The line first, then the hook.** The journal record is not the project's to replace;
+  an overridable record is how a guard becomes the silent place it was built to prevent.
+  Neither the wording, the level nor the limiter on repeats changed for this.
+- **Called on every contained failure**, not in step with that limiter. The limiter keeps
+  a storm out of the log; a project counting failures needs the storm counted honestly,
+  because the storm is the thing worth reacting to. In one, the hook is called hundreds
+  of times a minute.
+- **A hook that throws does not take the node with it.** Its failure is written as
+  `Failure in the contained-failure hook: ...` and the hook is not called again with it.
+- **The loop iteration is reported before the exit flag is set.** That order is load
+  bearing: it is the project's last chance to say anything outwards while the node is
+  still serving, and the departure is held to `shutdownTimeout`, so a frame handed over
+  there still makes it into the socket.
+
+It runs on the master loop, so the hook does nothing costlier than a line or a counter —
+no database, no file, no network, no waiting. Anything above that leaves through
+`MasterSignalSender` (see above); the rule itself is
+[heavy-work-in-master.md](../antipatterns/heavy-work-in-master.md).
+
+Not to be confused with `onException()`: that one answers a failure PHP could not place
+anywhere and asks the process to leave, while this one is a report in the other
+direction — the failure was caught and life goes on.
+
+Servers are handed the seam (`ContainedFailureSink`) at registration, through
+`ServerInterface` rather than by type: a server left without it would contain its
+failures in silence, and silence is indistinguishable from a node that has none.
+
 ## Consensus coordinator (HIL-339)
 
 A clustered **master** runs a self-written, raft-like coordinator

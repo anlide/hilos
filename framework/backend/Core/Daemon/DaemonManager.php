@@ -30,6 +30,7 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Master\MasterFailureUnit;
 use Hilos\Core\Daemon\Module\DaemonModule;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -143,6 +144,7 @@ abstract class DaemonManager extends BaseManager implements
     LeadershipObserver,
     PlacementObserver,
     ConnectionDropper,
+    ContainedFailureSink,
     MasterSignalSender,
     ProtectedModeSnapshotSource,
     ProtectedModeAdmissionRecorder,
@@ -151,6 +153,12 @@ abstract class DaemonManager extends BaseManager implements
 {
     /** @var string How the master facade's log line names "every worker of this node" as an addressee */
     private const string MASTER_SIGNAL_WORKERS_LABEL = 'workers';
+
+    /** @var string Address of the loop iteration on the card of a failure contained there */
+    private const string LOOP_FAILURE_ADDRESS = 'daemon loop';
+
+    /** @var string Journal line for a failure the project's hook raised: class, file, line, message */
+    private const string HOOK_FAILURE_FORMAT = 'Failure in the contained-failure hook: %s in %s:%d - %s';
 
     /** @var float Seconds between stuck-readiness log lines while the WebSocket server waits for startup agents */
     private const float READINESS_LOG_INTERVAL = 60.0;
@@ -444,75 +452,7 @@ abstract class DaemonManager extends BaseManager implements
         while ($this->shouldContinueRunning()) {
             $loopStartTime = microtime(true);
 
-            try {
-                // If shutdown requested but not started yet, initiate shutdown
-                if ($this->shouldExit && $this->shutdownStartTime === null) {
-                    $this->shutdownStartTime = microtime(true);
-                    $this->initiateShutdown();
-                }
-
-                // Process epoll events for all servers
-                $this->processEventLoop();
-
-                // Tick all servers (process clients)
-                $this->tickServers();
-
-                // Dispatch the per-iteration hook for the current node lifecycle phase
-                $this->dispatchRoleTick();
-
-                // Singleton duties run on exactly one node cluster-wide: the leader, or the
-                // sole node when cluster mode is off. A follower starts no cluster-singleton
-                // agents, runs no cron, and keeps its WebSocket closed until it is promoted.
-                if ($this->amLeader()) {
-                    // Start this node's cluster-singleton agents once per leadership term
-                    $this->ensureSingletonsStarted();
-
-                    // Open the WebSocket server once the required startup agents are ready
-                    $this->tickReadiness();
-
-                    // Check cron jobs (not more than once per minute)
-                    $this->checkCronJobs();
-
-                    // Notice a freeze that has stopped moving and tell a person about it. Under
-                    // the leader gate for the same reason cron is: one stuck freeze must not
-                    // produce one alert per node. It never lifts anything (HIL-482).
-                    $this->protectedModeWatchdog->tick(time());
-                }
-
-                // Dispatch accumulated signals
-                $this->dispatchSignals();
-
-                // Report the re-hydrate barrier once everyone has answered, or the deadline passed
-                $this->tickReHydrateRound();
-
-                // Flush buffered analytics rows on schedule
-                Hilos::$ac?->tick();
-
-                // Close the windows the client-read limiter has been counting in, so a
-                // stream of refusals that stopped still reports how much it held back.
-                ClientReadFailureLog::flushClosedWindows($loopStartTime);
-
-                // Process signals
-                pcntl_signal_dispatch();
-            } catch (Throwable $failure) {
-                // A failure that got this far is the node's own: one iteration of the loop
-                // did not finish, and nothing below this frame is left to make sense of it.
-                // The node leaves the way SIGTERM makes it leave - the departure announced
-                // to the cluster, every server given its prepareShutdown(), the exit held to
-                // shutdownTimeout by shouldContinueRunning() - instead of exiting from under
-                // the exception with the workers unaware and the mesh still counting this
-                // node in. A node that fell is a failover the cluster has to notice by
-                // timeout; a node that left is one it is told about.
-                $this->logException(sprintf(
-                    'Failure in the daemon loop: %s in %s:%d - %s',
-                    get_class($failure),
-                    basename($failure->getFile()),
-                    $failure->getLine(),
-                    $failure->getMessage()
-                ));
-
-                $this->shouldExit = true;
-            }
+            $this->runGuardedIteration($loopStartTime);
 
             // Sleep for precise timing. Outside the guard on purpose: the iterations that
             // follow a failure are the shutdown ones, and a loop spinning without its pause
@@ -524,6 +464,99 @@ abstract class DaemonManager extends BaseManager implements
         $this->eventLoop->cleanup();
         Hilos::$ac?->shutdown();
         Logger::info("Daemon stopped");
+    }
+
+    /**
+     * Runs one iteration of the main loop, and contains whatever it fails with.
+     *
+     * Its own method rather than a block inside {@see run()} because the iteration is
+     * the unit of work the guard below is about, and a unit of work is something a test
+     * can drive: the loop around it opens the event base, which asks the platform for
+     * libevent and is a poor thing to require of a test about the order of two lines.
+     *
+     * @param float $loopStartTime Time this iteration started, as the loop read it
+     */
+    private function runGuardedIteration(float $loopStartTime): void
+    {
+        try {
+            // If shutdown requested but not started yet, initiate shutdown
+            if ($this->shouldExit && $this->shutdownStartTime === null) {
+                $this->shutdownStartTime = microtime(true);
+                $this->initiateShutdown();
+            }
+
+            // Process epoll events for all servers
+            $this->processEventLoop();
+
+            // Tick all servers (process clients)
+            $this->tickServers();
+
+            // Dispatch the per-iteration hook for the current node lifecycle phase
+            $this->dispatchRoleTick();
+
+            // Singleton duties run on exactly one node cluster-wide: the leader, or the
+            // sole node when cluster mode is off. A follower starts no cluster-singleton
+            // agents, runs no cron, and keeps its WebSocket closed until it is promoted.
+            if ($this->amLeader()) {
+                // Start this node's cluster-singleton agents once per leadership term
+                $this->ensureSingletonsStarted();
+
+                // Open the WebSocket server once the required startup agents are ready
+                $this->tickReadiness();
+
+                // Check cron jobs (not more than once per minute)
+                $this->checkCronJobs();
+
+                // Notice a freeze that has stopped moving and tell a person about it. Under
+                // the leader gate for the same reason cron is: one stuck freeze must not
+                // produce one alert per node. It never lifts anything (HIL-482).
+                $this->protectedModeWatchdog->tick(time());
+            }
+
+            // Dispatch accumulated signals
+            $this->dispatchSignals();
+
+            // Report the re-hydrate barrier once everyone has answered, or the deadline passed
+            $this->tickReHydrateRound();
+
+            // Flush buffered analytics rows on schedule
+            Hilos::$ac?->tick();
+
+            // Close the windows the client-read limiter has been counting in, so a
+            // stream of refusals that stopped still reports how much it held back.
+            ClientReadFailureLog::flushClosedWindows($loopStartTime);
+
+            // Process signals
+            pcntl_signal_dispatch();
+        } catch (Throwable $failure) {
+            // A failure that got this far is the node's own: one iteration of the loop
+            // did not finish, and nothing below this frame is left to make sense of it.
+            // The node leaves the way SIGTERM makes it leave - the departure announced
+            // to the cluster, every server given its prepareShutdown(), the exit held to
+            // shutdownTimeout by shouldContinueRunning() - instead of exiting from under
+            // the exception with the workers unaware and the mesh still counting this
+            // node in. A node that fell is a failover the cluster has to notice by
+            // timeout; a node that left is one it is told about.
+            $this->logException(sprintf(
+                'Failure in the daemon loop: %s in %s:%d - %s',
+                get_class($failure),
+                basename($failure->getFile()),
+                $failure->getLine(),
+                $failure->getMessage()
+            ));
+
+            // Before the exit flag, not after: this is the project's last chance to
+            // say anything outwards while the node is still serving, and the leaving
+            // itself is held to shutdownTimeout, so a frame handed over here still
+            // makes it into the socket.
+            $this->reportContainedFailure(new ContainedFailure(
+                MasterFailureUnit::LOOP_ITERATION,
+                self::LOOP_FAILURE_ADDRESS,
+                $failure
+            ));
+
+            $this->shouldExit = true;
+        }
     }
 
     /**
@@ -655,6 +688,11 @@ abstract class DaemonManager extends BaseManager implements
     {
         $this->servers[] = $server;
 
+        // Every server, whatever it is: a failure this one contains is a failure the
+        // project is entitled to hear about, and handing the seam out by type would
+        // leave a server outside the hierarchy silently unable to report one.
+        $server->setContainedFailureSink($this);
+
         // The command channel needs the master to force-close a WebSocket connection for the
         // test-only drop command; wire this manager in as the dropper so the handler stays
         // decoupled from the concrete manager.
@@ -671,6 +709,36 @@ abstract class DaemonManager extends BaseManager implements
             // And the seam that lets a verifier in: the pass is decided on the 101, but the
             // freeze row it is decided against is the daemon's to write.
             $server->setProtectedModeAdmissionRecorder($this);
+        }
+    }
+
+    /**
+     * Takes a failure a guard contained and hands it to the project.
+     *
+     * The card arrives from wherever the failure was caught - a server's tick, the read
+     * callback, the accept handler, the loop itself - and this is the one place all of
+     * them meet, so a project overrides one hook and not four.
+     *
+     * The hook runs under a guard of its own, because it is the project's code and can
+     * fail like any other; unguarded, its failure would end the very iteration this
+     * machinery exists to survive. That failure is written as the hook's own and the
+     * hook is not called again with it: a hook that fails while answering a failure
+     * would answer its way into a loop.
+     *
+     * @param ContainedFailure $failure Failure, the unit it belongs to and where it happened
+     */
+    public function reportContainedFailure(ContainedFailure $failure): void
+    {
+        try {
+            $this->onContainedFailure($failure);
+        } catch (Throwable $hookFailure) {
+            $this->logException(sprintf(
+                self::HOOK_FAILURE_FORMAT,
+                get_class($hookFailure),
+                basename($hookFailure->getFile()),
+                $hookFailure->getLine(),
+                $hookFailure->getMessage()
+            ));
         }
     }
 
@@ -1133,6 +1201,12 @@ abstract class DaemonManager extends BaseManager implements
                     $e->getMessage()
                 )
             );
+
+            $this->reportContainedFailure(new ContainedFailure(
+                MasterFailureUnit::CONNECTION_ACCEPT,
+                $server->getServerName(),
+                $e
+            ));
             // Don't rethrow - continue processing other connections
         }
     }
@@ -1204,6 +1278,14 @@ abstract class DaemonManager extends BaseManager implements
                 $e,
                 microtime(true)
             );
+
+            // The other reader of the same connection reports the same card, so a project
+            // counting connection failures does not have to know which path caught one.
+            $this->reportContainedFailure(new ContainedFailure(
+                MasterFailureUnit::CONNECTION,
+                ClientReadFailureLog::connectionAddress($server->getServerName(), $client),
+                $e
+            ));
 
             $this->discardClient($server, $client);
         }
@@ -2914,6 +2996,42 @@ abstract class DaemonManager extends BaseManager implements
     protected function logShutdown(string $message): void
     {
         Logger::error($message);
+    }
+
+    /**
+     * Answers a failure the master contained, for the project to react to.
+     *
+     * Empty by default: a node that swallows a bad connection and keeps serving is the
+     * framework's behaviour, and this is where a project adds its own on top of it. The
+     * units that reach here are the master's ({@see MasterFailureUnit}) - a connection,
+     * an accept, an iteration of the loop, and the hook itself.
+     *
+     * Called AFTER the journal line and never instead of it. The record of a contained
+     * failure is not overridable, because a guard whose record a project can replace is
+     * the silent place the guard was built to prevent.
+     *
+     * Called on EVERY contained failure, not in step with the journal's rate limiter.
+     * The limiter keeps a storm out of the log; a project counting failures needs the
+     * storm counted honestly, since the storm is the thing worth reacting to. In one it
+     * is called hundreds of times a minute.
+     *
+     * It must not throw - a failure raised here is written as the hook's own and the
+     * hook is not called with it again ({@see reportContainedFailure()}).
+     *
+     * It runs on the master loop, which serves every connection of this node, so it does
+     * no database, no file, no network and no waiting: nothing costlier than a line or a
+     * counter. Anything above that leaves through {@see MasterSignalSender} - a signal to
+     * an agent or to the workers of this node, where blocking is allowed
+     * (docs/agents/architecture/daemon-lifecycle.md).
+     *
+     * Not to be confused with {@see onException()}: that one answers a failure PHP could
+     * not place anywhere and asks the process to leave, while this one is a report in the
+     * other direction - the failure was caught and life goes on.
+     *
+     * @param ContainedFailure $failure Failure, the unit it belongs to and where it happened
+     */
+    protected function onContainedFailure(ContainedFailure $failure): void
+    {
     }
 
     /**

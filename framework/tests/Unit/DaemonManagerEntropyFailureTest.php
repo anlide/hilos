@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
+use Hilos\Core\Daemon\ContainedFailureSink;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Hilos;
@@ -210,6 +211,13 @@ final class DaemonManagerEntropyFailureTestServer implements ServerInterface
      * @param ?string $refusal Message of the refusal to throw, or null to tick quietly
      */
     public function __construct(private readonly ?string $refusal)
+    {
+    }
+
+    /**
+     * @param ContainedFailureSink $sink Master seam this server would report through
+     */
+    public function setContainedFailureSink(ContainedFailureSink $sink): void
     {
     }
 

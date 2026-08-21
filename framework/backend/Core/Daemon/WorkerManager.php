@@ -23,7 +23,7 @@ use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
-use Hilos\Core\Daemon\Worker\ContainedFailure;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\Worker\WorkerTickUnit;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
@@ -1889,11 +1889,18 @@ abstract class WorkerManager extends BaseManager
      * guard exists to keep alive. It is written as a failure of the hook and not of the
      * unit, so the journal cannot be read as if the original failure happened twice.
      *
-     * @param WorkerTickUnit $unit Unit of work whose failure is being contained
+     * The unit is typed as the shared {@see FailureUnit} rather than as
+     * {@see WorkerTickUnit}, because one caller does not name a unit at all: the browser
+     * fan-out already contained its own failures and hands over the cards it built
+     * ({@see BrowserContext::flushToSignalRouter()}). Every unit that reaches here is
+     * still one of the worker's - the callers below name them literally - and widening
+     * the parameter is what keeps that pass-through from restating a unit it was told.
+     *
+     * @param FailureUnit $unit Unit of work whose failure is being contained
      * @param string $address Which one of that unit failed, in the unit's own terms
      * @param Throwable $failure Failure the unit ended with
      */
-    private function containFailure(WorkerTickUnit $unit, string $address, Throwable $failure): void
+    private function containFailure(FailureUnit $unit, string $address, Throwable $failure): void
     {
         $contained = new ContainedFailure($unit, $address, $failure);
         WorkerTickFailureLog::write($this->workerIndex, $contained, microtime(true));

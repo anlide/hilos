@@ -7,7 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
-use Hilos\Core\Daemon\Worker\ContainedFailure;
+use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\Worker\WorkerTickUnit;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Execution\ExecutionContext;

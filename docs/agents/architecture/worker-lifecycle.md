@@ -31,6 +31,12 @@ master sent when this process knows it. It is empty by default and carries no gu
 its own — the call lands inside the tick's guard, so a reaction that raises is
 contained as a `DAEMON_MESSAGE` failure and reaches `onTickFailure()`.
 
+The card `onTickFailure()` takes, `ContainedFailure`, is shared with the master since
+HIL-619: the same three facts describe a failure wherever it was caught, and only the
+enumeration of units is per process (`WorkerTickUnit` here, `MasterFailureUnit` there,
+both `FailureUnit`). The master's side of it is
+[daemon-lifecycle.md](daemon-lifecycle.md#answering-a-contained-failure-hil-619).
+
 Off the master's loop is not off every loop. The hook runs on the worker's tick, so it
 is bound by the same bar as `onTick()` and every other signal handler — see
 [blocking-in-ontick.md](../antipatterns/blocking-in-ontick.md). What the worker buys

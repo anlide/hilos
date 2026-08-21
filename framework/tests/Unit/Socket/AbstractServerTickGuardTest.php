@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Socket;
 
+use Hilos\Core\Daemon\ContainedFailure;
+use Hilos\Core\Daemon\ContainedFailureSink;
+use Hilos\Core\Daemon\Master\MasterFailureUnit;
 use Hilos\Core\Exception\InvalidJsonException;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Server\AbstractServer;
@@ -29,6 +32,10 @@ use Throwable;
  * marker the failure carries. The one exception is a failure that is the node's own -
  * the refusal of the secure random source - which passes through untouched, because
  * the decision to stop belongs to the manager and not to a server (HIL-568).
+ *
+ * Since HIL-619 the tick also reports what it contained, to the sink the manager wires
+ * in at registration. A server that was never handed one ticks exactly as it did before
+ * there was anything to hand over.
  */
 final class AbstractServerTickGuardTest extends TestCase
 {
@@ -163,6 +170,53 @@ final class AbstractServerTickGuardTest extends TestCase
         $this->assertStringContainsString('Suppressed 2 more ' . InvalidJsonException::class, $this->logged());
     }
 
+    public function testTheContainedFailureIsHandedToTheSinkTheManagerWiredIn(): void
+    {
+        $server = new AbstractServerTickGuardTestServer();
+        $sink = new AbstractServerTickGuardTestSink();
+        $server->setContainedFailureSink($sink);
+        $server->seedClient(new InvalidJsonException('Payload does not decode as JSON: Syntax error'));
+
+        $server->onTick();
+
+        $this->assertCount(1, $sink->reported);
+        $this->assertSame(MasterFailureUnit::CONNECTION, $sink->reported[0]->unit);
+        $this->assertSame('tick-guard-test', $sink->reported[0]->address);
+        $this->assertInstanceOf(InvalidJsonException::class, $sink->reported[0]->failure);
+    }
+
+    /**
+     * A connection that reads without failing is nobody's news: the sink hears about
+     * what was contained, and there is a difference between quiet and empty.
+     */
+    public function testASinkHearsNothingWhenNothingWasContained(): void
+    {
+        $server = new AbstractServerTickGuardTestServer();
+        $sink = new AbstractServerTickGuardTestSink();
+        $server->setContainedFailureSink($sink);
+        $server->seedClient(null);
+
+        $server->onTick();
+
+        $this->assertSame([], $sink->reported);
+    }
+
+    /**
+     * The tick of a server nobody wired a sink into is the tick as it was: the report is
+     * an addition to the guard and not a condition of it.
+     */
+    public function testAServerWithoutASinkContainsItsFailureExactlyAsBefore(): void
+    {
+        $server = new AbstractServerTickGuardTestServer();
+        $client = $server->seedClient(new InvalidJsonException('Payload does not decode as JSON: Syntax error'));
+
+        $server->onTick();
+
+        $this->assertTrue($client->closed);
+        $this->assertSame([], $server->getClients());
+        $this->assertStringContainsString('Error in client tick for tick-guard-test', $this->logged());
+    }
+
     public function testAClientThatReadsWithoutFailingIsKept(): void
     {
         $server = new AbstractServerTickGuardTestServer();
@@ -295,5 +349,22 @@ final class AbstractServerTickGuardTestClient implements ClientInterface
 
     public function onTick(): void
     {
+    }
+}
+
+/**
+ * A sink that remembers what the tick handed it and does nothing else.
+ */
+final class AbstractServerTickGuardTestSink implements ContainedFailureSink
+{
+    /** @var list<ContainedFailure> Cards the tick reported, in order */
+    public array $reported = [];
+
+    /**
+     * @param ContainedFailure $failure Failure the tick contained
+     */
+    public function reportContainedFailure(ContainedFailure $failure): void
+    {
+        $this->reported[] = $failure;
     }
 }

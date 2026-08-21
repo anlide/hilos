@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Socket\Server;
 
 use Hilos\Constants\SocketConstants;
+use Hilos\Core\Daemon\ContainedFailure;
+use Hilos\Core\Daemon\ContainedFailureSink;
+use Hilos\Core\Daemon\Master\MasterFailureUnit;
 use Hilos\HilosException;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\Client\ClientInterface;
@@ -38,6 +41,9 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     /** @var bool Whether server is preparing for shutdown (should not accept new connections) */
     protected bool $preparingShutdown = false;
 
+    /** @var ?ContainedFailureSink Master seam a contained failure is reported through, wired at registration */
+    private ?ContainedFailureSink $containedFailureSink = null;
+
     /**
      * Create server with host and port.
      *
@@ -48,6 +54,20 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     {
         $this->host = $host;
         $this->port = $port;
+    }
+
+    /**
+     * Wires the seam a contained failure of this server is reported through.
+     *
+     * Held by the server rather than reached through the manager, for the reason
+     * {@see WebSocketServer::setConnectionDropper()} is: a server knows the narrow door
+     * it needs and nothing about who is behind it.
+     *
+     * @param ContainedFailureSink $sink Master seam a contained failure is handed to
+     */
+    public function setContainedFailureSink(ContainedFailureSink $sink): void
+    {
+        $this->containedFailureSink = $sink;
     }
 
     /**
@@ -300,6 +320,15 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
                     $exception,
                     microtime(true)
                 );
+
+                // Told after the line and before the close: the project answers a
+                // connection that is still one, and a sink that was never wired leaves
+                // the tick behaving exactly as it did before there was one.
+                $this->containedFailureSink?->reportContainedFailure(new ContainedFailure(
+                    MasterFailureUnit::CONNECTION,
+                    ClientReadFailureLog::connectionAddress($this->getServerName(), $client),
+                    $exception
+                ));
 
                 // If client has error, close it
                 try {

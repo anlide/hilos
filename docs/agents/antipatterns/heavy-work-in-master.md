@@ -61,6 +61,11 @@ that needs no I/O — a random token — and let the worker persist and verify i
   so the work can leave. The facade does not exempt anything from this rule: sending
   to a stopped agent starts it, and the project's agent-daemon factory then runs
   right here, on the master loop.
+- **The master now also asks** (HIL-619): `onContainedFailure()` tells the project
+  about a failure a master guard swallowed, and it is master-loop code like the hooks
+  above — a line or a counter, and `MasterSignalSender` for anything more. It is called
+  once per contained failure, so in a storm it is called in a storm. See
+  [daemon-lifecycle.md](../architecture/daemon-lifecycle.md#answering-a-contained-failure-hil-619).
 - Routing is still the ordinary way to move a signal: `SignalRouter::queueSignal()`
   routes by sender, and the facade is for the case where the addressee is known by
   name and there is no route to declare. See

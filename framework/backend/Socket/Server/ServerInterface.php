@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Core\Daemon\ContainedFailure;
+use Hilos\Core\Daemon\ContainedFailureSink;
 use Hilos\HilosException;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\SocketException;
@@ -74,10 +76,23 @@ interface ServerInterface
     public function getServerName(): string;
 
     /**
+     * Wires the seam a contained failure of this server is reported through.
+     *
+     * Every server is handed it at registration, whatever it descends from: a server
+     * that contains failures without reporting them is silent in the one way that
+     * cannot be told apart from having none. A server with nothing to contain still
+     * implements this - an empty body says so out loud.
+     *
+     * @param ContainedFailureSink $sink Master seam a contained failure is handed to
+     */
+    public function setContainedFailureSink(ContainedFailureSink $sink): void;
+
+    /**
      * Tick method - called regularly to process clients.
      *
      * Should process read/write operations for all connected clients, containing a
-     * failure that belongs to a single client instead of leaving the loop with it.
+     * failure that belongs to a single client instead of leaving the loop with it, and
+     * reporting what it contained as a {@see ContainedFailure} through the wired sink.
      *
      * @throws RandomException When the secure random source refuses a handshake secret
      * @throws HilosException Whatever the concrete server's own tick raises

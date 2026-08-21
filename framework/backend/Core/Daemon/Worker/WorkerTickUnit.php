@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon\Worker;
 
+use Hilos\Core\Daemon\FailureUnit;
 use Hilos\Core\Daemon\WorkerManager;
 
 /**
@@ -19,7 +20,7 @@ use Hilos\Core\Daemon\WorkerManager;
  * The value of a case is the words that go into the journal line and into the limiter's
  * key, so it reads as English and not as a constant name.
  */
-enum WorkerTickUnit: string
+enum WorkerTickUnit: string implements FailureUnit
 {
     /** One message read from the daemon connection */
     case DAEMON_MESSAGE = 'daemon message';
