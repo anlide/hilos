@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\CodeStyle;
 use Hilos\Tests\CodeStyle\Baseline;
 use Hilos\Tests\CodeStyle\CodeStyleRule;
 use Hilos\Tests\CodeStyle\RootKind;
+use Hilos\Tests\CodeStyle\Rule\BlockingResolutionRule;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
@@ -204,6 +205,7 @@ final class CodeStyleGuardTest extends TestCase
             new ErrorSuppressionRule(),
             new FsSeamRule(),
             new RandomSourceRule(),
+            new BlockingResolutionRule(),
             new MalformedInputMarkerRule(),
             new SecretInQueryRule(),
             new MagicRepeatRule(),

@@ -634,6 +634,39 @@ enum EnvConstants
     /** @var string Directory the file transport writes .eml artifacts to; empty writes none. */
     case MAIL_FILE_DIR;
 
+    // ── Watchdog alert (HIL-617) ─────────────────────────────────────────────
+
+    /**
+     * @var string SMTP relay host the container watchdog mails its own incidents through.
+     * Empty means "not configured": the watchdog logs the missing names and sends nothing —
+     * unlike MAIL_*, it never falls back to the file transport.
+     */
+    case WATCHDOG_ALERT_SMTP_HOST;
+
+    /** @var string SMTP relay port for the watchdog alert. Default 587 (STARTTLS submission). */
+    case WATCHDOG_ALERT_SMTP_PORT;
+
+    /** @var string SMTP transport security for the watchdog alert: starttls | tls | none. Default starttls. */
+    case WATCHDOG_ALERT_SMTP_SECURITY;
+
+    /** @var string SMTP AUTH username for the watchdog alert; empty for an unauthenticated relay. Env-only secret. */
+    case WATCHDOG_ALERT_SMTP_USERNAME;
+
+    /** @var string SMTP AUTH password for the watchdog alert; empty for an unauthenticated relay. Env-only secret. */
+    case WATCHDOG_ALERT_SMTP_PASSWORD;
+
+    /** @var string From address of the watchdog alert; empty means "not configured". */
+    case WATCHDOG_ALERT_FROM_ADDRESS;
+
+    /** @var string The single operator address the watchdog alert goes to; empty means "not configured". */
+    case WATCHDOG_ALERT_TO_ADDRESS;
+
+    /**
+     * @var string Per-send timeout in milliseconds for the watchdog alert. Default 5000 —
+     * shorter than MAIL_TIMEOUT_MS, because a dying process must not sit on a socket.
+     */
+    case WATCHDOG_ALERT_TIMEOUT_MS;
+
     // ── SMS (HIL-285) ────────────────────────────────────────────────────────
 
     /**

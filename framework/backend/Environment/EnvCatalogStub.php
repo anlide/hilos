@@ -299,6 +299,26 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::MAIL_WORKER_COUNT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 1, emptyIsMissing: true),
             EnvConstants::MAIL_MAX_CONCURRENT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 4, emptyIsMissing: true),
             EnvConstants::MAIL_FILE_DIR->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::WATCHDOG_ALERT_SMTP_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::WATCHDOG_ALERT_SMTP_PORT->name => self::entry(
+                EnvCatalogConstants::TYPE_INTEGER,
+                587,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::WATCHDOG_ALERT_SMTP_SECURITY->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                SmtpSecurity::STARTTLS->value,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::WATCHDOG_ALERT_SMTP_USERNAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::WATCHDOG_ALERT_SMTP_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::WATCHDOG_ALERT_FROM_ADDRESS->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::WATCHDOG_ALERT_TO_ADDRESS->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::WATCHDOG_ALERT_TIMEOUT_MS->name => self::entry(
+                EnvCatalogConstants::TYPE_INTEGER,
+                5000,
+                emptyIsMissing: true,
+            ),
             EnvConstants::TELEGRAM_GATEWAY_TOKEN->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::TELEGRAM_GATEWAY_ENDPOINT_URL->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,

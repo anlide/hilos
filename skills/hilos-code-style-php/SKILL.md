@@ -35,6 +35,7 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 | `docs/agents/code-style/reflection.md` | adding or changing a `Reflection*` call, or judging an existing one |
 | `docs/agents/code-style/error-suppression.md` | writing `@` in front of a PHP call, or deciding how a failing builtin reports |
 | `docs/agents/code-style/random-source.md` | drawing a random value — minting a token, id or name — or judging a `RandomHelper` call |
+| `docs/agents/code-style/blocking-resolution.md` | turning a host name into an address, or judging a call that waits on a nameserver |
 | `docs/agents/code-style/automated-checks.md` | a style guard failed, a rule should stop depending on memory, or the known-debt baseline needs a record |
 | `docs/agents/code-style/cross-layer-field-names.md` | naming a data field that crosses DB → PHP → wire → TypeScript |
 | `docs/agents/code-style/spelling.md` | writing an English identifier, string key, UI copy, comment, or PHPDoc |

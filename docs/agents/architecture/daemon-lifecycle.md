@@ -43,6 +43,36 @@ Two rules make that supervision survive a *crash* rather than only a clean exit:
   is deliberately left alone. The reason comes from the error-log file and not from
   `Process::getStdErr()` — the daemon's stderr is redirected to that file, so the process
   has no stderr pipe to read.
+- **Say one thing when you die, and nothing else (HIL-617).** The watchdog is simple, and
+  there is no watchdog for the watchdog. Its own failure is *not* damped by a per-iteration
+  `try/catch`, not retried, and not handed to project code through a hook: it mails one
+  letter and leaves. It is deliberately denied what the worker got in HIL-574
+  (`containFailure` + `onTickFailure`), and the asymmetry is the whole point — a worker has
+  someone to bring it back, `WorkerServer::ensureMinWorkers()`, and the watchdog has nobody.
+  Making it survive its own failures by its own means *is* the watchdog for the watchdog.
+  Who restarts a watchdog is a question outside Hilos: a compose restart policy, systemd,
+  zabbix. The framework does not answer it, and the next author should not make it try.
+
+**Two occasions get mail, and no others (HIL-617).** `WatchdogAlertMailer` writes when the
+failed-start run hits the threshold above, and when the watchdog is exiting after a failure
+of its own — the first from `recordFailedStart()` at the exact moment the count reaches the
+threshold (one letter per run of failures, not one per failure), the second from the run
+loop's catch or, for a PHP fatal, from `onShutdown()`. There is no "the daemon is back"
+letter and no timed reminder.
+
+- **The mail is the watchdog's own** (`WATCHDOG_ALERT_*`), because it has to be able to
+  report itself on a box where the product mail is not configured at all. Those variables
+  belong to the watchdog: the master and every other process are barred from reusing a
+  setting with `WATCHDOG` in its name. Unlike `MAIL_*` there is no transport auto-select —
+  an empty host, From or To address means "not configured", which is one line in the log.
+- **The send goes straight out, synchronously, around `HilosMailer::send()`**, which only
+  queues a signal for an agent living inside a worker. The watchdog writes precisely when
+  there may be no daemon at all, so it pumps the transport itself, bounded by
+  `WATCHDOG_ALERT_TIMEOUT_MS`. Every failure of the send is a log line and nothing more.
+- **Where the honesty ends, in plain words.** A letter arrives for a failure carrying an
+  exception or a PHP fatal. On `kill -9`, on the OOM killer, or when the container itself
+  goes down, there is no letter, and this is not a gap to be closed from the inside —
+  those are watched for from outside (zabbix, the restart policy).
 
 **The daemon owns its log files.** `startDaemon()` hands its stdout and stderr to
 `DAEMON_LOG_FILE` and `DAEMON_ERROR_LOG_FILE` as file descriptors, so the daemon's output is

@@ -36,6 +36,7 @@ layer's specifics on top.
 | [reflection.md](reflection.md) | PHP | adding or changing a Reflection call, or wondering whether an existing one is justified |
 | [error-suppression.md](error-suppression.md) | PHP | writing `@` in front of a PHP call — how a failing builtin reports: exception, checked error code, or a marked degrade |
 | [random-source.md](random-source.md) | PHP | drawing a random value — which axis of `RandomHelper` a token, id or name comes from, and what a refused entropy source does to the node |
+| [blocking-resolution.md](blocking-resolution.md) | PHP | turning a host name into an address — which builtins stop the loop until a nameserver answers, and why `gethostname()` is not one of them |
 | [php-language-level.md](php-language-level.md) | PHP | choosing between an old and a new PHP syntax form, or wondering whether an 8.4-only construct is allowed |
 | [local-variables.md](local-variables.md) | PHP | introducing temporary/local variables or reviewing noisy one-use variables |
 | [spelling.md](spelling.md) | both | writing English identifiers, string keys, UI copy, comments, or docs — which dialect to use |

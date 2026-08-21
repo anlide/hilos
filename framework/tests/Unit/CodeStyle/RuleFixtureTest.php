@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\CodeStyle;
 
 use Hilos\Tests\CodeStyle\CodeStyleRule;
+use Hilos\Tests\CodeStyle\Rule\BlockingResolutionRule;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
@@ -50,6 +51,39 @@ final class RuleFixtureTest extends TestCase
     {
         $this->assertSame(
             [
+                'CODE-FQN Bad/BlockingResolutionSamples.php:30 — \dns_get_mx is written out in code; a global '
+                    . 'function or constant takes the short name and no import '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                // Line 32 is the userland function wearing a builtin's name: CODE-FQN judges how it is
+                // written and BLOCKING-RESOLUTION says nothing, which is the whole point of seeding it.
+                'CODE-FQN Bad/BlockingResolutionSamples.php:32 — '
+                    . '\Hilos\Tests\CodeStyle\Fixtures\Bad\Resolver\gethostbyname is written out in code; '
+                    . 'import it and use the short name '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'BLOCKING-RESOLUTION Bad/BlockingResolutionSamples.php:26 — gethostbyname() blocks the '
+                    . 'process until a nameserver answers; resolve the name outside the loop, or name this '
+                    . 'file in the rule\'s list with a reason '
+                    . '(see docs/agents/code-style/blocking-resolution.md)',
+                'BLOCKING-RESOLUTION Bad/BlockingResolutionSamples.php:27 — gethostbynamel() blocks the '
+                    . 'process until a nameserver answers; resolve the name outside the loop, or name this '
+                    . 'file in the rule\'s list with a reason '
+                    . '(see docs/agents/code-style/blocking-resolution.md)',
+                'BLOCKING-RESOLUTION Bad/BlockingResolutionSamples.php:28 — gethostbyaddr() blocks the '
+                    . 'process until a nameserver answers; resolve the name outside the loop, or name this '
+                    . 'file in the rule\'s list with a reason '
+                    . '(see docs/agents/code-style/blocking-resolution.md)',
+                'BLOCKING-RESOLUTION Bad/BlockingResolutionSamples.php:29 — dns_get_record() blocks the '
+                    . 'process until a nameserver answers; resolve the name outside the loop, or name this '
+                    . 'file in the rule\'s list with a reason '
+                    . '(see docs/agents/code-style/blocking-resolution.md)',
+                'BLOCKING-RESOLUTION Bad/BlockingResolutionSamples.php:30 — dns_get_mx() blocks the '
+                    . 'process until a nameserver answers; resolve the name outside the loop, or name this '
+                    . 'file in the rule\'s list with a reason '
+                    . '(see docs/agents/code-style/blocking-resolution.md)',
+                'BLOCKING-RESOLUTION Bad/BlockingResolutionSamples.php:31 — checkdnsrr() blocks the '
+                    . 'process until a nameserver answers; resolve the name outside the loop, or name this '
+                    . 'file in the rule\'s list with a reason '
+                    . '(see docs/agents/code-style/blocking-resolution.md)',
                 'MALFORMED-INPUT-MARKER Bad/Cluster/Exception/UnmarkedRefusal.php:18 — UnmarkedRefusal is '
                     . 'declared where input is parsed and carries no MalformedInput; implement it, extend a '
                     . 'marked base, or name the class in the rule\'s exempt list with a reason '
@@ -378,6 +412,7 @@ final class RuleFixtureTest extends TestCase
             new ErrorSuppressionRule(),
             new FsSeamRule(),
             new RandomSourceRule(),
+            new BlockingResolutionRule(),
             new MalformedInputMarkerRule(),
             new SecretInQueryRule(),
             new MagicRepeatRule(),

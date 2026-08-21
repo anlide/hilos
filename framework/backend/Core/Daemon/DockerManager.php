@@ -22,6 +22,7 @@ use Hilos\Log\LogRotationAgent;
 use Hilos\Log\LogRotator;
 use Hilos\Utils\Exception\LogRotationException;
 use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * Watchdog that runs the daemon process inside a Docker container: it starts
@@ -50,6 +51,15 @@ class DockerManager extends BaseManager
 
     /** @var int Daemon starts that died before reaching the minimum uptime, in a row */
     private int $consecutiveFailedStarts = 0;
+
+    /** @var ?WatchdogAlertMailer Mailer for the two incidents worth an operator's attention, or null when unconfigured */
+    private ?WatchdogAlertMailer $alertMailer = null;
+
+    /** @var bool Whether the watchdog has already mailed its own death, so it is mailed exactly once */
+    private bool $deathAlertSent = false;
+
+    /** @var string What the last fatal error said, kept for the alert the shutdown hook sends */
+    private string $lastFatalMessage = '';
 
     /**
      * Run Docker watchdog - main method
@@ -84,23 +94,41 @@ class DockerManager extends BaseManager
         // Rotate logs before starting processes
         $this->rotateLogs();
 
+        // Resolve the alert mail once, at startup: an unconfigured mailbox is worth saying while
+        // the node is healthy, and a watchdog on its way out must not be reading the environment.
+        // After the rotation, not before it, or the line saying so is archived the moment it is written.
+        $this->alertMailer = WatchdogAlertMailer::fromEnv();
+
         Logger::info("Docker watchdog started");
 
-        // Main loop
-        while ($this->shouldExit === false || $this->process !== null) {
-            $loopStartTime = microtime(true);
+        // Main loop. The catch mails and rethrows rather than recovering: the watchdog is not
+        // made resilient by the watchdog, and DockerApplication still decides the exit code.
+        try {
+            while ($this->shouldExit === false || $this->process !== null) {
+                $loopStartTime = microtime(true);
 
-            // If the process is not running, and we don't need to exit, start daemon
-            if ($this->shouldStartDaemon()) {
-                $this->startDaemon($daemonScript);
+                // If the process is not running, and we don't need to exit, start daemon
+                if ($this->shouldStartDaemon()) {
+                    $this->startDaemon($daemonScript);
+                }
+
+                $this->tickDaemon();
+
+                $this->sleepWithPreciseTiming($loopStartTime);
+
+                // Process signals
+                pcntl_signal_dispatch();
             }
+        } catch (Throwable $e) {
+            $this->alertWatchdogDeath(sprintf(
+                '%s: %s in %s:%d',
+                get_class($e),
+                $e->getMessage(),
+                basename($e->getFile()),
+                $e->getLine(),
+            ));
 
-            $this->tickDaemon();
-
-            $this->sleepWithPreciseTiming($loopStartTime);
-
-            // Process signals
-            pcntl_signal_dispatch();
+            throw $e;
         }
 
         Logger::info("Docker watchdog stopped");
@@ -164,7 +192,8 @@ class DockerManager extends BaseManager
      * @throws FailedToTerminateProcessException If the process cannot be terminated
      * @throws FailedToClosePipeException If pipes cannot be closed
      * @throws FailedToWriteStdInException If buffered input cannot be written to the daemon process
-     * @throws EnvException If the restart interval or failed-start threshold env value is missing or invalid
+     * @throws EnvException If the restart interval, failed-start threshold or error log env value is
+     *     missing or invalid
      */
     private function tickDaemon(): void
     {
@@ -190,8 +219,13 @@ class DockerManager extends BaseManager
                     // Error-based restart - record timestamp and reset logging flag
                     $this->lastErrorRestartTime = microtime(true);
                     $this->restartIntervalLogged = false;
+                    // The tail is read BEFORE the line below is written. The watchdog's own errors go
+                    // to DAEMON_ERROR_LOG_FILE as well - DockerApplication points Logger there - so a
+                    // tail read afterwards ends with this very sentence, while the escalation is about
+                    // what the DAEMON said before it died, not about the watchdog noticing that it did.
+                    $errorLogTail = $this->readErrorLogTail();
                     Logger::error("Daemon process has stopped unexpectedly");
-                    $this->recordFailedStart($uptime);
+                    $this->recordFailedStart($uptime, $errorLogTail);
                 }
             }
         } elseif ($this->processStartTime !== null && $this->lastErrorRestartTime !== null) {
@@ -218,9 +252,11 @@ class DockerManager extends BaseManager
      * silent about it.
      *
      * @param float $uptime How long the failed start survived, in seconds
+     * @param string $errorLogTail Tail of the daemon error log, read before the watchdog logged
+     *     the death itself into that same file
      * @throws EnvException If the failed-start threshold env value is missing or invalid
      */
-    private function recordFailedStart(float $uptime): void
+    private function recordFailedStart(float $uptime, string $errorLogTail): void
     {
         $this->consecutiveFailedStarts++;
         $threshold = Hilos::$env->int(EnvConstants::DAEMON_FAILED_START_THRESHOLD);
@@ -231,8 +267,31 @@ class DockerManager extends BaseManager
         Logger::error(
             "Daemon failed to start {$this->consecutiveFailedStarts} times in a row"
             . ' (last attempt survived ' . number_format($uptime, 2) . 's).'
-            . ' Watchdog keeps retrying. Last daemon errors: ' . $this->readErrorLogTail(),
+            . ' Watchdog keeps retrying. Last daemon errors: ' . $errorLogTail,
         );
+
+        if ($this->consecutiveFailedStarts === $threshold) {
+            $this->alertMailer?->sendDaemonFailedStart($this->consecutiveFailedStarts, $uptime, $errorLogTail);
+        }
+    }
+
+    /**
+     * Mails, at most once, that the watchdog is going away after a failure of its own.
+     *
+     * Both paths that can reach here — an exception out of the run loop, and a PHP fatal caught
+     * by the shutdown handler — end the process, so the flag exists to keep a fatal raised while
+     * the first alert is in flight from producing a second letter about the same death.
+     *
+     * @param string $reason What the watchdog failed on, as the caller rendered it
+     */
+    private function alertWatchdogDeath(string $reason): void
+    {
+        if ($this->deathAlertSent) {
+            return;
+        }
+
+        $this->deathAlertSent = true;
+        $this->alertMailer?->sendWatchdogExiting($reason);
     }
 
     /**
@@ -372,12 +431,16 @@ class DockerManager extends BaseManager
     }
 
     /**
-     * Log shutdown message (process error log + container stdout).
+     * Log shutdown message (process error log + container stdout), and keep it for the alert.
+     *
+     * The shutdown hook that follows has no access to the fatal error itself, so the sentence
+     * assembled here is the only description of it the alert can carry.
      *
      * @param string $message Shutdown message to log
      */
     protected function logShutdown(string $message): void
     {
+        $this->lastFatalMessage = $message;
         Logger::error($message);
     }
 
@@ -399,12 +462,21 @@ class DockerManager extends BaseManager
     }
 
     /**
-     * Handle shutdown event
+     * Handle shutdown event - a PHP fatal error, which for this watchdog is the end of the run.
+     *
+     * This is the one death path where the process still gets to run code: an uncaught exception
+     * cannot reach {@see onException()} here, because DockerApplication wraps the whole run in a
+     * catch, and the run loop mails from that catch instead.
+     *
+     * The daemon is stopped first and mailed about second, because the send blocks for as long as
+     * `WATCHDOG_ALERT_TIMEOUT_MS` allows: asking for the stop first costs nothing, and it keeps the
+     * supervised process from outliving its watchdog by the length of a mail.
      */
     protected function onShutdown(): void
     {
         $this->shouldExit = true;
         $this->initiateDaemonStop();
+        $this->alertWatchdogDeath($this->lastFatalMessage);
     }
 
     /**

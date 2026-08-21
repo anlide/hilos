@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\CodeStyle;
 
 use Hilos\Tests\CodeStyle\RootKind;
+use Hilos\Tests\CodeStyle\Rule\BlockingResolutionRule;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
@@ -54,6 +55,7 @@ final class ScannedRootsTest extends TestCase
      * @var array<int, string>
      */
     private const array EVERY_ROOT_RULE_IDS = [
+        BlockingResolutionRule::ID,
         CodeFqnRule::ID,
         PhpDocFqnRule::ID,
         RtStateReachRule::ID,
