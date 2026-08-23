@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page;
 
-use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\ActionHostInterface;
+use Hilos\Core\Action\ActionReply;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Page\DTO\PageActionErrorSignalData;
-use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\ActionRateLimitedException;
@@ -21,6 +20,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Pages\PageCatalogConstants;
@@ -39,7 +39,7 @@ use Throwable;
  * Concrete pages own subscription, action, and routed signal hooks. Shared
  * framework state is resolved through the active Hilos facade.
  */
-abstract class AbstractPage
+abstract class AbstractPage implements ActionHostInterface
 {
     /** Page name or identifier, overridden by concrete pages. */
     public const string PAGE = '';
@@ -100,11 +100,13 @@ abstract class AbstractPage
     protected PageAgentInterface $agent;
 
     /**
-     * Backend-authored success sentence set during the current onAction(), consumed
-     * by the tracked success reply that immediately follows it. Null unless the
-     * handler opted to send outcome text for the frontend toast.
+     * The node that answers this page's actions, built on first use.
+     *
+     * Lazily, because a page is constructed for every routed frame and most of them are
+     * not actions at all - and because the node takes the page itself, which does not
+     * exist yet while the page's own constructor runs.
      */
-    private ?string $pendingActionSuccessMessage = null;
+    private ?ActionReply $actionReply = null;
 
     /**
      * Creates a page bound to its owning agent.
@@ -134,6 +136,43 @@ abstract class AbstractPage
     public function getAgent(): PageAgentInterface
     {
         return $this->agent;
+    }
+
+    /**
+     * @return string Page name, under which the action dispatcher logs this host
+     */
+    public function actionHostName(): string
+    {
+        return static::PAGE;
+    }
+
+    /**
+     * @return list<string> Action names of this page the anti-abuse layer judges before they run
+     */
+    public function throttledActions(): array
+    {
+        return static::THROTTLED_ACTIONS;
+    }
+
+    /**
+     * @return list<string> Action names of this page that require an authenticated session
+     */
+    public function authActions(): array
+    {
+        return static::AUTH_ACTIONS;
+    }
+
+    /**
+     * Returns the signal source of the agent this page belongs to.
+     *
+     * A page has no signal source of its own: everything it sends leaves the worker under
+     * its agent's identity, which is what routes the frame back to the connection.
+     *
+     * @return SignalSourceInterface Signal source of the owning agent
+     */
+    public function getAgentSignalSource(): SignalSourceInterface
+    {
+        return $this->agent->getAgentSignalSource();
     }
 
     /**
@@ -285,6 +324,26 @@ abstract class AbstractPage
     }
 
     /**
+     * Runs this page's handler for one action the dispatcher routed here.
+     *
+     * The action-host spelling of {@see self::onAction()}: the dispatcher serves pages and
+     * agents through one contract, and each names its own handler.
+     *
+     * @param string $acceptKey WebSocket accept key
+     * @param string $action Action name
+     * @param ActionPayloadDTO $dto Action payload DTO
+     * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
+     * @throws AgentUnknownActionException When the page does not support the action
+     * @throws HilosException Whatever the concrete page's action handler raises
+     * @throws LogicException When a concrete page finds its own collection unavailable
+     * @throws RandomException When a concrete page's handler cannot draw from the CSPRNG
+     */
+    public function runAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
+    {
+        return $this->onAction($acceptKey, $action, $dto);
+    }
+
+    /**
      * Sets the backend-authored success sentence for the action currently being
      * handled.
      *
@@ -298,21 +357,54 @@ abstract class AbstractPage
      */
     protected function setActionSuccessMessage(string $message): void
     {
-        $this->pendingActionSuccessMessage = $message;
+        $this->actionReply()->setSuccessMessage($message);
     }
 
     /**
-     * Resets the per-action success slot at the start of an action dispatch.
+     * Resets the per-action slots at the start of an action dispatch.
      *
      * Called by PageSignalRouter before onAction() runs. The success message slot
      * is otherwise cleared only in sendActionSuccess()/sendActionFail(), neither of
      * which fires on the untracked path — so a message set by an untracked action
      * would survive and surface on the next action's ack. Clearing it up front
      * scopes the message to the action that set it.
+     *
+     * @param ?string $requestId Client-minted request id of this dispatch, or null when untracked
      */
-    public function beginActionDispatch(): void
+    public function beginActionDispatch(?string $requestId = null): void
     {
-        $this->pendingActionSuccessMessage = null;
+        $this->actionReply()->beginDispatch($requestId);
+    }
+
+    /**
+     * Ends the dispatch of one action, leaving no per-dispatch state readable behind it.
+     *
+     * Called by the dispatcher whichever way the action went - answered, deferred or thrown -
+     * so that a frame built between dispatches cannot quote an answered request id.
+     */
+    public function endActionDispatch(): void
+    {
+        $this->actionReply()->endDispatch();
+    }
+
+    /**
+     * Returns the request id of the action dispatch running right now.
+     *
+     * @return ?string Request id of the running dispatch, or null when the caller did not track it
+     */
+    public function currentActionRequestId(): ?string
+    {
+        return $this->actionReply()->requestId();
+    }
+
+    /**
+     * Whether the handler that just ran handed the answer to another process.
+     *
+     * @return bool True when this page owes no ack for the running action
+     */
+    public function actionReplyDeferred(): bool
+    {
+        return $this->actionReply()->isDeferred();
     }
 
     /**
@@ -329,15 +421,7 @@ abstract class AbstractPage
      */
     public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
     {
-        $this->sendToUser(
-            SignalConstants::ACTION_ERROR,
-            $acceptKey,
-            new PageActionErrorSignalData(
-                $action,
-                $e->getMessage(),
-                errorCode: $e instanceof ActionUnauthorizedException ? $e->errorCode : null,
-            ),
-        );
+        $this->actionReply()->sendException($acceptKey, $action, $e);
     }
 
     /**
@@ -362,13 +446,7 @@ abstract class AbstractPage
         string $requestId,
         ?ActionReplyDTO $reply = null,
     ): void {
-        $message = $this->pendingActionSuccessMessage;
-        $this->pendingActionSuccessMessage = null;
-        $this->sendToUser(
-            SignalConstants::ACTION_SUCCESS,
-            $acceptKey,
-            new PageActionSuccessSignalData($action, $requestId, $message, $reply?->toArray()),
-        );
+        $this->actionReply()->sendSuccess($acceptKey, $action, $requestId, $reply);
     }
 
     /**
@@ -394,13 +472,7 @@ abstract class AbstractPage
         ?string $errorCode = null,
         ?int $retryAfter = null,
     ): void {
-        // A failed action carries no success text; drop any the handler set before throwing.
-        $this->pendingActionSuccessMessage = null;
-        $this->sendToUser(
-            SignalConstants::ACTION_ERROR,
-            $acceptKey,
-            new PageActionErrorSignalData($action, $reason, $requestId, $errorCode, $retryAfter),
-        );
+        $this->actionReply()->sendFail($acceptKey, $action, $requestId, $reason, $errorCode, $retryAfter);
     }
 
     /**
@@ -544,4 +616,13 @@ abstract class AbstractPage
         );
     }
 
+    /**
+     * Returns this page's reply node, building it on first use.
+     *
+     * @return ActionReply Node that answers this page's actions
+     */
+    private function actionReply(): ActionReply
+    {
+        return $this->actionReply ??= new ActionReply($this);
+    }
 }

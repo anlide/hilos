@@ -6,6 +6,7 @@ namespace Hilos\Auth\OAuth\Agent;
 
 use Hilos\API\AsyncHttpClient;
 use Hilos\API\Exception\AsyncHttpException;
+use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
 use Hilos\Auth\OAuth\Exception\OAuthException;
@@ -51,12 +52,15 @@ use Throwable;
  * monopolistic singleton ({@see AbstractOAuthAgentDaemon}); if login volume ever outgrows
  * one pipelining singleton the daemon can be flipped to per-worker with no contract change.
  *
- * It is abstract, not concrete like {@see BackupAgent}, because the
- * success path crosses the framework boundary: resolving/creating the account and binding
- * the live session touch project-owned tables (users, sessions) and the project's own
- * session/currentUser fan-out (HIL-161). The project supplies that step through
- * {@see completeOAuthLogin()} and its configured providers through
- * {@see buildProviderRegistry()}; everything HTTP, timing, and failure-signalling stays here.
+ * It is abstract, not concrete like {@see BackupAgent}, because the providers it talks to
+ * are the project's to configure ({@see buildProviderRegistry()}). Everything HTTP, timing,
+ * and failure-signalling stays here.
+ *
+ * What it deliberately does NOT do is decide whose account the provider just described.
+ * That is a write over the user set and belongs to the users library, which this agent
+ * hands the resolved answer to ({@see completeOAuthLogin()}, HIL-622); before that leaf the
+ * project supplied the step itself, and every project that wanted a provider login had to
+ * write the account resolution again.
  */
 abstract class AbstractOAuthAgent extends AbstractAgent
 {
@@ -165,23 +169,58 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     abstract protected function buildProviderRegistry(): OAuthProviderRegistry;
 
     /**
-     * Completes a resolved login: bind the account to the live session and fan out currentUser.
+     * Completes a resolved login by handing the provider's answer to the users library.
      *
-     * Called on the tick the exchange resolves the account identity. The project resolves
-     * the account by (oauth, provider:subject) — creating the user + oauth identity on first
-     * login (email is never consulted for resolution; collision/merge is HIL-282) — and
-     * authenticates {@see OAuthPendingLogin::$sessionToken} to that user, which rides the
-     * existing session/currentUser signal (HIL-161). It must not throw on an expected miss;
-     * a thrown failure is reported to the client as a generic login failure.
+     * Called on the tick the exchange resolves the identity, and this is where this agent's
+     * work ends (HIL-622). Resolving which account the answer belongs to - and creating one
+     * when it belongs to nobody yet - is a write over the user set, which this agent does
+     * not own and must not do: it spends its ticks on provider round-trips, and the library
+     * is the one process that mints an account.
      *
-     * Only the subject is guaranteed: the email and the name are null whenever the
-     * provider withholds them (HIL-573), and naming the account is the project's call.
+     * Only the subject is guaranteed: the email is null whenever the provider withholds it
+     * (HIL-573), and the name a fresh account would take is settled here
+     * ({@see displayNameFor()}) because the provider's own name is what this side has.
      *
      * @param OAuthPendingLogin $op The pending op being completed
      * @param OAuthUserInfo $info Resolved provider subject, and email/name when the provider gave them
-     * @throws HilosException Whatever the project's completion raises, reported to the client as a generic failure
+     * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
+     * @throws HilosException Whatever naming the account raises, reported to the client as a generic failure
      */
-    abstract protected function completeOAuthLogin(OAuthPendingLogin $op, OAuthUserInfo $info): void;
+    protected function completeOAuthLogin(OAuthPendingLogin $op, OAuthUserInfo $info): void
+    {
+        $this->sendToAgent(
+            HilosSignalConstants::HILOS_OAUTH_LOGIN_READY,
+            new OAuthLoginReadySignalData(
+                $op->provider,
+                $info->subject,
+                $info->email,
+                $this->displayNameFor($op, $info),
+                $op->acceptKey,
+                $op->sessionToken,
+            ),
+        );
+    }
+
+    /**
+     * Names the account a first login would create.
+     *
+     * The provider's display name when it sent one, otherwise the technical
+     * `provider:subject` - `github:1234567` - so a provider that hands over nothing but a
+     * subject still produces a readable account. The address takes no part in the name
+     * (HIL-573).
+     *
+     * A project overrides this when its own users table bounds a name; the framework has
+     * no length to enforce, and a name the project cannot store is refused where it is
+     * stored rather than guessed at here.
+     *
+     * @param OAuthPendingLogin $op In-flight op carrying the provider key
+     * @param OAuthUserInfo $info Resolved provider identity
+     * @return string Display name for the account about to be created
+     */
+    protected function displayNameFor(OAuthPendingLogin $op, OAuthUserInfo $info): string
+    {
+        return $info->name ?? $op->provider . ':' . $info->subject;
+    }
 
     /**
      * @return int Maximum number of exchanges pumped concurrently

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Feature;
 
+use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Feature\Definition\AuthThrottleFeature;
 use Hilos\Core\Feature\Definition\CodeChannelsFeature;
 use Hilos\Core\Feature\Definition\BackupFeature;
@@ -92,6 +93,7 @@ class FeatureRegistry
             new NotificationDeliveryFeature(),
             new AuthThrottleFeature(),
             new CodeChannelsFeature(),
+            new AuthFeature(),
         ];
     }
 }

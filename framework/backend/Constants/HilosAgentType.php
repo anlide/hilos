@@ -48,4 +48,7 @@ final class HilosAgentType
 
     /** @var string Hilos auth code agent (async owner of probing, minting and delivering phone one-time codes) */
     public const string HILOS_AUTH_CODE = 'hilos_auth_code';
+
+    /** @var string Hilos users library agent (owner of the user set and of every sign-in command over it) */
+    public const string HILOS_USERS_LIBRARY = 'hilos_users_library';
 }

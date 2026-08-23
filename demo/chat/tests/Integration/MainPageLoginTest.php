@@ -8,9 +8,8 @@ use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\DTO\Main\LoginActionDTO;
-use Demo\Chat\Pages\DTO\Main\RequestPasswordResetActionDTO;
-use Demo\Chat\Pages\MainPage;
+use Hilos\Auth\Library\DTO\LoginActionDTO;
+use Hilos\Auth\Library\DTO\RequestPasswordResetActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -31,6 +30,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 
 /**
  * Integration tests for the email+password login handler (HIL-162): a valid
@@ -245,7 +245,7 @@ final class MainPageLoginTest extends IntegrationTestCase
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(ChatRtContext::userStates, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(ChatRtContext::recoveryWaiters, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(StateRecoveryWaiter::RT_COLLECTION, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
@@ -300,11 +300,12 @@ final class MainPageLoginTest extends IntegrationTestCase
      */
     private function login(ChatAgent $agent, string $acceptKey, string $email, string $password): void
     {
-        new MainPage($agent)->onAction(
+        $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_LOGIN,
             new LoginActionDTO($email, $password),
         );
+        $this->deliverLibraryFrames($agent);
     }
 
     /**
@@ -369,11 +370,12 @@ final class MainPageLoginTest extends IntegrationTestCase
      */
     private function requestPasswordReset(ChatAgent $agent, string $acceptKey, string $email): void
     {
-        new MainPage($agent)->onAction(
+        $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET,
             new RequestPasswordResetActionDTO($email),
         );
+        $this->deliverLibraryFrames($agent);
     }
 
     /**

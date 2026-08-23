@@ -6,6 +6,9 @@ namespace Hilos\Core\Agent;
 
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\ActionHostInterface;
+use Hilos\Core\Action\ActionReply;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -13,6 +16,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -35,6 +39,7 @@ use Hilos\Database\DbSyncApplicator;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Random\RandomException;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
@@ -56,6 +61,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * AbstractAgent - Abstract base class for agents running in worker processes.
@@ -66,7 +72,7 @@ use Hilos\Utils\Logger;
  * - onTick() - agent work logic run on each worker loop iteration
  * - Signal handling methods (can override onSignal* methods for specific signal types).
  */
-abstract class AbstractAgent implements AgentInterface, PageAgentInterface
+abstract class AbstractAgent implements AgentInterface, PageAgentInterface, ActionHostInterface
 {
     /** @var string Agent type identifier. Override in child classes. */
     public const string AGENT_TYPE = '';
@@ -84,11 +90,33 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      */
     public const array AGENT_ACTIONS = [];
 
+    /**
+     * @var list<string> Action names of this agent that require an authenticated session.
+     *     Read by the action dispatcher exactly as a page's AUTH_ACTIONS is: a listed action
+     *     invoked from an anonymous session is denied 401 before the handler runs.
+     */
+    public const array AUTH_ACTIONS = [];
+
+    /**
+     * @var list<string> Action names of this agent the anti-abuse layer rate-limits (HIL-420).
+     *     Read by the action dispatcher exactly as a page's THROTTLED_ACTIONS is; the agent
+     *     must also declare HILOS_AUTH_THROTTLE_VERDICT in AGENT_SIGNALS, because the verdict
+     *     is addressed back to whoever parked the action.
+     */
+    public const array THROTTLED_ACTIONS = [];
+
     /** @var ?string Agent index for multi-instance agents (null for singletons) */
     protected ?string $agentIndex = null;
 
     /** @var bool Flag indicating agent should stop */
     private bool $shouldStop = false;
+
+    /**
+     * The node that answers this agent's actions, built on first use.
+     *
+     * Lazily, because the node takes the agent itself and subclasses own their constructors.
+     */
+    private ?ActionReply $actionReply = null;
 
     /**
      * @return string Agent type from AGENT_TYPE constant
@@ -194,6 +222,21 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     protected function logAgentDebug(string $message): void
     {
         Logger::logAgentDebug($this->getId(), $message);
+    }
+
+    /**
+     * Sets the backend-authored success sentence for the action currently being handled.
+     *
+     * Call from an owned-action handler to have the success ack carry outcome text the
+     * frontend surfaces as a toast; the domain sentence lives on the backend because Hilos
+     * i18n does. The message is consumed by the ack that immediately follows the handler and
+     * does not carry over to a later action.
+     *
+     * @param string $message Backend-authored, already-localized success sentence
+     */
+    protected function setActionSuccessMessage(string $message): void
+    {
+        $this->actionReply()->setSuccessMessage($message);
     }
 
     /**
@@ -774,19 +817,182 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     /**
      * Handle a client action this agent owns through AGENT_ACTIONS.
      *
-     * The page-independent action seam: the worker parses the declared payload DTO
-     * and dispatches here instead of a page, so a shell-level control (e.g. logout)
+     * The page-independent action seam: the dispatcher parses the declared payload DTO
+     * and comes here instead of to a page, so a shell-level control (e.g. logout)
      * reaches the agent from any subscribed page or none. Default no-op; agents that
      * declare AGENT_ACTIONS override this and route by action name.
+     *
+     * A returned reply rides the action's success ack, the same way a page's does, and
+     * so needs the client to have minted a request id; an untracked action that returns
+     * one has nothing to correlate it to and the dispatcher drops it with a warning.
      *
      * @param string $acceptKey Acting connection accept key
      * @param string $action Owned action name from AGENT_ACTIONS
      * @param ActionPayloadDTO $dto Parsed action payload
+     * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
+     * @throws AgentUnknownActionException When the agent does not support the action
      * @throws HilosException Whatever the concrete agent's owned-action handler raises
+     * @throws RandomException When a concrete agent's handler cannot draw from the CSPRNG
      */
-    public function onAgentAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
+    public function onAgentAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
         // Default: do nothing
+        return null;
+    }
+
+    /**
+     * Runs this agent's handler for one action the dispatcher routed here.
+     *
+     * The action-host spelling of {@see self::onAgentAction()}: the dispatcher serves pages
+     * and agents through one contract, and each names its own handler.
+     *
+     * @param string $acceptKey Acting connection accept key
+     * @param string $action Owned action name from AGENT_ACTIONS
+     * @param ActionPayloadDTO $dto Parsed action payload
+     * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
+     * @throws AgentUnknownActionException When the agent does not support the action
+     * @throws HilosException Whatever the concrete agent's owned-action handler raises
+     * @throws RandomException When a concrete agent's handler cannot draw from the CSPRNG
+     */
+    public function runAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
+    {
+        return $this->onAgentAction($acceptKey, $action, $dto);
+    }
+
+    /**
+     * @return string Agent id, under which the action dispatcher logs this host
+     */
+    public function actionHostName(): string
+    {
+        return $this->getId();
+    }
+
+    /**
+     * @return list<string> Action names of this agent the anti-abuse layer judges before they run
+     */
+    public function throttledActions(): array
+    {
+        return static::THROTTLED_ACTIONS;
+    }
+
+    /**
+     * @return list<string> Action names of this agent that require an authenticated session
+     */
+    public function authActions(): array
+    {
+        return static::AUTH_ACTIONS;
+    }
+
+    /**
+     * Empties the per-action slots before a handler of this agent runs.
+     *
+     * @param ?string $requestId Client-minted request id of this dispatch, or null when untracked
+     */
+    public function beginActionDispatch(?string $requestId = null): void
+    {
+        $this->actionReply()->beginDispatch($requestId);
+    }
+
+    /**
+     * Ends the dispatch of one action, leaving no per-dispatch state readable behind it.
+     *
+     * Called by the dispatcher whichever way the action went - answered, deferred or thrown -
+     * so that a frame built between dispatches cannot quote an answered request id.
+     */
+    public function endActionDispatch(): void
+    {
+        $this->actionReply()->endDispatch();
+    }
+
+    /**
+     * Returns the request id of the action dispatch running right now.
+     *
+     * @return ?string Request id of the running dispatch, or null when the caller did not track it
+     */
+    public function currentActionRequestId(): ?string
+    {
+        return $this->actionReply()->requestId();
+    }
+
+    /**
+     * Hands the answer to this action to whoever the handler passed the ending to.
+     *
+     * The one thing a handler may say about its own reply, and it is a negative: the
+     * dispatcher must NOT ack, because an ack is on its way from another process and a
+     * second one would tell the browser the command finished before it did. Narrow on
+     * purpose - the reply node itself stays private, so a handler cannot compose an answer
+     * of its own behind the dispatcher's back (HIL-622).
+     */
+    protected function deferActionReply(): void
+    {
+        $this->actionReply()->defer();
+    }
+
+    /**
+     * Whether the handler that just ran handed the answer to another process.
+     *
+     * @return bool True when this agent owes no ack for the running action
+     */
+    public function actionReplyDeferred(): bool
+    {
+        return $this->actionReply()->isDeferred();
+    }
+
+    /**
+     * Sends the framework action-success reply for a tracked action of this agent.
+     *
+     * @param string $acceptKey Accept key of the initiating connection
+     * @param string $action Action name that committed
+     * @param string $requestId Client-minted request id echoed back for correlation
+     * @param ?ActionReplyDTO $reply Domain reply the handler returned, or null when it answered with nothing
+     * @throws InvalidArgumentException When the action-success signal cannot be named
+     */
+    public function sendActionSuccess(
+        string $acceptKey,
+        string $action,
+        string $requestId,
+        ?ActionReplyDTO $reply = null,
+    ): void {
+        $this->actionReply()->sendSuccess($acceptKey, $action, $requestId, $reply);
+    }
+
+    /**
+     * Sends the framework action-failure reply for a tracked action of this agent.
+     *
+     * @param string $acceptKey Accept key of the initiating connection
+     * @param string $action Action name that failed
+     * @param string $requestId Client-minted request id echoed back for correlation
+     * @param string $reason Human-readable error message exposed to the client
+     * @param ?string $errorCode Machine-readable error code, or null when unclassified
+     * @param ?int $retryAfter Seconds the caller should wait before retrying, or null
+     * @throws InvalidArgumentException When the action-error signal cannot be named
+     */
+    public function sendActionFail(
+        string $acceptKey,
+        string $action,
+        string $requestId,
+        string $reason,
+        ?string $errorCode = null,
+        ?int $retryAfter = null,
+    ): void {
+        $this->actionReply()->sendFail($acceptKey, $action, $requestId, $reason, $errorCode, $retryAfter);
+    }
+
+    /**
+     * Reports an untracked action's failure to the connection that sent it.
+     *
+     * Override only when the agent has a more specific user-facing error contract; a
+     * tracked action never reaches here, its failure goes out as the correlated fail ack.
+     *
+     * @param string $acceptKey Acting connection accept key
+     * @param string $action Action name that failed
+     * @param ActionPayloadDTO $dto Parsed action payload (unused by the default contract)
+     * @param Throwable $e Action failure exposed to the client
+     * @throws InvalidArgumentException When the action-error signal cannot be named
+     */
+    public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
+    {
+        $this->actionReply()->sendException($acceptKey, $action, $e);
     }
 
     /**
@@ -943,5 +1149,15 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     public function onSignalRtSyncDeleted(RtSyncDeletedSignalData $data, string $source, string $name): void
     {
         // Default: do nothing
+    }
+
+    /**
+     * Returns this agent's reply node, building it on first use.
+     *
+     * @return ActionReply Node that answers this agent's actions
+     */
+    private function actionReply(): ActionReply
+    {
+        return $this->actionReply ??= new ActionReply($this);
     }
 }

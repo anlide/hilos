@@ -6,6 +6,12 @@ namespace Hilos\Constants;
 
 use Hilos\Auth\Code\DTO\AuthCodeResultSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
+use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
+use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationAbandonedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
+use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
+use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
@@ -431,6 +437,71 @@ final class HilosSignalConstants
      * runtime collection. The single agent owns the in-flight-login pool it drains.
      */
     public const string HILOS_OAUTH_PENDING = 'hilos_oauth_pending';
+
+    /**
+     * OAuth agent → the users library: the provider answered, resolve the account.
+     *
+     * The other end of the exchange {@see HILOS_OAUTH_PENDING} starts. Who the provider
+     * says this is arrives here as plain facts - subject, address, display name - and the
+     * library turns them into an account, because writing the user set is what a library
+     * owns and the OAuth agent, which is busy with network round-trips, must not (HIL-622).
+     * Carried by {@see OAuthLoginReadySignalData}; a singleton route, since the library is
+     * monopolistic.
+     */
+    public const string HILOS_OAUTH_LOGIN_READY = 'hilos_oauth_login_ready';
+
+    // ── Hilos users library → the agent that holds sessions (agent signals) ──
+    /**
+     * Users library → the session holder: bind this session to this user, then answer.
+     *
+     * Where every sign-in command that ends in a signed-in person lands - password login,
+     * a magic link, a phone code, a passkey, a proven address. The library owns the user
+     * set and the proof; the holder owns sessions and the sockets standing on them, and a
+     * handshake is routed to exactly one agent, so the two cannot be the same process
+     * (HIL-622). The ORDER is the point of the frame: the holder marks, authenticates and
+     * only then answers the action, because "done" reaching the client before its session
+     * changes is a client that reads its own identity wrong.
+     * Carried by {@see AuthSessionGrantSignalData}.
+     */
+    public const string HILOS_AUTH_SESSION_GRANT = 'hilos_auth_session_grant';
+
+    /**
+     * Users library → the session holder: this registration landed, settle everyone waiting.
+     *
+     * A registration is the one flow with more than one browser in it: other tabs and other
+     * sessions may be parked on the same identifier, and only the holder can see them - the
+     * waits are its runtime rows and the sockets are its connections. So the library sends
+     * the outcome and the losers' tokens, and the holder converges them.
+     * Carried by {@see AuthRegistrationLandedSignalData}.
+     */
+    public const string HILOS_AUTH_REGISTRATION_LANDED = 'hilos_auth_registration_landed';
+
+    /**
+     * Users library → the session holder: this recovery is granted, move its tabs along.
+     *
+     * The recovery counterpart of {@see HILOS_AUTH_REGISTRATION_LANDED}: the code was
+     * proved in the library, and the tabs sitting on the code screen belong to the holder.
+     * Carried by {@see AuthRecoveryGrantedSignalData}.
+     */
+    public const string HILOS_AUTH_RECOVERY_GRANTED = 'hilos_auth_recovery_granted';
+
+    /**
+     * Users library → the session holder: the password changed, drop the other sessions.
+     *
+     * A changed password ends every session but the one that changed it, and sessions are
+     * the holder's. Carried by {@see AuthPasswordChangedSignalData}.
+     */
+    public const string HILOS_AUTH_PASSWORD_CHANGED = 'hilos_auth_password_changed';
+
+    /**
+     * Users library → the session holder: this browser walked away from its registration.
+     *
+     * Drops the pending registration of the session and the waits standing on it. The
+     * reservation is deliberately NOT released - it is what keeps a second person from
+     * taking the identifier while the first one is still deciding.
+     * Carried by {@see AuthRegistrationAbandonedSignalData}.
+     */
+    public const string HILOS_AUTH_REGISTRATION_ABANDONED = 'hilos_auth_registration_abandoned';
 
     // ── Hilos code channels: worker → code agent, code agent → guest browser ──
     /**

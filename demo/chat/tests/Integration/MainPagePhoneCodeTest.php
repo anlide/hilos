@@ -9,8 +9,7 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Entity\Item\EventUserRegistration as EntityEventUserRegistration;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\DTO\Main\ConfirmPhoneCodeActionDTO;
-use Demo\Chat\Pages\MainPage;
+use Hilos\Auth\Library\DTO\ConfirmPhoneCodeActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
@@ -33,6 +32,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
 /**
  * Integration tests for what a returned phone code does (HIL-486).
@@ -296,7 +296,7 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(ChatRtContext::userStates, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(ChatRtContext::registrationWaiters, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(StateRegistrationWaiter::RT_COLLECTION, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
@@ -357,14 +357,16 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
         string $code = self::CODE,
     ): AuthFlowOutcome {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
-        $reply = new MainPage($agent)->onAction(
+        $reply = $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE,
             new ConfirmPhoneCodeActionDTO($phone, $code),
         );
-        $this->assertInstanceOf(AuthFlowOutcome::class, $reply);
+        $handedOver = $this->deliverLibraryFrames($agent);
+        $outcome = $reply ?? $handedOver;
+        $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);
 
-        return $reply;
+        return $outcome;
     }
 
     /**

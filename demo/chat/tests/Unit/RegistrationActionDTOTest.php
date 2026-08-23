@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Unit;
 
-use Demo\Chat\Pages\DTO\Main\ConfirmRegisterActionDTO;
-use Demo\Chat\Pages\DTO\Main\RegisterActionDTO;
-use Demo\Chat\Pages\DTO\Main\RequestRegisterConfirmActionDTO;
+use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
+use Hilos\Auth\Library\DTO\RegisterActionDTO;
+use Hilos\Auth\Library\DTO\RequestRegisterConfirmActionDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use PHPUnit\Framework\TestCase;
 

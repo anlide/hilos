@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Auth\ChatAuthMethods;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\DTO\Main\DetectIdentifierActionDTO;
-use Demo\Chat\Pages\DTO\Main\RegisterActionDTO;
-use Demo\Chat\Pages\MainPage;
+use Hilos\Auth\Library\DTO\DetectIdentifierActionDTO;
+use Hilos\Auth\Library\DTO\RegisterActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\Detection\IdentifierDetection;
@@ -34,6 +34,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
 /**
  * Integration tests for the live identifier lookup (HIL-414).
@@ -338,9 +339,9 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
      */
     public function testLookupIsPublicAndThrottled(): void
     {
-        $this->assertContains(HilosSignalConstants::HILOS_DETECT_IDENTIFIER, MainPage::THROTTLED_ACTIONS);
-        $this->assertNotContains(HilosSignalConstants::HILOS_DETECT_IDENTIFIER, MainPage::AUTH_ACTIONS);
-        $this->assertArrayHasKey(HilosSignalConstants::HILOS_DETECT_IDENTIFIER, MainPage::ACTIONS);
+        $this->assertContains(HilosSignalConstants::HILOS_DETECT_IDENTIFIER, UsersLibraryAgent::THROTTLED_ACTIONS);
+        $this->assertNotContains(HilosSignalConstants::HILOS_DETECT_IDENTIFIER, UsersLibraryAgent::AUTH_ACTIONS);
+        $this->assertArrayHasKey(HilosSignalConstants::HILOS_DETECT_IDENTIFIER, UsersLibraryAgent::AGENT_ACTIONS);
     }
 
     /**
@@ -367,7 +368,7 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(ChatRtContext::userStates, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(ChatRtContext::registrationWaiters, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(StateRegistrationWaiter::RT_COLLECTION, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
@@ -423,11 +424,12 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
     private function detect(ChatAgent $agent, string $acceptKey, string $identifier): IdentifierDetection
     {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
-        $reply = new MainPage($agent)->onAction(
+        $reply = $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_DETECT_IDENTIFIER,
             DetectIdentifierActionDTO::fromArray(['identifier' => $identifier]),
         );
+        $this->deliverLibraryFrames($agent);
         $this->assertInstanceOf(IdentifierDetection::class, $reply);
 
         return $reply;
@@ -444,11 +446,12 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
     private function register(ChatAgent $agent, string $acceptKey, string $email): void
     {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
-        new MainPage($agent)->onAction(
+        $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REGISTER,
             new RegisterActionDTO($email, self::PASSWORD),
         );
+        $this->deliverLibraryFrames($agent);
     }
 
     /**

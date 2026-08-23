@@ -6,15 +6,13 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\PasswordUpdatedSignalData;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\DTO\Main\ConfirmRegisterActionDTO;
-use Demo\Chat\Pages\DTO\Main\RegisterActionDTO;
+use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
+use Hilos\Auth\Library\DTO\RegisterActionDTO;
 use Demo\Chat\Pages\DTO\Profile\SetPasswordActionDTO;
 use Demo\Chat\Pages\Hilos\ProfilePage;
-use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -34,6 +32,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
 /**
  * Integration tests for the profile set-password handler (HIL-402): a signed-in
@@ -214,7 +213,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
         RtTruthSourceRegistry::register(ChatRtContext::userStates, true, self::TEST_AGENT_ID);
         // Registering parks the submitting connection as a waiter (HIL-415), so this
         // fixture owns that collection too even though the suite is about passwords.
-        RtTruthSourceRegistry::register(ChatRtContext::registrationWaiters, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(StateRegistrationWaiter::RT_COLLECTION, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
@@ -267,8 +266,12 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
      */
     private function register(ChatAgent $agent, string $acceptKey, string $email): void
     {
-        $page = new MainPage($agent);
-        $page->onAction($acceptKey, HilosSignalConstants::HILOS_REGISTER, new RegisterActionDTO($email, self::PASSWORD));
+        $this->usersLibrary()->onAgentAction(
+            $acceptKey,
+            HilosSignalConstants::HILOS_REGISTER,
+            new RegisterActionDTO($email, self::PASSWORD),
+        );
+        $this->deliverLibraryFrames($agent);
 
         /** @var ObjectUserVerifications $verifications */
         $verifications = Hilos::$db->getObjectCollection(HilosDbContext::verifications);
@@ -285,11 +288,12 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
             self::CODE_TTL_SECONDS,
         );
 
-        $page->onAction(
+        $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_CONFIRM_REGISTER,
             new ConfirmRegisterActionDTO($email, self::CODE),
         );
+        $this->deliverLibraryFrames($agent);
     }
 
     /**

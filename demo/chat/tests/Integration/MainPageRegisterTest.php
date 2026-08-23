@@ -7,19 +7,19 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\PageConstants;
-use Demo\Chat\Constants\PasswordPolicy;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Entity\Item\User as EntityUser;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\DTO\Main\AbandonRegistrationActionDTO;
-use Demo\Chat\Pages\DTO\Main\ConfirmRegisterActionDTO;
-use Demo\Chat\Pages\DTO\Main\RegisterActionDTO;
-use Demo\Chat\Pages\DTO\Main\RequestRegisterConfirmActionDTO;
+use Hilos\Auth\Library\DTO\AbandonRegistrationActionDTO;
+use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
+use Hilos\Auth\Library\DTO\RegisterActionDTO;
+use Hilos\Auth\Library\DTO\RequestRegisterConfirmActionDTO;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
 use Hilos\Auth\Flow\AuthFlowOutcome;
+use Hilos\Auth\PasswordPolicy;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -50,6 +50,7 @@ use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
 /**
  * Integration tests for reserve-on-submit registration (HIL-415): the submit holds
@@ -981,14 +982,15 @@ final class MainPageRegisterTest extends IntegrationTestCase
             $this->assertSame($email, $this->waitOf($token));
 
             ExecutionContext::setCurrentAcceptKey('abandon-ak');
-            $reply = new MainPage($agent)->onAction(
+            $reply = $this->usersLibrary()->onAgentAction(
                 'abandon-ak',
                 HilosSignalConstants::HILOS_ABANDON_REGISTRATION,
                 new AbandonRegistrationActionDTO(),
             );
+            $outcome = $reply ?? $this->deliverLibraryFrames($agent);
 
-            $this->assertInstanceOf(AuthFlowOutcome::class, $reply);
-            $this->assertSame(AuthFlowStep::IDENTIFIER, $reply->step);
+            $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);
+            $this->assertSame(AuthFlowStep::IDENTIFIER, $outcome->step);
             $this->assertNull($this->waitOf($token), 'The session stops waiting on the address it walked away from');
             $this->assertSame(
                 $email,
@@ -1043,11 +1045,12 @@ final class MainPageRegisterTest extends IntegrationTestCase
             $this->register($agent, 'reconnect-abandon-ak', $email);
 
             ExecutionContext::setCurrentAcceptKey('reconnect-abandon-ak');
-            new MainPage($agent)->onAction(
+            $this->usersLibrary()->onAgentAction(
                 'reconnect-abandon-ak',
                 HilosSignalConstants::HILOS_ABANDON_REGISTRATION,
                 new AbandonRegistrationActionDTO(),
             );
+            $this->deliverLibraryFrames($agent);
             $this->assertNotNull($this->holdOf('reconnect-abandon-ak'), 'The hold is what the lookup answers with');
 
             $this->drainHandshakeResponses();
@@ -1115,7 +1118,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(ChatRtContext::userStates, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(ChatRtContext::registrationWaiters, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(StateRegistrationWaiter::RT_COLLECTION, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
@@ -1177,14 +1180,16 @@ final class MainPageRegisterTest extends IntegrationTestCase
         string $password = self::PASSWORD,
     ): AuthFlowOutcome {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
-        $reply = new MainPage($agent)->onAction(
+        $reply = $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REGISTER,
             new RegisterActionDTO($email, $password),
         );
-        $this->assertInstanceOf(AuthFlowOutcome::class, $reply);
+        $handedOver = $this->deliverLibraryFrames($agent);
+        $outcome = $reply ?? $handedOver;
+        $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);
 
-        return $reply;
+        return $outcome;
     }
 
     /**
@@ -1199,14 +1204,16 @@ final class MainPageRegisterTest extends IntegrationTestCase
     private function resend(ChatAgent $agent, string $acceptKey, string $email): AuthFlowOutcome
     {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
-        $reply = new MainPage($agent)->onAction(
+        $reply = $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM,
             new RequestRegisterConfirmActionDTO($email),
         );
-        $this->assertInstanceOf(AuthFlowOutcome::class, $reply);
+        $handedOver = $this->deliverLibraryFrames($agent);
+        $outcome = $reply ?? $handedOver;
+        $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);
 
-        return $reply;
+        return $outcome;
     }
 
     /**
@@ -1222,14 +1229,16 @@ final class MainPageRegisterTest extends IntegrationTestCase
     private function confirm(ChatAgent $agent, string $acceptKey, string $email, string $code): AuthFlowOutcome
     {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
-        $reply = new MainPage($agent)->onAction(
+        $reply = $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_CONFIRM_REGISTER,
             new ConfirmRegisterActionDTO($email, $code),
         );
-        $this->assertInstanceOf(AuthFlowOutcome::class, $reply);
+        $handedOver = $this->deliverLibraryFrames($agent);
+        $outcome = $reply ?? $handedOver;
+        $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);
 
-        return $reply;
+        return $outcome;
     }
 
     /**

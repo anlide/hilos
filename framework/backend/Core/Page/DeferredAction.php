@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Page;
 
 use Hilos\Auth\Throttle\ThrottleGate;
+use Hilos\Core\Action\ActionHostInterface;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
@@ -16,14 +17,14 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  * very same steps it was stopped before - access level, action auth, then the handler - so
  * a parked action is delayed, never treated differently.
  *
- * The parsed payload is what makes this a record and not a signal: a DTO and a live page
+ * The parsed payload is what makes this a record and not a signal: a DTO and a live host
  * instance do not cross a process boundary, so only the asking worker can hold them, and
  * only the request key travels ({@see ThrottleGate}).
  */
 final class DeferredAction
 {
     /**
-     * @param AbstractPage $page Page whose handler the action is destined for
+     * @param ActionHostInterface $host Page or agent whose handler the action is destined for
      * @param string $acceptKey Accept key of the connection that sent it
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Parsed action payload
@@ -32,7 +33,7 @@ final class DeferredAction
      * @param int $awaitingVerdicts Verdicts still outstanding; the action runs when the last allow lands
      */
     public function __construct(
-        public readonly AbstractPage $page,
+        public readonly ActionHostInterface $host,
         public readonly string $acceptKey,
         public readonly string $action,
         public readonly ActionPayloadDTO $dto,

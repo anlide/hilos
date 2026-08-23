@@ -9,12 +9,11 @@ use Demo\Chat\Agents\DTO\DismissSessionAckActionDTO;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\DTO\Main\CompletePasswordResetActionDTO;
-use Demo\Chat\Pages\DTO\Main\ConfirmPasswordResetActionDTO;
-use Demo\Chat\Pages\DTO\Main\ConfirmRegisterActionDTO;
-use Demo\Chat\Pages\DTO\Main\RegisterActionDTO;
-use Demo\Chat\Pages\DTO\Main\RequestPasswordResetActionDTO;
-use Demo\Chat\Pages\MainPage;
+use Hilos\Auth\Library\DTO\CompletePasswordResetActionDTO;
+use Hilos\Auth\Library\DTO\ConfirmPasswordResetActionDTO;
+use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
+use Hilos\Auth\Library\DTO\RegisterActionDTO;
+use Hilos\Auth\Library\DTO\RequestPasswordResetActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Constants\EnvConstants;
@@ -38,6 +37,8 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
+use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
 /**
  * Integration tests for the ephemeral success ack an auth flow leaves behind (HIL-422).
@@ -366,8 +367,8 @@ final class SessionAckTest extends IntegrationTestCase
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(ChatRtContext::userStates, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(ChatRtContext::registrationWaiters, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(ChatRtContext::recoveryWaiters, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(StateRegistrationWaiter::RT_COLLECTION, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(StateRecoveryWaiter::RT_COLLECTION, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
@@ -444,11 +445,12 @@ final class SessionAckTest extends IntegrationTestCase
     private function register(ChatAgent $agent, string $acceptKey, string $email): void
     {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
-        new MainPage($agent)->onAction(
+        $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REGISTER,
             new RegisterActionDTO($email, self::PASSWORD),
         );
+        $this->deliverLibraryFrames($agent);
     }
 
     /**
@@ -463,11 +465,12 @@ final class SessionAckTest extends IntegrationTestCase
     private function confirm(ChatAgent $agent, string $acceptKey, string $email, string $code): void
     {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
-        new MainPage($agent)->onAction(
+        $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_CONFIRM_REGISTER,
             new ConfirmRegisterActionDTO($email, $code),
         );
+        $this->deliverLibraryFrames($agent);
     }
 
     /**
@@ -481,11 +484,12 @@ final class SessionAckTest extends IntegrationTestCase
     private function requestReset(ChatAgent $agent, string $acceptKey, string $email): void
     {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
-        new MainPage($agent)->onAction(
+        $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET,
             new RequestPasswordResetActionDTO($email),
         );
+        $this->deliverLibraryFrames($agent);
     }
 
     /**
@@ -500,11 +504,12 @@ final class SessionAckTest extends IntegrationTestCase
     private function confirmReset(ChatAgent $agent, string $acceptKey, string $email, string $code): void
     {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
-        new MainPage($agent)->onAction(
+        $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_CONFIRM_PASSWORD_RESET,
             new ConfirmPasswordResetActionDTO($email, $code),
         );
+        $this->deliverLibraryFrames($agent);
     }
 
     /**
@@ -518,11 +523,12 @@ final class SessionAckTest extends IntegrationTestCase
     private function complete(ChatAgent $agent, string $acceptKey, string $password): void
     {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
-        new MainPage($agent)->onAction(
+        $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET,
             new CompletePasswordResetActionDTO($password),
         );
+        $this->deliverLibraryFrames($agent);
     }
 
     /**

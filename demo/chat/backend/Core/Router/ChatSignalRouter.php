@@ -6,6 +6,7 @@ namespace Demo\Chat\Core\Router;
 
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Hilos;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Router\SignalRouter;
 
 /**
@@ -65,6 +66,7 @@ final class ChatSignalRouter extends SignalRouter
             AgentType::HILOS_LOGS,
             AgentType::HILOS_BACKUP,
             AgentType::HILOS_OAUTH,
+            HilosAgentType::HILOS_USERS_LIBRARY,
         ];
     }
 

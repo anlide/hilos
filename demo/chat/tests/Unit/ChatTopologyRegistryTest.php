@@ -12,7 +12,6 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\AccountMergeSignalData;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
-use Demo\Chat\Core\Router\DTO\OAuthBindSessionSignalData;
 use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Agents\DTO\DismissSessionAckActionDTO;
 use Demo\Chat\Agents\DTO\ImpersonateStopActionDTO;
@@ -24,6 +23,33 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
+use Hilos\Auth\Library\DTO\AbandonRegistrationActionDTO;
+use Hilos\Auth\Library\DTO\CompletePasswordResetActionDTO;
+use Hilos\Auth\Library\DTO\ConfirmMagicLinkActionDTO;
+use Hilos\Auth\Library\DTO\ConfirmMagicLinkCodeActionDTO;
+use Hilos\Auth\Library\DTO\ConfirmPasswordResetActionDTO;
+use Hilos\Auth\Library\DTO\ConfirmPhoneCodeActionDTO;
+use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
+use Hilos\Auth\Library\DTO\DetectIdentifierActionDTO;
+use Hilos\Auth\Library\DTO\LinkOAuthAfterReauthActionDTO;
+use Hilos\Auth\Library\DTO\LoginActionDTO;
+use Hilos\Auth\Library\DTO\OAuthCallbackActionDTO;
+use Hilos\Auth\Library\DTO\OAuthStartActionDTO;
+use Hilos\Auth\Library\DTO\PasskeyDiscoverableLoginOptionsActionDTO;
+use Hilos\Auth\Library\DTO\PasskeyLoginConfirmActionDTO;
+use Hilos\Auth\Library\DTO\PasskeyRegisterConfirmActionDTO;
+use Hilos\Auth\Library\DTO\PasskeyRegisterOptionsActionDTO;
+use Hilos\Auth\Library\DTO\RegisterActionDTO;
+use Hilos\Auth\Library\DTO\RequestMagicLinkActionDTO;
+use Hilos\Auth\Library\DTO\RequestPasswordResetActionDTO;
+use Hilos\Auth\Library\DTO\RequestPhoneCodeActionDTO;
+use Hilos\Auth\Library\DTO\RequestRegisterConfirmActionDTO;
+use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
+use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationAbandonedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
+use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
+use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleCheckSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleSuccessSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
@@ -34,6 +60,7 @@ use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Backup\BackupConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Mail\DTO\MailSendSignalData;
@@ -164,29 +191,8 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             ChatSignalConstants::MESSAGE => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_DETECT_IDENTIFIER => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_LOGIN => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_REGISTER => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_CONFIRM_PASSWORD_RESET => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_REQUEST_PHONE_CODE => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK_CODE => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_CONFIRM_REGISTER => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_ABANDON_REGISTRATION => PageConstants::MAIN,
             ChatSignalConstants::FILE_UPLOAD_INIT => PageConstants::MAIN,
             ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_OAUTH_START => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_OAUTH_CALLBACK => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_PASSKEY_REGISTER_OPTIONS => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM => PageConstants::MAIN,
-            HilosSignalConstants::HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS => PageConstants::MAIN,
             ChatSignalConstants::RENAME => PageConstants::HILOS_PROFILE,
             ChatSignalConstants::UNLINK_IDENTITY => PageConstants::HILOS_PROFILE,
             ChatSignalConstants::SET_PASSWORD => PageConstants::HILOS_PROFILE,
@@ -231,29 +237,8 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             ChatSignalConstants::MESSAGE => AgentType::CHAT,
-            HilosSignalConstants::HILOS_DETECT_IDENTIFIER => AgentType::CHAT,
-            HilosSignalConstants::HILOS_LOGIN => AgentType::CHAT,
-            HilosSignalConstants::HILOS_REGISTER => AgentType::CHAT,
-            HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET => AgentType::CHAT,
-            HilosSignalConstants::HILOS_CONFIRM_PASSWORD_RESET => AgentType::CHAT,
-            HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET => AgentType::CHAT,
-            HilosSignalConstants::HILOS_REQUEST_PHONE_CODE => AgentType::CHAT,
-            HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE => AgentType::CHAT,
-            HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK => AgentType::CHAT,
-            HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK => AgentType::CHAT,
-            HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK_CODE => AgentType::CHAT,
-            HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM => AgentType::CHAT,
-            HilosSignalConstants::HILOS_CONFIRM_REGISTER => AgentType::CHAT,
-            HilosSignalConstants::HILOS_ABANDON_REGISTRATION => AgentType::CHAT,
             ChatSignalConstants::FILE_UPLOAD_INIT => AgentType::CHAT,
             ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => AgentType::CHAT,
-            HilosSignalConstants::HILOS_OAUTH_START => AgentType::CHAT,
-            HilosSignalConstants::HILOS_OAUTH_CALLBACK => AgentType::CHAT,
-            HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH => AgentType::CHAT,
-            HilosSignalConstants::HILOS_PASSKEY_REGISTER_OPTIONS => AgentType::CHAT,
-            HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM => AgentType::CHAT,
-            HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM => AgentType::CHAT,
-            HilosSignalConstants::HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS => AgentType::CHAT,
             ChatSignalConstants::RENAME => AgentType::CHAT,
             ChatSignalConstants::UNLINK_IDENTITY => AgentType::CHAT,
             ChatSignalConstants::SET_PASSWORD => AgentType::CHAT,
@@ -320,9 +305,14 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             ChatSignalConstants::BOT_MESSAGE => AgentType::CHAT,
-            ChatSignalConstants::OAUTH_BIND_SESSION => AgentType::CHAT,
             ChatSignalConstants::ACCOUNT_MERGE_REQUEST => AgentType::CHAT,
-            HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => AgentType::CHAT,
+            HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AgentType::CHAT,
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED => AgentType::CHAT,
+            HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED => AgentType::CHAT,
+            HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED => AgentType::CHAT,
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_ABANDONED => AgentType::CHAT,
+            HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => HilosAgentType::HILOS_USERS_LIBRARY,
             ChatSignalConstants::BOT_AGENT_START => AgentType::BOT,
             HilosSignalConstants::BACKUP_AGENT_CREATE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_DELETE => AgentType::HILOS_BACKUP,
@@ -433,9 +423,14 @@ final class ChatTopologyRegistryTest extends TestCase
 
         $this->assertSame([
             ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
-            ChatSignalConstants::OAUTH_BIND_SESSION => OAuthBindSessionSignalData::class,
             ChatSignalConstants::ACCOUNT_MERGE_REQUEST => AccountMergeSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED => AuthRegistrationLandedSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED => AuthRecoveryGrantedSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED => AuthPasswordChangedSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_ABANDONED => AuthRegistrationAbandonedSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
+            HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
             ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
@@ -460,6 +455,27 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::LOGOUT => AgentType::CHAT,
             HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => AgentType::CHAT,
             ChatSignalConstants::IMPERSONATE_STOP => AgentType::CHAT,
+            HilosSignalConstants::HILOS_DETECT_IDENTIFIER => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_LOGIN => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_REGISTER => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_CONFIRM_PASSWORD_RESET => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_CONFIRM_REGISTER => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_ABANDON_REGISTRATION => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_REQUEST_PHONE_CODE => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK_CODE => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_OAUTH_START => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_OAUTH_CALLBACK => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_PASSKEY_REGISTER_OPTIONS => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
         ], Hilos::getAgentActionRoutes());
     }
 
@@ -478,6 +494,27 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::LOGOUT => LogoutActionDTO::class,
             HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
             ChatSignalConstants::IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
+            HilosSignalConstants::HILOS_DETECT_IDENTIFIER => DetectIdentifierActionDTO::class,
+            HilosSignalConstants::HILOS_LOGIN => LoginActionDTO::class,
+            HilosSignalConstants::HILOS_REGISTER => RegisterActionDTO::class,
+            HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET => RequestPasswordResetActionDTO::class,
+            HilosSignalConstants::HILOS_CONFIRM_PASSWORD_RESET => ConfirmPasswordResetActionDTO::class,
+            HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET => CompletePasswordResetActionDTO::class,
+            HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM => RequestRegisterConfirmActionDTO::class,
+            HilosSignalConstants::HILOS_CONFIRM_REGISTER => ConfirmRegisterActionDTO::class,
+            HilosSignalConstants::HILOS_ABANDON_REGISTRATION => AbandonRegistrationActionDTO::class,
+            HilosSignalConstants::HILOS_REQUEST_PHONE_CODE => RequestPhoneCodeActionDTO::class,
+            HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE => ConfirmPhoneCodeActionDTO::class,
+            HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK => RequestMagicLinkActionDTO::class,
+            HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK => ConfirmMagicLinkActionDTO::class,
+            HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK_CODE => ConfirmMagicLinkCodeActionDTO::class,
+            HilosSignalConstants::HILOS_OAUTH_START => OAuthStartActionDTO::class,
+            HilosSignalConstants::HILOS_OAUTH_CALLBACK => OAuthCallbackActionDTO::class,
+            HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH => LinkOAuthAfterReauthActionDTO::class,
+            HilosSignalConstants::HILOS_PASSKEY_REGISTER_OPTIONS => PasskeyRegisterOptionsActionDTO::class,
+            HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM => PasskeyRegisterConfirmActionDTO::class,
+            HilosSignalConstants::HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS => PasskeyDiscoverableLoginOptionsActionDTO::class,
+            HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM => PasskeyLoginConfirmActionDTO::class,
         ], $declaredRoutes);
         $this->assertSame($declaredRoutes, Hilos::getAgentActionDtoRoutes());
     }

@@ -10,14 +10,13 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Entity\Item\EventUserRegistration as EntityEventUserRegistration;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\DTO\Main\ConfirmMagicLinkActionDTO;
-use Demo\Chat\Pages\DTO\Main\ConfirmMagicLinkCodeActionDTO;
-use Demo\Chat\Pages\DTO\Main\RegisterActionDTO;
-use Demo\Chat\Pages\DTO\Main\RequestMagicLinkActionDTO;
+use Hilos\Auth\Library\DTO\ConfirmMagicLinkActionDTO;
+use Hilos\Auth\Library\DTO\ConfirmMagicLinkCodeActionDTO;
+use Hilos\Auth\Library\DTO\RegisterActionDTO;
+use Hilos\Auth\Library\DTO\RequestMagicLinkActionDTO;
 use Demo\Chat\Pages\DTO\Profile\ConfirmAddPasswordActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RequestAddPasswordActionDTO;
 use Demo\Chat\Pages\Hilos\ProfilePage;
-use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
@@ -49,6 +48,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
 /**
  * Integration tests for the magic link that both signs in and registers (HIL-417):
@@ -904,7 +904,7 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(ChatRtContext::userStates, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(ChatRtContext::registrationWaiters, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(StateRegistrationWaiter::RT_COLLECTION, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
@@ -961,14 +961,16 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
     private function requestLink(ChatAgent $agent, string $acceptKey, string $email): AuthFlowOutcome
     {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
-        $reply = new MainPage($agent)->onAction(
+        $reply = $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK,
             new RequestMagicLinkActionDTO($email),
         );
-        $this->assertInstanceOf(AuthFlowOutcome::class, $reply);
+        $handedOver = $this->deliverLibraryFrames($agent);
+        $outcome = $reply ?? $handedOver;
+        $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);
 
-        return $reply;
+        return $outcome;
     }
 
     /**
@@ -988,14 +990,16 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         string $token,
     ): AuthFlowOutcome {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
-        $reply = new MainPage($agent)->onAction(
+        $reply = $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK,
             new ConfirmMagicLinkActionDTO($email, $token),
         );
-        $this->assertInstanceOf(AuthFlowOutcome::class, $reply);
+        $handedOver = $this->deliverLibraryFrames($agent);
+        $outcome = $reply ?? $handedOver;
+        $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);
 
-        return $reply;
+        return $outcome;
     }
 
     /**
@@ -1009,11 +1013,12 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
     private function register(ChatAgent $agent, string $acceptKey, string $email): void
     {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
-        new MainPage($agent)->onAction(
+        $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REGISTER,
             new RegisterActionDTO($email, self::PASSWORD),
         );
+        $this->deliverLibraryFrames($agent);
     }
 
     /**
@@ -1073,14 +1078,16 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         string $code,
     ): AuthFlowOutcome {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
-        $reply = new MainPage($agent)->onAction(
+        $reply = $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK_CODE,
             new ConfirmMagicLinkCodeActionDTO($email, $code),
         );
-        $this->assertInstanceOf(AuthFlowOutcome::class, $reply);
+        $handedOver = $this->deliverLibraryFrames($agent);
+        $outcome = $reply ?? $handedOver;
+        $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);
 
-        return $reply;
+        return $outcome;
     }
 
     /**

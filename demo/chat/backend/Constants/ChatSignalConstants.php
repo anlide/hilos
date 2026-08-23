@@ -100,9 +100,6 @@ final class ChatSignalConstants
     /** @var string BotAgent → ChatAgent: publish generated bot message */
     public const string BOT_MESSAGE = 'bot_message';
 
-    /** @var string OAuthAgent → ChatAgent: bind the resolved user to the initiating session (success login) */
-    public const string OAUTH_BIND_SESSION = 'oauth_bind_session';
-
     /** @var string Hilos user page (HILOS_INDEX agent) → ChatAgent: run an admin account merge on the session-owning agent (HIL-378) */
     public const string ACCOUNT_MERGE_REQUEST = 'account_merge_request';
 

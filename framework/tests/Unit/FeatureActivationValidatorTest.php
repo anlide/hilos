@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Auth\Session\HilosSessionHostInterface;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Catalog\CatalogProviderInterface;
@@ -118,6 +119,23 @@ final class FeatureActivationValidatorTest extends TestCase
         FeatureActivationUndeclaredHilos::validateFeatureActivation();
     }
 
+    public function testDeclaredFeatureWithoutASessionHostIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'HilosFeature::AUTH is declared but no agent in AGENTS implements ' . HilosSessionHostInterface::class,
+        );
+
+        FeatureActivationHostlessHilos::validateFeatureActivation();
+    }
+
+    public function testDeclaredFeatureWithASessionHostPasses(): void
+    {
+        FeatureActivationSessionHostHilos::validateFeatureActivation();
+
+        $this->addToAssertionCount(1);
+    }
+
     public function testFeatureWithoutTheFeatureItRequiresIsReported(): void
     {
         $this->expectException(IncompleteFeatureActivationException::class);
@@ -142,6 +160,7 @@ final class FeatureActivationTestRegistry extends FeatureRegistry
         return [
             new FeatureActivationRequiringFeature(),
             new FeatureActivationDependentFeature(),
+            new FeatureActivationSessionHostFeature(),
         ];
     }
 }
@@ -193,6 +212,28 @@ final class FeatureActivationDependentFeature extends FeatureDefinition
     public function requirements(): FeatureRequirements
     {
         return new FeatureRequirements(requires: [HilosFeature::SETTINGS]);
+    }
+}
+
+/**
+ * Synthetic feature whose only obligation is that somebody in AGENTS holds sessions.
+ */
+final class FeatureActivationSessionHostFeature extends FeatureDefinition
+{
+    /**
+     * @return HilosFeature Case standing in for a feature that sends frames to a session holder
+     */
+    public function feature(): HilosFeature
+    {
+        return HilosFeature::AUTH;
+    }
+
+    /**
+     * @return FeatureRequirements A session holder and nothing else
+     */
+    public function requirements(): FeatureRequirements
+    {
+        return new FeatureRequirements(requiresSessionHost: true);
     }
 }
 
@@ -441,4 +482,124 @@ final class FeatureActivationUnmetDependencyHilos extends FeatureActivationValid
     public const array TABLES = [];
 
     public const array PAGE_TABLES = [];
+}
+
+/**
+ * Agent that holds sessions, standing in for a project agent mixing the session-host trait in.
+ *
+ * Implements the contract with no bodies: what the validator asks is who implements it, and a
+ * fixture that actually bound a session would need a database, connections and a socket.
+ */
+final class FeatureActivationSessionHostAgent extends AbstractAgent implements HilosSessionHostInterface
+{
+    public const string AGENT_TYPE = 'feature_activation_session_host';
+
+    /**
+     * No-op stop hook for activation test agents.
+     */
+    public function onStop(): void
+    {
+    }
+
+    /**
+     * @param string $sessionToken Session token (unused)
+     * @param int $userId User id (unused)
+     * @param ?string $initiatorAcceptKey Accept key (unused)
+     */
+    public function authenticateSession(string $sessionToken, int $userId, ?string $initiatorAcceptKey): void
+    {
+    }
+
+    /**
+     * @param int $userId User id (unused)
+     * @param string $keepSessionToken Session token (unused)
+     */
+    public function deauthenticateOtherSessions(int $userId, string $keepSessionToken): void
+    {
+    }
+
+    /**
+     * @param string $sessionToken Session token (unused)
+     * @param string $ack Ack kind (unused)
+     */
+    public function markSessionAck(string $sessionToken, string $ack): void
+    {
+    }
+
+    /**
+     * @param string $identifier Identifier (unused)
+     * @param string $sessionToken Session token (unused)
+     * @param string $initiatorAcceptKey Accept key (unused)
+     */
+    public function grantRecoveryToSession(string $identifier, string $sessionToken, string $initiatorAcceptKey): void
+    {
+    }
+
+    /**
+     * @param string $identifier Identifier (unused)
+     * @param int $userId User id (unused)
+     * @param string $initiatorAcceptKey Accept key (unused)
+     * @param string $winnerSessionToken Session token (unused)
+     * @param list<string> $losingSessionTokens Session tokens (unused)
+     */
+    public function convergeRegistration(
+        string $identifier,
+        int $userId,
+        string $initiatorAcceptKey,
+        string $winnerSessionToken,
+        array $losingSessionTokens,
+    ): void {
+    }
+
+    /**
+     * @param string $identifier Identifier (unused)
+     * @param string $sessionToken Session token (unused)
+     * @param string $initiatorAcceptKey Accept key (unused)
+     */
+    public function convergeRecovery(string $identifier, string $sessionToken, string $initiatorAcceptKey): void
+    {
+    }
+
+    /**
+     * @param string $sessionToken Session token (unused)
+     * @param string $initiatorAcceptKey Accept key (unused)
+     */
+    public function abandonRegistration(string $sessionToken, string $initiatorAcceptKey): void
+    {
+    }
+}
+
+/**
+ * Daemon of the session-holding agent pair.
+ */
+final class FeatureActivationSessionHostAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'feature_activation_session_host';
+}
+
+/**
+ * Facade that declares the session-host feature and registers an agent that holds sessions.
+ */
+final class FeatureActivationSessionHostHilos extends FeatureActivationValidHilos
+{
+    protected const array FEATURES = [HilosFeature::SETTINGS, HilosFeature::AUTH];
+
+    public const array AGENTS = [
+        FeatureActivationTestAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => FeatureActivationTestAgent::class,
+            AgentRegistryKey::DAEMON => FeatureActivationTestAgentDaemon::class,
+        ],
+        FeatureActivationSessionHostAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => FeatureActivationSessionHostAgent::class,
+            AgentRegistryKey::DAEMON => FeatureActivationSessionHostAgentDaemon::class,
+        ],
+    ];
+}
+
+/**
+ * Facade that declares the session-host feature while no registered agent holds sessions.
+ */
+final class FeatureActivationHostlessHilos extends FeatureActivationValidHilos
+{
+    protected const array FEATURES = [HilosFeature::SETTINGS, HilosFeature::AUTH];
 }

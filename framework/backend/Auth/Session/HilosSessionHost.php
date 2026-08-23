@@ -6,6 +6,15 @@ namespace Hilos\Auth\Session;
 
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Detection\IdentifierDetector;
+use Hilos\Auth\Flow\AuthFlowIntent;
+use Hilos\Auth\Flow\AuthFlowOutcome;
+use Hilos\Auth\Flow\AuthFlowStep;
+use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
+use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
+use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationAbandonedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
+use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\Exception\SessionTokenExhaustedException;
@@ -15,12 +24,15 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\NotImplementedException;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\View\Item\Session;
 use Hilos\Environment\Exception\EnvException;
@@ -40,7 +52,7 @@ use Throwable;
  * Session-host seam graduated from the chat reference (HIL-361).
  *
  * Mixed into a project's monopolistic agent (an {@see AbstractAgent}
- * subclass, whose `sendToUser()`/`logAgentInfo()` this trait calls) to own the
+ * subclass, whose `sendToUser()`/`logAgentInfo()`/`sendActionSuccess()` this trait calls) to own the
  * three session-lifecycle cores that used to live inline in the chat agent:
  * resolving a handshake token to a session, upgrading a live session to a user
  * (login/register), and reverting it to anonymous (logout). Each core drives the
@@ -898,5 +910,657 @@ trait HilosSessionHost
             $this->markConnectionAck($acceptKey, $ack);
             $this->sendToUser($signalName, $acceptKey, $response);
         }
+    }
+
+    /**
+     * Ends every browser's wait on a just-registered identifier, each in its own way (HIL-415).
+     *
+     * The converge half of reserve-on-submit registration, and the place where the
+     * ownership rule becomes visible (HIL-608). Several sessions can legitimately have
+     * been waiting on one identifier, and they are NOT the same to it: the tabs of the
+     * browser that won are the same person finishing what they started, so they are
+     * signed into the new account and moved to the done step; every other browser was
+     * racing for the identifier and lost it, so it is told the address is taken and sent
+     * back to the identifier field under the sign-in intent - never subscribed into an
+     * account it has no claim to. That subscription, made to whoever happened to be
+     * parked, was the second door of the same capture the reservation key closed.
+     *
+     * A waiter whose connection is ALREADY signed in is moved but not re-bound: somebody
+     * else's registration must never swap the account a person is sitting in. The
+     * confirming connection is skipped entirely - its caller signed it in on the ordinary
+     * path and answered it with the action reply.
+     *
+     * The losing SESSIONS are named as well as parked ones, because a browser can hold an
+     * identifier without ever having been parked on it: a magic-link ask writes a hold and
+     * no wait, and its check-your-inbox screen would otherwise sit there until the link it
+     * is waiting for turned out to be worthless.
+     *
+     * The durable waits are dropped HERE, and only after the waiting sockets have been
+     * read off them (HIL-486): they are half of who is waiting, so a caller that cleared
+     * them first would converge to whoever happened to be parked in the runtime list and
+     * silently miss the rest.
+     *
+     * @param string $identifier Normalized identifier that was just confirmed (lowercased email)
+     * @param int $userId User the confirmation created
+     * @param string $initiatorAcceptKey Accept key of the connection that submitted the proof
+     * @param string $winnerSessionToken Session cookie token of the browser whose registration this was
+     * @param list<string> $losingSessionTokens Session tokens whose hold on the identifier was dropped
+     * @throws HilosException On runtime, database, or session failure
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     */
+    public function convergeRegistration(
+        string $identifier,
+        int $userId,
+        string $initiatorAcceptKey,
+        string $winnerSessionToken,
+        array $losingSessionTokens,
+    ): void {
+        $parked = $this->parkedAcceptKeys($identifier);
+        foreach ($losingSessionTokens as $sessionToken) {
+            foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
+                $parked[$acceptKey] = $sessionToken;
+            }
+        }
+
+        Hilos::$db->sessions->actions->releasePendingRegistrationFor($identifier);
+
+        foreach ($parked as $acceptKey => $sessionToken) {
+            Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
+            if ($acceptKey === $initiatorAcceptKey) {
+                continue;
+            }
+
+            if ($sessionToken !== $winnerSessionToken) {
+                $this->sendToUser(
+                    HilosSignalConstants::HILOS_AUTH_CONVERGE,
+                    $acceptKey,
+                    new AuthConvergeSignalData(
+                        $acceptKey,
+                        $identifier,
+                        AuthFlowStep::IDENTIFIER,
+                        AuthFlowIntent::LOGIN,
+                        AuthFlowOutcome::CODE_IDENTIFIER_TAKEN,
+                    ),
+                );
+
+                continue;
+            }
+
+            if (Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey)?->userId === null) {
+                // Marked before the session goes up, so the identity and the news that
+                // there is an account arrive in one frame (HIL-422). This tab did not
+                // type the code — another tab of the same browser did — which is exactly
+                // why it is owed the sentence rather than a screen that changed under it.
+                $this->markSessionAck($sessionToken, SessionAck::REGISTERED);
+                $this->authenticateSession($sessionToken, $userId, $acceptKey);
+            }
+
+            $this->sendToUser(
+                HilosSignalConstants::HILOS_AUTH_CONVERGE,
+                $acceptKey,
+                new AuthConvergeSignalData($acceptKey, $identifier, AuthFlowStep::DONE, AuthFlowIntent::REGISTER),
+            );
+        }
+    }
+
+    /**
+     * Ends one session's wait on a registration, in every tab of it (HIL-486).
+     *
+     * The whole of "not that address?": the session forgets the address it was on, the
+     * sockets parked on it are dropped, and the other tabs of the same session are told to
+     * go back to the identifier field. The initiator is skipped because its own action
+     * reply already moves it - a second order for the same move would race the first.
+     *
+     * Both halves happen HERE because both are the session's (HIL-622). Until the sign-in
+     * commands moved to the users library, the durable half was dropped by the page that
+     * took the action; the library that took its place owns no session and cannot.
+     *
+     * Only sockets of THIS session are touched. Another session waiting on the same
+     * identifier is still waiting on it, and the hold nobody released still stands.
+     *
+     * @param string $sessionToken Session cookie token walking away from its registration
+     * @param string $initiatorAcceptKey Accept key that asked, answered by its own action reply
+     * @throws HilosException On runtime or database failure
+     */
+    public function abandonRegistration(string $sessionToken, string $initiatorAcceptKey): void
+    {
+        // Collect first: releasing a waiter mutates the collection a foreach would walk.
+        $parked = [];
+        foreach (Hilos::$rt->hilosRegistrationWaiters as $waiter) {
+            if ($waiter->sessionToken === $sessionToken) {
+                $parked[$waiter->acceptKey] = $waiter->identifier;
+            }
+        }
+
+        // The durable memory goes ahead of the signals, for the reason the expiry sweep
+        // drops it in the same order: a tab reconnecting a moment later must be told the
+        // identifier step by the handshake, not parked again on a screen this call closes.
+        Hilos::$db->sessions->findByToken($sessionToken)?->actions->releasePendingRegistration();
+
+        foreach ($parked as $acceptKey => $identifier) {
+            Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
+            if ($acceptKey === $initiatorAcceptKey) {
+                continue;
+            }
+
+            $this->sendToUser(
+                HilosSignalConstants::HILOS_AUTH_CONVERGE,
+                $acceptKey,
+                new AuthConvergeSignalData(
+                    $acceptKey,
+                    $identifier,
+                    AuthFlowStep::IDENTIFIER,
+                    AuthFlowIntent::REGISTER,
+                ),
+            );
+        }
+    }
+
+    /**
+     * Opens the password step in the other tabs of a session that just proved a code (HIL-416).
+     *
+     * The push half of session-binding. A code accepted in one tab is accepted for the
+     * session, so the tabs that were sitting on the code screen of the same address are
+     * moved forward with it - otherwise the person would be looking at two windows of
+     * one browser disagreeing about which screen they are on, and typing the code again
+     * in the second would cost an attempt for nothing.
+     *
+     * The rows stay parked: the grant is written on them and the wait is not over yet.
+     * The answering connection is skipped - its caller answered it with the action reply.
+     *
+     * @param string $identifier Normalized address being recovered (lowercased email)
+     * @param string $sessionToken Session token that just proved the code
+     * @param string $initiatorAcceptKey Accept key of the connection that submitted the code
+     * @throws HilosException On runtime failure
+     */
+    public function grantRecoveryToSession(
+        string $identifier,
+        string $sessionToken,
+        string $initiatorAcceptKey,
+    ): void {
+        foreach (Hilos::$rt->hilosRecoveryWaiters->forSessionToken($sessionToken) as $waiter) {
+            if ($waiter->acceptKey === $initiatorAcceptKey || $waiter->identifier !== $identifier) {
+                continue;
+            }
+
+            $this->sendToUser(
+                HilosSignalConstants::HILOS_AUTH_CONVERGE,
+                $waiter->acceptKey,
+                new AuthConvergeSignalData(
+                    $waiter->acceptKey,
+                    $identifier,
+                    AuthFlowStep::SET_PASSWORD,
+                    AuthFlowIntent::RECOVERY,
+                ),
+            );
+        }
+    }
+
+    /**
+     * Settles an address for everyone the moment one session saves its new password (HIL-416).
+     *
+     * The converge half of recovery, and the reason nobody has to be refused a code:
+     * two devices may both reach the password screen, and what ends the race is the
+     * save, not the code. The code is single-use, so the first save spends it and every
+     * other waiter is now holding a grant that buys nothing - they are told so rather
+     * than left to discover it by typing a password into a refusal.
+     *
+     * Where they are sent depends on whose they are, and the split is the whole of
+     * session-binding seen from the other end: the tabs of the session that saved are
+     * signed in along with it, so they get the done step under recovery, exactly like
+     * the tab that submitted; the sessions of other devices get the identifier step
+     * under sign-in, with the news that the password is already the new one. Every row
+     * goes either way - the wait is over for all of them.
+     *
+     * No ack is marked here, and the asymmetry with {@see convergeRegistration()} is the
+     * mechanism rather than an omission (HIL-422). The waiters that go to done are on the
+     * saving session itself, whose sockets were all marked before it was signed in, so
+     * they already carry the announcement; the waiters on OTHER sessions must NOT get one
+     * - nothing was achieved on their device, and what they are owed is the inline
+     * "already changed" line this method sends them.
+     *
+     * @param string $identifier Normalized address whose password was just saved (lowercased email)
+     * @param string $sessionToken Session token that saved it, whose tabs go to done
+     * @param string $initiatorAcceptKey Accept key of the connection that submitted the password
+     * @throws HilosException On runtime failure
+     */
+    public function convergeRecovery(
+        string $identifier,
+        string $sessionToken,
+        string $initiatorAcceptKey,
+    ): void {
+        foreach ($this->parkedRecoveryAcceptKeys($identifier) as $acceptKey => $parkedSessionToken) {
+            Hilos::$rt->hilosRecoveryWaiters->actions->release($acceptKey);
+            if ($acceptKey === $initiatorAcceptKey) {
+                continue;
+            }
+
+            $isSameSession = $parkedSessionToken === $sessionToken;
+
+            $this->sendToUser(
+                HilosSignalConstants::HILOS_AUTH_CONVERGE,
+                $acceptKey,
+                new AuthConvergeSignalData(
+                    $acceptKey,
+                    $identifier,
+                    $isSameSession ? AuthFlowStep::DONE : AuthFlowStep::IDENTIFIER,
+                    $isSameSession ? AuthFlowIntent::RECOVERY : AuthFlowIntent::LOGIN,
+                    $isSameSession ? null : AuthFlowOutcome::CODE_PASSWORD_ALREADY_CHANGED,
+                ),
+            );
+        }
+    }
+
+    /**
+     * Routes one frame the users library addressed to this holder (HIL-622).
+     *
+     * Called from the owning agent's `onSignalAgent()`, under the five cases that
+     * {@see HilosSessionHostInterface::SESSION_HOST_SIGNALS} names. The switch lives here
+     * rather than in the project because what each frame means is the framework's: the
+     * library ends a ceremony by saying what happened, and the order the holder then acts
+     * in - mark the sockets, raise the session, settle the tabs, answer - is the mechanism
+     * itself (HIL-422). A project that re-implemented it could only ever re-implement it
+     * differently.
+     *
+     * @param AgentSignalData $data Wrapped agent-signal payload
+     * @param string $name Routed agent-signal name
+     * @throws AgentUnknownSignalException When the name is not one of the holder's frames
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
+     * @throws HilosException On database, runtime, or session failure
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws InvalidArgumentException When the reply frame cannot be named
+     */
+    final protected function handleSessionHostFrame(AgentSignalData $data, string $name): void
+    {
+        switch ($name) {
+            case HilosSignalConstants::HILOS_AUTH_SESSION_GRANT:
+                if (!$data->data instanceof AuthSessionGrantSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthSessionGrantSignalData::class, $data->data);
+                }
+
+                $this->grantSessionToUser($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED:
+                if (!$data->data instanceof AuthRegistrationLandedSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        AuthRegistrationLandedSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->settleLandedRegistration($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED:
+                if (!$data->data instanceof AuthRecoveryGrantedSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        AuthRecoveryGrantedSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->openRecoveryPasswordStep($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED:
+                if (!$data->data instanceof AuthPasswordChangedSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        AuthPasswordChangedSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->settleChangedPassword($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_AUTH_REGISTRATION_ABANDONED:
+                if (!$data->data instanceof AuthRegistrationAbandonedSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        AuthRegistrationAbandonedSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->dropAbandonedRegistration($data->data);
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
+    }
+
+    /**
+     * Rolls ONE browser's expired registration back to the identifier step (HIL-415).
+     *
+     * What an expired hold owes the person waiting on it. The step goes BACK rather than
+     * the code being refused: they are about to type a code into a registration that no
+     * longer exists, and "invalid code" would read as their mistake. The reason travels
+     * with the step so the surface can say what actually happened.
+     *
+     * Only the owning session is rolled back (HIL-608). The identifier may still be held
+     * by another browser whose own code is perfectly good, and taking that browser off its
+     * code screen because a stranger's attempt ran out would be somebody else's timer
+     * ending this person's registration.
+     *
+     * @param string $sessionToken Session cookie token whose hold just expired
+     * @param string $identifier Normalized identifier that hold was on
+     * @throws HilosException On runtime failure
+     */
+    final protected function rollBackRegistrationWaiters(string $sessionToken, string $identifier): void
+    {
+        // Read before the durable row goes, since the live sockets are found through it.
+        $acceptKeys = $this->sessionConnectionKeys($sessionToken);
+        foreach (Hilos::$rt->hilosRegistrationWaiters->forIdentifier($identifier) as $waiter) {
+            if ($waiter->sessionToken === $sessionToken) {
+                $acceptKeys[] = $waiter->acceptKey;
+            }
+        }
+
+        // The durable memory goes next, still ahead of the first signal: the hold is
+        // gone, so a tab reconnecting a second later must be told the identifier step by
+        // the handshake, not parked again on a code screen this very sweep is closing.
+        // Cleared on THIS session's row alone, not on every session waiting on the
+        // address - the narrowing HIL-608 made, kept when the memory moved onto the row.
+        Hilos::$db->sessions->findByToken($sessionToken)?->actions->releasePendingRegistration();
+
+        foreach (array_unique($acceptKeys) as $acceptKey) {
+            Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
+
+            $this->sendToUser(
+                HilosSignalConstants::HILOS_AUTH_CONVERGE,
+                $acceptKey,
+                new AuthConvergeSignalData(
+                    $acceptKey,
+                    $identifier,
+                    AuthFlowStep::IDENTIFIER,
+                    AuthFlowIntent::REGISTER,
+                    AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
+                ),
+            );
+        }
+    }
+
+    /**
+     * Drops registration waiters whose connection is no longer live (HIL-415).
+     *
+     * A waiter is released when its identifier resolves, and a browser closed on the code
+     * screen never resolves anything - so without this the collection would only grow, and
+     * a converge would be broadcast to sockets that are gone. The walk is over the waiters
+     * and not over the connections, because there are at most a handful of the former and
+     * as many of the latter as the chat has readers; while nobody is registering it costs
+     * one count().
+     *
+     * @throws HilosException On runtime failure
+     */
+    final protected function sweepRegistrationWaiters(): void
+    {
+        if (count(Hilos::$rt->hilosRegistrationWaiters) === 0) {
+            return;
+        }
+
+        // A project with no session-stage connections has nothing to compare a waiter
+        // against, and dropping every one of them on that ignorance would be worse than
+        // keeping them: the same nothing-to-do sessionConnectionKeys() answers with.
+        $connections = Hilos::$rt?->sessionConnectionsSource();
+        if ($connections === null) {
+            return;
+        }
+
+        // Collect first: releasing a waiter mutates the collection a foreach would walk.
+        $parked = [];
+        foreach (Hilos::$rt->hilosRegistrationWaiters as $waiter) {
+            $parked[] = $waiter->acceptKey;
+        }
+
+        foreach ($parked as $acceptKey) {
+            if ($connections->get($acceptKey) === null) {
+                Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
+            }
+        }
+    }
+
+    /**
+     * Drops recovery waiters whose connection is no longer live (HIL-416).
+     *
+     * The same reclamation the registration waiters get, and needed for the same reason:
+     * a browser closed on the code or password screen resolves nothing, so without this
+     * the collection would only grow and a converge would be broadcast to sockets that
+     * are gone. It is a second walk rather than a shared one because the two collections
+     * are two: they are parked by different flows, and a sweep that knew about both
+     * would have to be told which is which anyway.
+     *
+     * @throws HilosException On runtime failure
+     */
+    final protected function sweepRecoveryWaiters(): void
+    {
+        if (count(Hilos::$rt->hilosRecoveryWaiters) === 0) {
+            return;
+        }
+
+        // A project with no session-stage connections has nothing to compare a waiter
+        // against, and dropping every one of them on that ignorance would be worse than
+        // keeping them: the same nothing-to-do sessionConnectionKeys() answers with.
+        $connections = Hilos::$rt?->sessionConnectionsSource();
+        if ($connections === null) {
+            return;
+        }
+
+        // Collect first: releasing a waiter mutates the collection a foreach would walk.
+        $parked = [];
+        foreach (Hilos::$rt->hilosRecoveryWaiters as $waiter) {
+            $parked[] = $waiter->acceptKey;
+        }
+
+        foreach ($parked as $acceptKey) {
+            if ($connections->get($acceptKey) === null) {
+                Hilos::$rt->hilosRecoveryWaiters->actions->release($acceptKey);
+            }
+        }
+    }
+
+    /**
+     * Signs one session in on the library's word and answers the surface that asked.
+     *
+     * The ending shared by every ceremony that proves who somebody is against an account
+     * that already exists. The mark goes on the sockets BEFORE the sign-in, because the
+     * surface closes on the identity coming up and would otherwise take the sentence with
+     * it (HIL-422); the reply goes last, after the session is really up.
+     *
+     * @param AuthSessionGrantSignalData $frame Session, user, and the answer to give
+     * @throws HilosException On database, runtime, or session failure
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws InvalidArgumentException When the reply frame cannot be named
+     */
+    private function grantSessionToUser(AuthSessionGrantSignalData $frame): void
+    {
+        if ($frame->ack !== null) {
+            $this->markSessionAck($frame->sessionToken, $frame->ack);
+        }
+
+        $this->authenticateSession($frame->sessionToken, $frame->userId, $frame->acceptKey);
+        $this->answerLibraryAction($frame->acceptKey, $frame->action, $frame->requestId, $frame->outcome);
+    }
+
+    /**
+     * Ends a registration for the browser that won it and for the ones that were racing it.
+     *
+     * The order is the mechanism (HIL-415, HIL-422): mark the winner's sockets, raise its
+     * session, drop the wait of the socket that submitted the proof - its caller is
+     * answered by the reply below rather than by a converge - and only then settle every
+     * other surface standing on the identifier.
+     *
+     * @param AuthRegistrationLandedSignalData $frame Identifier, account, winner, and losers
+     * @throws HilosException On runtime, database, or session failure
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws InvalidArgumentException When a converge or reply frame cannot be named
+     */
+    private function settleLandedRegistration(AuthRegistrationLandedSignalData $frame): void
+    {
+        // Before the sign-in: the surface closes on the session coming up, so the mark has
+        // to be on the sockets by the time that frame goes out (HIL-422).
+        $this->markSessionAck($frame->winnerSessionToken, SessionAck::REGISTERED);
+        $this->authenticateSession($frame->winnerSessionToken, $frame->userId, $frame->initiatorAcceptKey);
+
+        Hilos::$rt->hilosRegistrationWaiters->actions->release($frame->initiatorAcceptKey);
+        $this->convergeRegistration(
+            $frame->identifier,
+            $frame->userId,
+            $frame->initiatorAcceptKey,
+            $frame->winnerSessionToken,
+            $frame->losingSessionTokens,
+        );
+        $this->answerLibraryAction($frame->initiatorAcceptKey, $frame->action, $frame->requestId, $frame->outcome);
+    }
+
+    /**
+     * Opens the password step for a browser whose recovery code was just accepted.
+     *
+     * @param AuthRecoveryGrantedSignalData $frame Address, session, and the answer to give
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When a converge or reply frame cannot be named
+     */
+    private function openRecoveryPasswordStep(AuthRecoveryGrantedSignalData $frame): void
+    {
+        $this->grantRecoveryToSession($frame->identifier, $frame->sessionToken, $frame->initiatorAcceptKey);
+        $this->answerLibraryAction($frame->initiatorAcceptKey, $frame->action, $frame->requestId, $frame->outcome);
+    }
+
+    /**
+     * Returns an account to the browser that reset its password, and takes it from everyone else.
+     *
+     * A reset happens when access has leaked, so it ends with one live session and not with
+     * one more: the saving browser is signed in, the surfaces waiting on the address are
+     * settled, and every OTHER session of the account is dropped to anonymous. The session
+     * that stays is named by the token it holds NOW - the sign-in above rotated it, and the
+     * frame carries the one the browser presented before that (HIL-582).
+     *
+     * @param AuthPasswordChangedSignalData $frame Account, session, address, and the answer to give
+     * @throws HilosException On database, runtime, or session failure
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws InvalidArgumentException When a converge or reply frame cannot be named
+     */
+    private function settleChangedPassword(AuthPasswordChangedSignalData $frame): void
+    {
+        // Before the sign-in, not after: the surface closes on the session coming up, so
+        // the mark has to be on the sockets by the time that frame goes out (HIL-422).
+        $this->markSessionAck($frame->sessionToken, SessionAck::PASSWORD_CHANGED);
+        $this->authenticateSession($frame->sessionToken, $frame->userId, $frame->acceptKey);
+        $this->convergeRecovery($frame->identifier, $frame->sessionToken, $frame->acceptKey);
+        $this->deauthenticateOtherSessions(
+            $frame->userId,
+            Hilos::$rt?->sessionConnectionsSource()?->get($frame->acceptKey)?->sessionToken ?? $frame->sessionToken,
+        );
+        $this->answerLibraryAction($frame->acceptKey, $frame->action, $frame->requestId, $frame->outcome);
+    }
+
+    /**
+     * Forgets the registration one browser walked away from, in every tab of it.
+     *
+     * @param AuthRegistrationAbandonedSignalData $frame Session that walked away and the answer to give
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When a converge or reply frame cannot be named
+     */
+    private function dropAbandonedRegistration(AuthRegistrationAbandonedSignalData $frame): void
+    {
+        $this->abandonRegistration($frame->sessionToken, $frame->initiatorAcceptKey);
+        $this->answerLibraryAction($frame->initiatorAcceptKey, $frame->action, $frame->requestId, $frame->outcome);
+    }
+
+    /**
+     * Answers the sign-in action a frame finished, when there is a caller waiting on it.
+     *
+     * The library deferred its own reply so that the answer would leave from HERE, behind
+     * the identity it announces (HIL-622). Nothing is sent when the frame carries no
+     * request id: the session grant is also the ending of an OAuth login, whose action was
+     * acked as "accepted, working on it" the moment the browser was sent to the provider.
+     *
+     * @param string $acceptKey Accept key of the connection that submitted the action
+     * @param ?string $action Action name the frame finished, or null when it finished none
+     * @param ?string $requestId Request id of the waiting caller, or null when nobody waits
+     * @param ?array<string, mixed> $outcome Where the surface goes next, or null for no domain reply
+     * @throws InvalidArgumentException When the reply frame cannot be named
+     */
+    private function answerLibraryAction(
+        string $acceptKey,
+        ?string $action,
+        ?string $requestId,
+        ?array $outcome,
+    ): void {
+        if ($action === null || $requestId === null) {
+            return;
+        }
+
+        $this->sendActionSuccess(
+            $acceptKey,
+            $action,
+            $requestId,
+            $outcome === null ? null : AuthFlowOutcome::fromArray($outcome),
+        );
+    }
+
+    /**
+     * Reads the connections waiting on one identifier before any of them is released.
+     *
+     * The list is materialized first on purpose: releasing a waiter mutates the collection
+     * a foreach over it would be walking, and the session token has to be read while the
+     * row is still there.
+     *
+     * TWO sources, because the runtime list is a projection and not the truth (HIL-486):
+     * a socket is parked when its session handshakes, so the socket that ASKED for the
+     * code is not in it - it has not handshaken since. The session rows close that gap;
+     * they name the sessions waiting on the address, and every live socket of such a
+     * session is waiting whether or not it was ever parked. Sessions with no live socket
+     * contribute nothing and cost nothing: their tabs are told at the handshake, by the
+     * step the response carries.
+     *
+     * @param string $identifier Normalized identifier being converged
+     * @return array<string, string> Session token by waiting connection accept key
+     * @throws HilosException On runtime failure
+     */
+    private function parkedAcceptKeys(string $identifier): array
+    {
+        $parked = [];
+        foreach (Hilos::$rt->hilosRegistrationWaiters->forIdentifier($identifier) as $waiter) {
+            $parked[$waiter->acceptKey] = $waiter->sessionToken;
+        }
+
+        foreach (Hilos::$db->sessions->findAwaitingRegistration($identifier) as $session) {
+            foreach ($this->sessionConnectionKeys($session->token) as $acceptKey) {
+                $parked[$acceptKey] = $session->token;
+            }
+        }
+
+        return $parked;
+    }
+
+    /**
+     * Reads the connections parked on one recovery before any of them is released.
+     *
+     * The list is materialized first on purpose: releasing a waiter mutates the collection
+     * a foreach over it would be walking, and the session token has to be read while the
+     * row is still there - it is what tells the saver's own tabs from another device's.
+     *
+     * @param string $identifier Normalized identifier being converged
+     * @return array<string, string> Session token by waiting connection accept key
+     * @throws HilosException On runtime failure
+     */
+    private function parkedRecoveryAcceptKeys(string $identifier): array
+    {
+        $parked = [];
+        foreach (Hilos::$rt->hilosRecoveryWaiters->forIdentifier($identifier) as $waiter) {
+            $parked[$waiter->acceptKey] = $waiter->sessionToken;
+        }
+
+        return $parked;
     }
 }

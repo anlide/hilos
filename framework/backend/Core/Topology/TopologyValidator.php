@@ -112,6 +112,7 @@ final class TopologyValidator
             $hilosClass::getAgentActionDtoRoutes(),
             $errors,
         );
+        $this->validateAgentActionGuards($agents, $errors);
         $this->validatePageSignalRoutes($pages, $hilosClass::getPageSignalRoutes(), $errors);
         $this->validatePageSignalDtoRoutes($pages, $hilosClass::getPageSignalDtoRoutes(), $errors);
         $this->validateAgentSignalRoutes(
@@ -1257,6 +1258,46 @@ final class TopologyValidator
             }
             if (($agentActionDtoRoutes[$action] ?? null) !== $declaredDtoRoutes[$action]) {
                 $errors[] = "Agent action DTO route {$action} is missing from computed agent action DTO routes";
+            }
+        }
+    }
+
+    /**
+     * Validates the guard lists an agent declares over its own actions.
+     *
+     * THROTTLED_ACTIONS and AUTH_ACTIONS name actions of the declaring agent, so a name
+     * that is not in its AGENT_ACTIONS guards nothing: the dispatcher looks the lists up
+     * on whoever owns the action being dispatched, and an action owned elsewhere never
+     * asks this agent. A typo there is silent - the action simply runs unguarded - which
+     * is why it is refused at startup instead (HIL-622).
+     *
+     * @param array $agents Agent registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateAgentActionGuards(array $agents, array &$errors): void
+    {
+        foreach ($agents as $agentType => $registryEntry) {
+            $agentClass = AgentRegistry::workerClass($registryEntry);
+            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
+                continue;
+            }
+
+            $guardLists = [
+                'THROTTLED_ACTIONS' => $agentClass::THROTTLED_ACTIONS,
+                'AUTH_ACTIONS' => $agentClass::AUTH_ACTIONS,
+            ];
+            foreach ($guardLists as $listName => $actions) {
+                foreach ($actions as $action) {
+                    if (!is_string($action) || $action === '') {
+                        $errors[] = "AGENTS[{$agentType}] class {$agentClass} {$listName} must list non-empty action names";
+                        continue;
+                    }
+
+                    if (!array_key_exists($action, $agentClass::AGENT_ACTIONS)) {
+                        $errors[] = "AGENTS[{$agentType}] class {$agentClass} {$listName} names {$action}, "
+                            . 'which it does not own through AGENT_ACTIONS';
+                    }
+                }
             }
         }
     }

@@ -37,6 +37,19 @@ abstract class AbstractPageFactory
     }
 
     /**
+     * Returns the agent every page of this factory belongs to.
+     *
+     * The action dispatcher asks for it to learn whether an incoming action is owned by
+     * the agent itself through AGENT_ACTIONS rather than by one of its pages.
+     *
+     * @return PageAgentInterface Agent this factory builds pages for
+     */
+    public function getAgent(): PageAgentInterface
+    {
+        return $this->agent;
+    }
+
+    /**
      * Create page instance (factory method)
      *
      * Must be implemented in child classes to create specific page types.

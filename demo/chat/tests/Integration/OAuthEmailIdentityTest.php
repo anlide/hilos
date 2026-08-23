@@ -9,8 +9,13 @@ use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Actions\Item\UserActions;
 use Demo\Chat\Hilos;
 use Hilos\Auth\OAuth\OAuthUserInfo;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Identity\IdentityType;
@@ -290,14 +295,20 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
     }
 
     /**
-     * Drives the protected completion for a fresh (provider, subject) with a given email and name.
+     * Drives a finished exchange through both halves of the login it ends in.
+     *
+     * The two halves are two agents since HIL-622: the OAuth agent names the account the
+     * provider's way and hands the resolved subject over, the users library decides which
+     * account that is - resolve, collide, or create. A case that ran only the first half
+     * would find no account at all, so this drives the frame between them as the running
+     * node would.
      *
      * @param OAuthAgent $agent Agent under test
      * @param string $provider Provider key the login is coming back from
      * @param string $subject Provider-immutable account subject
      * @param ?string $email Provider-reported email, or null when the provider withheld it
      * @param ?string $name Provider-reported display name, or null when the provider withheld it
-     * @throws HilosException When the completion fails
+     * @throws HilosException When either half of the completion fails
      */
     private function completeLogin(
         OAuthAgent $agent,
@@ -309,6 +320,42 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
         $op = OAuthPendingLogin::create('ak-' . $subject, 'session-' . $subject, $provider, 'code', 0.0);
         $method = new ReflectionMethod(OAuthAgent::class, 'completeOAuthLogin');
         $method->invoke($agent, $op, new OAuthUserInfo($subject, $email, $name));
+        $this->resolveHandedOverLogin();
+    }
+
+    /**
+     * Hands the queued login-ready frame to the library that owns account resolution.
+     *
+     * Signals queued before it are put back: a case reads them after the act, and the
+     * frame is the only one addressed to this hop.
+     *
+     * @throws HilosException When resolving the account fails
+     * @throws AgentUnknownSignalException When the library does not know the frame
+     * @throws InvalidArgumentException When a signal put back on the queue has no name
+     */
+    private function resolveHandedOverLogin(): void
+    {
+        $rest = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
+            if (
+                $signal->data instanceof AgentSignalData
+                && $signal->signalName->getName() === HilosSignalConstants::HILOS_OAUTH_LOGIN_READY
+            ) {
+                $this->usersLibrary()->onSignalAgent(
+                    $signal->data,
+                    '',
+                    HilosSignalConstants::HILOS_OAUTH_LOGIN_READY,
+                );
+
+                continue;
+            }
+
+            $rest[] = $signal;
+        }
+
+        foreach ($rest as $signal) {
+            Hilos::$sr?->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
+        }
     }
 
     /**

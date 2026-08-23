@@ -55,4 +55,7 @@ enum HilosFeature: string
 
     /** Delivery of one-time login codes over a registry of channels (SMS, messengers) and its agent. */
     case CODE_CHANNELS = 'code_channels';
+
+    /** The sign-in surface's commands and the users library that owns them and the user set. */
+    case AUTH = 'auth';
 }

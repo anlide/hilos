@@ -12,7 +12,10 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\ActionHostInterface;
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentException;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Daemon\DaemonManager;
@@ -53,6 +56,12 @@ use Throwable;
  * PageSignalRouter - Routes page signals to page handlers.
  *
  * Resolves page instances and dispatches subscribe/unsubscribe/action events.
+ *
+ * An action is the one frame here whose handler need not be a page: an agent that declares
+ * AGENT_ACTIONS owns actions of its own, and since HIL-622 those come through this same
+ * dispatcher rather than past it. Everything an action meets on the way in - the identity
+ * wait, the throttle park, the auth guard, the tracked reply - is therefore written against
+ * {@see ActionHostInterface} and not against a page.
  */
 class PageSignalRouter
 {
@@ -431,10 +440,11 @@ class PageSignalRouter
     }
 
     /**
-     * Dispatch action signal to page handler
+     * Dispatch action signal to its owner's handler
      *
-     * Resolves page from payload or action route configuration.
-     * Creates ActionPayloadDTO via PageFactory.
+     * Resolves the owner - this router's own agent when it declares the action, else the
+     * page the action route configuration names - and parses the payload into the DTO
+     * that owner declared for the action.
      *
      * When the action carried a client-minted requestId (a tracked action) the
      * framework replies with the action-success ack on success or the
@@ -483,39 +493,91 @@ class PageSignalRouter
      */
     private function runActionFrame(WebSocketActionSignalDTO $data, string $source): void
     {
-        $page = $this->actionRoutes->getPageForAction($data->action);
-
-        if ($page === null) {
-            Logger::error("Action routing failed: action={$data->action}, acceptKey={$data->acceptKey}");
-            return;
-        }
-
-        $pageInstance = $this->resolvePage($page);
-        if ($pageInstance === null) {
+        $host = $this->resolveActionHost($data->action, $data->acceptKey);
+        if ($host === null) {
             return;
         }
 
         $dto = null;
 
         try {
-            // Create typed DTO via PageFactory
-            $dto = $this->pageFactory->createActionPayloadDTO($data->action, $data->data);
-            if ($this->deferForThrottleVerdict($pageInstance, $data, $dto)) {
+            $dto = $this->createActionPayloadDTO($host, $data);
+            if ($this->deferForThrottleVerdict($host, $data, $dto)) {
                 return;
             }
-            $this->runAction($pageInstance, $data->acceptKey, $data->action, $dto, $data->requestId);
+            $this->runAction($host, $data->acceptKey, $data->action, $dto, $data->requestId);
         } catch (Throwable $e) {
-            $this->failAction($pageInstance, $data->acceptKey, $data->action, $dto, $data->requestId, $e);
+            $this->failAction($host, $data->acceptKey, $data->action, $dto, $data->requestId, $e);
         }
+    }
+
+    /**
+     * Finds who owns an incoming action: this router's own agent, or one of its pages.
+     *
+     * The agent is asked first and by its own declaration, because that declaration is
+     * what routed the frame to this agent in the first place; a name it does not claim
+     * belongs to a page exactly as it always did. The two can never both claim a name -
+     * topology validation refuses a project where an action has two owners.
+     *
+     * @param string $action Action name from the frame
+     * @param string $acceptKey Accept key of the connection that sent it, for the log line
+     * @return ?ActionHostInterface Owner of the action, or null when nothing owns it
+     */
+    private function resolveActionHost(string $action, string $acceptKey): ?ActionHostInterface
+    {
+        $agent = $this->pageFactory->getAgent();
+        if ($agent instanceof AbstractAgent && array_key_exists($action, $agent::AGENT_ACTIONS)) {
+            return $agent;
+        }
+
+        $page = $this->actionRoutes->getPageForAction($action);
+        if ($page === null) {
+            Logger::error("Action routing failed: action={$action}, acceptKey={$acceptKey}");
+            return null;
+        }
+
+        return $this->resolvePage($page);
+    }
+
+    /**
+     * Parses one action's payload into the DTO its owner declared for it.
+     *
+     * @param ActionHostInterface $host Owner the action was routed to
+     * @param WebSocketActionSignalDTO $data Action frame as it arrived
+     * @return ActionPayloadDTO Parsed payload
+     * @throws AgentUnknownActionException When an agent-owned action has no computed DTO route
+     * @throws ValidationException When the payload does not match the declared DTO
+     */
+    private function createActionPayloadDTO(ActionHostInterface $host, WebSocketActionSignalDTO $data): ActionPayloadDTO
+    {
+        if (!$host instanceof AbstractAgent) {
+            return $this->pageFactory->createActionPayloadDTO($data->action, $data->data);
+        }
+
+        $dto = Hilos::$sr?->createAgentActionPayloadDTO($data->action, $data->data, $host->getType());
+        if ($dto === null) {
+            // The agent declares this action in AGENT_ACTIONS - that is how it was resolved as
+            // the owner - so the computed route map must carry it too, and topology validation
+            // refuses a project where the two disagree. Reaching here means this process is
+            // routing against a map it does not share.
+            throw new AgentUnknownActionException("Unknown agent action: {$data->action}");
+        }
+
+        return $dto;
     }
 
     /**
      * Runs one action's guards and handler, and answers a tracked caller.
      *
      * Shared by the straight-through dispatch and the resumed one, so a throttled action
-     * meets the same guards in the same order as any other.
+     * meets the same guards in the same order as any other. The access-level guard is the
+     * one step that is not shared: it judges a subscription to a page, and an agent has no
+     * page for it to be asked about.
      *
-     * @param AbstractPage $page Resolved page handler
+     * A handler that finishes its action somewhere else says so, and then nothing is sent
+     * from here: the request id went with the work, and the process doing it answers.
+     *
+     * @param ActionHostInterface $host Owner the action was routed to
      * @param string $acceptKey Acting connection accept key
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Parsed action payload
@@ -525,36 +587,52 @@ class PageSignalRouter
      * @throws Throwable Whatever the action handler raises
      */
     private function runAction(
-        AbstractPage $page,
+        ActionHostInterface $host,
         string $acceptKey,
         string $action,
         ActionPayloadDTO $dto,
         ?string $requestId,
     ): void {
-        $this->assertPageAccessLevel($page, $acceptKey);
-        $this->assertActionAuthorized($page, $action, $acceptKey);
-        $page->beginActionDispatch();
-        $reply = $page->onAction($acceptKey, $action, $dto);
-        if ($requestId !== null) {
-            $page->sendActionSuccess($acceptKey, $action, $requestId, $reply);
-            return;
+        if ($host instanceof AbstractPage) {
+            $this->assertPageAccessLevel($host, $acceptKey);
         }
+        $this->assertActionAuthorized($host, $action, $acceptKey);
+        $host->beginActionDispatch($requestId);
+        try {
+            $reply = $host->runAction($acceptKey, $action, $dto);
+            if ($host->actionReplyDeferred()) {
+                // The handler passed the request id to whoever finishes this action, and
+                // that process answers when it is done. Acking here would put "done" on the
+                // wire in front of the state it announces.
+                return;
+            }
 
-        if ($reply !== null) {
-            // An untracked action has no requestId to correlate a reply to, so a
-            // returned reply cannot be delivered. Almost always an integration
-            // mistake on an answering action; drop it and log rather than fail.
-            Logger::warning(
-                "Action reply dropped: untracked action returned a reply, "
-                    . "page={$page->getPageName()}, action={$action}",
-            );
+            if ($requestId !== null) {
+                $host->sendActionSuccess($acceptKey, $action, $requestId, $reply);
+                return;
+            }
+
+            if ($reply !== null) {
+                // An untracked action has no requestId to correlate a reply to, so a
+                // returned reply cannot be delivered. Almost always an integration
+                // mistake on an answering action; drop it and log rather than fail.
+                Logger::warning(
+                    "Action reply dropped: untracked action returned a reply, "
+                        . "host={$host->actionHostName()}, action={$action}",
+                );
+            }
+        } finally {
+            // After the ack, not before: the success sentence a handler set is read while
+            // it is sent. And whichever way the dispatch left - answered, deferred, thrown -
+            // it is over, so nothing of it stays readable for the next frame to quote.
+            $host->endActionDispatch();
         }
     }
 
     /**
      * Reports one action's failure to its caller and to the log.
      *
-     * @param AbstractPage $page Resolved page handler
+     * @param ActionHostInterface $host Owner the action was routed to
      * @param string $acceptKey Acting connection accept key
      * @param string $action Action name
      * @param ?ActionPayloadDTO $dto Parsed action payload, or null when the payload is what failed
@@ -562,7 +640,7 @@ class PageSignalRouter
      * @param Throwable $e Failure to report
      */
     private function failAction(
-        AbstractPage $page,
+        ActionHostInterface $host,
         string $acceptKey,
         string $action,
         ?ActionPayloadDTO $dto,
@@ -574,7 +652,7 @@ class PageSignalRouter
         // Without this log the failure exists nowhere on the server either, so
         // a broken action is undiagnosable from the outside.
         Logger::error(
-            "Page action failed: page={$page->getPageName()}, action={$action}, "
+            "Action failed: host={$host->actionHostName()}, action={$action}, "
                 . 'exception=' . $e::class . ', message=' . $e->getMessage(),
             [
                 ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
@@ -591,7 +669,7 @@ class PageSignalRouter
         };
         $retryAfter = $e instanceof ActionRateLimitedException ? $e->retryAfter : null;
         if ($requestId !== null) {
-            $page->sendActionFail(
+            $host->sendActionFail(
                 $acceptKey,
                 $action,
                 $requestId,
@@ -603,7 +681,7 @@ class PageSignalRouter
         }
 
         if ($dto !== null) {
-            $page->onActionException($acceptKey, $action, $dto, $e);
+            $host->onActionException($acceptKey, $action, $dto, $e);
         }
     }
 
@@ -618,23 +696,23 @@ class PageSignalRouter
      * able to learn from the guards which accounts exist, and a refusal it never waits for
      * is a refusal it can repeat.
      *
-     * @param AbstractPage $page Resolved page handler
+     * @param ActionHostInterface $host Owner the action was routed to
      * @param WebSocketActionSignalDTO $data Action being dispatched
      * @param ActionPayloadDTO $dto Parsed action payload, held for the resumed dispatch
      * @return bool True when the action has been parked and must not run now
      * @throws ActionRateLimitedException When a block on one of this action's keys is already in force
      */
     private function deferForThrottleVerdict(
-        AbstractPage $page,
+        ActionHostInterface $host,
         WebSocketActionSignalDTO $data,
         ActionPayloadDTO $dto,
     ): bool {
-        if (!in_array($data->action, $page::THROTTLED_ACTIONS, true) || !$this->throttleGate->enabled()) {
+        if (!in_array($data->action, $host->throttledActions(), true) || !$this->throttleGate->enabled()) {
             return false;
         }
 
         $requestKey = $data->acceptKey . '#' . ++$this->deferredSequence;
-        $checks = $this->throttleGate->checksFor($data, $requestKey, $page->getAgent()->getAgentSignalSource());
+        $checks = $this->throttleGate->checksFor($data, $requestKey, $host->getAgentSignalSource());
         if ($checks === []) {
             return false;
         }
@@ -648,7 +726,7 @@ class PageSignalRouter
         }
 
         $this->deferredActions[$requestKey] = new DeferredAction(
-            page: $page,
+            host: $host,
             acceptKey: $data->acceptKey,
             action: $data->action,
             dto: $dto,
@@ -716,7 +794,7 @@ class PageSignalRouter
             unset($this->deferredActions[$requestKey]);
             Logger::error(
                 "Throttle verdict timed out, running the action anyway: "
-                    . "page={$entry->page->getPageName()}, action={$entry->action}, acceptKey={$entry->acceptKey}",
+                    . "host={$entry->host->actionHostName()}, action={$entry->action}, acceptKey={$entry->acceptKey}",
             );
             $this->resumeDeferredAction($entry, null);
         }
@@ -743,9 +821,9 @@ class PageSignalRouter
                     throw new ActionRateLimitedException($refusalSeconds);
                 }
 
-                $this->runAction($entry->page, $entry->acceptKey, $entry->action, $entry->dto, $entry->requestId);
+                $this->runAction($entry->host, $entry->acceptKey, $entry->action, $entry->dto, $entry->requestId);
             } catch (Throwable $e) {
-                $this->failAction($entry->page, $entry->acceptKey, $entry->action, $entry->dto, $entry->requestId, $e);
+                $this->failAction($entry->host, $entry->acceptKey, $entry->action, $entry->dto, $entry->requestId, $e);
             }
         });
     }
@@ -988,22 +1066,22 @@ class PageSignalRouter
     }
 
     /**
-     * Enforces the page's action-level auth guard before the handler runs.
+     * Enforces the host's action-level auth guard before the handler runs.
      *
-     * A page lists write actions that require an authenticated session in its
+     * A page or an agent lists the actions that require an authenticated session in its
      * AUTH_ACTIONS; an anonymous session (no resolvable user) invoking one is
-     * denied a 401 before onAction, for the anonymous-read + authenticated-write
+     * denied a 401 before the handler, for the anonymous-read + authenticated-write
      * model. The connection→user resolution stays project-owned through the
      * browser context seam.
      *
-     * @param AbstractPage $page Resolved page handler
+     * @param ActionHostInterface $host Owner the action was routed to
      * @param string $action Dispatched action name
      * @param string $acceptKey Acting connection accept key
      * @throws ActionUnauthorizedException When a guarded action is invoked by an anonymous session
      */
-    private function assertActionAuthorized(AbstractPage $page, string $action, string $acceptKey): void
+    private function assertActionAuthorized(ActionHostInterface $host, string $action, string $acceptKey): void
     {
-        if (!in_array($action, $page::AUTH_ACTIONS, true)) {
+        if (!in_array($action, $host->authActions(), true)) {
             return;
         }
 

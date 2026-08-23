@@ -11,6 +11,7 @@ use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosGuardianAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosLogsAgent;
+use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Agents\ModeratorAgent;
 use Demo\Chat\Agents\OAuthAgent;
@@ -21,6 +22,7 @@ use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosGuardianAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\LibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ModeratorAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\OAuthAgentDaemon;
@@ -213,6 +215,7 @@ final class Hilos extends HilosFacade
         HilosFeature::LOGS,
         HilosFeature::NOTIFICATIONS,
         HilosFeature::NOTIFICATION_DELIVERY,
+        HilosFeature::AUTH,
         HilosFeature::AUTH_THROTTLE,
         HilosFeature::CODE_CHANNELS,
     ];
@@ -304,6 +307,10 @@ final class Hilos extends HilosFacade
         ChatAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => ChatAgent::class,
             AgentRegistryKey::DAEMON => ChatAgentDaemon::class,
+        ],
+        UsersLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => UsersLibraryAgent::class,
+            AgentRegistryKey::DAEMON => UsersLibraryAgentDaemon::class,
         ],
         LibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => LibraryAgent::class,

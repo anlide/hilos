@@ -32,12 +32,6 @@ use Hilos\Auth\OAuth\StubOAuthProvider;
  */
 final class ChatOAuthConfig
 {
-    /**
-     * Lifetime of an in-flight OAuth exchange op after the callback records it: two
-     * provider round-trips plus slack, after which the async agent abandons it.
-     */
-    public const float EXCHANGE_TTL_MS = 15000.0;
-
     /** Lifetime of a minted `state` token: long enough for a human redirect, short enough to bound replay. */
     private const int STATE_TTL_SECONDS = 600;
 

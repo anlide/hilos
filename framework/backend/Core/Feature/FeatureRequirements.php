@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Feature;
 
+use Hilos\Auth\Session\HilosSessionHostInterface;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Table\Definition\TableDefinition;
 
@@ -39,6 +40,7 @@ final readonly class FeatureRequirements
      *     demo test)
      * @param list<string> $requiredCliCommands CLI command names the feature is driven by (checked by the demo test)
      * @param bool $requiresPresenceSource Whether a runtime collection must report user presence (checked by the demo test)
+     * @param bool $requiresSessionHost Whether some agent in AGENTS must implement {@see HilosSessionHostInterface}
      */
     public function __construct(
         public array $requiredPages = [],
@@ -50,6 +52,7 @@ final readonly class FeatureRequirements
         public array $requiredDbTables = [],
         public array $requiredCliCommands = [],
         public bool $requiresPresenceSource = false,
+        public bool $requiresSessionHost = false,
     ) {
     }
 }

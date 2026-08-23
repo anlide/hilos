@@ -243,9 +243,10 @@ implementing leaf's business, not a decision this approach makes.
 rather than historical: the person is not named until the command succeeds, the
 account a registration creates does not exist before it, and the identifier
 lookup in front of the form is a search across the whole set. So the users
-library owns the sign-in commands. The door itself is built by HIL-622, onto the
-unit named here; the handlers live in `demo/chat/backend/Pages/MainPage.php` and
-`demo/chat/backend/Agents/ChatAgent.php` today.
+library owns the sign-in commands. The door itself was built by HIL-622, onto the
+unit named here: the handlers live in `framework/backend/Auth/Library/` now, and a
+project reaches them by declaring `HilosFeature::AUTH` rather than by writing a
+page of its own.
 
 When an instance owner writes its own row, it tells the holder with an explicit
 agent signal:
@@ -416,3 +417,6 @@ Answer `SUBSCRIPTION_PAGE_ERROR`. An empty list is a claim about the data.
   reaches a browser once a holder answers for the set.
 - [../signals/subscriptions.md](../signals/subscriptions.md) — one page
   subscription answers with everything the page renders.
+- `framework/backend/Auth/Library/AbstractUsersLibraryAgent.php` — the first
+  entity library in code (HIL-622): the users library, its command groups, and
+  the frames it hands a finished sign-in to the session holder with.

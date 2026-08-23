@@ -26,6 +26,16 @@ final class OAuthPendingLogin extends RtState
     /** Runtime collection key registered by the project and used for RT sync. */
     public const string RT_COLLECTION = 'hilosOAuthPendingLogins';
 
+    /**
+     * Lifetime of an in-flight exchange op after the callback records it: two provider
+     * round-trips plus slack, after which the agent abandons it.
+     *
+     * It bounds a framework mechanism - how long the agent keeps chasing a provider that
+     * stopped answering - so the framework sets it rather than asking each project for a
+     * number it has no way to judge.
+     */
+    public const float EXCHANGE_TTL_MS = 15000.0;
+
     /** Flow mode: a plain sign-in exchange (the default). */
     public const string MODE_LOGIN = 'login';
 
