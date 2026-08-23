@@ -72,10 +72,10 @@ final class TelegramGatewayClientTest extends TestCase
 
     public function testACustomEndpointIsHonoredWithItsSchemePortAndBasePath(): void
     {
-        $client = $this->client(endpointUrl: 'http://telegram-mock-test:18000/gw');
+        $client = $this->client(endpointUrl: 'http://stand-gateway-test:18000/gw');
         $request = $client->buildCheckSendAbility(self::PHONE);
 
-        self::assertSame('telegram-mock-test', $request->host);
+        self::assertSame('stand-gateway-test', $request->host);
         self::assertSame(18000, $request->port);
         self::assertFalse($request->useTls);
         self::assertSame('/gw' . TelegramGatewayClient::PATH_CHECK_SEND_ABILITY, $request->path);

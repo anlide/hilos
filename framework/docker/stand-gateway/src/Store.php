@@ -2,15 +2,19 @@
 
 declare(strict_types=1);
 
-namespace Hilos\MockTelegram;
+namespace Hilos\StandGateway;
 
 /**
- * Store - the mock Gateway's state, which has to survive between requests.
+ * Store - the stand gateway's state, which has to survive between requests.
  *
  * PHP's built-in server re-enters the script for every request and keeps nothing in
- * memory, so "what arrived" and "which numbers are declared absent from Telegram"
- * live in one JSON file under an exclusive lock. That is the whole of the storage
- * design, and it is enough: one runner, a few dozen writes per suite.
+ * memory, so "which numbers are declared absent from Telegram" lives in one JSON file
+ * under an exclusive lock. That is the whole of the storage design, and it is enough:
+ * one runner, a few writes per suite.
+ *
+ * What arrived is deliberately NOT here (HIL-653). A caught message leaves as a letter
+ * to Mailpit, so the readable side of every channel is the inbox a person already
+ * opens, and this file holds only the one thing a spec has to arrange up front.
  *
  * The file is deliberately not a volume. State that outlives the container would
  * make a spec's outcome depend on what an earlier run left behind, which is exactly
@@ -19,33 +23,7 @@ namespace Hilos\MockTelegram;
 final class Store
 {
     /** Path of the state file inside the container. */
-    private const string PATH = '/tmp/mock-telegram-state.json';
-
-    /**
-     * Records one delivered verification message.
-     *
-     * @param string $phoneNumber Recipient number as the Gateway was given it
-     * @param array<string, mixed> $message Message fields a spec may read back
-     */
-    public static function addMessage(string $phoneNumber, array $message): void
-    {
-        self::mutate(static function (array $state) use ($phoneNumber, $message): array {
-            $state['messages'][$phoneNumber][] = $message;
-
-            return $state;
-        });
-    }
-
-    /**
-     * Reads every message delivered to one number, oldest first.
-     *
-     * @param string $phoneNumber Recipient number
-     * @return list<array<string, mixed>> Messages, empty when nothing arrived
-     */
-    public static function messages(string $phoneNumber): array
-    {
-        return self::read()['messages'][$phoneNumber] ?? [];
-    }
+    private const string PATH = '/tmp/stand-gateway-state.json';
 
     /**
      * Declares whether a number can be reached on Telegram.
@@ -77,26 +55,27 @@ final class Store
     }
 
     /**
-     * Forgets everything: no messages, no declared numbers.
+     * Forgets every declared number.
      */
     public static function reset(): void
     {
-        self::mutate(static fn(): array => ['messages' => [], 'reachable' => []]);
+        self::mutate(static fn(): array => ['reachable' => []]);
     }
 
     /**
-     * @return array{messages: array<string, list<array<string, mixed>>>, reachable: array<string, bool>} Current state
+     * @return array{reachable: array<string, bool>} Current state
      */
     private static function read(): array
     {
         $handle = @fopen(self::PATH, 'r');
         if ($handle === false) {
-            return ['messages' => [], 'reachable' => []];
+            return ['reachable' => []];
         }
 
         // Shared lock, because mutate() truncates before it writes: an unlocked read
-        // landing in that window sees an empty file and answers "nothing arrived" for
-        // a message that is there, which reads as a flaky test rather than as a race.
+        // landing in that window sees an empty file and answers "reachable" for a
+        // number a spec declared absent, which reads as a flaky test rather than as
+        // a race.
         flock($handle, LOCK_SH);
         $raw = stream_get_contents($handle);
         flock($handle, LOCK_UN);
@@ -104,7 +83,7 @@ final class Store
 
         $decoded = json_decode((string)$raw, true);
 
-        return is_array($decoded) ? $decoded + ['messages' => [], 'reachable' => []] : ['messages' => [], 'reachable' => []];
+        return is_array($decoded) ? $decoded + ['reachable' => []] : ['reachable' => []];
     }
 
     /**
@@ -122,7 +101,7 @@ final class Store
         flock($handle, LOCK_EX);
         $raw = stream_get_contents($handle);
         $decoded = json_decode((string)$raw, true);
-        $state = is_array($decoded) ? $decoded + ['messages' => [], 'reachable' => []] : ['messages' => [], 'reachable' => []];
+        $state = is_array($decoded) ? $decoded + ['reachable' => []] : ['reachable' => []];
 
         $state = $change($state);
 

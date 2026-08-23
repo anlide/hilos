@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Hilos\MockTelegram;
+namespace Hilos\StandGateway;
 
 /**
  * Router - method + exact path to a handler, and a JSON answer.
  *
- * The mock has a fixed handful of routes and no path parameters, so matching is an
+ * The gateway has a fixed handful of routes and no path parameters, so matching is an
  * exact comparison; anything cleverer would be scaffolding for a server that will
  * never grow one.
  */

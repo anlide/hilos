@@ -11,9 +11,8 @@ use Hilos\Auth\OAuth\OfflineOAuthProvider;
  *
  * The offline counterpart of {@see HttpSmsProvider}, mirroring
  * {@see OfflineOAuthProvider}: it resolves the send synchronously with no
- * network I/O. {@see StubSmsProvider} is the dev/e2e implementation - it writes a verifiable
- * .txt artifact (and a masked log line) instead of calling a gateway, the SMS analogue of the
- * file mail transport.
+ * network I/O. {@see StubSmsProvider} is the one implementation - it writes a masked log line
+ * instead of calling a gateway, so a project with no gateway configured still runs.
  */
 interface DirectSmsProvider extends SmsProviderInterface
 {

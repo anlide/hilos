@@ -1,20 +1,21 @@
-import { expect } from '@playwright/test'
-import { readdir, readFile } from 'node:fs/promises'
+import { waitForAnyMailTo } from './mail'
 
-// The stand's SMS interceptor, such as it is. The stub provider (SMS_PROVIDER
-// auto-selects it with no gateway configured) writes every message as a .txt
-// artifact under SMS_FILE_DIR, which the daemon and the runner see through the
-// same repo bind mount — so the artifact directory is to SMS what Mailpit's HTTP
-// API is to mail (helpers/mail.ts), and the only readable side of a channel that
-// has no API at all.
-const SMS_DIR = process.env.SMS_ARTIFACT_DIR ?? '/hilos/demo/chat/data/sms'
-
-// Artifact layout, written by StubSmsProvider::write():
-//   To: +100000000000
-//   From: ...
-//   Text: Your verification code is: 123456
-const RECIPIENT_LINE = /^To: (.+)$/m
-const CODE_IN_TEXT = /^Text:.*?(\d{4,})\s*$/m
+// The stand's SMS interceptor (HIL-653). The daemon posts every message to the
+// stand gateway with the generic HTTP provider, and the gateway forwards what it
+// caught to Mailpit as a letter addressed <E.164>@sms.stand — so SMS is read
+// exactly where mail is read (helpers/mail.ts), by this helper and by a person
+// with the mailbox open in a browser.
+//
+// Reading the code back through the transport is the point: the daemon really
+// built a request, really posted it, and the gateway really answered. A helper
+// that read the challenge out of the database instead would pass with the whole
+// transport removed.
+//
+// It replaced the .txt artifacts this helper first read. Those proved only that
+// the stub had written a file, they were unreachable on a local stand, and two
+// of them from an earlier run were once mistaken for the code a person had just
+// asked for — which is the whole reason the recipient now names the channel.
+const SMS_MAIL_DOMAIN = 'sms.stand'
 
 /**
  * A phone number no other run holds, so a login mints a fresh passwordless user
@@ -35,55 +36,23 @@ export function uniquePhone(): string {
 }
 
 /**
- * Wait for the code the stub texted to one number, and return it.
+ * Wait for the code the stand texted to one number, and return it.
+ *
+ * The code is read off the subject, which the gateway writes as the message text
+ * itself — the same line a person reads out of the mailbox list without opening
+ * anything. The body cannot be matched on loosely: it names the recipient and the
+ * time above the text, and a bare digit-run would answer with the phone number.
  *
  * @param phone Recipient number in canonical E.164, as `uniquePhone` produces it.
  * @returns The plaintext verification code.
- * @throws Error When the artifact turns out to carry no code.
+ * @throws Error When the delivered message carries no code.
  */
 export async function waitForSmsCode(phone: string): Promise<string> {
-  await expect
-    .poll(async () => (await readCode(phone)) !== null, {
-      message: `no SMS to ${phone} was written under ${SMS_DIR}`,
-    })
-    .toBe(true)
-
-  const code = await readCode(phone)
-  if (code === null) {
-    throw new Error(`SMS artifact for ${phone} carried no code`)
+  const mail = await waitForAnyMailTo(`${phone}@${SMS_MAIL_DOMAIN}`)
+  const code = /(\d{4,})/.exec(mail.subject)?.[1]
+  if (code === undefined) {
+    throw new Error(`the SMS to ${phone} carried no code`)
   }
 
   return code
-}
-
-/**
- * Read the code out of the artifact written for one number, if it is there yet.
- *
- * The directory does not exist until the first message is written, and that is a
- * "not yet", not a failure — a poll that threw on it would fail the wait before
- * the daemon ever got to send.
- *
- * @param phone Recipient number to match against the artifact's `To:` line.
- * @returns The code, or null while no artifact for this number carries one.
- */
-async function readCode(phone: string): Promise<string | null> {
-  let names: string[]
-  try {
-    names = await readdir(SMS_DIR)
-  } catch {
-    return null
-  }
-
-  for (const name of names) {
-    const content = await readFile(`${SMS_DIR}/${name}`, 'utf8')
-    if (RECIPIENT_LINE.exec(content)?.[1] !== phone) {
-      continue
-    }
-    const code = CODE_IN_TEXT.exec(content)?.[1]
-    if (code !== undefined) {
-      return code
-    }
-  }
-
-  return null
 }

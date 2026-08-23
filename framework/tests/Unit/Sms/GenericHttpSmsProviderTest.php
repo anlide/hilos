@@ -115,7 +115,6 @@ final class GenericHttpSmsProviderTest extends TestCase
             from: 'HILOS',
             timeoutMs: 5000,
             maxLength: 160,
-            fileDir: '',
             apiKey: 'secret-key',
             apiPassword: 'secret-pass',
         );

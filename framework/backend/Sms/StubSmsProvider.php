@@ -4,26 +4,27 @@ declare(strict_types=1);
 
 namespace Hilos\Sms;
 
-use Hilos\Mail\FileMailTransport;
 use Hilos\Utils\Logger;
 
 /**
- * StubSmsProvider - a dev/e2e provider that writes each message as a .txt file (HIL-285).
+ * StubSmsProvider - the safe default for a project with no SMS gateway (HIL-285, HIL-653).
  *
  * The auto provider when no gateway endpoint is configured, and the explicit choice under
- * SMS_PROVIDER=stub. It writes the message to the stub directory as a verifiable artifact -
- * the SMS analogue of {@see FileMailTransport} - so dev and e2e can assert a code
- * was "sent" without a real gateway or a live number. The artifact carries the full message
- * (dev reads it); the log line never does - only the masked number and length, so an Auth
- * code routed as a raw send is never exposed. The send settles synchronously.
+ * SMS_PROVIDER=stub. It sends nothing and reports the send settled, so a project that has
+ * not bought a gateway yet runs its login and notification flows instead of failing on
+ * them. The log line carries only the masked number and the text length - never the text,
+ * so an Auth code routed as a raw send is not exposed in a log a whole team reads.
+ *
+ * What it is NOT is a way to read a code. It used to write each message as a .txt artifact,
+ * and that artifact was mistaken for a readable channel: it was absent on a local stand,
+ * it landed in the work tree owned by the container's user, and a stale one from an earlier
+ * run was once read as the code a person had just asked for. Reading is the stand gateway's
+ * job now (framework/docker/stand-gateway), which forwards a caught message to the stand's
+ * Mailpit as a letter - so a stand that wants to read its SMS configures an endpoint, and
+ * the stub is left meaning exactly one thing.
  */
 final class StubSmsProvider implements DirectSmsProvider
 {
-    public function __construct(
-        private readonly SmsChannelConfig $config,
-    ) {
-    }
-
     /**
      * @return string The `stub` provider key
      */
@@ -33,49 +34,18 @@ final class StubSmsProvider implements DirectSmsProvider
     }
 
     /**
-     * Writes the message as a .txt artifact (when a directory is configured) and logs it masked.
+     * Logs the message masked and reports the send settled.
      *
      * @param SmsMessage $message Recipient message to send
-     * @param float $nowMs Current time in milliseconds, used to name the artifact
-     * @return SmsSendResult Delivered on success, or a permanent failure when the write fails
+     * @param float $nowMs Current time in milliseconds, unused by a provider that sends nothing
+     * @return SmsSendResult Always delivered
      */
     public function send(SmsMessage $message, float $nowMs): SmsSendResult
     {
-        $fileDir = $this->config->fileDir;
-        if ($fileDir !== null && $fileDir !== '') {
-            $result = $this->write($message, $nowMs, $fileDir);
-            if (!$result->delivered) {
-                return $result;
-            }
-        }
-
         Logger::info(
             'SMS delivered (stub)',
             ['to' => SmsText::maskNumber($message->to), 'length' => mb_strlen($message->text)],
         );
-
-        return SmsSendResult::delivered();
-    }
-
-    /**
-     * Writes the message to a uniquely named .txt artifact in the stub directory.
-     *
-     * @param SmsMessage $message Recipient message to write
-     * @param float $nowMs Current time in milliseconds, used to name the artifact
-     * @param string $fileDir Stub directory the caller has already confirmed is configured
-     * @return SmsSendResult Delivered on success, or a permanent failure when the write fails
-     */
-    private function write(SmsMessage $message, float $nowMs, string $fileDir): SmsSendResult
-    {
-        if (!is_dir($fileDir) && !mkdir($fileDir, 0o775, true) && !is_dir($fileDir)) {
-            return SmsSendResult::failed('sms file directory is not writable', true);
-        }
-
-        $content = "To: {$message->to}\nFrom: {$this->config->from}\nText: {$message->text}\n";
-        $path = $fileDir . '/' . (int)$nowMs . '-' . substr(hash('sha256', $content), 0, 16) . '.txt';
-        if (file_put_contents($path, $content) === false) {
-            return SmsSendResult::failed('sms file could not be written', true);
-        }
 
         return SmsSendResult::delivered();
     }

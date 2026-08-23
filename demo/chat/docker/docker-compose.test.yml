@@ -62,20 +62,26 @@ services:
     networks:
       - hilos-chat-test-network
 
-  # The stand's Telegram Gateway (HIL-492): the daemon points the code channel's
-  # transport here, so a Telegram login is a real HTTP exchange whose result the
-  # Playwright runner reads back over the mock's test routes - the messenger
-  # analogue of Mailpit above, since a messenger has no inbox a spec can open.
-  # Built from the framework so all three demos can adopt it unchanged. No host
-  # ports: nothing outside the stack talks to it.
-  telegram-mock-test:
+  # The stand's gateway for every non-mail channel (HIL-492, HIL-653): the daemon
+  # points the SMS and Telegram transports here, so a login over either is a real
+  # HTTP exchange, and everything the gateway catches it forwards to mailpit-test
+  # as a letter. That is why there is no reader beside it - what arrived is read
+  # in the same inbox as mail, by the runner and by a person alike. Built from the
+  # framework so all three demos can adopt it unchanged. No host ports: nothing
+  # outside the stack talks to it.
+  stand-gateway-test:
     build:
-      context: ../../../framework/docker/mock-telegram
-    container_name: chat-telegram-mock-test
+      context: ../../../framework/docker/stand-gateway
+    container_name: chat-stand-gateway-test
     environment:
+      MAILPIT_SMTP_HOST: mailpit-test
+      MAILPIT_SMTP_PORT: 1025
       TZ: UTC
+    depends_on:
+      mailpit-test:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"http://127.0.0.1:18000/test/messages?phone_number=health\") === false ? 1 : 0);'"]
+      test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"http://127.0.0.1:18000/test/health\") === false ? 1 : 0);'"]
       interval: 2s
       timeout: 5s
       retries: 30
@@ -132,17 +138,18 @@ services:
       - MAIL_SMTP_SECURITY=none
       - MAIL_FROM_ADDRESS=notifications@chat.test
       - MAIL_FROM_NAME=Hilos Chat
-      # SMS (HIL-558): the stub provider writes each message as a .txt artifact,
-      # which is how a spec reads a login code back — the SMS analogue of the mail
-      # interceptor above, and the only readable side of a channel that has no API.
-      # The directory sits under the repo bind mount (..:/app), so the Playwright
-      # runner sees the same files at /hilos/demo/chat/data/sms.
-      - SMS_FILE_DIR=/app/data/sms
-      # Telegram Gateway (HIL-492): the stand's own mock, which is the only reason
-      # the endpoint is configurable at all. The token is what makes the channel
-      # configured - the mock refuses a call that carries no bearer, so a daemon
+      # SMS (HIL-653): a non-empty endpoint is what selects the generic HTTP
+      # provider over the stub, so the daemon really posts the message and the
+      # stand gateway really mails it on. The URL is the send route in full — the
+      # generic provider posts to the endpoint exactly as configured, the way a
+      # real gateway's endpoint is a whole address rather than a base.
+      - SMS_ENDPOINT_URL=http://stand-gateway-test:18000/sms/send
+      # Telegram Gateway (HIL-492): the stand's own gateway, which is the only
+      # reason the endpoint is configurable at all. The channel prefix is the base
+      # the client appends its method paths to. The token is what makes the channel
+      # configured - the gateway refuses a call that carries no bearer, so a daemon
       # that forgot its credentials fails here rather than in production.
-      - TELEGRAM_GATEWAY_ENDPOINT_URL=http://telegram-mock-test:18000
+      - TELEGRAM_GATEWAY_ENDPOINT_URL=http://stand-gateway-test:18000/telegram
       - TELEGRAM_GATEWAY_TOKEN=stand-gateway-token
       - TELEGRAM_GATEWAY_SENDER_USERNAME=HilosChat
     command: ["php", "backend/Bootstrap/docker.php"]
@@ -151,7 +158,7 @@ services:
         condition: service_healthy
       mailpit-test:
         condition: service_healthy
-      telegram-mock-test:
+      stand-gateway-test:
         condition: service_healthy
     ports:
       - "${HILOS_BIND_HOST:-127.0.0.1}:${HTTP_TEST_PORT:-8095}:8090"
@@ -252,12 +259,11 @@ services:
       # The mail interceptor's HTTP API, which the notification-delivery spec
       # reads to prove a message left the node (HIL-558).
       MAILPIT_URL: http://mailpit-test:8025
-      # The daemon's SMS_FILE_DIR as the runner sees it through the repo mount:
-      # the stub provider's .txt artifacts are how a spec reads a login code back.
-      SMS_ARTIFACT_DIR: /hilos/demo/chat/data/sms
-      # The mock Gateway's test routes: how a spec reads a Telegram code back and
-      # declares a number absent from Telegram (HIL-492).
-      TELEGRAM_MOCK_URL: http://telegram-mock-test:18000
+      # The stand gateway's test routes: how a spec declares a number absent from
+      # Telegram and wipes what it declared (HIL-492, HIL-653). Reading a code
+      # back needs nothing here — an SMS and a Telegram code arrive as mail, so
+      # both are read over MAILPIT_URL above.
+      STAND_GATEWAY_URL: http://stand-gateway-test:18000
     profiles:
       - e2e
     networks:

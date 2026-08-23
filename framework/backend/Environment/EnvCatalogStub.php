@@ -338,7 +338,6 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::SMS_API_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::SMS_TIMEOUT_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 10000, emptyIsMissing: true),
             EnvConstants::SMS_WORKER_COUNT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 1, emptyIsMissing: true),
-            EnvConstants::SMS_FILE_DIR->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::VAPID_PUBLIC->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::VAPID_PRIVATE->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::VAPID_SUBJECT->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),

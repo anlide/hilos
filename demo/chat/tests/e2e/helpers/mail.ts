@@ -85,6 +85,37 @@ export async function waitForMailTo(
 }
 
 /**
+ * Wait until the interceptor holds any message for this recipient, and return
+ * the newest one.
+ *
+ * The read a channel letter needs (HIL-653). The stand gateway forwards a caught
+ * SMS or Telegram message under the message's own text as its subject, so there
+ * is no fixed subject to wait on — the recipient is the whole of the match, and
+ * that is enough for the same reason it is enough above: every spec coins an
+ * address no other one uses.
+ *
+ * @param address Recipient address, as the gateway addressed it.
+ * @returns The newest message's subject and plain-text body.
+ * @throws Error When the message vanishes between the poll and the read.
+ */
+export async function waitForAnyMailTo(
+  address: string,
+): Promise<InterceptedMail> {
+  await expect
+    .poll(async () => (await entriesTo(address)).length, {
+      message: `no mail to ${address} reached the interceptor`,
+    })
+    .toBeGreaterThan(0)
+
+  const [entry] = await entriesTo(address)
+  if (entry === undefined) {
+    throw new Error(`mail to ${address} disappeared`)
+  }
+
+  return readMessage(entry.ID)
+}
+
+/**
  * Wait for a verification code the product mailed, and return it.
  *
  * The `auth.*` templates all frame one numeric code in prose

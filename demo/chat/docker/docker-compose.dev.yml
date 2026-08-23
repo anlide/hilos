@@ -35,6 +35,15 @@ services:
       - MAIL_SMTP_HOST=${MAIL_SMTP_HOST:-mailpit-dev}
       - MAIL_SMTP_PORT=${MAIL_SMTP_PORT:-1025}
       - MAIL_SMTP_SECURITY=${MAIL_SMTP_SECURITY:-none}
+      # SMS and Telegram go to the stand's own gateway, which mails them on to the
+      # same interceptor (HIL-653). A non-empty SMS endpoint is what picks the
+      # generic HTTP provider over the stub, so the message really travels; the
+      # Telegram token is fake but non-empty, because the gateway refuses a call
+      # that carries no bearer and a daemon without credentials should fail here.
+      - SMS_ENDPOINT_URL=${SMS_ENDPOINT_URL:-http://stand-gateway-dev:18000/sms/send}
+      - TELEGRAM_GATEWAY_ENDPOINT_URL=${TELEGRAM_GATEWAY_ENDPOINT_URL:-http://stand-gateway-dev:18000/telegram}
+      - TELEGRAM_GATEWAY_TOKEN=${TELEGRAM_GATEWAY_TOKEN:-stand-gateway-token}
+      - TELEGRAM_GATEWAY_SENDER_USERNAME=${TELEGRAM_GATEWAY_SENDER_USERNAME:-HilosChat}
       # WebSocket ports (when implemented)
       # - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
       # - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
@@ -65,6 +74,26 @@ services:
       # Host-side of every publish binds to loopback by default; set
       # HILOS_BIND_HOST to expose this stack to a LAN/tailnet.
       - "${HILOS_BIND_HOST:-127.0.0.1}:${MAILPIT_HTTP_PORT:-8028}:8025"
+    restart: unless-stopped
+    networks:
+      - hilos-demo-chat-dev-network
+
+  # The stand's gateway for every non-mail channel (HIL-653): the daemon points
+  # its SMS and Telegram transports here, and everything the gateway catches it
+  # forwards to mailpit-dev as a letter. That is the whole point — a code sent to
+  # a phone is read in the browser beside the mailed ones, instead of being
+  # unreachable on this stand. Not published on the host: it is talked to by the
+  # daemon, and read through Mailpit's UI above.
+  stand-gateway-dev:
+    build:
+      context: ../../../framework/docker/stand-gateway
+    container_name: chat-stand-gateway-dev
+    environment:
+      MAILPIT_SMTP_HOST: mailpit-dev
+      MAILPIT_SMTP_PORT: 1025
+      TZ: UTC
+    depends_on:
+      - mailpit-dev
     restart: unless-stopped
     networks:
       - hilos-demo-chat-dev-network

@@ -1,12 +1,6 @@
 mysql/
 ollama/
 
-# Stub SMS provider artifacts (SMS_FILE_DIR): a verification text dumped as a
-# file instead of being sent, on the dev stand and on the e2e stand alike. Mail
-# has no counterpart here — it goes to the stand's interceptor over SMTP, so it
-# never touches the work tree (P-062).
-sms/
-
 # Chat file uploads (quarantine + published); keep .gitkeep so empty dirs stay tracked
 chat_attachments/quarantine/*
 chat_attachments/published/*

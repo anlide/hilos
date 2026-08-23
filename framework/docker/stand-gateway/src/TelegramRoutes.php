@@ -2,55 +2,55 @@
 
 declare(strict_types=1);
 
-namespace Hilos\MockTelegram;
+namespace Hilos\StandGateway;
 
 /**
- * GatewayServer - the mock Gateway's routes, provider and test side in one place.
+ * TelegramRoutes - the Telegram Gateway the stand pretends to be (HIL-492).
  *
- * Both halves are declared together on purpose (the shape the hleb mock server
- * established): the provider endpoints the daemon calls, and the test endpoints the
- * Playwright runner calls to see what the provider did. A spec has no other way to
- * look inside a messenger - there is no inbox to open - so the readable side has to
- * be built into the fake, exactly as Mailpit's HTTP API is the readable side of mail.
+ * The provider half answers what framework/backend/Telegram/TelegramGatewayClient calls,
+ * under a `/telegram` prefix so the next channel can have its own (HIL-653): the whole
+ * exchange is real HTTP, so a login proves the daemon built a request, posted it, and
+ * read the envelope back.
  *
- * What it deliberately DOES check is the bearer token. A mock that accepted anything
+ * What it deliberately DOES check is the bearer token. A gateway that accepted anything
  * would let a stand pass with a daemon that sends no credentials at all, which is a
- * failure mode worth catching here rather than in production.
+ * failure mode worth catching here rather than in production. The arrangement route
+ * beside it carries no token: it is called by a spec, not by the product.
  *
  * What it does not model: balances, message revocation, and the Gateway's own
- * verification status. Hilos verifies its own codes, so those are surface the
- * framework never touches, and faking them would invite someone to rely on them.
+ * verification status. Hilos verifies its own codes, so those are surface the framework
+ * never touches, and faking them would invite someone to rely on them.
  */
-final class GatewayServer
+final class TelegramRoutes
 {
+    /** Channel name, which becomes the mail domain a caught code is read under. */
+    public const string CHANNEL = 'telegram';
+
     /** Refusal the Gateway gives for a number that is not on Telegram. */
     private const string ERROR_NOT_FOUND = 'PHONE_NUMBER_NOT_FOUND';
 
     /** Refusal the Gateway gives when the bearer token is missing or empty. */
     private const string ERROR_TOKEN = 'ACCESS_TOKEN_INVALID';
 
-    private Router $router;
+    /** Refusal this stand gives when the caught code never reached the mailbox. */
+    private const string ERROR_FORWARD_FAILED = 'MAIL_FORWARD_FAILED';
 
-    public function __construct()
-    {
-        $this->router = new Router();
-
-        // Provider side: what framework/backend/Telegram/TelegramGatewayClient calls.
-        $this->router->add('POST', '/checkSendAbility', $this->checkSendAbility(...));
-        $this->router->add('POST', '/sendVerificationMessage', $this->sendVerificationMessage(...));
-
-        // Test side: what a spec calls to read the messenger and to arrange a number.
-        $this->router->add('GET', '/test/messages', $this->testMessages(...));
-        $this->router->add('POST', '/test/reachable', $this->testReachable(...));
-        $this->router->add('POST', '/test/reset', $this->testReset(...));
-    }
+    /** Status a failed forward answers with: the upstream this gateway depends on would not take it. */
+    private const int STATUS_BAD_GATEWAY = 502;
 
     /**
-     * Serves the current request.
+     * Registers the channel's provider and arrangement routes.
+     *
+     * @param Router $router Router the gateway dispatches through
      */
-    public function run(): void
+    public function register(Router $router): void
     {
-        $this->router->dispatch();
+        // Provider side: what framework/backend/Telegram/TelegramGatewayClient calls.
+        $router->add('POST', '/telegram/checkSendAbility', $this->checkSendAbility(...));
+        $router->add('POST', '/telegram/sendVerificationMessage', $this->sendVerificationMessage(...));
+
+        // Test side: the one thing a spec cannot arrange any other way.
+        $router->add('POST', '/telegram/test/reachable', $this->testReachable(...));
     }
 
     /**
@@ -82,11 +82,14 @@ final class GatewayServer
     }
 
     /**
-     * Delivers one code, recording it where the test side can read it.
+     * Delivers one code, forwarding it to the stand's mailbox before it answers.
      *
      * Reachability is re-checked here rather than trusted from the probe: a spec that
      * declares a number absent between the two calls should see the send refused, which
-     * is the real Gateway's behavior and the only way this mock can be wrong safely.
+     * is the real Gateway's behavior and the only way this fake can be wrong safely.
+     *
+     * The Gateway carries a code and not free text, so the code is what becomes the
+     * letter - a person reads it out of the subject the way they read a mailed one.
      *
      * @param array<string, mixed> $fields Request fields
      * @return array<string, mixed> Gateway envelope
@@ -102,14 +105,16 @@ final class GatewayServer
             return ['ok' => false, 'error' => self::ERROR_NOT_FOUND];
         }
 
+        try {
+            MailForwarder::forward(self::CHANNEL, $phoneNumber, (string)($fields['code'] ?? ''));
+        } catch (MailForwardException $exception) {
+            error_log('stand gateway could not forward a Telegram code: ' . $exception->getMessage());
+            http_response_code(self::STATUS_BAD_GATEWAY);
+
+            return ['ok' => false, 'error' => self::ERROR_FORWARD_FAILED];
+        }
+
         $requestId = (string)($fields['request_id'] ?? '');
-        Store::addMessage($phoneNumber, [
-            'phone_number' => $phoneNumber,
-            'code' => (string)($fields['code'] ?? ''),
-            'sender_username' => (string)($fields['sender_username'] ?? ''),
-            'request_id' => $requestId,
-            'received_at' => time(),
-        ]);
 
         return [
             'ok' => true,
@@ -121,17 +126,6 @@ final class GatewayServer
                 'delivery_status' => ['status' => 'sent', 'updated_at' => time()],
             ],
         ];
-    }
-
-    /**
-     * Test route: what "arrived" on one number.
-     *
-     * @param array<string, mixed> $fields Request fields
-     * @return array<string, mixed> Messages delivered to the number
-     */
-    private function testMessages(array $fields): array
-    {
-        return ['messages' => Store::messages((string)($fields['phone_number'] ?? ''))];
     }
 
     /**
@@ -148,19 +142,6 @@ final class GatewayServer
         }
 
         Store::setReachable($phoneNumber, (bool)($fields['reachable'] ?? true));
-
-        return ['ok' => true];
-    }
-
-    /**
-     * Test route: forget every message and every declared number.
-     *
-     * @param array<string, mixed> $fields Request fields (unused)
-     * @return array<string, mixed> Acknowledgement
-     */
-    private function testReset(array $fields): array
-    {
-        Store::reset();
 
         return ['ok' => true];
     }

@@ -22,10 +22,10 @@ use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
  * hybrid by design (HIL-200): the operational fields (endpoint, method, auth mode, field map,
  * success rule, from, timeout, max length) are layered settings-override -> env -> descriptor
  * default by {@see ChannelConfigResolver} through the channel's own {@see ChannelConfigField}
- * list, while the gateway secrets ({@see $apiKey}, {@see $apiPassword}) and the provider/file
+ * list, while the gateway secrets ({@see $apiKey}, {@see $apiPassword}) and the provider
  * selection live only in env. {@see provider} pins the driver (`generic` or `stub`); left empty
  * it auto-selects the stub whenever {@see endpointUrl} is empty, so a project with no gateway
- * still writes a verifiable .txt artifact. Tests build one directly.
+ * sends nothing rather than failing. Tests build one directly.
  */
 final class SmsChannelConfig
 {
@@ -67,8 +67,6 @@ final class SmsChannelConfig
      * @param string $from Sender id applied to outgoing messages, or empty for none
      * @param int $timeoutMs Per-send timeout in milliseconds
      * @param int $maxLength Single-segment GSM-7 length budget
-     * @param ?string $fileDir Directory the stub writes .txt artifacts to, null when there is no
-     *                         env accessor at all
      * @param ?string $apiKey Gateway API key/token (env-only secret), null when there is no env
      *                        accessor at all
      * @param ?string $apiPassword Gateway API password for basic auth (env-only secret), null when
@@ -84,7 +82,6 @@ final class SmsChannelConfig
         public readonly string $from,
         public readonly int $timeoutMs,
         public readonly int $maxLength,
-        public readonly ?string $fileDir,
         public readonly ?string $apiKey,
         public readonly ?string $apiPassword,
     ) {
@@ -121,7 +118,6 @@ final class SmsChannelConfig
             from: $string(SmsDeliveryChannel::FIELD_FROM),
             timeoutMs: $int(SmsDeliveryChannel::FIELD_TIMEOUT_MS),
             maxLength: max(1, $int(SmsDeliveryChannel::FIELD_MAX_LENGTH)),
-            fileDir: self::envString(EnvConstants::SMS_FILE_DIR),
             apiKey: self::envString(EnvConstants::SMS_API_KEY),
             apiPassword: self::envString(EnvConstants::SMS_API_PASSWORD),
         );

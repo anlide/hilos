@@ -7,8 +7,8 @@ namespace Hilos\Sms;
 /**
  * SmsProviderRegistry - selects the SMS provider for a resolved config (HIL-285).
  *
- * The one place the provider is chosen: the dev/e2e {@see StubSmsProvider} when the config
- * resolves to the stub (explicit `stub`, or no endpoint), otherwise the config-driven
+ * The one place the provider is chosen: the send-nothing {@see StubSmsProvider} when the
+ * config resolves to the stub (explicit `stub`, or no endpoint), otherwise the config-driven
  * {@see GenericHttpSmsProvider}. It is the extension seam for vendor providers with richer
  * semantics (delivery-status callbacks): a project subclasses it and overrides
  * {@see httpProviderFor()} to return its own {@see HttpSmsProvider} keyed by the config's
@@ -25,7 +25,7 @@ class SmsProviderRegistry
     public function providerFor(SmsChannelConfig $config): SmsProviderInterface
     {
         if ($config->usesStub()) {
-            return new StubSmsProvider($config);
+            return new StubSmsProvider();
         }
 
         return $this->httpProviderFor($config);

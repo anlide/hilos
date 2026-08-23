@@ -696,9 +696,6 @@ enum EnvConstants
      */
     case SMS_WORKER_COUNT;
 
-    /** @var string Directory the stub provider writes .txt artifacts to; empty writes none. */
-    case SMS_FILE_DIR;
-
     // ── Telegram Gateway: one-time codes to a phone number (HIL-492) ─────────
 
     /**

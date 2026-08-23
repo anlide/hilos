@@ -78,6 +78,26 @@ services:
     networks:
       - hilos-demo-chat-local-network
 
+  # The stand's gateway for every non-mail channel (HIL-653): the daemon points
+  # its SMS and Telegram transports here, and everything the gateway catches it
+  # forwards to mailpit-local as a letter. That is the whole point — a code sent
+  # to a phone is read in the browser beside the mailed ones, instead of being
+  # unreachable on a local stack. Not published on the host: it is talked to by
+  # the daemon, and read through Mailpit's UI above.
+  stand-gateway-local:
+    build:
+      context: ../../../framework/docker/stand-gateway
+    container_name: chat-stand-gateway-local
+    environment:
+      MAILPIT_SMTP_HOST: mailpit-local
+      MAILPIT_SMTP_PORT: 1025
+      TZ: UTC
+    depends_on:
+      - mailpit-local
+    restart: unless-stopped
+    networks:
+      - hilos-demo-chat-local-network
+
   chat-local:
     build: .
     env_file:
@@ -117,6 +137,15 @@ services:
       - MAIL_SMTP_HOST=${MAIL_SMTP_HOST:-mailpit-local}
       - MAIL_SMTP_PORT=${MAIL_SMTP_PORT:-1025}
       - MAIL_SMTP_SECURITY=${MAIL_SMTP_SECURITY:-none}
+      # SMS and Telegram go to the stack's own gateway, which mails them on to the
+      # same interceptor (HIL-653). A non-empty SMS endpoint is what picks the
+      # generic HTTP provider over the stub, so the message really travels; the
+      # Telegram token is fake but non-empty, because the gateway refuses a call
+      # that carries no bearer and a daemon without credentials should fail here.
+      - SMS_ENDPOINT_URL=${SMS_ENDPOINT_URL:-http://stand-gateway-local:18000/sms/send}
+      - TELEGRAM_GATEWAY_ENDPOINT_URL=${TELEGRAM_GATEWAY_ENDPOINT_URL:-http://stand-gateway-local:18000/telegram}
+      - TELEGRAM_GATEWAY_TOKEN=${TELEGRAM_GATEWAY_TOKEN:-stand-gateway-token}
+      - TELEGRAM_GATEWAY_SENDER_USERNAME=${TELEGRAM_GATEWAY_SENDER_USERNAME:-HilosChat}
       - LLM_LOCAL_URL=${LLM_LOCAL_URL:-http://host.docker.internal:11434}
       - CHAT_CONTEXT_ANALYZER_URL=${CHAT_CONTEXT_ANALYZER_URL:-}
       - CHAT_CONTEXT_ANALYZER_MODEL=${CHAT_CONTEXT_ANALYZER_MODEL:-qwen2.5:7b}
@@ -130,6 +159,7 @@ services:
     depends_on:
       - mysql-local
       - mailpit-local
+      - stand-gateway-local
     ports:
       # Expose ports to host for local frontend access
       - "${HILOS_BIND_HOST:-127.0.0.1}:${HTTP_STATUS_PORT:-8090}:${HTTP_STATUS_PORT:-8090}"
