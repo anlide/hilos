@@ -44,6 +44,7 @@ Both exceptions are about `git commit` only. The push ban has none.
 | [architecture/protected-mode.md](docs/agents/architecture/protected-mode.md) | freezing a node for a destructive operation: the unconditional freeze row and its RtContext boundary, the agent-only entry with CLI as trigger, fail-closed guards, what null means to the RT readers |
 | [architecture/backup-anonymization.md](docs/agents/architecture/backup-anonymization.md) | declaring a project's PII registry, classifying a new table or column, choosing an anonymization strategy, reading a refusal from the coverage or compatibility gate |
 | [architecture/filesystem-watch.md](docs/agents/architecture/filesystem-watch.md) | making an agent notice a change on disk it did not make itself: the one door over inotify and polling, the discard-then-read ordering, the coalescing window and the periodic backstop |
+| [architecture/entity-libraries.md](docs/agents/architecture/entity-libraries.md) | an entity is read or written by something other than the owner of its instance — lists, searches, creation, commands with no addressee: one entity one library, the two placement axes, the read path, and the refusal on an incomplete set |
 
 ## Framework Development
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos App Data Access"
   short_description: "Use Hilos::$db, Hilos::$rt, and topology from app code"
-  default_prompt: "Use $hilos-app-data-access to read and write Hilos DB/RT state from pages, tables, agents, actions, and topology-aware callers."
+  default_prompt: "Use $hilos-app-data-access to read and write Hilos DB/RT state from pages, tables, agents, actions, and topology-aware callers, or when you need every row of an entity or a row that has no owner yet."

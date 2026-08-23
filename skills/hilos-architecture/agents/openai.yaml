@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos Architecture"
   short_description: "Daemon, worker, lifecycle, and event-loop rules"
-  default_prompt: "Use $hilos-architecture to modify Hilos lifecycle or event-loop behavior."
+  default_prompt: "Use $hilos-architecture to modify Hilos lifecycle or event-loop behavior, or to decide which node of a cluster runs an agent or holds an entity."

@@ -1,6 +1,6 @@
 ---
 name: hilos-app-data-access
-description: Use Hilos::$db and Hilos::$rt correctly from application code. Use when reading DB or runtime data in pages, tables, agents, action handlers, table actions, signal handlers, page/table topology code, or when choosing collection access, item access, action calls, settings access, existing magic/result accessors, array access, or find helpers.
+description: Use Hilos::$db and Hilos::$rt correctly from application code. Use when reading DB or runtime data in pages, tables, agents, action handlers, table actions, signal handlers, page/table topology code, or when choosing collection access, item access, action calls, settings access, existing magic/result accessors, array access, or find helpers. Use it too when you need every row of an entity — a list, a search, a count — or need to create a row that has no owner yet.
 ---
 
 # Hilos App Data Access
@@ -21,6 +21,8 @@ switch to the focused data-layer skill first.
   `docs/agents/app-topology.md`.
 - Choosing between magic, array, result, and `findBy*()` access:
   use `$hilos-accessor-contracts`.
+- Reading a whole set of an entity, or writing a row that has no owner yet:
+  `docs/agents/architecture/entity-libraries.md`.
 - Page action routing and action error behavior:
   `docs/agents/code-style/page-action-handlers.md`.
 - Signal routing and DTO payloads: use `$hilos-signals`.
@@ -39,6 +41,10 @@ switch to the focused data-layer skill first.
 - On a cluster, an `Hilos::$rt` collection is shared by every node, but only the
   node hosting its truth source writes it; everywhere else it is a read-only
   replica kept current by the daemon. Reads look the same on every node.
+- A *set* of an entity is not the rows this process happens to hold. Ask the
+  agent that holds that set, or query the database; iterating a lazy collection
+  returns whatever was loaded earlier, and the end of it cannot be told apart
+  from the end of the table (`docs/agents/architecture/entity-libraries.md`).
 - Collection access is for loading and querying groups of items.
 - Item access is for reading one loaded model and its item-level calculated
   properties.
@@ -238,6 +244,9 @@ then call that API from the table/page.
 - Do not duplicate project page or table registries in caller code; use the
   project `Hilos` topology registry.
 - Do not store durable business state in `Hilos::$rt`.
+- Do not answer a list, a search or a count by iterating a lazy DB collection,
+  and do not call `loadAllFromDB()` to get one: ask the agent holding that set,
+  or run a query such as `queryPageItems()` or a typed `listBy*()`.
 - Do not write an RT collection this node does not own; send a signal to the
   owning agent instead. The write fails with
   `RtTruthSourceWriteNotAllowedException`, on a cluster as off it.
