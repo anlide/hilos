@@ -37,6 +37,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Http\RootInfoHandler;
+use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
@@ -110,6 +111,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
@@ -1413,6 +1415,24 @@ abstract class DaemonManager extends BaseManager implements
                 $this->sendSyncToWorkers($workerServer, $signal);
                 $this->handleDaemonSignal($signal);
                 $this->broadcastRtSyncToPeers($peerServer, $signal);
+            }
+
+            // The access re-decision announcement is fanned out and nothing more (HIL-644): the
+            // master resolves nobody, so it neither applies the fact to itself nor tells its
+            // peers - a tab on another node is not reached by the other half of the operation
+            // either. It sits beside the sync branch rather than inside it because that branch
+            // also self-applies and announces to the mesh, and both would be wrong here.
+            if ($signal->signalType->getType() === SignalTypeConstants::PAGE_ACCESS_REASSESS_USER) {
+                if ($signal->data instanceof PageAccessReassessUserSignalData) {
+                    $this->writeFrameToWorkers(
+                        $workerServer,
+                        new WorkerPageAccessReassessMessageDTO($signal->data->userId),
+                    );
+                } else {
+                    Logger::error(
+                        'dispatchSignals - access re-decision carries invalid data: ' . get_class($signal->data),
+                    );
+                }
             }
 
             // Get destinations for signal

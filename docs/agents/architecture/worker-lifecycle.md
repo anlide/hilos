@@ -20,6 +20,7 @@ Workers are forked by `WorkerServer` on demand. Two types exist: **regular** and
 | `AgentStopDTO` | Stop & remove agent |
 | `WorkerDbSyncCreated/Updated/Deleted/ClearedMessageDTO` | Apply DB sync to local context |
 | `WorkerRtSyncCreated/Updated/DeletedMessageDTO` | Apply RT sync to local context |
+| `WorkerPageAccessReassessMessageDTO` | Sweep this worker's page subscriptions for the named user (HIL-644) |
 | `SystemSignalDTO` | System signals |
 | `CronSignalDTO` | Route cron to agent |
 

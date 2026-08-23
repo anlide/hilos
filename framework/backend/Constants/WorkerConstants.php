@@ -62,6 +62,9 @@ final class WorkerConstants
     /** @var string Project signal broadcast from the master to every worker of this node (daemon -> worker) */
     public const string MESSAGE_DAEMON_WORKER_SIGNAL = 'daemon_worker_signal';
 
+    /** @var string Access re-decision announcement (worker -> daemon -> workers); canonical value in SignalTypeConstants */
+    public const string MESSAGE_PAGE_ACCESS_REASSESS_USER = SignalTypeConstants::PAGE_ACCESS_REASSESS_USER;
+
     /** @var string DB sync created (daemon/worker broadcast); canonical value in SignalTypeConstants */
     public const string MESSAGE_DB_SYNC_CREATED = SignalTypeConstants::DB_SYNC_CREATED;
 

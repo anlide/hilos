@@ -9,6 +9,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\ReHydrateRound;
 use Hilos\Environment\Exception\EnvException;
@@ -27,6 +28,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModePassDTO;
@@ -152,7 +154,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * @throws InvalidFormatException When a frame does not decode, names no known type,
      *     or lacks a field its DTO needs
      * @throws AgentDaemonCreationFailedException When agent creation fails during message handling
-     * @throws HilosException When buffered wire input refuses to become a DTO
+     * @throws HilosException When buffered wire input refuses to become a DTO, or a re-queued
+     *     frame carries an empty signal name
      */
     protected function processReadBuffer(): void
     {
@@ -173,6 +176,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * @param string $message Complete JSON message payload
      * @throws InvalidFormatException When a frame does not decode, names no known type,
      *     or lacks a field its DTO needs
+     * @throws InvalidArgumentException When a frame the master re-queues carries an empty signal name
      * @throws AgentDaemonCreationFailedException When agent creation fails during message handling
      */
     private function processMessage(string $message): void
@@ -194,6 +198,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerDbSyncDeletedMessageDTO => $this->handleWorkerDbSyncDeletedMessage($workerDTO),
             $workerDTO instanceof WorkerDbSyncClearedMessageDTO => $this->handleWorkerDbSyncClearedMessage($workerDTO),
             $workerDTO instanceof WorkerDbReHydrateMessageDTO => $this->handleWorkerDbReHydrateMessage($workerDTO),
+            $workerDTO instanceof WorkerPageAccessReassessMessageDTO
+                => $this->handleWorkerPageAccessReassessMessage($workerDTO),
             $workerDTO instanceof WorkerDbReHydratedDTO => $this->handleWorkerDbReHydratedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncCreatedMessageDTO => $this->handleWorkerRtSyncCreatedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncUpdatedMessageDTO => $this->handleWorkerRtSyncUpdatedMessage($workerDTO),
@@ -318,6 +324,22 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     private function handleWorkerDbReHydrateMessage(WorkerDbReHydrateMessageDTO $dto): void
     {
         $this->agentManager->handleWorkerDbReHydrate($dto->agentId);
+    }
+
+    /**
+     * Handle the access re-decision announcement from a worker (HIL-644).
+     *
+     * The frame names a person and no page, because the announcing worker holds neither the
+     * other workers' subscriptions nor an answer to who is behind a connection. Nothing is
+     * decided here: the master queues the fact and fans it back out to every worker of the
+     * node, each of which sweeps its own mirror.
+     *
+     * @param WorkerPageAccessReassessMessageDTO $dto Announcement naming the user whose rights changed
+     * @throws InvalidArgumentException When the queued announcement carries an empty name
+     */
+    private function handleWorkerPageAccessReassessMessage(WorkerPageAccessReassessMessageDTO $dto): void
+    {
+        $this->agentManager->handleWorkerPageAccessReassess($dto);
     }
 
     /**

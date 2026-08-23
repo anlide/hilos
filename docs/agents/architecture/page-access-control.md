@@ -250,19 +250,36 @@ tabs what they may now show:
 - a project routing its own grant command starts it there — the chat demo's
   `ChatAgent::handleSetAdmin` is the worked example.
 
-`PageAccessReassessment::forUser($userId)` walks the live page subscriptions, reads
-each accept key through `BrowserContext::connectionIdentity`, and queues one
-`page_access_reassess` frame per page that user has open. Each frame is routed
-exactly like the subscribe it re-judges — to the page's own agent, by the same
-page→agent resolution — and answered by the same code, so allow sends a full
+`PageAccessReassessment::forUser($userId)` queues one `page_access_reassess_user`
+announcement naming that person and returns. Each worker of the node then runs
+`PageAccessReassessment::sweepThisWorker($userId)` over its own live page
+subscriptions, reads each accept key through `BrowserContext::connectionIdentity`,
+and queues one `page_access_reassess` frame per page that user has open there. Each
+frame is routed exactly like the subscribe it re-judges — to the page's own agent, by
+the same page→agent resolution — and answered by the same code, so allow sends a full
 `page_response` and deny sends the `subscription_page_error` the same verdict would
 have produced at subscribe. One path, one shape on the wire.
 
-What the sweep WALKS is the subscription mirror of the worker it is called in — the
-same worker-local mirror the browser fan-out uses — so it reaches the pages served
-by agents in that worker. Delivery is global, enumeration is not: start the sweep
-from the agent that writes the rights, and expect it to cover the pages that
-agent's worker serves.
+**Announcing and sweeping are two steps because they live in two processes** (HIL-644).
+The pages of one person are spread across every worker of the node, while who is behind
+a connection can be answered only where a browser context is mounted — in a worker. So
+the writing worker announces, the master fans the announcement out to every worker link,
+and each worker sweeps the mirror it owns. The re-decision therefore reaches every open
+page of that person, wherever it is served, and not merely the pages of the worker that
+happened to write the rights.
+
+The master's part is one buffered write per worker and nothing else: it resolves no
+identity, walks no registry, and holds no reverse "connections of user X" lookup — that
+would be a second source of truth beside `BrowserContext::connectionIdentity`. The
+announcement is queued in the master rather than acted on at receipt, because the
+database sync of the flag that was just written rides the same queue in front of it; a
+frame acted on at receipt would overtake the sync and set a worker re-deciding against a
+flag it has not seen change.
+
+**The reach is node-local, and that is the whole operation's reach.** The other half of a
+rights change — the handshake re-send — is delivered by this node's WebSocket server, so a
+tab on another node never learns of the grant, never waits for an answer, and keeps the
+honest 403 it already had. Making the pair cross-node is one subject, not half of one.
 
 **A re-decision is not a re-subscribe.** The frame never passes through
 `DaemonManager::updateSubscriptions`, because a real re-subscribe carries three

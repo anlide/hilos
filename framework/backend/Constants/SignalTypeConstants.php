@@ -38,6 +38,19 @@ final class SignalTypeConstants
      */
     public const string PAGE_ACCESS_REASSESS = 'page_access_reassess';
 
+    /**
+     * Access re-decision announcement (server-internal, never reaches a browser).
+     *
+     * Names one person whose rights just changed and nothing else. The worker that wrote
+     * the rights announces it once; the master writes it to every worker of this node; each
+     * worker sweeps its own subscription mirror and turns the matches into PAGE_ACCESS_REASSESS
+     * frames ({@see PageAccessReassessment}). It exists because identity is resolved in a
+     * worker while the pages of one person are spread across all of them.
+     *
+     * @var string
+     */
+    public const string PAGE_ACCESS_REASSESS_USER = 'page_access_reassess_user';
+
     /** @var string Page unsubscribe signal type */
     public const string PAGE_UNSUBSCRIBE = 'page_unsubscribe';
 

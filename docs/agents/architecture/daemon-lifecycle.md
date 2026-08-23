@@ -224,6 +224,14 @@ the signal's source and type decide where it goes, and a destination that change
 the topology stays a routing rule instead of becoming a call site. This facade is the
 imperative exception for the case routing cannot express.
 
+**The framework's own worker broadcasts do not go through this door** — the access
+re-decision announcement (HIL-644) carries its own frame and its own branch in the
+dispatch pass. `sendToWorkers()` lands on `onDaemonSignal()`, which its own docblock
+declares to be the project's hook and one the framework sends nothing through: a project
+overriding it without calling `parent::` would silently kill a framework mechanism it
+never knew it was standing on. A framework fan-out gets a named frame instead, which no
+override can intercept.
+
 ### Answering a contained failure (HIL-619)
 
 The master swallows what belongs to one connection so the node keeps serving the rest.

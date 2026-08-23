@@ -71,14 +71,39 @@ test('shuts the open backup page the moment the admin flag is revoked', async ({
   // the whole point. The page shows the same 403 a fresh subscribe would have
   // answered with, and the archive list is gone rather than hidden behind it.
   // This is the losing half, which the client draws ahead of the server. The
-  // gaining half needs the server's answer to pass at all, and is covered in
-  // demo/tasks/tests/e2e/tests/users.spec.ts.
+  // gaining half needs the server's answer to pass at all, and stands directly
+  // below - in chat it also crosses two workers (HIL-644).
   const error = page.getByTestId('page-error')
   await expect(error).toBeVisible()
   await expect(error).toHaveAttribute('data-error-code', '403')
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
   await expect(page.getByTestId('hilos-backup-create')).toHaveCount(0)
   await expect(page.locator('[data-id^="hilos-backup-restore-"]')).toHaveCount(0)
+})
+
+test('opens the refused backup page the moment admin is granted', async ({
+  page,
+}) => {
+  // HIL-644 acceptance, and the case the revoke above cannot make: the gaining
+  // half only ever arrives from the server, so nothing the client draws by itself
+  // can stand in for it. In chat it also crosses two workers - /hilos/backup is
+  // served by hilos_index while setAdmin is written in the chat worker - which is
+  // exactly the seam that made HIL-621's sweep miss this page and leave a spinner
+  // where the honest 403 used to be.
+  const { userId } = await signUp(page)
+  await gotoPage(page, '/hilos/backup')
+  const error = page.getByTestId('page-error')
+  await expect(error).toBeVisible()
+  await expect(error).toHaveAttribute('data-error-code', '403')
+
+  await setAdmin(userId, true)
+
+  // No gotoPage and no reload between the grant and these assertions, same as the
+  // revoke above: the page is re-answered where it stands. The table appearing is
+  // the whole verdict arriving - a page payload the client had no way to invent.
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+  await expect(error).toHaveCount(0)
+  await expect(page.getByTestId('hilos-backup-create')).toBeVisible()
 })
 
 test('creates a backup, shows it as a completed row, and deletes it', async ({

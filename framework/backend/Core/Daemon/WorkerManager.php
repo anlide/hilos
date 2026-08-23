@@ -32,7 +32,9 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
+use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
@@ -82,6 +84,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncMessageInterface;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
@@ -434,7 +437,7 @@ abstract class WorkerManager extends BaseManager
      * @throws AgentCreationFailedException When agent creation fails
      * @throws PageSignalRouterNotFoundException When page routing is requested for an unsupported agent
      * @throws TableRowKeyMissingException When a windowed table row is a placeholder and carries no key
-     * @throws InvalidArgumentException When a command handler cannot name its reply
+     * @throws InvalidArgumentException When a command handler cannot name its reply, or a re-decision its page
      * @throws HilosException When a collection refuses to be re-read from the replaced database
      */
     public function handleDaemonMessage(WorkerDTO $data): void
@@ -496,6 +499,14 @@ abstract class WorkerManager extends BaseManager
                     break;
                 }
                 $this->onDaemonSignal($data->signalName, $data->data);
+                break;
+
+            case WorkerConstants::MESSAGE_PAGE_ACCESS_REASSESS_USER:
+                if (!$data instanceof WorkerPageAccessReassessMessageDTO) {
+                    Logger::error("sweepThisWorker - unexpected type: " . get_class($data));
+                    break;
+                }
+                PageAccessReassessment::sweepThisWorker($data->userId);
                 break;
 
             case WorkerConstants::MESSAGE_DB_SYNC_CREATED:
@@ -1988,6 +1999,18 @@ abstract class WorkerManager extends BaseManager
                     $this->daemonClient->send(new WorkerDbReHydrateMessageDTO($signal->data->agentId));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - re-hydrate carries invalid data: ' . get_class($signal->data));
+                }
+                continue;
+            }
+
+            // The access re-decision announcement is addressed to "every worker of this node",
+            // which only the master can address - so it is a control frame and deliberately not
+            // the WorkerAgentMessageDTO fallback below, which needs an agent to address (HIL-644).
+            if ($signalType === SignalTypeConstants::PAGE_ACCESS_REASSESS_USER) {
+                if ($signal->data instanceof PageAccessReassessUserSignalData) {
+                    $this->daemonClient->send(new WorkerPageAccessReassessMessageDTO($signal->data->userId));
+                } else {
+                    Logger::error('dispatchQueuedSignalsToDaemon - access re-decision carries invalid data: ' . get_class($signal->data));
                 }
                 continue;
             }

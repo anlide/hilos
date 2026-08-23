@@ -26,6 +26,9 @@ final class SignalConstants
     /** @var string DB re-hydrate signal name; canonical value in SignalTypeConstants */
     public const string DB_REHYDRATE = SignalTypeConstants::DB_REHYDRATE;
 
+    /** @var string Access re-decision announcement signal name; canonical value in SignalTypeConstants */
+    public const string PAGE_ACCESS_REASSESS_USER = SignalTypeConstants::PAGE_ACCESS_REASSESS_USER;
+
     /** @var string RT sync signal names (operation); canonical values in SignalTypeConstants */
     public const string RT_SYNC_CREATED = SignalTypeConstants::RT_SYNC_CREATED;
     public const string RT_SYNC_UPDATED = SignalTypeConstants::RT_SYNC_UPDATED;

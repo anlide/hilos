@@ -8,6 +8,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -25,6 +26,11 @@ use PHPUnit\Framework\TestCase;
  * project seam is called, and that the seam's outcome - refusal, failure, success - always
  * becomes exactly one reply. The write itself belongs to a project and is exercised by the
  * demo runs.
+ *
+ * A write that lands announces it (HIL-644), so the successful branches queue the access
+ * re-decision announcement first and the reply second. The refusing branches read their reply
+ * straight off the queue, which is what pins that nothing was announced for a write that never
+ * happened.
  */
 final class AdminGrantCommandRouteTest extends TestCase
 {
@@ -55,6 +61,7 @@ final class AdminGrantCommandRouteTest extends TestCase
             AdminCommandConstants::FIELD_ADMIN => true,
         ]);
 
+        $this->consumeAnnouncement(7);
         $reply = $this->consumeReply();
         self::assertTrue($reply->isOk());
         self::assertSame([7, true], $agent->applied);
@@ -73,6 +80,7 @@ final class AdminGrantCommandRouteTest extends TestCase
             AdminCommandConstants::FIELD_ADMIN => false,
         ]);
 
+        $this->consumeAnnouncement(7);
         $reply = $this->consumeReply();
         self::assertTrue($reply->isOk());
         self::assertSame([7, false], $agent->applied);
@@ -150,6 +158,19 @@ final class AdminGrantCommandRouteTest extends TestCase
             '',
             '',
         );
+    }
+
+    /**
+     * Takes the access re-decision announcement the grant queued ahead of its reply.
+     *
+     * @param int $userId User the announcement must name
+     */
+    private function consumeAnnouncement(int $userId): void
+    {
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($signal, 'A write that landed announces it');
+        self::assertInstanceOf(PageAccessReassessUserSignalData::class, $signal->data);
+        self::assertSame($userId, $signal->data->userId);
     }
 
     /**

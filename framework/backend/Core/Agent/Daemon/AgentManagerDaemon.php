@@ -10,6 +10,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentDaemonNotRegisteredException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
@@ -30,6 +31,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
@@ -388,6 +390,28 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
             signalType: new SignalType(SignalTypeConstants::DB_SYNC_CREATED),
             signalName: new SignalName(SignalConstants::DB_SYNC_CREATED),
             signalData: $dto->signalData,
+        );
+    }
+
+    /**
+     * Handle the access re-decision announcement from a worker (HIL-644).
+     *
+     * It queues; it must not act. The database sync of the flag that was just written travels
+     * this same queue and was queued ahead of the announcement, so both leave the writing
+     * worker in that order, are drained here in that order, and are written to each worker
+     * link in that order. A frame acted on at receipt would overtake the sync, and a worker
+     * would then re-decide the verdict against a flag it has not seen change.
+     *
+     * @param WorkerPageAccessReassessMessageDTO $dto DTO naming the user whose rights changed
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
+     */
+    public function handleWorkerPageAccessReassess(WorkerPageAccessReassessMessageDTO $dto): void
+    {
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::WORKER),
+            signalType: new SignalType(SignalTypeConstants::PAGE_ACCESS_REASSESS_USER),
+            signalName: new SignalName(SignalConstants::PAGE_ACCESS_REASSESS_USER),
+            signalData: new PageAccessReassessUserSignalData($dto->userId),
         );
     }
 

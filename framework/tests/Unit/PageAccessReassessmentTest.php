@@ -21,6 +21,7 @@ use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\PageAccessLevel;
@@ -36,12 +37,14 @@ use Hilos\Hilos;
 use RuntimeException;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Tests both ends of the access re-decision (HIL-621): the sweep that queues one frame per
- * open page of the user whose rights changed, and the receiving end that re-runs the
- * subscribe verdict for it.
+ * Tests every end of the access re-decision (HIL-621, HIL-644): the announcement one worker
+ * queues when a person's rights change, the frame that starts a worker's own sweep, the sweep
+ * that queues one re-decision per open page of that person, and the receiving end that re-runs
+ * the subscribe verdict for it.
  *
  * The receiving end is driven through the worker manager rather than the router alone,
  * because half of what makes a re-decision different from a re-subscribe lives there: the
@@ -63,12 +66,52 @@ final class PageAccessReassessmentTest extends TestCase
         parent::tearDown();
     }
 
+    /**
+     * The announcing half names a person and nothing else. It walks no subscription and asks
+     * nobody's identity - the worker that writes the rights is not the one that holds the
+     * pages - so an open page of that very user must not be answered here.
+     */
+    public function testTheAnnouncementQueuesOneSignalNamingTheUserAndNoReDecision(): void
+    {
+        $this->subscribe('ak-private', ReassessTestPrivatePage::PAGE, []);
+
+        PageAccessReassessment::forUser(ReassessTestBrowser::USER);
+
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertInstanceOf(SignalDTO::class, $signal);
+        $this->assertSame(SignalTypeConstants::PAGE_ACCESS_REASSESS_USER, $signal->signalType->getType());
+        $this->assertSame(SignalConstants::PAGE_ACCESS_REASSESS_USER, $signal->signalName->getName());
+        $this->assertInstanceOf(PageAccessReassessUserSignalData::class, $signal->data);
+        $this->assertSame(ReassessTestBrowser::USER, $signal->data->userId);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    /**
+     * The receiving end of the announcement: the frame the master fans out to every worker
+     * link starts that worker's own sweep, for the person the frame names and no other.
+     */
+    public function testTheAnnouncementFrameStartsThisWorkersSweep(): void
+    {
+        // The manager's constructor registers its own router globally, so the subscriptions
+        // have to be written into the mirror it left behind, not the one setUp made.
+        $manager = new ReassessTestManager();
+        $this->subscribe('ak-private', ReassessTestPrivatePage::PAGE, []);
+        $this->subscribe('ak-stranger', ReassessTestPrivatePage::PAGE, []);
+
+        $manager->handleDaemonMessage(new WorkerPageAccessReassessMessageDTO(ReassessTestBrowser::USER));
+
+        $this->assertSame(
+            [['ak-private', ReassessTestPrivatePage::PAGE, []]],
+            $this->queuedReassessments(),
+        );
+    }
+
     public function testTheSweepQueuesOneFramePerOpenPageOfThatUser(): void
     {
         $this->subscribe('ak-guarded', ReassessTestGuardedPage::PAGE, ['userId' => '5']);
         $this->subscribe('ak-private', ReassessTestPrivatePage::PAGE, []);
 
-        PageAccessReassessment::forUser(ReassessTestBrowser::USER);
+        PageAccessReassessment::sweepThisWorker(ReassessTestBrowser::USER);
 
         $queued = $this->queuedReassessments();
         $this->assertCount(2, $queued);
@@ -90,7 +133,7 @@ final class PageAccessReassessmentTest extends TestCase
         $this->subscribe('ak-stranger', ReassessTestPrivatePage::PAGE, []);
         $this->subscribe('ak-pending', ReassessTestPrivatePage::PAGE, []);
 
-        PageAccessReassessment::forUser(ReassessTestBrowser::USER);
+        PageAccessReassessment::sweepThisWorker(ReassessTestBrowser::USER);
 
         $this->assertSame([], $this->queuedReassessments());
     }
