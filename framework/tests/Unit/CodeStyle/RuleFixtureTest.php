@@ -13,6 +13,7 @@ use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
 use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\MalformedInputMarkerRule;
+use Hilos\Tests\CodeStyle\Rule\ObjectStoreMutationRule;
 use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
@@ -284,6 +285,18 @@ final class RuleFixtureTest extends TestCase
                 'WIRE-KEY-CASE Bad/WireKeyCaseSamples.php:21 — field key \'default_kind\' is not camelCase; '
                     . 'one spelling has to serve PHP, the wire and TS '
                     . '(see docs/agents/code-style/cross-layer-field-names.md)',
+                'DB-OBJECT-MUTATE Database/Object/Collection/ObjectStoreMutate.php:26 — $this->objects is '
+                    . 'written directly outside Objects; go through $this[$id] = $object for a new row, or '
+                    . 'hydrate() for a row read out of storage (see docs/agents/orm/object.md)',
+                'DB-OBJECT-MUTATE Database/Object/Collection/ObjectStoreMutate.php:27 — $this->objects is '
+                    . 'written directly outside Objects; go through $this[$id] = $object for a new row, or '
+                    . 'hydrate() for a row read out of storage (see docs/agents/orm/object.md)',
+                'DB-OBJECT-MUTATE Database/Object/Collection/ObjectStoreMutate.php:28 — $this->objects is '
+                    . 'written directly outside Objects; go through $this[$id] = $object for a new row, or '
+                    . 'hydrate() for a row read out of storage (see docs/agents/orm/object.md)',
+                'DB-OBJECT-MUTATE Database/Object/Collection/ObjectStoreMutate.php:29 — unset() drops a row of '
+                    . 'the object store directly; use unset($this[$id]), which announces the loss and lets the '
+                    . 'view drop its wrapper (see docs/agents/orm/object.md)',
                 'RT-STATE-MUTATE Runtime/State/Collection/StateMutateSubclass.php:25 — $this->states is written '
                     . 'directly outside RtStates; go through add(), remove() or clear() '
                     . '(see docs/agents/runtime/rt-state.md)',
@@ -409,6 +422,7 @@ final class RuleFixtureTest extends TestCase
             new PhpDocFqnRule($this->fixtureRoot()),
             new RtStateReachRule(),
             new RtStateMutationRule(),
+            new ObjectStoreMutationRule(),
             new ErrorSuppressionRule(),
             new FsSeamRule(),
             new RandomSourceRule(),

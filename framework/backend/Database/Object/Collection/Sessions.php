@@ -49,7 +49,7 @@ final class Sessions extends Objects
             return null;
         }
 
-        return $this->hydrate($entitySession);
+        return $this->hydrateSession($entitySession);
     }
 
     /**
@@ -145,7 +145,7 @@ final class Sessions extends Objects
             if ($entitySession->id === null) {
                 continue;
             }
-            $result[] = $this->hydrate($entitySession);
+            $result[] = $this->hydrateSession($entitySession);
         }
 
         return $result;
@@ -161,10 +161,10 @@ final class Sessions extends Objects
      * @param EntitySession $entitySession Row to wrap, whose id is known to be set
      * @return ObjectSession Session object for that row
      */
-    private function hydrate(EntitySession $entitySession): ObjectSession
+    private function hydrateSession(EntitySession $entitySession): ObjectSession
     {
         if (!isset($this->objects[$entitySession->id])) {
-            $this->objects[$entitySession->id] = ObjectSession::fromEntity($entitySession);
+            $this->hydrate($entitySession->id, ObjectSession::fromEntity($entitySession));
         }
 
         return $this->objects[$entitySession->id];

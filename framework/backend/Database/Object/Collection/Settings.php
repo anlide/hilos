@@ -51,7 +51,7 @@ final class Settings extends Objects
         }
 
         if (!isset($this->objects[$entitySetting->id])) {
-            $this->objects[$entitySetting->id] = ObjectSetting::fromEntity($entitySetting);
+            $this->hydrate($entitySetting->id, ObjectSetting::fromEntity($entitySetting));
         }
 
         return $this->objects[$entitySetting->id];

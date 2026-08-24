@@ -12,6 +12,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Object\Objects;
+use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -55,7 +56,7 @@ final class Guests extends Objects
             return null;
         }
 
-        return $this->hydrate($entityGuest);
+        return $this->hydrateGuest($entityGuest);
     }
 
     /**
@@ -76,6 +77,7 @@ final class Guests extends Objects
      * @return ObjectGuest Guest object of this session
      * @throws DatabaseException If the lookup or insert query fails, or the insert assigns no id
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function ensureForSession(string $sessionToken, string $name): ObjectGuest
     {
@@ -104,7 +106,7 @@ final class Guests extends Objects
             throw new DatabaseException('Guest insert did not assign an id');
         }
 
-        $this->objects[$id] = $guest;
+        $this[$id] = $guest;
 
         return $guest;
     }
@@ -119,6 +121,7 @@ final class Guests extends Objects
      * @param string $sessionToken Session cookie token whose guest row goes
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function deleteBySessionToken(string $sessionToken): void
     {
@@ -131,7 +134,7 @@ final class Guests extends Objects
         $guest->delete();
 
         if ($id !== null) {
-            unset($this->objects[$id]);
+            unset($this[$id]);
         }
     }
 
@@ -141,11 +144,11 @@ final class Guests extends Objects
      * @param EntityGuest $entityGuest Row to wrap, whose id is known to be set
      * @return ObjectGuest Guest object for that row
      */
-    private function hydrate(EntityGuest $entityGuest): ObjectGuest
+    private function hydrateGuest(EntityGuest $entityGuest): ObjectGuest
     {
         $id = (int)$entityGuest->id;
         if (!isset($this->objects[$id])) {
-            $this->objects[$id] = ObjectGuest::fromEntity($entityGuest);
+            $this->hydrate($id, ObjectGuest::fromEntity($entityGuest));
         }
 
         return $this->objects[$id];

@@ -13,6 +13,7 @@ use Hilos\Database\Entity\Collection\AuthBlocks as EntityAuthBlocks;
 use Hilos\Database\Entity\Item\AuthBlock as EntityAuthBlock;
 use Hilos\Database\Object\Item\AuthBlock as ObjectAuthBlock;
 use Hilos\Database\Object\Objects;
+use Hilos\HilosException;
 
 /**
  * AuthBlocks object collection.
@@ -65,7 +66,7 @@ final class AuthBlocks extends Objects
         }
 
         if (!isset($this->objects[$entityAuthBlock->id])) {
-            $this->objects[$entityAuthBlock->id] = ObjectAuthBlock::fromEntity($entityAuthBlock);
+            $this->hydrate($entityAuthBlock->id, ObjectAuthBlock::fromEntity($entityAuthBlock));
         }
 
         return $this->objects[$entityAuthBlock->id];
@@ -94,7 +95,7 @@ final class AuthBlocks extends Objects
             }
 
             if (!isset($this->objects[$entityAuthBlock->id])) {
-                $this->objects[$entityAuthBlock->id] = ObjectAuthBlock::fromEntity($entityAuthBlock);
+                $this->hydrate($entityAuthBlock->id, ObjectAuthBlock::fromEntity($entityAuthBlock));
             }
 
             $blocks[] = $this->objects[$entityAuthBlock->id];
@@ -121,6 +122,7 @@ final class AuthBlocks extends Objects
      * @throws EmptyValueException When scope, identity or action is empty
      * @throws DatabaseException If the insert or update query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function recordBlock(string $scope, string $identity, string $action, int $level, ?string $blockedUntil): ObjectAuthBlock
     {
@@ -145,7 +147,7 @@ final class AuthBlocks extends Objects
             throw new DatabaseException('Auth block insert did not assign an id');
         }
 
-        $this->objects[$id] = $block;
+        $this[$id] = $block;
 
         return $block;
     }
@@ -161,6 +163,7 @@ final class AuthBlocks extends Objects
      * @return int Number of blocks deleted
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function clearServed(string $before): int
     {
@@ -189,6 +192,7 @@ final class AuthBlocks extends Objects
      * @return int Number of blocks deleted
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function clearIdentity(string $scope, string $identity): int
     {
@@ -220,6 +224,7 @@ final class AuthBlocks extends Objects
      * @return int Number of blocks deleted
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function clearAll(): int
     {
@@ -237,6 +242,7 @@ final class AuthBlocks extends Objects
      *
      * @param EntityAuthBlock $entityAuthBlock Row to delete
      * @throws DatabaseException If the delete query fails
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     private function forget(EntityAuthBlock $entityAuthBlock): void
     {
@@ -247,7 +253,7 @@ final class AuthBlocks extends Objects
 
         $block->delete();
         if ($id !== null) {
-            unset($this->objects[$id]);
+            unset($this[$id]);
         }
     }
 
@@ -262,6 +268,7 @@ final class AuthBlocks extends Objects
      * @param string $action Throttled action name
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function clearBlock(string $scope, string $identity, string $action): void
     {
@@ -273,7 +280,7 @@ final class AuthBlocks extends Objects
         $id = $block->id;
         $block->delete();
         if ($id !== null) {
-            unset($this->objects[$id]);
+            unset($this[$id]);
         }
     }
 }

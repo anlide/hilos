@@ -20,6 +20,7 @@ use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
+use Hilos\HilosException;
 
 /**
  * Identities object collection.
@@ -66,7 +67,7 @@ final class Identities extends Objects
         }
 
         if (!isset($this->objects[$entityIdentity->id])) {
-            $this->objects[$entityIdentity->id] = ObjectIdentity::fromEntity($entityIdentity);
+            $this->hydrate($entityIdentity->id, ObjectIdentity::fromEntity($entityIdentity));
         }
 
         return $this->objects[$entityIdentity->id];
@@ -89,6 +90,7 @@ final class Identities extends Objects
      * @throws DuplicateValueException When an identity already exists for (password, identifier)
      * @throws DatabaseException If the insert or secret write query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function createPasswordIdentity(int $userId, string $identifier, string $plainSecret): ObjectIdentity
     {
@@ -122,6 +124,7 @@ final class Identities extends Objects
      * @throws DuplicateValueException When an identity already exists for (password, identifier)
      * @throws DatabaseException If the insert or secret write query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function createPasswordIdentityWithHash(int $userId, string $identifier, string $passwordHash): ObjectIdentity
     {
@@ -153,7 +156,7 @@ final class Identities extends Objects
             $params,
         );
 
-        $this->objects[$id] = $identity;
+        $this[$id] = $identity;
 
         return $identity;
     }
@@ -175,6 +178,7 @@ final class Identities extends Objects
      * @throws DuplicateValueException When an identity already exists for (sms, identifier)
      * @throws DatabaseException If the insert query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function createSmsIdentity(int $userId, string $identifier): ObjectIdentity
     {
@@ -198,7 +202,7 @@ final class Identities extends Objects
             throw new DatabaseException('Identity insert did not assign an id');
         }
 
-        $this->objects[$id] = $identity;
+        $this[$id] = $identity;
 
         return $identity;
     }
@@ -222,6 +226,7 @@ final class Identities extends Objects
      * @throws DuplicateValueException When an identity already exists for (oauth, identifier)
      * @throws DatabaseException If the insert query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function createOauthIdentity(int $userId, string $provider, string $subject): ObjectIdentity
     {
@@ -248,7 +253,7 @@ final class Identities extends Objects
             throw new DatabaseException('Identity insert did not assign an id');
         }
 
-        $this->objects[$id] = $identity;
+        $this[$id] = $identity;
 
         return $identity;
     }
@@ -272,6 +277,7 @@ final class Identities extends Objects
      * @throws DuplicateValueException When an identity already exists for (passkey, identifier)
      * @throws DatabaseException If the insert query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function createPasskeyIdentity(int $userId, string $credentialId): ObjectIdentity
     {
@@ -295,7 +301,7 @@ final class Identities extends Objects
             throw new DatabaseException('Identity insert did not assign an id');
         }
 
-        $this->objects[$id] = $identity;
+        $this[$id] = $identity;
 
         return $identity;
     }
@@ -319,6 +325,7 @@ final class Identities extends Objects
      * @throws DuplicateValueException When an identity already exists for (magic_link, identifier)
      * @throws DatabaseException If the insert query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function createMagicLinkIdentity(int $userId, string $email): ObjectIdentity
     {
@@ -343,7 +350,7 @@ final class Identities extends Objects
             throw new DatabaseException('Identity insert did not assign an id');
         }
 
-        $this->objects[$id] = $identity;
+        $this[$id] = $identity;
 
         return $identity;
     }
@@ -365,6 +372,7 @@ final class Identities extends Objects
      * @throws ValidationException When the identity is not owned by the user, or is their last one
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function deleteIdentity(int $userId, int $identityId): void
     {
@@ -382,11 +390,11 @@ final class Identities extends Objects
         }
 
         if (!isset($this->objects[$identityId])) {
-            $this->objects[$identityId] = ObjectIdentity::fromEntity($entityIdentity);
+            $this->hydrate($identityId, ObjectIdentity::fromEntity($entityIdentity));
         }
 
         $this->objects[$identityId]->delete();
-        unset($this->objects[$identityId]);
+        unset($this[$identityId]);
     }
 
     /**
@@ -406,6 +414,7 @@ final class Identities extends Objects
      * @return int Number of identities re-pointed to the survivor
      * @throws DatabaseException If a lookup, move, or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function rePointToUser(int $fromUserId, int $toUserId): int
     {
@@ -415,7 +424,7 @@ final class Identities extends Objects
             if ($existing !== null && $existing->userId === $toUserId) {
                 $identity->delete();
                 if ($identity->id !== null) {
-                    unset($this->objects[$identity->id]);
+                    unset($this[$identity->id]);
                 }
                 continue;
             }
@@ -602,7 +611,7 @@ final class Identities extends Objects
                 continue;
             }
             if (!isset($this->objects[$entityIdentity->id])) {
-                $this->objects[$entityIdentity->id] = ObjectIdentity::fromEntity($entityIdentity);
+                $this->hydrate($entityIdentity->id, ObjectIdentity::fromEntity($entityIdentity));
             }
             $result[] = $this->objects[$entityIdentity->id];
         }

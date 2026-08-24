@@ -15,6 +15,7 @@ use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDeliver
 use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\SqlSortDirection;
+use Hilos\HilosException;
 use Hilos\Notification\Delivery\DeliveryStatus;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -59,6 +60,7 @@ final class NotificationDeliveries extends Objects
      * @throws EmptyValueException When the channel name is empty
      * @throws TableNotActivatedException When the project has not activated the delivery table
      * @throws DatabaseException If the insert query fails
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function createPending(int $notificationId, string $channel): ObjectNotificationDelivery
     {
@@ -82,7 +84,7 @@ final class NotificationDeliveries extends Objects
             throw new DatabaseException('Notification delivery insert did not assign an id');
         }
 
-        $this->objects[$id] = $delivery;
+        $this[$id] = $delivery;
 
         return $delivery;
     }
@@ -119,7 +121,7 @@ final class NotificationDeliveries extends Objects
                 continue;
             }
             if (!isset($this->objects[$entity->id])) {
-                $this->objects[$entity->id] = ObjectNotificationDelivery::fromEntity($entity);
+                $this->hydrate($entity->id, ObjectNotificationDelivery::fromEntity($entity));
             }
 
             return $this->objects[$entity->id];
@@ -187,7 +189,7 @@ final class NotificationDeliveries extends Objects
             return null;
         }
 
-        $this->objects[$entity->id] = ObjectNotificationDelivery::fromEntity($entity);
+        $this->hydrate($entity->id, ObjectNotificationDelivery::fromEntity($entity));
 
         return $this->objects[$entity->id];
     }

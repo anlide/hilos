@@ -9,6 +9,7 @@ use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\RtState;
+use Hilos\Runtime\View\Actions\Collection\RtActions;
 use Hilos\Utils\Logger;
 
 /**
@@ -63,6 +64,13 @@ final class RtSnapshot
      * copy of the collection, and announcing it as local would send every row of a hand-over
      * straight back into the mesh.
      *
+     * The view's wrappers are dropped by hand right after the clear, the same cure
+     * {@see RtActions::clearAllStates()} applies on its own road: a mass clear announces
+     * nothing, so nothing else would empty a cache that answers keys the collection no longer
+     * holds. The whole cache and not a list of keys, because the keys that need repairing are
+     * exactly the ones this snapshot does NOT carry — nothing below walks those, and they are
+     * what the hand-over is silently dropping.
+     *
      * @param string $collectionKey RT collection to replace
      * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
      * @throws HilosException Whatever a subscriber to the collection's announcement raises
@@ -82,6 +90,7 @@ final class RtSnapshot
         }
 
         $stateCollection->clear();
+        Hilos::$rt?->getRtCollection($collectionKey)?->clearCache();
 
         /** @var class-string<RtState> $stateClass */
         SourceChangeBus::whileApplyingRemote(

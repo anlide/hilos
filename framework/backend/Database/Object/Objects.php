@@ -369,8 +369,8 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      *
      * Announced from here rather than from the roads that lead here, so that every road is
      * covered: what a dependent view has to hear is that this key now holds a different object.
-     * Reading the collection out of the database does not come through this method - it writes
-     * straight into the store - which is what keeps a load from announcing rows as new.
+     * Reading the collection out of the database goes through {@see self::hydrate()} instead,
+     * which is what keeps a load from announcing rows as new.
      *
      * @param mixed $offset Array key (int or string), or null to append under the next one
      * @param T $value Object instance to set
@@ -401,6 +401,22 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             $value->toArray(),
             ExecutionContext::currentAcceptKey(),
         ));
+    }
+
+    /**
+     * Put a row read out of storage into the store, announcing nothing.
+     *
+     * The silence is deliberate, and it is the whole reason this seam exists next to the door:
+     * a load changes what this process HOLDS, not what the table CONTAINS. Sent through
+     * {@see self::offsetSet()}, every row read back would be announced as a new membership of
+     * the mirror, and dependent views would be told that rows they already show just appeared.
+     *
+     * @param int|string $key Array key the row is stored under
+     * @param T $object Object read out of storage
+     */
+    protected function hydrate(int|string $key, Object_ $object): void
+    {
+        $this->objects[$key] = $object;
     }
 
     /**

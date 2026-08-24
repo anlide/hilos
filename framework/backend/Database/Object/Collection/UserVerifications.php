@@ -18,6 +18,7 @@ use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Database\Verification\VerificationSendStats;
+use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -212,6 +213,7 @@ final class UserVerifications extends Objects
      * @return ObjectUserVerification The created challenge object
      * @throws EmptyValueException When identifier or code is empty
      * @throws DatabaseException If the insert or code hash write query fails
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function createChallenge(
         string $type,
@@ -249,7 +251,7 @@ final class UserVerifications extends Objects
             $params,
         );
 
-        $this->objects[$id] = $verification;
+        $this[$id] = $verification;
 
         return $verification;
     }
@@ -324,7 +326,7 @@ final class UserVerifications extends Objects
                 continue;
             }
             if (!isset($this->objects[$entity->id])) {
-                $this->objects[$entity->id] = ObjectUserVerification::fromEntity($entity);
+                $this->hydrate($entity->id, ObjectUserVerification::fromEntity($entity));
             }
             $result[] = $this->objects[$entity->id];
         }

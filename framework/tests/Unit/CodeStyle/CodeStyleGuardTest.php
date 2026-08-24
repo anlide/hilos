@@ -15,6 +15,7 @@ use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
 use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\MalformedInputMarkerRule;
+use Hilos\Tests\CodeStyle\Rule\ObjectStoreMutationRule;
 use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
@@ -202,6 +203,7 @@ final class CodeStyleGuardTest extends TestCase
             new PhpDocFqnRule($this->repositoryRoot() . '/' . $root),
             new RtStateReachRule(),
             new RtStateMutationRule(),
+            new ObjectStoreMutationRule(),
             new ErrorSuppressionRule(),
             new FsSeamRule(),
             new RandomSourceRule(),

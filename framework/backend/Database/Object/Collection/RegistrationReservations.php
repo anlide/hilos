@@ -19,6 +19,7 @@ use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationRese
 use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
+use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -82,6 +83,7 @@ final class RegistrationReservations extends Objects
      * @throws DuplicateValueException When another socket of this session inserted a hold meanwhile
      * @throws DatabaseException If the insert or secret write query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function createReservation(
         string $type,
@@ -129,7 +131,7 @@ final class RegistrationReservations extends Objects
             $this->writeSecretHash($id, $secretHash);
         }
 
-        $this->objects[$id] = $reservation;
+        $this[$id] = $reservation;
 
         return $reservation;
     }
@@ -186,6 +188,7 @@ final class RegistrationReservations extends Objects
      * @param string $sessionToken Session cookie token of the browser whose hold is over
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function consume(string $sessionToken): void
     {
@@ -216,6 +219,7 @@ final class RegistrationReservations extends Objects
      * @return list<string> Session tokens whose hold this call removed (empty when there were none)
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function releaseOthers(string $identifier, string $winnerSessionToken): array
     {
@@ -247,6 +251,7 @@ final class RegistrationReservations extends Objects
      * @return list<array{sessionToken: string, identifier: string}> Session/identifier pairs this sweep freed
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function deleteExpired(): array
     {
@@ -286,7 +291,7 @@ final class RegistrationReservations extends Objects
                 continue;
             }
 
-            return $this->hydrate($entity);
+            return $this->hydrateReservation($entity);
         }
 
         return null;
@@ -314,7 +319,7 @@ final class RegistrationReservations extends Objects
             if ($entity->id === null) {
                 continue;
             }
-            $result[] = $this->hydrate($entity);
+            $result[] = $this->hydrateReservation($entity);
         }
 
         return $result;
@@ -339,7 +344,7 @@ final class RegistrationReservations extends Objects
             if ($entity->id === null) {
                 continue;
             }
-            $result[] = $this->hydrate($entity);
+            $result[] = $this->hydrateReservation($entity);
         }
 
         return $result;
@@ -351,11 +356,11 @@ final class RegistrationReservations extends Objects
      * @param EntityRegistrationReservation $entity Loaded row whose id is known to be set
      * @return ObjectRegistrationReservation Cached reservation object for the row
      */
-    private function hydrate(EntityRegistrationReservation $entity): ObjectRegistrationReservation
+    private function hydrateReservation(EntityRegistrationReservation $entity): ObjectRegistrationReservation
     {
         $id = (int)$entity->id;
         if (!isset($this->objects[$id])) {
-            $this->objects[$id] = ObjectRegistrationReservation::fromEntity($entity);
+            $this->hydrate($id, ObjectRegistrationReservation::fromEntity($entity));
         }
 
         return $this->objects[$id];
@@ -385,6 +390,7 @@ final class RegistrationReservations extends Objects
      *
      * @param ObjectRegistrationReservation $reservation Reservation to delete
      * @throws DatabaseException If the delete query fails
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     private function release(ObjectRegistrationReservation $reservation): void
     {
@@ -392,7 +398,7 @@ final class RegistrationReservations extends Objects
         $reservation->delete();
 
         if ($id !== null) {
-            unset($this->objects[$id]);
+            unset($this[$id]);
         }
     }
 }

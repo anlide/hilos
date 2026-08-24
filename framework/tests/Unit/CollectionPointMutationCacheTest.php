@@ -204,6 +204,48 @@ final class CollectionPointMutationCacheTest extends TestCase
         $this->assertSame('second', $view['2']?->mark());
     }
 
+    /**
+     * The road this ticket closed (HIL-674). The drop is made from INSIDE the store, by a method
+     * of the store's own subclass, which is where the 11 direct `unset($this->objects[$id])` of
+     * the framework collections used to sit: the array lost the row, nothing was announced, and
+     * the view went on answering the key with the wrapper it had cached.
+     *
+     * @throws HilosException When the fixture object cannot be built or stored
+     */
+    public function testAKeyDroppedFromInsideTheStoreStopsAnsweringReads(): void
+    {
+        $objects = $this->mountedDb();
+        $objects['1'] = PointMutationObject::fromEntity(PointMutationEntity::withId(1, 'first'));
+        $view = $this->dbView();
+        // The read is the point: it puts a wrapper for '1' into the cache the drop must clear.
+        $this->assertNotNull($view['1']);
+
+        $objects->forget('1');
+
+        $this->assertNull($view['1']);
+    }
+
+    /**
+     * The other half of the same seam, and the reason it is a second method and not the door:
+     * a row read out of storage goes in through hydrate(), which announces nothing. Were it sent
+     * through the door instead, every read-back would tell the view that rows it already shows
+     * have just appeared - so what is pinned here is that the cached wrapper is left alone.
+     *
+     * @throws HilosException When the fixture object cannot be built or stored
+     */
+    public function testARowReadOutOfStorageLeavesTheCachedWrapperAlone(): void
+    {
+        $objects = $this->mountedDb();
+        $objects['1'] = PointMutationObject::fromEntity(PointMutationEntity::withId(1, 'first'));
+        $view = $this->dbView();
+        $cached = $view['1'];
+        $this->assertNotNull($cached);
+
+        $objects->load('1', PointMutationObject::fromEntity(PointMutationEntity::withId(1, 'second')));
+
+        $this->assertSame($cached, $view['1']);
+    }
+
     public function testANullOffsetUnsetStaysSilentOnBothCollections(): void
     {
         $collection = $this->mounted();
@@ -504,6 +546,28 @@ final class PointMutationObjects extends Objects
 {
     public const string OBJECT_CLASS = PointMutationObject::class;
     public const string COLLECTION_KEY = PointMutationDbContext::COLLECTION;
+
+    /**
+     * Drops one row the way a subclass of the store drops one - through the door, from inside.
+     *
+     * @param string $key Key whose row goes
+     * @throws HilosException Whatever a subscriber to the store announcement raises
+     */
+    public function forget(string $key): void
+    {
+        unset($this[$key]);
+    }
+
+    /**
+     * Puts in one row the way a subclass of the store puts in a row it just read out of storage.
+     *
+     * @param string $key Key the row is stored under
+     * @param PointMutationObject $object Object standing for the stored row
+     */
+    public function load(string $key, PointMutationObject $object): void
+    {
+        $this->hydrate($key, $object);
+    }
 }
 
 /**

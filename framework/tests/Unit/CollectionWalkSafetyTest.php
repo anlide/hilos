@@ -307,11 +307,11 @@ final class RtStatesWalkSubject extends WalkSubject
  */
 final class ObjectsWalkSubject extends WalkSubject
 {
-    private WalkObjects $objects;
+    private WalkObjects $store;
 
     public function __construct()
     {
-        $this->objects = WalkObjects::initEmpty();
+        $this->store = WalkObjects::initEmpty();
     }
 
     public function name(): string
@@ -321,17 +321,17 @@ final class ObjectsWalkSubject extends WalkSubject
 
     public function collection(): iterable
     {
-        return $this->objects;
+        return $this->store;
     }
 
     public function put(string $key): void
     {
-        $this->objects[$key] = WalkObject::fromEntity(WalkEntity::withId(1));
+        $this->store[$key] = WalkObject::fromEntity(WalkEntity::withId(1));
     }
 
     public function drop(string $key): void
     {
-        unset($this->objects[$key]);
+        unset($this->store[$key]);
     }
 }
 
@@ -397,11 +397,11 @@ final class FilteredCollectionWalkSubject extends WalkSubject
  */
 final class ObjectCollectionWalkSubject extends WalkSubject
 {
-    private ObjectCollection $objects;
+    private ObjectCollection $store;
 
     public function __construct()
     {
-        $this->objects = ObjectCollection::empty();
+        $this->store = ObjectCollection::empty();
     }
 
     public function name(): string
@@ -411,17 +411,17 @@ final class ObjectCollectionWalkSubject extends WalkSubject
 
     public function collection(): iterable
     {
-        return $this->objects;
+        return $this->store;
     }
 
     public function put(string $key): void
     {
-        $this->objects->add(WalkObject::fromEntity(WalkEntity::withId(1)), $key);
+        $this->store->add(WalkObject::fromEntity(WalkEntity::withId(1)), $key);
     }
 
     public function drop(string $key): void
     {
-        $this->objects->remove($key);
+        $this->store->remove($key);
     }
 }
 
@@ -505,16 +505,16 @@ final class RtCollectionWalkSubject extends WalkSubject
  */
 final class DbCollectionWalkSubject extends WalkSubject
 {
-    private WalkObjects $objects;
+    private WalkObjects $store;
 
     private WalkDbCollection $view;
 
     public function __construct()
     {
-        $this->objects = WalkObjects::initEmpty();
+        $this->store = WalkObjects::initEmpty();
         $this->view = WalkDbCollection::init();
-        $this->view->setObjectCollection($this->objects);
-        Hilos::$db = WalkDbContext::create($this->objects, $this->view);
+        $this->view->setObjectCollection($this->store);
+        Hilos::$db = WalkDbContext::create($this->store, $this->view);
     }
 
     public function name(): string
@@ -529,12 +529,12 @@ final class DbCollectionWalkSubject extends WalkSubject
 
     public function put(string $key): void
     {
-        $this->objects[$key] = WalkObject::fromEntity(WalkEntity::withId(1));
+        $this->store[$key] = WalkObject::fromEntity(WalkEntity::withId(1));
     }
 
     public function drop(string $key): void
     {
-        unset($this->objects[$key]);
+        unset($this->store[$key]);
     }
 }
 

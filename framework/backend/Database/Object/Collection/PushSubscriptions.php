@@ -13,6 +13,7 @@ use Hilos\Database\Entity\Item\PushSubscription as EntityPushSubscription;
 use Hilos\Database\Object\Item\PushSubscription as ObjectPushSubscription;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\Schema;
+use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -55,6 +56,7 @@ final class PushSubscriptions extends Objects
      * @throws EmptyValueException When the endpoint is empty
      * @throws DatabaseException When the lookup or write query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function subscribe(int $userId, string $endpoint, string $p256dh, string $auth, ?string $userAgent): void
     {
@@ -79,7 +81,7 @@ final class PushSubscriptions extends Objects
         $subscription->sync();
 
         if ($subscription->id !== null) {
-            $this->objects[$subscription->id] = $subscription;
+            $this[$subscription->id] = $subscription;
         }
     }
 
@@ -92,6 +94,7 @@ final class PushSubscriptions extends Objects
      * @param string $endpoint Browser push endpoint URL
      * @throws DatabaseException When the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function unsubscribe(string $endpoint): void
     {
@@ -107,7 +110,7 @@ final class PushSubscriptions extends Objects
         $id = $subscription->id;
         $subscription->delete();
         if ($id !== null) {
-            unset($this->objects[$id]);
+            unset($this[$id]);
         }
     }
 
@@ -140,7 +143,7 @@ final class PushSubscriptions extends Objects
                 continue;
             }
             if (!isset($this->objects[$id])) {
-                $this->objects[$id] = ObjectPushSubscription::fromEntity($entity);
+                $this->hydrate($id, ObjectPushSubscription::fromEntity($entity));
             }
             $subscriptions[] = $this->objects[$id];
         }
@@ -157,6 +160,7 @@ final class PushSubscriptions extends Objects
      * @param int $userId Recipient user id
      * @throws DatabaseException When a delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function deleteForUser(int $userId): void
     {
@@ -168,7 +172,7 @@ final class PushSubscriptions extends Objects
                 : ObjectPushSubscription::fromEntity($entity);
             $subscription->delete();
             if ($id !== null) {
-                unset($this->objects[$id]);
+                unset($this[$id]);
             }
         }
     }
@@ -189,7 +193,7 @@ final class PushSubscriptions extends Objects
         }
 
         if (!isset($this->objects[$entity->id])) {
-            $this->objects[$entity->id] = ObjectPushSubscription::fromEntity($entity);
+            $this->hydrate($entity->id, ObjectPushSubscription::fromEntity($entity));
         }
 
         return $this->objects[$entity->id];

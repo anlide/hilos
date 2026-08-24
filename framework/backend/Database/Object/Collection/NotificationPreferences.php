@@ -13,6 +13,7 @@ use Hilos\Database\Entity\Item\NotificationPreference as EntityNotificationPrefe
 use Hilos\Database\Object\Item\NotificationPreference as ObjectNotificationPreference;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\Schema;
+use Hilos\HilosException;
 use Hilos\Notification\Delivery\NotificationDispatcher;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -55,6 +56,7 @@ final class NotificationPreferences extends Objects
      * @throws EmptyValueException When the channel name is empty
      * @throws DatabaseException When the delete or insert query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function setChannel(int $userId, string $channel, bool $enabled): void
     {
@@ -68,7 +70,7 @@ final class NotificationPreferences extends Objects
             if ($existing !== null) {
                 $existing->delete();
                 if ($existing->id !== null) {
-                    unset($this->objects[$existing->id]);
+                    unset($this[$existing->id]);
                 }
             }
 
@@ -89,7 +91,7 @@ final class NotificationPreferences extends Objects
         $preference->sync();
 
         if ($preference->id !== null) {
-            $this->objects[$preference->id] = $preference;
+            $this[$preference->id] = $preference;
         }
     }
 
@@ -149,6 +151,7 @@ final class NotificationPreferences extends Objects
      * @param int $userId Recipient user id
      * @throws DatabaseException When a delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function deleteForUser(int $userId): void
     {
@@ -160,7 +163,7 @@ final class NotificationPreferences extends Objects
                 : ObjectNotificationPreference::fromEntity($entity);
             $preference->delete();
             if ($id !== null) {
-                unset($this->objects[$id]);
+                unset($this[$id]);
             }
         }
     }
@@ -200,7 +203,7 @@ final class NotificationPreferences extends Objects
         }
 
         if (!isset($this->objects[$entity->id])) {
-            $this->objects[$entity->id] = ObjectNotificationPreference::fromEntity($entity);
+            $this->hydrate($entity->id, ObjectNotificationPreference::fromEntity($entity));
         }
 
         return $this->objects[$entity->id];

@@ -235,3 +235,9 @@ existing typed DB APIs; the DB layer should own persistent data behavior.
 
 Do not add read-only methods to actions. Put reads on `DbCollection`, `DbItem`,
 Object collection/item helpers, or typed read payload APIs.
+
+Do not change which rows an object store holds by writing `$this->objects` inside a
+concrete collection. A `DbCollection` answers a key out of its cache of wrappers and
+only the store's announcement empties that cache, so a row dropped by hand goes on
+reading as alive here. The two announcing roads, and the silent one a load takes, are
+in [object.md](object.md).

@@ -279,14 +279,14 @@ final class ClearEchoObjects extends Objects
      */
     public function loadAllFromDB(): void
     {
-        $this->objects = [];
+        $this->clearInMemory();
         if ($this->failNextLoad) {
             $this->failNextLoad = false;
             throw new DatabaseException('fake table unreachable');
         }
 
         foreach ($this->tableRows as $id) {
-            $this->objects[(string) $id] = ClearEchoObject::fromEntity(ClearEchoEntity::withId($id));
+            $this->hydrate((string) $id, ClearEchoObject::fromEntity(ClearEchoEntity::withId($id)));
         }
         $this->_allLoaded = true;
     }

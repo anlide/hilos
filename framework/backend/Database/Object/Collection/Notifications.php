@@ -18,6 +18,7 @@ use Hilos\Database\Schema\Schema;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Database\SqlSortDirection;
+use Hilos\HilosException;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -64,6 +65,7 @@ final class Notifications extends Objects
      * @throws EmptyValueException When type or title is empty
      * @throws TableNotActivatedException When the project has not activated the notification table
      * @throws DatabaseException If the insert query fails
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function createFor(
         int $userId,
@@ -94,7 +96,7 @@ final class Notifications extends Objects
             throw new DatabaseException('Notification insert did not assign an id');
         }
 
-        $this->objects[$id] = $notification;
+        $this[$id] = $notification;
 
         return $notification;
     }
@@ -125,7 +127,7 @@ final class Notifications extends Objects
                 continue;
             }
             if (!isset($this->objects[$entity->id])) {
-                $this->objects[$entity->id] = ObjectNotification::fromEntity($entity);
+                $this->hydrate($entity->id, ObjectNotification::fromEntity($entity));
             }
             $result[] = $this->objects[$entity->id];
             if (count($result) >= $limit) {

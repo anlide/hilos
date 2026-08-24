@@ -14,6 +14,7 @@ use Hilos\Database\Entity\Collection\PasskeyCredentials as EntityPasskeyCredenti
 use Hilos\Database\Entity\Item\PasskeyCredential as EntityPasskeyCredential;
 use Hilos\Database\Object\Item\PasskeyCredential as ObjectPasskeyCredential;
 use Hilos\Database\Object\Objects;
+use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -66,6 +67,7 @@ final class PasskeyCredentials extends Objects
      * @throws DuplicateValueException When a credential already exists for this credential id
      * @throws DatabaseException If the insert query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
      */
     public function createFromRegistration(
         int $identityId,
@@ -111,7 +113,7 @@ final class PasskeyCredentials extends Objects
             $credential->updateSignCount($signCount);
         }
 
-        $this->objects[$id] = $credential;
+        $this[$id] = $credential;
 
         return $credential;
     }
@@ -143,7 +145,7 @@ final class PasskeyCredentials extends Objects
         }
 
         if (!isset($this->objects[$entity->id])) {
-            $this->objects[$entity->id] = ObjectPasskeyCredential::fromEntity($entity);
+            $this->hydrate($entity->id, ObjectPasskeyCredential::fromEntity($entity));
         }
 
         return $this->objects[$entity->id];
@@ -172,7 +174,7 @@ final class PasskeyCredentials extends Objects
                 continue;
             }
             if (!isset($this->objects[$entity->id])) {
-                $this->objects[$entity->id] = ObjectPasskeyCredential::fromEntity($entity);
+                $this->hydrate($entity->id, ObjectPasskeyCredential::fromEntity($entity));
             }
             $result[] = $this->objects[$entity->id];
         }
