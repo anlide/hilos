@@ -237,4 +237,56 @@ describe('HilosMagicLinkPage', () => {
     expect(wrapper.find('[data-id="auth-magic-retry"]').exists()).toBe(false)
     expect(world.dispatched).toEqual([])
   })
+
+  it('drops a retry whose view went away, leaving the token unspent', async () => {
+    // The page is answered before the mount, so the gate is open throughout and a
+    // retry reaches the wire through one microtask — which is the window this
+    // asserts on.
+    const world = relayWorld(false)
+    world.answerPage()
+    const wrapper = mountRelay(world)
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-magic-retry"]').exists()).toBe(true)
+    // Deliberately not awaited: `trigger` returns nextTick, and awaiting it would
+    // drain the queue far enough for the retry to reach the dispatch — which is
+    // the very window this case asserts on.
+    void wrapper.find('[data-id="auth-magic-retry"]').trigger('click')
+    // The person leaves while the retry is still in flight. The token is
+    // one-time, so the attempt they walked away from must neither spend it nor
+    // navigate the page they went to.
+    wrapper.unmount()
+    // Drained by hand rather than through `flush`, whose contract takes a live vm.
+    for (let tick = 0; tick < 10; tick += 1) {
+      await Promise.resolve()
+    }
+
+    expect(world.dispatched).toHaveLength(1)
+    expect(world.navigated).toEqual([])
+  })
+
+  it('ignores the answer to a confirm whose view went away', async () => {
+    // The other half of the guard: a confirm already on the wire is not recalled,
+    // so this one succeeds — but its answer belongs to a view that is gone, and
+    // acting on it would navigate the person out of wherever they went instead.
+    const world = relayWorld(true)
+    world.answerPage()
+    const wrapper = mountRelay(world)
+    // Stop inside the window the guard covers: the confirm has reached the wire,
+    // its answer has not been read yet. Driven by the dispatch actually showing
+    // up rather than by a tick count, so the window is not missed by an await
+    // more or less along the way.
+    for (let tick = 0; tick < 20 && world.dispatched.length === 0; tick += 1) {
+      await Promise.resolve()
+    }
+
+    expect(world.dispatched).toHaveLength(1)
+
+    wrapper.unmount()
+    for (let tick = 0; tick < 10; tick += 1) {
+      await Promise.resolve()
+    }
+
+    expect(world.navigated).toEqual([])
+  })
 })

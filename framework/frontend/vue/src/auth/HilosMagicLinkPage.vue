@@ -21,7 +21,7 @@ import {
   whenPageReady,
   type HilosAuthContext,
 } from '@hilos/core'
-import { inject, onMounted, ref } from 'vue'
+import { inject, onMounted, onUnmounted, ref } from 'vue'
 
 import { hilosRouterKey } from '../hilosRouterKey.js'
 
@@ -78,6 +78,10 @@ const UNREACHABLE_MESSAGE = 'Could not reach the server. Please try again.'
 let linkEmail = ''
 let linkToken = ''
 
+// Which attempt is the one on screen. Taking it is how a new attempt supersedes
+// whatever is still in flight; see `runConfirm`.
+let attempt = 0
+
 function showError(reason: string, canRetry: boolean): void {
   status.value = 'error'
   message.value = reason
@@ -107,17 +111,34 @@ function waitForConnection(): Promise<boolean> {
  * Run the step whole: wait for a connection that can carry the confirm, dispatch
  * it, and show the outcome. This is what mount runs and what Try again runs again
  * — a retry that skipped the wait would be the very bug this screen is here for.
+ *
+ * Each call takes the attempt token, and every resume point checks it is still
+ * the holder. The guard lives HERE rather than in the callers because both of
+ * them need it for the same reason: the wait is up to twenty seconds long and the
+ * token is one-time, so an attempt that has been superseded — by Try again, or by
+ * the view going away — must not spend it and must not navigate out of a page the
+ * person has already left.
  */
 async function runConfirm(): Promise<void> {
+  attempt += 1
+  const mine = attempt
   status.value = 'verifying'
   message.value = ''
   if (!(await waitForConnection())) {
-    showError(UNREACHABLE_MESSAGE, true)
+    if (attempt === mine) {
+      showError(UNREACHABLE_MESSAGE, true)
+    }
 
+    return
+  }
+  if (attempt !== mine) {
     return
   }
 
   const outcome = await authActions.confirmMagicLink(linkEmail, linkToken)
+  if (attempt !== mine) {
+    return
+  }
   if (outcome.ok) {
     router.navigate(HOME_PATH)
 
@@ -137,6 +158,11 @@ onMounted(() => {
   }
 
   void runConfirm()
+})
+
+onUnmounted(() => {
+  // Whatever is in flight belongs to a view that is going away.
+  attempt += 1
 })
 
 function goToSignIn(): void {
