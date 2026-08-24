@@ -4,11 +4,13 @@
 // derivation (none/pending/active), the consent-as-local-step registration, the
 // channel-is-the-send code path, the resend gate, the second factor, the two
 // return points plus cancelMethod, the applyExternal converge, screenKey on all
-// thirteen screens, primaryAction, input preservation, and the
+// fourteen screens, primaryAction, input preservation, and the
 // method-set-agnostic guarantee. HIL-418 adds the cancel that reaches into the
 // ceremony (the abort) and the intent-judged fate of an outcome that lands after
 // it. HIL-419 wires TWO providers through the descriptor factory, so the matrix
-// answers for a row rather than for a single button.
+// answers for a row rather than for a single button. HIL-651 adds the lookup a
+// RETURN to the identifier step fires — the held-address screen it draws and the
+// step it deliberately does not move.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   applicableChannels,
@@ -124,6 +126,15 @@ async function typeAndDetect(
 ): Promise<void> {
   flow.setField('identifier', identifier)
   await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS)
+}
+
+/**
+ * Let the lookup a RETURN to the identifier step fires settle. It carries no
+ * debounce (HIL-651), so there is no window to advance — only the reply's own
+ * microtasks to drain.
+ */
+async function settleRefresh(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(0)
 }
 
 beforeEach(() => {
@@ -567,11 +578,20 @@ describe('primaryAction — the five shapes', () => {
   })
 })
 
-describe('screenKey — all thirteen screens', () => {
+describe('screenKey — all fourteen screens', () => {
   it('derives every screen from the axes', () => {
-    const cases: ReadonlyArray<[Partial<AuthFlowState>, AuthFlowScreen]> = [
+    // The third element is the resolved lookup: only the identifier step
+    // consults one, and only a `pending` reply changes what it draws (HIL-651).
+    const cases: ReadonlyArray<
+      [Partial<AuthFlowState>, AuthFlowScreen, IdentifierDetection?]
+    > = [
       [{}, 'sign_in'],
       [{ intent: 'register' }, 'create_account'],
+      [
+        { intent: 'register' },
+        'held_identifier',
+        detected({ status: 'pending', methods: [] }),
+      ],
       [{ step: 'consent', intent: 'register' }, 'terms'],
       [{ step: 'code', intent: 'register' }, 'confirm_identifier'],
       [{ step: 'code', intent: 'login' }, 'enter_code'],
@@ -592,8 +612,10 @@ describe('screenKey — all thirteen screens', () => {
       [{ step: 'done', intent: 'recovery' }, 'done_password_changed'],
       [{ step: 'done', intent: 'login' }, 'done_signed_in'],
     ]
-    for (const [partial, expected] of cases) {
-      expect(screenKeyOf({ ...INITIAL_FLOW, ...partial })).toBe(expected)
+    for (const [partial, expected, result] of cases) {
+      expect(screenKeyOf({ ...INITIAL_FLOW, ...partial }, result)).toBe(
+        expected,
+      )
     }
   })
 })
@@ -973,15 +995,54 @@ describe('the two return points and cancelMethod', () => {
   })
 
   it('backToIdentifier from the registration code screen ("Not that address?")', async () => {
-    const flow = setup({
-      onDetect: async (identifier) =>
-        detected({ identifier, status: 'pending', methods: [] }),
-    })
+    const onDetect = vi.fn(async (identifier: string) =>
+      detected({ identifier, status: 'pending', methods: [] }),
+    )
+    const flow = setup({ onDetect })
     await typeAndDetect(flow, 'reserved@b.com')
     expect(flow.flow.get().step).toBe('code')
     flow.backToIdentifier()
+    await settleRefresh()
+    // The return asks the lookup again, undebounced, and the answer draws the
+    // screen WITHOUT taking the step back away (HIL-651).
+    expect(onDetect).toHaveBeenCalledTimes(2)
     expect(flow.flow.get().step).toBe('identifier')
     expect(flow.form.get().identifier).toBe('reserved@b.com')
+    expect(flow.screenKey.get()).toBe('held_identifier')
+    expect(flow.primaryAction.get()).toEqual({ kind: 'resume_code' })
+  })
+
+  it('cancelMethod re-asks the lookup too — the ceremony left an old answer behind', async () => {
+    let status: IdentifierDetection['status'] = 'none'
+    const onDetect = vi.fn(async (identifier: string) =>
+      detected({
+        identifier,
+        status,
+        methods: [],
+        registerable: ['passkey'],
+      }),
+    )
+    const flow = setup({
+      onDetect,
+      // The send the terms screen makes (HIL-417) is the very thing that
+      // reserves the address, so the answer behind the field changes while the
+      // person is parked on the ceremony.
+      onMethodAction: async () => {
+        status = 'pending'
+
+        return { ok: true }
+      },
+    })
+    await typeAndDetect(flow, 'new@b.com')
+    await flow.chooseMethod('passkey')
+    flow.setField('consentAccepted', true)
+    await flow.submit()
+    expect(flow.flow.get().step).toBe('external')
+    flow.cancelMethod()
+    await settleRefresh()
+    expect(onDetect).toHaveBeenCalledTimes(2)
+    expect(flow.flow.get().step).toBe('identifier')
+    expect(flow.screenKey.get()).toBe('held_identifier')
   })
 
   it('cancelMethod abandons the parked ceremony and returns to the field', async () => {
@@ -1069,6 +1130,72 @@ describe('the two return points and cancelMethod', () => {
     flow.setField('password', 'secret-1')
     await flow.submit()
     expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('an address held by this browser (HIL-651)', () => {
+  it('stops offering "Create account" when the address got reserved in between', async () => {
+    // The defect itself: `none` was answered BEFORE the reservation, the flow
+    // left the field, and the return drew its offer from that dead answer —
+    // inviting the person to register an address they had just reserved.
+    let status: IdentifierDetection['status'] = 'none'
+    const flow = setup({
+      onDetect: async (identifier) =>
+        detected({ identifier, status, methods: [] }),
+      onSubmit: async () => ({ ok: true, next: { step: 'code' as const } }),
+    })
+    await typeAndDetect(flow, 'new@b.com')
+    expect(flow.screenKey.get()).toBe('create_account')
+    flow.setField('password', 'x'.repeat(PASSWORD_MIN_LENGTH))
+    await flow.submit()
+    flow.setField('consentAccepted', true)
+    await flow.submit()
+    expect(flow.flow.get().step).toBe('code')
+    status = 'pending'
+    flow.backToIdentifier()
+    await settleRefresh()
+    expect(flow.screenKey.get()).not.toBe('create_account')
+    expect(flow.screenKey.get()).toBe('held_identifier')
+    expect(flow.flow.get().step).toBe('identifier')
+    expect(flow.submittable.get()).toBe(false)
+  })
+
+  it('still parks on the code step when the held address is TYPED again', async () => {
+    // The existing path the lookup alone owns: an edit keeps its right to move
+    // the step, and only the return gives it up.
+    const flow = setup({
+      onDetect: async (identifier) =>
+        detected({ identifier, status: 'pending', methods: [] }),
+    })
+    await typeAndDetect(flow, 'reserved@b.com')
+    expect(flow.flow.get().step).toBe('code')
+    flow.backToIdentifier()
+    await settleRefresh()
+    expect(flow.flow.get().step).toBe('identifier')
+    await typeAndDetect(flow, '')
+    await typeAndDetect(flow, 'reserved@b.com')
+    expect(flow.flow.get()).toMatchObject({ step: 'code', intent: 'register' })
+  })
+
+  it('resumeHeldRegistration returns to the code, sending nothing and asking nothing', async () => {
+    const onDetect = vi.fn(async (identifier: string) =>
+      detected({ identifier, status: 'pending', methods: [] }),
+    )
+    const onSubmit = vi.fn(async () => ({ ok: true }))
+    const flow = setup({ onDetect, onSubmit })
+    await typeAndDetect(flow, 'reserved@b.com')
+    flow.backToIdentifier()
+    await settleRefresh()
+    expect(flow.screenKey.get()).toBe('held_identifier')
+    const asked = onDetect.mock.calls.length
+    flow.resumeHeldRegistration()
+    expect(flow.flow.get()).toMatchObject({ step: 'code', intent: 'register' })
+    expect(flow.screenKey.get()).toBe('confirm_identifier')
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(onDetect).toHaveBeenCalledTimes(asked)
+    // No deadline is invented for a code this browser never re-sent.
+    expect(flow.expiresAt.get()).toBeNull()
+    expect(flow.resendAvailableAt.get()).toBeNull()
   })
 })
 

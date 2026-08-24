@@ -111,6 +111,7 @@ const CHANNEL_ICONS: Record<string, string> = {
 const HEADINGS: Record<AuthFlowScreen, string> = {
   sign_in: 'Sign in',
   create_account: 'Create your account',
+  held_identifier: 'You already have a code',
   terms: 'Terms and privacy',
   confirm_identifier: 'Confirm your email',
   enter_code: 'Enter the code',
@@ -128,6 +129,7 @@ const HEADINGS: Record<AuthFlowScreen, string> = {
 const SUBMIT_LABELS: Record<AuthFlowScreen, string> = {
   sign_in: 'Sign in',
   create_account: 'Create account',
+  held_identifier: 'Enter the code',
   terms: 'Create account',
   confirm_identifier: 'Confirm',
   enter_code: 'Continue',
@@ -315,12 +317,12 @@ const identifierHint = computed(() => {
       ? 'No account yet — this creates one.'
       : 'No account for this, and registration is closed.'
   }
-  // A held address has no account to describe yet. The field is reachable with
-  // one under the cursor — "Not that address?" comes back here and keeps what
-  // the lookup found (HIL-486) — and saying "this account has no password"
-  // about a registration nobody confirmed is worse than saying nothing.
-  if (result.status !== 'active') {
-    return null
+  // A held address has no account to describe — it has a code in flight, and
+  // saying so is the whole point of the screen the return lands on (HIL-651).
+  if (result.status === 'pending') {
+    return result.kind === 'phone'
+      ? 'A code is already on its way to this number.'
+      : 'A code is already on its way to this address.'
   }
 
   return showPassword.value ? null : 'This account has no password.'
@@ -521,6 +523,13 @@ function startRecovery(): void {
 function abandon(): void {
   void authActions.abandonRegistration()
   auth.backToIdentifier()
+}
+
+// The way back into a code this browser is already holding, offered by the
+// screen a return to a held address draws. Purely local: the code is already in
+// flight, so nothing is sent and no second letter is ordered.
+function resumeHeldRegistration(): void {
+  auth.resumeHeldRegistration()
 }
 
 // The consent screen's way back. Nothing was reserved yet, so unlike "not that
@@ -912,6 +921,16 @@ onUnmounted(() => {
       >
         {{ submitLabel }}
       </LoadingButton>
+
+      <button
+        v-else-if="primaryAction?.kind === 'resume_code'"
+        type="button"
+        class="btn btn-primary w-100"
+        data-id="auth-resume-code"
+        @click="resumeHeldRegistration()"
+      >
+        {{ submitLabel }}
+      </button>
 
       <LoadingButton
         v-else-if="primaryMethod"

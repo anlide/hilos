@@ -278,13 +278,15 @@ export interface AuthFlowSubmitOutcome {
 /**
  * The derived main control of the current screen: the submit button, an icon
  * method promoted to the primary button (a passwordless account's magic link),
- * a code channel (a phone signs in by code, so its channel IS the send), or
+ * a code channel (a phone signs in by code, so its channel IS the send), the way
+ * back to a code this browser is already holding (`resume_code`, HIL-651), or
  * nothing (`null` — e.g. an empty field or a parked ceremony).
  */
 export type AuthFlowPrimaryAction =
   | { readonly kind: 'submit' }
   | { readonly kind: 'method'; readonly key: string }
   | { readonly kind: 'channel'; readonly key: string }
+  | { readonly kind: 'resume_code' }
   | null
 
 /**
@@ -296,6 +298,7 @@ export type AuthFlowPrimaryAction =
 export type AuthFlowScreen =
   | 'sign_in'
   | 'create_account'
+  | 'held_identifier'
   | 'terms'
   | 'confirm_identifier'
   | 'enter_code'
@@ -478,8 +481,23 @@ export interface AuthFlow {
    * Return to the single identifier field, keeping everything typed. The
    * mockup's exactly-two return points: "Not that address?" on the registration
    * code screen, and "Back" on the consent screen. There is NO general back().
+   *
+   * The field is re-looked-up on arrival, so the screen that greets them states
+   * what the address is NOW rather than what it was before they left; the answer
+   * never moves the step, because the return itself was the choice (HIL-651).
    */
   backToIdentifier(): void
+  /**
+   * Go back to the code of a registration this browser already started — the
+   * `resume_code` primary action of the `held_identifier` screen. A purely LOCAL
+   * move to the code step under the register intent: nothing is sent, because a
+   * code is already on its way, and no deadline is restored, because what a code
+   * is worth is the server's answer (the code screen's own "Send a new code"
+   * asks for a fresh one, held back by the server cooldown).
+   *
+   * A no-op nowhere: the screen that offers it is the only place it is drawn.
+   */
+  resumeHeldRegistration(): void
   /**
    * Cancel a running ceremony and return to the identifier field: aborts the
    * ceremony's signal and releases the pending guard (an abandoned ceremony may
@@ -882,11 +900,26 @@ const DONE_SCREENS: Record<AuthIntent, AuthFlowScreen> = {
  * ceremony waits on `waiting_external`; the remaining code and done screens
  * split by intent ({@link CODE_SCREENS}, {@link DONE_SCREENS}).
  *
+ * The identifier step is the one screen a LOOKUP has a say in: an address this
+ * browser is already holding a code for earns `held_identifier` instead of the
+ * registration offer, because offering to create an account there would deny a
+ * reservation the same person just made (HIL-651).
+ *
  * @param flow The current flow state.
+ * @param result The resolved lookup behind the field, or `null` when the
+ *   identifier step has nothing resolved (and on every other step, which does
+ *   not consult it).
  */
-export function screenKeyOf(flow: AuthFlowState): AuthFlowScreen {
+export function screenKeyOf(
+  flow: AuthFlowState,
+  result: IdentifierDetection | null = null,
+): AuthFlowScreen {
   switch (flow.step) {
     case 'identifier':
+      if (result?.status === 'pending') {
+        return 'held_identifier'
+      }
+
       return flow.intent === 'register' ? 'create_account' : 'sign_in'
     case 'consent':
       return 'terms'
@@ -974,7 +1007,9 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
   const channels = computedSignal(() =>
     applicableChannels(options.channels, flow.get().identifierKind),
   )
-  const screenKey = computedSignal(() => screenKeyOf(flow.get()))
+  const screenKey = computedSignal(() =>
+    screenKeyOf(flow.get(), detection.get().result),
+  )
   const primaryAction = computedSignal<AuthFlowPrimaryAction>(() => {
     const state = flow.get()
     switch (state.step) {
@@ -984,6 +1019,12 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         const result = detection.get().result
         if (result === null) {
           return null
+        }
+        if (result.status === 'pending') {
+          // Judged BEFORE the kind splits: a held number is held exactly as a
+          // held address is, and its channel choice would send a SECOND code
+          // for a reservation that already has one (HIL-651).
+          return { kind: 'resume_code' }
         }
         if (result.kind === 'phone') {
           // A phone never reveals a password; its channel choice IS the send —
@@ -1067,7 +1108,18 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     return identifier === form.get().identifier
   }
 
-  function scheduleDetect(identifier: string, kind: IdentifierKind): void {
+  /**
+   * Ask the lookup for an identifier the person just TYPED, after the debounce.
+   *
+   * @param identifier The field's current value.
+   * @param kind Its classification.
+   * @param moveOnPending Whether a `pending` reply may move to the code step.
+   */
+  function scheduleDetect(
+    identifier: string,
+    kind: IdentifierKind,
+    moveOnPending: boolean,
+  ): void {
     cancelDetect()
     // An empty or partial field rolls detection back to idle without spending a
     // lookup; a stale in-flight reply is dropped by the sequence+echo guards.
@@ -1080,14 +1132,48 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     detection.set(PENDING_DETECTION)
     debounceTimer = setTimeout(() => {
       debounceTimer = null
-      void runDetect(seq, identifier, kind)
+      void runDetect(seq, identifier, kind, moveOnPending)
     }, debounceMs)
   }
 
+  /**
+   * Ask the lookup for the field's CURRENT identifier the moment the flow comes
+   * BACK to the identifier step, with no debounce: the person is looking at a
+   * screen drawn from an answer that predates whatever they did in between, and
+   * a stale answer is exactly the defect (HIL-651). The reply may not move the
+   * step — returning to the field must not bounce them out of it again.
+   */
+  function refreshDetect(): void {
+    cancelDetect()
+    const identifier = form.get().identifier
+    const kind = classifyIdentifier(identifier)
+    // Same roll-back to idle an empty or partial field gets from
+    // scheduleDetect: there is nothing to ask about and nothing to reveal.
+    if (!isIdentifierComplete(identifier, kind)) {
+      detection.set(IDLE_DETECTION)
+
+      return
+    }
+    const seq = detectSeq
+    detection.set(PENDING_DETECTION)
+    void runDetect(seq, identifier, kind, false)
+  }
+
+  /**
+   * Run one lookup and apply its reply, unless a newer request or another field
+   * value orphaned it.
+   *
+   * @param seq The request's sequence number, checked against the newest.
+   * @param identifier The identifier asked about.
+   * @param kind Its classification.
+   * @param moveOnPending Whether a `pending` reply may move the flow to the code
+   *   step — true for a typed identifier, false for a return to the field.
+   */
   async function runDetect(
     seq: number,
     identifier: string,
     kind: IdentifierKind,
+    moveOnPending: boolean,
   ): Promise<void> {
     try {
       const result = await options.onDetect(identifier, kind)
@@ -1099,7 +1185,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         return
       }
       detection.set({ status: 'resolved', result })
-      applyDetection(result)
+      applyDetection(result, moveOnPending)
     } catch {
       if (seq === detectSeq) {
         // NO degraded state: an unanswered lookup reveals nothing and the
@@ -1113,14 +1199,28 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
    * Derive the intent from a resolved lookup: none → register (when
    * registration is open), pending → register parked on the code screen
    * WITHOUT re-sending (the reservation already sent one), active → login.
+   *
+   * What tells a return apart from an edit is the REQUEST, not any memory of the
+   * address: a lookup asked because the field changed may park the flow on the
+   * code step, a lookup asked because the flow came back to the field may not —
+   * that would take the step away the person just chose (HIL-651). Either way
+   * the reply lands in the detection signal, so the screen is drawn from it.
+   *
+   * @param result The resolved lookup.
+   * @param moveOnPending Whether a `pending` reply may move to the code step.
    */
-  function applyDetection(result: IdentifierDetection): void {
+  function applyDetection(
+    result: IdentifierDetection,
+    moveOnPending: boolean,
+  ): void {
     const state = flow.get()
     if (state.step !== 'identifier') {
       return
     }
     if (result.status === 'pending') {
-      flow.set({ ...state, step: 'code', intent: 'register' })
+      if (moveOnPending) {
+        flow.set({ ...state, step: 'code', intent: 'register' })
+      }
 
       return
     }
@@ -1256,7 +1356,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
           // retry a lookup that failed (idle after a rejection): without this
           // the surface would stay dead until the text actually changed.
           if (detection.get().status === 'idle') {
-            scheduleDetect(identifier, classifyIdentifier(identifier))
+            scheduleDetect(identifier, classifyIdentifier(identifier), true)
           }
 
           return
@@ -1274,7 +1374,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         error.set(null)
         resendAvailableAt.set(null)
         expiresAt.set(null)
-        scheduleDetect(identifier, kind)
+        scheduleDetect(identifier, kind, true)
 
         return
       }
@@ -1472,6 +1572,10 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         methodKey: null,
         channelKey: null,
       })
+      refreshDetect()
+    },
+    resumeHeldRegistration(): void {
+      flow.set({ ...flow.get(), step: 'code', intent: 'register' })
     },
     cancelMethod(): void {
       const state = flow.get()
@@ -1501,6 +1605,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       pending.set(false)
       error.set(null)
       flow.set({ ...state, step: 'identifier', methodKey: null })
+      refreshDetect()
     },
     applyExternal(next: Partial<AuthFlowState>): void {
       // The converge entry: an external transition lands with the same merge as

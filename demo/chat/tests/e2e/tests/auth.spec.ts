@@ -455,6 +455,38 @@ test('puts a held address back on its code step from the lookup alone', async ({
   expect(await mailsTo(email)).toHaveLength(1)
 })
 
+test('offers the held address its own code back, instead of "Create account"', async ({
+  page,
+}) => {
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await submitRegistration(page, email)
+  const code = await readRegisterCode(email)
+
+  // The same return as the case above — but here nobody retypes anything. The
+  // step the return lands on used to be drawn from the answer that came BEFORE
+  // the hold existed, so it offered to create an account on an address this very
+  // browser had just reserved (HIL-651). The return now asks again, and the
+  // answer it gets is the hold.
+  await page.getByTestId('auth-restart').click()
+  await expect(page.getByTestId('auth-heading')).toHaveText(
+    'You already have a code',
+  )
+  await expect(page.getByTestId('auth-identifier')).toHaveValue(email)
+  await expect(page.getByTestId('auth-password')).toHaveCount(0)
+
+  // And the way back is a way back, not a second send: the code already in the
+  // letter is the one this screen accepts.
+  await page.getByTestId('auth-resume-code').click()
+  await expect(page.getByTestId('auth-code')).toBeVisible()
+  await submitRegistrationCode(page, code)
+  await continueFromDone(page)
+  await expect(page.getByTestId('profile-name')).toHaveText(nameFromEmail(email))
+  expect(await mailsTo(email)).toHaveLength(1)
+})
+
 test('offers a countdown instead of a resend while the cooldown holds', async ({
   page,
 }) => {
