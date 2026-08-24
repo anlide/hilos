@@ -6,6 +6,7 @@ namespace Hilos\Database\Object\Item;
 
 use Hilos\Auth\WebAuthn\AssertionVerifier;
 use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
+use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -32,6 +33,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property int $userId
  * @property string $credentialId
  * @property string $publicKey
+ * @property int $algorithm
  * @property-read int $signCount
  * @property ?string $transports
  * @property ?string $aaguid
@@ -48,6 +50,7 @@ final class PasskeyCredential extends Object_
     public const string userId = 'userId';
     public const string credentialId = 'credentialId';
     public const string publicKey = 'publicKey';
+    public const string algorithm = 'algorithm';
     public const string signCount = 'signCount';
     public const string transports = 'transports';
     public const string aaguid = 'aaguid';
@@ -81,6 +84,7 @@ final class PasskeyCredential extends Object_
             self::userId => $this->entity->user_id,
             self::credentialId => $this->entity->credential_id,
             self::publicKey => $this->entity->public_key,
+            self::algorithm => $this->entity->algorithm,
             self::signCount => $this->entity->sign_count,
             self::transports => $this->entity->transports,
             self::aaguid => $this->entity->aaguid,
@@ -99,7 +103,7 @@ final class PasskeyCredential extends Object_
      * through {@see updateSignCount()} / {@see touchLastUsed()}, which write with a
      * targeted UPDATE and mirror the value on the loaded entity.
      *
-     * @param string $property Property name (identityId, userId, credentialId, publicKey, transports, aaguid, userHandle, label, createdAt)
+     * @param string $property Name of a settable property (see the class @property list)
      * @param mixed $value Value to set
      * @throws DatabaseException When the property cannot be set on a PasskeyCredential
      */
@@ -110,6 +114,7 @@ final class PasskeyCredential extends Object_
             self::userId => $this->entity->user_id = (int)$value,
             self::credentialId => $this->entity->credential_id = (string)$value,
             self::publicKey => $this->entity->public_key = (string)$value,
+            self::algorithm => $this->entity->algorithm = (int)$value,
             self::transports => $this->entity->transports = $value === null ? null : (string)$value,
             self::aaguid => $this->entity->aaguid = $value === null ? null : (string)$value,
             self::userHandle => $this->entity->user_handle = (string)$value,
@@ -184,17 +189,17 @@ final class PasskeyCredential extends Object_
     /**
      * Verifies a login assertion against this credential and records the successful use.
      *
-     * Runs the WebAuthn assertion check with this credential's stored public key and
-     * signature counter; on success it advances the stored counter to the value the
-     * authenticator reported (clone-detection baseline) and stamps last use. Any
-     * verification failure throws before either write, leaving the credential
-     * untouched.
+     * Runs the WebAuthn assertion check with this credential's stored public key,
+     * enrolled algorithm and signature counter; on success it advances the stored
+     * counter to the value the authenticator reported (clone-detection baseline)
+     * and stamps last use. Any verification failure throws before either write,
+     * leaving the credential untouched.
      *
      * @param AssertionVerifier $verifier Configured assertion verifier
      * @param string $expectedChallenge base64url challenge recovered from the signed token
      * @param string $clientDataJson Raw clientDataJSON bytes returned by the client
      * @param string $authenticatorData Raw authenticatorData bytes returned by the client
-     * @param string $signature Raw ECDSA (DER) signature bytes returned by the client
+     * @param string $signature Raw signature bytes returned by the client
      * @throws WebAuthnVerificationException When the assertion fails any client-data, signature or counter check
      * @throws DatabaseException When persisting the advanced counter or last-used stamp fails
      */
@@ -205,8 +210,11 @@ final class PasskeyCredential extends Object_
         string $authenticatorData,
         string $signature,
     ): void {
+        // The column is written only from a PasskeyAlgorithm case, so `from()` cannot
+        // miss on a row this framework wrote; a miss would be a corrupted table.
         $newSignCount = $verifier->verify(
             $this->entity->public_key,
+            PasskeyAlgorithm::from($this->entity->algorithm),
             $this->entity->sign_count,
             $expectedChallenge,
             $clientDataJson,

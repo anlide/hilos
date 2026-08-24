@@ -252,7 +252,7 @@ function describePasskeyError(error: unknown): string {
   }
   if (error instanceof DOMException) {
     if (error.name === 'NotAllowedError' || error.name === 'AbortError') {
-      return 'The passkey request was cancelled or timed out.'
+      return 'The passkey request was cancelled, or this device had no matching way to sign in — try a security key or your phone.'
     }
     if (error.name === 'InvalidStateError') {
       return 'This device already has a passkey for this account.'

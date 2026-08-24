@@ -20,6 +20,14 @@
 -- is the WebAuthn user handle (random_bytes, one per user, reused across a user's
 -- passkeys) provisioned now so usernameless/discoverable login (HIL-400) needs no
 -- migration. `label` and `last_used_at` are seeded for passkey management (HIL-404).
+--
+-- `algorithm` is the COSE identifier of the signature suite the key was enrolled
+-- with (HIL-658), and it is stored rather than derived because the key material
+-- does not carry it: for RSA the PKCS1 and PSS schemes share one kind of key, so a
+-- PEM alone cannot say which one a login must check against. It has no DEFAULT on
+-- purpose — a caller that forgot to pass it should fail loudly instead of quietly
+-- registering as ES256. SMALLINT is signed, which the COSE identifiers need: they
+-- run from -7 down past -257.
 
 CREATE TABLE `hilos_passkey_credential` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -27,6 +35,7 @@ CREATE TABLE `hilos_passkey_credential` (
     `user_id` INT UNSIGNED NOT NULL,
     `credential_id` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     `public_key` TEXT NOT NULL,
+    `algorithm` SMALLINT NOT NULL,
     `sign_count` INT UNSIGNED NOT NULL DEFAULT 0,
     `transports` VARCHAR(255) DEFAULT NULL,
     `aaguid` VARCHAR(36) DEFAULT NULL,

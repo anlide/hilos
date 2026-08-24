@@ -20,8 +20,11 @@ use Hilos\Database\PhpType;
  *
  * Unlike the identity/verification tables there is no DB-only secret to hide: the
  * `public_key` (PEM) is public material, so every column is ORM-mapped. The
- * WebAuthn signature verification reads `public_key` and `sign_count` through the
- * object layer ({@see ObjectPasskeyCredential}).
+ * WebAuthn signature verification reads `public_key`, `algorithm` and `sign_count`
+ * through the object layer ({@see ObjectPasskeyCredential}). The `algorithm`
+ * column carries the COSE identifier the key was enrolled with (HIL-658) and has
+ * no default: an RSA key does not say which scheme signed it, so a row that
+ * forgot its algorithm would be guessed at rather than verified.
  *
  * @method static EntityPasskeyCredentials get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityPasskeyCredentials getAll()
@@ -33,6 +36,7 @@ final class PasskeyCredential extends Entity
     public const string user_id = 'user_id';
     public const string credential_id = 'credential_id';
     public const string public_key = 'public_key';
+    public const string algorithm = 'algorithm';
     public const string sign_count = 'sign_count';
     public const string transports = 'transports';
     public const string aaguid = 'aaguid';
@@ -49,6 +53,7 @@ final class PasskeyCredential extends Entity
         self::user_id,
         self::credential_id,
         self::public_key,
+        self::algorithm,
         self::sign_count,
         self::transports,
         self::aaguid,
@@ -64,6 +69,7 @@ final class PasskeyCredential extends Entity
         self::user_id => PhpType::INTEGER->value,
         self::credential_id => PhpType::STRING->value,
         self::public_key => PhpType::TEXT->value,
+        self::algorithm => PhpType::INTEGER->value,
         self::sign_count => PhpType::INTEGER->value,
         self::transports => PhpType::STRING->value,
         self::aaguid => PhpType::STRING->value,
@@ -84,6 +90,7 @@ final class PasskeyCredential extends Entity
     public int $user_id;
     public string $credential_id;
     public string $public_key;
+    public int $algorithm;
     public int $sign_count = 0;
     public ?string $transports = null;
     public ?string $aaguid = null;

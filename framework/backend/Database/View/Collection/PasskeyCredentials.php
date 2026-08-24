@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Collection;
 
+use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Database\DatabaseException;
@@ -44,6 +45,7 @@ final class PasskeyCredentials extends DbCollection
      * @param int $userId Owning user id (denormalized for list/resolution)
      * @param string $credentialId Base64url credential id from the authenticator
      * @param string $publicKeyPem Credential public key as PEM
+     * @param PasskeyAlgorithm $algorithm Signature suite the ceremony enrolled the key under
      * @param int $signCount Initial signature counter from registration
      * @param ?string $transports Reported transports (e.g. 'internal,hybrid'), or null
      * @param ?string $aaguid Authenticator AAGUID, or null
@@ -59,6 +61,7 @@ final class PasskeyCredentials extends DbCollection
         int $userId,
         string $credentialId,
         string $publicKeyPem,
+        PasskeyAlgorithm $algorithm,
         int $signCount,
         ?string $transports,
         ?string $aaguid,
@@ -70,6 +73,7 @@ final class PasskeyCredentials extends DbCollection
             $userId,
             $credentialId,
             $publicKeyPem,
+            $algorithm,
             $signCount,
             $transports,
             $aaguid,

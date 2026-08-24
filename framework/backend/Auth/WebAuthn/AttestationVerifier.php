@@ -18,10 +18,11 @@ use Throwable;
  * returned, it checks the client data binding, CBOR-decodes the attestation
  * object, validates authenticatorData (RP-id hash, user-present, and
  * user-verified when policy requires it, attested-credential-data present), and
- * extracts the credential id, ES256 public key and signature counter into an
- * {@see AttestationResult}. Attestation is requested as `none`, so the
- * attestation statement is not trust-evaluated — only the credential material is
- * bound and captured. A pure verifier: no DB, no session, no I/O.
+ * extracts the credential id, the public key with the {@see PasskeyAlgorithm} it
+ * was enrolled under, and the signature counter into an {@see AttestationResult}.
+ * Attestation is requested as `none`, so the attestation statement is not
+ * trust-evaluated — only the credential material is bound and captured. A pure
+ * verifier: no DB, no session, no I/O.
  */
 final class AttestationVerifier
 {
@@ -47,7 +48,7 @@ final class AttestationVerifier
      * @param string $expectedChallenge base64url challenge recovered from the signed token
      * @param string $clientDataJson Raw clientDataJSON bytes returned by the client
      * @param string $attestationObject Raw CBOR attestationObject bytes returned by the client
-     * @return AttestationResult The credential id, public key, sign counter and AAGUID to persist
+     * @return AttestationResult The credential id, public key, algorithm, sign counter and AAGUID to persist
      * @throws WebAuthnVerificationException When the client data, attestation object or authenticatorData fails any check
      */
     public function verify(string $expectedChallenge, string $clientDataJson, string $attestationObject): AttestationResult
@@ -72,11 +73,12 @@ final class AttestationVerifier
             throw new WebAuthnVerificationException('Attested credential data is missing');
         }
 
-        $publicKeyPem = CoseKey::fromCbor($authData->credentialPublicKeyCbor)->toPem();
+        $coseKey = CoseKey::fromCbor($authData->credentialPublicKeyCbor);
 
         return new AttestationResult(
             Base64Url::encode($authData->credentialId),
-            $publicKeyPem,
+            $coseKey->toPem(),
+            $coseKey->algorithm(),
             $authData->signCount,
             $this->formatAaguid($authData->aaguid),
         );

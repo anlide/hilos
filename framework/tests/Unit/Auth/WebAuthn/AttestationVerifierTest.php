@@ -7,14 +7,20 @@ namespace Hilos\Tests\Unit\Auth\WebAuthn;
 use Hilos\Auth\WebAuthn\AttestationVerifier;
 use Hilos\Auth\WebAuthn\Base64Url;
 use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
+use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Auth\WebAuthn\WebAuthnConfig;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the registration (attestation) verifier (HIL-284).
+ * Unit tests for the registration (attestation) verifier (HIL-284, HIL-658).
  *
- * A genuine register ceremony yields the credential material to store; a ceremony
- * whose challenge, origin, RP-id hash or user-present flag is wrong is rejected.
+ * A genuine register ceremony yields the credential material to store, including
+ * the algorithm the authenticator enrolled under; a ceremony whose challenge,
+ * origin, RP-id hash or user-present flag is wrong is rejected. Every scenario
+ * runs once per declared algorithm, because the ceremony now offers a set rather
+ * than a single suite and the checks around the key must not care which one came
+ * back.
  */
 final class AttestationVerifierTest extends TestCase
 {
@@ -22,13 +28,23 @@ final class AttestationVerifierTest extends TestCase
     private const string ORIGIN = 'http://localhost';
 
     /**
-     * A valid registration returns the credential id, key, counter and AAGUID.
+     * @return list<array{PasskeyAlgorithm}> Every algorithm the ceremony offers
+     */
+    public static function declaredAlgorithms(): array
+    {
+        return array_map(static fn(PasskeyAlgorithm $algorithm): array => [$algorithm], PasskeyAlgorithm::cases());
+    }
+
+    /**
+     * A valid registration returns the credential id, key, algorithm, counter and AAGUID.
      *
+     * @param PasskeyAlgorithm $algorithm Algorithm the authenticator signs with
      * @throws WebAuthnVerificationException Never in the success path
      */
-    public function testValidRegistrationYieldsCredentialMaterial(): void
+    #[DataProvider('declaredAlgorithms')]
+    public function testValidRegistrationYieldsCredentialMaterial(PasskeyAlgorithm $algorithm): void
     {
-        $vectors = new WebAuthnTestVectors();
+        $vectors = new WebAuthnTestVectors(algorithm: $algorithm);
         $credentialId = random_bytes(20);
         $aaguid = hex2bin('0102030405060708090a0b0c0d0e0f10');
 
@@ -42,6 +58,7 @@ final class AttestationVerifierTest extends TestCase
         $result = new AttestationVerifier($this->config())->verify(self::CHALLENGE, $clientDataJson, $vectors->attestationObject($authData));
 
         self::assertSame(Base64Url::encode($credentialId), $result->credentialId);
+        self::assertSame($algorithm, $result->algorithm);
         self::assertSame(7, $result->signCount);
         self::assertSame('01020304-0506-0708-090a-0b0c0d0e0f10', $result->aaguid);
         self::assertNotFalse(openssl_pkey_get_public($result->publicKeyPem));
@@ -49,10 +66,13 @@ final class AttestationVerifierTest extends TestCase
 
     /**
      * A clientDataJSON echoing a different challenge is rejected.
+     *
+     * @param PasskeyAlgorithm $algorithm Algorithm the authenticator signs with
      */
-    public function testWrongChallengeIsRejected(): void
+    #[DataProvider('declaredAlgorithms')]
+    public function testWrongChallengeIsRejected(PasskeyAlgorithm $algorithm): void
     {
-        $vectors = new WebAuthnTestVectors();
+        $vectors = new WebAuthnTestVectors(algorithm: $algorithm);
         $authData = $this->registrationAuthData($vectors);
         $clientDataJson = $vectors->clientDataJson('a-different-challenge', self::ORIGIN);
 
@@ -62,10 +82,13 @@ final class AttestationVerifierTest extends TestCase
 
     /**
      * A ceremony from a non-allowed origin is rejected.
+     *
+     * @param PasskeyAlgorithm $algorithm Algorithm the authenticator signs with
      */
-    public function testDisallowedOriginIsRejected(): void
+    #[DataProvider('declaredAlgorithms')]
+    public function testDisallowedOriginIsRejected(PasskeyAlgorithm $algorithm): void
     {
-        $vectors = new WebAuthnTestVectors();
+        $vectors = new WebAuthnTestVectors(algorithm: $algorithm);
         $authData = $this->registrationAuthData($vectors);
         $clientDataJson = $vectors->clientDataJson(self::CHALLENGE, 'http://evil.example');
 
@@ -75,10 +98,13 @@ final class AttestationVerifierTest extends TestCase
 
     /**
      * authenticatorData scoped to a different RP id is rejected.
+     *
+     * @param PasskeyAlgorithm $algorithm Algorithm the authenticator signs with
      */
-    public function testWrongRpIdHashIsRejected(): void
+    #[DataProvider('declaredAlgorithms')]
+    public function testWrongRpIdHashIsRejected(PasskeyAlgorithm $algorithm): void
     {
-        $vectors = new WebAuthnTestVectors('localhost');
+        $vectors = new WebAuthnTestVectors('localhost', $algorithm);
         $authData = $this->registrationAuthData($vectors);
         $clientDataJson = $vectors->clientDataJson(self::CHALLENGE, self::ORIGIN);
 
@@ -90,10 +116,13 @@ final class AttestationVerifierTest extends TestCase
 
     /**
      * A ceremony without the user-present flag is rejected.
+     *
+     * @param PasskeyAlgorithm $algorithm Algorithm the authenticator signs with
      */
-    public function testMissingUserPresenceIsRejected(): void
+    #[DataProvider('declaredAlgorithms')]
+    public function testMissingUserPresenceIsRejected(PasskeyAlgorithm $algorithm): void
     {
-        $vectors = new WebAuthnTestVectors();
+        $vectors = new WebAuthnTestVectors(algorithm: $algorithm);
         $authData = $vectors->authenticatorData(
             WebAuthnTestVectors::FLAG_ATTESTED_CREDENTIAL_DATA,
             1,

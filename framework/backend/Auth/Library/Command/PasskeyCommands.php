@@ -14,6 +14,7 @@ use Hilos\Auth\WebAuthn\Base64Url;
 use Hilos\Auth\WebAuthn\DTO\PasskeyOptionsSignalData;
 use Hilos\Auth\WebAuthn\Exception\WebAuthnChallengeException;
 use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
+use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Auth\WebAuthn\PasskeyDeviceName;
 use Hilos\Auth\WebAuthn\WebAuthnChallengeSigner;
 use Hilos\Auth\WebAuthn\WebAuthnConfig;
@@ -47,11 +48,6 @@ use Random\RandomException;
 final class PasskeyCommands extends AbstractLibraryCommands
 {
     /**
-     * COSE algorithm identifier for ES256, the one signature suite these ceremonies ask for.
-     */
-    private const int ALG_ES256 = -7;
-
-    /**
      * Domain-separation prefix of a derived WebAuthn user handle, so the same secret cannot
      * produce a handle that collides with anything else derived from it.
      */
@@ -67,11 +63,11 @@ final class PasskeyCommands extends AbstractLibraryCommands
      *
      * The register-start entry, authenticated (see AUTH_ACTIONS): a passkey is
      * added to an already signed-in account. It builds the publicKey creation
-     * options (ES256, resident key required, the user's existing passkeys excluded)
-     * and a stateless challenge token bound to the session and user synchronously
-     * (CPU-only, no I/O), then — the framework `action_success` carries no domain
-     * payload — hands them to the browser on the PASSKEY_OPTIONS signal for
-     * navigator.credentials.create().
+     * options (the {@see PasskeyAlgorithm} set, resident key required, the user's
+     * existing passkeys excluded) and a stateless challenge token bound to the
+     * session and user synchronously (CPU-only, no I/O), then — the framework
+     * `action_success` carries no domain payload — hands them to the browser on the
+     * PASSKEY_OPTIONS signal for navigator.credentials.create().
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param PasskeyRegisterOptionsActionDTO $dto Parsed options request payload (no fields)
@@ -173,6 +169,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
                 $acting->userId,
                 $result->credentialId,
                 $result->publicKeyPem,
+                $result->algorithm,
                 $result->signCount,
                 $transports,
                 $result->aaguid,
@@ -352,7 +349,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
                 'name' => $displayName,
                 'displayName' => $displayName,
             ],
-            'pubKeyCredParams' => [['type' => 'public-key', 'alg' => self::ALG_ES256]],
+            'pubKeyCredParams' => PasskeyAlgorithm::credentialParameters(),
             'authenticatorSelection' => [
                 'residentKey' => 'required',
                 'requireResidentKey' => true,
