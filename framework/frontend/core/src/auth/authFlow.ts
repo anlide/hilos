@@ -246,10 +246,12 @@ export interface AuthFlowError {
 
 /**
  * The outcome a delegated dispatch reports back. On failure `message`/`code`
- * surface inline (auth deliberately shows the backend reason). On success
- * `next` is a PARTIAL flow state merged over the current one — the backend
- * decides where the flow goes; omit it when a session upgrade closes the
- * surface. `resendAt` arms the resend gate ({@link AuthFlow.resend}).
+ * surface inline (auth deliberately shows the backend reason). `next` is a
+ * PARTIAL flow state merged over the current one whatever `ok` says — the
+ * backend decides where the flow goes, and a refusal that knows where the person
+ * belongs says so too (`AuthFlowOutcome::rejectTo()`, against the `refuse()` that
+ * does not); omit it when a session upgrade closes the surface. `resendAt` arms
+ * the resend gate ({@link AuthFlow.resend}).
  */
 export interface AuthFlowSubmitOutcome {
   /** Whether the dispatch succeeded. */
@@ -258,7 +260,7 @@ export interface AuthFlowSubmitOutcome {
   readonly message?: string
   /** The semantic error code on failure, e.g. `rate_limited` (HIL-420). */
   readonly code?: string
-  /** A partial next flow state to merge on success; omit to stay put. */
+  /** A partial next flow state to merge whatever `ok` says; omit to stay put. */
   readonly next?: Partial<AuthFlowState>
   /**
    * The SERVER moment a code re-send is allowed again, in epoch ms, when one was
@@ -1234,17 +1236,30 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     }
   }
 
+  /**
+   * Apply one outcome — the single place a dispatch's answer reaches the surface.
+   *
+   * A REFUSAL moves the flow too (HIL-672): the backend answers 'this did not
+   * work AND here is where you should be' with `rejectTo()`, and dropping the
+   * second half stranded the person on a screen whose only way out was editing
+   * the identifier. The error is set BEFORE the merge so the sentence and the
+   * screen it belongs to land in one paint. The two moments stay success-only:
+   * a refusal sent no code, so arming a countdown off it would time a letter
+   * nobody received — while countdowns ALREADY running are left alone, the
+   * refusal having cancelled nothing.
+   */
   function applyOutcome(outcome: AuthFlowSubmitOutcome): void {
     if (!outcome.ok) {
       error.set({
         message: outcome.message ?? null,
         code: outcome.code ?? null,
       })
-
-      return
     }
     if (outcome.next !== undefined) {
       flow.set({ ...flow.get(), ...outcome.next })
+    }
+    if (!outcome.ok) {
+      return
     }
     if (outcome.resendAt !== undefined) {
       resendAvailableAt.set(toLocal(outcome.resendAt))
@@ -1398,8 +1413,9 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         // A method chosen BEFORE the terms starts here, not where it was picked
         // (HIL-417): accepting the terms is what sends the magic link. Parking in
         // `external` is the same move `chooseMethod` makes for a login, so the
-        // check_inbox screen is derived the one way; a refusal leaves the person
-        // on the terms screen with the reason, nothing having been sent.
+        // check_inbox screen is derived the one way; a refusal that names
+        // nowhere else leaves the person on the terms screen with the reason,
+        // nothing having been sent.
         //
         // It is a ceremony like the one a login starts, so it is registered as
         // one (HIL-418): a reset has to END what it started, not merely orphan
@@ -1464,10 +1480,11 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
 
         return
       }
-      // Park in `external` while the ceremony runs; on failure fall back to the
-      // identifier field so the user can retry another way. A superseded
-      // ceremony's late outcome is ignored (the generation and park guards); a
-      // CANCELED one's is judged by intent ({@link applyLateOutcome}).
+      // Park in `external` while the ceremony runs; on a failure that names
+      // nowhere else fall back to the identifier field so the user can retry
+      // another way. A superseded ceremony's late outcome is ignored (the
+      // generation and park guards); a CANCELED one's is judged by intent
+      // ({@link applyLateOutcome}).
       flow.set({ ...chosenFrom, step: 'external', methodKey: key })
       pending.set(true)
       const seq = ++dispatchSeq
@@ -1497,7 +1514,15 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         // resendAt a magic-link send replies with).
         applyOutcome(outcome)
         if (!outcome.ok) {
-          flow.set({ ...state, step: 'identifier', methodKey: null })
+          // The fall-back is exactly that (HIL-672): a refusal that NAMED a step
+          // has already been applied above and wins, and only one that named
+          // nothing (`refuse()`, e.g. send_cap_reached) leaves the person here
+          // with nowhere to be but the field. The state is re-read rather than
+          // taken from the snapshot above, which predates the merge and would
+          // roll the intent back along with the step.
+          if (outcome.next === undefined) {
+            flow.set({ ...flow.get(), step: 'identifier', methodKey: null })
+          }
 
           return
         }

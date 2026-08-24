@@ -1453,6 +1453,100 @@ describe('failure surface', () => {
     })
     expect(flow.error.get()).toEqual({ message: 'Ceremony failed', code: null })
   })
+
+  it('a refusal that names a step moves the surface and keeps the reason on screen', async () => {
+    const flow = setup({
+      onSubmit: async () => ({
+        ok: false,
+        code: 'identifier_taken',
+        message: 'That address is already registered.',
+        next: { step: 'identifier' as const, intent: 'login' as const },
+      }),
+      onDetect: async (identifier) =>
+        detected({ identifier, status: 'none', methods: [] }),
+    })
+    await typeAndDetect(flow, 'new@b.com')
+    flow.setField('password', 'x'.repeat(PASSWORD_MIN_LENGTH))
+    await flow.submit()
+    expect(flow.flow.get().step).toBe('consent')
+    flow.setField('consentAccepted', true)
+    await flow.submit()
+    expect(flow.flow.get()).toMatchObject({
+      step: 'identifier',
+      intent: 'login',
+    })
+    expect(flow.screenKey.get()).toBe('sign_in')
+    expect(flow.error.get()).toEqual({
+      message: 'That address is already registered.',
+      code: 'identifier_taken',
+    })
+  })
+
+  it('a refusal that names a step arms no countdown', async () => {
+    const flow = setup({
+      onSubmit: async () => ({
+        ok: false,
+        code: 'identifier_taken',
+        message: 'That address is already registered.',
+        next: { step: 'identifier' as const, intent: 'login' as const },
+        resendAt: Date.now() + 30 * SECOND_MS,
+        expiresAt: Date.now() + 300 * SECOND_MS,
+      }),
+      onDetect: async (identifier) =>
+        detected({ identifier, status: 'none', methods: [] }),
+    })
+    await typeAndDetect(flow, 'new@b.com')
+    flow.setField('password', 'x'.repeat(PASSWORD_MIN_LENGTH))
+    await flow.submit()
+    flow.setField('consentAccepted', true)
+    await flow.submit()
+    expect(flow.flow.get().step).toBe('identifier')
+    expect(flow.resendAvailableAt.get()).toBeNull()
+    expect(flow.expiresAt.get()).toBeNull()
+  })
+
+  it('a refusal that names no step still leaves the surface exactly where it is', async () => {
+    const flow = setup({
+      onSubmit: async () => ({
+        ok: false,
+        message: 'That password was already changed elsewhere.',
+      }),
+    })
+    await typeAndDetect(flow, 'a@b.com')
+    flow.applyExternal({ step: 'set_password', intent: 'recovery' })
+    flow.setField('newPassword', 'x'.repeat(PASSWORD_MIN_LENGTH))
+    await flow.submit()
+    expect(flow.flow.get()).toMatchObject({
+      step: 'set_password',
+      intent: 'recovery',
+    })
+    expect(flow.error.get()).toEqual({
+      message: 'That password was already changed elsewhere.',
+      code: null,
+    })
+  })
+
+  it('a ceremony refusal that names a step goes where the backend said, not to the identifier field', async () => {
+    const flow = setup({
+      onMethodAction: async () => ({
+        ok: false,
+        code: 'magic_link_invalid',
+        message: 'That link is no longer good.',
+        next: { step: 'code' as const, intent: 'login' as const },
+      }),
+    })
+    await typeAndDetect(flow, 'a@b.com')
+    await flow.chooseMethod('passkey')
+    expect(flow.flow.get()).toMatchObject({
+      step: 'code',
+      intent: 'login',
+      methodKey: 'passkey',
+    })
+    expect(flow.error.get()).toEqual({
+      message: 'That link is no longer good.',
+      code: 'magic_link_invalid',
+    })
+  })
 })
 
 describe('method-set-agnostic', () => {
