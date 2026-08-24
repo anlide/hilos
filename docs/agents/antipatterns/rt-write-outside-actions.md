@@ -48,7 +48,10 @@ log line) passes.
    ```
 
 2. **An owning agent that writes to the state collection because it can.** Being
-   the truth source is permission to write, not a delivery mechanism:
+   the truth source is permission to write, not a delivery mechanism - and not
+   even permission to write anything: a claim names the operations it covers, so
+   an agent that may add and remove is refused on an edit (HIL-688), and only the
+   actions ask that question:
 
    ```php
    // Wrong: the truth source still has to go through the actions.

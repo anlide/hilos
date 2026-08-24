@@ -45,7 +45,14 @@ Use this skill for agent business logic and registration work. Start by reading 
    is declared. An agent declared `AgentScope::NODE` runs on every node and must
    therefore own no RT collection — a second owner splits it, and all the daemon
    can do about that is refuse the other node's writes and log
-   `RT collection <key> has truth sources on two nodes`.
+   `RT collection <key> has truth sources on two nodes` — and only when both nodes
+   claim the WHOLE right, since a claim may cover part of the operations.
+   Say what the agent may DO with the rows it claims when that is less than
+   everything: `AbstractAgent::defaultTruthSourceOperations()` is the one place a
+   kind of agent answers, and `AbstractUsersLibraryAgent` overrides it with adding
+   and removing. Per-claim exceptions go in the fourth argument of `register()`.
+   The guard names the operation it refused, so a wrong answer here reads as a
+   `RtTruthSourceWriteNotAllowedException` on one action rather than on the agent.
 7. When the agent answers for a *set* — a list, a search, a create with nothing
    to address yet, a command with no addressee — read
    `docs/agents/architecture/entity-libraries.md` before writing its registry

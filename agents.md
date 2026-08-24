@@ -200,7 +200,7 @@ additional change in one of these surfaces, stop and ask again before editing it
 
 1. **Never** use Repository or Service on top of DbCollection — call `Hilos::$db->collection->actions->...` directly
 2. **Never** block in `onTick()` — must complete in < 0.1s
-3. **Only the truth source agent** writes to its DB/RT collection
+3. **Only the truth source agent** writes to its DB/RT collection, and only the operations its claim covers (`register()` takes a list of `TruthSourceOperation`)
 4. All PHP files: `declare(strict_types=1)` at top
 5. Signal routing is **declarative** in `SignalRouter` — do not add routing logic in agents
 6. For code style, use the matching small rule from [code-style/README.md](docs/agents/code-style/README.md)

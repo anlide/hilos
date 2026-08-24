@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Actions\Item;
 
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Item\DbActions;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
@@ -66,12 +67,18 @@ abstract class RtActions
     }
 
     /**
+     * Ensures the caller may perform one operation on the row this item wraps.
+     *
+     * Defaults to editing because that is what an item action does: the row is already there,
+     * held by this very item, and the ones that instead drop it name the operation themselves.
+     *
+     * @param TruthSourceOperation $operation Operation the caller is about to perform
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
-     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtTruthSourceWriteNotAllowedException When the row or the operation is not the caller's
      */
-    protected function ensureCanWrite(): void
+    protected function ensureCanWrite(TruthSourceOperation $operation = TruthSourceOperation::Update): void
     {
-        RtTruthSourceRegistry::checkCanWriteState($this->getRtCollectionKey(), $this->state->getId());
+        RtTruthSourceRegistry::checkCanWriteState($this->getRtCollectionKey(), $this->state->getId(), $operation);
     }
 
     /**
@@ -122,7 +129,7 @@ abstract class RtActions
      */
     protected function remove(): void
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
 
         $this->getRtCollection()->getStateCollection()->remove($this->state->getId());
     }

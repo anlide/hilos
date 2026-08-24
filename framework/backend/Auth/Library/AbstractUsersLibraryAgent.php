@@ -60,6 +60,7 @@ use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Runtime\State\Item\RecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter;
@@ -234,6 +235,22 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         TruthSourceRegistry::registerCreate($this->usersCollection(), $this->getId());
         $this->registerRtTruthSource(RegistrationWaiter::RT_COLLECTION);
         $this->registerRtTruthSource(RecoveryWaiter::RT_COLLECTION);
+    }
+
+    /**
+     * A library brings a row into being and takes it away, and never edits one.
+     *
+     * The standard behaviour of a library rather than a switch each project throws for
+     * itself: what a library writes is a fact about an account being made or unmade, and a
+     * fact already written is not its to reword. The whole of the rule is this one line, so
+     * revisiting it - the owner is explicitly unsure about the removal half - costs one edit
+     * and not a walk of every claim.
+     *
+     * @return list<TruthSourceOperation> Adding and removing, never updating
+     */
+    protected function defaultTruthSourceOperations(): array
+    {
+        return [TruthSourceOperation::Add, TruthSourceOperation::Remove];
     }
 
     /**

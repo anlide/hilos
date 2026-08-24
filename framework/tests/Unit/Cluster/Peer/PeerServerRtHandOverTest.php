@@ -113,7 +113,12 @@ final class PeerServerRtHandOverTest extends TestCase
              * @param string $signalType RT sync signal type the frame carried
              * @param SignalDTO $signal RT sync signal to apply
              */
-            public function applyRemoteRtSync(string $originNodeId, string $signalType, SignalDTO $signal): void
+            public function applyRemoteRtSync(
+                string $originNodeId,
+                string $signalType,
+                SignalDTO $signal,
+                bool $partialOwner = false,
+            ): void
             {
             }
 

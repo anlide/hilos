@@ -1,0 +1,161 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Tests\Unit;
+
+use Hilos\Auth\Detection\IdentifierDetector;
+use Hilos\Auth\Library\AbstractUsersLibraryAgent;
+use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\TruthSource\RtTruthSourceRegistry;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * Unit tests for the operations an agent's own claims carry.
+ */
+final class AgentTruthSourceOperationsTest extends TestCase
+{
+    public function tearDown(): void
+    {
+        ExecutionContext::setCurrentAgentId(null);
+        RtTruthSourceRegistry::unregisterAgent(AgentTruthSourceOperationsTestAgent::AGENT_TYPE);
+        RtTruthSourceRegistry::unregisterAgent(AgentTruthSourceOperationsTestLibrary::AGENT_TYPE);
+
+        parent::tearDown();
+    }
+
+    public function testOrdinaryAgentClaimsEveryOperation(): void
+    {
+        $agent = new AgentTruthSourceOperationsTestAgent();
+        $agent->onStart();
+        ExecutionContext::setCurrentAgentId($agent->getId());
+
+        foreach (TruthSourceOperation::ALL as $operation) {
+            RtTruthSourceRegistry::checkCanWriteState(
+                AgentTruthSourceOperationsTestAgent::RT_COLLECTION,
+                '1',
+                $operation,
+            );
+        }
+
+        $this->assertTrue(true);
+    }
+
+    public function testLibraryAgentMayBringARowAndTakeItAway(): void
+    {
+        $agent = new AgentTruthSourceOperationsTestLibrary();
+        $agent->onStart();
+        ExecutionContext::setCurrentAgentId($agent->getId());
+
+        RtTruthSourceRegistry::checkCanWriteState(
+            AgentTruthSourceOperationsTestLibrary::RT_COLLECTION,
+            '1',
+            TruthSourceOperation::Add,
+        );
+        RtTruthSourceRegistry::checkCanWriteState(
+            AgentTruthSourceOperationsTestLibrary::RT_COLLECTION,
+            '1',
+            TruthSourceOperation::Remove,
+        );
+
+        $this->assertTrue(true);
+    }
+
+    public function testLibraryAgentMayNotEditWhatIsAlreadyWritten(): void
+    {
+        $agent = new AgentTruthSourceOperationsTestLibrary();
+        $agent->onStart();
+        ExecutionContext::setCurrentAgentId($agent->getId());
+
+        $this->expectExceptionMessage(
+            "with operations [add, remove] and may not update state '1'."
+        );
+        RtTruthSourceRegistry::checkCanWriteState(
+            AgentTruthSourceOperationsTestLibrary::RT_COLLECTION,
+            '1',
+            TruthSourceOperation::Update,
+        );
+    }
+}
+
+/**
+ * An agent that says nothing about operations, so it holds all of them.
+ */
+final class AgentTruthSourceOperationsTestAgent extends AbstractAgent
+{
+    public const string AGENT_TYPE = 'unit_truth_source_operations';
+    public const string RT_COLLECTION = 'unit_truth_source_operations_rt';
+
+    /**
+     * Claims the one runtime collection this test asks about.
+     */
+    public function onStart(): void
+    {
+        $this->registerRtTruthSource(self::RT_COLLECTION);
+    }
+
+    /**
+     * Holds nothing across a stop.
+     */
+    public function onStop(): void
+    {
+    }
+}
+
+/**
+ * The framework's library base class, made concrete with the seams a project fills in.
+ *
+ * Subclassed rather than imitated on purpose: what is under test is the default the base
+ * class declares, and a copy of that default in a test agent would prove only the copy.
+ */
+final class AgentTruthSourceOperationsTestLibrary extends AbstractUsersLibraryAgent
+{
+    public const string AGENT_TYPE = 'unit_truth_source_operations_library';
+    public const string RT_COLLECTION = 'unit_truth_source_operations_library_rt';
+
+    /**
+     * Claims the one runtime collection this test asks about, through the same helper the
+     * real library uses, so the claim carries the base class's default.
+     */
+    public function onStart(): void
+    {
+        $this->registerRtTruthSource(self::RT_COLLECTION);
+    }
+
+    /**
+     * @return string Table this library would mint accounts in
+     */
+    protected function usersCollection(): string
+    {
+        return 'unit_truth_source_operations_users';
+    }
+
+    /**
+     * @param string $displayName Name the account would be minted under
+     * @return int Never returned: no test drives account creation
+     */
+    public function createUser(string $displayName): int
+    {
+        return 0;
+    }
+
+    /**
+     * @param int $userId Account to name
+     * @return ?string Always null: no test drives account lookup
+     */
+    public function displayNameOf(int $userId): ?string
+    {
+        return null;
+    }
+
+    /**
+     * @return IdentifierDetector Detector offering no method, since no test submits an identifier
+     */
+    protected function buildAuthMethods(): IdentifierDetector
+    {
+        return new IdentifierDetector([]);
+    }
+}

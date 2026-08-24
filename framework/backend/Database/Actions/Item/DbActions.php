@@ -7,6 +7,7 @@ namespace Hilos\Database\Actions\Item;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
@@ -68,6 +69,9 @@ abstract class DbActions
     /**
      * Ensures write is allowed and collection is loaded if needed.
      *
+     * The operation is editing: an item action holds a record that already exists, and minting
+     * a new one goes through the collection's create guard instead.
+     *
      * @throws ObjectCollectionNullException If object collection is null (manual)
      * @throws ObjectGetIdStringNotImplementedException When the item primary key is null during the per-item write check
      * @throws UnknownLazyStrategyException If lazy strategy is unknown
@@ -84,7 +88,11 @@ abstract class DbActions
             case Objects::LAZY_STRATEGY_NONE:
                 $collectionKey = $objectCollection->getCollectionKey();
                 if ($this->object->isRelated()) {
-                    TruthSourceRegistry::checkCanWriteItem($collectionKey, $this->object->getIdString());
+                    TruthSourceRegistry::checkCanWriteItem(
+                        $collectionKey,
+                        $this->object->getIdString(),
+                        TruthSourceOperation::Update,
+                    );
                 } else {
                     TruthSourceRegistry::checkCanWrite($collectionKey);
                 }

@@ -27,6 +27,10 @@ use Throwable;
  *
  * {@see $originNodeId} is what a dropped frame is logged with, and what names the other
  * owner when a collection turns out to have a truth source on two nodes.
+ *
+ * {@see $partialOwner} is what keeps that refusal from firing on a legitimate co-owner
+ * (HIL-688): a node writing a collection it holds only part of the right over says so in the
+ * frame, and the node holding the rest applies it instead of calling it a split.
  */
 final class PeerRtSyncDTO extends PeerDTO
 {
@@ -42,6 +46,9 @@ final class PeerRtSyncDTO extends PeerDTO
     /** @var string Payload key: the serialized RT sync signal */
     public const string FIELD_SIGNAL = 'signal';
 
+    /** @var string Payload key: whether the origin holds only part of the right over the collection */
+    public const string FIELD_PARTIAL_OWNER = 'partialOwner';
+
     /** @var list<string> The only signal types an RT replica frame may carry */
     public const array SIGNAL_TYPES = [
         SignalTypeConstants::RT_SYNC_CREATED,
@@ -53,11 +60,13 @@ final class PeerRtSyncDTO extends PeerDTO
      * @param string $originNodeId Id of the node the write happened on
      * @param string $signalType RT sync signal type the frame carries
      * @param SignalDTO $signal RT sync signal to apply on the receiving node
+     * @param bool $partialOwner Whether the origin holds only part of the right over the collection
      */
     public function __construct(
         public readonly string $originNodeId,
         public readonly string $signalType,
         public readonly SignalDTO $signal,
+        public readonly bool $partialOwner = false,
     ) {
     }
 
@@ -83,11 +92,16 @@ final class PeerRtSyncDTO extends PeerDTO
             self::FIELD_ORIGIN_NODE_ID => $this->originNodeId,
             self::FIELD_SIGNAL_TYPE => $this->signalType,
             self::FIELD_SIGNAL => $this->signal->toArray(),
+            self::FIELD_PARTIAL_OWNER => $this->partialOwner,
         ];
     }
 
     /**
      * Restores an RT sync frame from its wire array.
+     *
+     * The partial-owner mark is read strictly and defaults to false: a node of an older build
+     * marks nothing, and the safe reading of its silence is that it claims the whole right -
+     * that keeps the two-owner refusal firing rather than silently switching itself off.
      *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored RT sync frame
@@ -121,6 +135,7 @@ final class PeerRtSyncDTO extends PeerDTO
             originNodeId: $originNodeId,
             signalType: $signalType,
             signal: $signal,
+            partialOwner: ($data[self::FIELD_PARTIAL_OWNER] ?? false) === true,
         );
     }
 }

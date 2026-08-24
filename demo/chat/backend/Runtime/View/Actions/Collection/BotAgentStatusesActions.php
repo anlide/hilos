@@ -8,6 +8,7 @@ use Demo\Chat\Runtime\State\Collection\BotAgentStatuses as StateBotAgentStatuses
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\View\Collection\BotAgentStatuses;
 use Demo\Chat\Runtime\View\Item\BotAgentStatus as ViewBotAgentStatus;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
@@ -36,7 +37,7 @@ final class BotAgentStatusesActions extends RtActions
      */
     public function ensure(int $botId): ViewBotAgentStatus
     {
-        $this->ensureCanWriteState((string)$botId);
+        $this->ensureCanWriteState((string)$botId, TruthSourceOperation::Add);
 
         $existing = $this->stateCollection->get((string)$botId);
         if ($existing instanceof StateBotAgentStatus) {

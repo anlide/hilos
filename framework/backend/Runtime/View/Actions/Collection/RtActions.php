@@ -8,6 +8,7 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
@@ -161,20 +162,21 @@ abstract class RtActions
     }
 
     /**
-     * Ensures write is allowed for one runtime state id.
+     * Ensures one operation on one runtime state id is allowed.
      *
      * @param string $stateId Runtime state id
+     * @param TruthSourceOperation $operation Operation the caller is about to perform
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
-     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtTruthSourceWriteNotAllowedException When the row or the operation is not the caller's
      */
-    protected function ensureCanWriteState(string $stateId): void
+    protected function ensureCanWriteState(string $stateId, TruthSourceOperation $operation): void
     {
         $collectionName = $this->getCollectionName()
             ?? throw new RtActionsCollectionNameNullException(
                 "Cannot ensure write: collection name is null"
             );
-        RtTruthSourceRegistry::checkCanWriteState($collectionName, $stateId);
+        RtTruthSourceRegistry::checkCanWriteState($collectionName, $stateId, $operation);
     }
 
     /**
@@ -192,7 +194,7 @@ abstract class RtActions
      */
     protected function addStateToCollection(RtState $state): void
     {
-        $this->ensureCanWriteState($state->getId());
+        $this->ensureCanWriteState($state->getId(), TruthSourceOperation::Add);
         $this->getStateCollection()->add($state);
     }
 
@@ -210,7 +212,7 @@ abstract class RtActions
      */
     protected function applyDiffToState(RtState $state, array $diff): void
     {
-        $this->ensureCanWriteState($state->getId());
+        $this->ensureCanWriteState($state->getId(), TruthSourceOperation::Update);
         $state->applyDiff($diff);
         $this->queueRtSyncUpdated($state->getId(), $diff);
         $state->markRtSyncBaseline();
@@ -230,12 +232,15 @@ abstract class RtActions
      */
     protected function removeStateFromCollection(string $id): void
     {
-        $this->ensureCanWriteState($id);
+        $this->ensureCanWriteState($id, TruthSourceOperation::Remove);
         $this->getStateCollection()->remove($id);
     }
 
     /**
      * Clears all states from collection and queues RT sync deleted for each.
+     *
+     * Every row is checked for removal before the first one is announced: a wipe that refused
+     * halfway would leave the store cleared for some keys and announced for others.
      *
      * @throws RtActionsCallbackNotSetException When clear-cache callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
@@ -249,6 +254,9 @@ abstract class RtActions
         $collectionName = $this->getCollectionName();
         $stateCollection = $this->getStateCollection();
         if ($collectionName !== null) {
+            foreach ($stateCollection as $state) {
+                $this->ensureCanWriteState($state->getId(), TruthSourceOperation::Remove);
+            }
             foreach ($stateCollection as $state) {
                 $this->queueRtSyncDeleted($state->getId(), $state->toArray());
             }

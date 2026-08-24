@@ -1641,7 +1641,7 @@ final class PeerServer extends AbstractServer implements
     /**
      * Announces one RT sync fact written on this node to every other node of the mesh.
      *
-     * Implements {@see RtSyncMesh}. An RT collection has one truth source in the cluster, so
+     * Implements {@see RtSyncMesh}. A fact about an RT collection concerns every node alike, so
      * there is nobody to address:
      * the fact goes to every handshaked link, and each receiver applies it to its read-only
      * copy. Delivery is best-effort in the same sense as {@see sendSignalToNode()} — a node
@@ -1650,10 +1650,13 @@ final class PeerServer extends AbstractServer implements
      *
      * @param string $signalType RT sync signal type being announced
      * @param SignalDTO $signal RT sync signal the other nodes apply
+     * @param bool $partialOwner Whether this node holds only part of the right over the collection
      */
-    public function broadcastRtSync(string $signalType, SignalDTO $signal): void
+    public function broadcastRtSync(string $signalType, SignalDTO $signal, bool $partialOwner = false): void
     {
-        $this->broadcastToNodes(new PeerRtSyncDTO($this->localIdentity->nodeId, $signalType, $signal));
+        $this->broadcastToNodes(
+            new PeerRtSyncDTO($this->localIdentity->nodeId, $signalType, $signal, $partialOwner),
+        );
     }
 
     /**
@@ -1678,7 +1681,12 @@ final class PeerServer extends AbstractServer implements
         }
 
         try {
-            $sink->applyRemoteRtSync($frame->originNodeId, $frame->signalType, $frame->signal);
+            $sink->applyRemoteRtSync(
+                $frame->originNodeId,
+                $frame->signalType,
+                $frame->signal,
+                $frame->partialOwner,
+            );
         } catch (Throwable $e) {
             Logger::warning("Failed to apply peer RT sync from node '{$frame->originNodeId}': {$e->getMessage()}");
         }

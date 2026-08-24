@@ -30,6 +30,7 @@ use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Database\Context\DbContext;
@@ -163,6 +164,20 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     }
 
     /**
+     * Operations this agent's claims carry unless a claim was made with its own set.
+     *
+     * The one place a kind of agent says what it may do to the rows it owns, so that
+     * changing the answer for a whole kind costs this one line and no walk of the call
+     * sites. An ordinary agent owns its rows outright and may do anything with them.
+     *
+     * @return list<TruthSourceOperation> Operations every claim of this agent gets
+     */
+    protected function defaultTruthSourceOperations(): array
+    {
+        return TruthSourceOperation::ALL;
+    }
+
+    /**
      * Register this agent as truth source for a database collection.
      *
      * @param string $collection Collection/table name
@@ -170,7 +185,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      */
     protected function registerDbTruthSource(string $collection, array|true $keys = true): void
     {
-        TruthSourceRegistry::register($collection, $keys, $this->getId());
+        TruthSourceRegistry::register($collection, $keys, $this->getId(), $this->defaultTruthSourceOperations());
     }
 
     /**
@@ -181,7 +196,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      */
     protected function registerRtTruthSource(string $collection, array|true $keys = true): void
     {
-        RtTruthSourceRegistry::register($collection, $keys, $this->getId());
+        RtTruthSourceRegistry::register($collection, $keys, $this->getId(), $this->defaultTruthSourceOperations());
     }
 
     /**

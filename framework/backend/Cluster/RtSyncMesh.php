@@ -15,8 +15,8 @@ use Hilos\Core\Router\DTO\SignalDTO;
  * reason every mesh port in this framework exists — the announcing side stays logic a test
  * can drive with a fake instead of a listener and a live link.
  *
- * There is no addressed form and there will not be one: an RT collection has exactly one
- * truth source in the cluster, so a fact is either everybody's or nobody's.
+ * There is no addressed form and there will not be one: a fact about an RT collection is
+ * either everybody's or nobody's, however many nodes hold a piece of the right to write it.
  */
 interface RtSyncMesh
 {
@@ -25,8 +25,9 @@ interface RtSyncMesh
      *
      * @param string $signalType RT sync signal type being announced
      * @param SignalDTO $signal RT sync signal the other nodes apply
+     * @param bool $partialOwner Whether this node holds only part of the right over the collection
      */
-    public function broadcastRtSync(string $signalType, SignalDTO $signal): void;
+    public function broadcastRtSync(string $signalType, SignalDTO $signal, bool $partialOwner = false): void;
 
     /**
      * Hands one whole RT collection this node owns to a node that just joined.

@@ -158,4 +158,6 @@ Hilos::$db->users->findBySession($sessionToken);
 - Never put business logic or DB queries inside Entity classes.
 - Never map a nullable property over a NOT NULL column with a DB-level `DEFAULT`;
   such a value has exactly one owner, and `docs/agents/orm/entity.md` decides which.
-- Only the truth source agent writes to its owned DB/RT collection.
+- Only the truth source agent writes to its owned DB/RT collection, and only the
+  operations its claim covers: `TruthSourceRegistry::register()` takes a list of
+  `TruthSourceOperation`, and `registerCreate()` is that list with adding alone.

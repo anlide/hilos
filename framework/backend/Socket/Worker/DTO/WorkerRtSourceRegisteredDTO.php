@@ -28,15 +28,24 @@ class WorkerRtSourceRegisteredDTO extends WorkerDTO
     /** @var string Payload key: RT collections the agent registered as a truth source for */
     public const string FIELD_COLLECTION_KEYS = 'collectionKeys';
 
+    /** @var string Payload key: those of them the agent holds only part of the operations on */
+    public const string FIELD_PARTIAL_COLLECTION_KEYS = 'partialCollectionKeys';
+
     /**
      * Creates RT source registered DTO.
      *
+     * The second list is a subset of the first, not another set of collections: it says which
+     * of the claims are partial, so the master can tell a legitimate co-owner on another node
+     * from the two-owner split it refuses.
+     *
      * @param string $agentId Agent that registered the collections
      * @param list<string> $collectionKeys RT collections it owns on this node
+     * @param list<string> $partialCollectionKeys Those of them it owns with only part of the operations
      */
     public function __construct(
         public readonly string $agentId,
         public readonly array $collectionKeys,
+        public readonly array $partialCollectionKeys = [],
     ) {
     }
 
@@ -61,13 +70,17 @@ class WorkerRtSourceRegisteredDTO extends WorkerDTO
             self::TYPE => self::MESSAGE_TYPE,
             AgentConstants::FIELD_AGENT_ID => $this->agentId,
             self::FIELD_COLLECTION_KEYS => $this->collectionKeys,
+            self::FIELD_PARTIAL_COLLECTION_KEYS => $this->partialCollectionKeys,
         ];
     }
 
     /**
      * Creates DTO from array.
      *
-     * @param array<string, mixed> $data Source data (agentId, collectionKeys)
+     * The partial list is optional on the wire: a worker of an older build names no partial
+     * claim, and no claim named partial is the right reading of its silence.
+     *
+     * @param array<string, mixed> $data Source data (agentId, collectionKeys, partialCollectionKeys)
      * @return static DTO instance
      * @throws InvalidFormatException When the payload carries no agent id or no collection list
      */
@@ -80,9 +93,20 @@ class WorkerRtSourceRegisteredDTO extends WorkerDTO
             }
         }
 
+        $partialCollectionKeys = [];
+        $partialRaw = $data[self::FIELD_PARTIAL_COLLECTION_KEYS] ?? [];
+        if (is_array($partialRaw)) {
+            foreach ($partialRaw as $collectionKey) {
+                if (is_string($collectionKey) && $collectionKey !== '') {
+                    $partialCollectionKeys[] = $collectionKey;
+                }
+            }
+        }
+
         return new static(
             agentId: self::requireString($data, AgentConstants::FIELD_AGENT_ID),
             collectionKeys: $collectionKeys,
+            partialCollectionKeys: $partialCollectionKeys,
         );
     }
 }

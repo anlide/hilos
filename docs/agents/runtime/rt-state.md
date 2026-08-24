@@ -246,21 +246,28 @@ recover the type.
 - Created: collection actions such as `create(...)`, `register(...)`, or `ensure(...)`
 - Updated: item actions when the item key is known, or direct field set + `sync()` inside RT internals
 - Deleted: item actions when one item key is known; collection actions only for clear/bulk cleanup
+- Each of the three asks the truth-source guard for its own operation, so a source
+  granted only some of them is refused on the others by name
 - On worker sync: `applyDiff()` called with changed fields only
 - On another node: the same `fromRow()` / `applyDiff()` / `remove()`, reached from
   the daemon rather than from a worker — a row travels the mesh as the row the
   writer's process produced
 
 The node dimension changes nothing about how a row is written and one thing about
-where: a collection is shared by the whole cluster, its truth source is unique
-cluster-wide, and every other node holds a read-only replica (see
-[rt-context.md](rt-context.md)). So `fromRow()` has to hold on a payload that
+where: a collection is shared by the whole cluster, the right to write it is
+claimed cluster-wide, and every other node holds a read-only replica (see
+[rt-context.md](rt-context.md)). A claim covers a set of rows and a set of
+operations (HIL-688), so two nodes may each hold a piece of it - one adding and
+removing, another editing - and neither is the two-owner split the node map
+refuses. So `fromRow()` has to hold on a payload that
 arrived from another machine, not just another process, and a row it refuses is
 dropped and logged rather than hydrated as zeros — the same trap, one hop wider.
 
 A node that joins is handed each collection whole and **replaces** its copy with
 it, row by row through `fromRow()`. Nothing is merged: the owner's copy is the
-truth about the collection.
+truth about the collection. Only a node holding the WHOLE right hands one over -
+a partial owner's copy may be missing the rows the other owner writes, and
+offering it as the collection would delete them on the receiving node.
 
 ## markRtSyncBaseline()
 

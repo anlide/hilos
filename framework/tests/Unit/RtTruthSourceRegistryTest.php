@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
@@ -34,8 +35,8 @@ final class RtTruthSourceRegistryTest extends TestCase
         ExecutionContext::setCurrentAgentId(null);
 
         RtTruthSourceRegistry::checkCanWrite(self::COLLECTION);
-        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '1');
-        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '2');
+        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '1', TruthSourceOperation::Add);
+        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '2', TruthSourceOperation::Update);
 
         $this->assertTrue(true);
     }
@@ -47,7 +48,7 @@ final class RtTruthSourceRegistryTest extends TestCase
         ExecutionContext::setCurrentAgentId(null);
 
         $this->expectException(RtTruthSourceWriteNotAllowedException::class);
-        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '1');
+        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '1', TruthSourceOperation::Update);
     }
 
     public function testCurrentAgentCanWriteOnlyRegisteredRtStateKey(): void
@@ -56,10 +57,10 @@ final class RtTruthSourceRegistryTest extends TestCase
         RtTruthSourceRegistry::register(self::COLLECTION, ['2'], self::AGENT_B);
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
-        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '1');
+        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '1', TruthSourceOperation::Update);
 
         $this->expectException(RtTruthSourceWriteNotAllowedException::class);
-        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '2');
+        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '2', TruthSourceOperation::Update);
     }
 
     public function testKeyedRtSourceCannotPerformCollectionWideWrite(): void
@@ -77,8 +78,8 @@ final class RtTruthSourceRegistryTest extends TestCase
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         RtTruthSourceRegistry::checkCanWrite(self::COLLECTION);
-        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '1');
-        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '2');
+        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '1', TruthSourceOperation::Add);
+        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '2', TruthSourceOperation::Remove);
 
         $this->assertTrue(true);
     }
@@ -91,5 +92,81 @@ final class RtTruthSourceRegistryTest extends TestCase
         RtTruthSourceRegistry::unregisterAgent(self::AGENT_A);
 
         $this->assertNull(ExecutionContext::currentAgentId());
+    }
+
+    public function testAddRemoveSourceMayBringARowAndTakeItAway(): void
+    {
+        RtTruthSourceRegistry::register(
+            self::COLLECTION,
+            true,
+            self::AGENT_A,
+            [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+        );
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
+
+        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '1', TruthSourceOperation::Add);
+        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '1', TruthSourceOperation::Remove);
+
+        $this->assertTrue(true);
+    }
+
+    public function testAddRemoveSourceMayNotEditWhatIsAlreadyWritten(): void
+    {
+        RtTruthSourceRegistry::register(
+            self::COLLECTION,
+            true,
+            self::AGENT_A,
+            [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+        );
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
+
+        $this->expectException(RtTruthSourceWriteNotAllowedException::class);
+        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '1', TruthSourceOperation::Update);
+    }
+
+    public function testRefusalNamesTheOperationAndWhatIsAllowed(): void
+    {
+        RtTruthSourceRegistry::register(
+            self::COLLECTION,
+            true,
+            self::AGENT_A,
+            [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+        );
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
+
+        $this->expectExceptionMessage(
+            "Write operation not allowed: agent '" . self::AGENT_A . "' is a truth source for runtime collection "
+            . "'" . self::COLLECTION . "' with operations [add, remove] and may not update state '7'."
+        );
+        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '7', TruthSourceOperation::Update);
+    }
+
+    public function testAgentLessRefusalNamesTheOperationWithoutNamingAnAgent(): void
+    {
+        RtTruthSourceRegistry::register(
+            self::COLLECTION,
+            true,
+            RtTruthSourceRegistry::DAEMON_SOURCE_ID,
+            [TruthSourceOperation::Add],
+        );
+        ExecutionContext::setCurrentAgentId(null);
+
+        $this->expectExceptionMessage(
+            "Write operation not allowed: the truth source for runtime collection '" . self::COLLECTION
+            . "' has operations [add] and may not remove state '7'."
+        );
+        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '7', TruthSourceOperation::Remove);
+    }
+
+    public function testSourceWithoutTheRowIsRefusedBeforeTheOperationIsWeighed(): void
+    {
+        RtTruthSourceRegistry::register(self::COLLECTION, ['1'], self::AGENT_A, [TruthSourceOperation::Add]);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
+
+        $this->expectExceptionMessage(
+            "Write operation not allowed: agent '" . self::AGENT_A . "' is not a truth source for "
+            . "runtime collection '" . self::COLLECTION . "' state '2'."
+        );
+        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '2', TruthSourceOperation::Add);
     }
 }

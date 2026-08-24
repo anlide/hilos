@@ -269,6 +269,110 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     }
 
     /**
+     * The narrowing HIL-688 put on that refusal, from the receiving side. A node that says in
+     * the frame it holds only part of the right over the collection is not a second owner: the
+     * arrangement is that each node writes the operations it was granted, and refusing the other
+     * half would break the very thing the operation axis was built for. Nothing is logged - a
+     * line per legitimate write would bury the one line that means something.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAReplicaFromAPartialOwnerIsAppliedByTheNodeThatOwnsTheRest(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->noteOwnAgent('rooms_agent', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
+
+        ob_start();
+        $daemon->receive($daemon->rtSyncCreated('Grace'), partialOwner: true);
+        $logged = (string)ob_get_clean();
+
+        $this->assertTrue($collection->has(self::ROW_ID), 'A co-owner wrote what it was entitled to write');
+        $this->assertStringNotContainsString('truth sources on two nodes', $logged);
+    }
+
+    /**
+     * The other side of the same narrowing: this node owns the collection only partly, so it has
+     * no standing to call another node's write a split - it does not hold the whole truth about
+     * the collection to begin with.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testANodeThatOwnsOnlyPartOfACollectionRefusesNothing(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->noteOwnAgent(
+            'rooms_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+        );
+
+        ob_start();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $logged = (string)ob_get_clean();
+
+        $this->assertTrue($collection->has(self::ROW_ID), 'Holding part of a right is no ground to refuse the rest');
+        $this->assertStringNotContainsString('truth sources on two nodes', $logged);
+    }
+
+    /**
+     * And the mark is not a way out of the refusal: a frame claiming the whole right, arriving
+     * where the whole right is already held, is the split whatever else changed around it.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAReplicaClaimingTheWholeRightIsStillDroppedWhereItIsHeld(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->noteOwnAgent('rooms_agent', [DaemonManagerRtSyncPeerTestRtContext::ROWS], ['someOtherCollection']);
+
+        ob_start();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $logged = (string)ob_get_clean();
+
+        $this->assertFalse($collection->has(self::ROW_ID));
+        $this->assertStringContainsString('truth sources on two nodes', $logged);
+    }
+
+    /**
+     * What this node announces says how completely it owns what it wrote, because the node on
+     * the other end judges the frame by exactly that.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAPartialOwnerSaysSoInWhatItAnnounces(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->noteOwnAgent(
+            'rooms_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+        );
+
+        $collection->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => self::ROW_ID, 'name' => 'Ada']));
+        $daemon->announce($daemon->rtSyncCreated('Ada'));
+
+        $this->assertTrue($daemon->mesh->singleAnnouncement()->partialOwner);
+    }
+
+    /**
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAWholeOwnerAnnouncesWithoutTheMark(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->noteOwnAgent('rooms_agent', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
+
+        $daemon->announce($daemon->rtSyncCreated('Ada'));
+
+        $this->assertFalse($daemon->mesh->singleAnnouncement()->partialOwner);
+    }
+
+    /**
      * @throws InvalidArgumentException When the signal name is empty
      */
     public function testAReplicaForACollectionOwnedElsewhereIsApplied(): void
@@ -508,6 +612,30 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         );
     }
 
+    /**
+     * A collection this node owns only partly is not offered at all. A snapshot claims to be the
+     * whole collection, and a partial owner's copy is not: the rows only the other owner writes
+     * may be missing from it, and handing that over as the collection would delete them on the
+     * receiving node.
+     *
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     */
+    public function testACollectionOwnedOnlyPartlyIsNotHandedOverAsASnapshot(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $collection->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => self::ROW_ID, 'name' => 'Ada']));
+        $daemon->noteOwnAgent(
+            'rooms_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+        );
+
+        $daemon->handshaked('node-c');
+
+        $this->assertSame([], $daemon->mesh->snapshots);
+    }
+
     public function testANodeThatOwnsNothingOffersNothingToTheNodeItLinkedTo(): void
     {
         $daemon = new DaemonManagerRtSyncPeerTestManager();
@@ -741,11 +869,12 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
      *
      * @param string $agentId Agent that registered here
      * @param list<string> $collectionKeys RT collections it owns
+     * @param list<string> $partialCollectionKeys Those of them it owns with only part of the operations
      */
-    public function noteOwnAgent(string $agentId, array $collectionKeys): void
+    public function noteOwnAgent(string $agentId, array $collectionKeys, array $partialCollectionKeys = []): void
     {
         $this->agentManagerDaemon->handleRtSourceRegistered(
-            new WorkerRtSourceRegisteredDTO($agentId, $collectionKeys),
+            new WorkerRtSourceRegisteredDTO($agentId, $collectionKeys, $partialCollectionKeys),
         );
     }
 
@@ -753,13 +882,15 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
      * Delivers a replica the way a handshaked link does.
      *
      * @param SignalDTO $signal RT sync fact another node announced
+     * @param bool $partialOwner Whether the announcing node marked itself a partial owner
      */
-    public function receive(SignalDTO $signal): void
+    public function receive(SignalDTO $signal, bool $partialOwner = false): void
     {
         $this->applyRemoteRtSync(
             DaemonManagerRtSyncPeerTest::REMOTE_NODE,
             $signal->signalType->getType(),
             $signal,
+            $partialOwner,
         );
     }
 
@@ -913,10 +1044,11 @@ final class DaemonManagerRtSyncPeerTestMesh implements RtSyncMesh
     /**
      * @param string $signalType RT sync signal type being announced
      * @param SignalDTO $signal RT sync signal the other nodes apply
+     * @param bool $partialOwner Whether the announcing node holds only part of the right
      */
-    public function broadcastRtSync(string $signalType, SignalDTO $signal): void
+    public function broadcastRtSync(string $signalType, SignalDTO $signal, bool $partialOwner = false): void
     {
-        $this->announcements[] = new DaemonManagerRtSyncPeerTestAnnouncement($signalType, $signal);
+        $this->announcements[] = new DaemonManagerRtSyncPeerTestAnnouncement($signalType, $signal, $partialOwner);
     }
 
     /**
@@ -951,10 +1083,12 @@ final readonly class DaemonManagerRtSyncPeerTestAnnouncement
     /**
      * @param string $signalType RT sync signal type that was announced
      * @param SignalDTO $signal Signal that was announced
+     * @param bool $partialOwner Whether the announcing node marked itself a partial owner
      */
     public function __construct(
         public string $signalType,
         public SignalDTO $signal,
+        public bool $partialOwner = false,
     ) {
     }
 }

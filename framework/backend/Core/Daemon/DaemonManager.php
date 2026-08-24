@@ -1842,16 +1842,23 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        $mesh->broadcastRtSync($signalType, $signal);
+        $map = $this->agentManagerDaemon->rtNodeSourceMap();
+        $mesh->broadcastRtSync(
+            $signalType,
+            $signal,
+            $map->owns($syncData->collectionKey) && !$map->ownsFully($syncData->collectionKey),
+        );
     }
 
     /**
      * Hands every RT collection this node owns to one other node of the mesh.
      *
-     * Only the owner offers a collection, and only to the node it just linked to: everybody else
-     * has been kept current by the deltas. What this node merely holds a copy of is not offered
-     * at all — passing on somebody else's collection would make this node a second source of it,
-     * which is the very thing the map is here to prevent.
+     * Only the WHOLE owner offers a collection, and only to the node it just linked to: everybody
+     * else has been kept current by the deltas. What this node merely holds a copy of is not
+     * offered at all — passing on somebody else's collection would make this node a second source
+     * of it, which is the very thing the map is here to prevent. A collection this node owns only
+     * partly is left out for a quieter reason: a snapshot claims to be the whole collection, and
+     * the rows the other owner writes may be missing from this node's copy.
      *
      * Protected for the reason {@see broadcastRtSyncToPeers()} is: it is how a subclass sees
      * what this node hands over.
@@ -1865,7 +1872,7 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        foreach ($this->agentManagerDaemon->rtNodeSourceMap()->collections() as $collectionKey) {
+        foreach ($this->agentManagerDaemon->rtNodeSourceMap()->fullyOwnedCollections() as $collectionKey) {
             $mesh->sendRtSnapshotToNode($nodeId, $collectionKey, RtSnapshot::rows($collectionKey));
         }
     }
@@ -1926,21 +1933,34 @@ abstract class DaemonManager extends BaseManager implements
      * way, and it has to: it names no collection, so the ownership question below cannot even be
      * asked of it, and the apply step would be left converting it blind.
      *
-     * A replica for a collection an agent of this node owns is dropped too, and that line in the
-     * log is the machine-readable form of the defect this whole ticket is about: one collection
+     * A replica for a collection an agent of this node owns FULLY is dropped too, and that line
+     * in the log is the machine-readable form of the defect this whole ticket is about: one collection
      * with a truth source on two nodes. Applying it would let the two owners overwrite each other
      * for as long as both keep running, and there is no arbitration in the model to decide between
      * them - so the node keeps what it wrote itself and says whose write it refused. The one
      * collection every master co-writes is exempt for the reason given on
      * {@see isMasterCoWritten()}: there the second writer is not a split, it is the design.
      *
+     * Two things narrow that refusal since HIL-688, and both say the same thing from one side
+     * each. A frame marked as coming from a PARTIAL owner is applied whatever this node holds:
+     * the sender wrote what it is entitled to write, and refusing it would break the very
+     * arrangement the operation axis exists for. And a node that owns the collection only partly
+     * refuses nothing: it does not hold the whole truth, so it has no standing to call another
+     * node's write a split. Accepting a partial owner's frame is normal traffic and is not
+     * logged - a line per legitimate write would drown the one line that means something.
+     *
      * @param string $originNodeId Id of the node the write happened on
      * @param string $signalType RT sync signal type the frame carried
      * @param SignalDTO $signal RT sync signal to apply and fan out locally
+     * @param bool $partialOwner Whether the origin holds only part of the right over the collection
      * @throws HilosException When a collection refuses to be re-read from the replaced database
      */
-    public function applyRemoteRtSync(string $originNodeId, string $signalType, SignalDTO $signal): void
-    {
+    public function applyRemoteRtSync(
+        string $originNodeId,
+        string $signalType,
+        SignalDTO $signal,
+        bool $partialOwner = false,
+    ): void {
         $carriedType = $signal->signalType->getType();
         $carriedName = $signal->signalName->getName();
         if (
@@ -1968,7 +1988,8 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         if (
-            $this->agentManagerDaemon->rtNodeSourceMap()->owns($syncData->collectionKey)
+            !$partialOwner
+            && $this->agentManagerDaemon->rtNodeSourceMap()->ownsFully($syncData->collectionKey)
             && !self::isMasterCoWritten($syncData->collectionKey)
         ) {
             Logger::warning(
@@ -2011,7 +2032,7 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function applyRemoteRtSnapshot(string $originNodeId, string $collectionKey, array $rows): void
     {
-        if ($this->agentManagerDaemon->rtNodeSourceMap()->owns($collectionKey)) {
+        if ($this->agentManagerDaemon->rtNodeSourceMap()->ownsFully($collectionKey)) {
             Logger::warning(
                 "RT collection {$collectionKey} has truth sources on two nodes:"
                 . " local and {$originNodeId}",

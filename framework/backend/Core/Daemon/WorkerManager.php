@@ -1710,7 +1710,11 @@ abstract class WorkerManager extends BaseManager
             return;
         }
 
-        $this->daemonClient->send(new WorkerRtSourceRegisteredDTO($agentId, $collectionKeys));
+        $this->daemonClient->send(new WorkerRtSourceRegisteredDTO(
+            $agentId,
+            $collectionKeys,
+            RtTruthSourceRegistry::partialCollectionsOf($agentId),
+        ));
     }
 
     /**

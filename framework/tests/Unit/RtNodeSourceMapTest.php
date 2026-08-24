@@ -11,6 +11,7 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\WorkerDTO;
@@ -189,6 +190,85 @@ final class RtNodeSourceMapTest extends TestCase
         $this->expectException(InvalidFormatException::class);
 
         WorkerRtSourceRegisteredDTO::fromArray([AgentConstants::FIELD_AGENT_ID => self::AGENT]);
+    }
+
+    /**
+     * The registry names a claim partial when it is short of any operation, and that is the
+     * whole of what the master needs: which of this node's claims another node may hold the
+     * rest of.
+     */
+    public function testTheRegistryNamesTheClaimsThatAreShortOfAnOperation(): void
+    {
+        RtTruthSourceRegistry::register(
+            self::COLLECTION,
+            true,
+            self::AGENT,
+            [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+        );
+        RtTruthSourceRegistry::register('unitRtNodeSourceOther', true, self::AGENT);
+
+        $this->assertSame([self::COLLECTION], RtTruthSourceRegistry::partialCollectionsOf(self::AGENT));
+    }
+
+    /**
+     * Owning and owning wholly are two questions, and only the second one decides whether a
+     * replica from another node is a split: a node holding part of a right has no ground to
+     * refuse the holder of the rest.
+     */
+    public function testTheMapTellsOwningApartFromOwningWholly(): void
+    {
+        $map = new RtNodeSourceMap();
+
+        $map->note(self::AGENT, [self::COLLECTION, 'unitRtNodeSourceOther'], [self::COLLECTION]);
+
+        $this->assertTrue($map->owns(self::COLLECTION));
+        $this->assertFalse($map->ownsFully(self::COLLECTION));
+        $this->assertTrue($map->ownsFully('unitRtNodeSourceOther'));
+        $this->assertSame(['unitRtNodeSourceOther'], $map->fullyOwnedCollections());
+    }
+
+    /**
+     * Two agents here, one holding part of a collection and one holding all of it: the node owns
+     * it wholly, because one of its own agents does.
+     */
+    public function testANodeOwnsWhollyWhenAnyOfItsAgentsDoes(): void
+    {
+        $map = new RtNodeSourceMap();
+
+        $map->note(self::AGENT, [self::COLLECTION], [self::COLLECTION]);
+        $map->note(self::OTHER_AGENT, [self::COLLECTION]);
+
+        $this->assertTrue($map->ownsFully(self::COLLECTION));
+        $this->assertSame([self::COLLECTION], $map->fullyOwnedCollections());
+    }
+
+    /**
+     * @throws InvalidFormatException When the frame is not the object its DTO needs
+     */
+    public function testThePartialClaimsRoundTripToTheMaster(): void
+    {
+        $dto = new WorkerRtSourceRegisteredDTO(self::AGENT, [self::COLLECTION], [self::COLLECTION]);
+
+        $parsed = WorkerDTO::factoryWorkerDTO($dto->toJson());
+
+        $this->assertInstanceOf(WorkerRtSourceRegisteredDTO::class, $parsed);
+        $this->assertSame([self::COLLECTION], $parsed->partialCollectionKeys);
+    }
+
+    /**
+     * A report naming no partial claim is read as claiming the whole right, so a worker of an
+     * older build keeps the two-owner refusal working rather than silently switching it off.
+     *
+     * @throws InvalidFormatException When the frame is not the object its DTO needs
+     */
+    public function testAReportSilentAboutPartialClaimsNamesNone(): void
+    {
+        $parsed = WorkerRtSourceRegisteredDTO::fromArray([
+            AgentConstants::FIELD_AGENT_ID => self::AGENT,
+            WorkerRtSourceRegisteredDTO::FIELD_COLLECTION_KEYS => [self::COLLECTION],
+        ]);
+
+        $this->assertSame([], $parsed->partialCollectionKeys);
     }
 }
 

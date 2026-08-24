@@ -159,7 +159,8 @@ live overlay.
 - Keep reusable DB/RT links typed and discoverable on item or collection APIs.
 - Do not bypass `Hilos::$db` or `Hilos::$rt` with ad hoc arrays or duplicated
   filters in pages.
-- Only the truth source agent writes shared runtime state.
+- Only the truth source agent writes shared runtime state, and only the operations
+  its claim covers.
 - Do not update or delete one known runtime item through collection actions that
   accept that item's key; use the loaded item actions.
 - Do not create Repository or Service wrappers over DB or RT collections.

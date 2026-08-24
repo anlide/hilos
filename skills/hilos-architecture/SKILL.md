@@ -36,5 +36,6 @@ Use this skill only inside a Hilos repository. Start by reading `agents.md`, the
 
 - Never run `git commit` or `git push`.
 - Never block in `onTick()`; it must complete in less than 0.1s.
-- Only the truth source agent writes to its DB/RT collection.
+- Only the truth source agent writes to its DB/RT collection, and only the
+  operations its claim covers.
 - All PHP files must use `declare(strict_types=1)`.

@@ -218,16 +218,29 @@ leaf that reaches such a call site fixes it there.
 ## Writing Without The Owner
 
 The set and the row have different owners, and the existing truth-source registry
-already expresses both:
+already expresses both. A registration answers two questions, not one: which rows
+are yours, and what you may do with them.
 
 | Owner | Right | Call |
 |---|---|---|
 | library | create rows in the collection | `TruthSourceRegistry::registerCreate($collection, $agentId)` |
 | instance owner | write its own row's keys | `TruthSourceRegistry::register($collection, $keys, $agentId)` |
+| either | only some of add / update / remove | the fourth argument of `register()`, a list of `TruthSourceOperation` |
+
+Creating is not a mechanism of its own (HIL-688): `registerCreate()` is a
+registration that covers no row and allows `TruthSourceOperation::Add`, and the
+guard that refuses a write names the operation it refused along with the ones the
+source does hold.
 
 `AbstractAgent::registerDbTruthSource()` is the helper for the write half only;
 there is no create-side helper on the agent today, and adding one is the
-implementing leaf's business, not a decision this approach makes.
+implementing leaf's business, not a decision this approach makes. What the helper
+does carry is the operation set: it takes it from
+`AbstractAgent::defaultTruthSourceOperations()`, which
+`AbstractUsersLibraryAgent` overrides with adding and removing. **A library never
+edits a row it already wrote** (owner's decision, 2026-08-24) - the standard
+behaviour of a library rather than a switch each project throws, and the whole of
+the rule is that one override.
 
 **Sign-in is the case that proves a library writes** (owner's decision,
 2026-08-21). It has no instance owner to address, and the reason is structural

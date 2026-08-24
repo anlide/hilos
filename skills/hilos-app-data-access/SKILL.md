@@ -119,8 +119,8 @@ switch to the focused data-layer skill first.
 | Update one DB item | `$item->actions->update(...)` |
 | Read runtime item | `Hilos::$rt->collection[$id]` when supported |
 | Read runtime rows for one DB item | Existing RT collection helper such as `forUser(...)` |
-| Create/register/ensure runtime state | RT collection action owned by the truth source |
-| Update/delete one runtime item | Loaded `RtItem` action owned by the truth source |
+| Create/register/ensure runtime state | RT collection action owned by a truth source whose claim covers adding |
+| Update/delete one runtime item | Loaded `RtItem` action owned by a truth source whose claim covers that operation |
 | Add a missing reusable lookup | Collection/item layer, not page/table private helper |
 | Build frontend row data | Browser/table row contract from model API or View item serialization |
 
@@ -258,7 +258,9 @@ then call that API from the table/page.
   or run a query such as `queryPageItems()` or a typed `listBy*()`.
 - Do not write an RT collection this node does not own; send a signal to the
   owning agent instead. The write fails with
-  `RtTruthSourceWriteNotAllowedException`, on a cluster as off it.
+  `RtTruthSourceWriteNotAllowedException`, on a cluster as off it. The same
+  exception answers a write the claim does not cover - an agent library adds and
+  removes rows it may not edit - and it names the operation it refused.
 - Do not write DB/RT state directly from pages, tables, or signal handlers when
   a collection/item action owns the mutation.
 - Do not update or delete one known DB/RT item through collection actions that

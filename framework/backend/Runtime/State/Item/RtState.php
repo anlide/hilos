@@ -8,6 +8,7 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
@@ -143,7 +144,7 @@ abstract class RtState
 
         $collectionKey = static::getRtCollectionKey();
         if ($collectionKey !== '' && Hilos::$sr !== null) {
-            RtTruthSourceRegistry::checkCanWriteState($collectionKey, $this->getId());
+            RtTruthSourceRegistry::checkCanWriteState($collectionKey, $this->getId(), TruthSourceOperation::Update);
             Hilos::$sr->queueRtSyncSignal(
                 SignalConstants::RT_SYNC_UPDATED,
                 new RtSyncUpdatedSignalData($collectionKey, $this->getId(), $diff, ExecutionContext::currentAcceptKey()),

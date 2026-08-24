@@ -150,4 +150,5 @@ class MyPage extends AbstractPage {
 - [ ] Direct agent-to-agent signals declared in `AGENT_SIGNALS`; indexed multi-instance signals use `AgentSignalConfigKey::INDEX_FIELD` instead of `SignalRouter::getDestinations()`
 - [ ] Static source/type routes declared in `SignalRouter` when needed (not covered by topology)
 - [ ] `onStop()` cleans owned state; `WorkerManager` unregisters truth sources after the hook
+- [ ] `defaultTruthSourceOperations()` overridden when this kind of agent may not do all of add / update / remove to the rows it claims
 - [ ] `onTick()` completes in < 0.1s

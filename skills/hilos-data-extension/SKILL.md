@@ -103,7 +103,10 @@ For RT changes:
 5. If updating or deleting one runtime item and the key is known, load the item
    and call `$item->actions->...`; do not add a collection action that accepts
    the item key for that one-item write.
-6. Verify the truth source agent owns writes before mutating shared RT state.
+6. Verify the truth source agent owns writes before mutating shared RT state, and
+   that its claim covers the operation: `register()` takes a list of
+   `TruthSourceOperation`, and an agent granted only some of them is refused on
+   the rest.
 7. Keep direct backing-state access (`getStateCollection()`, `getStateItem()`,
    `RtContext::getStateCollection()`, `RtContext::getStateItem()`,
    `$this->stateCollection`) inside `Database/` or `Runtime/` files only,
@@ -119,7 +122,8 @@ For RT changes:
   collection, action, object, or state layer should be extended.
 - Do not introduce Repository or Service classes over `DbCollection` or
   `RtCollection`.
-- Only the truth source agent writes to its owned DB/RT collection.
+- Only the truth source agent writes to its owned DB/RT collection, and only the
+  operations its claim covers.
 - Do not store durable business state only in `Hilos::$rt`.
 - Do not duplicate DB or RT lookup/filter logic in pages.
 - Do not use `actions` for read-only helpers; actions are write APIs.

@@ -30,9 +30,15 @@ interface RtSyncSink
      * @param string $originNodeId Id of the node the write happened on
      * @param string $signalType RT sync signal type the frame carried
      * @param SignalDTO $signal RT sync signal to apply and fan out locally
+     * @param bool $partialOwner Whether the origin holds only part of the right over the collection
      * @throws HilosException When a collection refuses to be re-read from the replaced database
      */
-    public function applyRemoteRtSync(string $originNodeId, string $signalType, SignalDTO $signal): void;
+    public function applyRemoteRtSync(
+        string $originNodeId,
+        string $signalType,
+        SignalDTO $signal,
+        bool $partialOwner = false,
+    ): void;
 
     /**
      * Replaces this node's copy of one RT collection with the one its owner handed over.

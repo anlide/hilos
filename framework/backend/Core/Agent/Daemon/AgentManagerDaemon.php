@@ -662,7 +662,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      */
     public function handleRtSourceRegistered(WorkerRtSourceRegisteredDTO $dto): void
     {
-        $this->rtNodeSourceMap()->note($dto->agentId, $dto->collectionKeys);
+        $this->rtNodeSourceMap()->note($dto->agentId, $dto->collectionKeys, $dto->partialCollectionKeys);
     }
 
     /**

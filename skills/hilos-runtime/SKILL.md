@@ -193,14 +193,18 @@ of duplicating runtime mutation logic in the page/table layer.
 ## Hard Rules
 
 - Never run `git commit` or `git push`.
-- Only the truth source agent writes to its owned RT collection.
+- Only the truth source agent writes to its owned RT collection, and only the
+  operations its claim covers: `register()` takes a list of `TruthSourceOperation`
+  and the guard refuses the others by name. An `AbstractUsersLibraryAgent` adds
+  and removes rows it may never edit.
 - Never write to an `RtStates` collection directly (`add()`, `remove()`,
   `clear()`): those queue no RT sync, so the change exists in the writing worker
   and nowhere else. Write through the collection or item actions.
 - An agent that registers as a truth source must run on exactly one node: keep
   `AgentRegistryKey::SCOPE` at its default `AgentScope::CLUSTER`. Two nodes owning
-  one collection is the split the daemon can only refuse and log
-  (`RT collection <key> has truth sources on two nodes`).
+  one collection WHOLLY is the split the daemon can only refuse and log
+  (`RT collection <key> has truth sources on two nodes`); two nodes each holding
+  part of the operations are lawful co-owners, and the frame says which is which.
 - To change a collection this node does not own, send a signal to the owning
   agent. A replica is read-only, and writing it raises
   `RtTruthSourceWriteNotAllowedException`.
