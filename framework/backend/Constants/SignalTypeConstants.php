@@ -51,6 +51,24 @@ final class SignalTypeConstants
      */
     public const string PAGE_ACCESS_REASSESS_USER = 'page_access_reassess_user';
 
+    /**
+     * Access re-decision announcement by connection (server-internal, never reaches a browser).
+     *
+     * Names the accept keys whose pages are to be re-judged, and nothing else. It stands
+     * beside {@see self::PAGE_ACCESS_REASSESS_USER} rather than generalizing it because the
+     * two ask different questions - "the pages of this person" and "the pages of these
+     * connections" - and a receiving worker would otherwise have to establish which of the
+     * two it is holding before it could act.
+     *
+     * This is the criterion a DOWNGRADE needs (HIL-652): signing out removes the very
+     * identity the user criterion matches on, so "the pages of user N" announced after the
+     * runtime write matches nothing, and announced before it judges with an identity that is
+     * about to be destroyed. An accept key survives the write untouched.
+     *
+     * @var string
+     */
+    public const string PAGE_ACCESS_REASSESS_CONNECTIONS = 'page_access_reassess_connections';
+
     /** @var string Page unsubscribe signal type */
     public const string PAGE_UNSUBSCRIBE = 'page_unsubscribe';
 

@@ -29,6 +29,9 @@ final class SignalConstants
     /** @var string Access re-decision announcement signal name; canonical value in SignalTypeConstants */
     public const string PAGE_ACCESS_REASSESS_USER = SignalTypeConstants::PAGE_ACCESS_REASSESS_USER;
 
+    /** @var string Access re-decision by connection signal name; canonical value in SignalTypeConstants */
+    public const string PAGE_ACCESS_REASSESS_CONNECTIONS = SignalTypeConstants::PAGE_ACCESS_REASSESS_CONNECTIONS;
+
     /** @var string RT sync signal names (operation); canonical values in SignalTypeConstants */
     public const string RT_SYNC_CREATED = SignalTypeConstants::RT_SYNC_CREATED;
     public const string RT_SYNC_UPDATED = SignalTypeConstants::RT_SYNC_UPDATED;

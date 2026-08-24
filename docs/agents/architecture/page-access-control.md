@@ -276,6 +276,36 @@ database sync of the flag that was just written rides the same queue in front of
 frame acted on at receipt would overtake the sync and set a worker re-deciding against a
 flag it has not seen change.
 
+**A downgrade is the second trigger, and it carries its own criterion** (HIL-652).
+Signing out is not a rights change: nothing is written about what the person may
+see, the session simply stops being theirs. The by-user announcement cannot serve
+it, and not for want of plumbing — a downgrade REMOVES the identity that criterion
+matches on. Announced after the runtime write that un-points the connections,
+"the pages of user N" matches nothing; announced before it, the pages match but
+are judged with the identity being destroyed, so the sweep answers allow and
+re-sends the privileged page. Worse than doing nothing.
+
+So the criterion is the accept keys, which the operation holds directly and which
+name the same sockets on both sides of that write.
+`PageAccessReassessment::forConnections($acceptKeys)` queues one
+`page_access_reassess_connections` announcement, and each worker runs
+`PageAccessReassessment::sweepThisWorkerConnections($acceptKeys)` over its own
+mirror — never asking `BrowserContext::connectionIdentity` anything, which is
+exactly what lets it outlive the write. It is a frame of its own beside the by-user
+one rather than a payload carrying either, because they are two different
+questions and a merged shape would make every receiving worker first establish
+which of the two it is holding.
+
+**The seam is `HilosSessionHost::deauthenticateSession`,** in the loop that already
+re-points every connection of the session to nobody and re-sends it the anonymous
+handshake. That one seam is every way a live session loses its person — the shell
+logout, the session-expiry drop, the account-merge force-logout, the recovery drop
+of the other sessions — so all four behave identically and no project code
+announces anything. The announcement is queued ONCE after that loop, not per
+connection (the frame already reaches every worker), and AFTER the runtime writes
+rather than before: both travel one FIFO, so every worker applies "this connection
+belongs to nobody" before it re-judges.
+
 **The reach is node-local, and that is the whole operation's reach.** The other half of a
 rights change — the handshake re-send — is delivered by this node's WebSocket server, so a
 tab on another node never learns of the grant, never waits for an answer, and keeps the
@@ -292,15 +322,36 @@ only the answer to it does.
 guards. Otherwise granting admin would push a full page answer into every open chat
 tab of that person: harmless frames, pure noise.
 
+That skip is also what a project's own admin page must not fall into. A page left
+PUBLIC while its route carries `admin: true` is re-decided by nobody, yet the
+client reaction below reads the marker and waits for an answer that never comes —
+so signing out leaves the tab waiting instead of showing the sign-in invitation.
+The marker states surface type; the closure is the page class's own
+`ACCESS_LEVEL` (or its guard). See
+[admin-features.md](admin-features.md#closing-a-projects-own-admin-page).
+
 **The frontend reacts ahead, the server's answer rules.** `bindAccessReaction`
-watches the admin marker the handshake response carries. Losing it while the
-current route is administrative draws the 403 and drops the page data at once —
-stale privileged rows must not survive one frame while the server's verdict is on
-the wire. Gaining it while a 403 is displayed returns the page to its
-just-navigated state. The client sends nothing: it never rules on access, and a
-403 it drew wrongly is overruled by the first `page_response` that arrives. The
-surface test is the route's own `admin` marker, which states surface *type* rather
-than required rights, which is why it is deliberately not the only defense.
+watches two facts the handshake response carries — the admin marker and the person
+— and splits on which of them moved:
+
+- **the marker falls, the identity stands:** draw the 403 and drop the page data at
+  once, on an administrative route. Stale privileged rows must not survive one
+  frame while the server's verdict is on the wire.
+- **the identity goes** (HIL-652), on an administrative route: drop the page data
+  and wait for the answer, drawing nothing. 403 says "not for you", while the true
+  answer for somebody who just signed out is the 401 invitation the server is
+  already sending — and drawing a verdict known to be wrong while the right one is
+  in flight buys nothing.
+- **the marker is gained** while a 403 is displayed: return the page to its
+  just-navigated state.
+- **anything else,** including every non-administrative route: no reaction at all.
+  There is no "needs a signed-in visitor" marker, so /profile and a guarded project
+  page are closed by the server's answer alone.
+
+The client sends nothing in any of them: it never rules on access, and a 403 it
+drew wrongly is overruled by the first `page_response` that arrives. The surface
+test is the route's own `admin` marker, which states surface *type* rather than
+required rights, which is why it is deliberately not the only defense.
 
 Order does not matter and is not synchronized. Handshake before the answer: the
 client shows waiting and the answer ends it. Answer before the handshake: the data

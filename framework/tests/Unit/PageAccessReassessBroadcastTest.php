@@ -23,14 +23,15 @@ use Hilos\Hilos;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The master's half of the access re-decision (HIL-644): it fans the announcement out and does
- * nothing else with it.
+ * The master's half of the access re-decision (HIL-644, HIL-652): it fans the announcement out
+ * and does nothing else with it.
  *
  * The master is the only process that can address "every worker of this node", and it is also
  * the one process that cannot say who is behind a connection - so what is pinned here is a
@@ -41,6 +42,9 @@ use PHPUnit\Framework\TestCase;
 final class PageAccessReassessBroadcastTest extends TestCase
 {
     private const int USER_ID = 41;
+
+    /** @var list<string> Accept keys of the session whose sign-out is announced */
+    private const array ACCEPT_KEYS = ['ak-first', 'ak-second'];
 
     /** Temporary main log file the assertions read the written lines back from */
     private string $logFile = '';
@@ -112,6 +116,63 @@ final class PageAccessReassessBroadcastTest extends TestCase
         $this->assertInstanceOf(WorkerDbSyncUpdatedMessageDTO::class, WorkerDTO::factoryWorkerDTO($frames[0]));
         $this->assertInstanceOf(
             WorkerPageAccessReassessMessageDTO::class,
+            WorkerDTO::factoryWorkerDTO($frames[1]),
+        );
+    }
+
+    /**
+     * The by-connection announcement takes the same road on the same terms (HIL-652). What the
+     * master does with it is identical because it understands neither: it holds no browser
+     * context to resolve a person and no subscription mirror to resolve a socket, so both
+     * criteria are, to it, one list to hand every worker of the node.
+     */
+    public function testTheByConnectionAnnouncementIsWrittenToEveryWorkerLink(): void
+    {
+        $manager = new PageAccessReassessBroadcastTestManager();
+        $workerServer = $manager->addWorkerServer();
+        $workerServer->addWorker();
+        $workerServer->addWorker();
+
+        $manager->receiveConnectionsAnnouncement(self::ACCEPT_KEYS);
+        $manager->dispatch();
+
+        $perWorker = $workerServer->framesPerWorker();
+        $this->assertCount(2, $perWorker);
+        foreach ($perWorker as $frames) {
+            $this->assertCount(1, $frames);
+            $restored = WorkerDTO::factoryWorkerDTO($frames[0]);
+            $this->assertInstanceOf(WorkerPageAccessReassessConnectionsMessageDTO::class, $restored);
+            $this->assertSame(self::ACCEPT_KEYS, $restored->acceptKeys);
+        }
+        $this->assertSame('', $this->written());
+    }
+
+    /**
+     * The order the sign-out depends on, and the reason the master queues this frame instead of
+     * acting on it too. In a live sign-out the frame queued ahead is the runtime write that
+     * un-points the connections; the sync below stands in for it, because what is pinned here is
+     * the master's own behaviour and not which write came first. An announcement acted on at
+     * receipt would overtake whatever preceded it, and the sweep would then re-judge a connection
+     * that still answers to the person who just signed out - and answer "allow".
+     */
+    public function testAnyWriteQueuedAheadReachesEachWorkerBeforeTheByConnectionAnnouncement(): void
+    {
+        $manager = new PageAccessReassessBroadcastTestManager();
+        $workerServer = $manager->addWorkerServer();
+        $workerServer->addWorker();
+
+        $manager->receiveFlagSync(self::USER_ID);
+        $manager->receiveConnectionsAnnouncement(self::ACCEPT_KEYS);
+
+        $this->assertSame([[]], $workerServer->framesPerWorker(), 'Receipt writes nothing by itself');
+
+        $manager->dispatch();
+
+        $frames = $workerServer->framesPerWorker()[0];
+        $this->assertCount(2, $frames);
+        $this->assertInstanceOf(WorkerDbSyncUpdatedMessageDTO::class, WorkerDTO::factoryWorkerDTO($frames[0]));
+        $this->assertInstanceOf(
+            WorkerPageAccessReassessConnectionsMessageDTO::class,
             WorkerDTO::factoryWorkerDTO($frames[1]),
         );
     }
@@ -194,6 +255,20 @@ final class PageAccessReassessBroadcastTestManager extends DaemonManager
     {
         $this->agentManagerDaemon->handleWorkerPageAccessReassess(
             new WorkerPageAccessReassessMessageDTO($userId),
+        );
+    }
+
+    /**
+     * Hands the master the by-connection announcement the way a worker link does, through the
+     * handler that receives it (HIL-652).
+     *
+     * @param list<string> $acceptKeys Connections the arriving announcement names
+     * @throws InvalidArgumentException When the queued announcement carries an empty name
+     */
+    public function receiveConnectionsAnnouncement(array $acceptKeys): void
+    {
+        $this->agentManagerDaemon->handleWorkerPageAccessReassessConnections(
+            new WorkerPageAccessReassessConnectionsMessageDTO($acceptKeys),
         );
     }
 

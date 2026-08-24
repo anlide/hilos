@@ -43,6 +43,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Http\RootInfoHandler;
 use Hilos\Core\Page\Config\PageAgentIndexSource;
+use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Page\PageSignalRouter;
@@ -121,6 +122,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
@@ -1471,6 +1473,23 @@ abstract class DaemonManager extends BaseManager implements
                 } else {
                     Logger::error(
                         'dispatchSignals - access re-decision carries invalid data: ' . get_class($signal->data),
+                    );
+                }
+            }
+
+            // Its by-connection twin is fanned out on exactly the same terms (HIL-652). Order is
+            // what makes it correct: the runtime write that un-points the connections was queued
+            // ahead of it and is drained ahead of it, so every worker already holds "this
+            // connection belongs to nobody" by the time it is asked to re-judge.
+            if ($signal->signalType->getType() === SignalTypeConstants::PAGE_ACCESS_REASSESS_CONNECTIONS) {
+                if ($signal->data instanceof PageAccessReassessConnectionsSignalData) {
+                    $this->writeFrameToWorkers(
+                        $workerServer,
+                        new WorkerPageAccessReassessConnectionsMessageDTO($signal->data->acceptKeys),
+                    );
+                } else {
+                    Logger::error(
+                        'dispatchSignals - by-connection re-decision carries invalid data: ' . get_class($signal->data),
                     );
                 }
             }

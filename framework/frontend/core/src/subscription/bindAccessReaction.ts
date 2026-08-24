@@ -7,9 +7,15 @@
 // reacts AHEAD and the server's answer rules: a page_response for the current
 // page clears whatever was drawn here (PageSubscription.ingestPageResponse).
 //
-// The client never rules on access. It reads one fact it was told — the admin
-// marker on the handshake response — and one thing it knows about itself: the
-// surface type of the route it is standing on.
+// Signing out is the same window with a different true answer (HIL-652). The
+// marker falls there too, but drawing a 403 would state "not for you" while what
+// the server is already sending is the 401 invitation a guest gets — a verdict
+// known to be wrong, drawn while the right one is in flight. So identity loss
+// waits for the answer instead of guessing at it, and only the rows go.
+//
+// The client never rules on access. It reads two facts it was told — the admin
+// marker and the person on the handshake response — and one thing it knows about
+// itself: the surface type of the route it is standing on.
 
 import { type HilosRouter } from '../routing/HilosRouter.js'
 import {
@@ -22,29 +28,37 @@ import {
 const FORBIDDEN = 403
 
 /**
- * React to the session's admin marker changing while a page is open.
+ * React to the session's admin marker or its person changing while a page is open.
  *
- * Losing it on an administrative route draws the 403 and drops the page data.
- * Gaining it while a 403 is displayed returns the page to its just-navigated
- * state. Every other combination is silence — a visitor standing on /profile or
- * on a project page sees nothing at all when their flag flips.
+ * Losing the admin marker with the identity intact draws the 403 and drops the
+ * page data. Gaining it while a 403 is displayed returns the page to its
+ * just-navigated state. Losing the IDENTITY on an administrative route drops the
+ * page data and waits for the answer without drawing anything. Every other
+ * combination is silence — a visitor standing on /profile or on a project page
+ * sees nothing at all when their flag flips, and is closed by the server's answer
+ * alone.
  *
  * The surface test is the route's own `admin` marker (HIL-615), which states
  * surface TYPE rather than required rights, so it is deliberately not the only
  * defense: a page marked administrative but served at a softer level answers
- * with data, and that answer clears the error this drew.
+ * with data, and that answer clears whatever this drew.
  *
  * @param router The navigator, for the current route and the two page controls.
- * @param isAdmin Whether the session holds the admin privilege; the trigger.
+ * @param isAdmin Whether the session holds the admin privilege; one trigger.
+ * @param userId The person behind the session, or `null` for a guest; the other.
  * @returns Stops the reaction.
  */
 export function bindAccessReaction(
   router: HilosRouter,
   isAdmin: ReadonlySignal<boolean>,
+  userId: ReadonlySignal<number | null>,
 ): Unsubscribe {
-  return subscribeSignal(isAdmin, (admin) => {
+  const stopAdmin = subscribeSignal(isAdmin, (admin) => {
     if (!admin) {
-      if (router.currentRoute.get().admin) {
+      // Signing out drops both, and both listeners run off the one write. The
+      // 403 belongs to the visitor who is still here and may no longer look;
+      // for the one who has gone, the identity listener below has the answer.
+      if (userId.get() !== null && router.currentRoute.get().admin) {
         router.denyCurrentPage()
       }
 
@@ -54,4 +68,14 @@ export function bindAccessReaction(
       router.awaitPageAnswer()
     }
   })
+  const stopIdentity = subscribeSignal(userId, (id) => {
+    if (id === null && router.currentRoute.get().admin) {
+      router.awaitPageAnswer()
+    }
+  })
+
+  return () => {
+    stopAdmin()
+    stopIdentity()
+  }
 }

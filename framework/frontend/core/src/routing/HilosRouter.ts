@@ -101,10 +101,12 @@ export interface HilosRouter {
   denyCurrentPage(): void
   /**
    * Return the current page to the state a navigation leaves it in: error
-   * cleared, waiting for the subscription's answer. The access reaction calls it
-   * when the visitor gains the admin marker while a 403 is displayed, so the page
-   * shows what it shows on navigation rather than a refusal that no longer
-   * applies (HIL-621). No frame is sent - the server re-decides on its own.
+   * cleared, page data dropped, waiting for the subscription's answer. The access
+   * reaction calls it when the visitor gains the admin marker while a 403 is
+   * displayed, and when the visitor loses their identity on an administrative
+   * surface, so the page shows what it shows on navigation rather than a verdict
+   * that no longer applies (HIL-621, HIL-652). No frame is sent - the server
+   * re-decides on its own.
    */
   awaitPageAnswer(): void
   /**

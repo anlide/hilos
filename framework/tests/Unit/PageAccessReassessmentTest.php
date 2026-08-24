@@ -21,6 +21,7 @@ use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
@@ -37,14 +38,19 @@ use Hilos\Hilos;
 use RuntimeException;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Tests every end of the access re-decision (HIL-621, HIL-644): the announcement one worker
- * queues when a person's rights change, the frame that starts a worker's own sweep, the sweep
- * that queues one re-decision per open page of that person, and the receiving end that re-runs
- * the subscribe verdict for it.
+ * Tests every end of the access re-decision (HIL-621, HIL-644, HIL-652): the announcement one
+ * worker queues when the ground under an open page moves, the frame that starts a worker's own
+ * sweep, the sweep that turns it into one re-decision per open page, and the receiving end that
+ * re-runs the subscribe verdict for it.
+ *
+ * Both criteria are exercised here, and the by-connection one is not a copy of the by-user one
+ * with different arguments: what it must prove is that it never asks who is behind a connection,
+ * because the sign-out it follows has already erased the answer.
  *
  * The receiving end is driven through the worker manager rather than the router alone,
  * because half of what makes a re-decision different from a re-subscribe lives there: the
@@ -134,6 +140,98 @@ final class PageAccessReassessmentTest extends TestCase
         $this->subscribe('ak-pending', ReassessTestPrivatePage::PAGE, []);
 
         PageAccessReassessment::sweepThisWorker(ReassessTestBrowser::USER);
+
+        $this->assertSame([], $this->queuedReassessments());
+    }
+
+    /**
+     * The by-connection announcement is the same shape as its twin and carries the list whole.
+     * It walks nothing either: an open page of one of those very connections must not be
+     * answered here, only announced about.
+     */
+    public function testTheByConnectionAnnouncementQueuesOneSignalNamingTheConnections(): void
+    {
+        $this->subscribe('ak-private', ReassessTestPrivatePage::PAGE, []);
+
+        PageAccessReassessment::forConnections(['ak-private', 'ak-elsewhere']);
+
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertInstanceOf(SignalDTO::class, $signal);
+        $this->assertSame(
+            SignalTypeConstants::PAGE_ACCESS_REASSESS_CONNECTIONS,
+            $signal->signalType->getType(),
+        );
+        $this->assertSame(SignalConstants::PAGE_ACCESS_REASSESS_CONNECTIONS, $signal->signalName->getName());
+        $this->assertInstanceOf(PageAccessReassessConnectionsSignalData::class, $signal->data);
+        $this->assertSame(['ak-private', 'ak-elsewhere'], $signal->data->acceptKeys);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    /**
+     * A session with no live socket on this node has no open page to re-judge, and every
+     * worker of the node would pay for the frame that said so.
+     */
+    public function testAnEmptyConnectionListAnnouncesNothing(): void
+    {
+        PageAccessReassessment::forConnections([]);
+
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    /**
+     * The receiving end of the by-connection announcement: the frame the master fans out
+     * starts this worker's own sweep over the keys it names.
+     */
+    public function testTheByConnectionFrameStartsThisWorkersSweep(): void
+    {
+        // The manager's constructor registers its own router globally, so the subscriptions
+        // have to be written into the mirror it left behind, not the one setUp made.
+        $manager = new ReassessTestManager();
+        $this->subscribe('ak-private', ReassessTestPrivatePage::PAGE, []);
+        $this->subscribe('ak-stranger', ReassessTestPrivatePage::PAGE, []);
+
+        $manager->handleDaemonMessage(new WorkerPageAccessReassessConnectionsMessageDTO(['ak-stranger']));
+
+        $this->assertSame(
+            [['ak-stranger', ReassessTestPrivatePage::PAGE, []]],
+            $this->queuedReassessments(),
+        );
+    }
+
+    /**
+     * The load-bearing difference from the by-user sweep, and the reason this criterion exists:
+     * it never asks who is behind a connection. 'ak-stranger' belongs to somebody else and
+     * 'ak-pending' to nobody the worker can name yet - both of which make the by-user sweep skip
+     * them - and both are swept here, because by the time a sign-out is judged the identity it
+     * would have matched on is already gone.
+     */
+    public function testTheByConnectionSweepNeverAsksWhoIsBehindTheConnection(): void
+    {
+        $this->subscribe('ak-stranger', ReassessTestGuardedPage::PAGE, ['userId' => '9']);
+        $this->subscribe('ak-pending', ReassessTestPrivatePage::PAGE, []);
+
+        PageAccessReassessment::sweepThisWorkerConnections(['ak-stranger', 'ak-pending']);
+
+        $this->assertSame(
+            [
+                ['ak-stranger', ReassessTestGuardedPage::PAGE, ['userId' => '9']],
+                ['ak-pending', ReassessTestPrivatePage::PAGE, []],
+            ],
+            $this->queuedReassessments(),
+        );
+    }
+
+    /**
+     * The announcement reaches every worker of the node while a connection lives in exactly one
+     * of them, so most workers hold none of the keys they are handed. A key with no subscription
+     * here - a socket owned elsewhere, or a tab that has since navigated away - is matched by
+     * nobody, and a page this worker does hold for somebody else is left alone.
+     */
+    public function testAConnectionThisWorkerDoesNotHoldIsSweptByNobody(): void
+    {
+        $this->subscribe('ak-private', ReassessTestPrivatePage::PAGE, []);
+
+        PageAccessReassessment::sweepThisWorkerConnections(['ak-elsewhere']);
 
         $this->assertSame([], $this->queuedReassessments());
     }

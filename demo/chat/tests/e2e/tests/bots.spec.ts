@@ -15,8 +15,13 @@ import { gotoPage } from '../helpers/page'
 // pages to the last page; there the new bot shows at once, with no Apply gate (an
 // append is not pending like a cross-connection edit). Each test deletes the bot it
 // made so the shared database stays at its seed.
+//
+// The page is an ADMIN-level surface (HIL-652), so every test takes the grant
+// first — the route's `admin: true` marker is shell cosmetics and opens nothing.
+// A second tab of the same browser context inherits the session cookie, so it
+// signs in once per test and not once per tab.
 
-/** Open the bots admin and wait for the live window's first row. */
+/** Open the bots admin and wait for the live window's first row; the caller is admin already. */
 async function openBots(page: Page): Promise<void> {
   await gotoPage(page, '/hilos/admin_bots')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
@@ -72,6 +77,8 @@ test.fixme('creates, edits, and deletes a bot through the live table', async ({
   const name = `E2E Created ${stamp}`
   const renamed = `E2E Renamed ${stamp}`
 
+  await signUpAdmin(page)
+
   let fullLoads = 0
   page.on('load', () => {
     fullLoads += 1
@@ -112,6 +119,8 @@ test.fixme('a bot created in one tab appears live in another with no pending gat
   const stamp = Date.now()
   const name = `E2E Live ${stamp}`
 
+  await signUpAdmin(page)
+
   const tabB = await page.context().newPage()
   let tabBLoads = 0
   tabB.on('load', () => {
@@ -149,6 +158,7 @@ test.fixme('creating a bot applies at once in the creating tab with no Apply gat
   const stamp = Date.now()
   const name = `E2E Own ${stamp}`
 
+  await signUpAdmin(page)
   await openBots(page)
   await goToLastPage(page)
   await createBot(page, name)

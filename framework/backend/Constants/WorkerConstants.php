@@ -65,6 +65,9 @@ final class WorkerConstants
     /** @var string Access re-decision announcement (worker -> daemon -> workers); canonical value in SignalTypeConstants */
     public const string MESSAGE_PAGE_ACCESS_REASSESS_USER = SignalTypeConstants::PAGE_ACCESS_REASSESS_USER;
 
+    /** @var string Access re-decision by connection (worker -> daemon -> workers); canonical value in SignalTypeConstants */
+    public const string MESSAGE_PAGE_ACCESS_REASSESS_CONNECTIONS = SignalTypeConstants::PAGE_ACCESS_REASSESS_CONNECTIONS;
+
     /** @var string DB sync created (daemon/worker broadcast); canonical value in SignalTypeConstants */
     public const string MESSAGE_DB_SYNC_CREATED = SignalTypeConstants::DB_SYNC_CREATED;
 

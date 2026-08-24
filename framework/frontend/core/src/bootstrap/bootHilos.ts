@@ -107,9 +107,13 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   // grant re-sends moves this marker, and the page on screen is judged again -
   // here by its surface type, on the server by the whole access verdict. Bound
   // beside the handshake reaction below because both read the same answer.
+  // Signing out moves the person on that same answer (HIL-652), which is the
+  // second input: the marker falling says "no longer allowed", the identity
+  // going says "no longer anybody", and the two are drawn differently.
   bindAccessReaction(
     hilosRouter,
     sessionUserIsAdmin(config.scopes, config.session),
+    sessionUserId(config.scopes, config.session),
   )
   // The page subscribe is held until the session answers: the connection's
   // identity is established by the handshake and reaches the other workers on

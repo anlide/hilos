@@ -15,6 +15,7 @@ use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceUpdateActionDTO;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -29,6 +30,20 @@ use Hilos\HilosException;
 final class AdminModeratorPage extends AbstractPage
 {
     public const string PAGE = PageConstants::ADMIN_MODERATOR;
+
+    /**
+     * A project's own administrative surface, closed on the server like every
+     * other /hilos/* page: the route's `admin: true` marker states surface type
+     * to the shell and grants nothing.
+     *
+     * The level rather than an ACCESS browser guard because this page is served
+     * by the library agent, which owns bots and prompt pieces but only MIRRORS
+     * users and connections — the cross-agent guard rule in
+     * docs/agents/architecture/page-access-control.md. The level's isAdmin seam
+     * runs wherever the page is served, exactly as it does for the framework
+     * admin surface.
+     */
+    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::ADMIN;
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::LIBRARY;
 

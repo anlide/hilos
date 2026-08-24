@@ -8,8 +8,13 @@ import { gotoPage } from '../helpers/page'
 // the backend (AdminModeratorPage), the row appearing, updating, and leaving the
 // live table with no document reload. Prompt text is stamped unique so a retry
 // (which reuses the same database) never collides with a leftover row.
+//
+// The page is an ADMIN-level surface (HIL-652), so every test takes the grant
+// first — the route's `admin: true` marker is shell cosmetics and opens nothing.
+// A second tab of the same browser context inherits the session cookie, so it
+// signs in once per test and not once per tab.
 
-/** Open the moderation admin and wait for the live table. */
+/** Open the moderation admin and wait for the live table; the caller is admin already. */
 async function openModerator(page: Page): Promise<void> {
   await gotoPage(page, '/hilos/admin_moderator')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
@@ -23,6 +28,8 @@ test('creates, edits, and deletes a prompt piece through the live table', async 
   const stamp = Date.now()
   const text = `E2E piece ${stamp}`
   const edited = `E2E edited ${stamp}`
+
+  await signUpAdmin(page)
 
   let fullLoads = 0
   page.on('load', () => {
@@ -70,6 +77,7 @@ test('creates, edits, and deletes a prompt piece through the live table', async 
 test('saving an edit with no changes still closes the dialog', async ({
   page,
 }) => {
+  await signUpAdmin(page)
   await gotoPage(page, '/hilos/admin_moderator')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
@@ -104,6 +112,7 @@ test('an edit in one tab hangs as pending in another until applied', async ({
   const edited = `E2E pending edited ${stamp}`
 
   // Tab A creates a piece, then tab B opens and finds it in the cold snapshot.
+  await signUpAdmin(page)
   await openModerator(page)
   await page.getByTestId('admin-moderator-add').click()
   await page.getByTestId('admin-moderator-section').selectOption('name_rule')

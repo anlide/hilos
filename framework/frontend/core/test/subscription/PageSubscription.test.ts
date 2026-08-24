@@ -358,6 +358,38 @@ describe('reacting to a rights change on the open page', () => {
     expect(connection.sent.length).toBe(sentBefore)
   })
 
+  it('awaitPageAnswer empties the page scope of a page that was answered', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const pages = new PageSubscription(connection, scopes)
+    pages.releaseOnSession()
+    pages.subscribe('hilos_users')
+    pages.ingestPageResponse('hilos_users', { data: { rows: 4 } })
+    const sentBefore = connection.sent.length
+
+    pages.awaitPageAnswer()
+
+    // Waiting is not hiding: the identity these rows were decided for is gone,
+    // and a view reading the scope directly would keep rendering them (HIL-652).
+    expect(scopes.page()?.data.signal('rows').get()).toBeUndefined()
+    expect(pages.pageError.get()).toBeNull()
+    expect(pages.pageLoading.get()).toBe(true)
+    // The subscription is untouched and nothing is asked of the server.
+    expect(pages.pageKey()).toBe('hilos_users')
+    expect(connection.sent.length).toBe(sentBefore)
+  })
+
+  it('awaitPageAnswer does nothing to the scope when no page is subscribed', () => {
+    const scopes = new ScopeManager()
+    const pages = new PageSubscription(fakeConnection(), scopes)
+    pages.releaseOnSession()
+
+    pages.awaitPageAnswer()
+
+    expect(scopes.page()).toBeUndefined()
+    expect(pages.pageError.get()).toBeNull()
+  })
+
   it('a refusal from the server empties the page scope too', () => {
     const scopes = new ScopeManager()
     const pages = new PageSubscription(fakeConnection(), scopes)

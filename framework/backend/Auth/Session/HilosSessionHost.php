@@ -783,6 +783,12 @@ trait HilosSessionHost
      * Presence follows the connection re-point: a user with no other authenticated
      * connection drops offline through the standard connection sync.
      *
+     * This is also the one seam every way a live session loses its person passes
+     * through — the shell logout, the expiry drop above, the account-merge force-logout
+     * and the recovery drop of the other sessions — which is why the page re-decision
+     * of HIL-652 is announced here and nowhere else, and why no project code has to
+     * announce anything.
+     *
      * @param string $sessionToken Session cookie token to revert to anonymous
      * @throws HilosException On database or runtime failure
      */
@@ -799,12 +805,22 @@ trait HilosSessionHost
 
         $response = $this->handshakeResponse(null);
         $signalName = $this->handshakeResponseSignalName();
-        foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
+        $acceptKeys = $this->sessionConnectionKeys($sessionToken);
+        foreach ($acceptKeys as $acceptKey) {
             $this->bindConnectionUser($acceptKey, null);
             $this->sendToUser($signalName, $acceptKey, $response->withPendingAck(
                 $this->connectionPendingAck($acceptKey),
             ));
         }
+
+        // Every page these browsers still have open was answered for the person who has just
+        // gone, so each of them is re-asked the question a guest arriving at that URL would be
+        // asked (HIL-652). Once after the loop, not once per connection: the announcement
+        // already reaches every worker of the node. And after it, not before: the announcement
+        // and the runtime writes above travel one queue, so the worker that re-judges applies
+        // "this connection belongs to nobody" first. Announced ahead of them it would judge
+        // with the identity being destroyed and answer allow.
+        PageAccessReassessment::forConnections($acceptKeys);
     }
 
     /**

@@ -32,6 +32,7 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
 use Hilos\Core\Page\PageAccessReassessment;
@@ -84,6 +85,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncMessageInterface;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
@@ -507,6 +509,14 @@ abstract class WorkerManager extends BaseManager
                     break;
                 }
                 PageAccessReassessment::sweepThisWorker($data->userId);
+                break;
+
+            case WorkerConstants::MESSAGE_PAGE_ACCESS_REASSESS_CONNECTIONS:
+                if (!$data instanceof WorkerPageAccessReassessConnectionsMessageDTO) {
+                    Logger::error("sweepThisWorkerConnections - unexpected type: " . get_class($data));
+                    break;
+                }
+                PageAccessReassessment::sweepThisWorkerConnections($data->acceptKeys);
                 break;
 
             case WorkerConstants::MESSAGE_DB_SYNC_CREATED:
@@ -2000,6 +2010,20 @@ abstract class WorkerManager extends BaseManager
                     $this->daemonClient->send(new WorkerPageAccessReassessMessageDTO($signal->data->userId));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - access re-decision carries invalid data: ' . get_class($signal->data));
+                }
+                continue;
+            }
+
+            // The by-connection announcement takes the same road for the same reason (HIL-652);
+            // it is a frame of its own rather than a criterion field, so that a worker holding
+            // it never has to establish which of the two questions it was asked.
+            if ($signalType === SignalTypeConstants::PAGE_ACCESS_REASSESS_CONNECTIONS) {
+                if ($signal->data instanceof PageAccessReassessConnectionsSignalData) {
+                    $this->daemonClient->send(
+                        new WorkerPageAccessReassessConnectionsMessageDTO($signal->data->acceptKeys),
+                    );
+                } else {
+                    Logger::error('dispatchQueuedSignalsToDaemon - by-connection re-decision carries invalid data: ' . get_class($signal->data));
                 }
                 continue;
             }

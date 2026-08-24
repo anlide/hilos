@@ -66,6 +66,68 @@ sources, and the field mapping; never the engine.
 A new admin feature (e.g. a project's own audit table) is built right and easily
 by following Mode 2, not by copying a framework page wholesale.
 
+## Closing a project's own admin page
+
+A Mode-1 page is closed before the project touches it: `AbstractHilosPage`
+inherits `ACCESS_LEVEL = PageAccessLevel::ADMIN` to every descendant, so a
+project that activates settings or hilos-users inherits the gate with the page.
+
+A Mode-2 page inherits nothing of the sort. It extends `AbstractPage`, whose
+default level is `PUBLIC`, so silence leaves the page — and every action it
+declares — open to an anonymous session. Closing it is one line on the page
+class:
+
+```php
+final class AdminBotsPage extends AbstractPage
+{
+    public const string PAGE = PageConstants::ADMIN_BOTS;
+
+    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::ADMIN;
+
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::LIBRARY;
+}
+```
+
+**The route's `admin: true` marker is not that closure.** The marker states
+surface *type* to the shell — which nav entry to draw, which route the client
+reaction treats as administrative — and it grants nothing and refuses nothing.
+Only the server may state access. A page carrying the marker and no server
+closure is the worst of the two: it looks gated, so nobody notices it is not.
+
+**What that combination actually does (HIL-652).** A `PUBLIC` page with no
+browser guards is skipped by the re-decision sweep, on purpose — its verdict
+cannot turn on who is asking, so re-sending it on every rights change would be
+pure noise. But the client reaction reads the route marker, so on sign-out it
+drops the page data and waits for an answer the server will never send. The tab
+sits on an empty waiting page until the person reloads it. Before the sign-out
+re-decision existed the same place drew a permanent 403, so the marker was
+already writing a verdict it had no right to write; the re-decision only made
+the silence visible.
+
+**Level or `ACCESS` guard — pick by which agent serves the page.** Both close a
+page and both make it re-decidable; they read identity from different places:
+
+- the **level** resolves through the `isAdmin()` seam, which runs in whatever
+  worker serves the page and reads the project's own user storage. This is what
+  the framework admin surface itself uses, across agents.
+- an **`ACCESS` browser guard** is re-checked by the reactive fan-out inside the
+  page's own agent, so it may only sit on a page whose `SUBSCRIPTION_AGENT_TYPE`
+  agent OWNS the identity sources it reads — the cross-agent guard rule in
+  [page-access-control.md](page-access-control.md). On an agent that merely
+  mirrors users and connections it flickers to 403 on a stale read.
+
+The chat demo shows both: `AdminUsersPage` is served by the chat agent, which
+owns users and connections, so it declares an `ACCESS` guard on `User::admin`;
+`AdminBotsPage` and `AdminModeratorPage` are served by the library agent, which
+owns bots and prompt pieces and only mirrors the rest, so they declare the level.
+Needing "signed in" rather than "admin" is the same line with
+`PageAccessLevel::AUTHENTICATED`, and never a parallel `AUTHENTICATED` guard.
+
+Closing a page is a behavior change for its tests too: an e2e that used to walk
+onto the page anonymously must take the grant first (`signUpAdmin` in the chat
+demo), and a second tab of the same browser context inherits the session rather
+than needing its own.
+
 ## The framework/project boundary
 
 | Layer | Framework owns | Project supplies |

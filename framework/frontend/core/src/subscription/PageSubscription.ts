@@ -178,9 +178,17 @@ export class PageSubscription {
 
   /**
    * Put the current page back into the state a navigation leaves it in: no error,
-   * waiting for the subscription's answer (HIL-621). The client has just learned
-   * it gained the admin marker while a 403 was on screen, and the page it is
-   * about to be handed is not the one it is displaying.
+   * no data, waiting for the subscription's answer (HIL-621, HIL-652). The client
+   * has just learned that what it is displaying was decided for circumstances that
+   * no longer hold — it gained the admin marker while a 403 was on screen, or it
+   * lost its identity while a page for a signed-in visitor was on screen — and the
+   * page it is about to be handed is not the one it is showing.
+   *
+   * The page scope is re-opened for the same reason {@link denyCurrentPage} does
+   * it: waiting is not hiding, and a view reading the scope directly would keep
+   * rendering rows decided for somebody who has gone. Its first caller, the grant
+   * reaction, was standing on a refusal whose data had already been dropped, so
+   * nothing changes for it.
    *
    * No frame is sent. The subscription is already live and the server re-decides
    * it on its own; asking again from here would mean the judged party initiates
@@ -189,6 +197,10 @@ export class PageSubscription {
   awaitPageAnswer(): void {
     this.pageErrorSignal.set(null)
     this.pageLoadingSignal.set(true)
+    const pageKey = this.current?.pageKey
+    if (pageKey !== undefined) {
+      this.scopes.openPage(pageKey)
+    }
   }
 
   /** Leave to no page: drops the page scope and tells the backend. */

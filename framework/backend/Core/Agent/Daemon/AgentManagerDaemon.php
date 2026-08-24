@@ -10,6 +10,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentDaemonNotRegisteredException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -31,6 +32,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
@@ -412,6 +414,30 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
             signalType: new SignalType(SignalTypeConstants::PAGE_ACCESS_REASSESS_USER),
             signalName: new SignalName(SignalConstants::PAGE_ACCESS_REASSESS_USER),
             signalData: new PageAccessReassessUserSignalData($dto->userId),
+        );
+    }
+
+    /**
+     * Handle the by-connection re-decision announcement from a worker (HIL-652).
+     *
+     * It queues for the same reason its twin does, and here the reason is load-bearing rather
+     * than precautionary: the runtime write that un-pointed these connections travels this same
+     * queue and was queued ahead of the announcement. Acted on at receipt, the frame would
+     * overtake that write, and a worker would re-judge the page while the connection still
+     * answers to the person who just signed out - answering "allow" and re-sending the very
+     * page the sign-out was meant to take away.
+     *
+     * @param WorkerPageAccessReassessConnectionsMessageDTO $dto DTO naming the connections that lost their person
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
+     */
+    public function handleWorkerPageAccessReassessConnections(
+        WorkerPageAccessReassessConnectionsMessageDTO $dto,
+    ): void {
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::WORKER),
+            signalType: new SignalType(SignalTypeConstants::PAGE_ACCESS_REASSESS_CONNECTIONS),
+            signalName: new SignalName(SignalConstants::PAGE_ACCESS_REASSESS_CONNECTIONS),
+            signalData: new PageAccessReassessConnectionsSignalData($dto->acceptKeys),
         );
     }
 

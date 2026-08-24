@@ -28,6 +28,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
@@ -200,6 +201,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerDbReHydrateMessageDTO => $this->handleWorkerDbReHydrateMessage($workerDTO),
             $workerDTO instanceof WorkerPageAccessReassessMessageDTO
                 => $this->handleWorkerPageAccessReassessMessage($workerDTO),
+            $workerDTO instanceof WorkerPageAccessReassessConnectionsMessageDTO
+                => $this->handleWorkerPageAccessReassessConnectionsMessage($workerDTO),
             $workerDTO instanceof WorkerDbReHydratedDTO => $this->handleWorkerDbReHydratedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncCreatedMessageDTO => $this->handleWorkerRtSyncCreatedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncUpdatedMessageDTO => $this->handleWorkerRtSyncUpdatedMessage($workerDTO),
@@ -340,6 +343,22 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     private function handleWorkerPageAccessReassessMessage(WorkerPageAccessReassessMessageDTO $dto): void
     {
         $this->agentManager->handleWorkerPageAccessReassess($dto);
+    }
+
+    /**
+     * Handle the by-connection re-decision announcement from a worker (HIL-652).
+     *
+     * The frame names sockets and no page, and unlike its twin it names nobody at all - that is
+     * what lets it outlive the write it follows. Nothing is decided here: the master queues the
+     * fact and fans it back out to every worker of the node.
+     *
+     * @param WorkerPageAccessReassessConnectionsMessageDTO $dto Announcement naming the connections that lost their person
+     * @throws InvalidArgumentException When the queued announcement carries an empty name
+     */
+    private function handleWorkerPageAccessReassessConnectionsMessage(
+        WorkerPageAccessReassessConnectionsMessageDTO $dto,
+    ): void {
+        $this->agentManager->handleWorkerPageAccessReassessConnections($dto);
     }
 
     /**

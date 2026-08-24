@@ -81,7 +81,11 @@ subscriptions and queues one `page_access_reassess` frame per page that person
 has open there. The framework's own call site is
 `AbstractHilosIndexAgent::handleAdminGrant()`, and a project routing its own
 grant command starts it there — the chat demo's `ChatAgent::handleSetAdmin()`.
-Described in
+A session losing its person is the same obligation with the other criterion:
+`forConnections()` / `sweepThisWorkerConnections()` name the accept keys instead,
+because the identity the first pair matches on is precisely what signing out
+removes, and `HilosSessionHost::deauthenticateSession()` is the one seam every
+way of losing it passes through. Described in
 [page-access-control.md](../architecture/page-access-control.md).
 
 **Converge of a registration.** A session parked on the code step of an

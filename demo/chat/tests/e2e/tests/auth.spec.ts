@@ -1,5 +1,6 @@
 import { test, expect, type Locator } from '@playwright/test'
 
+import { setAdmin } from '../helpers/adminGrant'
 import {
   mailsTo,
   readMagicLinkCode,
@@ -15,12 +16,13 @@ import {
   nameFromEmail,
   PASSWORD,
   register,
+  signUp,
   submitRegistration,
   submitRegistrationCode,
   typeInto,
   uniqueEmail,
 } from '../helpers/session'
-import { gotoAuthReturn, gotoPage } from '../helpers/page'
+import { expectPageRefused, gotoAuthReturn, gotoPage } from '../helpers/page'
 import { uniquePhone, waitForSmsCode } from '../helpers/sms'
 import { setTelegramReachable, waitForTelegramCode } from '../helpers/telegram'
 
@@ -666,6 +668,67 @@ test('counts the code down and comes back to it, still counting, after a reload'
   await submitRegistrationCode(page, await readRegisterCode(email))
   await continueFromDone(page)
   await expect(page.getByTestId('profile-name')).toBeVisible()
+})
+
+// Signing out re-decides the page that is still open (HIL-652). These two are the
+// readiness of that leaf, and they are two cases and not one because the two
+// surfaces are closed by different halves of it: the administrative page has a
+// client reaction watching the identity, /profile has none at all and is closed by
+// the server's answer alone. What both assert is that the answer ARRIVES - the
+// outlet settles on a refusal - because a client that merely blanked the screen
+// would satisfy every assertion about what is gone.
+
+test('re-decides an open admin page when the person signs out, in place', async ({
+  page,
+}) => {
+  const { userId } = await signUp(page)
+  await setAdmin(userId, true)
+  await gotoPage(page, '/hilos/admin_users')
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+
+  let fullLoads = 0
+  page.on('load', () => {
+    fullLoads += 1
+  })
+
+  await logout(page)
+
+  // The table is gone because the outlet stopped rendering the page, not because
+  // the view hid itself: this component draws unconditionally.
+  await expectPageRefused(page)
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await expect(page.getByTestId('admin-users-view')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
+  expect(new URL(page.url()).pathname).toBe('/hilos/admin_users')
+  expect(fullLoads).toBe(0)
+
+  // Revoke so the shared-DB user does not stay admin for later specs.
+  await setAdmin(userId, false)
+})
+
+test('re-decides an open profile when the person signs out, in place', async ({
+  page,
+}) => {
+  await signUp(page)
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+
+  let fullLoads = 0
+  page.on('load', () => {
+    fullLoads += 1
+  })
+
+  await logout(page)
+
+  // /profile is not an administrative surface and gets no client reaction of any
+  // kind, so the sign-in invitation on screen is the server's own answer to a
+  // subscription it re-decided - the case the by-user criterion could never reach,
+  // since the person it would have named is exactly who just left.
+  await expectPageRefused(page)
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await expect(page.getByTestId('profile-name')).toHaveCount(0)
+  expect(new URL(page.url()).pathname).toBe('/profile')
+  expect(fullLoads).toBe(0)
 })
 
 /**
