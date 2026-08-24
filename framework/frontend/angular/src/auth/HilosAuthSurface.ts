@@ -44,6 +44,9 @@ import {
   createAuthActions,
   createAuthFlow,
   createOAuthLogin,
+  oauthTrip,
+  oauthTripMessage,
+  oauthTripTitle,
   MAGIC_LINK_FLOW_METHOD,
   PASSKEY_FLOW_METHOD,
   PASSWORD_METHOD_KEY,
@@ -72,6 +75,7 @@ import type {
 } from '@hilos/core'
 
 import { LoadingButton } from '../LoadingButton.js'
+import { hilosSignal } from '../hilosSignal.js'
 import { HILOS_AUTH_GATE } from './hilosAuthGateToken.js'
 
 /** How often the countdowns redraw — one second, the smallest unit they show. */
@@ -673,8 +677,11 @@ const GENERIC_ERROR = 'That did not work. Please try again.'
             <div class="spinner-border text-primary mb-3" role="status">
               <span class="visually-hidden">Waiting</span>
             </div>
+            @if (trip()) {
+              <div class="fw-semibold mb-1">{{ waitingTitle() }}</div>
+            }
             <div class="small text-body-secondary">
-              Waiting for your device…
+              {{ waitingMessage() }}
             </div>
           </div>
         }
@@ -690,14 +697,16 @@ const GENERIC_ERROR = 'That did not work. Please try again.'
           </div>
         }
 
-        <button
-          type="button"
-          class="btn btn-outline-secondary w-100"
-          data-id="auth-cancel"
-          (click)="cancelMethod()"
-        >
-          Cancel
-        </button>
+        @if (tripCancelable()) {
+          <button
+            type="button"
+            class="btn btn-outline-secondary w-100"
+            data-id="auth-cancel"
+            (click)="cancelMethod()"
+          >
+            Cancel
+          </button>
+        }
       } @else if (state().step === 'done') {
         <!-- The end of a flow is a screen with a button, not a fading toast:
         what was achieved is said once, and Continue is what closes it and lets
@@ -812,6 +821,34 @@ export class HilosAuthSurface {
   // the screen it lands on. The next dispatch clears it: by then the person is
   // acting on the new screen, and news about the past is over.
   protected readonly notice = signal<string | null>(null)
+
+  // The OAuth trip running behind this screen, when the parked ceremony is one
+  // (HIL-633). The park is the same step for every icon method, but an OAuth wait
+  // is the one that has somewhere for the person to LOOK — another window — so it
+  // says where, names the provider, and drops its Cancel once the window has
+  // closed itself. Read from the trip and not from the flow, because the phase is
+  // the trip's own and the flow parks in `external` for both of them.
+  protected readonly trip = hilosSignal(oauthTrip)
+
+  protected readonly waitingTitle = computed(() => {
+    const running = this.trip()
+
+    return running === null ? '' : oauthTripTitle(running)
+  })
+
+  protected readonly tripCancelable = computed(() => {
+    const running = this.trip()
+
+    return running === null || running.phase === 'authorizing'
+  })
+
+  protected readonly waitingMessage = computed(() => {
+    const running = this.trip()
+
+    return running === null
+      ? 'Waiting for your device…'
+      : oauthTripMessage(running)
+  })
 
   // The clock the countdowns are read against, ticked by the interval below: a
   // bare Date.now() inside a computed would freeze the number at whatever it was
@@ -1083,11 +1120,31 @@ export class HilosAuthSurface {
         this.now.set(Date.now())
       }, COUNTDOWN_TICK_MS)
 
-      const pendingLink = this.oauth().peekOAuthLink()
-      this.linkPrompt.set(pendingLink !== null)
-      if (pendingLink !== null) {
-        auth.setField('identifier', pendingLink.email)
-      }
+      // Answer an OAuth trip that ended while this screen was parked on it
+      // (HIL-633). Only a park is answered: a trip can also be a profile link
+      // running in another page of the same tab, and that one is somebody
+      // else's wait. What comes back from a trip is news about a move nobody on
+      // this screen asked for — which is what the notice region is — while the
+      // error region stays for what the person types next.
+      const stopWatchingTrip = this.oauth().subscribeOAuthOutcome((outcome) => {
+        if (auth.flow.get().step !== 'external') {
+          return
+        }
+        if (outcome.kind === 'signed_in') {
+          // The gate closes this surface on the upgrade; saying anything here
+          // would be saying it to a screen already on its way out (HIL-422).
+          return
+        }
+        auth.cancelMethod()
+        if (outcome.kind === 'reauth_pending') {
+          this.promptToFinishLink(auth)
+
+          return
+        }
+        this.notice.set(outcome.kind === 'error' ? outcome.message : null)
+      })
+
+      this.promptToFinishLink(auth)
       // The unfinished registration comes back from the SESSION, not from
       // anything this tab remembers, so a reload, a second tab and another
       // device all resume the same screen. Both pending facts are read from
@@ -1102,6 +1159,7 @@ export class HilosAuthSurface {
       onCleanup(() => {
         stopWatchingChannels()
         stopWatchingConverge()
+        stopWatchingTrip()
         clearInterval(clock)
       })
     })
@@ -1392,6 +1450,20 @@ export class HilosAuthSurface {
     const converged = identifier.trim().toLowerCase()
 
     return converged === typed || converged === normalized
+  }
+
+  /**
+   * Show the pending link the collision arm armed: pre-fill the colliding address
+   * and ask the person to sign in with a method they already have (HIL-282).
+   *
+   * @param auth The machine the pre-filled address is written into.
+   */
+  private promptToFinishLink(auth: AuthFlow): void {
+    const pendingLink = this.oauth().peekOAuthLink()
+    this.linkPrompt.set(pendingLink !== null)
+    if (pendingLink !== null) {
+      auth.setField('identifier', pendingLink.email)
+    }
   }
 
   /**

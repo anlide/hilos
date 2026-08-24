@@ -134,6 +134,21 @@ function passkeySubtitle(identity: IdentityItem): string {
 const linkPendingKey = ref<string | null>(null)
 const linkError = ref<string | null>(null)
 
+// The trip runs in another window while this page stays subscribed and alive
+// (HIL-633), so the row's spinner is released by the trip ENDING rather than by
+// anything this handler awaits. A refusal reaches this page through two doors
+// because it happens at two moments: the start rejects when the trip never began
+// (the browser refused the window, the daemon refused the provider), and a trip
+// that did begin reports here.
+const stopWatchingTrip = oauth.subscribeOAuthOutcome((outcome) => {
+  linkPendingKey.value = null
+  linkError.value = outcome.kind === 'error' ? outcome.message : null
+})
+
+onUnmounted(() => {
+  stopWatchingTrip()
+})
+
 async function linkProvider(key: string): Promise<void> {
   if (linkPendingKey.value !== null) {
     return
@@ -142,8 +157,9 @@ async function linkProvider(key: string): Promise<void> {
   linkError.value = null
   try {
     await oauth.startOAuthLink(key)
-    // Accepted, working: the browser is navigated to the provider off the
-    // authorize signal, so the button intentionally stays loading through it.
+    // Accepted, working: the framework's waiting modal now holds this page while
+    // the person is at the provider, and the outcome subscription above is what
+    // ends the row's loading state.
   } catch (caught) {
     linkPendingKey.value = null
     linkError.value = describeOAuthError(caught)

@@ -1,31 +1,30 @@
-// The OAuth callback relay (HIL-281), the React peer of
-// framework/frontend/vue/src/auth/HilosOAuthCallbackPage.vue. The provider (or
-// the offline stub) bounces the browser back to this static SPA route
-// (/auth/callback?code=…&state=…); the app has already opened its single live
-// connection (subscribed to the main page through the router fallback), so this
-// view hands the code + signed state back as the `hilos_oauth_callback` action.
-// The provider key rode session storage across the redirect, since the callback
-// URL carries only code + state.
+// The OAuth callback relay (HIL-281, HIL-633), the React peer of
+// framework/frontend/vue/src/auth/HilosOAuthCallbackPage.vue. The provider (or the
+// offline stub) brings a browser window back to this static SPA route
+// (/auth/callback?code=…&state=…), and this view has exactly two jobs, depending on
+// which window it is.
 //
-// Unlike magic-link, the login completes asynchronously: the action ack means
-// only "accepted, working", so the spinner stays and the outcome arrives out of
-// band — success as the current-user handshake fan-out (HIL-161), failure as the
-// OAuth result signal — with a client timeout as the last-resort backstop. A
-// synchronous CSRF/state rejection, a failure signal, a timeout, or a malformed
-// return each show a generic error with a way back to sign-in; no provider detail
-// is disclosed.
+// COURIER — the usual one. The trip opened this window, so it has an opener: hand
+// the return over by postMessage and close. Nothing is dispatched from here, because
+// the daemon answers the exchange on the acceptKey of the connection that asked, and
+// the connection that must hear the answer is the one in the page the person never
+// left.
+//
+// COLD — no opener, which means the window that started the trip is gone (it was
+// closed while the person was at the provider, or somebody opened this URL
+// directly). Then this page is the only one left to finish in: the core runs the
+// exchange over this document's own connection and this view navigates on the
+// outcome. It is the only way to complete a link whose starting window is gone.
+//
+// The outcome itself is the core's to decide either way; what is left here is where
+// to go and what to say when it will not complete.
 // Bootstrap classes only, no CSS of its own (styling-rules.md).
 import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createOAuthLogin,
-  describeOAuthError,
-  OAUTH_REASON_LINK_DUPLICATE,
-  OAUTH_REASON_LINK_FAILED,
-  OAUTH_REASON_LINK_OK,
-  OAUTH_REASON_REAUTH_REQUIRED,
-  sessionUserId,
-  subscribeSignal,
+  OAUTH_RETURN_MESSAGE_TYPE,
   type HilosAuthContext,
+  type OAuthReturnMessage,
 } from '@hilos/core'
 
 import { HilosRouterContext } from '../hilosRouterContext.js'
@@ -38,46 +37,27 @@ const HOME_PATH = '/'
 // started there, the session is unchanged, and the new method now shows in the list.
 const PROFILE_PATH = '/profile'
 
-// The messages shown when a profile link (HIL-401) does not succeed. A duplicate is
-// a distinct, non-sensitive outcome (the provider is tied to another account); any
-// other link failure is generic (no provider/network detail on the wire).
-const LINK_DUPLICATE_MESSAGE = 'That account is already linked to another user.'
-const LINK_FAILED_MESSAGE = 'Could not link the account. Please try again.'
-
-// Client-side backstop past the backend exchange deadline (EXCHANGE_TTL_MS = 15s):
-// if neither the current-user update nor the failure signal arrives, resolve the
-// spinner to a generic error so it can never wedge.
-const CALLBACK_TIMEOUT_MS = 20000
-
 /** The column the relay stands in, the width the mockup gives it. */
 const MAX_WIDTH = { maxWidth: '24rem' }
 
 /** Props for {@link HilosOAuthCallbackPage}. */
 export interface HilosOAuthCallbackPageProps {
-  /** The project context the callback dispatches over. */
+  /** The project context the cold path dispatches over. */
   context: HilosAuthContext
 }
 
 /**
- * The route an OAuth provider bounces back to: relay the code, then go where the
- * outcome says.
+ * The route an OAuth provider brings a window back to: courier the return home, or
+ * finish it here when there is no home left to courier it to.
  *
  * @param props The project's auth context.
  */
 export function HilosOAuthCallbackPage({
   context,
 }: HilosOAuthCallbackPageProps) {
-  // The framework OAuth client, bound to that context. The redirect state it
-  // reads back (the stashed provider, the armed link) is the framework module's
-  // own, so this route sees the trip the surface started.
+  // The framework OAuth client, bound to that context. The trip state it reads is
+  // the framework module's own, so a cold return here sees the stash the start left.
   const oauth = useMemo(() => createOAuthLogin(context), [context])
-  // Who the session belongs to now: its turn to non-null is the success carrier
-  // (the async agent upgraded this session and the handshake fan-out landed).
-  // It is SUBSCRIBED to below rather than mirrored into a render value, so only a
-  // change after arming counts: a link started from the profile (HIL-401) arrives
-  // here already signed in, and reading that standing value as the outcome would
-  // send the person home before the exchange it came for ever happened.
-  const currentUserId = useMemo(() => sessionUserId(context.scopes), [context])
 
   const router = useContext(HilosRouterContext)
   if (!router) {
@@ -86,133 +66,58 @@ export function HilosOAuthCallbackPage({
     )
   }
 
-  // The relay outcome: `verifying` while the login is in flight, `error` once it
-  // is rejected, fails, or times out. A success navigates away, so it needs no
-  // visible state.
+  // The relay outcome: `verifying` while the cold exchange is in flight, `error`
+  // once it fails. Every other ending navigates away, so it needs no visible state.
   const [status, setStatus] = useState<'verifying' | 'error'>('verifying')
   const [message, setMessage] = useState('')
 
-  // One-shot resolution: the first of success / failure / timeout wins, so a late
-  // signal cannot fire into a resolved view. The subscriptions themselves are
-  // dropped by the effect's cleanup.
-  const settled = useRef(false)
-  // The provider the redirect stashed. Reading it CONSUMES it, so it is kept
-  // here: the effect below can run a second time (React's development
-  // double-mount) and would otherwise find the stash empty and report a perfectly
-  // good return as malformed.
-  const provider = useRef<string | null>(null)
-  // The exchange is one-time — the first attempt spends the code — so it is armed
-  // once per mounted view, while the subscriptions and the timer follow the
-  // effect's own lifetime.
-  const exchanged = useRef(false)
+  // The return is handed over — or exchanged — exactly once per mounted view: both
+  // spend the code, and React's development double-mount would otherwise do it
+  // twice.
+  const relayed = useRef(false)
 
   useEffect(() => {
-    /**
-     * Show a refusal, unless something already resolved this view.
-     *
-     * @param reason The sentence to show.
-     */
-    const fail = (reason: string): void => {
-      if (settled.current) {
-        return
-      }
-      settled.current = true
-      setStatus('error')
-      setMessage(reason)
-    }
-
-    /**
-     * Leave for `path`, unless something already resolved this view.
-     *
-     * @param path Where the resolved outcome lands.
-     */
-    const leaveFor = (path: string): void => {
-      if (settled.current) {
-        return
-      }
-      settled.current = true
-      router.navigate(path)
-    }
-
     const params = new URLSearchParams(window.location.search)
-    const code = params.get('code') ?? ''
-    const state = params.get('state') ?? ''
-    provider.current ??= oauth.takeOAuthProvider()
-    if (provider.current === '' || code === '' || state === '') {
-      fail('This sign-in link is invalid or incomplete.')
+    const payload: OAuthReturnMessage = {
+      type: OAUTH_RETURN_MESSAGE_TYPE,
+      code: params.get('code') ?? '',
+      state: params.get('state') ?? '',
+      error: params.get('error') ?? '',
+    }
+    // A browser with no opener answers null; a DOM that never defines the property
+    // at all answers undefined, and both mean the same thing — nobody to hand this
+    // to.
+    const opener = (window.opener ?? null) as Window | null
+    if (opener !== null) {
+      if (!relayed.current) {
+        relayed.current = true
+        // Targeted at our own origin, so the message cannot be read by a document
+        // that merely happens to hold a handle on this window.
+        opener.postMessage(payload, window.location.origin)
+        window.close()
+      }
 
       return
     }
 
-    // Arm the out-of-band resolvers before dispatching, so an early current-user
-    // update or failure signal cannot slip past an unsubscribed view.
-    const stopUserWatch = subscribeSignal(currentUserId, (id) => {
-      if (id !== null) {
-        leaveFor(HOME_PATH)
+    // Armed before the resume, because a return with nothing to exchange is refused
+    // synchronously and would otherwise be answered to nobody.
+    const unsubscribeOutcome = oauth.subscribeOAuthOutcome((outcome) => {
+      if (outcome.kind === 'error') {
+        setStatus('error')
+        setMessage(outcome.message)
+
+        return
       }
+      router.navigate(outcome.kind === 'linked' ? PROFILE_PATH : HOME_PATH)
     })
-    const unsubscribeFailure = oauth.subscribeOAuthFailure((data) => {
-      if (
-        data.reason === OAUTH_REASON_REAUTH_REQUIRED &&
-        data.email !== null &&
-        data.linkToken !== null
-      ) {
-        // The provider email collided with an existing verified account
-        // (HIL-282): not a failure — arm the pending link (module state, so it
-        // outlives this view and the sign-in surface the gate later closes) and
-        // send the user home, where the auth gate shows the sign-in surface
-        // pre-filled to re-authenticate. The token is redeemed by the global
-        // replay watcher once that re-auth upgrades the session.
-        if (!settled.current) {
-          oauth.armOAuthLink(data.email, data.linkToken)
-        }
-        leaveFor(HOME_PATH)
-
-        return
-      }
-      if (data.reason === OAUTH_REASON_LINK_OK) {
-        // A profile account link (HIL-401) resolved: the session never changed,
-        // so success arrives as an explicit result signal rather than a
-        // current-user update, and the person goes back to the profile where the
-        // new method now shows.
-        leaveFor(PROFILE_PATH)
-
-        return
-      }
-      if (data.reason === OAUTH_REASON_LINK_DUPLICATE) {
-        fail(LINK_DUPLICATE_MESSAGE)
-
-        return
-      }
-      if (data.reason === OAUTH_REASON_LINK_FAILED) {
-        fail(LINK_FAILED_MESSAGE)
-
-        return
-      }
-      fail('OAuth login failed. Please try again.')
-    })
-    const timeoutTimer = setTimeout(() => {
-      fail('OAuth login timed out. Please try again.')
-    }, CALLBACK_TIMEOUT_MS)
-
-    if (!exchanged.current) {
-      exchanged.current = true
-      void (async () => {
-        try {
-          await oauth.dispatchOAuthCallback(provider.current ?? '', code, state)
-          // Accepted, working: the outcome arrives through the armed resolvers.
-        } catch (error) {
-          fail(describeOAuthError(error))
-        }
-      })()
+    if (!relayed.current) {
+      relayed.current = true
+      oauth.resumeOAuthReturn(payload.code, payload.state, payload.error)
     }
 
-    return () => {
-      stopUserWatch()
-      unsubscribeFailure()
-      clearTimeout(timeoutTimer)
-    }
-  }, [oauth, currentUserId, router])
+    return unsubscribeOutcome
+  }, [oauth, router])
 
   return (
     <section

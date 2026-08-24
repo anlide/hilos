@@ -35,6 +35,7 @@ import type { ReactNode } from 'react'
 import { HilosLink } from './HilosLink.js'
 import { HilosMaintenance } from './HilosMaintenance.js'
 import { HilosToastHost } from './HilosToastHost.js'
+import { HilosOAuthWaitModal } from './auth/HilosOAuthWaitModal.js'
 import { HilosRouterContext } from './hilosRouterContext.js'
 import { useConnectionState } from './useConnectionState.js'
 import { useProtectedMode } from './useProtectedMode.js'
@@ -243,6 +244,10 @@ export function HilosLayout({
       {/* Transient notices float over the shell, so every page inside it can
       report an outcome without owning a notification surface of its own. */}
       <HilosToastHost />
+      {/* An OAuth trip runs in another window over whatever page started it, so
+      the wait belongs to the shell too: the page underneath stays subscribed and
+      alive, and no project mounts anything (HIL-633). */}
+      <HilosOAuthWaitModal />
     </div>
   )
 }

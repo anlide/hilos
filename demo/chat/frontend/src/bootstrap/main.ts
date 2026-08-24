@@ -21,10 +21,11 @@ import { currentUserId, pendingAck, scopes } from './session'
 // since HIL-607 that is the shared page-ready gate, which bootHilos binds itself.
 const oauth = createOAuthLogin(hilosAuthContext)
 
-// The OAuth start reply (HIL-281): navigate the browser to the provider's
-// authorize URL when the daemon answers `hilos_oauth_start` with the authorize signal.
+// The OAuth trip's bindings (HIL-281, HIL-633): put the authorize URL the daemon
+// answers `hilos_oauth_start` with into the provider window, take the return the
+// callback window couriers back, and notice a window the person closed by hand.
 // Registered before bootHilos opens the socket so the reply always has a handler.
-oauth.bindOAuthAuthorizeRedirect()
+oauth.bindOAuthTrip()
 
 // The OAuth email-collision link replay (HIL-282): once a collision re-auth
 // upgrades the session (currentUserId turns non-null) with a pending link armed,

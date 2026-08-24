@@ -11,6 +11,6 @@ import { type HilosOAuthProviderOption } from '@hilos/core'
 
 /** The providers this demo offers, in the order their buttons are shown. */
 export const OAUTH_PROVIDERS: readonly HilosOAuthProviderOption[] = [
-  { key: 'oauth:github', label: 'Continue with GitHub' },
-  { key: 'oauth:google', label: 'Continue with Google' },
+  { key: 'oauth:github', label: 'Continue with GitHub', name: 'GitHub' },
+  { key: 'oauth:google', label: 'Continue with Google', name: 'Google' },
 ]

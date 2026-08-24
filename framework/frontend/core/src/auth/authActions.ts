@@ -71,7 +71,7 @@ import {
   AUTH_ACTION_REQUEST_PHONE_CODE,
   AUTH_ACTION_REQUEST_REGISTER_CONFIRM,
 } from './authProtocol.js'
-import { startOAuthLogin } from './oauthLogin.js'
+import { describeOAuthError, startOAuthLogin } from './oauthLogin.js'
 import { runPasskeyDiscoverableLogin } from './passkeyCeremony.js'
 
 /** The key prefix every OAuth provider method carries, e.g. `oauth:github`. */
@@ -729,7 +729,10 @@ async function startOAuthProvider(
 
     return { ok: true }
   } catch (error) {
-    return { ok: false, message: describeAuthError(error) }
+    // The OAuth describer, not the generic one: a trip that never began was
+    // refused by the browser as often as by the server, and only the OAuth
+    // describer knows how to say the first of those out loud (HIL-633).
+    return { ok: false, message: describeOAuthError(error) }
   }
 }
 

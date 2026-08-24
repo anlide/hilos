@@ -122,11 +122,16 @@ export async function gotoMaintenance(page: Page, path: string): Promise<void> {
 /**
  * Open an auth return route and wait for its relay screen to be on screen.
  *
- * The return routes — `/auth/magic`, `/auth/callback` — are the one navigation
- * {@link gotoPage} cannot serve: the app swaps `HilosView` out for the relay
- * (App.vue), so the `hilos-page-state` marker that wrapper waits on is not in the
- * DOM at all and the wait would time out on every call. What settles instead is
- * the relay's own root, so this waits for that.
+ * A return route — `/auth/magic`, and `/auth/callback` when it is entered cold —
+ * is the one navigation {@link gotoPage} cannot serve: the app swaps `HilosView`
+ * out for the relay (App.vue), so the `hilos-page-state` marker that wrapper waits
+ * on is not in the DOM at all and the wait would time out on every call. What
+ * settles instead is the relay's own root, so this waits for that.
+ *
+ * An OAuth trip does not come back this way any more (HIL-633): the provider
+ * returns the WINDOW the trip opened, and that window couriers the return to the
+ * page that started it and closes. Playwright sees it as a page of its own; the
+ * page under test never navigates.
  *
  * The wait deliberately stops there, at "the screen is up". What the relay does
  * next — hold, sign in, give up — is the behavior a spec calling this is about,

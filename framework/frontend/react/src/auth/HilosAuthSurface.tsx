@@ -35,6 +35,9 @@ import {
   createAuthFlow,
   createOAuthLogin,
   MAGIC_LINK_FLOW_METHOD,
+  oauthTrip,
+  oauthTripMessage,
+  oauthTripTitle,
   PASSKEY_FLOW_METHOD,
   PASSWORD_METHOD_KEY,
   PASSWORD_MIN_LENGTH,
@@ -45,6 +48,7 @@ import {
   toFlowPatch,
   type AuthFlowScreen,
   type HilosAuthContext,
+  type OAuthTripOutcome,
   type ProjectSignal,
 } from '@hilos/core'
 
@@ -293,6 +297,14 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   // the screen it lands on. The next dispatch clears it: by then the person is
   // acting on the new screen, and news about the past is over.
   const [notice, setNotice] = useState<string | null>(null)
+
+  // The OAuth trip running behind this screen, when the parked ceremony is one
+  // (HIL-633). The park is the same step for every icon method, but an OAuth wait
+  // is the one that has somewhere for the person to LOOK — another window — so it
+  // says where, names the provider, and drops its Cancel once the window has
+  // closed itself. Read from the trip and not from the flow, because the phase is
+  // the trip's own and the flow parks in `external` for both of them.
+  const trip = useSignal(oauthTrip)
 
   // The clock the countdowns are read against, ticked by the interval below: a
   // bare Date.now() in the render would freeze the number at whatever it was
@@ -614,11 +626,46 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
       setNow(Date.now())
     }, COUNTDOWN_TICK_MS)
 
-    const pendingLink = oauth.peekOAuthLink()
-    setLinkPrompt(pendingLink !== null)
-    if (pendingLink !== null) {
-      auth.setField('identifier', pendingLink.email)
+    /**
+     * Show the pending link the collision arm armed: pre-fill the colliding
+     * address and ask the person to sign in with a method they already have
+     * (HIL-282).
+     */
+    const promptToFinishLink = (): void => {
+      const pendingLink = oauth.peekOAuthLink()
+      setLinkPrompt(pendingLink !== null)
+      if (pendingLink !== null) {
+        auth.setField('identifier', pendingLink.email)
+      }
     }
+
+    // Answer an OAuth trip that ended while this screen was parked on it
+    // (HIL-633). Only a park is answered: a trip can also be a profile link
+    // running in another page of the same tab, and that one is somebody else's
+    // wait. What comes back from a trip is news about a move nobody on this
+    // screen asked for — which is what the notice region is — while the error
+    // region stays for what the person types next.
+    const stopWatchingTrip = oauth.subscribeOAuthOutcome(
+      (outcome: OAuthTripOutcome) => {
+        if (auth.flow.get().step !== 'external') {
+          return
+        }
+        if (outcome.kind === 'signed_in') {
+          // The gate closes this surface on the upgrade; saying anything here
+          // would be saying it to a screen already on its way out (HIL-422).
+          return
+        }
+        auth.cancelMethod()
+        if (outcome.kind === 'reauth_pending') {
+          promptToFinishLink()
+
+          return
+        }
+        setNotice(outcome.kind === 'error' ? outcome.message : null)
+      },
+    )
+
+    promptToFinishLink()
     // The unfinished registration comes back from the SESSION, not from anything
     // this tab remembers, so a reload, a second tab and another device all
     // resume the same screen. Both pending facts are read from their signals
@@ -633,6 +680,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     return () => {
       stopWatchingChannels()
       stopWatchingConverge()
+      stopWatchingTrip()
       clearInterval(clock)
     }
   }, [auth, authActions, oauth, context, pendingRegistration, pendingAck])
@@ -1156,8 +1204,11 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
               <div className="spinner-border text-primary mb-3" role="status">
                 <span className="visually-hidden">Waiting</span>
               </div>
+              {trip ? (
+                <div className="fw-semibold mb-1">{oauthTripTitle(trip)}</div>
+              ) : null}
               <div className="small text-body-secondary">
-                Waiting for your device…
+                {trip ? oauthTripMessage(trip) : 'Waiting for your device…'}
               </div>
             </div>
           )}
@@ -1173,14 +1224,16 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
             </div>
           ) : null}
 
-          <button
-            type="button"
-            className="btn btn-outline-secondary w-100"
-            data-id="auth-cancel"
-            onClick={() => auth.cancelMethod()}
-          >
-            Cancel
-          </button>
+          {trip === null || trip.phase === 'authorizing' ? (
+            <button
+              type="button"
+              className="btn btn-outline-secondary w-100"
+              data-id="auth-cancel"
+              onClick={() => auth.cancelMethod()}
+            >
+              Cancel
+            </button>
+          ) : null}
         </>
       ) : null}
 

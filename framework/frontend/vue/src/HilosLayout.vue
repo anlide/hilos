@@ -26,6 +26,7 @@ import { computed, inject, watch } from 'vue'
 import HilosLink from './HilosLink.vue'
 import HilosMaintenance from './HilosMaintenance.vue'
 import HilosToastHost from './HilosToastHost.vue'
+import HilosOAuthWaitModal from './auth/HilosOAuthWaitModal.vue'
 import { hilosRouterKey } from './hilosRouterKey.js'
 import { useConnectionState } from './useConnectionState.js'
 import { useProtectedMode } from './useProtectedMode.js'
@@ -211,5 +212,9 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
     <!-- Transient notices float over the shell, so every page inside it can report
     an outcome without owning a notification surface of its own. -->
     <HilosToastHost />
+    <!-- An OAuth trip runs in another window over whatever page started it, so the
+    wait belongs to the shell too: the page underneath stays subscribed and alive,
+    and no project mounts anything (HIL-633). -->
+    <HilosOAuthWaitModal />
   </div>
 </template>

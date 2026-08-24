@@ -188,9 +188,25 @@ export {
   AUTH_OAUTH_CALLBACK_PATH,
 } from './auth/authRoutes.js'
 export {
+  cancelOAuthTrip,
   createOAuthLogin,
   describeOAuthError,
+  oauthTrip,
+  oauthTripMessage,
+  oauthTripTitle,
+  HILOS_OAUTH_WINDOW_NAME,
+  OAUTH_EXCHANGE_TIMEOUT_MS,
+  OAUTH_POPUP_BLOCKED_MESSAGE,
+  OAUTH_RETURN_MESSAGE_TYPE,
+  OAuthWindowBlockedError,
+  OAUTH_WINDOW_FEATURES,
+  OAUTH_WINDOW_POLL_MS,
   type HilosOAuthLogin,
+  type OAuthReturnMessage,
+  type OAuthTrip,
+  type OAuthTripIntent,
+  type OAuthTripOutcome,
+  type OAuthTripPhase,
   type PendingOAuthLink,
 } from './auth/oauthLogin.js'
 export {

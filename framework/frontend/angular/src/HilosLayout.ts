@@ -42,6 +42,7 @@ import {
 import { HilosLink } from './HilosLink.js'
 import { HilosMaintenance } from './HilosMaintenance.js'
 import { HilosToastHost } from './HilosToastHost.js'
+import { HilosOAuthWaitModal } from './auth/HilosOAuthWaitModal.js'
 import { HILOS_ROUTER } from './hilosRouterToken.js'
 import { hilosSignal } from './hilosSignal.js'
 
@@ -64,7 +65,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
 @Component({
   selector: 'hilos-layout',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosLink, HilosMaintenance, HilosToastHost],
+  imports: [HilosLink, HilosMaintenance, HilosOAuthWaitModal, HilosToastHost],
   template: `
     <div class="d-flex flex-column vh-100 overflow-hidden" data-id="app-root">
       <a
@@ -166,6 +167,10 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
       <!-- Transient notices float over the shell, so every page inside it can
       report an outcome without owning a notification surface of its own. -->
       <hilos-toast-host />
+      <!-- An OAuth trip runs in another window over whatever page started it, so
+      the wait belongs to the shell too: the page underneath stays subscribed and
+      alive, and no project mounts anything (HIL-633). -->
+      <hilos-oauth-wait-modal />
     </div>
   `,
 })

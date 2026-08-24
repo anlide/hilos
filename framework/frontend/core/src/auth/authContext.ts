@@ -25,6 +25,13 @@ export interface HilosOAuthProviderOption {
   readonly key: string
   /** The button caption shown to the person, e.g. `Continue with GitHub`. */
   readonly label: string
+  /**
+   * The provider's short name, e.g. `GitHub`, for copy that names it in a
+   * sentence — the "Waiting for GitHub" heading a trip shows (HIL-633). Declared
+   * rather than derived from the key, because deriving it would impose our casing
+   * on somebody else's brand.
+   */
+  readonly name: string
 }
 
 /**

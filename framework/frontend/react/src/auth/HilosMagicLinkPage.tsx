@@ -40,9 +40,9 @@ const HOME_PATH = '/'
 
 // Client-side backstop on the wait for a connection that can carry the confirm:
 // the page-ready gate parks forever by design, so if no page is ever answered,
-// give the wait up rather than let the spinner wedge. The same value as
-// HilosOAuthCallbackPage's CALLBACK_TIMEOUT_MS — the two relays wait on the same
-// thing and there is no reason for one to be more patient than the other.
+// give the wait up rather than let the spinner wedge. The same value as the OAuth
+// trip's OAUTH_EXCHANGE_TIMEOUT_MS — the two relays wait on the same thing and
+// there is no reason for one to be more patient than the other.
 const MAGIC_LINK_TIMEOUT_MS = 20000
 
 // The generic sentence for a confirm that never reached the server, matching what

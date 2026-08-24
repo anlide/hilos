@@ -55,30 +55,32 @@ test('renames the current user through the edit modal', async ({ page }) => {
   await expect(page.getByTestId('profile-name')).toHaveText('Renamed Person')
 })
 
-// HIL-401: disabled — the linked identity does not surface in the profile list.
-// Starting the link does a full-page navigation off /profile, so the connection
-// holding the profileIdentities subscription dies: the live DB_SYNC re-projection
-// (which is wired correctly) has no subscriber to push to. The refresh then rides
-// solely on the post-callback re-subscribe snapshot, which reads the answering
-// worker's in-memory identities collection — but the agent releases the link-ok
-// result (which triggers that re-subscribe) before the identity's cross-process
-// DB_SYNC_CREATED is guaranteed applied on that worker. The snapshot is built
-// against a stale collection, so oauth:github never appears and nothing re-emits.
-// Same cross-process handoff race class as HIL-281. TODO: land a propagation
-// barrier before link-ok (or keep the profile subscription alive across the
-// redirect), then un-fixme.
-test.fixme('links a GitHub account to the current profile (HIL-401)', async ({
+// HIL-401, un-quarantined by HIL-633. The link used to navigate the document off
+// /profile, which killed the connection holding the profileIdentities
+// subscription: the live DB_SYNC re-projection had no subscriber left to push to,
+// and the refresh fell back to the post-callback re-subscribe snapshot, read from a
+// worker that had not necessarily applied the identity's DB_SYNC_CREATED yet. The
+// trip now runs in a separate window, so the subscription never dies and the new
+// row arrives on it — the race the quarantine waited on a propagation barrier for
+// is not raced any more, it is simply not entered.
+test('links a GitHub account to the current profile (HIL-401)', async ({
   page,
 }) => {
   // Link mode reuses the whole OAuth flow but attaches the identity to the
   // already-signed-in account instead of resolving one. With no real GitHub app
   // configured the offline stub answers under `oauth:github`: its authorize URL
-  // bounces straight back to /auth/callback, the framework agent binds the
-  // identity, and the explicit link-ok result returns the user to their profile.
+  // bounces the opened window straight back to /auth/callback, that window
+  // couriers the code home and closes, and this page does the exchange.
+  let fullLoads = 0
+  page.on('load', () => {
+    fullLoads += 1
+  })
+
   await signUp(page)
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('profile-name')).toBeVisible()
+  const loadsBeforeLink = fullLoads
 
   // A fresh password account offers GitHub to link and has no oauth identity yet.
   const linkButton = page.getByTestId('profile-oauth-link-oauth:github')
@@ -89,15 +91,22 @@ test.fixme('links a GitHub account to the current profile (HIL-401)', async ({
 
   await linkButton.click()
 
-  // The link resolves out of band (link-ok signal) and navigates back to /profile;
-  // the new method now shows and GitHub is no longer offered to link.
-  await expect(page).toHaveURL(/\/profile$/)
+  // The link resolves out of band (link-ok signal) on THIS page's own connection,
+  // so the identities projection re-emits into the list that is already on screen
+  // and GitHub stops being offered.
   await expect(page.getByTestId('profile-identities-list')).toContainText(
     'oauth:github',
+    { timeout: 30000 },
   )
   await expect(
     page.getByTestId('profile-oauth-link-oauth:github'),
   ).toHaveCount(0)
+  await expect(page.getByTestId('auth-oauth-wait')).toHaveCount(0)
+
+  // The whole trip happened beside this page, not through it: still /profile, and
+  // not one document load since the profile opened.
+  expect(new URL(page.url()).pathname).toBe('/profile')
+  expect(fullLoads).toBe(loadsBeforeLink)
 })
 
 test('surfaces a conflict when the name changes in another tab', async ({
