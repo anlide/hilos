@@ -1050,7 +1050,8 @@ trait HilosSessionHost
      */
     public function abandonRegistration(string $sessionToken, string $initiatorAcceptKey): void
     {
-        // Collect first: releasing a waiter mutates the collection a foreach would walk.
+        // Two passes for the ordering below, not for the walk: the durable release has to
+        // land between reading the waiters and telling them, so the reading finishes first.
         $parked = [];
         foreach (Hilos::$rt->hilosRegistrationWaiters as $waiter) {
             if ($waiter->sessionToken === $sessionToken) {
@@ -1342,13 +1343,8 @@ trait HilosSessionHost
             return;
         }
 
-        // Collect first: releasing a waiter mutates the collection a foreach would walk.
-        $parked = [];
         foreach (Hilos::$rt->hilosRegistrationWaiters as $waiter) {
-            $parked[] = $waiter->acceptKey;
-        }
-
-        foreach ($parked as $acceptKey) {
+            $acceptKey = $waiter->acceptKey;
             if ($connections->get($acceptKey) === null) {
                 Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
             }
@@ -1381,13 +1377,8 @@ trait HilosSessionHost
             return;
         }
 
-        // Collect first: releasing a waiter mutates the collection a foreach would walk.
-        $parked = [];
         foreach (Hilos::$rt->hilosRecoveryWaiters as $waiter) {
-            $parked[] = $waiter->acceptKey;
-        }
-
-        foreach ($parked as $acceptKey) {
+            $acceptKey = $waiter->acceptKey;
             if ($connections->get($acceptKey) === null) {
                 Hilos::$rt->hilosRecoveryWaiters->actions->release($acceptKey);
             }

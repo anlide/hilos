@@ -4,6 +4,7 @@ namespace Hilos\Runtime\State\Collection;
 
 use ArrayAccess;
 use Countable;
+use Generator;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
@@ -12,7 +13,7 @@ use Hilos\Runtime\Exception\State\RtStatesCloneException;
 use Hilos\Runtime\Exception\State\RtStatesUnserializeException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Context\RtContext;
-use Iterator;
+use IteratorAggregate;
 use OutOfBoundsException;
 
 /**
@@ -27,21 +28,15 @@ use OutOfBoundsException;
  *
  * @template T of RtState
  * @implements ArrayAccess<string, T>
- * @implements Iterator<string, T>
+ * @implements IteratorAggregate<string, T>
  */
-abstract class RtStates implements Iterator, ArrayAccess, Countable
+abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
 {
     /** @var class-string<RtState> */
     public const string STATE_CLASS = '';
 
     /** @var array<string, T> state ID => RtState map */
     protected array $states = [];
-
-    /** @var int current iterator position */
-    protected int $index = 0;
-
-    /** @var int backup iterator position for nested iteration */
-    private int $backupIndex = 0;
 
     /** @var ?string Name this collection is mounted under, or null while it is not mounted */
     private ?string $collectionName = null;
@@ -203,8 +198,6 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     public function clear(): void
     {
         $this->states = [];
-        $this->index = 0;
-        $this->backupIndex = 0;
     }
 
     /**
@@ -248,22 +241,6 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
         $keys = array_keys($this->states);
         $lastKey = end($keys);
         return $lastKey !== false ? $this->states[$lastKey] : null;
-    }
-
-    /**
-     * Backup current iterator position.
-     */
-    public function backupIndex(): void
-    {
-        $this->backupIndex = $this->index;
-    }
-
-    /**
-     * Restore iterator position from backup.
-     */
-    public function restoreIndex(): void
-    {
-        $this->index = $this->backupIndex;
     }
 
     // ==================== ArrayAccess ====================
@@ -344,57 +321,42 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
         return count($this->states);
     }
 
-    // ==================== Iterator ====================
+    // ==================== IteratorAggregate ====================
 
     /**
-     * Get current state in iteration.
+     * List the state IDs currently stored, in insertion order.
      *
-     * @return ?T Current state or null if position invalid
+     * This is the snapshot a walk is taken over, and it is public because the view layer walks
+     * by the keys of its truth source rather than by keys of its own wrapper cache.
+     *
+     * Cast on the way out, because a state id that reads as a number is an integer once it is
+     * an array key, and the view layer this feeds addresses its wrappers by string.
+     *
+     * @return list<string> State IDs
      */
-    public function current(): ?RtState
+    public function keys(): array
     {
-        $keys = array_keys($this->states);
-        if (!isset($keys[$this->index])) {
-            return null;
+        return array_map(strval(...), array_keys($this->states));
+    }
+
+    /**
+     * Walk the states over a snapshot of the keys taken when the walk starts.
+     *
+     * Each walk gets its own generator, so a nested foreach over the same collection does not
+     * disturb the outer one. A key removed after the snapshot was taken is skipped rather than
+     * answered as null, and a state added during the walk is not seen - the snapshot is already
+     * taken.
+     *
+     * @return Generator<string, T> State ID => RtState
+     */
+    public function getIterator(): Generator
+    {
+        foreach ($this->keys() as $key) {
+            $state = $this->states[$key] ?? null;
+            if ($state === null) {
+                continue;
+            }
+            yield $key => $state;
         }
-        return $this->states[$keys[$this->index]];
-    }
-
-    /**
-     * Get current iterator key.
-     *
-     * @return ?string Current state ID or null if position invalid
-     */
-    public function key(): ?string
-    {
-        $keys = array_keys($this->states);
-        return $keys[$this->index] ?? null;
-    }
-
-    /**
-     * Advance iterator to next element.
-     */
-    public function next(): void
-    {
-        ++$this->index;
-    }
-
-    /**
-     * Reset iterator to first element.
-     */
-    public function rewind(): void
-    {
-        $this->index = 0;
-    }
-
-    /**
-     * Check if current iterator position is valid.
-     *
-     * @return bool True if position has element
-     */
-    public function valid(): bool
-    {
-        $keys = array_keys($this->states);
-        return $this->index < count($keys);
     }
 }

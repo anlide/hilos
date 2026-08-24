@@ -6,28 +6,20 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Object\Item\Object_;
 use ArrayAccess;
 use Countable;
-use Iterator;
+use Generator;
+use IteratorAggregate;
 
 /**
  * Collection of Object_ instances.
  *
  * @template T of Object_
  * @implements ArrayAccess<int|string, T>
- * @implements Iterator<int|string, T>
+ * @implements IteratorAggregate<int|string, T>
  */
-class ObjectCollection implements ArrayAccess, Countable, Iterator
+class ObjectCollection implements ArrayAccess, Countable, IteratorAggregate
 {
     /** @var array<int|string, Object_> Objects keyed by int or string */
     private array $objects = [];
-
-    /** @var array<int|string> Keys in iteration order */
-    private array $keys = [];
-
-    /** @var int Current iterator position */
-    private int $position = 0;
-
-    /** @var int Saved position for backup/restore */
-    private int $savedPosition = 0;
 
     /**
      * Create empty collection.
@@ -68,7 +60,7 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Store an object at the given key and keep the iteration-order index in sync.
+     * Store an object at the given key, or append it when no key is given.
      *
      * @param Object_ $object Object to store
      * @param int|string|null $key Target key, or null to append
@@ -77,12 +69,8 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
     {
         if ($key === null) {
             $this->objects[] = $object;
-            $this->keys = array_keys($this->objects);
         } else {
             $this->objects[$key] = $object;
-            if (!in_array($key, $this->keys, true)) {
-                $this->keys[] = $key;
-            }
         }
     }
 
@@ -97,10 +85,7 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
         if ($key === null) {
             return $this;
         }
-        if (isset($this->objects[$key])) {
-            unset($this->objects[$key]);
-            $this->keys = array_keys($this->objects);
-        }
+        unset($this->objects[$key]);
         return $this;
     }
 
@@ -191,22 +176,6 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Backup current iterator position for later restore.
-     */
-    public function backupIndex(): void
-    {
-        $this->savedPosition = $this->position;
-    }
-
-    /**
-     * Restore iterator position from previous backup.
-     */
-    public function restoreIndex(): void
-    {
-        $this->position = $this->savedPosition;
-    }
-
-    /**
      * Check if offset exists (ArrayAccess).
      *
      * @param mixed $offset Offset to check, or null for a missing optional relation key
@@ -261,7 +230,6 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
             return;
         }
         unset($this->objects[$offset]);
-        $this->keys = array_keys($this->objects);
     }
 
     /**
@@ -275,50 +243,32 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get current element (Iterator).
+     * List the keys currently stored, in insertion order.
      *
-     * @return ?Object_ Current object or null
+     * @return list<int|string> Object keys
      */
-    public function current(): ?Object_
+    public function keys(): array
     {
-        $key = $this->keys[$this->position] ?? null;
-        return $key !== null ? $this->objects[$key] : null;
+        return array_keys($this->objects);
     }
 
     /**
-     * Get current key (Iterator).
+     * Walk the objects over a snapshot of the keys taken when the walk starts (IteratorAggregate).
      *
-     * @return mixed Current key or null
-     */
-    public function key(): mixed
-    {
-        return $this->keys[$this->position] ?? null;
-    }
-
-    /**
-     * Advance to next element (Iterator).
-     */
-    public function next(): void
-    {
-        ++$this->position;
-    }
-
-    /**
-     * Rewind to first element (Iterator).
-     */
-    public function rewind(): void
-    {
-        $this->position = 0;
-        $this->keys = array_keys($this->objects);
-    }
-
-    /**
-     * Check if current position is valid (Iterator).
+     * Each walk gets its own generator, so a nested foreach over the same collection does not
+     * disturb the outer one. A key removed after the snapshot was taken is skipped rather than
+     * answered as null, and an object added during the walk is not seen.
      *
-     * @return bool True if current position has element
+     * @return Generator<int|string, Object_> Object key => Object_
      */
-    public function valid(): bool
+    public function getIterator(): Generator
     {
-        return isset($this->keys[$this->position]);
+        foreach ($this->keys() as $key) {
+            $object = $this->objects[$key] ?? null;
+            if ($object === null) {
+                continue;
+            }
+            yield $key => $object;
+        }
     }
 }

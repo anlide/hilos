@@ -116,6 +116,7 @@ Minimum ORM rules before editing:
 |---|---|
 | [runtime/rt-context.md](docs/agents/runtime/rt-context.md) | Hilos::$rt usage, runtime collections, sync between workers |
 | [runtime/rt-state.md](docs/agents/runtime/rt-state.md) | creating RtState subclasses, writing/reading state items |
+| [orm/collection-iteration.md](docs/agents/orm/collection-iteration.md) | walking a collection with foreach, or adding/removing rows during a walk |
 
 ## Anti-patterns (read before writing code)
 

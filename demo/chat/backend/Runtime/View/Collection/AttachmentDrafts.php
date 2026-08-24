@@ -115,17 +115,6 @@ final class AttachmentDrafts extends RtCollection
     }
 
     /**
-     * @return ?AttachmentDraft Current item or null
-     */
-    public function current(): ?AttachmentDraft
-    {
-        /** @var ?AttachmentDraft $item */
-        $item = parent::current();
-
-        return $item;
-    }
-
-    /**
      * @param string $key Draft id
      * @return ?AttachmentDraft Item or null
      */

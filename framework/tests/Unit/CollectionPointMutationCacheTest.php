@@ -179,6 +179,31 @@ final class CollectionPointMutationCacheTest extends TestCase
         $this->assertNull($view['1']);
     }
 
+    /**
+     * A full read caches a wrapper per row, and the wrapper holds its object by reference. The
+     * loop that builds them reuses one variable, so unless the binding is dropped per row every
+     * wrapper but the last follows the walk to the last object - and the corruption is invisible
+     * in the answer the read itself gives, because each row is serialized before the next one
+     * rebinds it.
+     *
+     * @throws HilosException When the fixture objects cannot be built or stored
+     */
+    public function testAFullReadLeavesEveryCachedWrapperOnItsOwnRow(): void
+    {
+        $objects = $this->mountedDb();
+        $objects['1'] = PointMutationObject::fromEntity(PointMutationEntity::withId(1, 'first'));
+        $objects['2'] = PointMutationObject::fromEntity(PointMutationEntity::withId(2, 'second'));
+        $view = $this->dbView();
+
+        $this->assertSame(
+            ['first', 'second'],
+            array_column($view->toArray(), 'mark'),
+        );
+
+        $this->assertSame('first', $view['1']?->mark());
+        $this->assertSame('second', $view['2']?->mark());
+    }
+
     public function testANullOffsetUnsetStaysSilentOnBothCollections(): void
     {
         $collection = $this->mounted();

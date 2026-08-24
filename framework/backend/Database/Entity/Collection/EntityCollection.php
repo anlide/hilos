@@ -8,7 +8,8 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use ArrayAccess;
 use Countable;
-use Iterator;
+use Generator;
+use IteratorAggregate;
 
 /**
  * Collection of Entity objects.
@@ -17,21 +18,12 @@ use Iterator;
  *
  * @template T of Entity
  * @implements ArrayAccess<int|string, T>
- * @implements Iterator<int|string, T>
+ * @implements IteratorAggregate<int|string, T>
  */
-class EntityCollection implements ArrayAccess, Countable, Iterator
+class EntityCollection implements ArrayAccess, Countable, IteratorAggregate
 {
     /** @var array<int|string, Entity> entities in collection (key => Entity) */
     protected array $entities = [];
-
-    /** @var array<int|string> entity keys in order (for iteration) */
-    protected array $keys = [];
-
-    /** @var int current iterator position */
-    private int $position = 0;
-
-    /** @var int backup of iterator position for nested iteration */
-    private int $savedPosition = 0;
 
     /**
      * Entity class for this collection. Child classes must define:
@@ -121,7 +113,7 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Store entity at key (or append when key is null), keeping key order in sync.
+     * Store entity at key, or append it when no key is given.
      *
      * @param Entity $entity Entity to store
      * @param int|string|null $key Storage key (null = append)
@@ -130,12 +122,8 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     {
         if ($key === null) {
             $this->entities[] = $entity;
-            $this->keys = array_keys($this->entities);
         } else {
             $this->entities[$key] = $entity;
-            if (!in_array($key, $this->keys, true)) {
-                $this->keys[] = $key;
-            }
         }
     }
 
@@ -150,10 +138,7 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
         if ($key === null) {
             return $this;
         }
-        if (isset($this->entities[$key])) {
-            unset($this->entities[$key]);
-            $this->keys = array_keys($this->entities);
-        }
+        unset($this->entities[$key]);
         return $this;
     }
 
@@ -233,22 +218,6 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Backup current iterator position for nested iteration.
-     */
-    public function backupIndex(): void
-    {
-        $this->savedPosition = $this->position;
-    }
-
-    /**
-     * Restore iterator position from backup.
-     */
-    public function restoreIndex(): void
-    {
-        $this->position = $this->savedPosition;
-    }
-
-    /**
      * Check if offset exists (ArrayAccess).
      *
      * @param mixed $offset Entity key, or null for a missing optional relation key
@@ -308,7 +277,6 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
             return;
         }
         unset($this->entities[$offset]);
-        $this->keys = array_keys($this->entities);
     }
 
     /**
@@ -322,50 +290,32 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get current entity (Iterator).
+     * List the keys currently stored, in insertion order.
      *
-     * @return ?T Current entity or null if position invalid
+     * @return list<int|string> Entity keys
      */
-    public function current(): ?Entity
+    public function keys(): array
     {
-        $key = $this->keys[$this->position] ?? null;
-        return $key !== null ? $this->entities[$key] : null;
+        return array_keys($this->entities);
     }
 
     /**
-     * Get current key (Iterator).
+     * Walk the entities over a snapshot of the keys taken when the walk starts (IteratorAggregate).
      *
-     * @return int|string|null Current key or null if position invalid
-     */
-    public function key(): mixed
-    {
-        return $this->keys[$this->position] ?? null;
-    }
-
-    /**
-     * Move to next element (Iterator).
-     */
-    public function next(): void
-    {
-        ++$this->position;
-    }
-
-    /**
-     * Rewind to first element (Iterator).
-     */
-    public function rewind(): void
-    {
-        $this->position = 0;
-        $this->keys = array_keys($this->entities);
-    }
-
-    /**
-     * Check if current position is valid (Iterator).
+     * Each walk gets its own generator, so a nested foreach over the same collection does not
+     * disturb the outer one. A key removed after the snapshot was taken is skipped rather than
+     * answered as null, and an entity added during the walk is not seen.
      *
-     * @return bool True if current position has entity
+     * @return Generator<int|string, T> Entity key => Entity
      */
-    public function valid(): bool
+    public function getIterator(): Generator
     {
-        return isset($this->keys[$this->position]);
+        foreach ($this->keys() as $key) {
+            $entity = $this->entities[$key] ?? null;
+            if ($entity === null) {
+                continue;
+            }
+            yield $key => $entity;
+        }
     }
 }

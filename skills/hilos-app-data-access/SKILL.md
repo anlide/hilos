@@ -21,6 +21,8 @@ switch to the focused data-layer skill first.
   `docs/agents/app-topology.md`.
 - Choosing between magic, array, result, and `findBy*()` access:
   use `$hilos-accessor-contracts`.
+- Walking a collection with `foreach`, or adding and removing rows while a walk
+  is in progress: `docs/agents/orm/collection-iteration.md`.
 - Reading a whole set of an entity, or writing a row that has no owner yet:
   `docs/agents/architecture/entity-libraries.md`.
 - Page action routing and action error behavior:

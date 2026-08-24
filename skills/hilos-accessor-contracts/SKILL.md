@@ -29,6 +29,11 @@ result, or collection value. Start with `agents.md`, then read
 - A named `findBy*()` method is still correct for complex queries, ambiguous
   criteria, business-key lookups without array support, or lookup semantics that
   need a clear name.
+- Walking a collection is its own contract, not a lookup: a `foreach` observes
+  the keys the collection held when the walk started, so a row removed during
+  the walk is skipped and a row added during it is not seen. Read
+  `docs/agents/orm/collection-iteration.md` before mutating inside a walk, and
+  do not collect the keys into an array first to survive one.
 
 ## Workflow
 

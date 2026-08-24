@@ -76,17 +76,6 @@ final class UserStates extends RtCollection
     }
 
     /**
-     * @return ?ChatUserState Current item or null
-     */
-    public function current(): ?ChatUserState
-    {
-        /** @var ?ChatUserState $item */
-        $item = parent::current();
-
-        return $item;
-    }
-
-    /**
      * @param string $key User ID as string
      * @return ?ChatUserState Item or null
      */

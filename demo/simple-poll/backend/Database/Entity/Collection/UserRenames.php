@@ -5,13 +5,13 @@ namespace Demo\SimplePoll\Database\Entity\Collection;
 use ArrayAccess;
 use Demo\SimplePoll\Database\Entity\Item\UserRename as EntityUserRename;
 use Hilos\Database\Entity\Collection\EntityCollection;
-use Iterator;
+use IteratorAggregate;
 
 /**
  * UserRenames - Entity collection for user-rename audit rows.
  *
  * @extends EntityCollection<EntityUserRename>
- * @implements Iterator<int|string, EntityUserRename>
+ * @implements IteratorAggregate<int|string, EntityUserRename>
  * @implements ArrayAccess<int|string, EntityUserRename>
  */
 final class UserRenames extends EntityCollection

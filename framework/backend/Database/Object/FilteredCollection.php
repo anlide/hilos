@@ -2,6 +2,7 @@
 
 namespace Hilos\Database\Object;
 
+use Generator;
 use Hilos\Core\Exception\InvalidStateException;
 use Hilos\Database\Object\Item\Object_;
 
@@ -122,55 +123,32 @@ class FilteredCollection extends Objects
     }
 
     /**
-     * Get current object in iteration.
+     * List the filtered keys, in the order the filter produced them.
      *
-     * @return ?Object_ Current object or null
+     * Nothing is loaded here: a filtered collection holds references to objects the source has
+     * already produced, so the lazy strategies the parent honours have no work left to do.
+     *
+     * @return list<int|string> Filtered object keys
      */
-    public function current(): ?Object_
+    public function keys(): array
     {
-        $keys = array_keys($this->filteredObjects);
-        if (!isset($keys[$this->index])) {
-            return null;
+        return array_keys($this->filteredObjects);
+    }
+
+    /**
+     * Walk the filtered objects over a snapshot of the keys taken when the walk starts.
+     *
+     * @return Generator<int|string, Object_> Object key => Object_
+     */
+    public function getIterator(): Generator
+    {
+        foreach ($this->keys() as $key) {
+            $object = $this->filteredObjects[$key] ?? null;
+            if ($object === null) {
+                continue;
+            }
+            yield $key => $object;
         }
-        return $this->filteredObjects[$keys[$this->index]];
-    }
-
-    /**
-     * Get current key in iteration.
-     *
-     * @return string|int Current key
-     */
-    public function key(): string|int
-    {
-        $keys = array_keys($this->filteredObjects);
-        return $keys[$this->index] ?? 0;
-    }
-
-    /**
-     * Advance iterator to next element.
-     */
-    public function next(): void
-    {
-        $this->index++;
-    }
-
-    /**
-     * Check if current position is valid.
-     *
-     * @return bool True if valid
-     */
-    public function valid(): bool
-    {
-        $keys = array_keys($this->filteredObjects);
-        return isset($keys[$this->index]);
-    }
-
-    /**
-     * Reset iterator to first element.
-     */
-    public function rewind(): void
-    {
-        $this->index = 0;
     }
 
     // Abstract methods - must implement but not used in filtered collection

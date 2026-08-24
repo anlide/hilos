@@ -4,6 +4,7 @@ namespace Hilos\Database\Object;
 
 use ArrayAccess;
 use Countable;
+use Generator;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
@@ -23,7 +24,7 @@ use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlSortDirection;
 use Hilos\HilosException;
-use Iterator;
+use IteratorAggregate;
 
 /**
  * Abstract base class for Object collections.
@@ -35,11 +36,11 @@ use Iterator;
  *
  * @template T of Object_
  * @implements ArrayAccess<int|string, T>
- * @implements Iterator<int|string, T>
+ * @implements IteratorAggregate<int|string, T>
  *
  * @property-read bool allowLazyLoading
  */
-abstract class Objects implements Iterator, ArrayAccess, Countable
+abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
 {
     public const string allowLazyLoading = 'allowLazyLoading';
 
@@ -71,12 +72,6 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
 
     /** @var bool whether all objects have been loaded */
     protected bool $_allLoaded = false;
-
-    /** @var int current iterator position */
-    protected int $index = 0;
-
-    /** @var int backup of iterator position for nested iteration */
-    private int $backupIndex = 0;
 
     /**
      * Initialize collection with database loading strategy
@@ -315,22 +310,6 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Backup current iterator index for later restore.
-     */
-    public function backupIndex(): void
-    {
-        $this->backupIndex = $this->index;
-    }
-
-    /**
-     * Restore iterator index from backup.
-     */
-    public function restoreIndex(): void
-    {
-        $this->index = $this->backupIndex;
-    }
-
-    /**
      * Debug info for var_dump/print_r.
      *
      * @return array<string, mixed> Collection data as array
@@ -341,78 +320,48 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Get current object.
-     * For batch strategy, loads all objects on first iteration.
+     * List the keys currently stored, in insertion order.
      *
-     * @return ?T Current Object_ or null if position invalid
+     * For the batch strategy this is the point where the whole collection arrives, because a walk
+     * over a partially loaded batch collection would silently be a walk over a prefix. The KEY
+     * strategy answers with the already loaded keys only: loading all of them is exactly what that
+     * strategy exists to avoid.
+     *
+     * @return list<int|string> Object keys
      * @throws LogicException When entity collection class is not configured
      * @throws DatabaseException When loading the full object collection from the database fails
      */
-    public function current(): ?Object_
+    public function keys(): array
     {
-        // For batch strategy, load all on first iteration
         if ($this->_allowLazyLoading &&
             $this->_lazyStrategy === self::LAZY_STRATEGY_BATCH &&
             !$this->_allLoaded) {
-            $this->lazyLoadAll();
-            $this->_allLoaded = true;
+            $this->preloadAll();
         }
 
-        $keys = array_keys($this->objects);
-        if (!isset($keys[$this->index])) {
-            return null;
-        }
-
-        return $this->objects[$keys[$this->index]];
+        return array_keys($this->objects);
     }
 
     /**
-     * Move iterator to next object.
-     */
-    public function next(): void
-    {
-        $this->index++;
-    }
-
-    /**
-     * Get current iterator key.
+     * Walk the objects over a snapshot of the keys taken when the walk starts.
      *
-     * @return int|string Current array key
-     */
-    public function key(): string|int
-    {
-        return array_keys($this->objects)[$this->index];
-    }
-
-    /**
-     * Check if current position is valid.
-     * For KEY strategy, we need to check if we can load more.
+     * Each walk gets its own generator, so a nested foreach over the same collection does not
+     * disturb the outer one. A key removed after the snapshot was taken is skipped rather than
+     * answered as null, and an object added during the walk is not seen.
      *
-     * @return bool True if current position has valid object
+     * @return Generator<int|string, T> Object key => Object_
+     * @throws LogicException When entity collection class is not configured
+     * @throws DatabaseException When loading the full object collection from the database fails
      */
-    public function valid(): bool
+    public function getIterator(): Generator
     {
-        $keys = array_keys($this->objects);
-
-        if (isset($keys[$this->index])) {
-            return true;
+        foreach ($this->keys() as $key) {
+            $object = $this->objects[$key] ?? null;
+            if ($object === null) {
+                continue;
+            }
+            yield $key => $object;
         }
-
-        // For KEY strategy, we can't iterate over all (would require loading all)
-        // So iteration is only valid for already loaded objects
-        if ($this->_allowLazyLoading && $this->_lazyStrategy === self::LAZY_STRATEGY_KEY) {
-            return false;
-        }
-
-        return false;
-    }
-
-    /**
-     * Reset iterator to first position.
-     */
-    public function rewind(): void
-    {
-        $this->index = 0;
     }
 
     /**
@@ -645,7 +594,6 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     public function clearInMemory(): void
     {
         $this->objects = [];
-        $this->index = 0;
     }
 
     /**
@@ -665,7 +613,6 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     public function reHydrate(): void
     {
         $this->objects = [];
-        $this->index = 0;
         // Dropped before the reload, not after: a failed read then leaves the collection
         // empty AND not loaded, so the next access reads the DB again. Left true, a failed
         // read would pin an empty mirror over a non-empty table for the process lifetime.

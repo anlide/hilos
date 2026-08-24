@@ -101,18 +101,15 @@ final class HilosSessionRotationsActions extends RtActions
 
         $nowMs = microtime(true) * TimeConstants::MS_PER_SECOND;
 
-        // Collect first: removing a row mutates the collection the loop walks.
-        $expired = [];
+        $dropped = 0;
         foreach ($this->stateCollection as $state) {
-            if (!$state->isLiveAt($nowMs)) {
-                $expired[] = $state->getId();
+            if ($state->isLiveAt($nowMs)) {
+                continue;
             }
+            $this->removeStateFromCollection($state->getId());
+            $dropped++;
         }
 
-        foreach ($expired as $ticket) {
-            $this->removeStateFromCollection($ticket);
-        }
-
-        return count($expired);
+        return $dropped;
     }
 }

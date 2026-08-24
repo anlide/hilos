@@ -6,6 +6,7 @@ namespace Hilos\Runtime\View\Collection;
 
 use ArrayAccess;
 use Countable;
+use Generator;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
@@ -19,7 +20,7 @@ use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
 use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
 use Hilos\Runtime\View\Item\RtItem;
-use Iterator;
+use IteratorAggregate;
 
 /**
  * RtCollection - collection of RtItem instances (view layer).
@@ -29,15 +30,12 @@ use Iterator;
  * @template TItem of RtItem
  * @template TActions of RtActions
  * @implements ArrayAccess<string, TItem>
- * @implements Iterator<string, TItem>
+ * @implements IteratorAggregate<string, TItem>
  * @property-read TActions $actions
  */
-abstract class RtCollection implements ArrayAccess, Countable, Iterator
+abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
 {
     public const string actions = 'actions';
-
-    /** @var int current iterator position */
-    private int $position = 0;
 
     /** @var array<string, TItem> state ID => RtItem cache */
     private array $items = [];
@@ -302,22 +300,21 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Clears cached RtItem instances and resets iterator.
+     * Clears cached RtItem instances.
      */
     public function clearCache(): void
     {
         $this->items = [];
-        $this->position = 0;
     }
 
     /**
      * Drops the cached RtItem of one key, so the next read rebuilds it from the state.
      *
-     * The iterator position is deliberately left alone, unlike {@see clearCache()}, which
-     * would end a walk in progress at its first step. That buys survival, NOT safety: the
-     * cursor is a numeric index into this cache, so dropping a key at or before it shifts
-     * every later key down and the walk skips a row. Mutating from inside a walk therefore
-     * still means collecting the keys first and mutating afterwards.
+     * Safe to call from inside a walk, unlike {@see clearCache()}, which would make every
+     * later key rebuild its wrapper. A walk in progress is unaffected either way: it holds
+     * its own snapshot of the state keys and resolves each one when it gets there, so a key
+     * dropped from this cache is simply rebuilt, and a key dropped from the state collection
+     * is skipped.
      *
      * A key with nothing cached under it is a silent no-op.
      *
@@ -429,65 +426,24 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get current item in iteration.
+     * Walk the items by the keys of the state collection, which is the truth source here.
      *
-     * @return ?TItem Current item or null if position invalid
-     */
-    public function current(): ?RtItem
-    {
-        $keys = array_keys($this->items);
-        if (!isset($keys[$this->position])) {
-            return null;
-        }
-        return $this->items[$keys[$this->position]];
-    }
-
-    /**
-     * Get current iterator key.
+     * The key snapshot is taken from the states when the walk starts, and each key is resolved
+     * to its wrapper only when the walk reaches it. A state removed after the snapshot was taken
+     * resolves to null and is skipped; a state added during the walk is not seen. Each walk gets
+     * its own generator, so a nested foreach over this collection leaves the outer one alone.
      *
-     * @return ?string Current state ID or null if invalid
-     */
-    public function key(): ?string
-    {
-        $keys = array_keys($this->items);
-        return $keys[$this->position] ?? null;
-    }
-
-    /**
-     * Advance iterator to next element.
-     */
-    public function next(): void
-    {
-        ++$this->position;
-    }
-
-    /**
-     * Reset iterator to first element.
-     *
+     * @return Generator<string, TItem> State ID => RtItem
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
-    public function rewind(): void
+    public function getIterator(): Generator
     {
-        $this->position = 0;
-        $stateCollection = $this->getStateCollection();
-        $this->items = [];
-        foreach ($stateCollection as $key => $state) {
-            $item = $this->createRtItem($state);
-            $this->attachItemToCollection($item);
-            $this->items[$key] = $item;
-            unset($state);
+        foreach ($this->getStateCollection()->keys() as $key) {
+            $item = $this->getRtItemForKey($key);
+            if ($item === null) {
+                continue;
+            }
+            yield $key => $item;
         }
-        $stateCollection->rewind();
-    }
-
-    /**
-     * Check if current iterator position is valid.
-     *
-     * @return bool True if position has element
-     */
-    public function valid(): bool
-    {
-        $keys = array_keys($this->items);
-        return $this->position < count($keys);
     }
 }

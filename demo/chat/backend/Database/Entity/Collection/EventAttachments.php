@@ -7,13 +7,13 @@ namespace Demo\Chat\Database\Entity\Collection;
 use ArrayAccess;
 use Demo\Chat\Database\Entity\Item\EventAttachment as EntityEventAttachment;
 use Hilos\Database\Entity\Collection\EntityCollection;
-use Iterator;
+use IteratorAggregate;
 
 /**
  * EventAttachments - Entity collection for event attachments.
  *
  * @extends EntityCollection<EntityEventAttachment>
- * @implements Iterator<int|string, EntityEventAttachment>
+ * @implements IteratorAggregate<int|string, EntityEventAttachment>
  * @implements ArrayAccess<int|string, EntityEventAttachment>
  */
 final class EventAttachments extends EntityCollection

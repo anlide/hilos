@@ -6,6 +6,7 @@ namespace Hilos\Database\View\Collection;
 
 use ArrayAccess;
 use Countable;
+use Generator;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Actions\Collection\DbActions;
@@ -25,7 +26,7 @@ use Hilos\Database\View\Item\DbItem;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\HilosException;
-use Iterator;
+use IteratorAggregate;
 
 /**
  * Base Db collection: lazy loading and relation management between Db items.
@@ -40,10 +41,10 @@ use Iterator;
  * @template T of DbItem
  * @template TObjectCollection of Objects
  * @implements ArrayAccess<int|string, T>
- * @implements Iterator<int|string, T>
+ * @implements IteratorAggregate<int|string, T>
  * @property-read TObjectCollection $objectCollection Object collection shortcut (throws if manual)
  */
-abstract class DbCollection implements ArrayAccess, Countable, Iterator
+abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
 {
     public const string actions = 'actions';
     public const string objectCollection = 'objectCollection';
@@ -57,9 +58,6 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
 
     /** @var bool whether collection is manual (empty, populated via add) vs auto (wraps ObjectCollection) */
     protected bool $isManual = false;
-
-    /** @var int current iterator position */
-    private int $position = 0;
 
     /**
      * Cached DbItem instances for iteration
@@ -94,9 +92,6 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * @var ?DbActions<T, TObjectCollection>
      */
     private ?DbActions $_actions = null;
-
-    /** @var int backup iterator position for nested iteration */
-    private int $savedPosition = 0;
 
     /**
      * Creates empty collection. Should be called by child classes via init() or initEmpty().
@@ -414,6 +409,10 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
                     } else {
                         $result[] = $data;
                     }
+                    // The item binds this variable by reference, and the loop reuses it, so the
+                    // binding is dropped before the next row is assigned into it - otherwise the
+                    // wrapper just cached would follow the walk to whatever row comes last.
+                    unset($object);
                 }
             }
         }
@@ -557,7 +556,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
         if ($firstObject === null) {
             return null;
         }
-        $firstKey = array_key_first(iterator_to_array($objectCollection));
+        $firstKey = $objectCollection->keys()[0] ?? null;
         return $firstKey !== null ? $this->getItemForKey($firstKey) : null;
     }
 
@@ -584,32 +583,9 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
         if ($lastObject === null) {
             return null;
         }
-        $keys = array_keys(iterator_to_array($objectCollection));
+        $keys = $objectCollection->keys();
         $lastKey = end($keys);
         return $lastKey !== false ? $this->getItemForKey($lastKey) : null;
-    }
-
-    /**
-     * Backup current iterator position (DbItems and Objects).
-     * Useful when you need to iterate and then restore cursor.
-     */
-    public function backupIndex(): void
-    {
-        $this->savedPosition = $this->position;
-        if (!$this->isManual) {
-            $this->getObjectCollection()?->backupIndex();
-        }
-    }
-
-    /**
-     * Restore iterator position (DbItems and Objects) from backup.
-     */
-    public function restoreIndex(): void
-    {
-        $this->position = $this->savedPosition;
-        if (!$this->isManual) {
-            $this->getObjectCollection()?->restoreIndex();
-        }
     }
 
     /**
@@ -721,73 +697,42 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get current element.
+     * Walk the items by the keys of whatever holds them in this mode.
      *
-     * @return ?T Current DbItem or null if position invalid
-     */
-    public function current(): ?DbItem
-    {
-        $keys = array_keys($this->items);
-        if (!isset($keys[$this->position])) {
-            return null;
-        }
-        $key = $keys[$this->position];
-        return $this->items[$key];
-    }
-
-    /**
-     * Get current iterator key.
+     * A manual collection owns its rows, so it walks its own keys; an automatic one walks the
+     * keys of the object collection, which is the truth source, and resolves each key to its
+     * wrapper only when the walk reaches it. Either way the key snapshot is taken when the walk
+     * starts: a row removed after that resolves to null and is skipped, a row added during the
+     * walk is not seen, and a nested foreach over this collection leaves the outer one alone.
      *
-     * @return int|string|null Current key or null if position invalid
-     */
-    public function key(): mixed
-    {
-        $keys = array_keys($this->items);
-        return $keys[$this->position] ?? null;
-    }
-
-    /**
-     * Move iterator to next element.
-     */
-    public function next(): void
-    {
-        ++$this->position;
-    }
-
-    /**
-     * Rewind iterator to first element.
-     *
-     * Rebuilds DbItem cache from in-memory Object rows via getOrCreateItemForLoadedObject().
-     *
+     * @return Generator<int|string, T> Primary key ID => DbItem
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
+     * @throws DatabaseException When lazy-loading an object from the database fails
      */
-    public function rewind(): void
+    public function getIterator(): Generator
     {
-        $this->position = 0;
         if ($this->isManual) {
+            foreach (array_keys($this->items) as $key) {
+                $item = $this->items[$key] ?? null;
+                if ($item === null) {
+                    continue;
+                }
+                yield $key => $item;
+            }
             return;
         }
         $objectCollection = $this->getObjectCollection();
-        if ($objectCollection !== null) {
-            $this->items = [];
-            foreach ($objectCollection as $key => $object) {
-                $this->items[$key] = $this->getOrCreateItemForLoadedObject($key, $object);
-                unset($object);
-            }
-            $objectCollection->rewind();
+        if ($objectCollection === null) {
+            return;
         }
-    }
-
-    /**
-     * Check if current iterator position is valid.
-     *
-     * @return bool True if position has element
-     */
-    public function valid(): bool
-    {
-        $keys = array_keys($this->items);
-        return $this->position < count($keys);
+        foreach ($objectCollection->keys() as $key) {
+            $item = $this->getItemForKey($key);
+            if ($item === null) {
+                continue;
+            }
+            yield $key => $item;
+        }
     }
 
     /**
@@ -803,24 +748,20 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Clear cached DbItem instances and reset iterator.
+     * Clear cached DbItem instances.
      */
     public function clearCache(): void
     {
         $this->items = [];
-        $this->position = 0;
-        $this->savedPosition = 0;
     }
 
     /**
      * Drop the cached DbItem of one key, so the next read rebuilds it from the object.
      *
-     * The iterator position is deliberately left alone, unlike {@see clearCache()}, which
-     * would end a walk in progress at its first step. That buys survival, NOT safety: the
-     * cursor - and the one {@see backupIndex()} parks for a nested walk - is a numeric
-     * index into this cache, so dropping a key at or before it shifts every later key down
-     * and the walk skips a row. Mutating from inside a walk therefore still means
-     * collecting the keys first and mutating afterwards.
+     * Safe to call from inside a walk, unlike {@see clearCache()}, which would make every
+     * later key rebuild its wrapper. A walk in progress is unaffected either way: it holds its
+     * own snapshot of the keys and resolves each one when it gets there, so a key dropped from
+     * this cache is simply rebuilt, and a key dropped from the object collection is skipped.
      *
      * A key with nothing cached under it is a silent no-op.
      *

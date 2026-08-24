@@ -59,15 +59,11 @@ final class BackupHistoriesActions extends RtActions
 
         $changes = 0;
 
-        // Collect first: dropping a row mutates the collection the loop walks.
-        $gone = [];
         foreach ($this->stateCollection as $state) {
-            if (!isset($scanned[$state->getId()])) {
-                $gone[] = $state->getId();
+            if (isset($scanned[$state->getId()])) {
+                continue;
             }
-        }
-        foreach ($gone as $id) {
-            if ($this->forget($id)) {
+            if ($this->forget($state->getId())) {
                 $changes++;
             }
         }

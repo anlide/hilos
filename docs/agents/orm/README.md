@@ -10,6 +10,7 @@ documents by touched surface; it does not replace them.
 | `Hilos::$db`, `DbContext`, `DbCollection`, actions, or collection lookup | `db-collection.md` |
 | `Database/View/Item/*` relation properties, magic bridges, nullable relation access, or `Database/View/Collection/*` offset semantics | `db-item-bridges.md` and `accessor-contracts.md` |
 | Choosing between magic properties, `[]`, result accessors, and `findBy*()` | `accessor-contracts.md` |
+| Walking a collection with `foreach`, or adding/removing rows during a walk | `collection-iteration.md` |
 | Entity table mapping, persisted fields, primary keys, foreign keys, indexes, or row contracts | `entity.md` |
 | Object item mapping, object collection loading, object enrichment, or `getIdString()` | `object.md` |
 | Schema migrations, rollback files, seeds, or schema checks | `migrations.md` |
@@ -26,6 +27,8 @@ the project contract approval gate before implementation.
   and the collection contracts they rely on.
 - `accessor-contracts.md` explains when to use magic properties, array access,
   named finders, and existing result accessors.
+- `collection-iteration.md` defines what a walk over a collection observes
+  while the collection is being mutated.
 - `entity.md` describes raw persisted DB rows.
 - `object.md` describes object wrappers between entities and View items.
 - `migrations.md` describes schema change workflow and validation.
