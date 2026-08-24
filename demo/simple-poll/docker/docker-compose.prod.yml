@@ -9,7 +9,8 @@ services:
   poll-prod:
     build: .
     env_file:
-      - ../.env
+      - path: ../.env
+        required: false
     container_name: poll-daemon-prod
     volumes:
       - ..:/app
@@ -29,6 +30,14 @@ services:
       - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-2}
       - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
       - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
+      # The CLI command channel, the socket admin:create / admin:grant /
+      # admin:revoke / protected-mode:open speak.
+      - COMMAND_HOST=0.0.0.0
+      - COMMAND_PORT=8094
+      # The daemon addresses itself, so an operator command run with `docker exec`
+      # in this container (admin:create / admin:grant / admin:revoke /
+      # protected-mode:open) reaches the command channel over loopback.
+      - HILOS_DAEMON_HOST=127.0.0.1
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
     ports:
@@ -86,7 +95,8 @@ services:
   poll-cli-prod:
     build: .
     env_file:
-      - ../.env
+      - path: ../.env
+        required: false
     container_name: poll-cli-prod
     volumes:
       - ..:/app
@@ -97,9 +107,10 @@ services:
     environment:
       - APP_ENV=prod
       - TERM=xterm-256color
-      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.28.0.11}
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-172.28.0.11}
       - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+      - COMMAND_PORT=8094
     profiles:
       - composer
     networks:
@@ -108,7 +119,8 @@ services:
   poll-monitor-prod:
     build: .
     env_file:
-      - ../.env
+      - path: ../.env
+        required: false
     container_name: poll-monitor-prod
     volumes:
       - ..:/app
@@ -118,9 +130,10 @@ services:
     working_dir: /app
     environment:
       - APP_ENV=prod
-      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.28.0.11}
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-172.28.0.11}
       - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+      - COMMAND_PORT=8094
     profiles:
       - monitor
     networks:

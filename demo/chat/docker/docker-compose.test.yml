@@ -92,7 +92,8 @@ services:
   chat-test:
     build: .
     env_file:
-      - ../tests/.env
+      - path: ../tests/.env
+        required: false
     container_name: chat-daemon-test
     volumes:
       - ..:/app
@@ -115,6 +116,14 @@ services:
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
       - WEBSOCKET_PORT=8092
+      # The CLI command channel, the socket admin:create / admin:grant /
+      # admin:revoke / protected-mode:open speak.
+      - COMMAND_HOST=0.0.0.0
+      - COMMAND_PORT=8094
+      # The daemon addresses itself, so an operator command run with `docker exec`
+      # in this container (admin:create / admin:grant / admin:revoke /
+      # protected-mode:open) reaches the command channel over loopback.
+      - HILOS_DAEMON_HOST=127.0.0.1
       - FRONTEND_HTML_HOST=0.0.0.0
       - FRONTEND_HTML_PORT=8093
       - FRONTEND_DIST_PATH=/app/frontend/dist
@@ -211,7 +220,8 @@ services:
   chat-cli-test:
     build: .
     env_file:
-      - ../tests/.env
+      - path: ../tests/.env
+        required: false
     container_name: chat-cli-test
     volumes:
       - ..:/app

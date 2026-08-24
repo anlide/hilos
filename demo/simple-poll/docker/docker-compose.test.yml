@@ -64,7 +64,8 @@ services:
   poll-daemon-test:
     build: .
     env_file:
-      - ../tests/.env
+      - path: ../tests/.env
+        required: false
     container_name: poll-daemon-test
     volumes:
       - ..:/app
@@ -91,6 +92,10 @@ services:
       # port is published.
       - COMMAND_HOST=0.0.0.0
       - COMMAND_PORT=8094
+      # The daemon addresses itself, so an operator command run with `docker exec`
+      # in this container (admin:create / admin:grant / admin:revoke /
+      # protected-mode:open) reaches the command channel over loopback.
+      - HILOS_DAEMON_HOST=127.0.0.1
       # Two monopolistic workers: one for the poll agent, one for the Hilos
       # dashboard's hilos_index agent the shell gear subscribes. The framework
       # default already gives two, but the demos prescribe it here (like chat)
@@ -170,7 +175,8 @@ services:
   poll-cli-test:
     build: .
     env_file:
-      - ../tests/.env
+      - path: ../tests/.env
+        required: false
     container_name: poll-cli-test
     volumes:
       - ..:/app
@@ -211,6 +217,7 @@ services:
       # The admin-gated /hilos specs take the grant over the daemon command
       # channel before they navigate (helpers/adminGrant.ts).
       COMMAND_HOST: poll-daemon-test
+      COMMAND_PORT: "8094"
       CI: "1"
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
     profiles:

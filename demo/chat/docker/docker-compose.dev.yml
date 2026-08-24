@@ -1,5 +1,9 @@
 # Docker Compose configuration for Chat Demo Project
 # Load environment variables from .env file in project root
+#
+# Only this demo has a dev stack at all: tasks and simple-poll go local -> test -> prod.
+# It is kept because it is the stand this demo's own development runs on, and adding the
+# same stack to the others would be work nobody has asked for.
 
 name: hilos-chat-dev
 
@@ -7,7 +11,8 @@ services:
   chat-dev:
     build: .
     env_file:
-      - ../.env
+      - path: ../.env
+        required: false
     container_name: chat-daemon-dev
     volumes:
       - ..:/app
@@ -20,10 +25,20 @@ services:
     environment:
       - APP_ENV=dev
       - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
-      - HTTP_STATUS_HOST=${HTTP_STATUS_HOST:-0.0.0.0}
-      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
-      - WORKER_COMM_HOST=${WORKER_COMM_HOST:-0.0.0.0}
-      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+      - HTTP_STATUS_HOST=0.0.0.0
+      - HTTP_STATUS_PORT=8090
+      - WORKER_COMM_HOST=0.0.0.0
+      - WORKER_COMM_PORT=8091
+      - WEBSOCKET_HOST=0.0.0.0
+      - WEBSOCKET_PORT=8092
+      # The CLI command channel, the socket admin:create / admin:grant /
+      # admin:revoke / protected-mode:open speak.
+      - COMMAND_HOST=0.0.0.0
+      - COMMAND_PORT=8094
+      # The daemon addresses itself, so an operator command run with `docker exec`
+      # in this container (admin:create / admin:grant / admin:revoke /
+      # protected-mode:open) reaches the command channel over loopback.
+      - HILOS_DAEMON_HOST=127.0.0.1
       - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-12}
       # Mail goes to the stand's own interceptor, whose UI is published below, so
       # a message can be read with the eyes instead of dug out of a .eml file. The
@@ -44,14 +59,11 @@ services:
       - TELEGRAM_GATEWAY_ENDPOINT_URL=${TELEGRAM_GATEWAY_ENDPOINT_URL:-http://stand-gateway-dev:18000/telegram}
       - TELEGRAM_GATEWAY_TOKEN=${TELEGRAM_GATEWAY_TOKEN:-stand-gateway-token}
       - TELEGRAM_GATEWAY_SENDER_USERNAME=${TELEGRAM_GATEWAY_SENDER_USERNAME:-HilosChat}
-      # WebSocket ports (when implemented)
-      # - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
-      # - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
     expose:
-      - "${HTTP_STATUS_PORT:-8090}"
-      - "${WORKER_COMM_PORT:-8091}"
+      - "8090"
+      - "8091"
     restart: unless-stopped
     networks:
       hilos-demo-chat-dev-network:
@@ -101,7 +113,8 @@ services:
   chat-cli-dev:
     build: .
     env_file:
-      - ../.env
+      - path: ../.env
+        required: false
     container_name: chat-cli-dev
     volumes:
       - ..:/app
@@ -114,9 +127,10 @@ services:
     environment:
       - APP_ENV=dev
       - TERM=xterm-256color
-      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
-      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
-      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-172.26.0.11}
+      - HTTP_STATUS_PORT=8090
+      - WORKER_COMM_PORT=8091
+      - COMMAND_PORT=8094
     profiles:
       - composer
     networks:
@@ -125,7 +139,8 @@ services:
   chat-monitor-dev:
     build: .
     env_file:
-      - ../.env
+      - path: ../.env
+        required: false
     container_name: chat-monitor-dev
     volumes:
       - ..:/app
@@ -136,9 +151,10 @@ services:
     working_dir: /app
     environment:
       - APP_ENV=dev
-      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
-      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
-      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-172.26.0.11}
+      - HTTP_STATUS_PORT=8090
+      - WORKER_COMM_PORT=8091
+      - COMMAND_PORT=8094
     profiles:
       - monitor
     restart: unless-stopped

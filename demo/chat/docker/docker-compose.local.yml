@@ -98,10 +98,14 @@ services:
     networks:
       - hilos-demo-chat-local-network
 
+  # The daemon. Named after the demo rather than <demo>-daemon-local the way tasks and
+  # simple-poll name theirs: the name is a deliberate difference between the stacks, kept
+  # because renaming a service renames its container and every command that reaches for it.
   chat-local:
     build: .
     env_file:
-      - ../.env
+      - path: ../.env
+        required: false
     container_name: chat-daemon-local
     volumes:
       - ..:/app
@@ -114,15 +118,21 @@ services:
     environment:
       - APP_ENV=local
       - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
-      - HTTP_STATUS_HOST=${HTTP_STATUS_HOST:-0.0.0.0}
-      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
+      - HTTP_STATUS_HOST=0.0.0.0
+      - HTTP_STATUS_PORT=8090
+      # A bigger monopolistic pool than the other demos ask for (they take 2): the number
+      # belongs to this demo's own agent set, not to a framework norm.
       - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-12}
-      - WORKER_COMM_HOST=${WORKER_COMM_HOST:-0.0.0.0}
-      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
-      - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
-      - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
-      - COMMAND_HOST=${COMMAND_HOST:-0.0.0.0}
-      - COMMAND_PORT=${COMMAND_PORT:-8094}
+      - WORKER_COMM_HOST=0.0.0.0
+      - WORKER_COMM_PORT=8091
+      - WEBSOCKET_HOST=0.0.0.0
+      - WEBSOCKET_PORT=8092
+      - COMMAND_HOST=0.0.0.0
+      - COMMAND_PORT=8094
+      # The daemon addresses itself, so an operator command run with `docker exec`
+      # in this container (admin:create / admin:grant / admin:revoke /
+      # protected-mode:open) reaches the command channel over loopback.
+      - HILOS_DAEMON_HOST=127.0.0.1
       - DB_HOST=${DB_HOST:-mysql-local}
       - DB_PORT=${DB_PORT:-3306}
       - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-chat}
@@ -151,8 +161,8 @@ services:
       - CHAT_CONTEXT_ANALYZER_MODEL=${CHAT_CONTEXT_ANALYZER_MODEL:-qwen2.5:7b}
       - CHAT_CONTEXT_ANALYZER_TIMEOUT_SEC=${CHAT_CONTEXT_ANALYZER_TIMEOUT_SEC:-90.0}
       - CHAT_CONTEXT_ANALYZER_PROVIDER=${CHAT_CONTEXT_ANALYZER_PROVIDER:-local}
-      - FRONTEND_HTML_HOST=${FRONTEND_HTML_HOST:-0.0.0.0}
-      - FRONTEND_HTML_PORT=${FRONTEND_HTML_PORT:-8093}
+      - FRONTEND_HTML_HOST=0.0.0.0
+      - FRONTEND_HTML_PORT=8093
       - FRONTEND_DIST_PATH=${FRONTEND_DIST_PATH:-/app/frontend/dist}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
@@ -162,19 +172,23 @@ services:
       - stand-gateway-local
     ports:
       # Expose ports to host for local frontend access
-      - "${HILOS_BIND_HOST:-127.0.0.1}:${HTTP_STATUS_PORT:-8090}:${HTTP_STATUS_PORT:-8090}"
-      - "${HILOS_BIND_HOST:-127.0.0.1}:${WORKER_COMM_PORT:-8091}:${WORKER_COMM_PORT:-8091}"
-      - "${HILOS_BIND_HOST:-127.0.0.1}:${WEBSOCKET_PORT:-8092}:${WEBSOCKET_PORT:-8092}"
-      - "${HILOS_BIND_HOST:-127.0.0.1}:${FRONTEND_HTML_PORT:-8093}:${FRONTEND_HTML_PORT:-8093}"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${HTTP_STATUS_PORT:-8090}:8090"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WORKER_COMM_PORT:-8091}:8091"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WEBSOCKET_PORT:-8092}:8092"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${FRONTEND_HTML_PORT:-8093}:8093"
     restart: unless-stopped
     networks:
       hilos-demo-chat-local-network:
         ipv4_address: ${DOCKER_DAEMON_IP:-172.26.0.11}
 
+  # On-demand CLI container. Sits behind the `composer` profile, not the `cli` one the other
+  # demos use: the composer scripts of this demo name it that way, and the profile is a word
+  # in those scripts rather than anything the framework reads.
   chat-cli-local:
     build: .
     env_file:
-      - ../.env
+      - path: ../.env
+        required: false
     container_name: chat-cli-local
     volumes:
       - ..:/app
@@ -187,10 +201,10 @@ services:
       - APP_ENV=local
       - TERM=xterm-256color
       - DOCKER=true
-      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
-      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
-      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
-      - COMMAND_PORT=${COMMAND_PORT:-8094}
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-172.26.0.11}
+      - HTTP_STATUS_PORT=8090
+      - WORKER_COMM_PORT=8091
+      - COMMAND_PORT=8094
       - DB_HOST=${DB_HOST:-mysql-local}
       - DB_PORT=${DB_PORT:-3306}
       - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-chat}
@@ -203,10 +217,13 @@ services:
     networks:
       - hilos-demo-chat-local-network
 
+  # The live monitor view. Only this demo ships one, and only behind a profile, so it starts
+  # when someone asks for it and never with the stack.
   chat-monitor-local:
     build: .
     env_file:
-      - ../.env
+      - path: ../.env
+        required: false
     container_name: chat-monitor-local
     volumes:
       - ..:/app
@@ -217,9 +234,10 @@ services:
     working_dir: /app
     environment:
       - APP_ENV=local
-      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
-      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
-      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-172.26.0.11}
+      - HTTP_STATUS_PORT=8090
+      - WORKER_COMM_PORT=8091
+      - COMMAND_PORT=8094
     profiles:
       - monitor
     networks:

@@ -7,7 +7,8 @@ services:
   chat-prod:
     build: .
     env_file:
-      - ../.env
+      - path: ../.env
+        required: false
     container_name: chat-daemon-prod
     volumes:
       - ..:/app
@@ -20,26 +21,34 @@ services:
     environment:
       - APP_ENV=prod
       - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
-      - HTTP_STATUS_HOST=${HTTP_STATUS_HOST:-0.0.0.0}
-      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
-      - WORKER_COMM_HOST=${WORKER_COMM_HOST:-0.0.0.0}
-      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+      - HTTP_STATUS_HOST=0.0.0.0
+      - HTTP_STATUS_PORT=8090
+      - WORKER_COMM_HOST=0.0.0.0
+      - WORKER_COMM_PORT=8091
       - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-12}
-      - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
-      - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
-      - FRONTEND_HTML_HOST=${FRONTEND_HTML_HOST:-0.0.0.0}
-      - FRONTEND_HTML_PORT=${FRONTEND_HTML_PORT:-8093}
+      - WEBSOCKET_HOST=0.0.0.0
+      - WEBSOCKET_PORT=8092
+      # The CLI command channel, the socket admin:create / admin:grant /
+      # admin:revoke / protected-mode:open speak.
+      - COMMAND_HOST=0.0.0.0
+      - COMMAND_PORT=8094
+      # The daemon addresses itself, so an operator command run with `docker exec`
+      # in this container (admin:create / admin:grant / admin:revoke /
+      # protected-mode:open) reaches the command channel over loopback.
+      - HILOS_DAEMON_HOST=127.0.0.1
+      - FRONTEND_HTML_HOST=0.0.0.0
+      - FRONTEND_HTML_PORT=8093
       - FRONTEND_DIST_PATH=${FRONTEND_DIST_PATH:-/app/frontend/dist}
       - CHAT_FILES_XACCEL_LOCATION=${CHAT_FILES_XACCEL_LOCATION:-/__chat_published}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
     ports:
       # Expose WebSocket port to host for frontend access
-      - "${WEBSOCKET_PORT:-8092}:${WEBSOCKET_PORT:-8092}"
+      - "${WEBSOCKET_PORT:-8092}:8092"
     expose:
-      - "${HTTP_STATUS_PORT:-8090}"
-      - "${WORKER_COMM_PORT:-8091}"
-      - "${FRONTEND_HTML_PORT:-8093}"
+      - "8090"
+      - "8091"
+      - "8093"
     restart: unless-stopped
     networks:
       hilos-demo-chat-prod-network:
@@ -88,7 +97,8 @@ services:
   chat-cli-prod:
     build: .
     env_file:
-      - ../.env
+      - path: ../.env
+        required: false
     container_name: chat-cli-prod
     volumes:
       - ..:/app
@@ -99,9 +109,10 @@ services:
     environment:
       - APP_ENV=prod
       - TERM=xterm-256color
-      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
-      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
-      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-172.26.0.11}
+      - HTTP_STATUS_PORT=8090
+      - WORKER_COMM_PORT=8091
+      - COMMAND_PORT=8094
     profiles:
       - composer
     networks:
@@ -110,7 +121,8 @@ services:
   chat-monitor-prod:
     build: .
     env_file:
-      - ../.env
+      - path: ../.env
+        required: false
     container_name: chat-monitor-prod
     volumes:
       - ..:/app
@@ -120,9 +132,10 @@ services:
     working_dir: /app
     environment:
       - APP_ENV=prod
-      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
-      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
-      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-172.26.0.11}
+      - HTTP_STATUS_PORT=8090
+      - WORKER_COMM_PORT=8091
+      - COMMAND_PORT=8094
     profiles:
       - monitor
     networks:

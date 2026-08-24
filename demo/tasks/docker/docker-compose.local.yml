@@ -112,6 +112,14 @@ services:
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
       - WEBSOCKET_PORT=8092
+      # The CLI command channel, the socket admin:create / admin:grant /
+      # admin:revoke / protected-mode:open speak.
+      - COMMAND_HOST=0.0.0.0
+      - COMMAND_PORT=8094
+      # The daemon addresses itself, so an operator command run with `docker exec`
+      # in this container (admin:create / admin:grant / admin:revoke /
+      # protected-mode:open) reaches the command channel over loopback.
+      - HILOS_DAEMON_HOST=127.0.0.1
       - DB_HOST=${DB_HOST:-tasks-mysql-local}
       - DB_PORT=${DB_PORT:-3306}
       - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-tasks}
@@ -166,6 +174,7 @@ services:
       - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-172.27.0.11}
       - HTTP_STATUS_PORT=8090
       - WORKER_COMM_PORT=8091
+      - COMMAND_PORT=8094
       - DB_HOST=${DB_HOST:-tasks-mysql-local}
       - DB_PORT=${DB_PORT:-3306}
       - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-tasks}

@@ -34,6 +34,11 @@ x-node-env: &node-env
   WORKER_COMM_PORT: "8091"
   COMMAND_HOST: 0.0.0.0
   COMMAND_PORT: "8094"
+  # Every node addresses itself, so an operator command run with `docker exec` in
+  # any node's container (admin:create / admin:grant / admin:revoke /
+  # protected-mode:open, and the harness's test:cluster:inspect) reaches that
+  # node's command channel over loopback.
+  HILOS_DAEMON_HOST: 127.0.0.1
   CLUSTER_ENABLED: "true"
   CLUSTER_PEER_HOST: 0.0.0.0
   CLUSTER_PEER_PORT: "8095"
@@ -196,7 +201,10 @@ services:
 
   # Long-lived CLI container the harness `docker exec`s for test:cluster:inspect,
   # and the one-shot runner for composer/phpunit (profile cli, so it never joins a
-  # cluster bring-up implicitly).
+  # cluster bring-up implicitly). Deliberately WITHOUT HILOS_DAEMON_HOST: unlike a
+  # demo's cli service, which faces one daemon, this one addresses five nodes in
+  # turn, so the caller names the node (`docker exec -e HILOS_DAEMON_HOST=<ip>`,
+  # see the cluster script).
   cluster-cli:
     build: .
     container_name: cluster-cli

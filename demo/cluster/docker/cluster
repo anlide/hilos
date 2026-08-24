@@ -71,6 +71,8 @@ cmd_down() {
 
 cmd_inspect() {
   local node="${1:-}"; valid_node "$node"
+  # cluster-cli faces all five nodes, so it carries no HILOS_DAEMON_HOST of its
+  # own and the node's address is named here, per call.
   docker exec -e HILOS_DAEMON_HOST="${NODE_IP[$node]}" cluster-cli \
     php backend/Bootstrap/cli.php test:cluster:inspect
 }
@@ -80,7 +82,7 @@ cmd_inspect() {
 # test:cluster:inspect is DB-free, so it still answers over the local command socket.
 cmd_inspect_local() {
   local node="${1:-}"; valid_node "$node"
-  docker exec -e APP_ENV=test -e HILOS_DAEMON_HOST=127.0.0.1 "cluster-$node" \
+  docker exec -e APP_ENV=test "cluster-$node" \
     php backend/Bootstrap/cli.php test:cluster:inspect
 }
 
