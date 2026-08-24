@@ -17,9 +17,6 @@ final class Baseline
 {
     public const string PATH = 'framework/tests/CodeStyle/baseline.txt';
 
-    /** Written for a record the update mode cannot attribute; fails the next run on purpose. */
-    public const string UNKNOWN_TICKET = 'TODO-TICKET';
-
     private const string HEADER = <<<'TEXT'
         # Known code-style debt, one record per rule and file:
         #     <RULE-ID> <path from repository root> <count> # <HIL-nnn>
@@ -112,17 +109,63 @@ final class Baseline
      * Rewrites the baseline against what the scan actually found, keeping the owing
      * leaf of every record that survives.
      *
+     * The rewrite only shrinks the debt: a known record is written at the lower of
+     * its count and the tree, a record with nothing left disappears, and a key the
+     * baseline never knew is not written at all. Growth stays for a person to write
+     * by hand, where it reads as a decision instead of a side effect of the button.
+     *
      * @param array<string, array<int, string>> $reported Violation lines keyed by "<rule id> <path>"
-     * @return string Baseline file contents
+     * @return BaselineUpdate File to write and the message the run reports
      */
-    public function render(array $reported): string
+    public function update(array $reported): BaselineUpdate
     {
-        ksort($reported);
-        $lines = [self::HEADER];
-        foreach ($reported as $key => $violations) {
-            $lines[] = sprintf('%s %d # %s', $key, count($violations), $this->tickets[$key] ?? self::UNKNOWN_TICKET);
+        if ($this->parseProblems !== []) {
+            return BaselineUpdate::refused($this->parseProblems);
         }
 
-        return implode("\n", $lines) . "\n";
+        ksort($reported);
+        $lines = [self::HEADER];
+        $withheld = [];
+        foreach ($reported as $key => $violations) {
+            $found = count($violations);
+            $allowance = $this->allowances[$key] ?? null;
+            if ($allowance === null) {
+                $withheld[] = $this->withhold(
+                    sprintf('%s: not written, the tree has %d — the update mode never adds a record', $key, $found),
+                    $violations,
+                );
+                continue;
+            }
+            if ($found > $allowance) {
+                $withheld[] = $this->withhold(
+                    sprintf(
+                        '%s: kept at %d, the tree has %d — the update mode never raises a count',
+                        $key,
+                        $allowance,
+                        $found,
+                    ),
+                    array_slice($violations, $allowance),
+                );
+            }
+
+            $written = min($found, $allowance);
+            if ($written === 0) {
+                continue;
+            }
+
+            $lines[] = sprintf('%s %d # %s', $key, $written, $this->tickets[$key]);
+        }
+
+        return BaselineUpdate::rewritten(implode("\n", $lines) . "\n", $withheld);
+    }
+
+    /**
+     * @param string $refusal Why the record was left as it was
+     * @param array<int, string> $lines Violation lines the record does not cover
+     * @return array<int, string> Refusal with its uncovered lines indented under it
+     */
+    private function withhold(string $refusal, array $lines): array
+    {
+        return array_merge([$refusal], array_map(static fn(string $line): string => '  ' . $line, $lines));
     }
 }

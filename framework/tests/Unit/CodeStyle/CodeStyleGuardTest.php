@@ -103,8 +103,11 @@ final class CodeStyleGuardTest extends TestCase
         $baseline = Baseline::fromText($this->baselineText());
 
         if (getenv('CODESTYLE_BASELINE_UPDATE') === '1') {
-            file_put_contents($this->repositoryRoot() . '/' . Baseline::PATH, $baseline->render($reported));
-            $this->fail('Baseline regenerated from the current tree — review the diff before committing it.');
+            $update = $baseline->update($reported);
+            if ($update->text() !== null) {
+                file_put_contents($this->repositoryRoot() . '/' . Baseline::PATH, $update->text());
+            }
+            $this->fail($update->message());
         }
 
         $this->assertSame(

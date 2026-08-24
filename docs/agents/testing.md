@@ -72,7 +72,9 @@ file and a count, and every record names the leaf that will remove it. The
 baseline can only shrink: a fresh hit fails, and so does a record that has
 nothing left to cover. After paying debt off, regenerate it with
 `CODESTYLE_BASELINE_UPDATE=1` — the run rewrites the file and then fails on
-purpose so the diff gets reviewed. Full command and the `--user` caveat are in
+purpose so the diff gets reviewed. Regeneration goes downwards only: it lowers
+counts and drops records, while raising a count or adding a record stays a
+person's hand-written decision. Full command and the `--user` caveat are in
 [code-style/automated-checks.md](code-style/automated-checks.md).
 
 ---

@@ -381,12 +381,17 @@ RT-STATE-REACH framework/backend/Core/Daemon/DaemonManager.php 1 # HIL-508
 - **The ticket is mandatory.** A record names the leaf that will remove it, so
   the file reads as a list of owed work instead of a mute list. A record without
   a `HIL-nnn` fails the guard.
-- **The baseline can only shrink.** More hits than recorded fails with the new
-  lines; fewer hits asks you to lower the count; nothing left asks you to delete
-  the record.
+- **The baseline can only shrink**, and both halves of the tool hold that line.
+  The check fails on more hits than recorded, asks you to lower a count that has
+  fewer hits left, and asks you to delete a record with nothing left to cover.
+  The update mode below writes the same way round: it lowers counts and drops
+  records, and it never raises or adds one.
 
 Regenerate it after paying debt off — the update mode rewrites the file and then
-fails on purpose, so the diff is reviewed rather than committed blind:
+fails on purpose, so the diff is reviewed rather than committed blind. Pressing
+the button only ever shrinks the file: a known record is written at the lower of
+its count and the tree, a record with nothing left disappears, and a key the
+baseline does not already carry is not written at all.
 
 ```bash
 docker compose -f framework/docker/docker-compose.yml run --rm \
@@ -396,9 +401,19 @@ docker compose -f framework/docker/docker-compose.yml run --rm \
 ```
 
 Pass `--user` as shown: the test container otherwise runs as root and leaves a
-root-owned `baseline.txt` behind. A record the update mode cannot attribute is
-written with `TODO-TICKET`, which is not a valid ticket — the next run fails
-until a person names the owing leaf.
+root-owned `baseline.txt` behind. The run reports every record it refused to
+write — a count that grew, a key that is new — and prints the lines those records
+do not cover, so nothing it left out stays invisible. A baseline whose own
+records do not parse is left untouched: they have to be readable before the tree
+is written into them.
+
+**A count only grows by hand, written by a person, with a `HIL-nnn` on the
+line.** Then the growth shows up in the diff as a decision instead of a side
+effect of pressing a button. The same holds for a path the baseline has never
+seen: a new record means the debt has spread into code that owed none, and that
+is read and dealt with, not frozen. Cascading debt that a leaf induces elsewhere
+is work the leaf answers for, which is exactly why the tool refuses to file it
+away silently.
 
 ## Adding a rule
 

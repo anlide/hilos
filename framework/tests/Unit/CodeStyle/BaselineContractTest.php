@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\CodeStyle;
 
 use Hilos\Tests\CodeStyle\Baseline;
+use Hilos\Tests\CodeStyle\BaselineUpdate;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -80,20 +81,85 @@ final class BaselineContractTest extends TestCase
         );
     }
 
-    public function testRenderKeepsKnownTicketsAndFlagsUnattributedDebt(): void
+    public function testUpdateWritesThePaidPartOfARecord(): void
     {
         $baseline = Baseline::fromText('PHPDOC-FQN framework/backend/Mail/EmailContent.php 3 # HIL-521');
 
-        $rendered = $baseline->render(
-            $this->reported('PHPDOC-FQN framework/backend/Mail/EmailContent.php', 1)
-            + $this->reported('RT-STATE-REACH framework/backend/Core/Daemon/DaemonManager.php', 2),
-        );
+        $update = $baseline->update($this->reported('PHPDOC-FQN framework/backend/Mail/EmailContent.php', 1));
 
         $this->assertStringContainsString(
-            "PHPDOC-FQN framework/backend/Mail/EmailContent.php 1 # HIL-521\n"
-                . 'RT-STATE-REACH framework/backend/Core/Daemon/DaemonManager.php 2 # ' . Baseline::UNKNOWN_TICKET,
-            $rendered,
+            "PHPDOC-FQN framework/backend/Mail/EmailContent.php 1 # HIL-521\n",
+            $this->writtenText($update),
         );
+        $this->assertSame(
+            'Baseline regenerated from the current tree — review the diff before committing it.',
+            $update->message(),
+        );
+    }
+
+    public function testUpdateDropsARecordPaidOffInFull(): void
+    {
+        $baseline = Baseline::fromText('PHPDOC-FQN framework/backend/Mail/EmailContent.php 3 # HIL-521');
+
+        $update = $baseline->update([]);
+
+        $this->assertStringNotContainsString('EmailContent.php', $this->writtenText($update));
+    }
+
+    public function testUpdateKeepsAGrownRecordAtItsCountAndSaysSo(): void
+    {
+        $baseline = Baseline::fromText('PHPDOC-FQN framework/backend/Mail/EmailContent.php 1 # HIL-521');
+
+        $update = $baseline->update($this->reported('PHPDOC-FQN framework/backend/Mail/EmailContent.php', 3));
+
+        $this->assertStringContainsString(
+            "PHPDOC-FQN framework/backend/Mail/EmailContent.php 1 # HIL-521\n",
+            $this->writtenText($update),
+        );
+        $this->assertStringContainsString(
+            'PHPDOC-FQN framework/backend/Mail/EmailContent.php: kept at 1, the tree has 3'
+                . " — the update mode never raises a count\n  line 2\n  line 3",
+            $update->message(),
+        );
+    }
+
+    public function testUpdateNeverAddsARecordTheBaselineDoesNotKnow(): void
+    {
+        $baseline = Baseline::fromText('');
+
+        $update = $baseline->update($this->reported('RT-STATE-REACH framework/backend/Core/Daemon/DaemonManager.php', 2));
+
+        $this->assertStringNotContainsString('DaemonManager.php 2', $this->writtenText($update));
+        $this->assertStringContainsString(
+            'RT-STATE-REACH framework/backend/Core/Daemon/DaemonManager.php: not written, the tree has 2'
+                . " — the update mode never adds a record\n  line 1\n  line 2",
+            $update->message(),
+        );
+    }
+
+    public function testUpdateWritesNothingWhileTheBaselineItselfIsUnreadable(): void
+    {
+        $baseline = Baseline::fromText('PHPDOC-FQN framework/backend/Mail/EmailContent.php # HIL-521');
+
+        $update = $baseline->update($this->reported('PHPDOC-FQN framework/backend/Mail/EmailContent.php', 1));
+
+        $this->assertNull($update->text());
+        $this->assertStringContainsString(
+            'baseline line 1 is malformed: PHPDOC-FQN framework/backend/Mail/EmailContent.php # HIL-521',
+            $update->message(),
+        );
+    }
+
+    /**
+     * @param BaselineUpdate $update Outcome of pressing the update button
+     * @return string Contents the update writes, asserted to exist first
+     */
+    private function writtenText(BaselineUpdate $update): string
+    {
+        $text = $update->text();
+        $this->assertNotNull($text);
+
+        return $text;
     }
 
     /**
