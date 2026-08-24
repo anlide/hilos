@@ -91,6 +91,7 @@ approval gate below.
 | [signals/routing.md](docs/agents/signals/routing.md) | adding routing rules, tracing signal path, signal not arriving |
 | [signals/subscriptions.md](docs/agents/signals/subscriptions.md) | page/group subscriptions, sendToUser/sendToGroup, a page needs one more piece of data to render |
 | [signals/dto-convention.md](docs/agents/signals/dto-convention.md) | creating signal payload DTOs, agent-to-agent signals |
+| [signals/screen-invalidation.md](docs/agents/signals/screen-invalidation.md) | a fact you just wrote devalues a screen someone is looking at now — an access verdict, a flow step in another tab, an answer a page is waiting for |
 
 ## ORM
 

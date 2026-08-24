@@ -314,6 +314,9 @@ forgets the call — is not noticed. Detecting it would mean re-deciding every l
 subscription's verdict on every tick: a cost paid always, against a case that is
 code which already owes the announcement.
 
+This section is one instance of a general obligation:
+[../signals/screen-invalidation.md](../signals/screen-invalidation.md).
+
 ## The cross-agent guard rule
 
 **An `ACCESS` guard must sit on a page whose subscribing agent OWNS — not mirrors

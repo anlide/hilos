@@ -25,6 +25,8 @@ switch to the focused data-layer skill first.
   `docs/agents/architecture/entity-libraries.md`.
 - Page action routing and action error behavior:
   `docs/agents/code-style/page-action-handlers.md`.
+- A write that devalues a screen somebody is looking at right now:
+  `docs/agents/signals/screen-invalidation.md`.
 - Signal routing and DTO payloads: use `$hilos-signals`.
 
 ## Mental Model
@@ -88,15 +90,20 @@ switch to the focused data-layer skill first.
 7. For writes, call a collection action or item action. When a DB/RT item key is
    known and the write changes or deletes that one item, load the item and call
    `$item->actions->...` instead of a collection action that accepts the key.
-8. Do not write raw DB/RT state from page, table, or signal-delivery code.
-9. If a reusable lookup is missing, add it to the owning collection/item layer
+8. After a write, ask who is on an open screen the new fact devalues. A screen
+   that declared the collection you wrote as its own source needs nothing — the
+   browser fan-out carries it. A screen whose next action now fails on a fact
+   outside its contract is moved by the server: see
+   `docs/agents/signals/screen-invalidation.md`.
+9. Do not write raw DB/RT state from page, table, or signal-delivery code.
+10. If a reusable lookup is missing, add it to the owning collection/item layer
    through `$hilos-data-extension`; do not hide it as a private caller helper.
-10. If the value is a model-level frontend field, put it on the Object/View item,
+11. If the value is a model-level frontend field, put it on the Object/View item,
    typed DTO, or signal payload; keep table/page code as assembly.
-11. Keep signal delivery separate from business writes: perform the write through
+12. Keep signal delivery separate from business writes: perform the write through
    the owning action, then let the established subscription/signal contract emit
    or route the result.
-12. Validate through the narrow composer script selected by
+13. Validate through the narrow composer script selected by
     `$hilos-testing-cli`.
 
 ## Choosing The API

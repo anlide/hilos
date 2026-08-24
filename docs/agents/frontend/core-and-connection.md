@@ -104,6 +104,10 @@ action lifecycle (deferred ~0.3s loading, `requestId`-correlated reply, ~30s
 timeout, orphan reconciliation) is in [wire-protocol.md](wire-protocol.md). Every action also
 produces a success/fail toast (catalogued in [rules-and-violations.md](rules-and-violations.md)).
 
+This rule has a server half. The backend owes the screen a move when a fact it
+has just written makes the person's next action on an open screen fail — see
+[../signals/screen-invalidation.md](../signals/screen-invalidation.md).
+
 ## Disconnect behavior
 
 The framework provides **both** disconnect modes, and the project picks per view

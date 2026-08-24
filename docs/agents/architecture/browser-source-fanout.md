@@ -147,3 +147,6 @@ transport payloads that need to carry a source fact.
 - If a delete browser row needs fields such as `userId`, include the previous
   row in the delete sync payload before removing the DB/RT item.
 - Keep global, non-page broadcasts separate from page-shaped browser payloads.
+- Fan-out closes only what a page declared as its contract; for a fact outside
+  it that still invalidates an open screen, see
+  [../signals/screen-invalidation.md](../signals/screen-invalidation.md).

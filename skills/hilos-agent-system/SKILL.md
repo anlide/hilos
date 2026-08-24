@@ -15,6 +15,9 @@ Use this skill for agent business logic and registration work. Start by reading 
 - Agent lifecycle and signal methods: `docs/agents/architecture/agent-lifecycle.md`
 - An agent that holds a whole entity's set — one entity one library, and which
   of the two placement axes is yours: `docs/agents/architecture/entity-libraries.md`
+- The agent writes a fact somebody has on screen right now — when the server
+  owes that screen a move, and which frame moves it:
+  `docs/agents/signals/screen-invalidation.md`
 - Asking for a node freeze before a destructive operation: `docs/agents/architecture/protected-mode.md`
 - Blocking anti-patterns: `docs/agents/antipatterns/blocking-in-ontick.md`
 - Signal routing changes: use `$hilos-signals`
@@ -47,8 +50,13 @@ Use this skill for agent business logic and registration work. Start by reading 
    `docs/agents/architecture/entity-libraries.md` before writing its registry
    entry. One entity gets one such agent, and how many instances run is a
    separate question from which node runs them.
-8. Add focused tests through composer scripts when behavior changes.
-9. After registering the agent or its `AGENT_SIGNALS` in the topology, update the
+8. When a handler or a tick writes a fact instead of answering the request that
+   asked for it, ask who is on an open screen that fact devalues. A screen that
+   declared what you changed as its own source is served by the browser fan-out;
+   one that did not, and whose next action now fails, is moved by the server —
+   see `docs/agents/signals/screen-invalidation.md`.
+9. Add focused tests through composer scripts when behavior changes.
+10. After registering the agent or its `AGENT_SIGNALS` in the topology, update the
    demo's `*TopologyRegistryTest` snapshot and run its `test:unit` — a shared
    cross-ticket guard. See `docs/agents/app-topology.md` step 12.
 

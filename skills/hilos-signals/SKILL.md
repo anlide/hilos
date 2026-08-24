@@ -16,6 +16,9 @@ Use this skill for every change that affects signal shape, route, subscription, 
   subscription answers with everything the page renders:
   `docs/agents/signals/subscriptions.md`
 - Payload DTOs and agent-to-agent signals: `docs/agents/signals/dto-convention.md`
+- You just wrote a fact and someone is looking at a screen it devalues right
+  now — whether the server owes that screen a move, and which frame moves it:
+  `docs/agents/signals/screen-invalidation.md`
 - Page action handler style: `docs/agents/code-style/page-action-handlers.md`
 - Named signal handler style: `docs/agents/code-style/signal-handlers.md`
 
@@ -37,7 +40,12 @@ Use this skill for every change that affects signal shape, route, subscription, 
 6. Keep serialization roundtrips explicit with `toArray()` and `fromArray()` where applicable.
 7. If the signal crosses worker-to-daemon IPC, add backend roundtrip coverage.
 8. If the signal reaches frontend code, add or update the TypeScript parser tests.
-9. After changing a topology registry (`ACTIONS`, `SIGNALS`, `AGENT_SIGNALS`,
+9. When the change writes a fact rather than answering a request, ask who is on
+   an open screen the fact devalues. If that screen declared what you changed as
+   its own source, the browser fan-out already carries it and you send nothing;
+   if it did not, and the next action there now fails, read
+   `docs/agents/signals/screen-invalidation.md` before choosing a frame.
+10. After changing a topology registry (`ACTIONS`, `SIGNALS`, `AGENT_SIGNALS`,
    `Hilos::AGENTS`, and peers), update the demo's `*TopologyRegistryTest`
    snapshot and run its `test:unit` — the snapshot is a shared cross-ticket
    guard. See `docs/agents/app-topology.md` step 12.
