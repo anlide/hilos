@@ -259,13 +259,15 @@ final class PollAgent extends AbstractAgent
     }
 
     /**
-     * Clears runtime connection state on shutdown; the user table persists.
+     * Nothing to clean up on shutdown: this agent owns no runtime state of its own.
      *
-     * @throws HilosException On runtime cleanup failure
+     * It used to empty the connections here, and that was the defect (HIL-664): who is on the
+     * wire is the truth of the node holding the sockets, not of the agent, and a stop closes no
+     * socket. The rows outlive the agent now, and the sockets that died while it was down are
+     * struck against the master's roster when it comes back.
      */
     public function onStop(): void
     {
-        Hilos::$rt->connections->actions->clear();
     }
 
 }

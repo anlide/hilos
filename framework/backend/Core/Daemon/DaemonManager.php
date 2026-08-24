@@ -158,6 +158,7 @@ abstract class DaemonManager extends BaseManager implements
     LeadershipObserver,
     PlacementObserver,
     ConnectionDropper,
+    LiveConnectionRoster,
     ContainedFailureSink,
     MasterSignalSender,
     ProtectedModeSnapshotSource,
@@ -738,6 +739,12 @@ abstract class DaemonManager extends BaseManager implements
             // freeze row it is decided against is the daemon's to write.
             $server->setProtectedModeAdmissionRecorder($this);
         }
+
+        // The same shape once more, for the server that starts agents: an agent coming up has
+        // to be told which sockets are still on the wire (HIL-664), and only the master knows.
+        if ($server instanceof WorkerServer) {
+            $server->setLiveConnectionRoster($this);
+        }
     }
 
     /**
@@ -806,6 +813,38 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         return false;
+    }
+
+    /**
+     * Names the accept keys of the WebSocket connections this node holds open.
+     *
+     * Implements {@see LiveConnectionRoster}. The walk is the one
+     * {@see dropWebSocketConnection()} makes, stopping at the accept key instead of closing
+     * the socket, and it stays on the master loop for the same reason: it reads memory the
+     * daemon already has and touches nothing outside the process.
+     *
+     * A client that has not handshaked yet still carries the empty accept key it was
+     * constructed with, and is left out - it is not a connection anyone could have a runtime
+     * row for.
+     *
+     * @return list<string> Accept keys live at the moment of the call, empty when the node holds no socket
+     */
+    public function liveAcceptKeys(): array
+    {
+        $acceptKeys = [];
+        foreach ($this->servers as $server) {
+            if (!$server instanceof WebSocketServer) {
+                continue;
+            }
+
+            foreach ($server->getClients() as $client) {
+                if ($client instanceof WebSocketClient && $client->acceptKey !== '') {
+                    $acceptKeys[] = $client->acceptKey;
+                }
+            }
+        }
+
+        return $acceptKeys;
     }
 
     /**

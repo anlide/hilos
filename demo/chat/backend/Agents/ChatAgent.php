@@ -881,7 +881,13 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
     }
 
     /**
-     * Records chat shutdown and clears transient chat runtime state.
+     * Records chat shutdown and clears the chat runtime state that is the agent's own.
+     *
+     * The connections are not among it (HIL-664). Who is on the wire is the truth of the node
+     * holding the sockets, and a stop does not close them: a freeze stops this agent and leaves
+     * every tab connected, so emptying the collection here told the rest of the node the hall
+     * was empty while it was full - and the restore that followed photographed nobody. The rows
+     * outlive the agent now, and the sockets that died meanwhile are struck when it comes back.
      *
      * @throws HilosException On database or runtime cleanup failure
      */
@@ -889,7 +895,6 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
     {
         Hilos::$db->events->actions->addChatStopped();
         Hilos::$rt->attachmentDrafts->actions->clearWithFiles();
-        Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
     }
 

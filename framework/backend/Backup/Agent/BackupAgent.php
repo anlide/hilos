@@ -2718,17 +2718,31 @@ final class BackupAgent extends AbstractAgent
      * of an empty one is that people log in again, which is nothing beside a restore that
      * refuses to run. Failures are therefore contained here rather than propagated.
      *
+     * An empty snapshot taken while the node still holds connections is written down (HIL-664).
+     * It is not an error and nothing is stopped by it, but "carried over 0" reads exactly like
+     * an empty hall, and on 22.08.2026 that is what hid a real defect for as long as it took a
+     * person to be logged out of their own restore.
+     *
      * @return list<SessionCarryover> Sessions to re-create after the swap (empty when none could be read)
      */
     private function captureSessions(): array
     {
         try {
-            return SessionCarrier::capture();
+            $snapshot = SessionCarrier::capture();
         } catch (Throwable $e) {
             $this->logAgentError('Restore could not photograph live sessions: ' . $e->getMessage());
 
             return [];
         }
+
+        $openConnections = Hilos::$rt?->connectionsSource()?->count() ?? 0;
+        if ($snapshot === [] && $openConnections > 0) {
+            $this->logAgentWarning(
+                "Restore photographed no live sessions while {$openConnections} connection(s) are open"
+            );
+        }
+
+        return $snapshot;
     }
 
     /**

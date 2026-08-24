@@ -12,6 +12,11 @@ use Hilos\Backup\BackupScope;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\AgentInterface;
+use Hilos\Core\Agent\AgentManager;
+use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Database;
 use Hilos\Database\DTO\DbReHydrateOutcome;
@@ -26,10 +31,19 @@ use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
+use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Actions\Collection\BackupHistoriesActions;
+use Hilos\Runtime\View\Actions\Collection\HilosSessionConnectionsActions;
+use Hilos\Runtime\View\Actions\Item\HilosConnectionActions;
 use Hilos\Runtime\View\Collection\BackupHistories as ViewBackupHistories;
+use Hilos\Runtime\View\Collection\HilosSessionConnections as ViewHilosSessionConnections;
+use Hilos\Runtime\View\Item\HilosSessionConnection as ViewHilosSessionConnection;
 use Hilos\Runtime\View\Item\RestoreRuntime;
+use Hilos\Socket\Worker\DTO\AgentStartDTO;
+use Hilos\Socket\Worker\DTO\AgentStopDTO;
+use Hilos\Socket\Worker\WorkerDaemonClient;
+use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use RuntimeException;
 
@@ -52,6 +66,9 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
     private const string BACKUP_ID = '2026-08-15_10-30-00';
 
     private const string TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
+
+    /** A second live session, whose socket is the one that dies while its agent is stopped. */
+    private const string OTHER_TOKEN = '0f9e8d7c6b5a493827160f5e4d3c2b1a';
 
     private const string CREATED_AT = '2026-08-01 09:15:00';
 
@@ -115,6 +132,8 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
     {
         RtTruthSourceRegistry::unregisterDaemon(StateBackupRuntime::RT_ITEM);
         RtTruthSourceRegistry::unregisterDaemon(StateRestoreRuntime::RT_ITEM);
+        RtTruthSourceRegistry::unregisterAgent(CarryOverTestOwnerAgent::AGENT_TYPE);
+        ExecutionContext::setCurrentAgentId(null);
         Hilos::$env = null;
         Hilos::$sr = null;
         Hilos::$notify = null;
@@ -223,6 +242,83 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
         $row = self::notificationRow(self::NEW_USER_ID);
         $this->assertNotNull($row, 'A restore that failed is exactly the one nobody may find out about by chance');
         $this->assertSame(BackupNotificationType::RESTORE_FAILED, $row['type']);
+    }
+
+    /**
+     * @throws HilosException When a step against the database fails
+     */
+    public function testTheFrozenNodeStillHoldsTheHallItsStoppedAgentLeftBehind(): void
+    {
+        // The order of 22.08.2026, end to end: the tabs are connected, the freeze stops the agent
+        // that owns their rows, and only then is the photograph taken. The agent leaving used to
+        // empty the collection, so this is where "carried over 0" was born - with every socket of
+        // the node still open and a person watching their own restore log them out.
+        self::seedSession(self::TOKEN, self::OLD_USER_ID, self::CREATED_AT, self::EXPIRES_AT);
+        self::seedIdentity(self::OLD_USER_ID, self::EMAIL_TYPE, self::EMAIL);
+
+        $worker = new CarryOverTestWorkerManager();
+        $worker->handleDaemonMessage(new AgentStartDTO(CarryOverTestOwnerAgent::AGENT_TYPE));
+        $this->openConnection('accept-live', self::TOKEN);
+        $this->openConnection('accept-gone', self::OTHER_TOKEN);
+
+        $worker->handleDaemonMessage(new AgentStopDTO(CarryOverTestOwnerAgent::AGENT_TYPE));
+
+        $agent = $this->admittedRestore();
+        $agent->onProtectedModeReady();
+
+        $this->assertCount(
+            1,
+            $this->snapshotOf($agent),
+            'The freeze stops the agents, not the sockets: the hall it photographs is still full',
+        );
+    }
+
+    /**
+     * @throws HilosException When a step against the database fails
+     */
+    public function testTheAgentComingBackStrikesTheTabThatClosedWhileItWasDown(): void
+    {
+        // The other end of the same window. Nobody could write the collection while the agent was
+        // stopped, so a tab that closed in the meantime left its row behind; the master's roster
+        // is what tells the agent which rows those are.
+        self::seedSession(self::TOKEN, self::OLD_USER_ID, self::CREATED_AT, self::EXPIRES_AT);
+
+        $worker = new CarryOverTestWorkerManager();
+        $worker->handleDaemonMessage(new AgentStartDTO(CarryOverTestOwnerAgent::AGENT_TYPE));
+        $this->openConnection('accept-live', self::TOKEN);
+        $this->openConnection('accept-gone', self::OTHER_TOKEN);
+
+        $worker->handleDaemonMessage(new AgentStopDTO(CarryOverTestOwnerAgent::AGENT_TYPE));
+        $worker->handleDaemonMessage(new AgentStartDTO(CarryOverTestOwnerAgent::AGENT_TYPE, ['accept-live']));
+
+        $connections = $this->connectionRegistry();
+        $this->assertTrue(isset($connections['accept-live']), 'A socket the node still holds keeps its row');
+        $this->assertFalse(isset($connections['accept-gone']), 'A socket that died unwitnessed loses it');
+    }
+
+    /**
+     * Registers one connection row the way a handshake does, under the agent that owns them.
+     *
+     * @param string $acceptKey Accept key of the socket
+     * @param string $sessionToken Session token the socket belongs to
+     * @throws HilosException When the runtime write is refused
+     */
+    private function openConnection(string $acceptKey, string $sessionToken): void
+    {
+        ExecutionContext::setCurrentAgentId(CarryOverTestOwnerAgent::AGENT_TYPE);
+        $this->connectionRegistry()->actions->register($acceptKey, self::OLD_USER_ID, $sessionToken);
+    }
+
+    /**
+     * @return CarryOverTestViewConnections The represented connections collection of this context
+     */
+    private function connectionRegistry(): CarryOverTestViewConnections
+    {
+        $registry = Hilos::$rt?->connectionsRegistry();
+
+        return $registry instanceof CarryOverTestViewConnections
+            ? $registry
+            : throw new RuntimeException('The connections collection is not represented.');
     }
 
     /**
@@ -449,6 +545,137 @@ final class CarryOverTestConnections extends HilosSessionConnections
 }
 
 /**
+ * The project's view of one connection row: the framework session match and nothing else.
+ *
+ * @extends ViewHilosSessionConnection<CarryOverTestConnection>
+ */
+final class CarryOverTestViewConnection extends ViewHilosSessionConnection
+{
+}
+
+/**
+ * @extends HilosConnectionActions<CarryOverTestViewConnection>
+ */
+final class CarryOverTestConnectionActions extends HilosConnectionActions
+{
+}
+
+/**
+ * @extends HilosSessionConnectionsActions<CarryOverTestViewConnection, CarryOverTestViewConnections>
+ */
+final class CarryOverTestConnectionsActions extends HilosSessionConnectionsActions
+{
+}
+
+/**
+ * @extends ViewHilosSessionConnections<CarryOverTestViewConnection, CarryOverTestConnectionsActions>
+ */
+final class CarryOverTestViewConnections extends ViewHilosSessionConnections
+{
+    /**
+     * @param RtState $state Backing state row
+     * @return CarryOverTestViewConnection View item over the row
+     */
+    protected function createRtItem(RtState &$state): CarryOverTestViewConnection
+    {
+        /** @var CarryOverTestConnection $state */
+        return new CarryOverTestViewConnection($state);
+    }
+}
+
+/**
+ * The agent that owns the connections, as every project has exactly one.
+ *
+ * Its stop hook is empty and that is the fix under test (HIL-664): the rows belong to the node
+ * holding the sockets, so an agent on its way out has nothing to say about them.
+ */
+final class CarryOverTestOwnerAgent extends AbstractAgent
+{
+    /** @var string Agent type identifier */
+    public const string AGENT_TYPE = 'carryover_connections_owner';
+
+    /**
+     * Claims the connections, which is what makes this agent the one allowed to strike a row.
+     */
+    public function onStart(): void
+    {
+        $this->registerRtTruthSource(CarryOverTestRtContext::connections);
+    }
+
+    public function onStop(): void
+    {
+    }
+}
+
+final class CarryOverTestAgentManager extends AgentManager
+{
+    /**
+     * @param string $agentType Agent type to build
+     * @param ?string $agentIndex Agent index, or null for a singleton
+     * @return AgentInterface The one agent these cases host
+     */
+    protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
+    {
+        return new CarryOverTestOwnerAgent();
+    }
+}
+
+/**
+ * Worker manager with the daemon link replaced by a sink, so start and stop frames can be
+ * delivered to a real worker without a socket behind it.
+ */
+final class CarryOverTestWorkerManager extends WorkerManager
+{
+    public function __construct()
+    {
+        parent::__construct(1);
+
+        $this->daemonClient = new CarryOverTestDaemonClient();
+    }
+
+    /**
+     * @return SignalRouter Router this worker registers globally
+     */
+    protected function createSignalRouter(): SignalRouter
+    {
+        return new SignalRouter();
+    }
+
+    /**
+     * @return AgentManager Manager building the one agent these cases host
+     */
+    protected function createAgentManager(): AgentManager
+    {
+        return new CarryOverTestAgentManager();
+    }
+}
+
+/**
+ * Daemon link that drops what the worker sends instead of writing it to a socket.
+ */
+final class CarryOverTestDaemonClient extends WorkerDaemonClient
+{
+    public function __construct()
+    {
+    }
+
+    /**
+     * @return bool Always true: these cases never test the link itself
+     */
+    public function isConnected(): bool
+    {
+        return true;
+    }
+
+    /**
+     * @param WorkerDTO|array<string, mixed> $data Message the worker wanted delivered
+     */
+    public function send(WorkerDTO|array $data): void
+    {
+    }
+}
+
+/**
  * A runtime context carrying the project's live connections; the backup rows are mounted onto it.
  */
 final class CarryOverTestRtContext extends RtContext
@@ -456,11 +683,18 @@ final class CarryOverTestRtContext extends RtContext
     public const string connections = 'connections';
 
     /**
-     * Mounts the one collection these cases need: the project's live connections.
+     * Mounts the one collection these cases need: the project's live connections, represented -
+     * the write side is what the roster reconcile of a starting agent goes through (HIL-664).
      */
     public function configure(): void
     {
         $this->_stateCollections[self::connections] = CarryOverTestConnections::init();
+        $this->setRepresent(
+            self::connections,
+            CarryOverTestViewConnections::class,
+            CarryOverTestConnectionsActions::class,
+            CarryOverTestConnectionActions::class,
+        );
     }
 
     /**

@@ -42,6 +42,14 @@ final class SessionCarrier
      * because the right to look at someone else's account was granted in a database that is
      * about to stop existing.
      *
+     * The window is real, and until HIL-664 it was not: the freeze stops the node's agents, and
+     * an agent used to empty the connections collection on its way out, so this ran over rows
+     * that had been wiped fifteen milliseconds earlier - the sentence above described a hall
+     * that had just been cleared. The rows now outlive the agent, which is what makes "frozen"
+     * the right moment rather than merely the current one. Nothing can be lost between the
+     * photograph and the swap either: under the freeze a new tab meets the stub and a login has
+     * no agent to be handled by, so the set this reads cannot grow behind it.
+     *
      * The session token is what is photographed, so the source asked for is the session stage
      * of the connection base (HIL-509): a project whose runtime connections do not reach
      * {@see HilosSessionConnections} - because it carries no browser sessions, or keeps no

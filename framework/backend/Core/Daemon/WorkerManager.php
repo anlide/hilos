@@ -19,6 +19,7 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\DTO\DbReHydrateOutcome;
+use Hilos\Runtime\ConnectionRosterReconciler;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Router\AgentSignalData;
@@ -618,7 +619,7 @@ abstract class WorkerManager extends BaseManager
      *
      * @param AgentStartDTO $data Agent start request
      * @throws AgentCreationFailedException When agent creation fails
-     * @throws HilosException Whatever the started agent's start hook raises
+     * @throws HilosException Whatever the started agent's start hook raises, or the roster reconcile after it
      */
     private function handleAgentStart(AgentStartDTO $data): void
     {
@@ -647,6 +648,15 @@ abstract class WorkerManager extends BaseManager
         Logger::info("Agent '{$agentId}' started");
         // Additional agent log from worker side
         Logger::logAgentInfo($agentId, "Agent started on worker [workerIndex={$this->workerIndex}]");
+
+        // Now that the agent has claimed its collections, and before it can be addressed: the rows
+        // of sockets that died while it was down are struck against the roster the frame carried
+        // (HIL-664). Earlier than onStart() is impossible - the write-guard has no owner to accept
+        // yet - and later would mean serving presence that names people who are gone.
+        $struck = ConnectionRosterReconciler::reconcile($data->liveAcceptKeys);
+        if ($struck > 0) {
+            Logger::info("Connection roster: dropped {$struck} connection(s) with no live socket on {$agentId} start");
+        }
 
         // Tell the daemon what this agent took ownership of before reporting that it started:
         // the master replicates RT by that map, and the agent is addressable from the moment

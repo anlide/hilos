@@ -32,6 +32,7 @@ use Hilos\Runtime\View\Actions\Item\RestoreRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
 use Hilos\Runtime\View\Collection\BackupHistories;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
+use Hilos\Runtime\View\Collection\HilosConnections as ViewHilosConnections;
 use Hilos\Runtime\View\Collection\HilosSessionConnections as ViewHilosSessionConnections;
 use Hilos\Runtime\View\Collection\HilosSessionRotations;
 use Hilos\Runtime\View\Collection\RtCollection;
@@ -319,6 +320,32 @@ abstract class RtContext
     {
         foreach ($this->_stateCollections as $collection) {
             if ($collection instanceof HilosConnections) {
+                return $collection;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Returns the represented collection of WebSocket connections, when there is one.
+     *
+     * The write-side twin of {@see connectionsSource()}, and the presence-stage counterpart of
+     * {@see sessionConnectionsRegistry()}: a framework seam that has to CHANGE a connection row
+     * takes this, because a write outside the represented collection's actions lands in a single
+     * worker and is never synced. Standing on the presence stage is enough for it - striking out
+     * a row whose socket is gone (HIL-664) needs no session token, so a project that carries no
+     * browser sessions reconciles exactly like one that does.
+     *
+     * A project that mounted no connections, or mounted them without representing them, answers
+     * null - and the seam then has no row to strike, the same nothing-to-do the empty node has.
+     *
+     * @return ?ViewHilosConnections First represented collection of framework-based connections, or null
+     */
+    final public function connectionsRegistry(): ?ViewHilosConnections
+    {
+        foreach ($this->_rtCollections as $collection) {
+            if ($collection instanceof ViewHilosConnections) {
                 return $collection;
             }
         }

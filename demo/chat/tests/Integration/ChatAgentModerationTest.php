@@ -36,7 +36,18 @@ final class ChatAgentModerationTest extends IntegrationTestCase
 {
     private const string TEST_AGENT_ID = 'test-agent';
 
-    public function testOnStopClearsConnectionsAndUserStates(): void
+    /**
+     * What a stopping agent may empty, and what is not its to empty (HIL-664).
+     *
+     * The user states and the attachment drafts are the agent's own, and a stop is the end of
+     * them. The connections are not: they say who is on the wire, which is the truth of the node
+     * holding the sockets, and a stop closes no socket. Emptying them here is what made a freeze
+     * report an empty hall to the rest of the node while every tab was still connected - and the
+     * restore that followed photographed nobody. The row below therefore SURVIVES the stop; the
+     * sockets that died meanwhile are struck when the agent comes back, against the roster the
+     * master hands its start (ConnectionRosterReconciler).
+     */
+    public function testOnStopClearsWhatIsItsOwnAndLeavesTheConnections(): void
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
@@ -55,7 +66,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             $agent = new ChatAgent();
             $agent->onStop();
 
-            $this->assertSame(0, count(Hilos::$rt->connections));
+            $this->assertSame(1, count(Hilos::$rt->connections));
             $this->assertSame(0, count(Hilos::$rt->userStates));
             $this->assertSame(0, count(Hilos::$rt->attachmentDrafts));
             $this->assertEventTypeExists(ChatEventType::CHAT_STOPPED);

@@ -12,6 +12,9 @@ final class AgentConstants
     /** @var string Agent unique identifier field key */
     public const string FIELD_AGENT_ID = 'agentId';
 
+    /** @var string Accept keys of the node's live sockets, carried by the agent-start frame (HIL-664) */
+    public const string FIELD_LIVE_ACCEPT_KEYS = 'liveAcceptKeys';
+
     /** @var string Agent type field key */
     public const string FIELD_AGENT_TYPE = 'agentType';
 

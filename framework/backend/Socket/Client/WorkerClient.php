@@ -537,8 +537,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
+     * @param list<string> $liveAcceptKeys Accept keys of the node's live sockets, for the roster reconcile (HIL-664)
      */
-    public function sendAgentStart(string $agentType, ?string $agentIndex = null): void
+    public function sendAgentStart(string $agentType, ?string $agentIndex = null, array $liveAcceptKeys = []): void
     {
         // external-boundary: the neutral element of the agent id — a singleton is the bare type
         $agentId = $agentType . ($agentIndex !== null ? ":{$agentIndex}" : '');
@@ -547,6 +548,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
 
         $dto = new AgentStartDTO(
             agentId: $agentId,
+            liveAcceptKeys: $liveAcceptKeys,
         );
 
         $this->send($dto->toJson());

@@ -18,6 +18,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Daemon\LiveConnectionRoster;
 use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
@@ -106,6 +107,9 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     /** @var bool Whether onInitialWorkersReady() has been called */
     private bool $initialWorkersReadyCalled = false;
 
+    /** @var ?LiveConnectionRoster Master seam naming the node's live sockets, wired at registration */
+    private ?LiveConnectionRoster $liveConnectionRoster = null;
+
     /** @var float Interval between worker processes tick checks in seconds */
     private const float WORKER_PROCESSES_TICK_INTERVAL = 1.0;
 
@@ -176,6 +180,20 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
 
         // Ensure log directory exists at startup to avoid repeated is_dir() checks
         $this->ensureLogDirectory();
+    }
+
+    /**
+     * Wires the seam that names the node's live sockets, for the agent starts this server sends.
+     *
+     * Held by the server rather than reached for at the moment of use, the same way the
+     * WebSocket server holds its connection dropper: the start path must not know the
+     * concrete manager behind the master.
+     *
+     * @param LiveConnectionRoster $liveConnectionRoster Master seam naming the node's live sockets
+     */
+    public function setLiveConnectionRoster(LiveConnectionRoster $liveConnectionRoster): void
+    {
+        $this->liveConnectionRoster = $liveConnectionRoster;
     }
 
     /**
@@ -946,8 +964,10 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
         // Link agent daemon to selected worker
         $agentDaemon->setWorkerClient($workerClient);
 
-        // Send agent_start signal to worker
-        $workerClient->sendAgentStart($agentType, $agentIndex);
+        // Send agent_start signal to worker, with the sockets this node holds open right now:
+        // the agent coming up is the only one entitled to strike out the connection rows left
+        // behind by tabs that closed while it was down (HIL-664).
+        $workerClient->sendAgentStart($agentType, $agentIndex, $this->liveConnectionRoster?->liveAcceptKeys() ?? []);
     }
 
     /**
