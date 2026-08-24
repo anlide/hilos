@@ -123,6 +123,9 @@ final class SignalTypeConstants
     /** @var string WebSocket signal to single user */
     public const string WS_USER = 'ws_user';
 
+    /** @var string WebSocket signal to every connection of one browser session */
+    public const string WS_SESSION = 'ws_session';
+
     /** @var string WebSocket signal to all page-subscribed users */
     public const string WS_ALL = 'ws_all';
 

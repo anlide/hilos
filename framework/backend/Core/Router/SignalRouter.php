@@ -21,6 +21,7 @@ use Hilos\Core\Router\Destination\Destination;
 use Hilos\Core\Router\Destination\RemoteAgentDestination;
 use Hilos\Core\Router\Destination\RemoteClientDestination;
 use Hilos\Core\Router\Destination\RemoteFanoutDestination;
+use Hilos\Core\Router\Destination\SessionClientsDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -103,15 +104,18 @@ class SignalRouter
      * @var list<string> Signal types delivered to browsers by fan-out rather than by address,
      *     so that on a cluster they have to be carried to every node instead of resolved here.
      *
-     * All three are answered from the subscription registry or the connection list of one node
+     * All four are answered from the subscription registry or the connection list of one node
      * ({@see getWebSocketDestinations()}), which is exactly why the cluster cannot resolve them
      * centrally: this node knows only its own. ws_user is absent because it names its target,
-     * and a named target is an address the connection index can place.
+     * and a named target is an address the connection index can place. ws_session names something
+     * too, but not an address: a session is a set of sockets, and only the node holding them can
+     * say which ones - the index maps accept keys, and there is no accept key here to map.
      */
     private const array CLIENT_FANOUT_SIGNAL_TYPES = [
         SignalTypeConstants::WS_ALL,
         SignalTypeConstants::WS_ALL_CONNECTED,
         SignalTypeConstants::WS_GROUP,
+        SignalTypeConstants::WS_SESSION,
     ];
 
     /** @var int Byte length of the random per-process emitter identity */
@@ -802,10 +806,10 @@ class SignalRouter
      * on a node with no registered lookup, the list is returned untouched, so single-node
      * behaviour is unchanged.
      *
-     * Only {@see WebSocketDestination} is eligible. {@see AllClientsDestination} is deliberately
-     * left alone: it is not an address but an instruction to fan out, and the node that holds
-     * the connections is the only one that can carry it out — its cross-node half is a separate
-     * frame, not a rewritten destination.
+     * Only {@see WebSocketDestination} is eligible. {@see AllClientsDestination} and
+     * {@see SessionClientsDestination} are deliberately left alone: neither is an address but an
+     * instruction to fan out, and the node that holds the connections is the only one that can
+     * carry it out — their cross-node half is a separate frame, not a rewritten destination.
      *
      * @param list<Destination> $destinations Resolved destinations before the connection lookup
      * @return list<Destination> Destinations with cross-node clients rewritten to remote
@@ -921,6 +925,8 @@ class SignalRouter
                     [WebSocketDestination::class, $destination->acceptKey],
                 $destination instanceof AllClientsDestination =>
                     [AllClientsDestination::class, $destination->excludeAcceptKey],
+                $destination instanceof SessionClientsDestination =>
+                    [SessionClientsDestination::class, $destination->sessionTokenHash],
                 default => [(string) spl_object_id($destination)],
             };
             // A part that is absent contributes nothing to the key rather than an
@@ -1279,6 +1285,7 @@ class SignalRouter
      *
      * Returns array of WebSocket client destinations based on signal type and subscriptions.
      * For ws_user: returns single client with targetAcceptKey
+     * For ws_session: returns a single session fan-out marker carrying targetSessionTokenHash
      * For ws_all: returns all page-subscribed clients, excluding excludeAcceptKey
      * For ws_all_connected: returns a single all-clients broadcast marker, excluding excludeAcceptKey
      * For ws_group: returns clients subscribed to targetGroup, excluding excludeAcceptKey
@@ -1293,11 +1300,13 @@ class SignalRouter
 
         // Extract targeting info from WebSocketSignalData
         $targetAcceptKey = null;
+        $targetSessionTokenHash = null;
         $targetGroup = null;
         $excludeAcceptKey = null;
 
         if ($signalData instanceof WebSocketSignalData) {
             $targetAcceptKey = $signalData->targetAcceptKey;
+            $targetSessionTokenHash = $signalData->targetSessionTokenHash;
             $targetGroup = $signalData->targetGroup;
             $excludeAcceptKey = $signalData->excludeAcceptKey;
         }
@@ -1319,6 +1328,13 @@ class SignalRouter
                         continue;
                     }
                     $destinations[] = new WebSocketDestination($acceptKey);
+                }
+                break;
+
+            case SignalTypeConstants::WS_SESSION:
+                // Single fan-out marker; the daemon picks its own clients by session token hash
+                if ($targetSessionTokenHash !== null) {
+                    $destinations[] = new SessionClientsDestination($targetSessionTokenHash);
                 }
                 break;
 

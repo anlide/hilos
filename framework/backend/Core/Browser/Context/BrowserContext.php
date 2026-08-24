@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Browser\Context;
 
+use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
@@ -59,6 +60,7 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
 use Throwable;
 use ArrayAccess;
@@ -2108,12 +2110,28 @@ abstract class BrowserContext
      * mode - the row is mounted for every project that has an RT context. Same
      * lightweight in-memory read the master welcome path uses.
      *
+     * The session behind the connection is offered beside its accept key, so this gate answers the
+     * same way the master's welcome path does for the browser that started the operation (HIL-655).
+     * The token comes from the session stage of the runtime connection roster - the framework's own
+     * seam, the one {@see SessionCarrier} reads - and a connection the roster does not carry hashes
+     * to null, which is the accept-key-only verdict this gate gave before.
+     *
      * @param string $acceptKey Subscriber accept key
      * @return bool Whether this connection is frozen out right now
      */
     private function protectedModeLocksOut(string $acceptKey): bool
     {
-        return Hilos::$rt?->hilosProtectedModeRuntime?->locksOut($acceptKey) ?? false;
+        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($freeze === null) {
+            return false;
+        }
+
+        $sessionToken = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey)?->sessionToken;
+
+        return $freeze->locksOut(
+            $acceptKey,
+            $sessionToken === null ? null : ProtectedModeRuntime::hashSessionToken($sessionToken),
+        );
     }
 
     /**

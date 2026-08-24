@@ -29,6 +29,12 @@ final class ProtectedModeAdmissionTest extends TestCase
 {
     private const string PASS = 'let-me-in-please';
 
+    /** Session cookie of the browser that asked for the operation, in the minted token form. */
+    private const string INITIATOR_SESSION_TOKEN = '0123456789abcdef0123456789abcdef';
+
+    /** Session cookie of any other browser, same form and a different value. */
+    private const string STRANGER_SESSION_TOKEN = 'fedcba9876543210fedcba9876543210';
+
     private ?SignalRouter $previousSignalRouter = null;
 
     private ?EnvAccessor $previousEnv = null;
@@ -133,6 +139,37 @@ final class ProtectedModeAdmissionTest extends TestCase
         $this->assertTrue($block['passIssued']);
     }
 
+    public function testTheInitiatorsOtherTabIsNotHeldByTheFreeze(): void
+    {
+        // The socket the operation was started from is gone - this is the reload that replaced it,
+        // arriving with a brand new accept key and the same cookie. It is the same person.
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, [], self::INITIATOR_SESSION_TOKEN);
+
+        $block = $this->protectedModeBlock($this->handshake(null, sessionToken: self::INITIATOR_SESSION_TOKEN));
+
+        $this->assertFalse($block['active']);
+    }
+
+    public function testAnotherBrowserIsHeldByTheFreezeAsBefore(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, [], self::INITIATOR_SESSION_TOKEN);
+
+        $block = $this->protectedModeBlock($this->handshake(null, sessionToken: self::STRANGER_SESSION_TOKEN));
+
+        $this->assertTrue($block['active']);
+    }
+
+    public function testAFreezeNobodyStartedFromABrowserHoldsEveryConnection(): void
+    {
+        // A restore started from the CLI records no session, and the connection that just minted
+        // its first cookie carries one nothing can match: neither side may stand in for the other.
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, []);
+
+        $block = $this->protectedModeBlock($this->handshake(null, sessionToken: self::INITIATOR_SESSION_TOKEN));
+
+        $this->assertTrue($block['active']);
+    }
+
     public function testAFrozenPhaseOffersNoCodeField(): void
     {
         $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, []);
@@ -151,14 +188,18 @@ final class ProtectedModeAdmissionTest extends TestCase
      *
      * @param string $phase Freeze phase to mount
      * @param list<string> $passHashes Hashes of the passes the window has outstanding
+     * @param ?string $initiatorSessionToken Session token of the browser that asked, or null when nothing with one did
      */
-    private function freeze(string $phase, array $passHashes): void
+    private function freeze(string $phase, array $passHashes, ?string $initiatorSessionToken = null): void
     {
         Hilos::$rt = new AdmissionTestRtContext();
         Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::fromRow([
             StateProtectedModeRuntime::phase => $phase,
             StateProtectedModeRuntime::operation => 'restore',
             StateProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
+            StateProtectedModeRuntime::initiatorSessionTokenHash => $initiatorSessionToken === null
+                ? null
+                : StateProtectedModeRuntime::hashSessionToken($initiatorSessionToken),
             StateProtectedModeRuntime::initiatorAgentType => 'backup',
             StateProtectedModeRuntime::passHashes => $passHashes,
         ]));
@@ -171,8 +212,11 @@ final class ProtectedModeAdmissionTest extends TestCase
      * @param bool $admitOnTheRow Whether the recorder should write the admission through to the row
      * @return WebSocketClientTestProbe Probe with a completed handshake
      */
-    private function handshake(?string $pass, bool $admitOnTheRow = false): WebSocketClientTestProbe
-    {
+    private function handshake(
+        ?string $pass,
+        bool $admitOnTheRow = false,
+        ?string $sessionToken = null,
+    ): WebSocketClientTestProbe {
         $probe = WebSocketClientTestProbe::createSocketless();
         $this->recorder->writeThrough = $admitOnTheRow;
         $probe->setProtectedModeAdmissionRecorder($this->recorder);
@@ -181,12 +225,16 @@ final class ProtectedModeAdmissionTest extends TestCase
         if ($pass !== null) {
             $path .= '?' . ProtectedModeAdmissionConstants::HILOS_PASS_QUERY_PARAM . '=' . rawurlencode($pass);
         }
+        $cookieHeader = $sessionToken === null
+            ? ''
+            : 'Cookie: hilos_session_token=' . $sessionToken . "\r\n";
 
         $probe->feed(
             "GET {$path} HTTP/1.1\r\n"
             . "Host: localhost:8092\r\n"
             . "Upgrade: websocket\r\n"
             . "Connection: Upgrade\r\n"
+            . $cookieHeader
             . 'Sec-WebSocket-Key: ' . base64_encode('0123456789abcdef') . "\r\n"
             . "Sec-WebSocket-Version: 13\r\n"
             . "\r\n",

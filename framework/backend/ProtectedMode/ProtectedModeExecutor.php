@@ -29,10 +29,17 @@ interface ProtectedModeExecutor
      * @param ?string $initiatorAcceptKey Accept key of the initiator connection when the leader
      *                                    freezes itself; null on a follower, which locks out every
      *                                    connection and has no initiator to let through
+     * @param ?string $initiatorSessionTokenHash Hash of the session token behind that connection, on the
+     *                                           same terms; null on a follower and whenever the freeze
+     *                                           was asked for by something without a browser
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
-    public function enterActivating(ProtectedModeQuiesceData $freeze, ?string $initiatorAcceptKey): void;
+    public function enterActivating(
+        ProtectedModeQuiesceData $freeze,
+        ?string $initiatorAcceptKey,
+        ?string $initiatorSessionTokenHash,
+    ): void;
 
     /**
      * Marks the cluster-wide freeze active locally once every follower has quiesced.

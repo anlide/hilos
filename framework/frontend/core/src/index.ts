@@ -512,6 +512,8 @@ export {
   hasBackupFailureDetail,
   hasRestoreOutcome,
   formatRestoreCliCommand,
+  formatRestorePhaseLine,
+  formatRestoreOutcomeLine,
   createHilosBackupsRestoreGate,
   createHilosRestoreProgress,
   BACKUP_SIGNAL_SCHEMAS,

@@ -197,6 +197,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onEnable('node-b', new ProtectedModeEnableSignalData(
             operation: 'restore',
             initiatorAcceptKey: 'accept-9',
+            initiatorSessionTokenHash: null,
             initiatorAgentType: 'protected-mode-driver',
             initiatorAgentIndex: 0,
             initiatorNodeId: 'node-b',
@@ -610,6 +611,7 @@ final class ClusterProtectedModeTest extends TestCase
             Hilos::$rt?->hilosProtectedModeRuntime?->actions->enterActivating(
                 new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'),
                 null,
+                null,
             );
         });
 
@@ -685,7 +687,7 @@ final class ClusterProtectedModeTest extends TestCase
         }
 
         $this->withDaemonTruthSource(static function () use ($view): void {
-            $view->actions->enterActivating(new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'), null);
+            $view->actions->enterActivating(new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'), null, null);
             $view->actions->enterActive();
         });
     }
@@ -758,6 +760,7 @@ final class ClusterProtectedModeTest extends TestCase
         return new ProtectedModeEnableSignalData(
             operation: 'restore',
             initiatorAcceptKey: 'accept-9',
+            initiatorSessionTokenHash: null,
             initiatorAgentType: 'backup',
             initiatorAgentIndex: 0,
             initiatorNodeId: $initiatorNodeId,
@@ -883,10 +886,17 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
     /** @var ?string Accept key passed to the most recent enterActivating call */
     public ?string $activatingAcceptKey = null;
 
-    public function enterActivating(ProtectedModeQuiesceData $freeze, ?string $initiatorAcceptKey): void
-    {
+    /** @var ?string Session token hash passed to the most recent enterActivating call */
+    public ?string $activatingSessionTokenHash = null;
+
+    public function enterActivating(
+        ProtectedModeQuiesceData $freeze,
+        ?string $initiatorAcceptKey,
+        ?string $initiatorSessionTokenHash,
+    ): void {
         $this->calls[] = 'enterActivating';
         $this->activatingAcceptKey = $initiatorAcceptKey;
+        $this->activatingSessionTokenHash = $initiatorSessionTokenHash;
     }
 
     public function enterActive(): void

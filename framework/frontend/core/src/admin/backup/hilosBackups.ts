@@ -1051,12 +1051,17 @@ export interface HilosRestoreProgress {
  * down for the length of the operation.
  *
  * Another admin's restore is not shown here: the frames are addressed, so a tab that
- * did not start one simply never receives any and keeps a null status.
+ * did not start one simply never receives any and keeps a null status. Since HIL-655
+ * they are addressed to the browser SESSION rather than to one socket, so every tab of
+ * the admin who asked receives them — including the one showing the maintenance
+ * surface, which is why this takes a bare connection rather than the backup page's
+ * context: the shell holds no page scope and no action lifecycle, and this never
+ * needed either.
  *
- * @param context The project context (the connection the frames arrive on).
+ * @param connection The connection the frames arrive on.
  */
 export function createHilosRestoreProgress(
-  context: HilosBackupsContext,
+  connection: HilosConnection,
 ): HilosRestoreProgress {
   const status = createSignal<HilosRestoreStatus | null>(null)
   const teardown: Array<() => void> = []
@@ -1065,7 +1070,7 @@ export function createHilosRestoreProgress(
     status,
     start() {
       teardown.push(
-        context.connection.on('projectSignal', (signal) => {
+        connection.on('projectSignal', (signal) => {
           if (signal.type === BACKUP_RESTORE_PROGRESS_SIGNAL) {
             // Validated against restoreProgressSchema at the parse boundary; this cast is
             // the declared typed selector for that schema's output.
@@ -1080,6 +1085,65 @@ export function createHilosRestoreProgress(
       }
     },
   }
+}
+
+/**
+ * The phase line of the restore panel — `Restore 2026-08-24-full · importing`.
+ *
+ * Worded here rather than in the three shells for the reason every caption in this
+ * module is: an operator reads it while a destructive operation runs, and three
+ * templates drift a separator at a time. The phase value is the backend's own
+ * (`RestorePhase`), the terminal ones included, so the line keeps saying something
+ * true after the run ends and the outcome line below it takes over.
+ *
+ * A frame that names no archive or no phase drops that half rather than printing a
+ * placeholder: the panel is the only thing a shuttered tab has to go on, and an
+ * invented identifier there is worse than a shorter sentence.
+ *
+ * @param status The latest restore frame this connection received.
+ */
+export function formatRestorePhaseLine(status: HilosRestoreStatus): string {
+  const named = ['Restore', status.backupId].filter(
+    (part) => part !== null && part !== '',
+  )
+
+  return status.phase === null || status.phase === ''
+    ? named.join(' ')
+    : `${named.join(' ')} · ${status.phase}`
+}
+
+/**
+ * The outcome line under {@link formatRestorePhaseLine}, empty while the run is still
+ * going: a restore in flight has no outcome, and a sentence that appears before there
+ * is one would be read as the answer.
+ *
+ * The failure wording carries the two facts a shuttered tab cannot find anywhere else
+ * — whether the database was already being replaced, and whether the node stays closed
+ * because not every process re-read it. Neither is actionable from this screen, and
+ * that is precisely why they are said here: the person reading it is the one who will
+ * have to act from a terminal.
+ *
+ * @param status The latest restore frame this connection received.
+ */
+export function formatRestoreOutcomeLine(status: HilosRestoreStatus): string {
+  if (status.outcome === 'success') {
+    return 'Restored. This page reloads itself as soon as the system reopens.'
+  }
+  if (status.outcome !== 'error') {
+    return ''
+  }
+
+  const sentences = [status.failureReason ?? 'The restore failed.']
+  if (status.databaseTouched) {
+    sentences.push('The database was already being replaced when this failed.')
+  }
+  if (!status.rehydrateComplete) {
+    sentences.push(
+      'The system stays closed until an operator reopens it from the CLI.',
+    )
+  }
+
+  return sentences.join(' ')
 }
 
 /** The shared clock a backup view redraws its progress from. */

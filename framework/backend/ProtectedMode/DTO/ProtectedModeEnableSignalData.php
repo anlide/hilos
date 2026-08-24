@@ -17,6 +17,11 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
  * running and let its connection through the lockdown. The leader records these fields on
  * {@see ProtectedModeRuntime}, drives the two-phase freeze, and
  * signals PROTECTED_MODE_READY back to this initiator once every node has quiesced.
+ *
+ * The initiator is named twice over, and both are needed: the accept key is the socket that asked,
+ * and the session token hash is the browser it asked from. A reload or a second tab arrives with a
+ * new accept key and the same cookie, so the hash is the half that keeps the person who started the
+ * operation inside it (HIL-655). Only the hash travels - the token itself opens the account.
  */
 final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -25,6 +30,9 @@ final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataI
 
     /** Payload key: the initiator connection's accept key. */
     public const string initiatorAcceptKey = 'initiatorAcceptKey';
+
+    /** Payload key: the hash of the initiator browser's session token. */
+    public const string initiatorSessionTokenHash = 'initiatorSessionTokenHash';
 
     /** Payload key: the initiator agent type left running during the freeze. */
     public const string initiatorAgentType = 'initiatorAgentType';
@@ -39,6 +47,9 @@ final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataI
      * @param string $operation Operation the initiator will run under the freeze
      * @param ?string $initiatorAcceptKey Accept key of the initiator connection, or null when the
      *                                    freeze was asked for by something without a connection
+     * @param ?string $initiatorSessionTokenHash Hash of the session token behind that connection, or null
+     *                                           when the asker has no browser session - the accept key
+     *                                           names one socket, this names every tab of one browser
      * @param string $initiatorAgentType Agent type left running during the freeze
      * @param ?int $initiatorAgentIndex Agent index, or null for a singleton agent
      * @param ?string $initiatorNodeId Node id that hosts the initiator agent, or null on a
@@ -47,6 +58,7 @@ final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataI
     public function __construct(
         public readonly string $operation,
         public readonly ?string $initiatorAcceptKey,
+        public readonly ?string $initiatorSessionTokenHash,
         public readonly string $initiatorAgentType,
         public readonly ?int $initiatorAgentIndex,
         public readonly ?string $initiatorNodeId,
@@ -61,6 +73,7 @@ final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataI
         return [
             self::operation => $this->operation,
             self::initiatorAcceptKey => $this->initiatorAcceptKey,
+            self::initiatorSessionTokenHash => $this->initiatorSessionTokenHash,
             self::initiatorAgentType => $this->initiatorAgentType,
             self::initiatorAgentIndex => $this->initiatorAgentIndex,
             self::initiatorNodeId => $this->initiatorNodeId,
@@ -77,6 +90,7 @@ final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataI
         return new static(
             operation: self::requireString($data, self::operation),
             initiatorAcceptKey: self::optionalString($data, self::initiatorAcceptKey),
+            initiatorSessionTokenHash: self::optionalString($data, self::initiatorSessionTokenHash),
             initiatorAgentType: self::requireString($data, self::initiatorAgentType),
             initiatorAgentIndex: self::optionalInt($data, self::initiatorAgentIndex),
             initiatorNodeId: self::optionalString($data, self::initiatorNodeId),

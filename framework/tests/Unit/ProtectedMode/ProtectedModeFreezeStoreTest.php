@@ -173,7 +173,7 @@ final class ProtectedModeFreezeStoreTest extends TestCase
     {
         $executor = $this->executorOnAMountedNode();
 
-        $executor->enterActivating($this->freeze(), 'accept-7');
+        $executor->enterActivating($this->freeze(), 'accept-7', null);
         $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVATING, $this->persistedPhase());
 
         $executor->enterActive();
@@ -192,7 +192,7 @@ final class ProtectedModeFreezeStoreTest extends TestCase
     public function testTheLiftTakesTheFreezeOffDisk(): void
     {
         $executor = $this->executorOnAMountedNode();
-        $executor->enterActivating($this->freeze(), 'accept-7');
+        $executor->enterActivating($this->freeze(), 'accept-7', null);
 
         $executor->enterInactive();
 
@@ -224,8 +224,8 @@ final class ProtectedModeFreezeStoreTest extends TestCase
         $this->assertNull($view->initiatorAcceptKey);
         $this->assertSame([], $view->passHashes);
         $this->assertSame([], $view->admittedAcceptKeys);
-        $this->assertTrue($view->locksOut('accept-7'));
-        $this->assertTrue($view->locksOut('accept-9'));
+        $this->assertTrue($view->locksOut('accept-7', null));
+        $this->assertTrue($view->locksOut('accept-9', null));
     }
 
     /**

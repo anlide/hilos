@@ -85,6 +85,29 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /** @var string Backing storage for accept key */
     private string $acceptKeyValue = '';
 
+    /**
+     * @var ?string Hash of this connection's session token, computed on the 101; null before the
+     * handshake and for a connection that carries no session at all.
+     *
+     * The accept key above names this socket and dies with it; this names the browser behind it and
+     * outlives a reload. It is what lets the master recognize the operator who started a destructive
+     * operation in a tab that is not the tab they started it from, and what a session-addressed
+     * frame is matched against on the way out (HIL-655). The hash is held rather than the token:
+     * this object lives for the length of the connection in the master process, and the token is
+     * the key to the account.
+     *
+     * Readable from outside because the fan-out asks each client whether the frame is for it; the
+     * write stays private, because only the 101 knows which browser this socket came from.
+     */
+    public ?string $sessionTokenHash {
+        get {
+            return $this->sessionTokenHashValue;
+        }
+    }
+
+    /** @var ?string Backing storage for the session token hash */
+    private ?string $sessionTokenHashValue = null;
+
     /** WebSocket frame opcodes */
     private const int OPCODE_CONTINUATION = 0x0;     // Continuation frame
     private const int OPCODE_TEXT = 0x1;             // Text frame
@@ -395,6 +418,12 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             $this->shouldClose = true;
             throw $exception;
         }
+
+        // Hashed here, where the token has just been settled, and never re-derived later: this runs
+        // on the accept loop, so the one hash a connection costs the master is this one.
+        $this->sessionTokenHashValue = $sessionToken === ''
+            ? null
+            : ProtectedModeRuntime::hashSessionToken($sessionToken);
 
         // The one thing a rotation carries besides the token: the announcement the socket it
         // replaces had not shown yet (HIL-423). It rides the handshake signal rather than
@@ -757,12 +786,16 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * state. There is no project that does not use protected mode - the framework mounts the row
      * for every project that has an RT context.
      *
+     * The connection is offered under both of its names: the accept key of this socket and the hash
+     * of the session behind it. The second is the one a reload and a second tab arrive with, and
+     * without it the operator watching their own restore is locked out of it by pressing F5.
+     *
      * @param string $acceptKey This connection's accept key, compared against the initiator's
      * @return bool Whether an active freeze locks this connection out
      */
     private function protectedModeLocksOut(string $acceptKey): bool
     {
-        return Hilos::$rt?->hilosProtectedModeRuntime?->locksOut($acceptKey) ?? false;
+        return Hilos::$rt?->hilosProtectedModeRuntime?->locksOut($acceptKey, $this->sessionTokenHash) ?? false;
     }
 
     /**

@@ -29,6 +29,7 @@ final class ProtectedModeWorkerFrameTest extends TestCase
         $frame = new WorkerProtectedModeEnableDTO(new ProtectedModeEnableSignalData(
             operation: 'restore',
             initiatorAcceptKey: 'accept-9',
+            initiatorSessionTokenHash: null,
             initiatorAgentType: 'backup',
             initiatorAgentIndex: 0,
             initiatorNodeId: 'node-a',
@@ -49,6 +50,7 @@ final class ProtectedModeWorkerFrameTest extends TestCase
         $frame = new WorkerProtectedModeEnableDTO(new ProtectedModeEnableSignalData(
             operation: 'restore',
             initiatorAcceptKey: 'accept-9',
+            initiatorSessionTokenHash: null,
             initiatorAgentType: 'backup',
             initiatorAgentIndex: null,
             initiatorNodeId: 'node-a',
@@ -96,6 +98,7 @@ final class ProtectedModeWorkerFrameTest extends TestCase
         $frame = new WorkerProtectedModeEnableDTO(new ProtectedModeEnableSignalData(
             operation: 'restore',
             initiatorAcceptKey: 'accept-9',
+            initiatorSessionTokenHash: null,
             initiatorAgentType: 'backup',
             initiatorAgentIndex: 2,
             initiatorNodeId: 'node-a',

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-import { gotoMaintenance, gotoPage } from '../helpers/page'
+import { gotoAdmitted, gotoMaintenance, gotoPage } from '../helpers/page'
 import {
   enterProtectedMode,
   inspectProtectedMode,
@@ -9,6 +9,7 @@ import {
   mintProtectedModePass,
   openProtectedMode,
   openProtectedModeIfAny,
+  sessionTokenOf,
 } from '../helpers/protectedMode'
 
 // Protected-mode e2e (HIL-344): the debt HIL-268 and HIL-522 were closed with —
@@ -76,6 +77,55 @@ test('a live window shows the maintenance stub while the mode is on', async ({
 
   await expect(page.getByTestId('maintenance')).toBeHidden()
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
+})
+
+test('the browser that asked keeps its way in across a reload and a second tab', async ({
+  page,
+  context,
+  browser,
+}) => {
+  // HIL-655 acceptance, and the observation it was written from: the operator who
+  // started a restore pressed F5 and locked themselves out of watching it, because
+  // the way in was the accept key of one socket and a reload mints a new one.
+  //
+  // A cold connection first — the session cookie is minted on the first 101, and it
+  // is the only handle a browser has on its own identity here: the welcome frame
+  // carries no accept key, so nothing in the page can name the socket it arrived on.
+  await gotoPage(page, '/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  const sessionToken = await sessionTokenOf(context)
+  expect(sessionToken).not.toBe('')
+
+  // Entered for this BROWSER and for no particular socket: the accept key is left
+  // empty on purpose, so whatever gets in below got in as the session.
+  expect(await enterProtectedMode(OPERATION, '', sessionToken)).toBe('active')
+
+  // The reload. A brand new accept key, the same cookie, and the same person.
+  await gotoAdmitted(page, '/')
+  await expect(page.getByTestId('maintenance')).toBeHidden()
+
+  // The second tab, which the freeze was never told about at all — it did not exist
+  // when the operation started, and under the freeze no agent is left running to
+  // register it anywhere. The master recognizes it off its own connection list.
+  const secondTab = await context.newPage()
+  await gotoAdmitted(secondTab, ADMIN_URL)
+  await expect(secondTab.getByTestId('maintenance')).toBeHidden()
+
+  // The right belongs to one session and not to everybody: another browser is held
+  // exactly as it was before this leaf.
+  const strangerContext = await browser.newContext()
+  const stranger = await strangerContext.newPage()
+  await gotoMaintenance(stranger, '/')
+  await expect(stranger.getByTestId('maintenance-title')).toHaveText(STUB_TITLE)
+  await strangerContext.close()
+
+  expect(await openProtectedMode()).toBe('inactive')
+
+  // Both tabs of the session are inside after the lift too — which is what a restore
+  // leaves behind, and the half SessionCarrier already answered for (HIL-479).
+  await expect(page.getByTestId('maintenance')).toBeHidden()
+  await expect(secondTab.getByTestId('maintenance')).toBeHidden()
+  await secondTab.close()
 })
 
 test('the verification window waits for a code before it offers a field', async ({

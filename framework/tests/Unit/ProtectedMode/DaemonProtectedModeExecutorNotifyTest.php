@@ -81,7 +81,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
 
     public function testEnteringAnnouncesTheModeWithCopyAndExcludesTheInitiator(): void
     {
-        $this->executor->enterActivating($this->freeze(), 'accept-7');
+        $this->executor->enterActivating($this->freeze(), 'accept-7', null);
 
         $this->assertCount(1, $this->notifier->frames);
         [$state, $excluded] = $this->notifier->frames[0];
@@ -96,14 +96,14 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
     {
         // The initiator's connection lives on the initiator's node, so a follower has no accept
         // key to spare - and must not invent one, or it would quietly leave a browser unfrozen.
-        $this->executor->enterActivating($this->freeze(), null);
+        $this->executor->enterActivating($this->freeze(), null, null);
 
         $this->assertNull($this->notifier->frames[0][1]);
     }
 
     public function testTheMiddlePhasesSayNothing(): void
     {
-        $this->executor->enterActivating($this->freeze(), 'accept-7');
+        $this->executor->enterActivating($this->freeze(), 'accept-7', null);
         $this->notifier->frames = [];
 
         $this->executor->enterActive();
@@ -114,7 +114,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
 
     public function testLiftingAnnouncesTheModeIsOffToEveryone(): void
     {
-        $this->executor->enterActivating($this->freeze(), 'accept-7');
+        $this->executor->enterActivating($this->freeze(), 'accept-7', null);
         $this->notifier->frames = [];
 
         $this->executor->enterDeactivating();
@@ -131,7 +131,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
 
     public function testTheVerificationWindowKeepsTheStubUpAndOffersACodeField(): void
     {
-        $this->executor->enterActivating($this->freeze(), 'accept-7');
+        $this->executor->enterActivating($this->freeze(), 'accept-7', null);
         $this->executor->enterActive();
         $this->notifier->frames = [];
 
@@ -157,7 +157,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
 
     public function testTheFirstMintTurnsTheSentenceIntoTheField(): void
     {
-        $this->executor->enterActivating($this->freeze(), 'accept-7');
+        $this->executor->enterActivating($this->freeze(), 'accept-7', null);
         $this->executor->enterActive();
         $this->executor->enterVerifying();
         Hilos::$rt?->hilosProtectedModeRuntime?->actions->issuePass('hash-a');
@@ -179,7 +179,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
 
     public function testTheMintAnnouncementMovesNoPhaseAndWritesNoPass(): void
     {
-        $this->executor->enterActivating($this->freeze(), 'accept-7');
+        $this->executor->enterActivating($this->freeze(), 'accept-7', null);
         $this->executor->enterActive();
         $this->executor->enterVerifying();
         Hilos::$rt?->hilosProtectedModeRuntime?->actions->issuePass('hash-a');
@@ -195,7 +195,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
 
     public function testClosingBackFromTheWindowTakesTheCodeFieldAway(): void
     {
-        $this->executor->enterActivating($this->freeze(), 'accept-7');
+        $this->executor->enterActivating($this->freeze(), 'accept-7', null);
         $this->executor->enterActive();
         $this->executor->enterVerifying();
         Hilos::$rt?->hilosProtectedModeRuntime?->actions->issuePass('hash-a');
@@ -211,7 +211,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         // Every pass is void, so the verifier that was inside is back on the stub with everyone.
         $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
         $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->admittedAcceptKeys);
-        $this->assertTrue(Hilos::$rt?->hilosProtectedModeRuntime?->locksOut('accept-1'));
+        $this->assertTrue(Hilos::$rt?->hilosProtectedModeRuntime?->locksOut('accept-1', null));
 
         $this->assertCount(1, $this->notifier->frames);
         [$state, $excluded] = $this->notifier->frames[0];
@@ -244,7 +244,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
     {
         Hilos::$cluster = new ClusterContext();
 
-        $this->executor->enterActivating($this->freeze(), 'accept-7');
+        $this->executor->enterActivating($this->freeze(), 'accept-7', null);
 
         $this->assertSame([], $this->notifier->frames);
         $this->assertSame(

@@ -11,12 +11,20 @@ use Hilos\Constants\SignalPayloadConstants;
  * WebSocketSignalData - Signal data for WebSocket signals.
  *
  * Contains both the actual signal data and targeting metadata
- * (targetAcceptKey, targetGroup, excludeAcceptKey).
+ * (targetAcceptKey, targetSessionTokenHash, targetGroup, excludeAcceptKey).
  */
 class WebSocketSignalData extends BaseDTO implements SignalDataInterface
 {
     /** @var ?string Target connection accept key (user delivery), null when unaddressed */
     public readonly ?string $targetAcceptKey;
+
+    /**
+     * @var ?string Hash of the target session token (session delivery), null when unaddressed
+     *
+     * The accept key above names one socket; this names every socket of one browser, which is what
+     * a delivery has to say when the tab it is answering may have been replaced by a reload.
+     */
+    public readonly ?string $targetSessionTokenHash;
 
     /** @var ?string Target group name (group delivery), null when unaddressed */
     public readonly ?string $targetGroup;
@@ -33,16 +41,19 @@ class WebSocketSignalData extends BaseDTO implements SignalDataInterface
      *
      * @param SignalDataInterface $data Inner signal payload
      * @param ?string $targetAcceptKey Target connection accept key (user delivery)
+     * @param ?string $targetSessionTokenHash Hash of the target session token (session delivery)
      * @param ?string $targetGroup Target group name (group delivery)
      * @param ?string $excludeAcceptKey Accept key to exclude from broadcast
      */
     public function __construct(
         public readonly SignalDataInterface $data,
         ?string $targetAcceptKey = null,
+        ?string $targetSessionTokenHash = null,
         ?string $targetGroup = null,
         ?string $excludeAcceptKey = null,
     ) {
         $this->targetAcceptKey = $targetAcceptKey === '' ? null : $targetAcceptKey;
+        $this->targetSessionTokenHash = $targetSessionTokenHash === '' ? null : $targetSessionTokenHash;
         $this->targetGroup = $targetGroup === '' ? null : $targetGroup;
         $this->excludeAcceptKey = $excludeAcceptKey === '' ? null : $excludeAcceptKey;
     }
@@ -58,6 +69,10 @@ class WebSocketSignalData extends BaseDTO implements SignalDataInterface
 
         if ($this->targetAcceptKey !== null) {
             $result['targetAcceptKey'] = $this->targetAcceptKey;
+        }
+
+        if ($this->targetSessionTokenHash !== null) {
+            $result['targetSessionTokenHash'] = $this->targetSessionTokenHash;
         }
 
         if ($this->targetGroup !== null) {
@@ -85,6 +100,7 @@ class WebSocketSignalData extends BaseDTO implements SignalDataInterface
                 $data[SignalPayloadConstants::FIELD_DATA_TYPE] ?? null,
             ),
             targetAcceptKey: $data['targetAcceptKey'] ?? null,
+            targetSessionTokenHash: $data['targetSessionTokenHash'] ?? null,
             targetGroup: $data['targetGroup'] ?? null,
             excludeAcceptKey: $data['excludeAcceptKey'] ?? null,
         );

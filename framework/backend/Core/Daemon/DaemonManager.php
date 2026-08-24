@@ -59,6 +59,7 @@ use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
+use Hilos\Core\Router\Destination\SessionClientsDestination;
 use Hilos\Core\Router\Destination\CommandReplyDestination;
 use Hilos\Core\Router\Destination\RemoteAgentDestination;
 use Hilos\Core\Router\Destination\RemoteClientDestination;
@@ -1696,6 +1697,22 @@ abstract class DaemonManager extends BaseManager implements
                         $broadcastFrame,
                         $destination->excludeAcceptKey,
                     );
+                } elseif ($destination instanceof SessionClientsDestination) {
+                    // Deliver to every connection of one browser session held by this node
+                    if ($webSocketServer === null) {
+                        continue;
+                    }
+
+                    $sessionFrame = $this->encodeSignalFrame($signal);
+                    if ($sessionFrame === null) {
+                        continue;
+                    }
+
+                    $this->sendToSessionClients(
+                        $webSocketServer,
+                        $sessionFrame,
+                        $destination->sessionTokenHash,
+                    );
                 } elseif ($destination instanceof CommandReplyDestination) {
                     // Write the agent reply back to the held CLI command connection
                     if ($commandServer === null) {
@@ -2215,6 +2232,13 @@ abstract class DaemonManager extends BaseManager implements
                 }
 
                 $this->sendToAllClients($webSocketServer, $broadcastFrame, $destination->excludeAcceptKey);
+            } elseif ($destination instanceof SessionClientsDestination) {
+                $sessionFrame = $this->encodeSignalFrame($signal);
+                if ($sessionFrame === null) {
+                    continue;
+                }
+
+                $this->sendToSessionClients($webSocketServer, $sessionFrame, $destination->sessionTokenHash);
             }
         }
     }
@@ -2653,6 +2677,40 @@ abstract class DaemonManager extends BaseManager implements
                 } catch (Throwable $e) {
                     Logger::error("Failed to send message to acceptKey {$client->acceptKey}: " . $e->getMessage());
                 }
+            }
+        }
+    }
+
+    /**
+     * Deliver a pre-serialized frame to every connection of one browser session held here.
+     *
+     * The same single pass as the broadcast above, with the session hash as the filter instead of
+     * the excluded key: a browser is a set of sockets, and the whole point of addressing one is
+     * that the tab which asked may no longer be the tab that is watching. A connection carrying no
+     * session is skipped rather than compared - it has nothing this frame could be meant for, and
+     * a null on both sides must never read as a match.
+     *
+     * The compare is {@see hash_equals()} because both sides are derived from a session token,
+     * which is the credential this whole address stands in for.
+     *
+     * @param WebSocketServer $server WebSocket server
+     * @param string $message Message JSON
+     * @param string $sessionTokenHash Hash of the session whose connections receive the frame
+     */
+    private function sendToSessionClients(WebSocketServer $server, string $message, string $sessionTokenHash): void
+    {
+        foreach ($server->getClients() as $client) {
+            if (!$client instanceof WebSocketClient || $client->sessionTokenHash === null) {
+                continue;
+            }
+            if (!hash_equals($sessionTokenHash, $client->sessionTokenHash)) {
+                continue;
+            }
+
+            try {
+                $client->sendFrame($message);
+            } catch (Throwable $e) {
+                Logger::error("Failed to send message to acceptKey {$client->acceptKey}: " . $e->getMessage());
             }
         }
     }

@@ -374,7 +374,7 @@ final class ClusterProtectedMode implements
         $this->pendingNodes = array_fill_keys($this->mesh->followerMasterNodeIds(), true);
         $this->active = false;
 
-        $this->executor->enterActivating($this->activeFreeze, $data->initiatorAcceptKey);
+        $this->executor->enterActivating($this->activeFreeze, $data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
         $this->mesh->broadcastQuiesce($this->activeFreeze);
         $this->activateWhenAllQuiesced();
     }
@@ -454,7 +454,11 @@ final class ClusterProtectedMode implements
 
         $this->freezingLeaderId = $fromNodeId;
         $this->readyRelayed = false;
-        $this->executor->enterActivating($data, null);
+        // The follower is handed neither half of the initiator identity: the accept key is a
+        // welcome-path concern of the node that minted it, and the session hash is deliberately
+        // recorded on one node only, so a browser reaching another node of the cluster meets the
+        // stub exactly as it does today.
+        $this->executor->enterActivating($data, null, null);
         $this->mesh->sendQuiesced($fromNodeId);
     }
 

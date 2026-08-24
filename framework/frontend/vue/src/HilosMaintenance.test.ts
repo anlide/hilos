@@ -1,8 +1,15 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
-import { PROTECTED_MODE_INACTIVE } from '@hilos/core'
-import type { HilosConnection, ProtectedModeStatus } from '@hilos/core'
+import {
+  BACKUP_RESTORE_PROGRESS_SIGNAL,
+  PROTECTED_MODE_INACTIVE,
+} from '@hilos/core'
+import type {
+  HilosConnection,
+  HilosRestoreStatus,
+  ProtectedModeStatus,
+} from '@hilos/core'
 
 import HilosLayout from './HilosLayout.vue'
 import HilosMaintenance from './HilosMaintenance.vue'
@@ -36,16 +43,44 @@ const MINTED: ProtectedModeStatus = { ...VERIFYING, passIssued: true }
 /** The window, after a code that opened nothing. */
 const REJECTED: ProtectedModeStatus = { ...MINTED, passRejected: true }
 
+/** A restore frame as the backup agent addresses it to the initiator's session. */
+function restoreFrame(
+  overrides: Partial<HilosRestoreStatus> = {},
+): HilosRestoreStatus {
+  return {
+    running: true,
+    backupId: '2026-08-24-full',
+    scope: 'full',
+    phase: 'importing',
+    phaseStartedAt: null,
+    startedAt: null,
+    finishedAt: null,
+    outcome: null,
+    failureReason: null,
+    estimatedSeconds: null,
+    rehydrateComplete: true,
+    rehydrateProblems: [],
+    databaseTouched: false,
+    ...overrides,
+  }
+}
+
 // A minimal connection stub: the shell only reads the transport state and the
 // protected-mode state off it, and subscribes to both. `push` drives the freeze
-// the way the daemon's pushed frame would.
+// the way the daemon's pushed frame would, and `pushRestore` the addressed frame
+// the backup agent sends to every tab of the initiator's session.
 function fakeConnection(initial: ProtectedModeStatus): {
   connection: HilosConnection
   push: (next: ProtectedModeStatus) => void
+  pushRestore: (frame: HilosRestoreStatus) => void
   presented: string[]
 } {
   let current = initial
   const listeners: ((next: ProtectedModeStatus) => void)[] = []
+  const projectListeners: ((signal: {
+    type: string
+    data: unknown
+  }) => void)[] = []
   const presented: string[] = []
   const connection = {
     state: 'connected',
@@ -55,6 +90,14 @@ function fakeConnection(initial: ProtectedModeStatus): {
     on(event: string, listener: (next: never) => void): () => void {
       if (event === 'protectedMode') {
         listeners.push(listener as (next: ProtectedModeStatus) => void)
+      }
+      if (event === 'projectSignal') {
+        projectListeners.push(
+          listener as unknown as (signal: {
+            type: string
+            data: unknown
+          }) => void,
+        )
       }
       return () => {}
     },
@@ -70,6 +113,11 @@ function fakeConnection(initial: ProtectedModeStatus): {
       current = next
       for (const listener of listeners) {
         listener(next)
+      }
+    },
+    pushRestore(frame: HilosRestoreStatus): void {
+      for (const listener of projectListeners) {
+        listener({ type: BACKUP_RESTORE_PROGRESS_SIGNAL, data: frame })
       }
     },
   }
@@ -247,6 +295,63 @@ describe('HilosMaintenance', () => {
     expect(
       wrapper.find('[data-id="maintenance-pass"]').attributes('aria-invalid'),
     ).toBe('true')
+  })
+
+  it('shows no restore panel to a visitor whose session asked for nothing', () => {
+    const wrapper = mount(HilosMaintenance, {
+      props: {
+        status: FROZEN,
+        connection: fakeConnection(FROZEN).connection,
+        adminSurface: true,
+      },
+    })
+
+    expect(wrapper.find('[data-id="maintenance-restore"]').exists()).toBe(false)
+  })
+
+  it('reports the phase of the restore addressed to this session', async () => {
+    const { connection, pushRestore } = fakeConnection(FROZEN)
+    const wrapper = mount(HilosMaintenance, {
+      props: { status: FROZEN, connection, adminSurface: true },
+    })
+
+    pushRestore(restoreFrame())
+    await nextTick()
+
+    expect(wrapper.find('[data-id="maintenance-restore-phase"]').text()).toBe(
+      'Restore 2026-08-24-full · importing',
+    )
+    // Nothing has ended, so nothing is said about how it ended.
+    expect(
+      wrapper.find('[data-id="maintenance-restore-outcome"]').exists(),
+    ).toBe(false)
+  })
+
+  it('says how the restore ended, and what a failure left behind', async () => {
+    const { connection, pushRestore } = fakeConnection(FROZEN)
+    const wrapper = mount(HilosMaintenance, {
+      props: { status: FROZEN, connection, adminSurface: true },
+    })
+
+    pushRestore(
+      restoreFrame({
+        running: false,
+        phase: 'failed',
+        outcome: 'error',
+        failureReason: 'the archive checksum did not match',
+        databaseTouched: true,
+        rehydrateComplete: false,
+      }),
+    )
+    await nextTick()
+
+    const outcome = wrapper.find('[data-id="maintenance-restore-outcome"]')
+    expect(outcome.text()).toContain('checksum did not match')
+    expect(outcome.text()).toContain('already being replaced')
+    expect(outcome.text()).toContain('stays closed')
+    expect(wrapper.find('[data-id="maintenance-restore"]').classes()).toContain(
+      'alert-danger',
+    )
   })
 })
 

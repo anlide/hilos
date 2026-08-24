@@ -15,14 +15,25 @@ any code exists, and until one does the same spot carries a sentence saying so â
 the field would otherwise be a box that can take nothing. The rule lives here, in
 the component that owns the field, rather than in the shell. Submitting
 reconnects with the key on the socket url (the core does that), because a client
-refused every outbound frame can only ask to be let in on the 101. -->
+refused every outbound frame can only ask to be let in on the 101.
+
+The second exception is the restore panel, and it appears for one visitor only:
+the admin whose own restore is what shuttered the node. Its frames are addressed
+to that browser's session (HIL-655), so every other tab receives none and keeps
+this screen exactly as it was. What it says is the phase and the outcome, not the
+backup list â€” under the freeze there is nobody left to serve a list. -->
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { HilosConnection, ProtectedModeStatus } from '@hilos/core'
 import {
+  createHilosRestoreProgress,
+  formatRestoreOutcomeLine,
+  formatRestorePhaseLine,
   PROTECTED_MODE_FALLBACK_COPY,
   PROTECTED_MODE_PASS_COPY,
 } from '@hilos/core'
+
+import { useSignal } from './useSignal.js'
 
 const props = defineProps<{
   status: ProtectedModeStatus
@@ -41,6 +52,26 @@ const title = computed(
 const message = computed(
   () => props.status.message ?? PROTECTED_MODE_FALLBACK_COPY.message,
 )
+
+const restoreProgress = createHilosRestoreProgress(props.connection)
+const restoreStatus = useSignal(restoreProgress.status)
+const restorePhaseLine = computed(() =>
+  restoreStatus.value === null
+    ? ''
+    : formatRestorePhaseLine(restoreStatus.value),
+)
+const restoreOutcomeLine = computed(() =>
+  restoreStatus.value === null
+    ? ''
+    : formatRestoreOutcomeLine(restoreStatus.value),
+)
+
+onMounted(() => {
+  restoreProgress.start()
+})
+onUnmounted(() => {
+  restoreProgress.dispose()
+})
 
 const code = ref('')
 const submittable = computed(() => code.value.trim() !== '')
@@ -68,6 +99,29 @@ function present(): void {
     <p class="text-body-secondary mb-0" data-id="maintenance-message">
       {{ message }}
     </p>
+    <div
+      v-if="restoreStatus"
+      class="alert mt-4 mb-0"
+      :class="
+        restoreStatus.outcome === 'error'
+          ? 'alert-danger'
+          : restoreStatus.outcome === 'success'
+            ? 'alert-success'
+            : 'alert-info'
+      "
+      data-id="maintenance-restore"
+    >
+      <div class="fw-semibold" data-id="maintenance-restore-phase">
+        {{ restorePhaseLine }}
+      </div>
+      <div
+        v-if="restoreOutcomeLine"
+        class="small"
+        data-id="maintenance-restore-outcome"
+      >
+        {{ restoreOutcomeLine }}
+      </div>
+    </div>
     <p
       v-if="status.acceptsPass && adminSurface && !status.passIssued"
       class="text-body-secondary small mt-4 mb-0"

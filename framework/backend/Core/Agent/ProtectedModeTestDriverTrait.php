@@ -195,7 +195,7 @@ trait ProtectedModeTestDriverTrait
     /**
      * Asks for the freeze, unless this node's row says the core would drop the request.
      *
-     * @param CommandRequestDTO $data Enter request carrying the operation name and accept key
+     * @param CommandRequestDTO $data Enter request carrying the operation name, the accept key and the session cookie
      * @param ProtectedModeRuntime $freeze This node's freeze row
      */
     private function enterProtectedModeForTest(CommandRequestDTO $data, ProtectedModeRuntime $freeze): void
@@ -217,12 +217,24 @@ trait ProtectedModeTestDriverTrait
         }
 
         $acceptKey = $data->payload[CommandConstants::FIELD_ACCEPT_KEY] ?? null;
+        $sessionToken = $data->payload[ProtectedModeCommandConstants::FIELD_SESSION_TOKEN] ?? null;
 
         $this->armProtectedModeTest($data->correlationId, '');
 
         try {
             // external-boundary: no accept key is a CLI initiator, the identity BackupAgent restores with
-            $this->requestProtectedModeEnable($operation, is_string($acceptKey) ? $acceptKey : '');
+            $initiatorAcceptKey = is_string($acceptKey) ? $acceptKey : '';
+            $this->requestProtectedModeEnable(
+                $operation,
+                $initiatorAcceptKey,
+                // A named cookie is hashed as it stands, because a browser cannot tell this
+                // command its own accept key; without one, resolved from the roster exactly the
+                // way a real initiator's is. Either way the row ends up holding the hash of the
+                // session that asked, which is what the two-tab e2e drives through.
+                is_string($sessionToken) && $sessionToken !== ''
+                    ? StateProtectedModeRuntime::hashSessionToken($sessionToken)
+                    : $this->resolveInitiatorSessionTokenHash($initiatorAcceptKey),
+            );
         } catch (Throwable $e) {
             // Cluster config is read on this path, so the request can fail before it is even
             // queued; leaving the state armed would hold the caller for the whole window over

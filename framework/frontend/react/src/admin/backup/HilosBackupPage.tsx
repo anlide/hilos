@@ -167,7 +167,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
   const backups = useMemo(() => createHilosBackupsTable(context), [context])
   const actions = useMemo(() => createHilosBackupsActions(context), [context])
   const restoreProgress = useMemo(
-    () => createHilosRestoreProgress(context),
+    () => createHilosRestoreProgress(context.connection),
     [context],
   )
   const restoreGate = useSignal(

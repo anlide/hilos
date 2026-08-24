@@ -25,6 +25,8 @@ final class ProtectedModeRuntimeViewTest extends TestCase
 {
     private const string INITIATOR_KEY = 'accept-9';
 
+    private const string INITIATOR_SESSION_HASH = 'session-hash-9';
+
     protected function tearDown(): void
     {
         RtTruthSourceRegistry::unregisterDaemon(StateProtectedModeRuntime::RT_ITEM);
@@ -36,17 +38,54 @@ final class ProtectedModeRuntimeViewTest extends TestCase
     {
         $state = StateProtectedModeRuntime::create();
 
-        $this->assertFalse(new ProtectedModeRuntime($state)->locksOut('any-key'));
+        $this->assertFalse(new ProtectedModeRuntime($state)->locksOut('any-key', null));
     }
 
     public function testTheInitiatorStaysLiveWhileEveryoneElseIsLockedOut(): void
     {
         $view = $this->frozenView();
 
-        $this->assertFalse($view->locksOut(self::INITIATOR_KEY));
-        $this->assertTrue($view->locksOut('accept-1'));
+        $this->assertFalse($view->locksOut(self::INITIATOR_KEY, null));
+        $this->assertTrue($view->locksOut('accept-1', null));
         // A connection with no key of its own is not the initiator either.
-        $this->assertTrue($view->locksOut(null));
+        $this->assertTrue($view->locksOut(null, null));
+    }
+
+    public function testEveryTabOfTheInitiatorSessionStaysInsideTheFreeze(): void
+    {
+        $view = $this->frozenView(self::INITIATOR_SESSION_HASH);
+
+        // The tab that asked, by its accept key, and the reload that replaced it, by its session:
+        // a new socket of the same browser is the same operator watching the same operation.
+        $this->assertFalse($view->locksOut(self::INITIATOR_KEY, self::INITIATOR_SESSION_HASH));
+        $this->assertFalse($view->locksOut('accept-reloaded', self::INITIATOR_SESSION_HASH));
+        $this->assertTrue($view->locksOut('accept-stranger', 'session-hash-stranger'));
+    }
+
+    public function testAFreezeWithNoInitiatorSessionLocksOutEverySessionlessConnection(): void
+    {
+        // A CLI or scheduled operation records no session, and a connection carrying no cookie
+        // hashes to null too: letting those two nulls meet would open the node to everybody.
+        $view = $this->frozenView();
+
+        $this->assertTrue($view->locksOut('accept-1', null));
+        $this->assertTrue($view->locksOut(null, null));
+        $this->assertTrue($view->locksOut('accept-1', self::INITIATOR_SESSION_HASH));
+    }
+
+    public function testEnterInactiveForgetsTheInitiatorSessionToo(): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $state = StateProtectedModeRuntime::create();
+        $view = $this->viewWithActions($state);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, self::INITIATOR_SESSION_HASH);
+
+        $view->actions->enterInactive();
+
+        // A session hash left standing would outlive the operation that earned it by as long as
+        // the browser keeps its cookie - a far longer privilege than a stale accept key.
+        $this->assertNull($view->initiatorSessionTokenHash);
+        $this->assertFalse($view->locksOut('accept-1', self::INITIATOR_SESSION_HASH));
     }
 
     public function testEnterActivatingRecordsTheFreezeAndItsInitiator(): void
@@ -55,9 +94,10 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
 
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, self::INITIATOR_SESSION_HASH);
 
         $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVATING, $view->phase);
+        $this->assertSame(self::INITIATOR_SESSION_HASH, $view->initiatorSessionTokenHash);
         $this->assertSame('restore', $view->operation);
         $this->assertSame(self::INITIATOR_KEY, $view->initiatorAcceptKey);
         $this->assertSame('backup', $view->initiatorAgentType);
@@ -72,7 +112,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
 
         $view->actions->enterActive();
 
@@ -85,13 +125,13 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
 
         $view->actions->enterDeactivating();
 
         $this->assertSame(StateProtectedModeRuntime::PHASE_DEACTIVATING, $view->phase);
         // Lifting is not lifted: everyone but the initiator stays out until the row is inactive.
-        $this->assertTrue($view->locksOut('accept-1'));
+        $this->assertTrue($view->locksOut('accept-1', null));
     }
 
     public function testEnterInactiveForgetsTheInitiatorWithTheFreeze(): void
@@ -99,7 +139,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
         $view->actions->enterActive();
 
         $view->actions->enterInactive();
@@ -113,7 +153,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $this->assertNull($view->startedAt);
         $this->assertNull($view->activatedAt);
         // The accept key is gone with the freeze, so the ex-initiator holds no privilege.
-        $this->assertFalse($view->locksOut('accept-1'));
+        $this->assertFalse($view->locksOut('accept-1', null));
     }
 
     public function testEnterVerifyingKeepsTheInitiatorDriving(): void
@@ -121,7 +161,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
         $view->actions->enterActive();
 
         $view->actions->enterVerifying();
@@ -134,7 +174,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $this->assertSame(2, $view->initiatorAgentIndex);
         $this->assertSame('node-a', $view->initiatorNodeId);
         // Nobody has a pass yet, so everyone else is still on the stub.
-        $this->assertTrue($view->locksOut('accept-1'));
+        $this->assertTrue($view->locksOut('accept-1', null));
     }
 
     public function testAPassAdmitsTheConnectionThatPresentedIt(): void
@@ -142,7 +182,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
         $view->actions->enterActive();
         $view->actions->enterVerifying();
 
@@ -153,8 +193,8 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $this->assertSame(['hash-a', 'hash-b'], $view->passHashes);
         $this->assertSame(['accept-1'], $view->admittedAcceptKeys);
         $this->assertTrue($view->admits('accept-1'));
-        $this->assertFalse($view->locksOut('accept-1'));
-        $this->assertTrue($view->locksOut('accept-2'));
+        $this->assertFalse($view->locksOut('accept-1', null));
+        $this->assertTrue($view->locksOut('accept-2', null));
     }
 
     public function testAVerifierThatReconnectsIsAdmittedUnderItsNewAcceptKey(): void
@@ -162,7 +202,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
         $view->actions->enterActive();
         $view->actions->enterVerifying();
 
@@ -180,7 +220,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
         $view->actions->enterActive();
         $view->actions->enterVerifying();
         $view->actions->issuePass('hash-a');
@@ -192,7 +232,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $this->assertSame([], $view->passHashes);
         $this->assertSame([], $view->admittedAcceptKeys);
         // The verifier is back on the stub with everyone else, and its key buys nothing.
-        $this->assertTrue($view->locksOut('accept-1'));
+        $this->assertTrue($view->locksOut('accept-1', null));
     }
 
     public function testANewFreezeStartsWithNoPassesWhateverTheRowHeld(): void
@@ -203,13 +243,13 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
         $view->actions->enterActive();
         $view->actions->enterVerifying();
         $view->actions->issuePass('hash-a');
         $view->actions->admitConnection('accept-1');
 
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
 
         $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVATING, $view->phase);
         $this->assertSame([], $view->passHashes);
@@ -221,7 +261,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
         $view->actions->enterActive();
         $view->actions->enterVerifying();
         $view->actions->issuePass('hash-a');
@@ -240,18 +280,20 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $view = $this->viewWithActions($state);
 
         $this->expectException(RtTruthSourceWriteNotAllowedException::class);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
     }
 
     /**
+     * @param ?string $initiatorSessionTokenHash Session hash the freeze recognizes, or null when it names none
      * @return ProtectedModeRuntime View over a node frozen for the initiator's restore
      */
-    private function frozenView(): ProtectedModeRuntime
+    private function frozenView(?string $initiatorSessionTokenHash = null): ProtectedModeRuntime
     {
         $state = StateProtectedModeRuntime::fromRow([
             StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_ACTIVE,
             StateProtectedModeRuntime::operation => 'restore',
             StateProtectedModeRuntime::initiatorAcceptKey => self::INITIATOR_KEY,
+            StateProtectedModeRuntime::initiatorSessionTokenHash => $initiatorSessionTokenHash,
         ]);
 
         return new ProtectedModeRuntime($state);

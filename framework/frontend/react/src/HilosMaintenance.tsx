@@ -17,13 +17,39 @@
 // shell. Submitting reconnects with the key on the socket url (the core does
 // that), because a client refused every outbound frame can only ask to be let in
 // on the 101.
-import { useState } from 'react'
+//
+// The second exception is the restore panel, and it appears for one visitor only:
+// the admin whose own restore is what shuttered the node. Its frames are addressed
+// to that browser's session (HIL-655), so every other tab receives none and keeps
+// this screen exactly as it was. What it says is the phase and the outcome, not the
+// backup list — under the freeze there is nobody left to serve a list.
+import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
+  createHilosRestoreProgress,
+  formatRestoreOutcomeLine,
+  formatRestorePhaseLine,
   PROTECTED_MODE_FALLBACK_COPY,
   PROTECTED_MODE_PASS_COPY,
 } from '@hilos/core'
 import type { HilosConnection, ProtectedModeStatus } from '@hilos/core'
+
+import { useSignal } from './useSignal.js'
+
+/**
+ * The alert variant the restore panel wears: the colour follows the outcome, and
+ * the sentence inside says the same thing in words — the colour is never the only
+ * carrier (WCAG 1.4.1).
+ *
+ * @param outcome The terminal outcome of the run, or null while it is still going.
+ */
+function restoreOutcomeVariant(outcome: string | null): string {
+  if (outcome === 'error') {
+    return 'alert-danger'
+  }
+
+  return outcome === 'success' ? 'alert-success' : 'alert-info'
+}
 
 /** Props for {@link HilosMaintenance}. */
 export interface HilosMaintenanceProps {
@@ -55,6 +81,17 @@ export function HilosMaintenance({
   const message = status.message ?? PROTECTED_MODE_FALLBACK_COPY.message
   const [code, setCode] = useState('')
 
+  const restoreProgress = useMemo(
+    () => createHilosRestoreProgress(connection),
+    [connection],
+  )
+  const restoreStatus = useSignal(restoreProgress.status)
+  useEffect(() => {
+    restoreProgress.start()
+
+    return () => restoreProgress.dispose()
+  }, [restoreProgress])
+
   // The typed code is deliberately kept after a submit: a rejection is most often
   // a typo, and clearing the field would make the visitor retype the whole key.
   function present(event: FormEvent): void {
@@ -80,6 +117,21 @@ export function HilosMaintenance({
       <p className="text-body-secondary mb-0" data-id="maintenance-message">
         {message}
       </p>
+      {restoreStatus !== null && (
+        <div
+          className={`alert mt-4 mb-0 ${restoreOutcomeVariant(restoreStatus.outcome)}`}
+          data-id="maintenance-restore"
+        >
+          <div className="fw-semibold" data-id="maintenance-restore-phase">
+            {formatRestorePhaseLine(restoreStatus)}
+          </div>
+          {formatRestoreOutcomeLine(restoreStatus) !== '' && (
+            <div className="small" data-id="maintenance-restore-outcome">
+              {formatRestoreOutcomeLine(restoreStatus)}
+            </div>
+          )}
+        </div>
+      )}
       {status.acceptsPass && adminSurface && !status.passIssued && (
         <p
           className="text-body-secondary small mt-4 mb-0"

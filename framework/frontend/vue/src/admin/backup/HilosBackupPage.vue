@@ -84,7 +84,7 @@ const {
 // What this installation offers for restoring, and the live frames a restore this
 // tab started sends back while the node is frozen.
 const restoreGate = useSignal(createHilosBackupsRestoreGate(props.context))
-const restoreProgress = createHilosRestoreProgress(props.context)
+const restoreProgress = createHilosRestoreProgress(props.context.connection)
 const restoreStatus = useSignal(restoreProgress.status)
 const rows = useSignal(backupsTable.rows)
 

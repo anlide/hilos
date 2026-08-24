@@ -591,7 +591,7 @@ export class HilosBackupPage {
     createHilosBackupsActions(this.context()),
   )
   private readonly restoreProgress = computed(() =>
-    createHilosRestoreProgress(this.context()),
+    createHilosRestoreProgress(this.context().connection),
   )
 
   // One ticker for the whole page: a percentage moves with wall time, while the socket

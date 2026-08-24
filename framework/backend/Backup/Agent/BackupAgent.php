@@ -273,6 +273,16 @@ final class BackupAgent extends AbstractAgent
     private ?string $pendingRestoreInitiator = null;
 
     /**
+     * Hash of the session token behind that connection, or null when nobody with a browser asked.
+     *
+     * The accept key above is one socket and dies with a reload; this is the browser it belonged to,
+     * and it is what protected mode keeps letting through for the length of the run, so the person
+     * watching their own restore can press F5 without locking themselves out of it (HIL-655). Only
+     * the hash is held, here and on the freeze row: the token itself is the key to the account.
+     */
+    private ?string $pendingRestoreInitiatorSessionTokenHash = null;
+
+    /**
      * @var ?list<SessionIdentityRef> Identity pairs of the person who asked for the restore, read at
      *     admission; null when no restore is in flight, empty when nobody asked or they could not be
      *     read. Photographed for the same reason the sessions are, and kept in memory beside them:
@@ -941,17 +951,23 @@ final class BackupAgent extends AbstractAgent
         $this->pendingRestoreTimeout = $timeoutSeconds;
         $this->pendingRestoreSince = microtime(true);
         $this->pendingRestoreInitiator = $initiator;
+        $this->pendingRestoreInitiatorSessionTokenHash = $this->resolveInitiatorSessionTokenHash($initiator);
         $this->pendingRestoreInitiatorIdentities = $this->captureInitiatorIdentities($initiatorUserId);
         $this->restoreView()?->actions->markRunning($id, $scope, $this->restoreEstimate($id, $scope));
         $this->reportRestoreProgress();
         if ($initiator === null) {
             // Empty accept key: the initiator is a CLI, not a browser connection, so the freeze
-            // has no connection to keep alive on its behalf.
-            $this->requestProtectedModeEnable(self::RESTORE_OPERATION, '');
+            // has no connection to keep alive on its behalf and no session to recognize either.
+            $this->requestProtectedModeEnable(self::RESTORE_OPERATION, '', null);
         } else {
-            // The tab that asked stays connected through the freeze - protected mode lets its
-            // accept key through - because it is the one being shown the operation.
-            $this->requestProtectedModeEnable(self::RESTORE_OPERATION, $initiator);
+            // The browser that asked stays inside through the freeze - protected mode lets its
+            // accept key AND its session through - because it is the one being shown the operation.
+            // The session is the half that survives the reload the operator is bound to press.
+            $this->requestProtectedModeEnable(
+                self::RESTORE_OPERATION,
+                $initiator,
+                $this->pendingRestoreInitiatorSessionTokenHash,
+            );
         }
         $this->logAgentInfo("Restore accepted: {$id} (scope={$scope->value}); requesting protected mode");
 
@@ -993,13 +1009,18 @@ final class BackupAgent extends AbstractAgent
      * - the freeze's progress mark, so the watchdog watching this node can tell an operation that
      *   is legitimately long from one that hung (HIL-482). Sent first and unconditionally, because
      *   the run that most needs a watchdog is the unattended one the branch below returns on;
-     * - the connection that asked for the run. The node is frozen while a restore runs: the page's
-     *   own agent is stopped, so its table produces no deltas, and this addressed frame is the
-     *   only thing moving on the initiator's screen. It carries the snapshot the CLI monitor is
-     *   answered with, so the two views of one run cannot disagree.
+     * - the BROWSER that asked for the run, not the socket it asked from. The node is frozen while
+     *   a restore runs: the page's own agent is stopped, so its table produces no deltas, and this
+     *   addressed frame is the only thing moving on the initiator's screen. It carries the snapshot
+     *   the CLI monitor is answered with, so the two views of one run cannot disagree. Addressed to
+     *   the session because the operator reloads that screen and opens second tabs, and each of
+     *   those is a socket this agent has never heard of - the registry that would name them is
+     *   written by an agent the freeze has stopped (HIL-655).
      *
      * An unattended run (CLI, schedule) has no initiator and quietly sends nothing there, exactly
-     * as {@see sendFailureNotice()} does - its progress is read from the row instead.
+     * as {@see sendFailureNotice()} does - its progress is read from the row instead. A run whose
+     * session could not be read at admission falls back to the accept key, which is what this did
+     * for every run before sessions were addressable.
      *
      * @throws InvalidArgumentException When the progress mark cannot be named
      */
@@ -1017,11 +1038,17 @@ final class BackupAgent extends AbstractAgent
             return;
         }
 
-        $this->sendToUser(
-            HilosSignalConstants::BACKUP_RESTORE_PROGRESS,
-            $initiator,
-            BackupRestoreProgressSignalData::fromRuntime($view),
-        );
+        $progress = BackupRestoreProgressSignalData::fromRuntime($view);
+        $sessionTokenHash = $this->pendingRestoreInitiatorSessionTokenHash;
+        if ($sessionTokenHash === null) {
+            // Nothing with a session asked, or its token could not be read at admission (the warning
+            // is already in the log): the one socket that asked is all there is to answer.
+            $this->sendToUser(HilosSignalConstants::BACKUP_RESTORE_PROGRESS, $initiator, $progress);
+
+            return;
+        }
+
+        $this->sendToSession(HilosSignalConstants::BACKUP_RESTORE_PROGRESS, $sessionTokenHash, $progress);
     }
 
     /**
@@ -2794,6 +2821,7 @@ final class BackupAgent extends AbstractAgent
         $this->pendingRestoreTimeout = 0.0;
         $this->pendingRestoreSince = 0.0;
         $this->pendingRestoreInitiator = null;
+        $this->pendingRestoreInitiatorSessionTokenHash = null;
         $this->pendingRestoreInitiatorIdentities = null;
         $this->pendingCarryover = null;
         $this->rehydrateDeadline = 0.0;

@@ -43,6 +43,7 @@ use Hilos\HilosException;
 use Random\RandomException;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
@@ -273,6 +274,34 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     }
 
     /**
+     * Send signal to every connection of one browser session.
+     *
+     * The address {@see sendToUser()} cannot express: a session is a set of sockets, and a browser
+     * that reloaded is watching from one the sender never saw. Reach for it when what is being
+     * answered belongs to the person rather than to the tab - the progress of an operation they
+     * started, and which outlives the socket they started it from.
+     *
+     * It is also the only address that survives a protected-mode freeze: the registry a named
+     * accept key would come from is written by an agent the freeze has stopped, so a tab opened
+     * during the operation is known to nobody but the master that accepted it. The master matches
+     * the hash against its own connections, so no lookup is needed of a registry standing still.
+     *
+     * @param string $signalName Signal name
+     * @param string $targetSessionTokenHash Hash of the session token whose connections receive the signal
+     * @param SignalDataInterface $data Signal payload
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function sendToSession(string $signalName, string $targetSessionTokenHash, SignalDataInterface $data): void
+    {
+        Hilos::$sr->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::WS_SESSION),
+            signalName: new SignalName($signalName),
+            signalData: new WebSocketSignalData(data: $data, targetSessionTokenHash: $targetSessionTokenHash),
+        );
+    }
+
+    /**
      * Reply to a CLI command routed to this agent.
      *
      * Queues a COMMAND_REPLY signal carrying the reply; the daemon writes it back
@@ -369,6 +398,37 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     }
 
     /**
+     * Reads the session token of the connection that asked and returns the hash the freeze stores.
+     *
+     * The token is resolved from the runtime connection roster rather than taken from the request:
+     * the request carries the socket, and the socket is exactly what a reload replaces. Failing to
+     * resolve it is a degradation and not a refusal - the operation goes ahead recognized by its
+     * accept key alone, the way it behaved before this existed - so it is written down rather than
+     * thrown, or nobody would ever learn why the reload stopped working.
+     *
+     * @param ?string $acceptKey Accept key of the connection that asked, or null when nothing with a socket did
+     * @return ?string Hash of that connection's session token, or null when there is none to read
+     */
+    protected function resolveInitiatorSessionTokenHash(?string $acceptKey): ?string
+    {
+        if ($acceptKey === null || $acceptKey === '') {
+            return null;
+        }
+
+        $sessionToken = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey)?->sessionToken;
+        if ($sessionToken === null) {
+            $this->logAgentWarning(
+                "Protected mode could not read the session of the connection that asked ({$acceptKey}); "
+                . 'the freeze will recognize that one socket only'
+            );
+
+            return null;
+        }
+
+        return ProtectedModeRuntime::hashSessionToken($sessionToken);
+    }
+
+    /**
      * Request the cluster to enter protected mode for a destructive operation.
      *
      * The initiator agent (a backup restore agent today, other destructive operations later) runs in
@@ -378,7 +438,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * payload to {@see ProtectedModeSwitch::requestEnable()}.
      * The initiator identity carried here (this agent's type and index, and this node's id when
      * there are nodes to name) is what the freeze leaves running through the lockdown and later
-     * authorizes {@see requestProtectedModeDisable()} against.
+     * authorizes {@see requestProtectedModeDisable()} against. The connection identity beside it is
+     * carried twice over - the socket that asked and the browser session behind it - because the
+     * socket dies on a reload and the browser is what the operator keeps watching from (HIL-655).
      *
      * The agent asks the same way whether or not the installation clusters: which machinery answers
      * is a topology decision that lives in the daemon. A single node names no node id - it has none,
@@ -394,12 +456,17 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      *
      * @param string $operation Operation name the freeze protects (for example a restore)
      * @param string $initiatorAcceptKey Accept key of the connection driving the operation
+     * @param ?string $initiatorSessionTokenHash Hash of the session token behind that connection, or null when
+     *                                           the operation was asked for by something with no browser at all
      * @throws EnvException When a cluster environment value cannot be read
      * @throws ClusterConfigurationException When cluster mode is on but the local node config is missing or invalid
      * @throws InvalidArgumentException When the signal name or the queued signal is malformed
      */
-    protected function requestProtectedModeEnable(string $operation, string $initiatorAcceptKey): void
-    {
+    protected function requestProtectedModeEnable(
+        string $operation,
+        string $initiatorAcceptKey,
+        ?string $initiatorSessionTokenHash,
+    ): void {
         $cluster = Hilos::$cluster;
         $clustered = $cluster !== null && $cluster->isEnabled();
 
@@ -411,6 +478,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
             signalData: new ProtectedModeEnableSignalData(
                 operation: $operation,
                 initiatorAcceptKey: $initiatorAcceptKey,
+                initiatorSessionTokenHash: $initiatorSessionTokenHash,
                 initiatorAgentType: $this->getType(),
                 initiatorAgentIndex: $index === null ? null : (int)$index,
                 initiatorNodeId: $clustered ? $cluster->identity()->nodeId : null,

@@ -91,7 +91,7 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
             null,
         );
 
-        $this->executor->enterActivating($this->activeFreeze, $data->initiatorAcceptKey);
+        $this->executor->enterActivating($this->activeFreeze, $data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
         $this->executor->enterActive();
         $this->executor->notifyInitiatorReady();
     }

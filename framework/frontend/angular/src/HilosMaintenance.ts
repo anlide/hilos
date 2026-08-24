@@ -17,18 +17,33 @@
 // shell. Submitting reconnects with the key on the socket url (the core does
 // that), because a client refused every outbound frame can only ask to be let in
 // on the 101.
+//
+// The second exception is the restore panel, and it appears for one visitor only:
+// the admin whose own restore is what shuttered the node. Its frames are addressed
+// to that browser's session (HIL-655), so every other tab receives none and keeps
+// this screen exactly as it was. What it says is the phase and the outcome, not the
+// backup list — under the freeze there is nobody left to serve a list.
 import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   input,
   signal,
 } from '@angular/core'
 import {
+  createHilosRestoreProgress,
+  formatRestoreOutcomeLine,
+  formatRestorePhaseLine,
+  subscribeSignal,
   PROTECTED_MODE_FALLBACK_COPY,
   PROTECTED_MODE_PASS_COPY,
 } from '@hilos/core'
-import type { HilosConnection, ProtectedModeStatus } from '@hilos/core'
+import type {
+  HilosConnection,
+  HilosRestoreStatus,
+  ProtectedModeStatus,
+} from '@hilos/core'
 
 /** The full-screen maintenance state of the shell. */
 @Component({
@@ -50,6 +65,24 @@ import type { HilosConnection, ProtectedModeStatus } from '@hilos/core'
       <p class="text-body-secondary mb-0" data-id="maintenance-message">
         {{ message() }}
       </p>
+      @if (restoreStatus()) {
+        <div
+          class="alert mt-4 mb-0"
+          [class.alert-danger]="restoreVariant() === 'alert-danger'"
+          [class.alert-success]="restoreVariant() === 'alert-success'"
+          [class.alert-info]="restoreVariant() === 'alert-info'"
+          data-id="maintenance-restore"
+        >
+          <div class="fw-semibold" data-id="maintenance-restore-phase">
+            {{ restorePhaseLine() }}
+          </div>
+          @if (restoreOutcomeLine()) {
+            <div class="small" data-id="maintenance-restore-outcome">
+              {{ restoreOutcomeLine() }}
+            </div>
+          }
+        </div>
+      }
       @if (status().acceptsPass && adminSurface() && status().passIssued) {
         <form
           class="row justify-content-center w-100 mt-4 px-3"
@@ -134,6 +167,55 @@ export class HilosMaintenance {
 
   protected readonly code = signal('')
   protected readonly submittable = computed(() => this.code().trim() !== '')
+
+  /**
+   * The latest restore frame this connection was sent, mirrored from the core
+   * selector; null for every visitor whose session did not ask for the run.
+   */
+  protected readonly restoreStatus = signal<HilosRestoreStatus | null>(null)
+
+  protected readonly restorePhaseLine = computed(() => {
+    const status = this.restoreStatus()
+
+    return status === null ? '' : formatRestorePhaseLine(status)
+  })
+
+  protected readonly restoreOutcomeLine = computed(() => {
+    const status = this.restoreStatus()
+
+    return status === null ? '' : formatRestoreOutcomeLine(status)
+  })
+
+  /**
+   * The alert variant the restore panel wears: the colour follows the outcome, and
+   * the sentence inside says the same thing in words — the colour is never the only
+   * carrier (WCAG 1.4.1).
+   */
+  protected readonly restoreVariant = computed(() => {
+    const outcome = this.restoreStatus()?.outcome ?? null
+    if (outcome === 'error') {
+      return 'alert-danger'
+    }
+
+    return outcome === 'success' ? 'alert-success' : 'alert-info'
+  })
+
+  constructor() {
+    // The connection arrives via input, so the selector is built once it binds and
+    // dropped if it is replaced — the same shape the backup page uses for the same
+    // frames.
+    effect((onCleanup) => {
+      const progress = createHilosRestoreProgress(this.connection())
+      progress.start()
+      const unsubscribe = subscribeSignal(progress.status, (value) =>
+        this.restoreStatus.set(value),
+      )
+      onCleanup(() => {
+        unsubscribe()
+        progress.dispose()
+      })
+    })
+  }
 
   /**
    * Mirrors the typed code into the signal the submit button reads.

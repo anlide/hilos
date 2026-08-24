@@ -1,5 +1,8 @@
 import net from 'node:net'
 import { randomBytes } from 'node:crypto'
+import type { BrowserContext } from '@playwright/test'
+
+import { SESSION_COOKIE } from './session'
 
 // The daemon command channel — the same socket the CLI test:protected-mode:*
 // commands speak. The Playwright runner has no PHP, so the e2e drives the freeze
@@ -41,15 +44,41 @@ export interface ProtectedModeSnapshot {
  * @param operation Operation name the freeze protects, carried to the browser.
  * @param acceptKey Connection accept key to keep live through the lockdown;
  *   omitted (the default) means every browser connection is locked out.
+ * @param sessionToken Session cookie of the browser the freeze is entered on
+ *   behalf of; every tab carrying it stays inside for as long as the freeze
+ *   holds, reloads and tabs opened afterwards included. Omitted means the same
+ *   as an omitted accept key: nothing with a browser asked.
  * @returns The phase the agent observed.
  */
 export async function enterProtectedMode(
   operation: string,
   acceptKey = '',
+  sessionToken = '',
 ): Promise<string> {
-  const reply = await sendCommand(ENTER_COMMAND, { operation, acceptKey })
+  const reply = await sendCommand(ENTER_COMMAND, {
+    operation,
+    acceptKey,
+    sessionToken,
+  })
 
   return String(reply.phase ?? '')
+}
+
+/**
+ * Reads the session cookie a browser context carries — the value the freeze
+ * names its initiator by.
+ *
+ * A browser never learns its own accept key (the welcome frame carries none),
+ * so the cookie is the only handle a spec has on "this browser". It is minted
+ * on the first 101, so the context must have been connected once already.
+ *
+ * @param context The Playwright browser context to read the jar of.
+ * @returns The session token, or an empty string when the stand issued none.
+ */
+export async function sessionTokenOf(context: BrowserContext): Promise<string> {
+  const cookies = await context.cookies()
+
+  return cookies.find((cookie) => cookie.name === SESSION_COOKIE)?.value ?? ''
 }
 
 /**

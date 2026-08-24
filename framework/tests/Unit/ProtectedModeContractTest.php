@@ -42,6 +42,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
             ProtectedModeRuntime::operation => 'restore',
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-9',
+            ProtectedModeRuntime::initiatorSessionTokenHash => 'session-hash-9',
             ProtectedModeRuntime::initiatorAgentType => 'backup',
             ProtectedModeRuntime::initiatorAgentIndex => 0,
             ProtectedModeRuntime::initiatorNodeId => 'node-a',
@@ -65,6 +66,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
             ProtectedModeRuntime::operation => 'restore',
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
+            ProtectedModeRuntime::initiatorSessionTokenHash => 'session-hash-initiator',
             ProtectedModeRuntime::initiatorAgentType => 'backup',
             ProtectedModeRuntime::initiatorAgentIndex => null,
             ProtectedModeRuntime::initiatorNodeId => 'node-a',
@@ -158,8 +160,8 @@ final class ProtectedModeContractTest extends TestCase
     {
         $runtime = ProtectedModeRuntime::create();
 
-        $this->assertFalse($runtime->locksOut('accept-9'));
-        $this->assertFalse($runtime->locksOut(null));
+        $this->assertFalse($runtime->locksOut('accept-9', null));
+        $this->assertFalse($runtime->locksOut(null, null));
     }
 
     public function testActiveRuntimeLocksOutEveryConnectionButTheInitiator(): void
@@ -169,9 +171,9 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
         ]);
 
-        $this->assertFalse($runtime->locksOut('accept-initiator'));
-        $this->assertTrue($runtime->locksOut('accept-other'));
-        $this->assertTrue($runtime->locksOut(null));
+        $this->assertFalse($runtime->locksOut('accept-initiator', null));
+        $this->assertTrue($runtime->locksOut('accept-other', null));
+        $this->assertTrue($runtime->locksOut(null, null));
     }
 
     public function testFollowerRuntimeLocksOutEveryoneWhileMerelyActivating(): void
@@ -184,8 +186,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::initiatorAcceptKey => null,
         ]);
 
-        $this->assertTrue($runtime->locksOut('accept-9'));
-        $this->assertTrue($runtime->locksOut('accept-other'));
+        $this->assertTrue($runtime->locksOut('accept-9', null));
+        $this->assertTrue($runtime->locksOut('accept-other', null));
     }
 
     public function testDeactivatingRuntimeStillLocksOutNonInitiator(): void
@@ -195,8 +197,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
         ]);
 
-        $this->assertFalse($runtime->locksOut('accept-initiator'));
-        $this->assertTrue($runtime->locksOut('accept-other'));
+        $this->assertFalse($runtime->locksOut('accept-initiator', null));
+        $this->assertTrue($runtime->locksOut('accept-other', null));
     }
 
     public function testVerifyingRuntimeLetsTheInitiatorAndTheAdmittedThrough(): void
@@ -207,10 +209,10 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedAcceptKeys => ['accept-verifier'],
         ]);
 
-        $this->assertFalse($runtime->locksOut('accept-initiator'));
-        $this->assertFalse($runtime->locksOut('accept-verifier'));
-        $this->assertTrue($runtime->locksOut('accept-stranger'));
-        $this->assertTrue($runtime->locksOut(null));
+        $this->assertFalse($runtime->locksOut('accept-initiator', null));
+        $this->assertFalse($runtime->locksOut('accept-verifier', null));
+        $this->assertTrue($runtime->locksOut('accept-stranger', null));
+        $this->assertTrue($runtime->locksOut(null, null));
     }
 
     public function testAdmitsAnswersOnlyForTheVerifyingPhase(): void
@@ -247,7 +249,7 @@ final class ProtectedModeContractTest extends TestCase
                 ProtectedModeRuntime::admittedAcceptKeys => ['accept-verifier'],
             ]);
 
-            $this->assertTrue($runtime->locksOut('accept-verifier'), $phase);
+            $this->assertTrue($runtime->locksOut('accept-verifier', null), $phase);
             $this->assertFalse($runtime->admits('accept-verifier'), $phase);
         }
     }
@@ -257,6 +259,7 @@ final class ProtectedModeContractTest extends TestCase
         $data = new ProtectedModeEnableSignalData(
             operation: 'restore',
             initiatorAcceptKey: 'accept-9',
+            initiatorSessionTokenHash: null,
             initiatorAgentType: 'backup',
             initiatorAgentIndex: 0,
             initiatorNodeId: 'node-a',
@@ -276,6 +279,7 @@ final class ProtectedModeContractTest extends TestCase
         $data = new ProtectedModeEnableSignalData(
             operation: 'restore',
             initiatorAcceptKey: 'accept-9',
+            initiatorSessionTokenHash: null,
             initiatorAgentType: 'backup',
             initiatorAgentIndex: null,
             initiatorNodeId: 'node-a',
@@ -293,6 +297,7 @@ final class ProtectedModeContractTest extends TestCase
         $data = new ProtectedModeEnableSignalData(
             operation: 'restore',
             initiatorAcceptKey: 'accept-9',
+            initiatorSessionTokenHash: null,
             initiatorAgentType: 'backup',
             initiatorAgentIndex: 0,
             initiatorNodeId: null,

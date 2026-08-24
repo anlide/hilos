@@ -47,6 +47,7 @@ final class ProtectedModeRuntime extends RtState
     public const string phase = 'phase';
     public const string operation = 'operation';
     public const string initiatorAcceptKey = 'initiatorAcceptKey';
+    public const string initiatorSessionTokenHash = 'initiatorSessionTokenHash';
     public const string initiatorAgentType = 'initiatorAgentType';
     public const string initiatorAgentIndex = 'initiatorAgentIndex';
     public const string initiatorNodeId = 'initiatorNodeId';
@@ -56,6 +57,9 @@ final class ProtectedModeRuntime extends RtState
     public const string passHashes = 'passHashes';
     public const string admittedAcceptKeys = 'admittedAcceptKeys';
 
+    /** Hash algorithm the initiator's session token is stored and compared under. */
+    private const string SESSION_TOKEN_HASH_ALGO = 'sha256';
+
     /** Current lifecycle phase of the protected mode. */
     public string $phase = self::PHASE_INACTIVE;
 
@@ -64,6 +68,19 @@ final class ProtectedModeRuntime extends RtState
 
     /** Accept key of the initiator connection allowed through the lockdown, or null. */
     public ?string $initiatorAcceptKey = null;
+
+    /**
+     * SHA-256 of the session token of the browser that asked for the operation, or null.
+     *
+     * The accept key above names one socket; this names the browser behind it, and it is what
+     * survives a reload - the accept key is minted on the 101 and a reloaded tab arrives with a
+     * new one, which is how the initiator used to lock itself out of its own restore (HIL-655).
+     *
+     * Only the hash is kept. The row lives in runtime state and travels the cluster, while the
+     * token itself is the key to the account: the same reason {@see self::$passHashes} keeps
+     * hashes and not the passes they were minted from.
+     */
+    public ?string $initiatorSessionTokenHash = null;
 
     /** Agent type of the initiator agent left running during the freeze, or null. */
     public ?string $initiatorAgentType = null;
@@ -131,6 +148,7 @@ final class ProtectedModeRuntime extends RtState
         $instance->phase = (string)($row[self::phase] ?? self::PHASE_INACTIVE);
         $instance->operation = self::stringOrNull($row[self::operation] ?? null);
         $instance->initiatorAcceptKey = self::stringOrNull($row[self::initiatorAcceptKey] ?? null);
+        $instance->initiatorSessionTokenHash = self::stringOrNull($row[self::initiatorSessionTokenHash] ?? null);
         $instance->initiatorAgentType = self::stringOrNull($row[self::initiatorAgentType] ?? null);
         $instance->initiatorAgentIndex = self::intOrNull($row[self::initiatorAgentIndex] ?? null);
         $instance->initiatorNodeId = self::stringOrNull($row[self::initiatorNodeId] ?? null);
@@ -162,6 +180,9 @@ final class ProtectedModeRuntime extends RtState
         }
         if (array_key_exists(self::initiatorAcceptKey, $diff)) {
             $this->initiatorAcceptKey = self::stringOrNull($diff[self::initiatorAcceptKey]);
+        }
+        if (array_key_exists(self::initiatorSessionTokenHash, $diff)) {
+            $this->initiatorSessionTokenHash = self::stringOrNull($diff[self::initiatorSessionTokenHash]);
         }
         if (array_key_exists(self::initiatorAgentType, $diff)) {
             $this->initiatorAgentType = self::stringOrNull($diff[self::initiatorAgentType]);
@@ -222,14 +243,58 @@ final class ProtectedModeRuntime extends RtState
      * does so by pass ({@see admits()}) rather than by widening this rule: every other phase
      * keeps the binary lockdown it had.
      *
+     * The initiator is recognized by either half of its identity: the accept key of the socket
+     * that asked, and the session token hash of the browser behind it ({@see belongsToInitiator()}).
+     * The second is what a reload and a second tab arrive with - they carry the same cookie and a
+     * brand new accept key - and without it the person watching their own restore was locked out
+     * of it by pressing F5 (HIL-655).
+     *
      * @param ?string $acceptKey Connection accept key to test, or null when none is known
+     * @param ?string $sessionTokenHash Hash of the connection's session token, or null when it carries no session
      * @return bool Whether the connection is locked out right now
      */
-    public function locksOut(?string $acceptKey): bool
+    public function locksOut(?string $acceptKey, ?string $sessionTokenHash): bool
     {
         return $this->phase !== self::PHASE_INACTIVE
             && $acceptKey !== $this->initiatorAcceptKey
+            && !$this->belongsToInitiator($sessionTokenHash)
             && !$this->admits($acceptKey);
+    }
+
+    /**
+     * Whether this connection belongs to the browser session that asked for the operation.
+     *
+     * Both nulls are refusals rather than matches: a freeze entered without a session (a CLI or a
+     * scheduled restore) leaves the row's hash null, and a connection carrying no session hashes to
+     * null too - letting those two meet would open the whole node to every cookieless visitor.
+     *
+     * The comparison is {@see hash_equals()} because the left side is derived from a secret; the
+     * right side is derived on this node from a cookie the client presented, which is exactly the
+     * shape a timing comparison is worth removing from.
+     *
+     * @param ?string $sessionTokenHash Hash of the connection's session token, or null when it carries no session
+     * @return bool Whether the session behind this connection is the initiator's
+     */
+    public function belongsToInitiator(?string $sessionTokenHash): bool
+    {
+        return $sessionTokenHash !== null
+            && $this->initiatorSessionTokenHash !== null
+            && hash_equals($this->initiatorSessionTokenHash, $sessionTokenHash);
+    }
+
+    /**
+     * Hashes a session token into the form this row stores and compares it in.
+     *
+     * The one door to the algorithm, so the three places that need it - the agent recording the
+     * initiator, the master gating a handshake and the row comparing them - cannot drift apart by
+     * spelling it separately.
+     *
+     * @param string $sessionToken Session cookie token of a browser
+     * @return string Hash of that token in the row's storage form
+     */
+    public static function hashSessionToken(string $sessionToken): string
+    {
+        return hash(self::SESSION_TOKEN_HASH_ALGO, $sessionToken);
     }
 
     /**
@@ -258,6 +323,7 @@ final class ProtectedModeRuntime extends RtState
             self::phase => $this->phase,
             self::operation => $this->operation,
             self::initiatorAcceptKey => $this->initiatorAcceptKey,
+            self::initiatorSessionTokenHash => $this->initiatorSessionTokenHash,
             self::initiatorAgentType => $this->initiatorAgentType,
             self::initiatorAgentIndex => $this->initiatorAgentIndex,
             self::initiatorNodeId => $this->initiatorNodeId,

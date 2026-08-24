@@ -165,10 +165,11 @@ final class ProtectedModeTriggerTestAgent extends AbstractAgent
     /**
      * @param string $operation Operation the freeze protects
      * @param string $initiatorAcceptKey Accept key of the driving connection
+     * @param ?string $initiatorSessionTokenHash Hash of the session behind it, or null when it carries none
      */
-    public function enable(string $operation, string $initiatorAcceptKey): void
+    public function enable(string $operation, string $initiatorAcceptKey, ?string $initiatorSessionTokenHash = null): void
     {
-        $this->requestProtectedModeEnable($operation, $initiatorAcceptKey);
+        $this->requestProtectedModeEnable($operation, $initiatorAcceptKey, $initiatorSessionTokenHash);
     }
 
     public function disable(): void

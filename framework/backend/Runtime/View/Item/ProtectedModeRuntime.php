@@ -23,6 +23,7 @@ use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
  * @property-read string $phase Current lifecycle phase of the protected mode
  * @property-read ?string $operation Operation the initiator is running; null when inactive
  * @property-read ?string $initiatorAcceptKey Accept key let through the lockdown; null when none
+ * @property-read ?string $initiatorSessionTokenHash Hash of the initiator browser's session token; null when none
  * @property-read ?string $initiatorAgentType Agent type of the initiator agent; null when inactive
  * @property-read ?int $initiatorAgentIndex Agent index of the initiator agent; null when inactive
  * @property-read ?string $initiatorNodeId Node hosting the initiator agent; null when inactive
@@ -55,6 +56,7 @@ final class ProtectedModeRuntime extends RtItem
             StateProtectedModeRuntime::phase => $this->_state->phase,
             StateProtectedModeRuntime::operation => $this->_state->operation,
             StateProtectedModeRuntime::initiatorAcceptKey => $this->_state->initiatorAcceptKey,
+            StateProtectedModeRuntime::initiatorSessionTokenHash => $this->_state->initiatorSessionTokenHash,
             StateProtectedModeRuntime::initiatorAgentType => $this->_state->initiatorAgentType,
             StateProtectedModeRuntime::initiatorAgentIndex => $this->_state->initiatorAgentIndex,
             StateProtectedModeRuntime::initiatorNodeId => $this->_state->initiatorNodeId,
@@ -76,11 +78,12 @@ final class ProtectedModeRuntime extends RtItem
      * outside the runtime ask the question without holding the backing row.
      *
      * @param ?string $acceptKey Connection accept key to test, or null when none is known
+     * @param ?string $sessionTokenHash Hash of the connection's session token, or null when it carries no session
      * @return bool Whether the connection is locked out right now
      */
-    public function locksOut(?string $acceptKey): bool
+    public function locksOut(?string $acceptKey, ?string $sessionTokenHash): bool
     {
-        return $this->_state->locksOut($acceptKey);
+        return $this->_state->locksOut($acceptKey, $sessionTokenHash);
     }
 
     /**

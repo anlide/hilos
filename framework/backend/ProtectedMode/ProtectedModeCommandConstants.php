@@ -44,6 +44,22 @@ final class ProtectedModeCommandConstants
      */
     public const string FIELD_OPERATION = 'operation';
 
+    /**
+     * @var string Request key: session cookie of the browser the freeze is entered on behalf of
+     *
+     * The browser half of the initiator identity (HIL-655), and the only handle a test has on
+     * it: a live restore resolves the session token from the connection roster by the accept
+     * key it was asked through, and a browser driving Playwright never learns its own accept
+     * key - the welcome frame does not carry one - while the cookie is right there in its jar.
+     * Named here rather than derived, so the agent hashes exactly what the master hashed on
+     * the 101 and the two sides cannot disagree about which browser asked.
+     *
+     * Absent means the same thing it has always meant: a freeze nothing with a browser
+     * started, which locks out every connection. The value is a session token, so it goes no
+     * further than the process that hashes it.
+     */
+    public const string FIELD_SESSION_TOKEN = 'sessionToken';
+
     /** @var string Reply key: phase the agent observed when it answered */
     public const string FIELD_PHASE = 'phase';
 

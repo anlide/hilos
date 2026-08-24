@@ -119,6 +119,32 @@ export async function gotoMaintenance(page: Page, path: string): Promise<void> {
   await expect(page.getByTestId(MAINTENANCE)).toBeVisible()
 }
 
+/** The live connection indicator the shell keeps at every state, freeze included. */
+const CONNECTION_STATE = 'conn-state'
+
+/**
+ * Open a url on a browser the freeze lets through, and wait for the socket to
+ * have answered.
+ *
+ * The third navigation neither wrapper above can serve. {@link gotoPage} waits
+ * for a page subscription, and under a freeze the agent that would answer one is
+ * stopped; {@link gotoMaintenance} waits for the stub, which is the very thing an
+ * admitted browser must not be shown. What settles for both is the connection
+ * indicator: it is painted from the welcome frame, and the welcome frame is where
+ * admission is decided (HIL-655), so a spec that has waited for it may ask what
+ * this browser was let into.
+ *
+ * It says nothing about which side of the freeze the browser is on — a locked-out
+ * one reports `connected` too. That verdict is the caller's assertion to make.
+ *
+ * @param page The Playwright page.
+ * @param path Path to open, as the address bar would hold it.
+ */
+export async function gotoAdmitted(page: Page, path: string): Promise<void> {
+  await page.goto(path)
+  await expect(page.getByTestId(CONNECTION_STATE)).toHaveText('connected')
+}
+
 /**
  * Open an auth return route and wait for its relay screen to be on screen.
  *

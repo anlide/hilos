@@ -354,6 +354,7 @@ final class StandaloneProtectedModeTest extends TestCase
             $view->actions->enterActivating(
                 new ProtectedModeQuiesceData('restore', $agentType, $agentIndex, null),
                 null,
+                null,
             );
             if ($activate) {
                 $view->actions->enterActive();
@@ -404,6 +405,7 @@ final class StandaloneProtectedModeTest extends TestCase
         return new ProtectedModeEnableSignalData(
             operation: 'restore',
             initiatorAcceptKey: 'accept-9',
+            initiatorSessionTokenHash: null,
             initiatorAgentType: $agentType,
             initiatorAgentIndex: $agentIndex,
             initiatorNodeId: null,
@@ -461,10 +463,17 @@ final class FakeStandaloneExecutor implements ProtectedModeExecutor
     /** @var ?ProtectedModeQuiesceData Freeze descriptor passed to the most recent enterActivating call */
     public ?ProtectedModeQuiesceData $freeze = null;
 
-    public function enterActivating(ProtectedModeQuiesceData $freeze, ?string $initiatorAcceptKey): void
-    {
+    /** @var ?string Session token hash passed to the most recent enterActivating call */
+    public ?string $activatingSessionTokenHash = null;
+
+    public function enterActivating(
+        ProtectedModeQuiesceData $freeze,
+        ?string $initiatorAcceptKey,
+        ?string $initiatorSessionTokenHash,
+    ): void {
         $this->calls[] = 'enterActivating';
         $this->activatingAcceptKey = $initiatorAcceptKey;
+        $this->activatingSessionTokenHash = $initiatorSessionTokenHash;
         $this->freeze = $freeze;
     }
 

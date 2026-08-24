@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { PROTECTED_MODE_INACTIVE } from '@hilos/core'
-import type { HilosConnection, ProtectedModeStatus } from '@hilos/core'
+import {
+  BACKUP_RESTORE_PROGRESS_SIGNAL,
+  PROTECTED_MODE_INACTIVE,
+} from '@hilos/core'
+import type {
+  HilosConnection,
+  HilosRestoreStatus,
+  ProtectedModeStatus,
+} from '@hilos/core'
 
 import { HilosLayout } from '../src/HilosLayout.js'
 import { HilosMaintenance } from '../src/HilosMaintenance.js'
@@ -35,25 +42,61 @@ const MINTED: ProtectedModeStatus = { ...VERIFYING, passIssued: true }
 /** The window, after a code that opened nothing. */
 const REJECTED: ProtectedModeStatus = { ...MINTED, passRejected: true }
 
+/** A restore frame as the backup agent addresses it to the initiator's session. */
+function restoreFrame(
+  overrides: Partial<HilosRestoreStatus> = {},
+): HilosRestoreStatus {
+  return {
+    running: true,
+    backupId: '2026-08-24-full',
+    scope: 'full',
+    phase: 'importing',
+    phaseStartedAt: null,
+    startedAt: null,
+    finishedAt: null,
+    outcome: null,
+    failureReason: null,
+    estimatedSeconds: null,
+    rehydrateComplete: true,
+    rehydrateProblems: [],
+    databaseTouched: false,
+    ...overrides,
+  }
+}
+
 // A minimal connection stub: the shell only reads the transport state and the
 // protected-mode state off it, and subscribes to both. `push` drives the freeze
-// the way the daemon's pushed frame would.
+// the way the daemon's pushed frame would, and `pushRestore` the addressed frame
+// the backup agent sends to every tab of the initiator's session.
 function fakeConnection(initial: ProtectedModeStatus): {
   connection: HilosConnection
   push: (next: ProtectedModeStatus) => void
+  pushRestore: (frame: HilosRestoreStatus) => void
   presented: string[]
 } {
   let current = initial
   const listeners: (() => void)[] = []
+  const projectListeners: ((signal: {
+    type: string
+    data: unknown
+  }) => void)[] = []
   const presented: string[] = []
   const connection = {
     state: 'connected',
     get protectedMode(): ProtectedModeStatus {
       return current
     },
-    on(event: string, listener: () => void): () => void {
+    on(event: string, listener: (signal: never) => void): () => void {
       if (event === 'protectedMode') {
-        listeners.push(listener)
+        listeners.push(listener as () => void)
+      }
+      if (event === 'projectSignal') {
+        projectListeners.push(
+          listener as unknown as (signal: {
+            type: string
+            data: unknown
+          }) => void,
+        )
       }
       return () => {}
     },
@@ -69,6 +112,11 @@ function fakeConnection(initial: ProtectedModeStatus): {
       current = next
       for (const listener of listeners) {
         listener()
+      }
+    },
+    pushRestore(frame: HilosRestoreStatus): void {
+      for (const listener of projectListeners) {
+        listener({ type: BACKUP_RESTORE_PROGRESS_SIGNAL, data: frame })
       }
     },
   }
@@ -250,6 +298,61 @@ describe('HilosMaintenance', () => {
     expect(
       surface(container, 'maintenance-pass')?.getAttribute('aria-invalid'),
     ).toBe('true')
+  })
+
+  it('shows no restore panel to a visitor whose session asked for nothing', () => {
+    const { container } = render(
+      <HilosMaintenance
+        status={FROZEN}
+        connection={fakeConnection(FROZEN).connection}
+        adminSurface
+      />,
+    )
+
+    expect(surface(container, 'maintenance-restore')).toBeNull()
+  })
+
+  it('reports the phase of the restore addressed to this session', () => {
+    const { connection, pushRestore } = fakeConnection(FROZEN)
+    const { container } = render(
+      <HilosMaintenance status={FROZEN} connection={connection} adminSurface />,
+    )
+
+    act(() => pushRestore(restoreFrame()))
+
+    expect(surface(container, 'maintenance-restore-phase')?.textContent).toBe(
+      'Restore 2026-08-24-full · importing',
+    )
+    // Nothing has ended, so nothing is said about how it ended.
+    expect(surface(container, 'maintenance-restore-outcome')).toBeNull()
+  })
+
+  it('says how the restore ended, and what a failure left behind', () => {
+    const { connection, pushRestore } = fakeConnection(FROZEN)
+    const { container } = render(
+      <HilosMaintenance status={FROZEN} connection={connection} adminSurface />,
+    )
+
+    act(() =>
+      pushRestore(
+        restoreFrame({
+          running: false,
+          phase: 'failed',
+          outcome: 'error',
+          failureReason: 'the archive checksum did not match',
+          databaseTouched: true,
+          rehydrateComplete: false,
+        }),
+      ),
+    )
+
+    const outcome = surface(container, 'maintenance-restore-outcome')
+    expect(outcome?.textContent).toContain('checksum did not match')
+    expect(outcome?.textContent).toContain('already being replaced')
+    expect(outcome?.textContent).toContain('stays closed')
+    expect(surface(container, 'maintenance-restore')?.className).toContain(
+      'alert-danger',
+    )
   })
 })
 

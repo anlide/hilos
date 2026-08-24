@@ -63,17 +63,22 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
     /**
      * @param ProtectedModeQuiesceData $freeze Operation and initiator identity the freeze protects
      * @param ?string $initiatorAcceptKey Accept key let through when the leader freezes itself; null on a follower
+     * @param ?string $initiatorSessionTokenHash Hash of the initiator browser's session token, let through on the
+     *                                           same terms; null on a follower and when nobody with a browser asked
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
-    public function enterActivating(ProtectedModeQuiesceData $freeze, ?string $initiatorAcceptKey): void
-    {
+    public function enterActivating(
+        ProtectedModeQuiesceData $freeze,
+        ?string $initiatorAcceptKey,
+        ?string $initiatorSessionTokenHash,
+    ): void {
         $view = $this->runtimeView();
         if ($view === null) {
             return;
         }
 
-        $view->actions->enterActivating($freeze, $initiatorAcceptKey);
+        $view->actions->enterActivating($freeze, $initiatorAcceptKey, $initiatorSessionTokenHash);
         $this->persistFreeze($view);
 
         // Stop this node's own agents so no application work runs against the destructive
