@@ -106,6 +106,15 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame(array_keys(Hilos::PAGES), array_keys(Hilos::getPageRoutes()));
     }
 
+    /**
+     * No chat page is served by the agent of one entity instance yet: this leaf gave the
+     * mechanism, and which pages move onto it belongs to the epic (HIL-627).
+     */
+    public function testNoPageIsServedByTheAgentOfOneInstance(): void
+    {
+        $this->assertSame([], Hilos::getPageAgentIndexRoutes());
+    }
+
     public function testComputedGroupRoutesCoverEveryRegisteredGroup(): void
     {
         $this->assertSame(array_keys(Hilos::GROUPS), array_keys(Hilos::getGroupRoutes()));

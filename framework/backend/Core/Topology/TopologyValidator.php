@@ -32,6 +32,9 @@ use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\Config\PageAgentIndexKey;
+use Hilos\Core\Page\Config\PageAgentIndexSource;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -102,6 +105,7 @@ final class TopologyValidator
         $this->validateBrowserSourceConfigs($browserLists, self::SECTION_BROWSER_LISTS, $errors);
         $this->validateBrowserSourceConfigs($browserData, self::SECTION_BROWSER_DATA, $errors);
         $this->validatePageRoutes($pages, $hilosClass::getPageRoutes(), $errors);
+        $this->validatePageAgentIndexRoutes($pages, $agents, $errors);
         $this->validateGroupRoutes($groups, $hilosClass::getGroupRoutes(), $errors);
         $this->validatePageActionRoutes($pages, $hilosClass::getPageActionRoutes(), $errors);
         $this->validateActionDtoRoutes($pages, $hilosClass::getActionDtoRoutes(), $errors);
@@ -1076,6 +1080,67 @@ final class TopologyValidator
 
             if (!array_key_exists($page, $pages)) {
                 $errors[] = "Computed page route {$page} references a page missing from PAGES";
+            }
+        }
+    }
+
+    /**
+     * Validates per-instance page route declarations against registered pages and agents.
+     *
+     * Judged off the raw declaration and not off the computed registry: the registry drops
+     * a malformed entry silently ({@see PageAgentIndexRouteRegistry::routes}), so reading it
+     * here would report nothing at all for exactly the pages that need reporting.
+     *
+     * @param array $pages Page registry
+     * @param array $agents Agent registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validatePageAgentIndexRoutes(array $pages, array $agents, array &$errors): void
+    {
+        foreach ($pages as $page => $pageClass) {
+            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
+                continue;
+            }
+
+            $declaration = $pageClass::SUBSCRIPTION_AGENT_INDEX;
+            if ($declaration === []) {
+                continue;
+            }
+
+            $path = "PAGES[{$page}] class {$pageClass} SUBSCRIPTION_AGENT_INDEX";
+            $unknownKeys = array_diff(array_keys($declaration), [
+                PageAgentIndexKey::SOURCE,
+                PageAgentIndexKey::PARAM,
+                PageAgentIndexKey::FALLBACK_AGENT_TYPE,
+            ]);
+            if ($unknownKeys !== []) {
+                $errors[] = "{$path} contains unknown config keys: " . implode(', ', $unknownKeys);
+            }
+
+            $source = $declaration[PageAgentIndexKey::SOURCE] ?? null;
+            if (!$source instanceof PageAgentIndexSource) {
+                $errors[] = "{$path} must declare a '" . PageAgentIndexKey::SOURCE . "' of type "
+                    . PageAgentIndexSource::class;
+            }
+
+            $param = $declaration[PageAgentIndexKey::PARAM] ?? null;
+            if ($source === PageAgentIndexSource::PARAM && (!is_string($param) || $param === '')) {
+                $errors[] = "{$path} with source " . PageAgentIndexSource::PARAM->value . " must declare a non-empty '"
+                    . PageAgentIndexKey::PARAM . "'";
+            }
+
+            $fallbackAgentType = $declaration[PageAgentIndexKey::FALLBACK_AGENT_TYPE] ?? null;
+            if (!is_string($fallbackAgentType) || $fallbackAgentType === '') {
+                $errors[] = "{$path} must declare a non-empty '" . PageAgentIndexKey::FALLBACK_AGENT_TYPE . "'";
+            } elseif (!array_key_exists($fallbackAgentType, $agents)) {
+                $errors[] = "{$path} names fallback agent type {$fallbackAgentType}, which is missing from AGENTS";
+            }
+
+            // A public per-instance "my" page would hand a guest to the fallback agent, which
+            // serves the page for real - the refusal it is there to give would never happen.
+            if ($source === PageAgentIndexSource::SESSION_USER && $pageClass::ACCESS_LEVEL === PageAccessLevel::PUBLIC) {
+                $errors[] = "{$path} with source " . PageAgentIndexSource::SESSION_USER->value
+                    . ' requires ACCESS_LEVEL other than ' . PageAccessLevel::PUBLIC->value;
             }
         }
     }

@@ -37,6 +37,15 @@ final class PollTopologyRegistryTest extends TestCase
         $this->assertSame(array_keys(Hilos::PAGES), array_keys(Hilos::getPageRoutes()));
     }
 
+    /**
+     * No poll page is served by the agent of one entity instance yet: this leaf gave the
+     * mechanism, and which pages move onto it belongs to the epic (HIL-627).
+     */
+    public function testNoPageIsServedByTheAgentOfOneInstance(): void
+    {
+        $this->assertSame([], Hilos::getPageAgentIndexRoutes());
+    }
+
     public function testPageRegistryKeysMatchPageClassConstants(): void
     {
         foreach (Hilos::PAGES as $page => $pageClass) {

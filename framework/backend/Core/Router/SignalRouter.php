@@ -12,6 +12,8 @@ use Hilos\Core\Agent\Exception\BrokenSignalPayloadDtoException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Page\Config\PageAgentIndexRoute;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
 use Hilos\Core\Router\Destination\CommandReplyDestination;
@@ -27,6 +29,7 @@ use Hilos\Hilos;
 use Hilos\Mail\HilosMailer;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
@@ -526,6 +529,45 @@ class SignalRouter
     }
 
     /**
+     * Reads the per-instance route a page declared, from project topology.
+     *
+     * The single reader of the per-instance registry: the router asks it to decide whether a
+     * signal is addressed off the subscription record, and the master asks it to resolve the
+     * address in the first place ({@see DaemonManager}).
+     *
+     * @param string $page Page name
+     * @return ?PageAgentIndexRoute Declared route, or null when the page is not per-instance
+     */
+    public function pageAgentIndexRoute(string $page): ?PageAgentIndexRoute
+    {
+        return $this->hilosClass()::getPageAgentIndexRoutes()[$page] ?? null;
+    }
+
+    /**
+     * Returns a connection's page subscription, or null when it holds none.
+     *
+     * @param string $acceptKey Accept key identifier
+     * @return ?PageSubscription Stored subscription, or null when the connection holds none
+     */
+    public function pageSubscription(string $acceptKey): ?PageSubscription
+    {
+        return $this->subscriptions->pageSubscription($acceptKey);
+    }
+
+    /**
+     * Records which agent serves a connection's page subscription.
+     *
+     * @param string $acceptKey Accept key identifier
+     * @param string $page Page identifier that must match the stored page
+     * @param string $agentType Agent type serving the subscription
+     * @param ?string $agentIndex Instance index, or null to serve the subscription unindexed
+     */
+    public function bindPageAgent(string $acceptKey, string $page, string $agentType, ?string $agentIndex): void
+    {
+        $this->subscriptions->bindPageAgent($acceptKey, $page, $agentType, $agentIndex);
+    }
+
+    /**
      * Unsubscribe user from all subscriptions
      *
      * @param string $acceptKey Accept key identifier
@@ -802,6 +844,26 @@ class SignalRouter
         }
 
         $actionName = $signal->signalName->getName();
+
+        // An action on a per-instance page goes to the very instance the caller is
+        // subscribed to, and to nothing else: with no live subscription there is no
+        // instance to name, and acting on a page one is not subscribed to has never
+        // meant anything anyway (HIL-627).
+        $ownerPage = $this->hilosClass()::getPageActionRoutes()[$actionName] ?? null;
+        if (is_string($ownerPage) && $this->pageAgentIndexRoute($ownerPage) !== null) {
+            $boundDestination = $this->boundPageAgentDestination($signal, $ownerPage);
+            if ($boundDestination === null) {
+                Logger::error(
+                    "Action {$actionName} on per-instance page {$ownerPage} has no destination"
+                    . ' - the connection holds no bound subscription to that page',
+                );
+
+                return [];
+            }
+
+            return [$boundDestination];
+        }
+
         $agentType = $this->hilosClass()::getActionAgentRoutes()[$actionName]
             ?? $this->hilosClass()::getAgentActionRoutes()[$actionName]
             ?? null;
@@ -879,6 +941,28 @@ class SignalRouter
             return [];
         }
 
+        // A per-instance page is addressed off its subscription record, which the master
+        // resolved once and bound there (HIL-627). Reading it here and computing it there
+        // keeps routing a pure function of the registry: resolution, re-resolution, and the
+        // check that an update did not move the instance all live where the mutation lives.
+        $boundDestination = $this->boundPageAgentDestination($signal, $page);
+        if ($boundDestination !== null) {
+            return [$boundDestination];
+        }
+
+        // A per-instance page has no type-level addressee to fall back to: the agent type it
+        // is served by is an indexed one, and naming it without an index would address an
+        // instance nobody asked for and nobody can serve. No record means no addressee and a
+        // line in the log, exactly as an action without one (HIL-627).
+        if ($this->pageAgentIndexRoute($page) !== null) {
+            Logger::error(
+                "Signal {$signalType} on per-instance page {$page} has no destination"
+                . ' - the connection holds no bound subscription to that page',
+            );
+
+            return [];
+        }
+
         $agentType = $this->getPageSubscriptionAgentType($page);
         if ($agentType === null) {
             return [];
@@ -888,12 +972,53 @@ class SignalRouter
     }
 
     /**
+     * Reads the agent bound to this connection's subscription, for a per-instance page only.
+     *
+     * Null for a page that declares no per-instance route: it is served by its agent type,
+     * through the very code path it always was. Null too when the page declares one but the
+     * connection holds no matching bound record - and there the caller has no type to fall
+     * back to, so it drops the signal with a line in the log rather than address an instance
+     * nobody asked for.
+     *
+     * @param SignalDTO $signal Signal being routed
+     * @param string $page Page the signal names
+     * @return ?AgentDestination Bound destination, or null when the page is not per-instance
+     */
+    private function boundPageAgentDestination(SignalDTO $signal, string $page): ?AgentDestination
+    {
+        if ($this->pageAgentIndexRoute($page) === null) {
+            return null;
+        }
+
+        $data = $signal->data;
+        if (!$data instanceof WebSocketAcceptKeySignalDTO) {
+            return null;
+        }
+
+        $acceptKey = $data->getAcceptKey();
+        if ($acceptKey === null || $acceptKey === '') {
+            return null;
+        }
+
+        $subscription = $this->subscriptions->pageSubscription($acceptKey);
+        if ($subscription === null || $subscription->page !== $page || $subscription->agentType === null) {
+            return null;
+        }
+
+        return new AgentDestination($subscription->agentType, $subscription->agentIndex);
+    }
+
+    /**
      * Resolves page subscription owner from project topology.
+     *
+     * Public because the master resolves the same question when it addresses a per-instance
+     * subscription ({@see DaemonManager}): the project facade is named in one place, here,
+     * and a second reader of the registry would be a second thing to keep in step.
      *
      * @param string $page Page name from the subscription signal
      * @return ?string Agent type or null when no route exists
      */
-    private function getPageSubscriptionAgentType(string $page): ?string
+    public function getPageSubscriptionAgentType(string $page): ?string
     {
         $hilosClass = $this->hilosClass();
         $agentType = $hilosClass::getPageRoutes()[$page] ?? null;

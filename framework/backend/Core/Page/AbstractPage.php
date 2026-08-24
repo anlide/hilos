@@ -10,6 +10,7 @@ use Hilos\Core\Action\ActionReply;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Page\Config\PageAgentIndexKey;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\ActionRateLimitedException;
@@ -46,6 +47,21 @@ abstract class AbstractPage implements ActionHostInterface
 
     /** Agent type that owns subscription signals for this page. */
     public const string SUBSCRIPTION_AGENT_TYPE = '';
+
+    /**
+     * Per-instance route: which entity instance's agent serves this page (HIL-627).
+     *
+     * Empty - the default - means the page is not per-instance and is routed by
+     * SUBSCRIPTION_AGENT_TYPE alone, exactly as before. A page that fills it declares
+     * where the instance index comes from and who takes the subscription when no index
+     * can be determined; the keys and their accepted values are
+     * {@see PageAgentIndexKey}.
+     *
+     * The master resolves the address once, on subscribe, and remembers it on the
+     * subscription record: an unsubscribe carries no params at all, so an address
+     * recomputed per signal would have nothing to recompute from.
+     */
+    public const array SUBSCRIPTION_AGENT_INDEX = [];
 
     /** WebSocket actions owned by this page, keyed by action name with payload DTO class values. */
     public const array ACTIONS = [];

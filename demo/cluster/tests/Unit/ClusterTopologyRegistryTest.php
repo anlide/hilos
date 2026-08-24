@@ -30,6 +30,7 @@ final class ClusterTopologyRegistryTest extends TestCase
         $this->assertSame([], Hilos::GROUPS);
         $this->assertSame([], Hilos::TABLES);
         $this->assertSame([], Hilos::getPageRoutes());
+        $this->assertSame([], Hilos::getPageAgentIndexRoutes());
     }
 
     public function testRoutingSurfaceIsEmptyApartFromTheProtectedModeDrive(): void

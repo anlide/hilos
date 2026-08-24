@@ -27,8 +27,13 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
+use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentException;
+use Hilos\Core\Agent\Exception\AgentNotFoundException;
+use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
+use Hilos\Core\Agent\Exception\WorkerClientNotFoundException;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Daemon\Master\MasterFailureUnit;
 use Hilos\Core\Daemon\Module\DaemonModule;
@@ -37,7 +42,10 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Http\RootInfoHandler;
+use Hilos\Core\Page\Config\PageAgentIndexSource;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
+use Hilos\Core\Page\PageAccessReassessment;
+use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
@@ -45,6 +53,7 @@ use Hilos\Core\Router\Destination\CommandReplyDestination;
 use Hilos\Core\Router\Destination\RemoteAgentDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\PageAgentAddress;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
@@ -95,6 +104,7 @@ use Hilos\Socket\Server\ServerInterface;
 use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
@@ -177,6 +187,17 @@ abstract class DaemonManager extends BaseManager implements
     /** @var string What a restored freeze whose row names no operation is called in the startup line */
     private const string UNNAMED_FROZEN_OPERATION = '(unnamed)';
 
+    /**
+     * @var int Milliseconds a subscription waits for the identity behind its connection before
+     *     it is routed on whatever is known (HIL-627)
+     *
+     * Deliberately its own number and not the worker's {@see PageSignalRouter} wait under a shared
+     * name. The two happen to be equal today and are answerable to different things: the worker
+     * waits for an RT row to reach the worker that judges a frame, this one waits for it to reach
+     * the master that addresses a subscription. Either may move without the other.
+     */
+    private const int SUBSCRIPTION_IDENTITY_WAIT_TIMEOUT_MS = 500;
+
     /** @var list<ServerInterface> registered servers */
     protected array $servers = [];
 
@@ -217,6 +238,9 @@ abstract class DaemonManager extends BaseManager implements
 
     /** @var ?float microtime when the readiness wait began; null until workers are ready */
     private ?float $readinessWaitSince = null;
+
+    /** @var list<ParkedSignal> Signals held until the identity behind their connection arrives (HIL-627) */
+    private array $parkedSignals = [];
 
     /** @var ?float microtime of the last stuck-readiness log line; null until the first one */
     private ?float $lastReadinessLogAt = null;
@@ -1343,18 +1367,12 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @throws AgentException When routing a signal to its agent fails (no suitable
      *     worker, daemon creation, agent lookup, or worker-link failure)
+     * @throws InvalidArgumentException When the unsubscribe of a replaced subscription cannot be named
+     * @throws HilosException Whatever the project's agent-daemon factory raises reaching an agent
      */
     private function dispatchSignals(): void
     {
-        // Find WorkerServer once
-        $workerServer = null;
-        foreach ($this->servers as $server) {
-            if ($server instanceof WorkerServer) {
-                $workerServer = $server;
-                break;
-            }
-        }
-
+        $workerServer = $this->findWorkerServer();
         if ($workerServer === null) {
             // No WorkerServer available
             return;
@@ -1399,8 +1417,30 @@ abstract class DaemonManager extends BaseManager implements
             SignalTypeConstants::RT_SYNC_DELETED,
         ];
 
+        // Signals held for an identity that has since arrived (or run out of time) rejoin the
+        // ordinary path here, ahead of the queue, so a subscription that waited one tick is
+        // still served before whatever the browser sent after it (HIL-627). A released signal
+        // has already served its wait, so it is NOT offered to the park again - re-parking it
+        // would hand it a fresh deadline every pass and hold it forever behind an answer that
+        // is never coming, which is the one outcome the deadline exists to prevent.
+        $released = $this->releaseParkedSignals();
+
         // Process signals one by one in while-do loop
-        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+        while (true) {
+            $wasParked = $released !== [];
+            $signal = $wasParked ? array_shift($released) : Hilos::$sr->getNextQueuedSignal();
+            if ($signal === null) {
+                break;
+            }
+
+            if (!$wasParked && $this->parkUntilIdentified($signal)) {
+                continue;
+            }
+
+            if ($this->refusePageInstanceMove($signal)) {
+                continue;
+            }
+
             // Update subscriptions BEFORE routing (routing may depend on current subscriptions)
             $this->updateSubscriptions($signal);
 
@@ -1450,62 +1490,28 @@ abstract class DaemonManager extends BaseManager implements
                 // required startup agents have finished onStart (or the readiness timeout fires).
             }
 
-            if (empty($destinations)) {
+            if (empty($destinations) && Hilos::$sr->expectsDestination($signal)) {
                 // A signal whose route is declared, not subscribed to, was supposed to reach
                 // somebody: an empty list means it is being dropped, and the only way anyone
                 // ever notices is this line. The router decides which types those are.
-                if (Hilos::$sr->expectsDestination($signal)) {
-                    $source = $this->describeSignalSource($signal->signalSource);
-                    Logger::error(
-                        "Signal {$signalName} (type {$signalType}) from {$source} has no destination"
-                        . " - no route is declared for this signal name",
-                    );
-                }
-
-                continue;
+                $source = $this->describeSignalSource($signal->signalSource);
+                Logger::error(
+                    "Signal {$signalName} (type {$signalType}) from {$source} has no destination"
+                    . " - no route is declared for this signal name",
+                );
             }
 
             // Deliver signal to each destination
             $skipSignal = false;
+            $agentsDelivered = [];
             while (($destination = array_shift($destinations)) !== null) {
                 if ($skipSignal) {
                     break;
                 }
 
                 if ($destination instanceof AgentDestination) {
-                    // Send signal to agent via worker server
-                    $agentType = $destination->agentType;
-                    $agentIndex = $destination->agentIndex;
-                    // An agent destination names its agent type, so the id is always
-                    // built; there is nothing here for a fallback to stand in for.
-                    $agentId = $this->agentManagerDaemon->buildAgentId($agentType, $agentIndex);
-                    $agentLabel = $agentIndex !== null ? "{$agentType} (index: {$agentIndex})" : $agentType;
-
-                    // Wrap signal in DaemonAgentMessageDTO
-                    $messageDto = new DaemonAgentMessageDTO(
-                        agentId: $agentId,
-                        signal: $signal,
-                    );
-
-                    try {
-                        $workerServer->sendSignalToAgent(
-                            $agentType,
-                            $agentIndex,
-                            $messageDto,
-                        );
-                    } catch (NoSuitableWorkerException $e) {
-                        // During shutdown, workers may be unavailable - ignore this error
-                        if ($this->shouldExit) {
-                            Logger::info("Signal skipped during shutdown: {$signalType}/{$signalName}"
-                                . " -> agent: {$agentLabel} - no suitable worker available");
-                            $skipSignal = true;
-                            continue;
-                        }
-                        // Re-throw if not shutting down
-                        Logger::error("Failed to send signal: {$signalType}/{$signalName}"
-                            . " -> agent: {$agentLabel} - no suitable worker available");
-                        throw $e;
-                    }
+                    $agentsDelivered[] = $destination;
+                    $skipSignal = $this->sendSignalToAgentDestination($workerServer, $destination, $signal);
                 } elseif ($destination instanceof RemoteAgentDestination) {
                     // Forward the signal to the agent on its host node over the peer channel.
                     // Best-effort: no live link (offline node / no peer server) drops and logs,
@@ -1571,6 +1577,9 @@ abstract class DaemonManager extends BaseManager implements
                     Logger::error("Unknown destination type: " . get_class($destination) . " for signal: {$signalType}/{$signalName}");
                 }
             }
+
+            $this->fanOutConnectionCloseToPageAgents($workerServer, $signal, $agentsDelivered);
+            $this->forgetSubscriptionsAfterRouting($signal);
         }
     }
 
@@ -2308,6 +2317,12 @@ abstract class DaemonManager extends BaseManager implements
      * hide real router failures.
      *
      * @param SignalDTO $signal Signal DTO
+     * @throws AgentDaemonCreationFailedException When the replaced subscription's agent daemon cannot be created
+     * @throws AgentNotFoundException When the replaced subscription's agent is gone after a start attempt
+     * @throws AgentNotLinkedToWorkerException When the replaced subscription's agent is not linked to a worker
+     * @throws HilosException Whatever the project's agent-daemon factory raises reaching the replaced agent
+     * @throws InvalidArgumentException When the unsubscribe of a replaced subscription cannot be named
+     * @throws WorkerClientNotFoundException When the worker hosting the replaced subscription's agent is gone
      */
     protected function updateSubscriptions(SignalDTO $signal): void
     {
@@ -2320,8 +2335,49 @@ abstract class DaemonManager extends BaseManager implements
                     return;
                 }
                 $page = $signal->data->page ?? $signalName;
+                $address = $this->settledPageAgentAddress($page, $signal->data->acceptKey, $signal->data->params);
+                $this->unsubscribeReplacedPageAgent($signal->data->acceptKey, $address);
                 Hilos::$sr->subscribeToPage($page, $signal->data);
+                if ($address !== null) {
+                    Hilos::$sr->bindPageAgent(
+                        $signal->data->acceptKey,
+                        $page,
+                        $address->agentType,
+                        $address->agentIndex,
+                    );
+                }
                 Hilos::$ac?->openPageSession($signal->data->acceptKey, $page, $signal->data->params);
+                break;
+
+            // A re-decision is where a live subscription may change hands: a guest who signed in
+            // is the same connection on the same page, now belonging to somebody (HIL-627).
+            case SignalTypeConstants::PAGE_ACCESS_REASSESS:
+                if (!($signal->data instanceof WebSocketPageSubscribeSignalDTO)) {
+                    return;
+                }
+                $reassessedPage = $signal->data->page ?? $signalName;
+                // A re-decision is built from a WORKER's mirror of the subscriptions
+                // ({@see PageAccessReassessment::sweepThisWorker()}), so it can name a page this
+                // connection has already navigated away from. Re-addressing on it would take the
+                // page the connection IS on away from the agent serving it and point that record
+                // at the agent of the page it left - a live page dead with nothing to notice it.
+                if (Hilos::$sr->pageSubscription($signal->data->acceptKey)?->page !== $reassessedPage) {
+                    return;
+                }
+                $reassessedAddress = $this->settledPageAgentAddress(
+                    $reassessedPage,
+                    $signal->data->acceptKey,
+                    $signal->data->params,
+                );
+                if ($reassessedAddress !== null) {
+                    $this->unsubscribeReplacedPageAgent($signal->data->acceptKey, $reassessedAddress);
+                    Hilos::$sr->bindPageAgent(
+                        $signal->data->acceptKey,
+                        $reassessedPage,
+                        $reassessedAddress->agentType,
+                        $reassessedAddress->agentIndex,
+                    );
+                }
                 break;
 
             case SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION:
@@ -2342,8 +2398,8 @@ abstract class DaemonManager extends BaseManager implements
                 if (!($signal->data instanceof WebSocketPageUnsubscribeSignalDTO)) {
                     return;
                 }
-                $page = $signal->signalName->getName();
-                Hilos::$sr->unsubscribeFromPage($page, $signal->data);
+                // The registry entry itself is dropped after routing, by
+                // {@see forgetSubscriptionsAfterRouting()}: it is what names the addressee.
                 Hilos::$ac?->closePageSession($signal->data->acceptKey);
                 break;
 
@@ -2374,6 +2430,476 @@ abstract class DaemonManager extends BaseManager implements
                 Hilos::$sr->unsubscribeFromGroup($signal->data->group ?? $signalName, $signal->data);
                 break;
         }
+    }
+
+    /**
+     * Resolves which agent instance serves a subscription to one page.
+     *
+     * Null for a page that declares no per-instance route: it is served by its agent type,
+     * nothing is bound, and routing takes the path it always took. A page that declares one
+     * resolves to the instance named by its source, or - when the source names nothing usable -
+     * to the fallback agent the page itself declared, which then answers the client the way any
+     * page agent does. The master never answers a client itself.
+     *
+     * The value form matches what an indexed agent signal accepts for its index
+     * ({@see SignalRouter}): a positive int or a non-empty string. Whether the row behind that
+     * index exists is not asked here - the master must not read the database, and the ordinary
+     * DB_EXISTS guards ask it inside the agent. Topology is read through the router, which is
+     * where the project facade is named.
+     *
+     * @param string $page Page the subscription names
+     * @param string $acceptKey Connection holding the subscription
+     * @param array<string, mixed> $params Subscription params
+     * @return ?PageAgentAddress Address to bind, the pending state, or null when the page is not per-instance
+     */
+    private function resolvePageAgentAddress(string $page, string $acceptKey, array $params): ?PageAgentAddress
+    {
+        $route = Hilos::$sr->pageAgentIndexRoute($page);
+        if ($route === null) {
+            return null;
+        }
+
+        $value = match ($route->source) {
+            PageAgentIndexSource::PARAM => $route->param === null ? null : ($params[$route->param] ?? null),
+            PageAgentIndexSource::SESSION_USER => $this->sessionUserIndexValue($acceptKey),
+        };
+
+        if ($value instanceof PageAgentAddress) {
+            return $value;
+        }
+
+        $agentIndex = self::pageAgentIndexValue($value);
+
+        return $agentIndex === null
+            ? PageAgentAddress::to($route->fallbackAgentType, null)
+            : PageAgentAddress::to($this->pageAgentTypeFor($page, $route->fallbackAgentType), $agentIndex);
+    }
+
+    /**
+     * Reads a raw value as the instance index it names, or as naming none.
+     *
+     * The one definition of the form, shared by the resolution that addresses a subscription
+     * and by the veto that keeps an update from moving it: two readings of "which instance is
+     * this" would eventually disagree, and the disagreement would show up as a subscription
+     * addressed to one instance while the client is shown another. The form itself is the one
+     * an indexed agent signal accepts for its index field ({@see SignalRouter}).
+     *
+     * @param mixed $value Raw value carried by a subscription param or read off the connection
+     * @return ?string Index as it is addressed, or null when the value names no instance
+     */
+    private static function pageAgentIndexValue(mixed $value): ?string
+    {
+        return match (true) {
+            is_int($value) && $value > 0 => (string) $value,
+            is_string($value) && $value !== '' => $value,
+            default => null,
+        };
+    }
+
+    /**
+     * Resolves an address fit to be written onto a subscription record.
+     *
+     * Everything that mutates a record goes through here rather than through
+     * {@see resolvePageAgentAddress()} directly, so a pending address can never be bound. A
+     * pending one only ever reaches this point once its wait is over
+     * ({@see releaseParkedSignals()}), and an identity that never arrived is answered the same
+     * way an absent one is: the page's fallback agent takes the subscription and refuses, or
+     * serves, the client itself.
+     *
+     * @param string $page Page the subscription names
+     * @param string $acceptKey Connection holding the subscription
+     * @param array<string, mixed> $params Subscription params
+     * @return ?PageAgentAddress Settled address to bind, or null when the page is not per-instance
+     */
+    private function settledPageAgentAddress(string $page, string $acceptKey, array $params): ?PageAgentAddress
+    {
+        $address = $this->resolvePageAgentAddress($page, $acceptKey, $params);
+        if ($address === null || !$address->pending) {
+            return $address;
+        }
+
+        $route = Hilos::$sr->pageAgentIndexRoute($page);
+
+        return $route === null ? null : PageAgentAddress::to($route->fallbackAgentType, null);
+    }
+
+    /**
+     * Reads the durable user behind a connection out of the master's own runtime copy.
+     *
+     * The very seam the access guards are judged through ({@see BrowserContext::connectionIdentity}),
+     * so what the router is allowed to look at stays one row of one connection - the master reads
+     * no database and keeps no second copy of who a person is.
+     *
+     * @param string $acceptKey Connection holding the subscription
+     * @return int|PageAgentAddress|null User id, the pending address when the identity has not arrived, null for a guest
+     */
+    private function sessionUserIndexValue(string $acceptKey): int|PageAgentAddress|null
+    {
+        $identity = Hilos::$browser?->connectionIdentity($acceptKey);
+        if ($identity === null) {
+            return null;
+        }
+
+        return $identity->pending ? PageAgentAddress::pending() : $identity->userId;
+    }
+
+    /**
+     * Names the agent type that serves a page, falling back to what the page declared for the
+     * case where no instance can be named.
+     *
+     * @param string $page Page the subscription names
+     * @param string $fallbackAgentType Agent type the page declared for an undeterminable instance
+     * @return string Agent type to address
+     */
+    private function pageAgentTypeFor(string $page, string $fallbackAgentType): string
+    {
+        $agentType = Hilos::$sr->getPageSubscriptionAgentType($page);
+
+        return is_string($agentType) && $agentType !== '' ? $agentType : $fallbackAgentType;
+    }
+
+    /**
+     * Tells the agent that used to serve this connection that its subscription is gone.
+     *
+     * Delivered straight to the previous addressee instead of being queued, because a queued
+     * frame is routed after the current one - by then the record already carries the new
+     * address, and the unsubscribe would be delivered to the very agent that just took over.
+     *
+     * No-op when the connection held nothing, when nothing was bound (the worker-side
+     * replacement handles that case as it always has), or when the address has not moved.
+     *
+     * @param string $acceptKey Connection whose subscription is being replaced
+     * @param ?PageAgentAddress $address Settled address the subscription is moving to, null when the new page is not per-instance
+     */
+    private function unsubscribeReplacedPageAgent(string $acceptKey, ?PageAgentAddress $address): void
+    {
+        $previous = Hilos::$sr->pageSubscription($acceptKey);
+        if ($previous === null || $previous->agentType === null) {
+            return;
+        }
+
+        if ($address !== null
+            && $previous->agentType === $address->agentType
+            && $previous->agentIndex === $address->agentIndex
+        ) {
+            return;
+        }
+
+        $workerServer = $this->findWorkerServer();
+        if ($workerServer === null) {
+            return;
+        }
+
+        $this->sendSignalToAgentDestination(
+            $workerServer,
+            new AgentDestination($previous->agentType, $previous->agentIndex),
+            new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::PAGE_UNSUBSCRIBE),
+                new SignalName($previous->page),
+                new WebSocketPageUnsubscribeSignalDTO(acceptKey: $acceptKey),
+            ),
+        );
+    }
+
+    /**
+     * Refuses a subscription update that would move the connection to a different instance.
+     *
+     * Another instance is another page, and a page change arrives as a subscribe. The
+     * refusal is a veto on the whole signal and not only on the record: a frame let through
+     * is applied on the far side, where the worker merges the new params into its own mirror
+     * and re-renders the page from them ({@see PageSignalRouter::dispatchPageUpdateSubscription}).
+     * Keeping the record and delivering the frame would leave the master addressing one
+     * instance while the client is shown another - a disagreement nothing later resolves.
+     *
+     * @param SignalDTO $signal Signal about to be routed
+     * @return bool Whether the signal was refused instead of routed
+     */
+    private function refusePageInstanceMove(SignalDTO $signal): bool
+    {
+        if ($signal->signalType->getType() !== SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION) {
+            return false;
+        }
+
+        $data = $signal->data;
+        if (!$data instanceof WebSocketPageUpdateSubscriptionSignalDTO) {
+            return false;
+        }
+
+        $page = $data->page ?? $signal->signalName->getName();
+        $route = Hilos::$sr->pageAgentIndexRoute($page);
+        if ($route === null || $route->source !== PageAgentIndexSource::PARAM || $route->param === null) {
+            return false;
+        }
+
+        if (!array_key_exists($route->param, $data->params)) {
+            return false;
+        }
+
+        $subscription = Hilos::$sr->pageSubscription($data->acceptKey);
+        if ($subscription === null || $subscription->page !== $page) {
+            return false;
+        }
+
+        // Judged on the index the two param sets NAME, not on the raw values: a subscription
+        // that named no instance is served by the fallback agent, and an update handing it one
+        // moves it just as surely as an update handing it a different one. Both sides are read
+        // through the one form the address is resolved by, so a value that names nothing on
+        // either side moves nothing and is let through.
+        $current = self::pageAgentIndexValue($subscription->params[$route->param] ?? null);
+        $updated = self::pageAgentIndexValue($data->params[$route->param]);
+        if ($current === $updated) {
+            return false;
+        }
+
+        Logger::error(
+            "Refused page_update_subscription for page '{$page}': it would move the subscription"
+            . ' from ' . ($current === null ? 'no instance' : "instance '{$current}'")
+            . ' to ' . ($updated === null ? 'no instance' : "instance '{$updated}'")
+            . ' - another instance is another page and arrives as a subscribe',
+        );
+
+        return true;
+    }
+
+    /**
+     * Tells every agent instance holding a subscription of this connection that it is gone.
+     *
+     * The ordinary route sends connection_close to one lifecycle agent of a type; an instance
+     * living in another worker would never hear of the disconnect and would keep a subscription
+     * that has no socket behind it. Delivered before the records are dropped, because the records
+     * are what name the addressees.
+     *
+     * Skipped when the ordinary walk already reached that very agent, which is the ordinary
+     * shape rather than a corner: a subscription that could name no instance is served by the
+     * page's fallback agent, and a project usually names its lifecycle agent there. Delivering
+     * again would run the agent's close hook twice for one disconnect.
+     *
+     * @param WorkerServer $workerServer Worker server the delivery goes through
+     * @param SignalDTO $signal Signal just routed
+     * @param list<AgentDestination> $agentsDelivered Agent destinations the ordinary walk already reached
+     */
+    private function fanOutConnectionCloseToPageAgents(
+        WorkerServer $workerServer,
+        SignalDTO $signal,
+        array $agentsDelivered,
+    ): void {
+        if ($signal->signalType->getType() !== SignalTypeConstants::CONNECTION_CLOSE) {
+            return;
+        }
+
+        $data = $signal->data;
+        if (!$data instanceof WebSocketCloseSignalDTO || $data->acceptKey === '') {
+            return;
+        }
+
+        $subscription = Hilos::$sr->pageSubscription($data->acceptKey);
+        if ($subscription === null || $subscription->agentType === null) {
+            return;
+        }
+
+        foreach ($agentsDelivered as $delivered) {
+            if ($delivered->agentType === $subscription->agentType
+                && $delivered->agentIndex === $subscription->agentIndex
+            ) {
+                return;
+            }
+        }
+
+        $this->sendSignalToAgentDestination(
+            $workerServer,
+            new AgentDestination($subscription->agentType, $subscription->agentIndex),
+            $signal,
+        );
+    }
+
+    /**
+     * Drops the subscription records a routed signal has ended.
+     *
+     * Runs after routing and not before it, which is the whole point: the record carries the
+     * address the unsubscribe has to reach, and a record removed first takes that address with
+     * it (HIL-627).
+     *
+     * @param SignalDTO $signal Signal just routed
+     */
+    private function forgetSubscriptionsAfterRouting(SignalDTO $signal): void
+    {
+        $data = $signal->data;
+
+        if ($signal->signalType->getType() === SignalTypeConstants::PAGE_UNSUBSCRIBE
+            && $data instanceof WebSocketPageUnsubscribeSignalDTO
+        ) {
+            Hilos::$sr->unsubscribeFromPage($signal->signalName->getName(), $data);
+
+            return;
+        }
+
+        if ($signal->signalType->getType() === SignalTypeConstants::CONNECTION_CLOSE
+            && $data instanceof WebSocketCloseSignalDTO
+            && $data->acceptKey !== ''
+        ) {
+            Hilos::$sr->unsubscribeFromAll($data->acceptKey);
+            $this->dropParkedSignals($data->acceptKey);
+        }
+    }
+
+    /**
+     * Forgets whatever this connection was waiting to have addressed.
+     *
+     * A subscribe held for an identity outlives the connection otherwise: it would sit out its
+     * deadline, then bind a subscription record for a dead accept key and be delivered to an
+     * agent that answers a socket nobody is listening on - and nothing would clean that record,
+     * because the close that would have is already past. The worker's held frames are dropped
+     * on the same event and for the same reason ({@see PageSignalRouter::dropPendingFrames}).
+     *
+     * @param string $acceptKey Connection that closed
+     */
+    private function dropParkedSignals(string $acceptKey): void
+    {
+        $this->parkedSignals = array_values(array_filter(
+            $this->parkedSignals,
+            static function (ParkedSignal $parked) use ($acceptKey): bool {
+                $data = $parked->signal->data;
+
+                return !$data instanceof WebSocketPageSubscribeSignalDTO || $data->acceptKey !== $acceptKey;
+            },
+        ));
+    }
+
+    /**
+     * Holds a subscription signal whose address cannot be resolved until the identity arrives.
+     *
+     * Only a page whose instance IS the person behind the connection can be undecidable this
+     * way, so every other signal passes straight through and nothing about their timing changes.
+     * A held signal keeps its place ahead of the queue when it is released
+     * ({@see releaseParkedSignals()}).
+     *
+     * @param SignalDTO $signal Signal about to be routed
+     * @return bool Whether the signal was held instead of routed
+     */
+    private function parkUntilIdentified(SignalDTO $signal): bool
+    {
+        $signalType = $signal->signalType->getType();
+        if ($signalType !== SignalTypeConstants::PAGE_SUBSCRIBE
+            && $signalType !== SignalTypeConstants::PAGE_ACCESS_REASSESS
+        ) {
+            return false;
+        }
+
+        $data = $signal->data;
+        if (!$data instanceof WebSocketPageSubscribeSignalDTO) {
+            return false;
+        }
+
+        $page = $data->page ?? $signal->signalName->getName();
+        $address = $this->resolvePageAgentAddress($page, $data->acceptKey, $data->params);
+        if ($address === null || !$address->pending) {
+            return false;
+        }
+
+        $this->parkedSignals[] = new ParkedSignal(
+            $signal,
+            microtime(true) + self::SUBSCRIPTION_IDENTITY_WAIT_TIMEOUT_MS / 1000,
+        );
+
+        return true;
+    }
+
+    /**
+     * Returns the held signals that are ready to be routed, and keeps holding the rest.
+     *
+     * A signal is ready once the identity behind its connection has arrived, or once its
+     * deadline has passed - the latter is routed on what is known, with a line saying so,
+     * rather than held forever behind an answer that may never come.
+     *
+     * @return list<SignalDTO> Signals to route in this pass, in the order they were held
+     */
+    private function releaseParkedSignals(): array
+    {
+        if ($this->parkedSignals === []) {
+            return [];
+        }
+
+        $now = microtime(true);
+        $released = [];
+        $stillParked = [];
+        foreach ($this->parkedSignals as $parked) {
+            $data = $parked->signal->data;
+            if (!$data instanceof WebSocketPageSubscribeSignalDTO) {
+                $released[] = $parked->signal;
+                continue;
+            }
+
+            $pending = Hilos::$browser?->connectionIdentity($data->acceptKey)->pending ?? false;
+            if ($pending && $parked->deadline > $now) {
+                $stillParked[] = $parked;
+                continue;
+            }
+
+            if ($pending) {
+                Logger::error(
+                    "Subscription of connection {$data->acceptKey} routed without its identity:"
+                    . ' it did not arrive within ' . self::SUBSCRIPTION_IDENTITY_WAIT_TIMEOUT_MS . 'ms',
+                );
+            }
+
+            $released[] = $parked->signal;
+        }
+
+        $this->parkedSignals = $stillParked;
+
+        return $released;
+    }
+
+    /**
+     * Sends one signal to one agent instance through the worker server.
+     *
+     * The single door to an agent from the master loop: the ordinary destination walk uses it,
+     * and so do the three deliveries that must not go through the queue - the unsubscribe of a
+     * replaced subscription, the one of a subscription that moved, and the connection-close
+     * fan-out ({@see unsubscribeReplacedPageAgent()}, {@see fanOutConnectionCloseToPageAgents()}).
+     *
+     * @param WorkerServer $workerServer Worker server hosting the agents
+     * @param AgentDestination $destination Agent instance to reach
+     * @param SignalDTO $signal Signal to deliver
+     * @return bool True when the daemon is shutting down and the signal was dropped instead of delivered
+     * @throws AgentException When the agent cannot be reached and the daemon is not shutting down
+     */
+    private function sendSignalToAgentDestination(
+        WorkerServer $workerServer,
+        AgentDestination $destination,
+        SignalDTO $signal,
+    ): bool {
+        $agentType = $destination->agentType;
+        $agentIndex = $destination->agentIndex;
+        // An agent destination names its agent type, so the id is always
+        // built; there is nothing here for a fallback to stand in for.
+        $agentId = $this->agentManagerDaemon->buildAgentId($agentType, $agentIndex);
+        $agentLabel = $agentIndex !== null ? "{$agentType} (index: {$agentIndex})" : $agentType;
+        $signalType = $signal->signalType->getType();
+        $signalName = $signal->signalName->getName();
+
+        try {
+            $workerServer->sendSignalToAgent(
+                $agentType,
+                $agentIndex,
+                new DaemonAgentMessageDTO(agentId: $agentId, signal: $signal),
+            );
+        } catch (NoSuitableWorkerException $e) {
+            // During shutdown, workers may be unavailable - ignore this error
+            if ($this->shouldExit) {
+                Logger::info("Signal skipped during shutdown: {$signalType}/{$signalName}"
+                    . " -> agent: {$agentLabel} - no suitable worker available");
+
+                return true;
+            }
+            // Re-throw if not shutting down
+            Logger::error("Failed to send signal: {$signalType}/{$signalName}"
+                . " -> agent: {$agentLabel} - no suitable worker available");
+            throw $e;
+        }
+
+        return false;
     }
 
     /**

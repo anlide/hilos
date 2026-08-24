@@ -24,6 +24,7 @@ use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\Config\PageAgentIndexRoute;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
@@ -35,6 +36,7 @@ use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Core\Topology\AgentActionRouteRegistry;
 use Hilos\Core\Topology\AgentCommandRouteRegistry;
 use Hilos\Core\Topology\AgentSignalRouteRegistry;
+use Hilos\Core\Topology\PageAgentIndexRouteRegistry;
 use Hilos\Core\Topology\PageSignalRouteRegistry;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Database\Context\DbContext;
@@ -523,6 +525,21 @@ abstract class Hilos
         }
 
         return $pageRoutes;
+    }
+
+    /**
+     * Returns per-instance page routes declared by registered page classes.
+     *
+     * Only pages that declare {@see AbstractPage::SUBSCRIPTION_AGENT_INDEX} appear; a page
+     * absent from the map is served by its subscription agent type, as every page was
+     * before per-instance routing existed. Malformed declarations are skipped here and
+     * reported by topology validation.
+     *
+     * @return array<string, PageAgentIndexRoute> Per-instance route keyed by page name
+     */
+    public static function getPageAgentIndexRoutes(): array
+    {
+        return PageAgentIndexRouteRegistry::routes(static::PAGES);
     }
 
     /**

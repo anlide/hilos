@@ -32,6 +32,7 @@ use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\NotImplementedException;
+use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\View\Item\Session;
@@ -599,6 +600,7 @@ trait HilosSessionHost
      * @param string $sessionToken Session cookie token to authenticate
      * @param int $userId Durable user id to bind the session to
      * @param ?string $initiatorAcceptKey Accept key of the connection that logged in, or null when there is none
+     * @throws InvalidArgumentException When the re-decision announcement cannot be named
      * @throws HilosException On database or runtime failure
      * @throws RandomException When the platform's secure random source refuses a mint
      * @throws SessionTokenExhaustedException When three minted tokens in a row were already taken
@@ -656,27 +658,35 @@ trait HilosSessionHost
                     $this->connectionPendingAck($acceptKey),
                 ));
             }
+        } else {
+            // The session's other connections are left anonymous on purpose: they are dropped
+            // once the browser holds the new cookie, and they come back into the rotated
+            // session by themselves. Authenticating them here is the second half of the attack
+            // this leaf closes - a socket opened with a planted token would ride the victim's
+            // login into her account.
+            $keysToDrop = array_values(array_filter(
+                $this->sessionConnectionKeys($sessionToken),
+                static fn(string $acceptKey): bool => $acceptKey !== $initiatorAcceptKey,
+            ));
 
-            return;
+            $this->repointInitiatorSessionToken($initiatorAcceptKey, $rotated);
+            $this->bindConnectionUser($initiatorAcceptKey, $userId);
+            $this->sendToUser($signalName, $initiatorAcceptKey, $response->withPendingAck(
+                $this->connectionPendingAck($initiatorAcceptKey),
+            ));
+
+            $this->announceRotation($rotated, $keysToDrop, $initiatorAcceptKey);
         }
 
-        // The session's other connections are left anonymous on purpose: they are dropped
-        // once the browser holds the new cookie, and they come back into the rotated
-        // session by themselves. Authenticating them here is the second half of the attack
-        // this leaf closes - a socket opened with a planted token would ride the victim's
-        // login into her account.
-        $keysToDrop = array_values(array_filter(
-            $this->sessionConnectionKeys($sessionToken),
-            static fn(string $acceptKey): bool => $acceptKey !== $initiatorAcceptKey,
-        ));
-
-        $this->repointInitiatorSessionToken($initiatorAcceptKey, $rotated);
-        $this->bindConnectionUser($initiatorAcceptKey, $userId);
-        $this->sendToUser($signalName, $initiatorAcceptKey, $response->withPendingAck(
-            $this->connectionPendingAck($initiatorAcceptKey),
-        ));
-
-        $this->announceRotation($rotated, $keysToDrop, $initiatorAcceptKey);
+        // Whatever page this browser had open, it opened as a guest, and it is still being
+        // served the verdict a guest was given - and, where the page is served by the agent
+        // of one instance, by the agent a guest was sent to (HIL-627). The re-decision is
+        // announced last, AFTER the connection has been bound above: the announcement and
+        // the runtime row travel the same queue, so the worker that re-judges applies "this
+        // connection belongs to N" before it judges. Sign-in can use the existing
+        // "pages of this user" criterion precisely because the identity has just appeared;
+        // sign-out, which erases it, had to build its own (HIL-652).
+        PageAccessReassessment::forUser($userId);
     }
 
     /**

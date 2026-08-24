@@ -44,6 +44,48 @@ final class SubscriptionRegistry
     }
 
     /**
+     * Returns a connection's page subscription, or null when it holds none.
+     *
+     * @param string $acceptKey Client accept key
+     * @return ?PageSubscription Stored subscription, or null when the connection holds none
+     */
+    public function pageSubscription(string $acceptKey): ?PageSubscription
+    {
+        return $this->pages[$acceptKey] ?? null;
+    }
+
+    /**
+     * Records which agent serves a connection's page subscription.
+     *
+     * Written by the master once the address is resolved, and read by routing for every
+     * later signal of the same subscription: an unsubscribe carries no params, so nothing
+     * downstream could resolve the instance a second time (HIL-627).
+     *
+     * The page is named and has to match the stored one, the way it does for an update and
+     * for an unsubscribe: an address is resolved from the signal that carried it, and a
+     * signal about a page this connection has already left must not re-address the page it
+     * is on now.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $page Page identifier that must match the stored page
+     * @param string $agentType Agent type serving the subscription
+     * @param ?string $agentIndex Instance index, or null to serve the subscription unindexed
+     */
+    public function bindPageAgent(string $acceptKey, string $page, string $agentType, ?string $agentIndex): void
+    {
+        if (!isset($this->pages[$acceptKey])) {
+            return;
+        }
+
+        $subscription = $this->pages[$acceptKey];
+        if ($subscription->page !== $page) {
+            return;
+        }
+
+        $this->pages[$acceptKey] = $subscription->withPageAgent($agentType, $agentIndex);
+    }
+
+    /**
      * Merges new params into an existing page subscription.
      *
      * @param string $acceptKey Client accept key

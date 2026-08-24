@@ -30,6 +30,16 @@ table contexts when they can read the project registry.
   `SignalRouter` resolves page subscription signals from that computed registry
   through the active project Hilos facade; project routers should not rebuild
   the page-to-agent list in config.
+- A page whose surface belongs to ONE entity may additionally declare
+  `PageClass::SUBSCRIPTION_AGENT_INDEX`, and is then served by the agent of that
+  instance rather than by the agent of a type. The declaration names where the index
+  comes from (`PageAgentIndexKey::SOURCE` — a subscription param or the connection's
+  user), the param when there is one, and the `FALLBACK_AGENT_TYPE` that takes the
+  subscription when no instance can be determined. `Hilos::getPageAgentIndexRoutes()`
+  computes the per-instance map; the master resolves the address once, on subscribe, and
+  every later signal of that subscription is addressed off the subscription record. An
+  empty declaration — the default — means the page routes by type exactly as before. See
+  [signals/routing.md](signals/routing.md) for the full behavior and its consequences.
 - Each group class declares its group subscription owner in
   `GroupClass::SUBSCRIPTION_AGENT_TYPE`. `Hilos::getGroupRoutes()` computes the
   group-to-agent routing map from `Hilos::GROUPS` and those group-level constants.
@@ -144,39 +154,42 @@ declaration; a project must not mount it in `configure()`. See
    `SomePage::PAGE => SomePage::class`.
 2. Declare the page subscription owner in the page class:
    `public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;`.
-3. For a new WebSocket group, add the group class to `Hilos::GROUPS` using
+3. When the page is the surface of one entity instance, declare
+   `public const array SUBSCRIPTION_AGENT_INDEX = [...]` naming the index source, its
+   param, and the fallback agent type. Leave it as the inherited empty array otherwise.
+4. For a new WebSocket group, add the group class to `Hilos::GROUPS` using
    `SomeGroup::GROUP => SomeGroup::class` and declare
    `public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;` on the group
    class.
-4. Declare inbound WebSocket actions owned by that page in
+5. Declare inbound WebSocket actions owned by that page in
    `public const array ACTIONS = [ActionConstants::NAME => SomeActionDTO::class]`.
    Leave it as the inherited empty array when the page has no actions.
-5. Declare page-dispatched non-action signals in
+6. Declare page-dispatched non-action signals in
    `public const array SIGNALS = [...]` when the page handles them. For named
    agent-signal routes, prefer `signal name => SignalDataInterface` class over
    routing-only strings when the page handler needs a typed inner payload.
-6. For a new agent, add worker and daemon classes to `Hilos::AGENTS` using
+7. For a new agent, add worker and daemon classes to `Hilos::AGENTS` using
    `SomeAgent::AGENT_TYPE => [AgentRegistryKey::WORKER => SomeAgent::class, AgentRegistryKey::DAEMON => SomeAgentDaemon::class]`.
    Set `AgentRegistryKey::INDEXED => true` when creation requires `agentIndex`,
    or `AgentRegistryKey::PER_NODE => true` for an every-node singleton (started
    on each node via `WorkerServer::onInitialWorkersReady()`, e.g. the per-node
    log rotation agent). The two flags cannot be combined.
-7. Declare directly handled agent-to-agent signal names in
+8. Declare directly handled agent-to-agent signal names in
    `public const array AGENT_SIGNALS = [...]` when the agent owns them. Prefer
    `signal name => SignalDataInterface` class for singleton typed signals. For
    indexed multi-instance agents, use
    `AgentSignalConfigKey::INDEX_FIELD` and optional `AgentSignalConfigKey::DTO`
    in the config array.
-8. For a server table definition, add the table class to `Hilos::TABLES`.
-9. For a browser-only table config, add the config class to
+9. For a server table definition, add the table class to `Hilos::TABLES`.
+10. For a browser-only table config, add the config class to
    `Hilos::BROWSER_TABLES`.
-10. For page-shaped browser state, bind the page to its tables in
+11. For page-shaped browser state, bind the page to its tables in
    `Hilos::PAGE_TABLES`, including any browser params.
-11. Make table contexts, browser contexts, signal routers, worker page routers,
+12. Make table contexts, browser contexts, signal routers, worker page routers,
     and WebSocket clients read the project registry through their established
     hooks or factory methods instead of adding another local topology list.
     Use `HilosPageFactory` with the project facade class for page routing.
-12. **Update the topology registry test snapshot whenever a project registry
+13. **Update the topology registry test snapshot whenever a project registry
     changes** — this is a shared, cross-ticket guard, not optional cleanup. Each
     demo has a `*TopologyRegistryTest` (`ChatTopologyRegistryTest`,
     `TasksTopologyRegistryTest`, `PollTopologyRegistryTest`,
@@ -333,7 +346,8 @@ to:
 
 The root `AGENTS.md` contract approval gate still applies before
 implementation. Stop and ask for explicit confirmation before changing
-page `SUBSCRIPTION_AGENT_TYPE` values, page `SIGNALS`, page-owned `ACTIONS`,
+page `SUBSCRIPTION_AGENT_TYPE` values, page `SUBSCRIPTION_AGENT_INDEX`
+declarations, page `SIGNALS`, page-owned `ACTIONS`,
 agent `AGENT_SIGNALS`, `Hilos::AGENTS`, `SignalRouter`, `PageSignalRouter`, or
 page/worker route config. The confirmation must list the exact pages, agents,
 actions, agent routes, signal DTOs, and route declarations that would change.

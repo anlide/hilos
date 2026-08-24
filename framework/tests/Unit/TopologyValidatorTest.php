@@ -27,6 +27,9 @@ use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\Config\PageAgentIndexKey;
+use Hilos\Core\Page\Config\PageAgentIndexSource;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -399,6 +402,49 @@ final class TopologyValidatorTest extends TestCase
         $this->expectExceptionMessage('unknown_key');
 
         TopologyIndexedAgentUnknownConfigKeyHilos::validateTopology();
+    }
+
+    public function testPerInstancePageRoutesComeFromRegisteredPageClasses(): void
+    {
+        TopologyPerInstancePageHilos::validateTopology();
+
+        $routes = TopologyPerInstancePageHilos::getPageAgentIndexRoutes();
+        $this->assertSame([TopologyPerInstancePage::PAGE], array_keys($routes));
+        $this->assertSame(PageAgentIndexSource::PARAM, $routes[TopologyPerInstancePage::PAGE]->source);
+        $this->assertSame('entityId', $routes[TopologyPerInstancePage::PAGE]->param);
+        $this->assertSame(
+            TopologyValidAgent::AGENT_TYPE,
+            $routes[TopologyPerInstancePage::PAGE]->fallbackAgentType,
+        );
+    }
+
+    public function testPerInstanceParamSourceWithoutParamFails(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('SUBSCRIPTION_AGENT_INDEX');
+        $this->expectExceptionMessage(PageAgentIndexKey::PARAM);
+
+        TopologyPerInstanceMissingParamHilos::validateTopology();
+    }
+
+    public function testPerInstanceFallbackAgentTypeMissingFromAgentsFails(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('SUBSCRIPTION_AGENT_INDEX');
+        $this->expectExceptionMessage('unregistered_agent');
+        $this->expectExceptionMessage('missing from AGENTS');
+
+        TopologyPerInstanceUnknownFallbackHilos::validateTopology();
+    }
+
+    public function testPerInstanceSessionUserSourceOnPublicPageFails(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('SUBSCRIPTION_AGENT_INDEX');
+        $this->expectExceptionMessage(PageAgentIndexSource::SESSION_USER->value);
+        $this->expectExceptionMessage(PageAccessLevel::PUBLIC->value);
+
+        TopologyPerInstancePublicSessionUserHilos::validateTopology();
     }
 
     public function testPerNodeAgentPassesValidation(): void
@@ -2853,6 +2899,152 @@ final class TopologyPageCatalogSectionHilos extends HilosFacade
 final class TopologyPageCatalogNotAProviderHilos extends HilosFacade
 {
     protected const string PAGE_CATALOG = TopologyTestDbContext::class;
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyPerInstancePage extends AbstractPage
+{
+    public const string PAGE = 'per_instance_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::PARAM,
+        PageAgentIndexKey::PARAM => 'entityId',
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => 'valid_agent',
+    ];
+}
+
+final class TopologyPerInstanceMissingParamPage extends AbstractPage
+{
+    public const string PAGE = 'per_instance_missing_param_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::PARAM,
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => 'valid_agent',
+    ];
+}
+
+final class TopologyPerInstanceUnknownFallbackPage extends AbstractPage
+{
+    public const string PAGE = 'per_instance_unknown_fallback_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::PARAM,
+        PageAgentIndexKey::PARAM => 'entityId',
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => 'unregistered_agent',
+    ];
+}
+
+final class TopologyPerInstancePublicSessionUserPage extends AbstractPage
+{
+    public const string PAGE = 'per_instance_public_session_user_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::SESSION_USER,
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => 'valid_agent',
+    ];
+}
+
+final class TopologyPerInstancePageHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyPerInstancePage::PAGE => TopologyPerInstancePage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyPerInstanceMissingParamHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyPerInstanceMissingParamPage::PAGE => TopologyPerInstanceMissingParamPage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyPerInstanceUnknownFallbackHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyPerInstanceUnknownFallbackPage::PAGE => TopologyPerInstanceUnknownFallbackPage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyPerInstancePublicSessionUserHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyPerInstancePublicSessionUserPage::PAGE => TopologyPerInstancePublicSessionUserPage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
 
     /**
      * Creates a no-op DB context for tests.

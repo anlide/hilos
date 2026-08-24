@@ -1,6 +1,6 @@
 ---
 name: hilos-signals
-description: Work with Hilos signal routing, SignalRouter declarations, page subscription topology, signal payload DTOs, page subscriptions, group subscriptions, sendToUser, sendToGroup, sendToAgent, client-server actions, server-client signals, and signal delivery debugging. Use when adding, changing, or tracing Hilos signal flow, and when a page needs one more piece of data to render and you are deciding which frame carries it.
+description: Work with Hilos signal routing, SignalRouter declarations, page subscription topology, signal payload DTOs, page subscriptions, group subscriptions, sendToUser, sendToGroup, sendToAgent, client-server actions, server-client signals, and signal delivery debugging. Use when adding, changing, or tracing Hilos signal flow, when a page must be served by the agent of one particular entity rather than by an agent of a type, and when a page needs one more piece of data to render and you are deciding which frame carries it.
 ---
 
 # Hilos Signals
@@ -10,6 +10,9 @@ Use this skill for every change that affects signal shape, route, subscription, 
 ## Read First
 
 - Routing rules and tracing signal paths: `docs/agents/signals/routing.md`
+- A page served by the agent of ONE entity, and what that changes about the
+  subscription's whole life: `docs/agents/signals/routing.md`
+  (section "Per-instance page subscriptions")
 - App topology for page subscription routing:
   `docs/agents/app-topology.md`
 - Page/group subscriptions, send helpers, and the rule that one page

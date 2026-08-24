@@ -21,22 +21,47 @@ final class PageSubscription
     /**
      * @param string $page Page identifier the client is subscribed to
      * @param array<string, mixed> $params Route params from the subscribe signal
+     * @param ?string $agentType Agent type serving this subscription; null until the master binds one
+     * @param ?string $agentIndex Instance index of the serving agent, null when it is served unindexed
      */
     public function __construct(
         public readonly string $page,
         public readonly array $params = [],
+        public readonly ?string $agentType = null,
+        public readonly ?string $agentIndex = null,
     ) {
     }
 
     /**
      * Returns a copy of this subscription with $params merged over the current params.
      *
+     * The bound address survives the merge: an update is a param change inside the same
+     * page, and re-resolving the address there would hand a live subscription to a
+     * different instance mid-flight ({@see SubscriptionRegistry::bindPageAgent}).
+     *
      * @param array<string, mixed> $params Params to merge on top of the current ones
      * @return self Subscription with merged params
      */
     public function withMergedParams(array $params): self
     {
-        return new self($this->page, array_merge($this->params, $params));
+        return new self(
+            $this->page,
+            array_merge($this->params, $params),
+            $this->agentType,
+            $this->agentIndex,
+        );
+    }
+
+    /**
+     * Returns a copy of this subscription served by the named agent.
+     *
+     * @param string $agentType Agent type serving this subscription
+     * @param ?string $agentIndex Instance index, or null to serve the subscription unindexed
+     * @return self Subscription carrying the address
+     */
+    public function withPageAgent(string $agentType, ?string $agentIndex): self
+    {
+        return new self($this->page, $this->params, $agentType, $agentIndex);
     }
 
     /**

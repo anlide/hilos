@@ -15,6 +15,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WebSocketConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Daemon\ConnectionDropper;
+use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\ProtectedModeAdmissionRecorder;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -1455,8 +1456,12 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Called when socket connection is successfully closed.
      *
-     * Announces the close and drops every subscription the accept key held. The
-     * page the connection sat on is unsubscribed on the worker side by
+     * Announces the close and nothing more. The subscriptions the accept key held are
+     * dropped by the master's own dispatch, after the close has been routed
+     * ({@see DaemonManager::forgetSubscriptionsAfterRouting()}): the records name the
+     * agent instances serving this connection, and dropping them here would erase the
+     * addressees before the close reached them (HIL-627). The page the connection sat
+     * on is unsubscribed on the worker side by
      * {@see WorkerManager::dispatchPageUnsubscribeIfTrackedOnConnectionClose()},
      * which is the only side that knows which page that was.
      *
@@ -1485,8 +1490,6 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             new SignalName(SignalTypeConstants::CONNECTION_CLOSE),
             $closeDto,
         );
-
-        Hilos::$sr->unsubscribeFromAll($this->acceptKey);
     }
 
     /**

@@ -1,6 +1,6 @@
 ---
 name: hilos-page-subscribe
-description: Work with Hilos page subscription params, page registration and routing, PageRouteParams accessors, AbstractPageSubscribeParamsDTO subclasses, onSubscribe/onUpdateSubscription signatures, template method dispatch in abstract pages, and subscription error signals. Use when adding or changing page route params or subscribe handlers, and when a page needs one more piece of data to render and you are deciding where that data comes from.
+description: Work with Hilos page subscription params, page registration and routing, PageRouteParams accessors, AbstractPageSubscribeParamsDTO subclasses, onSubscribe/onUpdateSubscription signatures, template method dispatch in abstract pages, and subscription error signals. Use when adding or changing page route params or subscribe handlers, when a page must be served by the agent of one particular entity rather than by an agent of a type, and when a page needs one more piece of data to render and you are deciding where that data comes from.
 ---
 
 # Hilos Page Subscribe Params
@@ -14,6 +14,10 @@ signals back to their source.
 
 - Page registration and subscription routing:
   `docs/agents/app-topology.md`
+- A page served by the agent of ONE entity — how the instance is named, when the
+  address is resolved, and what a replacement, an update, a disconnect, and a
+  sign-in do to it: `docs/agents/signals/routing.md`
+  (section "Per-instance page subscriptions")
 - Subscribe handlers, `PageRouteParams` accessors, per-page DTO template:
   `docs/agents/code-style/page-action-handlers.md` (section
   "Subscribe handlers and route params")

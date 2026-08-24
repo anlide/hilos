@@ -160,6 +160,81 @@ Do **not** override `SignalRouter::getDestinations()` for indexed routing when
 `INDEX_FIELD` covers the case. Reserve overrides for routing patterns that the
 topology registry cannot express at all.
 
+## Per-instance page subscriptions
+
+A page is normally served by the agent of a TYPE. A page that is the surface of ONE
+entity — a chat room, a person's profile — can declare that its subscription belongs to
+the agent of that one instance instead:
+
+```php
+use Hilos\Core\Page\Config\PageAgentIndexKey;
+use Hilos\Core\Page\Config\PageAgentIndexSource;
+
+final class ChatRoomPage extends AbstractPage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT_ROOM;
+
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::PARAM,
+        PageAgentIndexKey::PARAM => 'chatId',
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => AgentType::CHAT,
+    ];
+}
+```
+
+Two sources, because an instance is named in exactly two ways. `PARAM` — the address of
+the page names it, and the index travels as a subscription param. `SESSION_USER` — the
+page is "mine", and the instance is the person behind the connection, whom the master
+reads through the same identity seam the access guards are judged with
+(`BrowserContext::connectionIdentity()`). It reads one row of one connection and never
+the database.
+
+**The address is resolved ONCE, on `page_subscribe`, and remembered on the subscription
+record.** Everything that follows — `page_update_subscription`, `table_viewport`,
+`action`, `page_unsubscribe` — is addressed off that record. This is not an optimization:
+an unsubscribe carries nothing but the accept key, so a per-signal recomputation would
+have nothing to recompute from, and a recomputation mid-subscription would hand a live
+client to a different instance and leave a phantom subscription on the old one.
+
+The value form matches an indexed agent signal's: positive `int` or non-empty `string`.
+Anything else — no such param, an empty value, a guest on a "my" page — is not an error:
+the subscription goes to the `FALLBACK_AGENT_TYPE` the page declared, and that agent
+answers the client the ordinary way, 401 included. **The master never answers a client
+itself and forms no application errors.** Whether the row behind an index exists is not
+checked either — the ordinary `DB_EXISTS` guards ask that inside the agent.
+
+Consequences worth knowing before declaring one:
+
+- **Replacement.** Navigation is a single `page_subscribe` that atomically replaces the
+  previous subscription. When the address moves, the master delivers `page_unsubscribe`
+  straight to the previous agent — not through the queue, which would deliver it after
+  the record already named the new one.
+- **Update.** `page_update_subscription` is a param change INSIDE the same page. An
+  update that would change the index value is refused with a log line and leaves the
+  subscription untouched: another instance is another page, and a page change arrives as
+  a subscribe.
+- **Action.** An action on a per-instance page is addressed by the caller's live
+  subscription to the page that owns it. No subscription, no destination — acting on a
+  page one is not subscribed to never meant anything.
+- **Disconnect.** `connection_close` additionally reaches the instance that held the
+  connection's subscription, and the records are dropped only afterwards. Without that,
+  an instance in another worker keeps a subscription with no socket behind it.
+- **Move on sign-in.** A guest who signs in stays on the same page, and the page is
+  re-judged rather than re-subscribed: `page_access_reassess` carries a copy of the
+  subscribe, its address is recomputed, and the client gets a full page answer without
+  the frontend knowing anything happened. `HilosSessionHost::authenticateSession()`
+  announces it after binding the connection.
+- **Waiting for an identity.** A `SESSION_USER` page whose connection identity has not
+  crossed the RT sync yet is held for up to 500ms and then routed on what is known. Only
+  such a page ever waits; every other subscription is routed the moment it arrives.
+
+`TopologyValidator` refuses a declaration that cannot work: a `PARAM` source without a
+param, a missing or unregistered `FALLBACK_AGENT_TYPE`, and a `SESSION_USER` source on a
+`PageAccessLevel::PUBLIC` page — a guest handed to the fallback agent would be served the
+"my" page for real.
+
+Groups (`GROUPS`) stay on the agent type: there is no per-instance group surface yet.
+
 ## Out of scope for topology DTO routing
 
 Do not add topology inner-payload DTO declarations for:
