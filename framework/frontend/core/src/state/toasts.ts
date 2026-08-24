@@ -8,6 +8,12 @@
 // and the frontend decides what deserves one (wire-protocol.md). Nothing here
 // is durable — a toast that expires is gone, so anything a user may need later
 // belongs in the feature's own record, not in this store.
+//
+// A notice nobody asked for lands while the user is looking elsewhere, so the
+// lifetime is measured in reading time, not in noticing time, and the countdown
+// freezes while the stack is under the cursor or holds keyboard focus (WCAG
+// 2.2.1 Timing Adjustable). Long lifetimes stack up, so the stack is capped:
+// see MAX_VISIBLE_TOASTS.
 
 import { createSignal, type ReadonlySignal } from './signal.js'
 
@@ -30,17 +36,27 @@ export interface HilosToastOptions {
   severity?: HilosToastSeverity
   /**
    * Lifetime in milliseconds; 0 keeps it until dismissed. Defaults to
-   * {@link DEFAULT_ERROR_TTL_MS} for an error (a failure deserves reading time)
-   * and {@link DEFAULT_TTL_MS} otherwise.
+   * {@link DEFAULT_ERROR_TTL_MS} — 40 seconds, an error carries a reason to read
+   * and understand — and to {@link DEFAULT_TTL_MS} — 20 seconds — otherwise.
+   * Pass a lifetime of your own only with the reason written at the call site
+   * (toasts.md).
    */
   ttlMs?: number
 }
 
 /** Lifetime of a success / info toast. */
-const DEFAULT_TTL_MS = 5000
+const DEFAULT_TTL_MS = 20000
 
 /** Lifetime of an error toast — longer, because it carries a reason worth reading. */
-const DEFAULT_ERROR_TTL_MS = 12000
+const DEFAULT_ERROR_TTL_MS = 40000
+
+/**
+ * How many notices the corner shows at once; a further push evicts the oldest.
+ *
+ * Module-private on purpose: the cap answers how much of the screen corner stays
+ * readable, which is this store's business and not a caller's.
+ */
+const MAX_VISIBLE_TOASTS = 4
 
 /** The transient notice stack a view renders. */
 export interface HilosToastStore {
@@ -61,6 +77,28 @@ export interface HilosToastStore {
   dismiss(id: number): void
   /** Remove every notice and cancel their timers. */
   clear(): void
+  /**
+   * Freeze the countdown of the whole stack, taking one hold.
+   *
+   * The cursor and keyboard focus are independent sources, so holds are counted:
+   * leaving with the cursor while focus is still inside must not resume.
+   */
+  pause(): void
+  /**
+   * Release one hold; on the last one the countdown continues from what is left,
+   * not from the full lifetime, and postponed evictions are applied.
+   */
+  resume(): void
+}
+
+/** What is left of one notice's lifetime, and the timer that will end it. */
+interface PendingToast {
+  /** The live countdown, or `null` while the stack is held. */
+  timer: ReturnType<typeof setTimeout> | null
+  /** Milliseconds still to run; frozen while `timer` is `null`. */
+  remainingMs: number
+  /** When the live timer fires; meaningless while `timer` is `null`. */
+  deadline: number
 }
 
 /**
@@ -71,16 +109,55 @@ export interface HilosToastStore {
  */
 export function createHilosToastStore(): HilosToastStore {
   const toasts = createSignal<readonly HilosToast[]>([])
-  const timers = new Map<number, ReturnType<typeof setTimeout>>()
+  // Only a notice with a lifetime is tracked here: a sticky one (ttlMs 0) never
+  // gets a timer, so it has nothing to freeze and nothing to resume.
+  const pending = new Map<number, PendingToast>()
   let sequence = 0
+  let holds = 0
+
+  function cancel(id: number): void {
+    const entry = pending.get(id)
+    if (entry === undefined) {
+      return
+    }
+    if (entry.timer !== null) {
+      clearTimeout(entry.timer)
+    }
+    pending.delete(id)
+  }
 
   function drop(id: number): void {
-    const timer = timers.get(id)
-    if (timer !== undefined) {
-      clearTimeout(timer)
-      timers.delete(id)
-    }
+    cancel(id)
     toasts.set(toasts.get().filter((toast) => toast.id !== id))
+  }
+
+  function arm(id: number, entry: PendingToast): void {
+    entry.deadline = Date.now() + entry.remainingMs
+    entry.timer = setTimeout(() => {
+      drop(id)
+    }, entry.remainingMs)
+  }
+
+  /**
+   * Trim `stack` down to the visible cap, cancelling what it evicts.
+   *
+   * Eviction is postponed while the stack is held: a pause promises that nothing
+   * disappears while the user is reading, so an over-tall stack is allowed and
+   * the excess leaves in one move on resume. A sticky notice is evicted like any
+   * other, or four of them would own the corner forever.
+   */
+  function enforceLimit(stack: readonly HilosToast[]): readonly HilosToast[] {
+    const excess = stack.length - MAX_VISIBLE_TOASTS
+    if (holds > 0 || excess <= 0) {
+      return stack
+    }
+    // The first of the list is the top one on screen: the container sits at
+    // bottom-0 and new notices come in below.
+    for (const toast of stack.slice(0, excess)) {
+      cancel(toast.id)
+    }
+
+    return stack.slice(excess)
   }
 
   return {
@@ -92,15 +169,20 @@ export function createHilosToastStore(): HilosToastStore {
         (severity === 'error' ? DEFAULT_ERROR_TTL_MS : DEFAULT_TTL_MS)
       const id = ++sequence
 
-      toasts.set([...toasts.get(), { id, message, severity }])
       if (ttlMs > 0) {
-        timers.set(
-          id,
-          setTimeout(() => {
-            drop(id)
-          }, ttlMs),
-        )
+        const entry: PendingToast = {
+          timer: null,
+          remainingMs: ttlMs,
+          deadline: 0,
+        }
+        pending.set(id, entry)
+        // Pushed into a held stack, it waits with its lifetime untouched and
+        // starts ticking on resume.
+        if (holds === 0) {
+          arm(id, entry)
+        }
       }
+      toasts.set(enforceLimit([...toasts.get(), { id, message, severity }]))
 
       return id
     },
@@ -108,11 +190,43 @@ export function createHilosToastStore(): HilosToastStore {
       drop(id)
     },
     clear() {
-      for (const timer of timers.values()) {
-        clearTimeout(timer)
+      for (const entry of pending.values()) {
+        if (entry.timer !== null) {
+          clearTimeout(entry.timer)
+        }
       }
-      timers.clear()
+      pending.clear()
+      holds = 0
       toasts.set([])
+    },
+    pause() {
+      holds += 1
+      if (holds > 1) {
+        return
+      }
+      const now = Date.now()
+      for (const entry of pending.values()) {
+        if (entry.timer !== null) {
+          clearTimeout(entry.timer)
+          entry.timer = null
+          entry.remainingMs = entry.deadline - now
+        }
+      }
+    },
+    resume() {
+      if (holds === 0) {
+        return
+      }
+      holds -= 1
+      if (holds > 0) {
+        return
+      }
+      // Every tracked notice is frozen here — either the pause stopped it or it
+      // arrived during the hold — so all of them are armed again.
+      for (const [id, entry] of pending) {
+        arm(id, entry)
+      }
+      toasts.set(enforceLimit(toasts.get()))
     },
   }
 }

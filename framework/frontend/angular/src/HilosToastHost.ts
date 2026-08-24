@@ -31,6 +31,33 @@ const SURFACE: Record<HilosToastSeverity, string> = {
   info: 'text-bg-secondary',
 }
 
+// Only a failure earns an interrupt; a success or a plain notice waits its turn
+// rather than cutting into what the screen-reader user is listening to.
+const LIVE_REGION: Record<
+  HilosToastSeverity,
+  { role: string; ariaLive: 'assertive' | 'polite' }
+> = {
+  error: { role: 'alert', ariaLive: 'assertive' },
+  success: { role: 'status', ariaLive: 'polite' },
+  info: { role: 'status', ariaLive: 'polite' },
+}
+
+/**
+ * Whether a focus event only moved focus inside the stack.
+ *
+ * The cursor and keyboard focus are two independent holds on the countdown: the
+ * host only reports them, the store counts them. Tabbing from one close button to
+ * the next is neither an arrival nor a leave, and `relatedTarget` is what tells
+ * those apart; without the check the holds would never balance out.
+ *
+ * @param event The bubbled focusin / focusout.
+ */
+function movesWithin(event: FocusEvent): boolean {
+  const container = event.currentTarget as HTMLElement
+
+  return container.contains(event.relatedTarget as Node | null)
+}
+
 /** The application's transient notice stack. */
 @Component({
   selector: 'hilos-toast-host',
@@ -39,13 +66,17 @@ const SURFACE: Record<HilosToastSeverity, string> = {
     <div
       class="toast-container position-fixed bottom-0 end-0 p-3"
       data-id="hilos-toasts"
+      (mouseover)="holdOnCursor()"
+      (mouseleave)="releaseCursorHold()"
+      (focusin)="holdOnFocus($event)"
+      (focusout)="releaseOnBlur($event)"
     >
       @for (toast of toasts(); track toast.id) {
         <div
           class="toast show align-items-center border-0 d-flex"
           [class]="surface(toast.severity)"
-          role="alert"
-          aria-live="assertive"
+          [attr.role]="role(toast.severity)"
+          [attr.aria-live]="ariaLive(toast.severity)"
           aria-atomic="true"
           [attr.data-id]="'hilos-toast-' + toast.severity"
         >
@@ -67,6 +98,18 @@ export class HilosToastHost {
   readonly store = input<HilosToastStore>(hilosToasts)
 
   protected readonly toasts = signal<readonly HilosToast[]>([])
+
+  // The host owns at most one hold of each kind and knows whether it is holding it,
+  // because a toast that closes under the pointer takes the release event with it:
+  // Chrome and WebKit fire no mouseleave and no focusout for an element that leaves
+  // the DOM, and they never make it up afterwards. So both holds are given back by
+  // hand in dismiss(), and the cursor's one is re-taken from mouseover rather than
+  // mouseenter — mouseover also fires for the toast that slides under a cursor
+  // standing still, which is exactly what happens to the notice below the one just
+  // closed.
+  private cursorHeld = false
+
+  private focusHeld = false
 
   constructor() {
     // Mirror the store's stack, re-subscribing if the input is swapped. Done in an
@@ -93,11 +136,78 @@ export class HilosToastHost {
   }
 
   /**
+   * The live-region role for a severity.
+   *
+   * @param severity The toast's severity.
+   */
+  protected role(severity: HilosToastSeverity): string {
+    return LIVE_REGION[severity].role
+  }
+
+  /**
+   * How urgently a screen reader announces a severity.
+   *
+   * @param severity The toast's severity.
+   */
+  protected ariaLive(severity: HilosToastSeverity): string {
+    return LIVE_REGION[severity].ariaLive
+  }
+
+  /**
    * Remove one notice early.
    *
    * @param id The toast id.
    */
   protected dismiss(id: number): void {
+    this.releaseCursorHold()
+    this.releaseFocusHold()
     this.store().dismiss(id)
+  }
+
+  /** Freeze the countdown while the cursor rests on the stack. */
+  protected holdOnCursor(): void {
+    if (!this.cursorHeld) {
+      this.cursorHeld = true
+      this.store().pause()
+    }
+  }
+
+  /** Give back the cursor's hold, if this host is the one holding it. */
+  protected releaseCursorHold(): void {
+    if (this.cursorHeld) {
+      this.cursorHeld = false
+      this.store().resume()
+    }
+  }
+
+  /**
+   * Freeze the countdown when keyboard focus arrives from outside the stack.
+   *
+   * @param event The bubbled focusin.
+   */
+  protected holdOnFocus(event: FocusEvent): void {
+    if (!this.focusHeld && !movesWithin(event)) {
+      this.focusHeld = true
+      this.store().pause()
+    }
+  }
+
+  /**
+   * Release the focus hold once focus actually leaves the stack.
+   *
+   * @param event The bubbled focusout.
+   */
+  protected releaseOnBlur(event: FocusEvent): void {
+    if (!movesWithin(event)) {
+      this.releaseFocusHold()
+    }
+  }
+
+  /** Give back the focus hold, if this host is the one holding it. */
+  private releaseFocusHold(): void {
+    if (this.focusHeld) {
+      this.focusHeld = false
+      this.store().resume()
+    }
   }
 }

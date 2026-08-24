@@ -95,8 +95,17 @@ The rules to apply when building a view or an SDK component:
 - **Busy state** — a control performing an action sets `aria-busy` while in
   flight (`LoadingButton`).
 - **Live regions** — transient status that should be announced uses
-  `role="status" aria-live="polite"` (the connection indicator and the
-  page-change announcement are the references). Use sparingly.
+  `role="status" aria-live="polite"` (the connection indicator, the page-change
+  announcement and the toast stack are the references). Use sparingly, and reserve
+  `role="alert" aria-live="assertive"` for a failure: a toast earns the interrupt
+  only at `error` severity, while `success` and `info` go polite rather than cut
+  into what the user is listening to.
+- **A timed notice is readable or it does not exist (2.2.1 Timing Adjustable).**
+  A toast that expires before it is read is nothing to a screen-reader user, so
+  the toast stack lives 20 seconds — 40 for an error — and freezes its countdown
+  while it is under the cursor or holds keyboard focus, continuing from what is
+  left. That is the success criterion being met, not a nicety; a new timed
+  surface owes the same.
 
 ## What Bootstrap already covers — leave it alone
 

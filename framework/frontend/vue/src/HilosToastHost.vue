@@ -30,20 +30,97 @@ const SURFACE: Record<HilosToastSeverity, string> = {
   success: 'text-bg-success',
   info: 'text-bg-secondary',
 }
+
+// Only a failure earns an interrupt; a success or a plain notice waits its turn
+// rather than cutting into what the screen-reader user is listening to.
+const LIVE_REGION: Record<
+  HilosToastSeverity,
+  { role: string; ariaLive: 'assertive' | 'polite' }
+> = {
+  error: { role: 'alert', ariaLive: 'assertive' },
+  success: { role: 'status', ariaLive: 'polite' },
+  info: { role: 'status', ariaLive: 'polite' },
+}
+
+// The cursor and keyboard focus are two independent holds on the countdown: the
+// host only reports them, the store counts them. A focus move inside the stack —
+// tabbing from one close button to the next — is neither an arrival nor a leave,
+// and relatedTarget is what tells those apart; without the check the holds would
+// never balance out.
+function movesWithin(event: FocusEvent): boolean {
+  const container = event.currentTarget as HTMLElement
+
+  return container.contains(event.relatedTarget as Node | null)
+}
+
+// The host owns at most one hold of each kind and knows whether it is holding it,
+// because a toast that closes under the pointer takes the release event with it:
+// Chrome and WebKit fire no mouseleave and no focusout for an element that leaves
+// the DOM, and they never make it up afterwards. So both holds are given back by
+// hand in dismiss(), and the cursor's one is re-taken from mouseover rather than
+// mouseenter — mouseover also fires for the toast that slides under a cursor
+// standing still, which is exactly what happens to the notice below the one just
+// closed.
+let cursorHeld = false
+let focusHeld = false
+
+function holdOnCursor(): void {
+  if (!cursorHeld) {
+    cursorHeld = true
+    store.pause()
+  }
+}
+
+function releaseCursorHold(): void {
+  if (cursorHeld) {
+    cursorHeld = false
+    store.resume()
+  }
+}
+
+function releaseFocusHold(): void {
+  if (focusHeld) {
+    focusHeld = false
+    store.resume()
+  }
+}
+
+function holdOnFocus(event: FocusEvent): void {
+  if (!focusHeld && !movesWithin(event)) {
+    focusHeld = true
+    store.pause()
+  }
+}
+
+function releaseOnBlur(event: FocusEvent): void {
+  if (!movesWithin(event)) {
+    releaseFocusHold()
+  }
+}
+
+function dismiss(id: number): void {
+  releaseCursorHold()
+  releaseFocusHold()
+  store.dismiss(id)
+}
 </script>
 
 <template>
   <div
     class="toast-container position-fixed bottom-0 end-0 p-3"
     data-id="hilos-toasts"
+    @mouseover="holdOnCursor"
+    @mouseleave="releaseCursorHold"
+    @focusin="holdOnFocus"
+    @focusout="releaseOnBlur"
   >
     <div
       v-for="toast in toasts"
       :key="toast.id"
       class="toast show align-items-center border-0 d-flex"
       :class="SURFACE[toast.severity]"
-      role="alert"
-      aria-live="assertive"
+      :role="LIVE_REGION[toast.severity].role"
+      :aria-live="LIVE_REGION[toast.severity].ariaLive"
       aria-atomic="true"
       :data-id="`hilos-toast-${toast.severity}`"
     >
@@ -53,7 +130,7 @@ const SURFACE: Record<HilosToastSeverity, string> = {
         class="btn-close btn-close-white me-2 m-auto"
         aria-label="Close"
         data-id="hilos-toast-close"
-        @click="store.dismiss(toast.id)"
+        @click="dismiss(toast.id)"
       ></button>
     </div>
   </div>

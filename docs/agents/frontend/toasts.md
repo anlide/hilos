@@ -40,11 +40,14 @@ that asked for the work, or to nobody.
 
 2. Choose the severity honestly: `error` (something failed), `success` (something
    the user asked for completed), `info` (neither). The severity drives the
-   Bootstrap surface and the lifetime — an error stays on screen longer than a
-   success, because it carries a reason worth reading.
-3. Pass `ttlMs` only to override the default lifetime; `ttlMs: 0` keeps a notice
-   until the user dismisses it. Use it sparingly — a sticky toast is a modal in
-   disguise.
+   Bootstrap surface and the lifetime — **20 seconds** by default, **40 seconds**
+   for an error. An error gets double because it carries a reason the user has to
+   read and understand, not merely notice.
+3. Pass `ttlMs` only to override the default lifetime, and only with the reason
+   written at the call site — a lifetime with no reason beside it is the next
+   person's mystery. `ttlMs: 0` keeps a notice until the user dismisses it. Use it
+   sparingly — a sticky toast is a modal in disguise, and it is evicted by the
+   visible cap like any other.
 4. Write the message as a whole sentence the user can act on. A failure names
    what failed and why in one line; the full detail belongs in the log, not in
    the corner of the screen — and never the engine's own words
@@ -53,6 +56,17 @@ that asked for the work, or to nobody.
 5. Nothing to mount: `HilosToastHost` is part of `HilosLayout` in all three view
    layers, so any page inside the shell is covered. Mount the host yourself only
    in an app that does not use the framework shell.
+
+**Reading time is protected, and the corner is capped.** The countdown of the
+whole stack freezes while it is under the cursor or holds keyboard focus, and on
+leaving it continues from what is left, not from the full lifetime — the two are
+independent holds, so leaving with the cursor while focus is still inside does
+not restart anything. Twenty seconds is enough to read a notice only if the
+notice is still there, which is why the stack shows at most **4 at once**: a
+fifth push evicts the oldest. While the stack is held, eviction waits — a pause
+promises that nothing disappears while the user is reading, so the excess leaves
+in one move on release. None of this is a per-call option: the host reports the
+events, the store owns the policy, and a caller has nothing to wire.
 
 ## Failures of a tracked action
 
@@ -127,9 +141,14 @@ A project may render its own stack by creating an independent store
 
 ## Validation
 
-- Unit: the store's queue, lifetimes, and dismissal are covered in
-  `core/src/state/toasts.test.ts`; a feature that pushes needs no store test of
-  its own.
+- Unit: the store's queue, lifetimes, dismissal, the paused countdown and the
+  visible cap are covered in `core/src/state/toasts.test.ts`; the host's pause
+  events and live-region wiring, in `react/test/HilosToastHost.test.tsx`. A
+  feature that pushes needs no store test of its own.
+- **Not e2e, on purpose.** The lifetime, the pause and the cap are timing, and
+  asserting them through a browser would mean a spec that sits still for 20
+  seconds to prove a toast is still there — slow, and flaky the moment the box is
+  loaded. The unit test owns them; e2e asserts that a notice appears at all.
 - E2E: assert inside the stack, not on a per-feature id —
   `page.getByTestId('hilos-toasts').getByText('Password changed.')`. Remember the
   notice expires: assert it before the lifetime elapses, and never assert its
