@@ -9,7 +9,9 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentCommandConfigKey;
+use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -494,13 +496,24 @@ final class TopologyValidator
                 $errors[] = 'AGENTS[' . $agentType . '][' . AgentRegistryKey::INDEXED . '] must be a boolean';
             }
 
-            $perNode = $registryEntry[AgentRegistryKey::PER_NODE] ?? false;
-            if ($perNode !== false && !is_bool($perNode)) {
-                $errors[] = 'AGENTS[' . $agentType . '][' . AgentRegistryKey::PER_NODE . '] must be a boolean';
-            } elseif ($perNode === true && $indexed === true) {
-                $errors[] = 'AGENTS[' . $agentType . '] cannot combine '
-                    . AgentRegistryKey::PER_NODE . ' with ' . AgentRegistryKey::INDEXED
-                    . ': a sharded pool needs an index, an every-node singleton has none';
+            $scope = $registryEntry[AgentRegistryKey::SCOPE] ?? null;
+            if ($scope !== null && !$scope instanceof AgentScope) {
+                $errors[] = 'AGENTS[' . $agentType . '][' . AgentRegistryKey::SCOPE . '] must be a '
+                    . AgentScope::class . ' case';
+            } elseif ($scope === AgentScope::NODE && $indexed === true) {
+                $errors[] = 'AGENTS[' . $agentType . '] cannot combine scope '
+                    . AgentScope::NODE->name . ' with ' . AgentRegistryKey::INDEXED
+                    . ': a sharded pool needs an index, an every-node replica has none';
+            }
+
+            $placement = $registryEntry[AgentRegistryKey::PLACEMENT] ?? null;
+            if ($placement !== null && !$placement instanceof AgentPlacement) {
+                $errors[] = 'AGENTS[' . $agentType . '][' . AgentRegistryKey::PLACEMENT . '] must be a '
+                    . AgentPlacement::class . ' case';
+            } elseif ($placement !== null && $scope === AgentScope::NODE) {
+                $errors[] = 'AGENTS[' . $agentType . '] cannot set ' . AgentRegistryKey::PLACEMENT
+                    . ' with scope ' . AgentScope::NODE->name
+                    . ': a replica runs on every node, so no node is picked';
             }
         }
     }

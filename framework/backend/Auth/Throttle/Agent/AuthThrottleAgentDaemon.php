@@ -31,14 +31,4 @@ final class AuthThrottleAgentDaemon extends AbstractAgentDaemon
     {
         return false;
     }
-
-    /**
-     * Counters are node-local, so the agent runs on every node rather than pinning to the leader.
-     *
-     * @return bool False: per-node, not a cluster singleton
-     */
-    public function requiresClusterLeadership(): bool
-    {
-        return false;
-    }
 }

@@ -34,17 +34,27 @@ class MyAgentDaemon extends AbstractAgentDaemon {
 ## 4. Register in Hilos topology
 
 Declare worker and daemon classes in `Hilos::AGENTS`. Use `AgentRegistryKey::INDEXED`
-when the agent requires `agentIndex` at creation (for example one bot per index), or
-`AgentRegistryKey::PER_NODE` for an every-node singleton that must run on each node
-(for example the per-node log rotation agent, whose daemon returns
-`requiresClusterLeadership() = false`); such agents are started automatically by
-`WorkerServer::onInitialWorkersReady()` once a node's workers are ready. The two
-placement flags are mutually exclusive — a sharded pool needs an index, an every-node
-singleton has none:
+when the agent requires `agentIndex` at creation (for example one bot per index).
+
+Where the agent runs is two independent axes, both declared here and nowhere else:
+`AgentRegistryKey::SCOPE` says how many instances exist (`AgentScope::CLUSTER`, the
+default, or `AgentScope::NODE`), and `AgentRegistryKey::PLACEMENT` says who picks the
+node (`AgentPlacement::LEADER`, the default, or `AgentPlacement::POLICY`). Declaring
+neither is today's leader-hosted cluster singleton. `AgentScope::NODE` is a replica on
+every node, started automatically by `WorkerServer::onInitialWorkersReady()` once that
+node's workers are ready — for example the log rotation agent, whose logs are node-local.
+`AgentPlacement::POLICY` is one instance cluster-wide on the node best-fit picks; the
+leader places it, and `DaemonManager` does that itself for the unindexed ones.
+
+`AgentScope::NODE` combines with neither `INDEXED` (a sharded pool needs an index, a
+replica has none) nor `PLACEMENT` (a replica runs everywhere, so no node is picked);
+`TopologyValidator` refuses both pairs at startup:
 
 ```php
 // backend/Hilos.php
+use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Config\AgentScope;
 
 public const array AGENTS = [
     MyAgent::AGENT_TYPE => [
@@ -59,7 +69,12 @@ public const array AGENTS = [
     LogRotationAgent::AGENT_TYPE => [
         AgentRegistryKey::WORKER => LogRotationAgent::class,
         AgentRegistryKey::DAEMON => LogRotationAgentDaemon::class,
-        AgentRegistryKey::PER_NODE => true,
+        AgentRegistryKey::SCOPE => AgentScope::NODE,
+    ],
+    LibraryAgent::AGENT_TYPE => [
+        AgentRegistryKey::WORKER => LibraryAgent::class,
+        AgentRegistryKey::DAEMON => LibraryAgentDaemon::class,
+        AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
     ],
 ];
 ```
@@ -131,7 +146,7 @@ class MyPage extends AbstractPage {
 ## Checklist
 
 - [ ] `AGENT_TYPE` constant matches value in `AgentType`
-- [ ] Registered in `Hilos::AGENTS` with `WORKER`, `DAEMON`, and `INDEXED` or `PER_NODE` when needed
+- [ ] Registered in `Hilos::AGENTS` with `WORKER`, `DAEMON`, `INDEXED` when needed, and `SCOPE` / `PLACEMENT` when the agent is not a leader-hosted cluster singleton
 - [ ] Direct agent-to-agent signals declared in `AGENT_SIGNALS`; indexed multi-instance signals use `AgentSignalConfigKey::INDEX_FIELD` instead of `SignalRouter::getDestinations()`
 - [ ] Static source/type routes declared in `SignalRouter` when needed (not covered by topology)
 - [ ] `onStop()` cleans owned state; `WorkerManager` unregisters truth sources after the hook

@@ -389,11 +389,12 @@ arbitrate.
 
 What this means when you write an agent that owns a collection:
 
-- **Say it in `requiresClusterLeadership()`.** An agent that registers as a truth
-  source must return `true` (the default), so it runs on exactly one node. An
-  agent that returns `false` runs on every node — and if it registers as a truth
-  source, that collection now has two owners, which is the one thing the model
-  does not allow.
+- **Say it in the registry, on the scope axis.** An agent that registers as a
+  truth source must stay `AgentScope::CLUSTER` (the default), so it runs on
+  exactly one node — hosted by the leader or placed by the policy, either way
+  once. An agent declared `AgentScope::NODE` runs on every node, and if it
+  registers as a truth source, that collection now has two owners, which is the
+  one thing the model does not allow.
 - **A per-node agent may read a shared collection, not write it.** Writing on a
   node where the source is not registered fails with
   `RtTruthSourceWriteNotAllowedException`, exactly as it does off-cluster.
@@ -404,7 +405,7 @@ What this means when you write an agent that owns a collection:
 A node that receives a replica for a collection it owns itself refuses it and
 writes `RT collection <key> has truth sources on two nodes: local and <node>`.
 That line means an agent is registered as a source on two nodes at once — look
-at its `requiresClusterLeadership()` first.
+at its `AgentRegistryKey::SCOPE` first.
 
 A node joining the mesh is handed each collection whole by its owner, because it
 has no history for the deltas to apply to. That hand-over **replaces** the

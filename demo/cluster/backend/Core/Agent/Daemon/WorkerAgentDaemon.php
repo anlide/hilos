@@ -52,16 +52,6 @@ final class WorkerAgentDaemon extends AbstractAgentDaemon
     }
 
     /**
-     * A data-plane agent, not a leader-singleton: the leader places it on another node.
-     *
-     * @return bool False: may run on a node that is not the cluster leader
-     */
-    public function requiresClusterLeadership(): bool
-    {
-        return false;
-    }
-
-    /**
      * Only a node advertising the WORKER capability may host it.
      *
      * @return list<string> Required capability tags

@@ -27,14 +27,4 @@ final class LogRotationAgentDaemon extends AbstractAgentDaemon
     {
         return false;
     }
-
-    /**
-     * Logs are node-local, so the agent runs on every node rather than pinning to the leader.
-     *
-     * @return bool False: per-node, not a cluster singleton
-     */
-    public function requiresClusterLeadership(): bool
-    {
-        return false;
-    }
 }

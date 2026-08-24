@@ -14,10 +14,11 @@ agents whose only job is to keep their workers busy.
 - **Nodes:** 3 masters (`m1..m3`, the consensus master-set) + 2 data-plane slaves
   (`s1`, `s2`, advertising the `worker` capability). Role, identity, master set,
   and every timeout come from `CLUSTER_*` env in `docker/docker-compose.cluster.yml`.
-- **Workload:** a fleet of 10 `WorkerAgent` instances (`worker:0`…`worker:9`) —
-  monopolistic, **not** cluster-singletons (`requiresClusterLeadership() = false`),
-  gated to the `worker` capability. Each one busies its worker with 50–250 ms jobs
-  and reports its throughput, so a node's share of the load is visible in its log.
+- **Workload:** a fleet of 10 `WorkerAgent` instances (`worker:0`…`worker:9`) — on
+  the node's regular workers, declared `AgentPlacement::POLICY` so the leader
+  places them rather than hosting them, gated to the `worker` capability. Each one
+  busies its worker with 50–250 ms jobs and reports its throughput, so a node's
+  share of the load is visible in its log.
   The leader spreads the fleet over the slaves via the framework's node-selection
   policy (HIL-182) and re-places a lost node's share on failover (HIL-183).
   `ClusterDaemonManager` supplies only the placement *trigger*.

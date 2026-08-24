@@ -10,7 +10,9 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Constants\CommandConstants;
 use Hilos\Core\Agent\Config\AgentCommandConfigKey;
+use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserGuardKey;
@@ -456,20 +458,48 @@ final class TopologyValidatorTest extends TestCase
         );
     }
 
-    public function testPerNodeMustBeBoolean(): void
+    public function testPolicyPlacedAgentPassesValidation(): void
     {
-        $this->expectException(InvalidTopologyException::class);
-        $this->expectExceptionMessage(AgentRegistryKey::PER_NODE . '] must be a boolean');
+        TopologyPolicyPlacedAgentHilos::validateTopology();
 
-        TopologyPerNodeNonBooleanHilos::validateTopology();
+        $this->assertSame(
+            AgentPlacement::POLICY,
+            AgentRegistry::placement(TopologyPolicyPlacedAgentHilos::AGENTS[TopologyValidAgent::AGENT_TYPE]),
+        );
     }
 
-    public function testPerNodeCannotCombineWithIndexed(): void
+    public function testScopeMustBeAnEnumCase(): void
     {
         $this->expectException(InvalidTopologyException::class);
-        $this->expectExceptionMessage('cannot combine ' . AgentRegistryKey::PER_NODE . ' with ' . AgentRegistryKey::INDEXED);
+        $this->expectExceptionMessage(AgentRegistryKey::SCOPE . '] must be a ' . AgentScope::class . ' case');
+
+        TopologyScopeNotACaseHilos::validateTopology();
+    }
+
+    public function testPlacementMustBeAnEnumCase(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(AgentRegistryKey::PLACEMENT . '] must be a ' . AgentPlacement::class . ' case');
+
+        TopologyPlacementNotACaseHilos::validateTopology();
+    }
+
+    public function testNodeScopeCannotCombineWithIndexed(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('cannot combine scope ' . AgentScope::NODE->name . ' with ' . AgentRegistryKey::INDEXED);
 
         TopologyPerNodeIndexedHilos::validateTopology();
+    }
+
+    public function testNodeScopeCannotCarryPlacement(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(
+            'cannot set ' . AgentRegistryKey::PLACEMENT . ' with scope ' . AgentScope::NODE->name,
+        );
+
+        TopologyPerNodePlacedHilos::validateTopology();
     }
 
     public function testPageTablesRejectUnknownPages(): void
@@ -1293,7 +1323,7 @@ final class TopologyPerNodeAgentHilos extends HilosFacade
         TopologyValidAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => TopologyValidAgent::class,
             AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
-            AgentRegistryKey::PER_NODE => true,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
         ],
     ];
 
@@ -1308,13 +1338,55 @@ final class TopologyPerNodeAgentHilos extends HilosFacade
     }
 }
 
-final class TopologyPerNodeNonBooleanHilos extends HilosFacade
+final class TopologyPolicyPlacedAgentHilos extends HilosFacade
 {
     public const array AGENTS = [
         TopologyValidAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => TopologyValidAgent::class,
             AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
-            AgentRegistryKey::PER_NODE => 'yes',
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyScopeNotACaseHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+            AgentRegistryKey::SCOPE => 'node',
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyPlacementNotACaseHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => 'policy',
         ],
     ];
 
@@ -1335,8 +1407,30 @@ final class TopologyPerNodeIndexedHilos extends HilosFacade
         TopologyValidAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => TopologyValidAgent::class,
             AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
-            AgentRegistryKey::PER_NODE => true,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
             AgentRegistryKey::INDEXED => true,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyPerNodePlacedHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
     ];
 

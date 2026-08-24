@@ -7,6 +7,9 @@ namespace Hilos\Tests\Unit\Auth\OAuth;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgentDaemon;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentScope;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -24,13 +27,22 @@ final class OAuthAgentPlacementTest extends TestCase
         $this->assertSame(HilosAgentType::HILOS_OAUTH, AbstractOAuthAgentDaemon::AGENT_TYPE);
     }
 
-    public function testDaemonIsAClusterLeaderPinnedMonopolisticSingleton(): void
+    public function testDaemonIsAMonopolisticUnindexedSingleton(): void
     {
         $daemon = new class extends AbstractOAuthAgentDaemon {};
 
         $this->assertTrue($daemon->requiresMonopolisticProcess());
-        $this->assertTrue($daemon->requiresClusterLeadership());
         $this->assertNull($daemon->getIndex());
         $this->assertSame(HilosAgentType::HILOS_OAUTH, $daemon->getType());
+    }
+
+    public function testAnUndeclaredRegistryEntryLeavesItPinnedToTheLeader(): void
+    {
+        // The agent is leader-pinned by declaring nothing: a project registers it with worker
+        // and daemon alone, and both axes fall back to today's cluster singleton.
+        $entry = [];
+
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        $this->assertSame(AgentPlacement::LEADER, AgentRegistry::placement($entry));
     }
 }

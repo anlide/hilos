@@ -35,9 +35,16 @@ final class AgentRegistryKey
     public const string INDEXED = 'indexed';
 
     /**
-     * When true, the agent is started once on every node as its workers become ready, rather than
-     * only on the cluster leader. Mutually exclusive with {@see self::INDEXED}: a sharded pool needs
-     * an index, an every-node singleton has none.
+     * How many instances of the agent exist: an {@see AgentScope} case, defaulting to
+     * {@see AgentScope::CLUSTER}. {@see AgentScope::NODE} is mutually exclusive with
+     * {@see self::INDEXED}: a sharded pool needs an index, an every-node replica has none.
      */
-    public const string PER_NODE = 'per_node';
+    public const string SCOPE = 'scope';
+
+    /**
+     * Who picks the node a cluster-wide agent runs on: an {@see AgentPlacement} case, defaulting
+     * to {@see AgentPlacement::LEADER}. Meaningless — and refused by topology validation — next
+     * to {@see AgentScope::NODE}, where no node is picked.
+     */
+    public const string PLACEMENT = 'placement';
 }

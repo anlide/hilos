@@ -20,7 +20,9 @@ use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Daemon\LiveConnectionRoster;
 use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
+use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
@@ -248,11 +250,10 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * registered workers (both regular and monopolistic) has been reached, whether
      * or not the node is the cluster leader. It does not start cluster-singleton
      * agents — that is the leader-gated {@see onBecameSingletonHost()}, driven by the
-     * daemon's ensure-once. The base starts every agent flagged
-     * {@see AgentRegistryKey::PER_NODE} in the project registry (an empty per-node set
-     * is a normal no-op); a per-agent start failure is contained and logged so it never
-     * strands the others. Child classes may override for local, non-singleton setup,
-     * calling parent::onInitialWorkersReady() first.
+     * daemon's ensure-once. The base starts every agent the project registry declares
+     * {@see AgentScope::NODE} (an empty per-node set is a normal no-op); a per-agent start
+     * failure is contained and logged so it never strands the others. Child classes may
+     * override for local, non-singleton setup, calling parent::onInitialWorkersReady() first.
      */
     protected function onInitialWorkersReady(): void
     {
@@ -260,7 +261,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     }
 
     /**
-     * Starts every agent the project registry flags {@see AgentRegistryKey::PER_NODE}.
+     * Starts every agent the project registry declares {@see AgentScope::NODE}.
      *
      * Shared by the workers-ready bootstrap and by the protected-mode lift default
      * ({@see onProtectedModeLifted()}), which needs exactly this loop, containment included.
@@ -293,10 +294,9 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * their own cluster-singletons (e.g. one agent per active bot), calling
      * parent::onBecameSingletonHost() first.
      *
-     * Every agent started here still passes the leadership gate in
-     * {@see startAgent()}, so a per-node agent that opts out with
-     * {@see AgentDaemonInterface::requiresClusterLeadership()} is unaffected. Re-fires
-     * when a follower is later promoted, so it must stay idempotent.
+     * Every agent started here still passes the placement gate in {@see startAgent()}, so an
+     * agent the registry declares {@see AgentScope::NODE} is unaffected. Re-fires when a
+     * follower is later promoted, so it must stay idempotent.
      *
      * @throws InvalidArgumentException When the initial-agents signal cannot be named
      * @throws HilosException Whatever the project's own cluster-singleton start raises
@@ -315,22 +315,27 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * Stops this node's cluster-singleton agents; the mirror of {@see onBecameSingletonHost()}.
      *
      * Invoked by the daemon when this node loses leadership, so a truth source never
-     * outlives the term it was elected for: every running agent that requires cluster
-     * leadership ({@see AgentDaemonInterface::requiresClusterLeadership()}) is stopped,
-     * leaving the per-node agents that opted out untouched. Idempotent — safe to call
-     * with nothing to stop — so a second leadership-loss signal is harmless. A child
-     * that starts extra cluster-singletons in {@see onBecameSingletonHost()} may override
-     * to release matching resources, calling parent::onLostSingletonHost() first.
+     * outlives the term it was elected for: every running agent the registry declares
+     * {@see AgentScope::CLUSTER} with {@see AgentPlacement::LEADER} is stopped. The two other
+     * cells are left alone on purpose — an every-node replica was never tied to the term, and a
+     * policy-placed singleton lives on the node the policy picked, its failover owned by
+     * placement rather than by the leader's list. Idempotent — safe to call with nothing to
+     * stop — so a second leadership-loss signal is harmless. A child that starts extra
+     * cluster-singletons in {@see onBecameSingletonHost()} may override to release matching
+     * resources, calling parent::onLostSingletonHost() first.
      */
     public function onLostSingletonHost(): void
     {
         foreach (array_keys($this->agentManager->getAgents()) as $agentId) {
-            $agentDaemon = $this->agentManager->getAgent($agentId);
-            if ($agentDaemon === null || !$agentDaemon->requiresClusterLeadership()) {
+            $parsed = $this->parseAgentId($agentId);
+            $registryEntry = Hilos::appClass()::AGENTS[$parsed->type] ?? null;
+            if (
+                AgentRegistry::scope($registryEntry) !== AgentScope::CLUSTER
+                || AgentRegistry::placement($registryEntry) !== AgentPlacement::LEADER
+            ) {
                 continue;
             }
 
-            $parsed = $this->parseAgentId($agentId);
             $this->stopAgent($parsed->type, $parsed->index);
         }
     }
@@ -897,6 +902,10 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * For monopolistic agents, uses monopolistic worker.
      * For regular agents, uses regular worker (load balancing).
      *
+     * An ordinary start carries no placement sanction, so a cluster-wide agent whose node the
+     * policy picks ({@see AgentPlacement::POLICY}) comes up here only on the leader; the
+     * placement path reaches the same start through {@see executePlacement()}.
+     *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
@@ -904,6 +913,21 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     protected function startAgent(string $agentType, ?string $agentIndex = null): void
+    {
+        $this->startAgentInternal($agentType, $agentIndex, false);
+    }
+
+    /**
+     * The start every entry point shares, with the one bit no caller outside this class may set.
+     *
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index (optional)
+     * @param bool $placedByLeader True when this node hosts the agent because placement said so
+     * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
+     * @throws NoSuitableWorkerException If no suitable worker is available
+     * @throws HilosException Whatever the project's agent-daemon factory raises
+     */
+    private function startAgentInternal(string $agentType, ?string $agentIndex, bool $placedByLeader): void
     {
         // Build agent ID
         $agentId = $this->buildAgentId($agentType, $agentIndex);
@@ -919,8 +943,9 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
 
         // Protected-mode freeze gate: while the node is frozen only the initiator agent may
         // start, so an inbound signal cannot revive an agent the freeze just stopped. It sits
-        // here, above the temporary record, because it needs only the identity - unlike the
-        // leadership gate below, which needs the agent daemon and therefore has to roll back.
+        // here, above the temporary record, because a freeze refuses everyone alike - unlike the
+        // placement gate below, which refuses only this node and therefore has to leave the
+        // record the way a later promotion or placement expects to find it.
         if ($this->protectedModeRefusesStart($agentType, $agentIndex)) {
             Logger::debug("Agent {$agentId} not started: protected mode holds the node");
             return;
@@ -935,17 +960,25 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
         $agentDaemon = $this->agentManager->getAgent($agentId)
             ?? throw new AgentDaemonCreationFailedException($agentType, $agentIndex);
 
-        // Cluster leadership gate: a leader-only (cluster-singleton) agent runs on
-        // exactly one node cluster-wide. A node that is not the cluster leader skips
-        // the start, covering both the bootstrap-list path and direct project starts.
-        // Standalone nodes are always the leader, so this is a no-op off-cluster.
-        if ($agentDaemon->requiresClusterLeadership() && !$this->amClusterLeader()) {
-            // Roll back the temporary record so a later promotion starts it cleanly.
-            if (!$agentExisted) {
-                $this->agentManager->removeAgent($agentId);
+        // Placement gate: the registry's two axes decide whether this node may host the agent.
+        // An every-node replica starts anywhere; a leader-hosted cluster singleton starts only
+        // where leadership sits; a policy-placed cluster singleton starts only where placement
+        // put it, which keeps "exactly one cluster-wide" a mechanism rather than a convention
+        // the callers are trusted to observe. Standalone nodes are always the leader, so this
+        // is a no-op off-cluster.
+        $registryEntry = Hilos::appClass()::AGENTS[$agentType] ?? null;
+        if (AgentRegistry::scope($registryEntry) === AgentScope::CLUSTER && !$this->amClusterLeader()) {
+            $placedByPolicy = AgentRegistry::placement($registryEntry) === AgentPlacement::POLICY;
+            if (!$placedByPolicy || !$placedByLeader) {
+                // Roll back the temporary record so a later promotion starts it cleanly.
+                if (!$agentExisted) {
+                    $this->agentManager->removeAgent($agentId);
+                }
+                Logger::debug($placedByPolicy
+                    ? "Agent {$agentId} not started: a cluster-wide agent placed by policy starts only where the leader placed it"
+                    : "Agent {$agentId} not started: node is not the cluster leader");
+                return;
             }
-            Logger::debug("Agent {$agentId} not started: node is not the cluster leader");
-            return;
         }
 
         // Select appropriate worker
@@ -1396,15 +1429,19 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * Restarts the agents {@see stopAgentsForProtectedMode()} stopped for this freeze, when it lifts
      * ({@see ProtectedModeAgentFreezer}).
      *
-     * Replays exactly the remembered set through {@see startAgent()} — the same path bootstrap and
-     * placement use — so each agent comes back on this node as it was, and {@see startAgent()}'s own
-     * leadership and worker gates silently drop any that no longer belong here (e.g. a
-     * cluster-singleton whose node lost leadership during the freeze). Clears the remembered set up
-     * front so a second call is a harmless no-op, and contains a per-agent start failure so one bad
-     * restart never strands the rest. Nothing has to be un-set first: the executor writes the phase
-     * before it calls this, and the freeze gate lets starts through on both phases that resume -
-     * the verification window and inactive - so each replayed start passes it on its own.
-     * Ends by firing {@see onProtectedModeLifted()} for whatever else the application wants back.
+     * Replays exactly the remembered set through the same local start bootstrap and placement
+     * use, so each agent comes back on this node as it was, and the placement and worker gates
+     * silently drop any that no longer belong here (e.g. a cluster-singleton whose node lost
+     * leadership during the freeze). The replay carries the placement sanction, because the
+     * remembered set is itself the record of one: every agent in it was running here, so it had
+     * already passed the gate. Without the sanction a {@see AgentPlacement::POLICY} agent would
+     * be refused on the very node placement chose for it, and nothing would ask for it again
+     * while its placement record stands. Clears the remembered set up front so a second call is a
+     * harmless no-op, and contains a per-agent start failure so one bad restart never strands the
+     * rest. Nothing has to be un-set first: the executor writes the phase before it calls this,
+     * and the freeze gate lets starts through on both phases that resume - the verification
+     * window and inactive - so each replayed start passes it on its own. Ends by firing
+     * {@see onProtectedModeLifted()} for whatever else the application wants back.
      */
     public function resumeAgentsForProtectedMode(): void
     {
@@ -1413,7 +1450,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
 
         foreach ($stopped as $agent) {
             try {
-                $this->startAgent($agent->type, $agent->index);
+                $this->startAgentInternal($agent->type, $agent->index, true);
             } catch (Throwable $e) {
                 $agentId = $this->buildAgentId($agent->type, $agent->index);
                 Logger::error("Protected mode: failed to resume agent {$agentId}: {$e->getMessage()}");
@@ -1489,8 +1526,10 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * Launches a placed agent on this node and returns the worker it landed on
      * ({@see PlacementExecutor}).
      *
-     * Reuses {@see startAgent()} — no new spawn logic — so a placed agent is hosted exactly
-     * like a locally-started one, then reads back the worker id the agent manager recorded.
+     * Reuses the ordinary local start — no new spawn logic — so a placed agent is hosted exactly
+     * like a locally-started one, then reads back the worker id the agent manager recorded. This
+     * is the one entry that carries the placement sanction, so it is also the only way a
+     * {@see AgentPlacement::POLICY} agent comes up on a node that is not the leader.
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
@@ -1502,7 +1541,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      */
     public function executePlacement(string $agentType, ?string $agentIndex): int
     {
-        $this->startAgent($agentType, $agentIndex);
+        $this->startAgentInternal($agentType, $agentIndex, true);
 
         $agentId = $this->buildAgentId($agentType, $agentIndex);
 

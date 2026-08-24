@@ -11,7 +11,6 @@ use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
 use Hilos\Core\Agent\DTO\MessageFromUserDTO;
 use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Socket\Client\WorkerClient;
-use Hilos\Socket\Server\WorkerServer;
 
 /**
  * AgentDaemonInterface - Interface for agent proxies running in daemon.
@@ -46,22 +45,6 @@ interface AgentDaemonInterface
      * @return bool True if agent requires monopolistic worker, false otherwise
      */
     public function requiresMonopolisticProcess(): bool;
-
-    /**
-     * Whether this agent is a cluster-singleton that runs only on the leader node.
-     *
-     * A leader-only agent (truth source, monopolistic/singleton, startup service)
-     * must exist on exactly one node cluster-wide, so {@see WorkerServer::startAgent()}
-     * refuses to start it on a node that is not the cluster leader. Standalone
-     * daemons are always their own leader, so the flag has no effect off-cluster.
-     *
-     * The default is true (fail-safe leader-only): forgetting to mark an agent
-     * under-runs it (safe) rather than double-running a truth source (a
-     * correctness bug). Per-node agents opt out by returning false.
-     *
-     * @return bool True if the agent may run only on the cluster leader
-     */
-    public function requiresClusterLeadership(): bool;
 
     /**
      * Capability tags a node must advertise to host this agent.

@@ -55,41 +55,29 @@ carrying "all the admin entities" is the same monolith at an earlier size.
 
 ## Placement Is Two Axes, Not One Flag
 
-Today neither question is declared, and what stands in their place is two
-booleans in two different files that have to agree:
-
-- `AgentDaemonInterface::requiresClusterLeadership()`, on the agent daemon,
-  defaults to true, and `WorkerServer::startAgent()` refuses to start such an
-  agent on a node that is not the cluster leader. This is the **gate**.
-- `AgentRegistryKey::PER_NODE`, in the project's `Hilos::AGENTS` entry, puts the
-  agent into the every-node start **pass**
-  (`WorkerServer::startPerNodeAgents()`, via `AgentRegistry::startsOnEveryNode()`).
-
-The pass does not open the gate. An agent flagged `PER_NODE` whose daemon still
-returned true would be started on every node and then refused on every follower
-by the gate, silently. Keeping the two in step is manual and by convention —
-`LogRotationAgent` sets `PER_NODE` in the registry *and* returns false from
-`LogRotationAgentDaemon::requiresClusterLeadership()`. So the questions are not
-merely welded together; they are answered twice, in two places, with nothing
-checking that the answers match.
-
-The approach splits them into two independent registry keys, declared per agent
-in `Hilos::AGENTS`:
+Each question is declared once, in the project's `Hilos::AGENTS` entry, on its
+own axis (HIL-667):
 
 | Key | Enum | Values | Question it answers |
 |---|---|---|---|
 | `AgentRegistryKey::SCOPE = 'scope'` | `Hilos\Core\Agent\Config\AgentScope` | `CLUSTER`, `NODE` | how many instances exist |
 | `AgentRegistryKey::PLACEMENT = 'placement'` | `Hilos\Core\Agent\Config\AgentPlacement` | `LEADER`, `POLICY` | who picks the node |
 
-Defaults are `SCOPE = CLUSTER` and `PLACEMENT = LEADER`, which is exactly
-today's behaviour, so no existing agent is edited when the axes arrive.
-`SCOPE = NODE` is what today's per-node agents express with **both** halves —
-`AgentRegistryKey::PER_NODE = 'per_node'`
-(`framework/backend/Core/Agent/Config/AgentRegistryKey.php`) *and* a daemon
-returning false from the gate. Whether `PER_NODE` survives as an alias is the
-splitting leaf's call; what this approach requires is that the two axes become
-separately declarable **in one place**, with the gate a consequence of the
-declaration rather than a second answer to the same question.
+Defaults are `SCOPE = CLUSTER` and `PLACEMENT = LEADER`, which is exactly the
+behavior that came before, so an agent that declares neither is untouched.
+`TopologyValidator` refuses the two combinations that mean nothing: `NODE` with
+`INDEXED` (a sharded pool needs an index, a replica has none), and `NODE` with
+any `PLACEMENT` (a replica runs everywhere, so no node is picked).
+
+It was worth splitting because one question used to be answered twice, in two
+files that had to agree by convention. `AgentDaemonInterface::requiresClusterLeadership()`
+was the **gate** on the daemon; `AgentRegistryKey::PER_NODE` in the registry was
+the every-node start **pass**. The pass did not open the gate: an agent flagged
+`PER_NODE` whose daemon still returned true was started on every node and then
+refused on every follower, silently. `LogRotationAgent` kept the two in step by
+hand. Both are gone now — the method is deleted from the interface, the base and
+all seven overrides, `PER_NODE` is removed with no alias, and the gate in
+`WorkerServer::startAgent()` reads the axes instead.
 
 **A library declares `SCOPE = CLUSTER` and `PLACEMENT = POLICY`.** One holder
 cluster-wide, on the node the placement policy picks — the owner's decision of
@@ -98,15 +86,18 @@ matrix rather than as options bolted onto the chosen one:
 
 | Scope | Placement | What it is |
 |---|---|---|
-| `CLUSTER` | `LEADER` | today's cluster-singleton; every current agent, unchanged |
-| `CLUSTER` | `POLICY` | an entity library |
-| `NODE` | — | a replica on every node; today's `PER_NODE` |
+| `CLUSTER` | `LEADER` | the leader-hosted cluster singleton; every agent that declares nothing |
+| `CLUSTER` | `POLICY` | an entity library; also the delivery pools and the cluster demo's fleet |
+| `NODE` | — | a replica on every node; log rotation, throttle counters, the code pool |
 
-The machinery a `POLICY` library needs already exists on the placement side:
+The machinery a `POLICY` library needs is in place on both sides.
 `ClusterPlacement::placeAgentOnBestNode()` ranks the online nodes by fit and
 places on the winner, and `WorkerServer::executePlacement()` hosts it there by
-reusing the ordinary local start. What is missing is the split itself — see *Open
-Preconditions*.
+reusing the ordinary local start — the one entry that carries the placement
+sanction, so a `POLICY` agent comes up on a follower through it and no other way.
+`DaemonManager::ensurePolicyAgentsPlaced()` is what asks: a per-tick
+reconciliation on the leader over every unindexed `POLICY` agent in the registry.
+Indexed pools stay with the project, which alone knows their members.
 
 ## Reading Without The Owner
 
@@ -304,27 +295,27 @@ node has not exercised a single one of its four open preconditions.
 
 ## Open Preconditions, And Who Owns Them
 
-Four things this approach depends on do not exist, and none is built by the leaf
+Four things this approach depends on were missing, and none was built by the leaf
 that wrote this page. All four were found by reading the code, and all four are
-invisible until a second node exists.
+invisible until a second node exists. The first is now closed.
 
-1. **A cluster-singleton cannot be placed anywhere but the leader.**
-   `WorkerServer::executePlacement()` reuses `startAgent()`, and `startAgent()`
-   holds the leadership gate — so a `SCOPE = CLUSTER`, `PLACEMENT = POLICY` agent
-   placed on a non-leader node is refused by the gate that placement just chose
-   to bypass. This is the splitting of the flag described above, and it is a
-   precondition of the library specifically. **HIL-667** owns it.
+1. **A cluster-singleton could not be placed anywhere but the leader — closed by
+   HIL-667.** `WorkerServer::executePlacement()` still reuses the ordinary local
+   start, but that start now reads the two axes rather than the daemon's
+   leadership flag, and carries a bit no caller outside the class can set: a
+   `SCOPE = CLUSTER`, `PLACEMENT = POLICY` agent comes up on a follower when — and
+   only when — the start arrived down the placement path.
 
-   **What the split must not lose along with the gate.** That gate is not only a
-   placement rule; today it is the only thing enforcing *one holder cluster-wide*.
+   **What the split did not lose along with the gate.** That gate was not only a
+   placement rule; it was the only thing enforcing *one holder cluster-wide*.
    `WorkerServer::sendSignalToAgent()` starts an agent that is not running so it
    can deliver to it, and on a follower the gate is what refuses that start. An
-   axis that lets a `POLICY` agent start off the leader, applied naively, lets an
-   inbound signal raise a second holder — and a second truth source for the same
-   collection, which is the correctness bug the flag's fail-safe default exists to
-   prevent. The splitting leaf owes a named replacement: the placement record, not
-   leadership, decides which node may host the agent, and every other node refuses
-   the start rather than serving it.
+   axis that let a `POLICY` agent start off the leader, applied naively, would let
+   an inbound signal raise a second holder — a second truth source for the same
+   collection. The replacement is named and in place: the placement path, not
+   leadership, is what may host the agent, and every other start on a follower is
+   refused rather than served. What such a refused signal should do instead is
+   **HIL-629**'s question, not this one's.
 2. **A signal crosses nodes only when the leader routes it.** `nodeFor()` reads
    the leader-side `PlacementRegistry`, so on a follower it returns null and the
    destination stays local. The owner-to-holder announcement therefore works from
@@ -346,8 +337,8 @@ invisible until a second node exists.
    the whole HIL-626 epic**, not of the library alone: any agent that is not on
    the client's node has the same problem. **HIL-668** owns it.
 
-Two of the four have a leaf — HIL-667 for the first, HIL-668 for the fourth, both
-placed on 2026-08-23. The second and the third surfaced while this page was being
+Two of the four had a leaf — HIL-667 for the first, now landed, and HIL-668 for the
+fourth, still open. The second and the third surfaced while this page was being
 written and have none yet; they are for the owner to place.
 
 ## What This Approach Does Not Decide
@@ -365,7 +356,7 @@ each piece lands:
 | HIL-632 | the instance-owner rule in docs and skills; that document and this one are neighbours and reference each other |
 
 Also outside it: the library base class and any framework code; the splitting of
-the leadership flag (HIL-667); the cross-node return path to a client (HIL-668);
+the leadership flag (HIL-667, landed); the cross-node return path to a client (HIL-668);
 edits to `BrowserContext` or any other existing reader; the mechanics of a
 table's first window (HIL-642).
 

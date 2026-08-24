@@ -335,13 +335,28 @@ them:
   (HIL-180). On promotion the socket opens and duties start.
 - **Cron.** `checkCronJobs()` runs only inside the gate.
 
-**The leader-only agent flag.** `AgentDaemonInterface::requiresClusterLeadership()`
-(default `true` in `AbstractAgentDaemon`) marks an agent as a cluster-singleton.
-`WorkerServer::startAgent()` refuses to start such an agent when the node is not the
-leader, covering **both** the bootstrap-list path and direct project starts. The
-default is fail-safe: forgetting to mark an agent under-runs it (safe) rather than
-double-running a truth source (a correctness bug). Per-node agents opt out with
-`false`.
+**The placement gate.** Where an agent may run is declared once, in its `Hilos::AGENTS`
+entry, on two axes: `AgentRegistryKey::SCOPE` (`AgentScope::CLUSTER` | `AgentScope::NODE`)
+and `AgentRegistryKey::PLACEMENT` (`AgentPlacement::LEADER` | `AgentPlacement::POLICY`).
+`WorkerServer::startAgent()` reads them and refuses accordingly, covering **both** the
+bootstrap-list path and direct project starts: a `NODE` replica starts anywhere, a
+`CLUSTER`+`LEADER` singleton only where leadership sits, and a `CLUSTER`+`POLICY`
+singleton only where placement put it. Both defaults are fail-safe — an undeclared axis
+under-runs an agent (safe) rather than double-running a truth source (a correctness bug).
+
+**Placing the policy agents.** `DaemonManager::ensurePolicyAgentsPlaced()` runs inside
+the leader gate, next to `ensureSingletonsStarted()`, and places every `CLUSTER`+`POLICY`
+agent the registry declares without an index. It reconciles on every tick rather than
+ensuring once, because `ClusterPlacement::placeAgentOnBestNode()` places nothing when no
+online node clears the hard gate; a record left `Failed` is retried no more often than
+`POLICY_PLACEMENT_RETRY_SEC`. Indexed pools stay with the project — only it knows their
+members. With cluster mode off the same pass hosts the agent locally: a single node is
+its own leader and its own data plane.
+
+On lost leadership only the `CLUSTER`+`LEADER` agents are stopped
+(`WorkerServer::onLostSingletonHost()`). A replica was never tied to the term, and a
+policy-placed singleton lives on the node the policy picked — its failover belongs to
+placement (HIL-183), not to the leader's list.
 
 Coordination state is **not** persisted (MySQL is kept out of coordination). A new
 leader rebuilds membership/placement by re-querying the mesh; singleton agents are

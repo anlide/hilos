@@ -44,14 +44,4 @@ final class MailDeliveryChannelAgentDaemon extends AbstractDeliveryChannelAgentD
     {
         return false;
     }
-
-    /**
-     * The pool spreads across all nodes rather than pinning to the cluster leader.
-     *
-     * @return bool False: pool instances run on any node
-     */
-    public function requiresClusterLeadership(): bool
-    {
-        return false;
-    }
 }

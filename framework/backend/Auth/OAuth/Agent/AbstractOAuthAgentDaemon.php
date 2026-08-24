@@ -5,16 +5,19 @@ declare(strict_types=1);
 namespace Hilos\Auth\OAuth\Agent;
 
 use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 
 /**
  * AbstractOAuthAgentDaemon - daemon proxy for the OAuth login async agent (HIL-281).
  *
  * Places {@see AbstractOAuthAgent} as a cluster-leader-pinned monopolistic singleton
- * (the default {@see requiresClusterLeadership()} keeps it leader-only, and monopolistic
- * makes it the single owner of the in-flight-login pool cluster-wide). The agent itself
- * pipelines, so one instance serves a login burst concurrently; flip this to per-worker
- * (both flags false) only if login volume ever outgrows a single pipelining singleton.
+ * (the registry defaults {@see AgentScope::CLUSTER} and {@see AgentPlacement::LEADER} keep it
+ * leader-only, and monopolistic makes it the single owner of the in-flight-login pool
+ * cluster-wide). The agent itself pipelines, so one instance serves a login burst
+ * concurrently; declare {@see AgentScope::NODE} and drop the monopoly only if login volume
+ * ever outgrows a single pipelining singleton.
  *
  * A project subclasses it alongside a concrete {@see AbstractOAuthAgent} and registers
  * both under {@see HilosAgentType::HILOS_OAUTH}.

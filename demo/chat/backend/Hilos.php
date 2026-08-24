@@ -141,7 +141,9 @@ use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Constants\HilosPageRouteParams;
+use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserRuntimeParam;
 use Hilos\Core\Browser\Context\BrowserContext;
@@ -357,31 +359,34 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => MailDeliveryChannelAgent::class,
             AgentRegistryKey::DAEMON => MailDeliveryChannelAgentDaemon::class,
             AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         SmsDeliveryChannelAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => SmsDeliveryChannelAgent::class,
             AgentRegistryKey::DAEMON => SmsDeliveryChannelAgentDaemon::class,
             AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         PushDeliveryChannelAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => PushDeliveryChannelAgent::class,
             AgentRegistryKey::DAEMON => PushDeliveryChannelAgentDaemon::class,
             AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         LogRotationAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => LogRotationAgent::class,
             AgentRegistryKey::DAEMON => LogRotationAgentDaemon::class,
-            AgentRegistryKey::PER_NODE => true,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
         ],
         AuthThrottleAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => AuthThrottleAgent::class,
             AgentRegistryKey::DAEMON => AuthThrottleAgentDaemon::class,
-            AgentRegistryKey::PER_NODE => true,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
         ],
         AuthCodeAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => AuthCodeAgent::class,
             AgentRegistryKey::DAEMON => AuthCodeAgentDaemon::class,
-            AgentRegistryKey::PER_NODE => true,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
         ],
     ];
 

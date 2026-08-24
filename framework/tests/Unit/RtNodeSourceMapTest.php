@@ -219,11 +219,6 @@ final class RtNodeSourceMapTestAgentDaemon extends AbstractAgentDaemon
         return false;
     }
 
-    public function requiresClusterLeadership(): bool
-    {
-        return false;
-    }
-
     /**
      * @param AgentMessageDTOInterface $message Message that would go to a user; unused here
      */

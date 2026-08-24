@@ -197,9 +197,9 @@ of duplicating runtime mutation logic in the page/table layer.
 - Never write to an `RtStates` collection directly (`add()`, `remove()`,
   `clear()`): those queue no RT sync, so the change exists in the writing worker
   and nowhere else. Write through the collection or item actions.
-- An agent that registers as a truth source must run on exactly one node:
-  keep `requiresClusterLeadership()` at its default `true`. Two nodes owning one
-  collection is the split the daemon can only refuse and log
+- An agent that registers as a truth source must run on exactly one node: keep
+  `AgentRegistryKey::SCOPE` at its default `AgentScope::CLUSTER`. Two nodes owning
+  one collection is the split the daemon can only refuse and log
   (`RT collection <key> has truth sources on two nodes`).
 - To change a collection this node does not own, send a signal to the owning
   agent. A replica is read-only, and writing it raises

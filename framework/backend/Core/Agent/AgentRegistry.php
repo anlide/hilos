@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 
 /**
@@ -17,7 +19,8 @@ final class AgentRegistry
         AgentRegistryKey::WORKER,
         AgentRegistryKey::DAEMON,
         AgentRegistryKey::INDEXED,
-        AgentRegistryKey::PER_NODE,
+        AgentRegistryKey::SCOPE,
+        AgentRegistryKey::PLACEMENT,
     ];
 
     /**
@@ -58,17 +61,59 @@ final class AgentRegistry
     }
 
     /**
-     * Whether the entry opts into an every-node start pass rather than leader-only placement.
+     * How many instances of the agent type exist.
+     *
+     * An entry that declares nothing, or declares something other than a scope case, reads as
+     * {@see AgentScope::CLUSTER}: an undeclared axis must under-run an agent, never double-run a
+     * truth source. Topology validation is what reports the malformed declaration.
      *
      * @param mixed $registryEntry Raw Hilos::AGENTS entry for one agent type
-     * @return bool True when the entry sets {@see AgentRegistryKey::PER_NODE} to true
+     * @return AgentScope Declared scope, or the cluster-wide default
+     */
+    public static function scope(mixed $registryEntry): AgentScope
+    {
+        if (!is_array($registryEntry)) {
+            return AgentScope::CLUSTER;
+        }
+
+        $scope = $registryEntry[AgentRegistryKey::SCOPE] ?? null;
+
+        return $scope instanceof AgentScope ? $scope : AgentScope::CLUSTER;
+    }
+
+    /**
+     * Who picks the node a cluster-wide agent runs on.
+     *
+     * Reads as {@see AgentPlacement::LEADER} when undeclared or malformed, which is what every
+     * agent did before the axes arrived. Meaningless next to {@see AgentScope::NODE}, and
+     * topology validation refuses that pair rather than silently ignoring it.
+     *
+     * @param mixed $registryEntry Raw Hilos::AGENTS entry for one agent type
+     * @return AgentPlacement Declared placement, or the leader-hosted default
+     */
+    public static function placement(mixed $registryEntry): AgentPlacement
+    {
+        if (!is_array($registryEntry)) {
+            return AgentPlacement::LEADER;
+        }
+
+        $placement = $registryEntry[AgentRegistryKey::PLACEMENT] ?? null;
+
+        return $placement instanceof AgentPlacement ? $placement : AgentPlacement::LEADER;
+    }
+
+    /**
+     * Whether the entry opts into an every-node start pass rather than a single cluster-wide
+     * instance.
+     *
+     * A readable shorthand over the single source of truth, not a second one: it is exactly
+     * {@see self::scope()} answering {@see AgentScope::NODE}.
+     *
+     * @param mixed $registryEntry Raw Hilos::AGENTS entry for one agent type
+     * @return bool True when the entry declares {@see AgentScope::NODE}
      */
     public static function startsOnEveryNode(mixed $registryEntry): bool
     {
-        if (!is_array($registryEntry)) {
-            return false;
-        }
-
-        return ($registryEntry[AgentRegistryKey::PER_NODE] ?? false) === true;
+        return self::scope($registryEntry) === AgentScope::NODE;
     }
 }

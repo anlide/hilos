@@ -12,6 +12,8 @@ use Demo\Cluster\Hilos;
 use Demo\Cluster\Runtime\View\Context\ClusterRtContext;
 use Hilos\Constants\CliCommands;
 use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\CLI\CliManager;
 use PHPUnit\Framework\TestCase;
@@ -61,6 +63,10 @@ final class ClusterTopologyRegistryTest extends TestCase
         $this->assertSame(WorkerAgentDaemon::class, AgentRegistry::daemonClass($entry));
         // The leader places a fleet, so the registry must hand each instance its index.
         $this->assertTrue(AgentRegistry::requiresIndex($entry));
+        // Both placement axes, so the declaration the harness depends on cannot change in
+        // silence: one instance per fleet index cluster-wide, on the node the policy picked.
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
         $this->assertTrue(is_subclass_of(WorkerAgentDaemon::class, AbstractAgentDaemon::class));
         $this->assertSame(AgentType::WORKER, WorkerAgent::AGENT_TYPE);
     }

@@ -17,8 +17,10 @@ use Hilos\Cluster\MembershipObserver;
 use Hilos\Cluster\NodeLifecycleState;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Cluster\Peer\PeerServer;
+use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementObserver;
+use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Cluster\RtSyncMesh;
 use Hilos\Cluster\RtSyncSink;
 use Hilos\Constants\EnvConstants;
@@ -26,6 +28,9 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentException;
@@ -201,6 +206,9 @@ abstract class DaemonManager extends BaseManager implements
      */
     private const int SUBSCRIPTION_IDENTITY_WAIT_TIMEOUT_MS = 500;
 
+    /** @var float Seconds between attempts at a policy placement that has not taken */
+    private const float POLICY_PLACEMENT_RETRY_SEC = 5.0;
+
     /** @var list<ServerInterface> registered servers */
     protected array $servers = [];
 
@@ -227,6 +235,9 @@ abstract class DaemonManager extends BaseManager implements
 
     /** @var bool Flag indicating if initial workers are ready */
     private bool $workersReady = false;
+
+    /** @var float Microtime a policy placement that has not taken may be attempted again */
+    private float $policyPlacementRetryAt = 0.0;
 
     /**
      * @var bool True once this node's cluster-singleton agents have been started for
@@ -529,6 +540,11 @@ abstract class DaemonManager extends BaseManager implements
             if ($this->amLeader()) {
                 // Start this node's cluster-singleton agents once per leadership term
                 $this->ensureSingletonsStarted();
+
+                // Put the cluster-wide agents whose node the policy picks where the policy
+                // picks them; unlike the line above this is a per-tick reconciliation, not
+                // an ensure-once, because a placement can find no capable node yet.
+                $this->ensurePolicyAgentsPlaced();
 
                 // Open the WebSocket server once the required startup agents are ready
                 $this->tickReadiness();
@@ -3041,6 +3057,80 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Places every cluster-wide, unindexed agent the registry hands to the placement policy.
+     *
+     * The framework half of the two placement axes: an agent declared
+     * {@see AgentScope::CLUSTER} with {@see AgentPlacement::POLICY} exists exactly once
+     * cluster-wide, on the node best-fit picks, and nothing but this pass would ever ask for
+     * it — the start gate refuses it everywhere else. Indexed pools are left alone: how many
+     * members a pool has and under which indexes is known only to the project that declared
+     * it.
+     *
+     * A reconciliation rather than an ensure-once, because {@see ClusterPlacement::placeAgentOnBestNode()}
+     * places nothing and records nothing when no online node clears the hard gate; without a
+     * per-tick re-check such an agent would never come up. A tracked record in any state
+     * suppresses placement, so this never fights failover or double-places — except a record
+     * left {@see PlacementState::Failed}, which nothing else retries and this pass re-places
+     * once per {@see POLICY_PLACEMENT_RETRY_SEC}.
+     *
+     * With cluster mode off there is no placement view and no other node: the single node is
+     * its own leader and its own data plane, so the same declaration lands the agent here,
+     * through the same local start a remote placement ends in. Repeating that start is free
+     * once the agent is linked to a worker, and it is throttled all the same so a node that
+     * cannot host it yet does not say so every iteration of the loop.
+     *
+     * Runs on the master loop, so the whole read/write is guarded: a registry hiccup or a
+     * rejected placement is logged, never propagated, and the next tick retries from where
+     * this one stopped.
+     */
+    private function ensurePolicyAgentsPlaced(): void
+    {
+        try {
+            $placement = Hilos::$cluster?->placement();
+            if ($placement === null && !$this->workersReady) {
+                return;
+            }
+
+            $now = microtime(true);
+            $mayRetry = $now >= $this->policyPlacementRetryAt;
+            if ($mayRetry) {
+                $this->policyPlacementRetryAt = $now + self::POLICY_PLACEMENT_RETRY_SEC;
+            }
+
+            $tracked = [];
+            foreach ($placement?->registry()->all() ?? [] as $record) {
+                if ($record->agentIndex !== null) {
+                    continue;
+                }
+                if ($mayRetry && $record->state === PlacementState::Failed) {
+                    continue;
+                }
+
+                $tracked[$record->agentType] = true;
+            }
+
+            foreach (Hilos::appClass()::AGENTS as $agentType => $registryEntry) {
+                if (
+                    AgentRegistry::scope($registryEntry) !== AgentScope::CLUSTER
+                    || AgentRegistry::placement($registryEntry) !== AgentPlacement::POLICY
+                    || AgentRegistry::requiresIndex($registryEntry)
+                    || isset($tracked[$agentType])
+                ) {
+                    continue;
+                }
+
+                if ($placement !== null) {
+                    $placement->placeAgentOnBestNode($agentType, null);
+                } elseif ($mayRetry) {
+                    $this->findWorkerServer()?->executePlacement($agentType, null);
+                }
+            }
+        } catch (Throwable $e) {
+            Logger::warning("Could not place the policy-placed agents: {$e->getMessage()}");
+        }
+    }
+
+    /**
      * Stops this node's cluster-singleton agents and re-arms the ensure-once.
      *
      * The reaction side of leadership loss: it fires {@see WorkerServer::onLostSingletonHost()}
@@ -3216,7 +3306,10 @@ abstract class DaemonManager extends BaseManager implements
      * relinquishes the singleton duties this node held as leader: it stops the
      * cluster-singleton agents and resets the ensure-once so a later promotion re-runs
      * the start (the mirror of {@see WorkerServer::onBecameSingletonHost()}), and drops the
-     * leader-side placement view (the next leader rebuilds it from the mesh). A project
+     * leader-side placement view (the next leader rebuilds it from the mesh). Only the agents
+     * declared {@see AgentScope::CLUSTER} with {@see AgentPlacement::LEADER} are stopped: a
+     * policy-placed one lives on the node the policy picked and outlives the term, and a
+     * replica was never tied to it. A project
      * may override to add its own teardown, calling parent::onLostLeadership() first.
      * Runs on the daemon master loop, so overrides must stay non-blocking.
      *

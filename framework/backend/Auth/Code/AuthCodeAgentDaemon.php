@@ -35,14 +35,4 @@ final class AuthCodeAgentDaemon extends AbstractAgentDaemon
     {
         return true;
     }
-
-    /**
-     * Holds no truth source, so it runs per node rather than pinning to the leader.
-     *
-     * @return bool False: per-node, not a cluster singleton
-     */
-    public function requiresClusterLeadership(): bool
-    {
-        return false;
-    }
 }

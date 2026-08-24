@@ -19,11 +19,16 @@ table contexts when they can read the project registry.
   value.
 - `Hilos::AGENTS` registers agent runtime bindings keyed by each worker class
   `::AGENT_TYPE` value. Each entry declares `AgentRegistryKey::WORKER`,
-  `AgentRegistryKey::DAEMON`, and optionally `AgentRegistryKey::INDEXED` (a
-  sharded pool keyed by `agentIndex`) or `AgentRegistryKey::PER_NODE` (an
-  every-node singleton started on each node as its workers become ready). The
-  two placement flags are mutually exclusive. `TopologyAgentFactory` creates
-  worker and daemon instances from this registry.
+  `AgentRegistryKey::DAEMON`, optionally `AgentRegistryKey::INDEXED` (a sharded
+  pool keyed by `agentIndex`), and the two placement axes
+  `AgentRegistryKey::SCOPE` (`AgentScope::CLUSTER` | `AgentScope::NODE`, how
+  many instances exist) and `AgentRegistryKey::PLACEMENT`
+  (`AgentPlacement::LEADER` | `AgentPlacement::POLICY`, who picks the node).
+  Both default to today's cluster singleton — `CLUSTER` and `LEADER` — so an
+  entry that declares neither keeps its behavior. `NODE` combines with neither
+  `INDEXED` (a sharded pool needs an index) nor `PLACEMENT` (a replica runs on
+  every node, so no node is picked). `TopologyAgentFactory` creates worker and
+  daemon instances from this registry.
 - Each page class declares its page subscription owner in
   `PageClass::SUBSCRIPTION_AGENT_TYPE`. `Hilos::getPageRoutes()` computes the
   page-to-agent routing map from `Hilos::PAGES` and those page-level constants.
@@ -170,10 +175,14 @@ declaration; a project must not mount it in `configure()`. See
    routing-only strings when the page handler needs a typed inner payload.
 7. For a new agent, add worker and daemon classes to `Hilos::AGENTS` using
    `SomeAgent::AGENT_TYPE => [AgentRegistryKey::WORKER => SomeAgent::class, AgentRegistryKey::DAEMON => SomeAgentDaemon::class]`.
-   Set `AgentRegistryKey::INDEXED => true` when creation requires `agentIndex`,
-   or `AgentRegistryKey::PER_NODE => true` for an every-node singleton (started
-   on each node via `WorkerServer::onInitialWorkersReady()`, e.g. the per-node
-   log rotation agent). The two flags cannot be combined.
+   Set `AgentRegistryKey::INDEXED => true` when creation requires `agentIndex`.
+   Declare `AgentRegistryKey::SCOPE => AgentScope::NODE` for a replica on every
+   node (started via `WorkerServer::onInitialWorkersReady()`, e.g. the log
+   rotation agent), or `AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY`
+   for a single cluster-wide instance on the node the placement policy picks
+   (the leader places it; unindexed ones the framework places itself). Leave
+   both out for today's leader-hosted cluster singleton. `NODE` combines with
+   neither `INDEXED` nor `PLACEMENT`.
 8. Declare directly handled agent-to-agent signal names in
    `public const array AGENT_SIGNALS = [...]` when the agent owns them. Prefer
    `signal name => SignalDataInterface` class for singleton typed signals. For

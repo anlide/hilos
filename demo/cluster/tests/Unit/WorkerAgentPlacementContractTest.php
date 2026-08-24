@@ -7,12 +7,16 @@ namespace Demo\Cluster\Tests\Unit;
 use Demo\Cluster\Constants\AgentType;
 use Demo\Cluster\Constants\ClusterCapability;
 use Demo\Cluster\Core\Agent\Daemon\WorkerAgentDaemon;
+use Demo\Cluster\Hilos;
+use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentScope;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins the placement contract the multi-node harness depends on: the WORKER agent
- * is a monopolistic, capability-gated, per-node (non-singleton) agent, so the leader
- * places it on a data-plane node rather than running it as a leader-singleton.
+ * Pins the placement contract the multi-node harness depends on: the WORKER agent shares the
+ * node's regular workers, is capability-gated, and is declared cluster-scoped but placed by
+ * policy — so the leader places it on a data-plane node rather than hosting it itself.
  */
 final class WorkerAgentPlacementContractTest extends TestCase
 {
@@ -40,11 +44,15 @@ final class WorkerAgentPlacementContractTest extends TestCase
         $this->assertFalse($this->daemon->requiresMonopolisticProcess());
     }
 
-    public function testAgentIsPerNodeNotLeaderSingleton(): void
+    public function testAgentIsPlacedByPolicyNotHostedByTheLeader(): void
     {
-        // False is the whole point: it must be startable on a node that is not the
-        // leader, because the leader places it remotely on a data-plane node.
-        $this->assertFalse($this->daemon->requiresClusterLeadership());
+        // The declaration is the whole point: one instance per fleet index cluster-wide, on
+        // the node the policy picked, which is what lets the leader place it remotely on a
+        // data-plane node instead of hosting it itself.
+        $entry = Hilos::AGENTS[AgentType::WORKER];
+
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
     }
 
     public function testAgentIsGatedToTheWorkerCapability(): void

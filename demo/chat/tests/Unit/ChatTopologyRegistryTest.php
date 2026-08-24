@@ -67,6 +67,8 @@ use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 use Hilos\Sms\DTO\SmsSendSignalData;
 use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -156,6 +158,41 @@ final class ChatTopologyRegistryTest extends TestCase
             $this->assertNotNull($workerClass);
             $this->assertSame($agentType, $workerClass::AGENT_TYPE);
         }
+    }
+
+    /**
+     * Both placement axes of every registered agent, so a declaration cannot change in silence.
+     *
+     * Written as the two exceptions rather than as eighteen rows: everything absent from both
+     * lists is a cluster singleton hosted by the leader, which is what an entry declaring
+     * neither axis means.
+     */
+    public function testEveryAgentDeclaresTheExpectedPlacementCell(): void
+    {
+        $nodeScoped = [];
+        $policyPlaced = [];
+        foreach (Hilos::AGENTS as $agentType => $registryEntry) {
+            if (AgentRegistry::scope($registryEntry) === AgentScope::NODE) {
+                $nodeScoped[] = $agentType;
+            }
+            if (AgentRegistry::placement($registryEntry) === AgentPlacement::POLICY) {
+                $policyPlaced[] = $agentType;
+            }
+        }
+
+        // Node-local state, so one replica per node: log files, throttle counters, the code pool.
+        $this->assertSame([
+            HilosAgentType::HILOS_LOG_ROTATION,
+            AgentType::HILOS_AUTH_THROTTLE,
+            AgentType::HILOS_AUTH_CODE,
+        ], $nodeScoped);
+
+        // Delivery shards: one instance per shard index cluster-wide, on the node policy picks.
+        $this->assertSame([
+            AgentType::HILOS_MAIL,
+            AgentType::HILOS_SMS,
+            AgentType::HILOS_PUSH,
+        ], $policyPlaced);
     }
 
     public function testBotAgentRegistryRequiresIndex(): void

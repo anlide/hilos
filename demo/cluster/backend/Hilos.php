@@ -9,6 +9,7 @@ use Demo\Cluster\Core\Agent\Daemon\WorkerAgentDaemon;
 use Demo\Cluster\Database\ClusterDbContext;
 use Demo\Cluster\Environment\ClusterEnvCatalog;
 use Demo\Cluster\Runtime\View\Context\ClusterRtContext;
+use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Database\Context\DbContext;
 use Hilos\Environment\EnvAccessor;
@@ -42,6 +43,7 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::DAEMON => WorkerAgentDaemon::class,
             // The leader places a fleet of these, so every instance carries its own index.
             AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
     ];
 

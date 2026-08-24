@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -390,11 +391,6 @@ final class FreezeGateTestAgentDaemon extends AbstractAgentDaemon
         return false;
     }
 
-    public function requiresClusterLeadership(): bool
-    {
-        return false;
-    }
-
     public function sendToUser(AgentMessageDTOInterface $message): void
     {
         // Not used in this test
@@ -419,6 +415,6 @@ final class FreezeGateTestRtContext extends RtContext
 abstract class FreezeGateTestHilos extends Hilos
 {
     public const array AGENTS = [
-        'presence' => [AgentRegistryKey::PER_NODE => true],
+        'presence' => [AgentRegistryKey::SCOPE => AgentScope::NODE],
     ];
 }
