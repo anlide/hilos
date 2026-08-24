@@ -52,7 +52,7 @@ on prod. Subclasses implement `run()`.
 **The socket refuses a test-only command too, and a handler must not repeat it** (HIL-566).
 The CLI class guards the CLI process, but a stray caller does not use the CLI: the command
 socket authenticates nobody and the routes exist in every project. So `CommandClient` asks
-`TestOnlyCommandGate::admitted()` before it branches at all — above both the commands the
+`NonProductionGate::admitted()` before it branches at all — above both the commands the
 master answers itself and the ones it parks for an agent — and answers a refusal with the
 same sentence the CLI class raises (`TestOnlyCommandOnProductionException::message()`). The
 connection stays open: the gate judges the command, not the caller.

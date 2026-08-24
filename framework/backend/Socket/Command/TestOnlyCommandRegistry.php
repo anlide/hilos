@@ -6,6 +6,7 @@ namespace Hilos\Socket\Command;
 
 use Hilos\Constants\CommandConstants;
 use Hilos\Core\Agent\Config\AgentCommandConfigKey;
+use Hilos\Environment\NonProductionGate;
 use Hilos\Hilos;
 
 /**
@@ -17,7 +18,7 @@ use Hilos\Hilos;
  * route, so the two cannot drift apart, while the three commands the master answers itself
  * appear in no agent registry at all and are named by
  * {@see CommandConstants::MASTER_TEST_ONLY_COMMANDS}. This class is what makes that split
- * invisible to the asker: the socket gate ({@see TestOnlyCommandGate}) has exactly one
+ * invisible to the asker: the socket gate ({@see NonProductionGate}) has exactly one
  * question and exactly one place to ask it.
  *
  * The project half is resolved through {@see Hilos::appClass()} rather than a bare

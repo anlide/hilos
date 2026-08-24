@@ -8,16 +8,17 @@ use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\NonProductionGate;
 use Hilos\Hilos;
-use Hilos\Socket\Command\TestOnlyCommandGate;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Unit tests for the TestOnlyCommand production guard.
  *
- * The verdict itself moved to {@see TestOnlyCommandGate} (HIL-566), which the command socket
- * asks the same question of; these cases stay because the CLI half is the one that answers by
- * THROWING, and a base class that stopped refusing would take the whole family down with it.
+ * The verdict itself moved to {@see NonProductionGate} (HIL-566, rehomed in HIL-671), which
+ * the command socket asks the same question of; these cases stay because the CLI half is the
+ * one that answers by THROWING, and a base class that stopped refusing would take the whole
+ * family down with it.
  */
 final class TestOnlyCommandGuardTest extends TestCase
 {

@@ -15,12 +15,12 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Environment\NonProductionGate;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\Client\Interface\CommandClientInterface;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
-use Hilos\Socket\Command\TestOnlyCommandGate;
 use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\SocketException;
@@ -125,7 +125,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
             // whichever half a later command lands in. What it judges is the command, not
             // the connection: a `ping` and a test-only command down one socket get
             // different answers.
-            if (TestOnlyCommandRegistry::isTestOnly($request->command) && !TestOnlyCommandGate::admitted()) {
+            if (TestOnlyCommandRegistry::isTestOnly($request->command) && !NonProductionGate::admitted()) {
                 Logger::warning("Refused test-only command {$request->command}: APP_ENV is production-like or unset");
                 $this->writeBuffer .= CommandReplyDTO::error(
                     $request->correlationId,

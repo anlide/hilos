@@ -30,6 +30,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\State\Collection\OAuthPendingLogins;
 use Hilos\Runtime\State\Item\OAuthPendingLogin;
 use Hilos\Socket\SocketException;
+use Hilos\Utils\Logger;
 use Throwable;
 
 /**
@@ -97,11 +98,26 @@ abstract class AbstractOAuthAgent extends AbstractAgent
 
     /**
      * Resolves the project's configured OAuth providers and initializes the pending-op store.
+     *
+     * Also the one place the registry's refusals are said out loud (HIL-671). This agent
+     * builds the registry once per process, while every other caller rebuilds it per login
+     * action and per identifier detection, so it is the only caller that can name the
+     * dropped providers without writing the same line at typing speed. The level is
+     * warning, not info: refusing an offline provider on a production node is legal
+     * configuration, but in practice it is a misspelled environment variable rather than
+     * an intention, and a provider that vanished silently is an ops riddle.
      */
     public function onStart(): void
     {
         $this->providers = $this->buildProviderRegistry();
         $this->pending = OAuthPendingLogins::init();
+
+        $refused = $this->providers->refusedOfflineKeys();
+        if ($refused !== []) {
+            Logger::warning(
+                'OAuth offline providers refused on a production-like node: ' . implode(', ', $refused),
+            );
+        }
     }
 
     /**

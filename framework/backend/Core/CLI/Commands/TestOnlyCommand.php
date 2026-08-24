@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
+use Hilos\Environment\NonProductionGate;
 use Hilos\HilosException;
-use Hilos\Socket\Command\TestOnlyCommandGate;
 use JsonException;
 
 /**
@@ -17,7 +17,7 @@ use JsonException;
  * reader sees the parent and knows it must never run on prod. execute() is final so the
  * guard cannot be skipped; subclasses implement run().
  *
- * The verdict itself is not computed here: it belongs to {@see TestOnlyCommandGate}, which
+ * The verdict itself is not computed here: it belongs to {@see NonProductionGate}, which
  * the command socket asks the same question of, so a command refused in one process is
  * refused in the other for the same reason.
  */
@@ -35,7 +35,7 @@ abstract class TestOnlyCommand implements CommandInterface
      */
     final public function execute(array $options, array $args): int
     {
-        if (!TestOnlyCommandGate::admitted()) {
+        if (!NonProductionGate::admitted()) {
             throw new TestOnlyCommandOnProductionException($this->getName());
         }
 

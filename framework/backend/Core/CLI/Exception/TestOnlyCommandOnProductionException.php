@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Exception;
 
+use Hilos\Environment\NonProductionGate;
 use Hilos\HilosException;
-use Hilos\Socket\Command\TestOnlyCommandGate;
 
 /**
  * Thrown when a test-only CLI command is invoked in a production-like (or unset) environment.
@@ -13,7 +13,7 @@ use Hilos\Socket\Command\TestOnlyCommandGate;
  * Also the home of the refusal SENTENCE, which the command socket answers with without
  * throwing anything: the CLI half raises, the socket half replies, and a caller that drives
  * a command both ways must not have to recognize two wordings for one verdict
- * ({@see TestOnlyCommandGate}).
+ * ({@see NonProductionGate}).
  */
 final class TestOnlyCommandOnProductionException extends HilosException
 {

@@ -26,9 +26,12 @@ use Hilos\Auth\OAuth\StubOAuthProvider;
  * {@see OAuthAgent} drives. It mirrors the LLM
  * local-vs-external switch: when a provider's client id + secret are configured a
  * real {@see GenericOAuthProvider} is built; otherwise the offline
- * {@see StubOAuthProvider} answers under the same key, so dev/e2e log in with no
- * real round-trip. A settings-override source (the OAuth analog of HIL-262) is a
- * later concern; config is env-only here.
+ * {@see StubOAuthProvider} is handed to the registry under the same key, so dev/e2e
+ * log in with no real round-trip. Whether that stub survives is not this class's
+ * call: the registry refuses an offline provider on a production-like node
+ * (HIL-671), so an unconfigured provider there is simply absent rather than open.
+ * A settings-override source (the OAuth analog of HIL-262) is a later concern;
+ * config is env-only here.
  */
 final class ChatOAuthConfig
 {
@@ -107,6 +110,10 @@ final class ChatOAuthConfig
 
     /**
      * Resolves one provider: a real one when its credentials are set, the offline stub otherwise.
+     *
+     * The stub is offered unconditionally and dropped selectively: on a production-like
+     * node {@see OAuthProviderRegistry} refuses it, which is why this method needs to know
+     * nothing about the environment (HIL-671).
      *
      * @param OAuthProviderPreset $preset Framework recipe for this provider
      * @param string $clientIdKey Env key carrying the client id
