@@ -141,6 +141,12 @@ def ctl_out(*args):
     return proc.stdout.strip() if proc.returncode == 0 else ""
 
 
+def client(node, *args):
+    """Run a test-only client command on one node. True when the CLI reported success."""
+    proc = subprocess.run([CLUSTER, "client", node, *args], capture_output=True, text=True)
+    return proc.returncode == 0
+
+
 def container_id(node):
     """Docker id of a node's container, or '' when there is none."""
     return ctl_out("container-id", node)
@@ -211,6 +217,18 @@ def hosted_by(views, node):
     """Agent ids of the fleet members the leader reports started on one node."""
     return {i for i, row in worker_placements(views).items()
             if row.get("nodeId") == node and row.get("state") == "started"}
+
+
+def client_deliveries(views, node):
+    """Cross-node client deliveries a node reports having accepted, or -1 when unreachable."""
+    view = views.get(node)
+    return -1 if view is None else int(view.get("clientDeliveries", 0))
+
+
+def indexed_for(views, watcher, holder):
+    """How many browser connections one node's index holds for another node."""
+    view = views.get(watcher)
+    return 0 if view is None else int((view.get("clientIndex") or {}).get(holder, 0))
 
 
 def fleet_started(views):
@@ -470,6 +488,69 @@ def scenario_9_daemon_crash_selfheal():
         wait_converge(ALL_NODES)
 
 
+def scenario_10_cross_node_browser():
+    """A browser attached to one node must be answerable from any other (HIL-668).
+
+    The defect this closes is silent: a browser hangs on exactly one node, an agent runs on
+    whichever node the leader placed it on, and until now the second could not reach the first.
+    The answer went out locally, to a socket table that never held that connection, and nothing
+    anywhere reported a failure.
+
+    Both directions of the fix are asserted, and they are different mechanisms. An ADDRESSED
+    signal is looked up in the connection index and forwarded to the one node holding the key -
+    so the delivery lands on that node and on no other. A FAN-OUT has no address at all, because
+    which browsers it reaches is answered by each node's own subscriptions, so it is carried to
+    every node instead. The sender is the exception on purpose: it expands its own fan-out
+    locally, and the counter here is of frames that came off the mesh.
+
+    The demo is headless, so the browser is attached through the CLI and the delivery is read
+    from the inspect reply rather than from a socket. Everything between those two ends - the
+    per-tick announcement, the index, the routing pass, the peer frame - is the production path.
+    """
+    key = "ak-cluster-e2e"
+    holder, sender = "s1", "m2"
+    wait_converge(ALL_NODES)
+    assert client(holder, "test:cluster:client:attach", key), \
+        f"could not attach a test browser on {holder}"
+    try:
+        wait_until(lambda v: indexed_for(v, sender, holder) >= 1, CONVERGE_TIMEOUT,
+                   f"{sender} learns that {holder} holds a browser")
+
+        views = inspect_all()
+        before = {n: client_deliveries(views, n) for n in ALL_NODES}
+        assert client(sender, "test:cluster:client:send", key, "hello"), \
+            f"could not raise an addressed signal on {sender}"
+
+        def addressed_arrived(views):
+            view = views.get(holder)
+            return (bool(view)
+                    and client_deliveries(views, holder) > before[holder]
+                    and view.get("lastClientAcceptKey") == key)
+
+        wait_until(addressed_arrived, CONVERGE_TIMEOUT,
+                   f"{holder} takes in the signal {sender} addressed to its browser")
+
+        others = [n for n in ALL_NODES if n not in (holder, sender)]
+        quiet = inspect_all(others)
+        for node in others:
+            assert client_deliveries(quiet, node) == before[node], \
+                f"an addressed signal reached {node}, which holds no such browser"
+
+        views = inspect_all()
+        before = {n: client_deliveries(views, n) for n in ALL_NODES}
+        assert client(sender, "test:cluster:client:fanout", "everyone"), \
+            f"could not raise a fan-out on {sender}"
+
+        receivers = [n for n in ALL_NODES if n != sender]
+        wait_until(lambda v: all(client_deliveries(v, n) > before[n] for n in receivers),
+                   CONVERGE_TIMEOUT, "every node but the sender takes in the fan-out",
+                   nodes=receivers)
+        return (f"{sender} answered a browser attached to {holder} and fanned out to all "
+                f"{len(receivers)} other nodes")
+    finally:
+        client(holder, "test:cluster:client:detach", key)
+
+
 SCENARIOS = [
     ("1 master-slave mesh", scenario_1_master_slave_mesh),
     ("2 master-master", scenario_2_master_master),
@@ -480,6 +561,7 @@ SCENARIOS = [
     ("7 quorum-loss", scenario_7_quorum_loss),
     ("8 split-brain prevention", scenario_8_split_brain),
     ("9 daemon-crash self-heal", scenario_9_daemon_crash_selfheal),
+    ("10 cross-node browser", scenario_10_cross_node_browser),
 ]
 
 # Park a scenario here (name -> reason) to skip it as known timing-flaky -- the

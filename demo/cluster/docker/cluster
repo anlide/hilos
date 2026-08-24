@@ -13,6 +13,7 @@
 #   cluster down [--volumes]   stop and remove the stack (add --volumes to wipe the DB)
 #   cluster status             docker ps for the stack + a one-line inspect per node
 #   cluster inspect <node>     print a node's test:cluster:inspect JSON (m1..m3,s1,s2)
+#   cluster client <node> <cmd> [args]  run a test:cluster:client:* command on a node
 #   cluster kill <node>        docker kill -9 a node container (simulate node-down)
 #   cluster start <node>       (re)start a node container, reusing it as it is
 #   cluster recreate <node>    replace a node with a pristine container
@@ -84,6 +85,16 @@ cmd_inspect_local() {
   local node="${1:-}"; valid_node "$node"
   docker exec -e APP_ENV=test "cluster-$node" \
     php backend/Bootstrap/cli.php test:cluster:inspect
+}
+
+# Run one of the test-only client commands against a node (HIL-668). The cluster demo is
+# headless, so a browser is attached through the CLI rather than by a socket, and the
+# addressed/fan-out signals are raised the same way -- everything past that point is the
+# production path.
+cmd_client() {
+  local node="${1:-}"; valid_node "$node"; shift
+  docker exec -e HILOS_DAEMON_HOST="${NODE_IP[$node]}" cluster-cli \
+    php backend/Bootstrap/cli.php "$@"
 }
 
 cmd_status() {
@@ -237,6 +248,7 @@ case "${1:-}" in
   status-json) shift; cmd_status_json ;;
   inspect)   shift; cmd_inspect "$@" ;;
   inspect-local) shift; cmd_inspect_local "$@" ;;
+  client)    shift; cmd_client "$@" ;;
   kill)      shift; cmd_kill "$@" ;;
   start)     shift; cmd_start "$@" ;;
   recreate)  shift; cmd_recreate "$@" ;;
@@ -246,5 +258,5 @@ case "${1:-}" in
   heal)      shift; cmd_heal "$@" ;;
   logs)      shift; cmd_logs "$@" ;;
   scenarios) shift; cmd_scenarios ;;
-  *)         die "usage: cluster {up|down|restart|status|inspect|kill|start|recreate|crash-daemon|container-id|partition|heal|logs|scenarios} [args]" ;;
+  *)         die "usage: cluster {up|down|restart|status|inspect|client|kill|start|recreate|crash-daemon|container-id|partition|heal|logs|scenarios} [args]" ;;
 esac

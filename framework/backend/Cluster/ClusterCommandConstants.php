@@ -69,4 +69,23 @@ final class ClusterCommandConstants
 
     /** @var string Placement-row key: last-known placement state value */
     public const string FIELD_PLACEMENT_STATE = 'state';
+
+    /**
+     * @var string Signal name the test-only client commands raise, and the browser side of the
+     *     mesh answers to
+     *
+     * A name of its own rather than a page's, because the point of these scenarios is the
+     * transport under the pages: the harness drives it from a command line, on a demo that has
+     * no browser at all, and asserts on what the receiving node accepted.
+     */
+    public const string SIGNAL_CLIENT_TEST = 'cluster_client_test';
+
+    /** @var string Inspect reply key: how many browser connections this node's index holds per node */
+    public const string FIELD_CLIENT_INDEX = 'clientIndex';
+
+    /** @var string Inspect reply key: cross-node deliveries this node has accepted for its browsers */
+    public const string FIELD_CLIENT_DELIVERIES = 'clientDeliveries';
+
+    /** @var string Inspect reply key: browser the last addressed cross-node delivery was for */
+    public const string FIELD_LAST_CLIENT_ACCEPT_KEY = 'lastClientAcceptKey';
 }

@@ -297,7 +297,7 @@ node has not exercised a single one of its four open preconditions.
 
 Four things this approach depends on were missing, and none was built by the leaf
 that wrote this page. All four were found by reading the code, and all four are
-invisible until a second node exists. The first is now closed.
+invisible until a second node exists. Three are now closed; the third is not.
 
 1. **A cluster-singleton could not be placed anywhere but the leader — closed by
    HIL-667.** `WorkerServer::executePlacement()` still reuses the ordinary local
@@ -316,30 +316,45 @@ invisible until a second node exists. The first is now closed.
    leadership, is what may host the agent, and every other start on a follower is
    refused rather than served. What such a refused signal should do instead is
    **HIL-629**'s question, not this one's.
-2. **A signal crosses nodes only when the leader routes it.** `nodeFor()` reads
-   the leader-side `PlacementRegistry`, so on a follower it returns null and the
-   destination stays local. The owner-to-holder announcement therefore works from
-   the leader and silently does not from anywhere else. Either followers learn
-   placements, or the frame is relayed through the leader; the approach needs one
-   of the two and does not pick.
+2. **A signal crossed nodes only when the leader routed it — closed by
+   HIL-668.** `nodeFor()` read the leader-side `PlacementRegistry`, so on a
+   follower it returned null and the destination stayed local: the
+   owner-to-holder announcement worked from the leader and silently did not from
+   anywhere else. Of the two ways out the page named — followers learn
+   placements, or the frame is relayed through the leader — the first was taken.
+   The leader publishes its whole placement view (`peer_placement_view`) whenever
+   it changes and to every node that links, and `nodeFor()` answers from the
+   registry it owns or, off the leader, from that published copy. A node that has
+   not been handed one yet still answers null, which is what it did when there
+   was no copy at all.
 3. **A row cached on one node is never invalidated by a write on another.** DB
    sync reaches this daemon's own workers and stops there; `framework/backend/Cluster`
    has none. Until this is answered, "read the database" means *query* for
    anything that must not be stale, and the by-key path is safe only for rows this
    node has not read before.
-4. **An agent cannot answer a client attached to another node.** The one peer
-   frame that carries a signal is addressed to an agent
-   (`PeerServer::sendSignalToNode()`), while the reply to a browser is local:
-   `DaemonManager` sends a `WebSocketDestination` through this node's WebSocket
-   server, and `SignalRouter::applyPlacement()` says so in as many words — only
-   an `AgentDestination` is eligible for rewriting, because WebSocket, all-client
-   and command-reply targets are bound to this node. **This is a precondition of
-   the whole HIL-626 epic**, not of the library alone: any agent that is not on
-   the client's node has the same problem. **HIL-668** owns it.
+4. **An agent could not answer a client attached to another node — closed by
+   HIL-668.** The one peer frame that carried a signal was addressed to an agent
+   (`PeerServer::sendSignalToNode()`), while the reply to a browser was local, and
+   `SignalRouter::applyPlacement()` said so in as many words. It no longer does.
+   Every master announces the accept keys it holds, so a `WebSocketDestination`
+   whose key belongs elsewhere is rewritten to a `RemoteClientDestination` and
+   forwarded (`peer_client_signal`) to the node holding the socket, which writes
+   it down the path it writes its own. A fan-out (`ws_all`, `ws_group`,
+   `ws_all_connected`) has no address to rewrite — who receives one is answered by
+   a node-local subscription registry — so it is carried to every node instead
+   (`peer_client_fanout`) and each expands it against its own. The public API is
+   untouched: application code still names an accept key and nothing else.
 
-Two of the four had a leaf — HIL-667 for the first, now landed, and HIL-668 for the
-fourth, still open. The second and the third surfaced while this page was being
-written and have none yet; they are for the owner to place.
+   **What this did not close.** A signal that cannot be carried is dropped and
+   logged, exactly as a write to a socket that has already gone is. The one
+   exception is a page subscription, where somebody is waiting on an answer: the
+   client's node raises the ordinary `subscription_page_error` so the tab stops
+   spinning. Holding and retrying what was in flight to a node that fell over is
+   durable delivery and belongs to HIL-347.
+
+Three of the four are landed: HIL-667 for the first, HIL-668 for the second and
+the fourth. The third surfaced while this page was being written and has no leaf
+yet; it is for the owner to place.
 
 ## What This Approach Does Not Decide
 

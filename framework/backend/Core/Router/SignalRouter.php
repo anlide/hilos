@@ -19,6 +19,8 @@ use Hilos\Core\Router\Destination\AllClientsDestination;
 use Hilos\Core\Router\Destination\CommandReplyDestination;
 use Hilos\Core\Router\Destination\Destination;
 use Hilos\Core\Router\Destination\RemoteAgentDestination;
+use Hilos\Core\Router\Destination\RemoteClientDestination;
+use Hilos\Core\Router\Destination\RemoteFanoutDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -95,6 +97,21 @@ class SignalRouter
         SignalTypeConstants::AGENT_SIGNAL,
         SignalTypeConstants::ACTION,
         SignalTypeConstants::COMMAND_REQUEST,
+    ];
+
+    /**
+     * @var list<string> Signal types delivered to browsers by fan-out rather than by address,
+     *     so that on a cluster they have to be carried to every node instead of resolved here.
+     *
+     * All three are answered from the subscription registry or the connection list of one node
+     * ({@see getWebSocketDestinations()}), which is exactly why the cluster cannot resolve them
+     * centrally: this node knows only its own. ws_user is absent because it names its target,
+     * and a named target is an address the connection index can place.
+     */
+    private const array CLIENT_FANOUT_SIGNAL_TYPES = [
+        SignalTypeConstants::WS_ALL,
+        SignalTypeConstants::WS_ALL_CONNECTED,
+        SignalTypeConstants::WS_GROUP,
     ];
 
     /** @var int Byte length of the random per-process emitter identity */
@@ -678,6 +695,7 @@ class SignalRouter
     {
         $destinations = [
             ...$this->getWebSocketDestinations($signal),
+            ...$this->getClientFanoutDestinations($signal),
             ...$this->getPageSubscriptionDestinations($signal),
             ...$this->getGroupSubscriptionDestinations($signal),
             ...$this->getActionDestinations($signal),
@@ -687,7 +705,7 @@ class SignalRouter
             ...$this->additionalDestinations($signal),
         ];
 
-        return $this->applyPlacement($this->dedupeDestinations($destinations));
+        return $this->applyClientLocation($this->applyPlacement($this->dedupeDestinations($destinations)));
     }
 
     /**
@@ -712,6 +730,27 @@ class SignalRouter
     }
 
     /**
+     * Resolves the browsers of THIS node a signal is meant for, and nothing beyond them.
+     *
+     * The entry point for the receiving end of a cross-node fan-out: the frame arrives already
+     * decided, and all that is left is asking this node's own subscription registry who it goes
+     * to. Deliberately not {@see getDestinations()} — that one contributes agents, actions and
+     * command replies the sending node has already dealt with, and it would append the fan-out
+     * marker again, turning one broadcast into a mesh-wide storm. Skipping it is the one-hop
+     * rule expressed as a call, not as a hop counter.
+     *
+     * The cross-node post-passes are skipped for the same reason: every accept key this
+     * registry holds is a socket of this node, so there is nothing here to place elsewhere.
+     *
+     * @param SignalDTO $signal Signal to resolve against this node's subscriptions
+     * @return list<Destination> WebSocket client destinations, or a single all-clients broadcast marker
+     */
+    public function localClientDestinations(SignalDTO $signal): array
+    {
+        return $this->getWebSocketDestinations($signal);
+    }
+
+    /**
      * Rewrites agent destinations that resolve to another node into remote destinations.
      *
      * Cross-node routing preserves the declarative route-by-sender model: destinations are
@@ -721,7 +760,8 @@ class SignalRouter
      * reports null) stays an {@see AgentDestination} and is delivered locally. Off-cluster,
      * or on a node with no registered lookup, there is no lookup and the list is returned
      * untouched, so single-node behaviour is unchanged. Only {@see AgentDestination} is
-     * eligible — WebSocket, all-clients, and command-reply targets are bound to this node.
+     * eligible: a browser is placed by its own post-pass ({@see applyClientLocation()}) and a
+     * command reply is bound to the connection this node is holding open.
      *
      * @param list<Destination> $destinations Resolved destinations before placement
      * @return list<Destination> Destinations with cross-node agents rewritten to remote
@@ -745,6 +785,82 @@ class SignalRouter
         }
 
         return $destinations;
+    }
+
+    /**
+     * Rewrites client destinations that resolve to another node into remote destinations.
+     *
+     * The browser-side twin of {@see applyPlacement()}, and it runs after it for a reason worth
+     * naming: the two post-passes are about different halves of the same signal, and neither
+     * can turn the other's destinations into its own — a {@see WebSocketDestination} is never
+     * an agent and an {@see AgentDestination} is never a socket. Running them in sequence is
+     * therefore order-independent, and this order is only the one the list reads in.
+     *
+     * A connection held by another node becomes a {@see RemoteClientDestination} the daemon
+     * forwards over the peer channel; a connection attached here (or any key the lookup reports
+     * null for) stays a {@see WebSocketDestination} and is written to locally. Off-cluster, or
+     * on a node with no registered lookup, the list is returned untouched, so single-node
+     * behaviour is unchanged.
+     *
+     * Only {@see WebSocketDestination} is eligible. {@see AllClientsDestination} is deliberately
+     * left alone: it is not an address but an instruction to fan out, and the node that holds
+     * the connections is the only one that can carry it out — its cross-node half is a separate
+     * frame, not a rewritten destination.
+     *
+     * @param list<Destination> $destinations Resolved destinations before the connection lookup
+     * @return list<Destination> Destinations with cross-node clients rewritten to remote
+     */
+    private function applyClientLocation(array $destinations): array
+    {
+        $location = Hilos::$cluster?->clientLocation();
+        if ($location === null) {
+            return $destinations;
+        }
+
+        foreach ($destinations as $index => $destination) {
+            if (!$destination instanceof WebSocketDestination) {
+                continue;
+            }
+
+            $nodeId = $location->nodeFor($destination->acceptKey);
+            if ($nodeId !== null) {
+                $destinations[$index] = new RemoteClientDestination($nodeId, $destination->acceptKey);
+            }
+        }
+
+        return $destinations;
+    }
+
+    /**
+     * Adds the marker that carries a browser fan-out to the other nodes of the cluster.
+     *
+     * Added ALONGSIDE the local destinations rather than in place of them, which is what makes
+     * it unlike the two post-passes above: they rewrite a target that turned out to live
+     * elsewhere, while a fan-out has no single target at all. This node still fans out to its
+     * own browsers exactly as before; the marker is the other nodes' half of the same job, and
+     * {@see DaemonManager} turns it into one broadcast frame.
+     *
+     * The frame goes out whether or not an agent, a peer, or anyone else is remote, because
+     * the alternative is a flag nobody can compute honestly: a node cannot tell from a signal
+     * whether some other node holds a subscriber. It is also what fixes today's silent hole,
+     * where a ws_all raised on one node reached only the browsers attached to that node.
+     *
+     * Contributed only where a connection lookup is registered — that is, on a clustered
+     * daemon, which is the one place both client-side cluster seams are installed together.
+     * Off-cluster, and in every worker, the list stays empty and delivery is local as before.
+     *
+     * @param SignalDTO $signal Signal DTO
+     * @return list<Destination> The single fan-out marker, or empty when it is not one / not clustered
+     */
+    private function getClientFanoutDestinations(SignalDTO $signal): array
+    {
+        if (!in_array($signal->signalType->getType(), self::CLIENT_FANOUT_SIGNAL_TYPES, true)) {
+            return [];
+        }
+
+        return Hilos::$cluster?->clientLocation() !== null
+            ? [new RemoteFanoutDestination()]
+            : [];
     }
 
     /**

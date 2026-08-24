@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Peer;
 
+use Hilos\Cluster\ClientMesh;
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\ClusterRegistry;
 use Hilos\Cluster\Consensus\ClusterConsensusConfig;
@@ -15,6 +16,10 @@ use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
+use Hilos\Cluster\Peer\DTO\PeerClientFanoutDTO;
+use Hilos\Cluster\Peer\DTO\PeerClientSignalDTO;
+use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
+use Hilos\Cluster\Peer\DTO\PeerConnectionsSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydratedDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydrateDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
@@ -23,6 +28,7 @@ use Hilos\Cluster\Peer\DTO\PeerNodeEntry;
 use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
@@ -102,7 +108,8 @@ final class PeerServer extends AbstractServer implements
     ConsensusMesh,
     PlacementMesh,
     ProtectedModeMesh,
-    RtSyncMesh
+    RtSyncMesh,
+    ClientMesh
 {
     /** @var float Seconds to wait before retrying a failed or dropped seed dial */
     private const float DIAL_RETRY_INTERVAL_SEC = 5.0;
@@ -653,6 +660,11 @@ final class PeerServer extends AbstractServer implements
         // reason the line above is: the peer may be a member already, but this link is what lets
         // anything reach it, and nothing else will ask later.
         Hilos::$cluster?->rtSyncSink()?->handOverRtSnapshots($remote->nodeId);
+
+        // And the browser connections it holds (HIL-668), on exactly the same terms: without
+        // them the peer resolves every one of this node's clients as unknown and answers them
+        // locally, into nothing.
+        Hilos::$cluster?->clientSignalSink()?->handOverConnections($remote->nodeId);
     }
 
     /**
@@ -894,6 +906,20 @@ final class PeerServer extends AbstractServer implements
         $from = $link->remoteIdentity()?->nodeId;
         if ($from !== null) {
             $this->placement?->onPlacementReport($from, $frame);
+        }
+    }
+
+    /**
+     * Routes a received placement view to the placement coordinator to answer lookups from.
+     *
+     * @param PeerLink $link Link the view arrived on
+     * @param PeerPlacementViewDTO $frame Received placement-view frame
+     */
+    public function onPlacementViewReceived(PeerLink $link, PeerPlacementViewDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->placement?->onPlacementView($from, $frame);
         }
     }
 
@@ -1702,6 +1728,188 @@ final class PeerServer extends AbstractServer implements
                 "Failed to apply peer RT snapshot from node '{$frame->originNodeId}': {$e->getMessage()}",
             );
         }
+    }
+
+    /**
+     * Delivers one signal to a browser attached to another node.
+     *
+     * Implements {@see ClientMesh}. The addressed twin of {@see sendSignalToNode()}, and
+     * best-effort in the same sense: a false return (no handshaked link to the node) is the
+     * caller's cue to drop and log, which is what the local path already does for a socket that
+     * has gone. Buffering and retry on an offline node are out of scope.
+     *
+     * @param string $nodeId Id of the node holding the connection
+     * @param string $acceptKey Accept key of the connection to deliver to
+     * @param SignalDTO $signal Signal to deliver on that node
+     * @return bool True when a live link carried the frame, false when the node is unlinked
+     */
+    public function sendSignalToClientNode(string $nodeId, string $acceptKey, SignalDTO $signal): bool
+    {
+        return $this->sendToNode($nodeId, new PeerClientSignalDTO(
+            $this->localIdentity->nodeId,
+            $nodeId,
+            $acceptKey,
+            $signal,
+        ));
+    }
+
+    /**
+     * Delivers a received cross-node signal to the browser attached to this node.
+     *
+     * Verifies the frame is addressed to this node, then hands the already-resolved accept key
+     * straight to the local delivery sink — no re-routing, which structurally rules out a
+     * forward loop or a second fan-out. A mismatched target, an unregistered sink, or a failing
+     * write is dropped and logged, keeping a bad forward from tearing down the daemon loop.
+     *
+     * @param PeerLink $link Link the signal arrived on
+     * @param PeerClientSignalDTO $frame Received client signal-forward frame
+     */
+    public function onClientSignalReceived(PeerLink $link, PeerClientSignalDTO $frame): void
+    {
+        if ($frame->targetNodeId !== $this->localIdentity->nodeId) {
+            Logger::warning(
+                "Dropping peer client signal addressed to node '{$frame->targetNodeId}'"
+                . " received on node '{$this->localIdentity->nodeId}'",
+            );
+            return;
+        }
+
+        $sink = Hilos::$cluster?->clientSignalSink();
+        if ($sink === null) {
+            Logger::warning(
+                "Dropping peer client signal for '{$frame->acceptKey}': no local client signal sink registered",
+            );
+            return;
+        }
+
+        try {
+            $sink->deliverSignalToClient($frame->acceptKey, $frame->signal);
+        } catch (Throwable $e) {
+            Logger::warning("Failed to deliver peer client signal to '{$frame->acceptKey}': {$e->getMessage()}");
+        }
+    }
+
+    /**
+     * Asks every other node to fan one signal out to the browsers it holds.
+     *
+     * Implements {@see ClientMesh}. The unaddressed twin of {@see sendSignalToClientNode()},
+     * and unaddressed by necessity rather than by convenience: only the node a browser hangs
+     * on can say whether it is subscribed, so the frame names the signal and leaves the
+     * resolving to each receiver. Best-effort like every other broadcast here — a node that is
+     * not linked misses it, and a fan-out has no backlog to catch up from.
+     *
+     * @param SignalDTO $signal Signal every node expands against its own subscription registry
+     */
+    public function broadcastClientFanout(SignalDTO $signal): void
+    {
+        $this->broadcastToNodes(new PeerClientFanoutDTO($this->localIdentity->nodeId, $signal));
+    }
+
+    /**
+     * Fans a received cross-node job out to the browsers attached to this node.
+     *
+     * Hands the signal to the local delivery sink, which resolves it against this node's own
+     * subscription registry — the one thing the sending node could not do — and writes to
+     * whoever comes out. It stops here: passing it on is what the sending node already did for
+     * everyone, and not doing it is the whole echo defense, the same one-hop rule
+     * {@see onRtSyncReceived()} stands on. An unregistered sink or a failing expansion is
+     * dropped and logged, so a bad frame cannot end the daemon loop.
+     *
+     * @param PeerLink $link Link the fan-out arrived on
+     * @param PeerClientFanoutDTO $frame Received client fan-out frame
+     */
+    public function onClientFanoutReceived(PeerLink $link, PeerClientFanoutDTO $frame): void
+    {
+        $sink = Hilos::$cluster?->clientSignalSink();
+        if ($sink === null) {
+            Logger::warning(
+                "Dropping peer client fanout from node '{$frame->originNodeId}':"
+                . " no local client signal sink registered",
+            );
+            return;
+        }
+
+        try {
+            $sink->deliverFanoutToClients($frame->originNodeId, $frame->signal);
+        } catch (Throwable $e) {
+            Logger::warning(
+                "Failed to fan out peer client signal from node '{$frame->originNodeId}': {$e->getMessage()}",
+            );
+        }
+    }
+
+    /**
+     * Hands one node the whole set of browser connections this node holds.
+     *
+     * Implements {@see ClientMesh}. Addressed rather than broadcast for the same reason
+     * {@see sendRtSnapshotToNode()} is: only the node on the other end of the new link is
+     * behind on this set, and the others have been kept current by the deltas. A node that is
+     * not linked is silently skipped — it will be handed the set when it links.
+     *
+     * @param string $nodeId Node that just linked and is being handed the set
+     * @param list<string> $acceptKeys Every accept key this node holds right now
+     */
+    public function sendConnectionsSnapshotToNode(string $nodeId, array $acceptKeys): void
+    {
+        $this->sendToNode($nodeId, new PeerConnectionsSnapshotDTO($this->localIdentity->nodeId, $acceptKeys));
+    }
+
+    /**
+     * Announces which browser connections this node has gained and lost to every other node.
+     *
+     * Implements {@see ClientMesh}. Broadcast because any node may be the one whose agent
+     * answers one of these browsers, and best-effort in the same sense as
+     * {@see broadcastRtSync()}: a node that is not linked right now misses the delta and is
+     * handed the whole set the moment it links.
+     *
+     * @param list<string> $opened Accept keys this node has gained since its last announcement
+     * @param list<string> $closed Accept keys this node has lost since its last announcement
+     */
+    public function broadcastConnectionsDelta(array $opened, array $closed): void
+    {
+        $this->broadcastToNodes(new PeerConnectionsDeltaDTO($this->localIdentity->nodeId, $opened, $closed));
+    }
+
+    /**
+     * Rebuilds this node's index of the browser connections another node holds.
+     *
+     * Stops here like every other received frame: the announcing node told everyone itself,
+     * and passing it on is the echo this mesh was built to structurally rule out. A missing
+     * index means the daemon has not registered one yet, which off-cluster it never does.
+     *
+     * @param PeerLink $link Link the snapshot arrived on
+     * @param PeerConnectionsSnapshotDTO $frame Received connection-snapshot frame
+     */
+    public function onConnectionsSnapshotReceived(PeerLink $link, PeerConnectionsSnapshotDTO $frame): void
+    {
+        $connections = Hilos::$cluster?->clientConnections();
+        if ($connections === null) {
+            Logger::warning(
+                "Dropping peer connections snapshot from node '{$frame->nodeId}': no local connection index registered",
+            );
+            return;
+        }
+
+        $connections->applySnapshot($frame->nodeId, $frame->acceptKeys);
+    }
+
+    /**
+     * Applies another node's report of the browser connections it has gained and lost.
+     *
+     * @param PeerLink $link Link the delta arrived on
+     * @param PeerConnectionsDeltaDTO $frame Received connection-delta frame
+     */
+    public function onConnectionsDeltaReceived(PeerLink $link, PeerConnectionsDeltaDTO $frame): void
+    {
+        $connections = Hilos::$cluster?->clientConnections();
+        if ($connections === null) {
+            Logger::warning(
+                "Dropping peer connections delta from node '{$frame->nodeId}': no local connection index registered",
+            );
+            return;
+        }
+
+        $connections->applyDelta($frame->nodeId, $frame->opened, $frame->closed);
     }
 
     /**

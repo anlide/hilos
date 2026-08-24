@@ -15,8 +15,8 @@ use Hilos\Hilos;
  * The flag itself is declared where the command is declared, and that is deliberately two
  * places rather than one flat list: an agent-owned command carries
  * {@see AgentCommandConfigKey::TEST_ONLY} in the same AGENT_COMMANDS entry that carries its
- * route, so the two cannot drift apart, while the three commands the master answers itself
- * appear in no agent registry at all and are named by
+ * route, so the two cannot drift apart, while the commands the master answers itself appear
+ * in no agent registry at all and are named by
  * {@see CommandConstants::MASTER_TEST_ONLY_COMMANDS}. This class is what makes that split
  * invisible to the asker: the socket gate ({@see NonProductionGate}) has exactly one
  * question and exactly one place to ask it.

@@ -8,6 +8,10 @@ use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
+use Hilos\Cluster\Peer\DTO\PeerClientFanoutDTO;
+use Hilos\Cluster\Peer\DTO\PeerClientSignalDTO;
+use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
+use Hilos\Cluster\Peer\DTO\PeerConnectionsSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHandshakeDTO;
 use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
@@ -17,6 +21,7 @@ use Hilos\Cluster\Peer\DTO\PeerPingDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerPongDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
@@ -278,9 +283,14 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerAgentStatusDTO => $this->onAgentStatus($frame),
             $frame instanceof PeerPlacementQueryDTO => $this->onPlacementQuery($frame),
             $frame instanceof PeerPlacementReportDTO => $this->onPlacementReport($frame),
+            $frame instanceof PeerPlacementViewDTO => $this->onPlacementView($frame),
             $frame instanceof PeerSignalDTO => $this->onSignal($frame),
             $frame instanceof PeerRtSyncDTO => $this->onRtSync($frame),
             $frame instanceof PeerRtSnapshotDTO => $this->onRtSnapshot($frame),
+            $frame instanceof PeerClientSignalDTO => $this->onClientSignal($frame),
+            $frame instanceof PeerClientFanoutDTO => $this->onClientFanout($frame),
+            $frame instanceof PeerConnectionsSnapshotDTO => $this->onConnectionsSnapshot($frame),
+            $frame instanceof PeerConnectionsDeltaDTO => $this->onConnectionsDelta($frame),
             $frame instanceof PeerProtectedModeEnableDTO => $this->onProtectedModeEnable($frame),
             $frame instanceof PeerProtectedModeReadyDTO => $this->onProtectedModeReady($frame),
             $frame instanceof PeerProtectedModeDisableDTO => $this->onProtectedModeDisable($frame),
@@ -513,6 +523,66 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('RT snapshot');
         $this->server->onRtSnapshotReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received placement view to the server for this node to answer lookups from.
+     *
+     * @param PeerPlacementViewDTO $frame Incoming placement-view frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onPlacementView(PeerPlacementViewDTO $frame): void
+    {
+        $this->requireHandshaked('placement view');
+        $this->server->onPlacementViewReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received client signal to the server for the browser on this node.
+     *
+     * @param PeerClientSignalDTO $frame Incoming client signal-forward frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onClientSignal(PeerClientSignalDTO $frame): void
+    {
+        $this->requireHandshaked('client signal');
+        $this->server->onClientSignalReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received fan-out job to the server for this node's own browsers.
+     *
+     * @param PeerClientFanoutDTO $frame Incoming client fan-out frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onClientFanout(PeerClientFanoutDTO $frame): void
+    {
+        $this->requireHandshaked('client fanout');
+        $this->server->onClientFanoutReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received connection set to the server for this node's index to be rebuilt.
+     *
+     * @param PeerConnectionsSnapshotDTO $frame Incoming connection-snapshot frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onConnectionsSnapshot(PeerConnectionsSnapshotDTO $frame): void
+    {
+        $this->requireHandshaked('connections snapshot');
+        $this->server->onConnectionsSnapshotReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received connection change to the server for this node's index to be updated.
+     *
+     * @param PeerConnectionsDeltaDTO $frame Incoming connection-delta frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onConnectionsDelta(PeerConnectionsDeltaDTO $frame): void
+    {
+        $this->requireHandshaked('connections delta');
+        $this->server->onConnectionsDeltaReceived($this, $frame);
     }
 
     /**

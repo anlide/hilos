@@ -71,6 +71,9 @@ final class HttpConstants
     /** @var int HTTP status code for internal server error */
     public const int HTTP_INTERNAL_ERROR = 500;
 
+    /** @var int HTTP status code for a service that is temporarily unable to answer */
+    public const int HTTP_SERVICE_UNAVAILABLE = 503;
+
     /** @var string Fallback HTTP status reason phrase for unknown codes */
     public const string HTTP_STATUS_TEXT_UNKNOWN = 'Unknown';
 
@@ -85,6 +88,7 @@ final class HttpConstants
         self::HTTP_CONFLICT => 'Conflict',
         self::HTTP_GONE => 'Gone',
         self::HTTP_INTERNAL_ERROR => 'Internal Server Error',
+        self::HTTP_SERVICE_UNAVAILABLE => 'Service Unavailable',
     ];
 
     /** @var string HTTP method GET */

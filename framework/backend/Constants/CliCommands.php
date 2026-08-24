@@ -36,6 +36,18 @@ final class CliCommands
     /** @var string Command: Inspect the daemon's cluster/consensus/placement state (test-only) */
     public const string CLUSTER_TEST_INSPECT = 'test:cluster:inspect';
 
+    /** @var string Command: Index an accept key as a browser attached to this node (test-only) */
+    public const string CLUSTER_TEST_CLIENT_ATTACH = 'test:cluster:client:attach';
+
+    /** @var string Command: Take an attached accept key back off this node (test-only) */
+    public const string CLUSTER_TEST_CLIENT_DETACH = 'test:cluster:client:detach';
+
+    /** @var string Command: Send a signal to one browser, wherever in the cluster it hangs (test-only) */
+    public const string CLUSTER_TEST_CLIENT_SEND = 'test:cluster:client:send';
+
+    /** @var string Command: Broadcast a signal to every browser of the cluster (test-only) */
+    public const string CLUSTER_TEST_CLIENT_FANOUT = 'test:cluster:client:fanout';
+
     /** @var string Command: Show help information */
     public const string HELP = 'help';
 

@@ -60,6 +60,21 @@ final class CommandConstants
     /** @var string Test-only command: the master force-closes the live WebSocket connection with the given acceptKey */
     public const string COMMAND_CONNECTION_DROP = 'test:connection:drop';
 
+    /** @var string Test-only command: the master indexes an accept key as a browser attached to this node */
+    public const string COMMAND_CLUSTER_CLIENT_ATTACH = 'test:cluster:client:attach';
+
+    /** @var string Test-only command: the master takes an attached accept key back off this node */
+    public const string COMMAND_CLUSTER_CLIENT_DETACH = 'test:cluster:client:detach';
+
+    /** @var string Test-only command: the master raises a signal addressed to one browser, wherever it hangs */
+    public const string COMMAND_CLUSTER_CLIENT_SEND = 'test:cluster:client:send';
+
+    /** @var string Test-only command: the master raises a broadcast for every browser of the cluster */
+    public const string COMMAND_CLUSTER_CLIENT_FANOUT = 'test:cluster:client:fanout';
+
+    /** @var string Request payload key: text a test client signal carries */
+    public const string FIELD_TEXT = 'text';
+
     /**
      * The prefix every test-only command name carries on the wire.
      *
@@ -76,11 +91,12 @@ final class CommandConstants
      * The test-only commands the master answers itself, which therefore carry no flag anywhere else.
      *
      * Every other test-only command is declared by the agent that owns it, in its own
-     * AGENT_COMMANDS entry ({@see AgentCommandConfigKey::TEST_ONLY}). These three appear in
+     * AGENT_COMMANDS entry ({@see AgentCommandConfigKey::TEST_ONLY}). These appear in
      * no agent registry at all - they are handled in the master's own branches, because a
-     * freeze stops every agent but its initiator and because dropping a live socket is the
-     * master's own hand - so this is the one place that can declare them. The socket gate
-     * reads the union of both halves through {@see TestOnlyCommandRegistry}.
+     * freeze stops every agent but its initiator, because dropping a live socket is the
+     * master's own hand, and because the browser index and the signals addressed through it
+     * live in the master too (HIL-668) - so this is the one place that can declare them. The
+     * socket gate reads the union of both halves through {@see TestOnlyCommandRegistry}.
      *
      * @var list<string> Command names the master answers and refuses on a production-like node
      */
@@ -88,6 +104,10 @@ final class CommandConstants
         self::COMMAND_CLUSTER_INSPECT,
         CliCommands::PROTECTED_MODE_TEST_INSPECT,
         self::COMMAND_CONNECTION_DROP,
+        self::COMMAND_CLUSTER_CLIENT_ATTACH,
+        self::COMMAND_CLUSTER_CLIENT_DETACH,
+        self::COMMAND_CLUSTER_CLIENT_SEND,
+        self::COMMAND_CLUSTER_CLIENT_FANOUT,
     ];
 
     /**

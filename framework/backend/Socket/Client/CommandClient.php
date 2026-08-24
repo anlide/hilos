@@ -11,9 +11,11 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Environment\NonProductionGate;
 use Hilos\Hilos;
@@ -177,6 +179,30 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
+            if ($request->command === CommandConstants::COMMAND_CLUSTER_CLIENT_ATTACH
+                || $request->command === CommandConstants::COMMAND_CLUSTER_CLIENT_DETACH
+            ) {
+                // Test-only: put an accept key in this node's own set, or take it back out,
+                // with no socket behind it (HIL-668). The cluster demo runs headless, so this
+                // is the only way to give the mesh a browser to argue about; everything past
+                // the socket - the announcement, the lookup, the forward - is the real path.
+                $reply = $this->answerClientAttachment($request);
+                $this->writeBuffer .= $reply->toJson() . "\n";
+                continue;
+            }
+
+            if ($request->command === CommandConstants::COMMAND_CLUSTER_CLIENT_SEND
+                || $request->command === CommandConstants::COMMAND_CLUSTER_CLIENT_FANOUT
+            ) {
+                // Test-only: raise the signal an agent would raise for a browser - addressed at
+                // one, or fanned out to all - and let the ordinary routing pass decide which
+                // node it belongs to. Answered here rather than parked, because the point is the
+                // master's own routing and the demo registers no agent to park it at.
+                $reply = $this->answerClientSignal($request);
+                $this->writeBuffer .= $reply->toJson() . "\n";
+                continue;
+            }
+
             if ($request->command === CliCommands::PROTECTED_MODE_TEST_INSPECT) {
                 // Test-only read of the master's own view of protected mode. Answered here and
                 // not parked, because parking routes to an agent and a freeze stops every agent
@@ -226,6 +252,84 @@ class CommandClient extends AbstractClient implements CommandClientInterface
 
             return;
         }
+    }
+
+    /**
+     * Attaches or detaches a browser connection on this node's index (HIL-668).
+     *
+     * @param CommandRequestDTO $request Attach or detach request naming the accept key
+     * @return CommandReplyDTO Reply naming the key, or the error to answer instead
+     */
+    private function answerClientAttachment(CommandRequestDTO $request): CommandReplyDTO
+    {
+        // external-boundary: a test harness's command line, checked on the very next line
+        $acceptKey = $request->payload[CommandConstants::FIELD_ACCEPT_KEY] ?? null;
+        if (!is_string($acceptKey) || $acceptKey === '') {
+            return CommandReplyDTO::error($request->correlationId, 'Missing acceptKey');
+        }
+
+        try {
+            $connections = Hilos::$cluster?->clientConnections();
+            if ($connections === null) {
+                return CommandReplyDTO::error($request->correlationId, 'No cluster connection index on this node');
+            }
+
+            if ($request->command === CommandConstants::COMMAND_CLUSTER_CLIENT_ATTACH) {
+                $connections->attachLocal($acceptKey);
+            } else {
+                $connections->detachLocal($acceptKey);
+            }
+        } catch (HilosException $e) {
+            return CommandReplyDTO::error($request->correlationId, $e->getMessage());
+        }
+
+        return CommandReplyDTO::ok($request->correlationId, [
+            CommandConstants::FIELD_ACCEPT_KEY => $acceptKey,
+        ]);
+    }
+
+    /**
+     * Raises the signal a test asks this node to send a browser, addressed or fanned out.
+     *
+     * The addressed one needs its target; the fan-out names nobody by design, so it takes no
+     * accept key at all rather than an ignored one.
+     *
+     * @param CommandRequestDTO $request Send or fanout request
+     * @return CommandReplyDTO Reply naming what was raised, or the error to answer instead
+     */
+    private function answerClientSignal(CommandRequestDTO $request): CommandReplyDTO
+    {
+        $addressed = $request->command === CommandConstants::COMMAND_CLUSTER_CLIENT_SEND;
+        // external-boundary: a test harness's command line, checked on the very next lines
+        $acceptKey = $request->payload[CommandConstants::FIELD_ACCEPT_KEY] ?? null;
+        if ($addressed && (!is_string($acceptKey) || $acceptKey === '')) {
+            return CommandReplyDTO::error($request->correlationId, 'Missing acceptKey');
+        }
+
+        $text = $request->payload[CommandConstants::FIELD_TEXT] ?? null;
+        if (!is_string($text) || $text === '') {
+            return CommandReplyDTO::error($request->correlationId, 'Missing text');
+        }
+
+        try {
+            Hilos::$sr->queueSignal(
+                signalSource: new SignalSource(SignalSource::DAEMON),
+                signalType: new SignalType(
+                    $addressed ? SignalTypeConstants::WS_USER : SignalTypeConstants::WS_ALL_CONNECTED,
+                ),
+                signalName: new SignalName(ClusterCommandConstants::SIGNAL_CLIENT_TEST),
+                signalData: new WebSocketSignalData(
+                    data: new SignalData([CommandConstants::FIELD_TEXT => $text]),
+                    targetAcceptKey: $addressed && is_string($acceptKey) ? $acceptKey : null,
+                ),
+            );
+        } catch (HilosException $e) {
+            return CommandReplyDTO::error($request->correlationId, $e->getMessage());
+        }
+
+        return CommandReplyDTO::ok($request->correlationId, [
+            CommandConstants::FIELD_TEXT => $text,
+        ]);
     }
 
     /**

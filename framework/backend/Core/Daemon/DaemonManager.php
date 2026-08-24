@@ -11,7 +11,10 @@ use Hilos\API\Router\HttpRouter;
 use Hilos\Backup\BackupSchedule;
 use Hilos\Backup\Exception\BackupScheduleException;
 use Hilos\Cluster\AgentSignalSink;
+use Hilos\Cluster\ClientMesh;
+use Hilos\Cluster\ClientSignalSink;
 use Hilos\Cluster\ClusterNode;
+use Hilos\Cluster\Connections\ClusterClientLocation;
 use Hilos\Cluster\LeadershipObserver;
 use Hilos\Cluster\MembershipObserver;
 use Hilos\Cluster\NodeLifecycleState;
@@ -50,6 +53,7 @@ use Hilos\Core\Http\RootInfoHandler;
 use Hilos\Core\Page\Config\PageAgentIndexSource;
 use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
+use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
@@ -57,6 +61,8 @@ use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
 use Hilos\Core\Router\Destination\CommandReplyDestination;
 use Hilos\Core\Router\Destination\RemoteAgentDestination;
+use Hilos\Core\Router\Destination\RemoteClientDestination;
+use Hilos\Core\Router\Destination\RemoteFanoutDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\PageAgentAddress;
@@ -169,8 +175,15 @@ abstract class DaemonManager extends BaseManager implements
     ProtectedModeSnapshotSource,
     ProtectedModeAdmissionRecorder,
     ProtectedModeClientNotifier,
-    RtSyncSink
+    RtSyncSink,
+    ClientSignalSink
 {
+    /** @var string Error code a browser is answered with when the node serving its page cannot be reached */
+    private const string SUBSCRIPTION_NODE_UNREACHABLE_CODE = 'node_unreachable';
+
+    /** @var string Message a browser is answered with when the node serving its page cannot be reached */
+    private const string SUBSCRIPTION_NODE_UNREACHABLE_MESSAGE = 'This page is temporarily unavailable. Please try again.';
+
     /** @var string How the master facade's log line names "every worker of this node" as an addressee */
     private const string MASTER_SIGNAL_WORKERS_LABEL = 'workers';
 
@@ -479,6 +492,20 @@ abstract class DaemonManager extends BaseManager implements
         // Expose this daemon as the port an RT replica from another node is applied through: the
         // copy a receiving node holds lives in the master, and the workers are fed from here.
         Hilos::$cluster?->registerRtSyncSink($this);
+        // Build this node's half of the cluster connection index and expose the daemon as the
+        // port its own browser connections are reached through (HIL-668). Both are the daemon's
+        // because the sockets are: the diff that keeps the index true reads the WebSocket server
+        // registered here, and the delivery it enables ends at that same server. Only on a
+        // clustered node - off-cluster there is nowhere for a connection to be but here, so
+        // leaving both slots empty is what keeps the router's post-pass inert.
+        if (Hilos::$cluster !== null && Hilos::$cluster->isEnabled()) {
+            $clientConnections = new ClusterClientLocation();
+            Hilos::$cluster->registerClientConnections($clientConnections);
+            // The index doubles as the router's read-only connection lookup, so a signal to a
+            // browser can ask which node holds it.
+            Hilos::$cluster->registerClientLocation($clientConnections);
+            Hilos::$cluster->registerClientSignalSink($this);
+        }
         // Off-cluster there is no peer transport to build a freeze coordinator, and this is the one
         // start-up path both topologies run, so the single-node freeze is built here. The clustered
         // one is built by PeerServer::onStart(); the two are mutually exclusive by construction.
@@ -557,6 +584,12 @@ abstract class DaemonManager extends BaseManager implements
                 // produce one alert per node. It never lifts anything (HIL-482).
                 $this->protectedModeWatchdog->tick(time());
             }
+
+            // Tell the other nodes which browser connections this node has gained and lost
+            // (HIL-668). Ahead of the dispatch on purpose: a signal resolved below is addressed
+            // through the peers' copy of this index, so the closer that copy is to this tick,
+            // the fewer answers go to a node that no longer holds the socket.
+            $this->announceConnectionChanges($this->findPeerServer());
 
             // Dispatch accumulated signals
             $this->dispatchSignals();
@@ -1436,13 +1469,7 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         // Find WebSocket server once (for WebSocket destinations)
-        $webSocketServer = null;
-        foreach ($this->servers as $server) {
-            if ($server instanceof WebSocketServer) {
-                $webSocketServer = $server;
-                break;
-            }
-        }
+        $webSocketServer = $this->findWebSocketServer();
 
         // Find Command server once (for command reply destinations)
         $commandServer = null;
@@ -1594,6 +1621,7 @@ abstract class DaemonManager extends BaseManager implements
                     if ($peerServer === null) {
                         Logger::error("Peer signal dropped: {$signalType}/{$signalName}"
                             . " -> node {$destination->nodeId} agent {$destination->agentType} - no peer server");
+                        $this->answerUnreachableSubscription($signal);
                         continue;
                     }
 
@@ -1606,7 +1634,39 @@ abstract class DaemonManager extends BaseManager implements
                     if (!$delivered) {
                         Logger::warning("Peer signal dropped: {$signalType}/{$signalName}"
                             . " -> node {$destination->nodeId} agent {$destination->agentType} - no live link");
+                        $this->answerUnreachableSubscription($signal);
                     }
+                } elseif ($destination instanceof RemoteClientDestination) {
+                    // Forward the signal to the browser on the node holding its socket. Same
+                    // best-effort contract as the agent forward above: no live link drops and
+                    // logs, matching the local path that writes to nobody when the socket is
+                    // already gone.
+                    if ($peerServer === null) {
+                        Logger::error("Peer client signal dropped: {$signalType}/{$signalName}"
+                            . " -> node {$destination->nodeId} client {$destination->acceptKey} - no peer server");
+                        continue;
+                    }
+
+                    $delivered = $peerServer->sendSignalToClientNode(
+                        $destination->nodeId,
+                        $destination->acceptKey,
+                        $signal,
+                    );
+                    if (!$delivered) {
+                        Logger::warning("Peer client signal dropped: {$signalType}/{$signalName}"
+                            . " -> node {$destination->nodeId} client {$destination->acceptKey} - no live link");
+                    }
+                } elseif ($destination instanceof RemoteFanoutDestination) {
+                    // Carry the fan-out to the rest of the cluster. This marker travels
+                    // ALONGSIDE the local destinations, not instead of them: the browsers of
+                    // this node are served by those, and the other nodes are served by this one
+                    // frame, which each of them expands against its own subscription registry.
+                    if ($peerServer === null) {
+                        Logger::error("Peer client fanout dropped: {$signalType}/{$signalName} - no peer server");
+                        continue;
+                    }
+
+                    $peerServer->broadcastClientFanout($signal);
                 } elseif ($destination instanceof WebSocketDestination) {
                     // Send signal to WebSocket client
                     if ($webSocketServer === null) {
@@ -1998,6 +2058,166 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Hands the browser connections this node holds to a node the mesh has just linked to.
+     *
+     * Implements {@see ClientSignalSink}. The set is taken from the index rather than from the
+     * sockets, so the snapshot says exactly what this node's deltas have been saying; the two
+     * agree at every point a hand-over can happen, and taking the same source keeps them
+     * agreeing even where they might not.
+     *
+     * @param string $nodeId Node this one can now reach
+     */
+    public function handOverConnections(string $nodeId): void
+    {
+        $this->sendConnectionsToNode($this->findPeerServer(), $nodeId);
+    }
+
+    /**
+     * Writes one signal forwarded from another node to the browser it is addressed to.
+     *
+     * Implements {@see ClientSignalSink}. The routing was done on the sending node, so this end
+     * only encodes and writes — through the very method a locally resolved signal goes through,
+     * which is what keeps a forwarded frame indistinguishable from a local one at the socket.
+     *
+     * @param string $acceptKey Accept key of the connection to deliver to
+     * @param SignalDTO $signal Signal to write to that connection
+     */
+    public function deliverSignalToClient(string $acceptKey, SignalDTO $signal): void
+    {
+        // Counted on acceptance, before the socket is looked for: what this records is that the
+        // mesh reached this node, which is what a cluster scenario asserts on and what the
+        // headless demo has no other way of seeing.
+        Hilos::$cluster?->clientConnections()?->noteAddressedDelivery($acceptKey);
+
+        $webSocketServer = $this->findWebSocketServer();
+        if ($webSocketServer === null) {
+            Logger::warning(
+                "Forwarded client signal dropped for '{$acceptKey}': this node serves no browser connections",
+            );
+            return;
+        }
+
+        $this->sendSignalToWebSocketClient($webSocketServer, $signal, $acceptKey);
+    }
+
+    /**
+     * Answers the browser when a page subscription could not be carried to the node that serves
+     * it (HIL-668).
+     *
+     * A subscription is the one dropped signal with somebody waiting on it: the browser has a
+     * loading flag up and nothing else will ever come. This node is also the only one that can
+     * say so — it holds that socket, and the node that would have answered is the one that could
+     * not be reached. So it sends the ordinary subscription error, the very frame a page raises
+     * by refusing a subscription, and the frontend clears its flag and shows a page it can
+     * retry. The alternative is a tab that spins forever.
+     *
+     * Everything else dropped here stays dropped with its log line. A late push has no addressee
+     * to be answered on behalf of, and inventing an error for it would put a failure on screen
+     * for something the person never asked for.
+     *
+     * TODO: signals recently sent to a node that fell over could be held and retried after
+     * failover instead of dropped. That is durable delivery and belongs to the cluster phase
+     * (HIL-347), not here.
+     *
+     * Protected rather than private so a subclass can observe what this node answers, the same
+     * way {@see announceConnectionChanges()} is.
+     *
+     * @param SignalDTO $signal Signal that could not be carried to the node hosting its agent
+     * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     */
+    protected function answerUnreachableSubscription(SignalDTO $signal): void
+    {
+        if ($signal->signalType->getType() !== SignalTypeConstants::PAGE_SUBSCRIBE) {
+            return;
+        }
+
+        $data = $signal->data;
+        if (!$data instanceof WebSocketPageSubscribeSignalDTO) {
+            return;
+        }
+
+        // The page name travels in the payload or, when the route named it, in the signal name -
+        // the same pair every other reader of a subscribe signal takes it from.
+        $page = $data->page ?? $signal->signalName->getName();
+        Logger::warning(
+            "Page subscription to '{$page}' refused for '{$data->acceptKey}': the node serving it is unreachable",
+        );
+
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DAEMON),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName(SignalConstants::SUBSCRIPTION_PAGE_ERROR),
+            signalData: new WebSocketSignalData(
+                data: new PageSubscriptionErrorSignalData(
+                    page: $page,
+                    httpCode: HttpConstants::HTTP_SERVICE_UNAVAILABLE,
+                    errorCode: self::SUBSCRIPTION_NODE_UNREACHABLE_CODE,
+                    message: self::SUBSCRIPTION_NODE_UNREACHABLE_MESSAGE,
+                ),
+                targetAcceptKey: $data->acceptKey,
+            ),
+        );
+    }
+
+    /**
+     * Fans one signal forwarded from another node out to the browsers this node holds.
+     *
+     * Implements {@see ClientSignalSink}. Nothing arrived resolved, because nothing could be:
+     * who receives a fan-out is answered by a subscription registry that only ever knew this
+     * node's own browsers. So the resolving happens here, through the router's local-only
+     * entry point, and the writing goes through the very helpers a locally raised fan-out uses
+     * — which is what makes a forwarded frame indistinguishable from a local one at the socket.
+     *
+     * @param string $originNodeId Id of the node the fan-out started on (trace only)
+     * @param SignalDTO $signal Signal to expand against this node's subscriptions
+     */
+    public function deliverFanoutToClients(string $originNodeId, SignalDTO $signal): void
+    {
+        Hilos::$cluster?->clientConnections()?->noteFanoutDelivery();
+
+        $webSocketServer = $this->findWebSocketServer();
+        if ($webSocketServer === null) {
+            Logger::warning(
+                "Forwarded client fanout from node '{$originNodeId}' dropped:"
+                . " this node serves no browser connections",
+            );
+            return;
+        }
+
+        foreach (Hilos::$sr->localClientDestinations($signal) as $destination) {
+            if ($destination instanceof WebSocketDestination) {
+                $this->sendSignalToWebSocketClient($webSocketServer, $signal, $destination->acceptKey);
+            } elseif ($destination instanceof AllClientsDestination) {
+                $broadcastFrame = $this->encodeSignalFrame($signal);
+                if ($broadcastFrame === null) {
+                    continue;
+                }
+
+                $this->sendToAllClients($webSocketServer, $broadcastFrame, $destination->excludeAcceptKey);
+            }
+        }
+    }
+
+    /**
+     * Hands one node the browser connections this node holds.
+     *
+     * Protected, and taking the port rather than finding it, for the reason
+     * {@see sendRtSnapshotsToNode()} is: it is how a subclass sees what this node hands over.
+     *
+     * @param ?ClientMesh $mesh Peer server of this node, or null off-cluster
+     * @param string $nodeId Node the connections go to
+     */
+    protected function sendConnectionsToNode(?ClientMesh $mesh, string $nodeId): void
+    {
+        $connections = Hilos::$cluster?->clientConnections();
+        if ($mesh === null || $connections === null) {
+            return;
+        }
+
+        $mesh->sendConnectionsSnapshotToNode($nodeId, $connections->announcedLocalKeys());
+    }
+
+    /**
      * Re-reads every DB-backed collection of the daemon after the database was replaced (HIL-479).
      *
      * The failure is contained here and nowhere else. {@see DbSyncApplicator::applyReHydrate()}
@@ -2174,6 +2394,72 @@ abstract class DaemonManager extends BaseManager implements
     private function findPeerServer(): ?PeerServer
     {
         return array_find($this->servers, fn($server) => $server instanceof PeerServer);
+    }
+
+    /**
+     * @return ?WebSocketServer Registered WebSocket server, or null when this daemon serves no browsers
+     */
+    private function findWebSocketServer(): ?WebSocketServer
+    {
+        return array_find($this->servers, fn($server) => $server instanceof WebSocketServer);
+    }
+
+    /**
+     * Announces what changed in this node's browser connections since it last spoke (HIL-668).
+     *
+     * A diff of the socket set, taken once per loop iteration, rather than a hook on open and
+     * close: a connection ends in the master from three different places, and the path that got
+     * no hook would leave a ghost in every other node's index — signals addressed forever to a
+     * socket that is gone. The diff cannot miss a path because it never looks at them, and it
+     * batches a reconnect storm into one frame for free.
+     *
+     * Silent off-cluster and while nothing changed: there is no peer to tell, and an unchanged
+     * set is not news. The whole step costs one pass over the connected clients.
+     *
+     * Protected rather than private so that what this node tells the mesh can be observed from a
+     * subclass, the same way {@see broadcastRtSyncToPeers()} is.
+     *
+     * @param ?ClientMesh $mesh Peer server of this node, or null off-cluster
+     */
+    protected function announceConnectionChanges(?ClientMesh $mesh): void
+    {
+        $connections = Hilos::$cluster?->clientConnections();
+        if ($mesh === null || $connections === null) {
+            return;
+        }
+
+        $delta = $connections->diffLocal($this->connectedAcceptKeys());
+        if ($delta['opened'] === [] && $delta['closed'] === []) {
+            return;
+        }
+
+        $mesh->broadcastConnectionsDelta($delta['opened'], $delta['closed']);
+    }
+
+    /**
+     * Lists the accept keys of the browser connections this node holds right now.
+     *
+     * A socket that has not finished its handshake carries no accept key yet and is left out:
+     * it has no address to be reached at, so announcing it would index a connection nothing
+     * can address. It is picked up by the next diff, one tick after it is addressable.
+     *
+     * @return list<string> Accept keys of the connected clients
+     */
+    private function connectedAcceptKeys(): array
+    {
+        $webSocketServer = $this->findWebSocketServer();
+        if ($webSocketServer === null) {
+            return [];
+        }
+
+        $acceptKeys = [];
+        foreach ($webSocketServer->getClients() as $client) {
+            if ($client instanceof WebSocketClient && $client->acceptKey !== '') {
+                $acceptKeys[] = $client->acceptKey;
+            }
+        }
+
+        return $acceptKeys;
     }
 
     /**
@@ -3275,6 +3561,10 @@ abstract class DaemonManager extends BaseManager implements
         // dead worker is: it cannot answer, and whatever rejoins reads the database already in
         // place. Waiting would spend the whole deadline on a node that is gone (HIL-436).
         $this->agentManagerDaemon->dropReHydrateParticipant(ReHydrateRound::nodeParticipant($node->nodeId));
+        // The browser connections that node held go with it (HIL-668). Driven by membership
+        // rather than by the link dropping, because a dropped link is re-dialed and forgetting
+        // its clients meanwhile would blind this node to every browser attached there.
+        Hilos::$cluster?->clientConnections()?->forgetNode($node->nodeId);
     }
 
     /**

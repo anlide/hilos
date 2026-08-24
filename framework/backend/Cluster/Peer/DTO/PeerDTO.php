@@ -18,12 +18,20 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * {@see PeerVoteReplyDTO}, {@see PeerHeartbeatDTO}) carry election terms; the
  * graceful-leave frame ({@see PeerNodeLeavingDTO}) announces a planned departure;
  * the placement frames ({@see PeerPlaceAgentDTO}, {@see PeerStopAgentDTO},
- * {@see PeerAgentStatusDTO}, {@see PeerPlacementQueryDTO}, {@see PeerPlacementReportDTO})
- * launch, stop, and track agents placed on a named node; the signal-forward frame
+ * {@see PeerAgentStatusDTO}, {@see PeerPlacementQueryDTO}, {@see PeerPlacementReportDTO},
+ * {@see PeerPlacementViewDTO}) launch, stop, and track agents placed on a named node, the last
+ * of them handing the leader's whole picture back down so any node can tell where an agent
+ * runs; the signal-forward frame
  * ({@see PeerSignalDTO}) carries one resolved signal to an agent on another node; the
  * RT replication frames ({@see PeerRtSyncDTO}, {@see PeerRtSnapshotDTO}) carry one RT sync
  * fact, and one whole collection to a node that just joined, from the node that owns it to
- * the other nodes' read-only copies; the
+ * the other nodes' read-only copies; the connection-index frames
+ * ({@see PeerConnectionsSnapshotDTO}, {@see PeerConnectionsDeltaDTO}) tell the mesh which
+ * browser connections each node holds, so a signal can be addressed to the node a browser is
+ * attached to, and the client-forward frame ({@see PeerClientSignalDTO}) is what that
+ * addressing then sends; the fan-out frame ({@see PeerClientFanoutDTO}) is what the same
+ * index cannot help with, since which browsers a fan-out reaches is answered by each node's
+ * own subscription registry rather than by an address; the
  * protected-mode frames ({@see PeerProtectedModeEnableDTO}, {@see PeerProtectedModeReadyDTO},
  * {@see PeerProtectedModeDisableDTO}) carry the initiator↔leader freeze hand-off that the
  * agent-signal fabric cannot deliver to a leader daemon, and their cluster-wide mirror
@@ -76,9 +84,14 @@ abstract class PeerDTO extends BaseDTO
             PeerAgentStatusDTO::MESSAGE_TYPE => PeerAgentStatusDTO::fromArray($data),
             PeerPlacementQueryDTO::MESSAGE_TYPE => PeerPlacementQueryDTO::fromArray($data),
             PeerPlacementReportDTO::MESSAGE_TYPE => PeerPlacementReportDTO::fromArray($data),
+            PeerPlacementViewDTO::MESSAGE_TYPE => PeerPlacementViewDTO::fromArray($data),
             PeerSignalDTO::MESSAGE_TYPE => PeerSignalDTO::fromArray($data),
             PeerRtSyncDTO::MESSAGE_TYPE => PeerRtSyncDTO::fromArray($data),
             PeerRtSnapshotDTO::MESSAGE_TYPE => PeerRtSnapshotDTO::fromArray($data),
+            PeerClientSignalDTO::MESSAGE_TYPE => PeerClientSignalDTO::fromArray($data),
+            PeerClientFanoutDTO::MESSAGE_TYPE => PeerClientFanoutDTO::fromArray($data),
+            PeerConnectionsSnapshotDTO::MESSAGE_TYPE => PeerConnectionsSnapshotDTO::fromArray($data),
+            PeerConnectionsDeltaDTO::MESSAGE_TYPE => PeerConnectionsDeltaDTO::fromArray($data),
             PeerProtectedModeEnableDTO::MESSAGE_TYPE => PeerProtectedModeEnableDTO::fromArray($data),
             PeerProtectedModeReadyDTO::MESSAGE_TYPE => PeerProtectedModeReadyDTO::fromArray($data),
             PeerProtectedModeDisableDTO::MESSAGE_TYPE => PeerProtectedModeDisableDTO::fromArray($data),
@@ -97,6 +110,40 @@ abstract class PeerDTO extends BaseDTO
                 "Unknown peer frame type: '" . ($type ?? get_debug_type($typeValue)) . "'",
             ),
         };
+    }
+
+    /**
+     * Reads one accept-key list out of a connection-index frame.
+     *
+     * Shared by {@see PeerConnectionsSnapshotDTO} and {@see PeerConnectionsDeltaDTO}, the
+     * latter carrying two such lists. Strict where {@see normalizeCapabilities()} is lenient,
+     * and for a reason: a capability tag nobody understands is noise, but an accept key is the
+     * address a signal is delivered to, so a blank or non-string entry would index a
+     * connection nothing can ever reach. Such a frame is refused whole rather than thinned.
+     *
+     * @param array<string, mixed> $data Frame payload
+     * @param string $field Payload key holding the list
+     * @param string $frameName How the frame names itself in the failure message
+     * @return list<string> Accept keys as read from the wire
+     * @throws PeerTransportException When the field is absent or holds anything but accept keys
+     */
+    public static function readAcceptKeys(array $data, string $field, string $frameName): array
+    {
+        $raw = $data[$field] ?? null;
+        if (!is_array($raw)) {
+            throw new PeerTransportException("Peer connections {$frameName} is missing the '{$field}' list");
+        }
+
+        $acceptKeys = [];
+        foreach ($raw as $acceptKey) {
+            if (!is_string($acceptKey) || $acceptKey === '') {
+                throw new PeerTransportException("Peer connections {$frameName} carries a malformed accept key");
+            }
+
+            $acceptKeys[] = $acceptKey;
+        }
+
+        return $acceptKeys;
     }
 
     /**

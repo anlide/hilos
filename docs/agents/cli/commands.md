@@ -59,8 +59,8 @@ connection stays open: the gate judges the command, not the caller.
 
 **Declaring a test-only command means saying so twice, in two different languages.** The
 machine-readable half is `AgentCommandConfigKey::TEST_ONLY` in the same `AGENT_COMMANDS`
-entry that declares the route (the three commands the master answers itself have no agent
-entry and are listed in `CommandConstants::MASTER_TEST_ONLY_COMMANDS` instead). The
+entry that declares the route (the commands the master answers itself have no agent entry
+and are listed in `CommandConstants::MASTER_TEST_ONLY_COMMANDS` instead). The
 human-readable half is the `test:` prefix on the wire name. Topology validation fails the
 daemon's start if either half is missing, because a flag alone is invisible on review and a
 prefix alone is a promise nothing keeps. `TestOnlyCommandRegistry` joins both halves, and it
@@ -112,7 +112,10 @@ Marked today: `db:wait` (its poll *is* the connect, and it has to run before the
 answers), `db:test:reset` (opens its own server-level connection, because it drops and
 recreates the database `DB_DATABASE` names), `help` (prints the registry it was handed),
 `test:cluster:inspect` (talks only to the local command socket, so the multi-node harness
-can inspect a network-partitioned node that cannot reach MySQL either),
+can inspect a network-partitioned node that cannot reach MySQL either), the cluster client
+family `test:cluster:client:attach` / `:detach` / `:send` / `:fanout` (same reason: the
+master answers them out of memory, and a partitioned node is exactly where they are worth
+running),
 `test:notification:emit` (every row it causes is written by the agent that answers it, so
 the CLI process itself has nothing to read or write) and the protected-mode family
 `test:protected-mode:inspect` / `:enter` / `:leave` / `:open` / `:pass` (the inspector reads

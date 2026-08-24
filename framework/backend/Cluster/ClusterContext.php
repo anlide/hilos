@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Cluster\Connections\ClusterClientLocation;
 use Hilos\Cluster\Consensus\ClusterCoordinator;
 use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
@@ -93,6 +94,15 @@ final class ClusterContext
 
     /** @var ?RtSyncSink Local apply port for cross-node RT replicas, registered by the daemon at start. */
     private ?RtSyncSink $rtSyncSink = null;
+
+    /** @var ?ClusterClientLocation Cluster-wide index of which node each browser connection is attached to, registered by the daemon at start. */
+    private ?ClusterClientLocation $clientConnections = null;
+
+    /** @var ?ClientLocation Read-only connection lookup the signal router consults, registered by the daemon at start. */
+    private ?ClientLocation $clientLocation = null;
+
+    /** @var ?ClientSignalSink Local delivery port for cross-node client signals, registered by the daemon at start. */
+    private ?ClientSignalSink $clientSignalSink = null;
 
     /**
      * @return bool True when cluster mode is enabled
@@ -543,6 +553,85 @@ final class ClusterContext
     }
 
     /**
+     * Installs the cluster connection index.
+     *
+     * The write/track side, separate from {@see registerClientLocation()} the way
+     * {@see registerPlacement()} is separate from {@see registerWorkerPlacement()}: this is what
+     * the peer transport applies announcements to, that is the narrow seam the router reads. One
+     * object normally fills both, and the daemon registers it in both — it is the daemon's
+     * because the sockets are, and because the diff keeping the local half true is a line of its
+     * loop.
+     *
+     * @param ClusterClientLocation $connections Connection index to install
+     */
+    public function registerClientConnections(ClusterClientLocation $connections): void
+    {
+        $this->clientConnections = $connections;
+    }
+
+    /**
+     * Installs the read-only connection lookup the signal router consults.
+     *
+     * Separate from {@see registerClientConnections()} so the router binds to the narrow
+     * contract and a test can supply a fake for it, exactly as {@see registerWorkerPlacement()}
+     * does for placement.
+     *
+     * @param ClientLocation $clientLocation Connection lookup to install
+     */
+    public function registerClientLocation(ClientLocation $clientLocation): void
+    {
+        $this->clientLocation = $clientLocation;
+    }
+
+    /**
+     * Returns the connection index the peer transport applies announcements to, or null when
+     * none is set.
+     *
+     * @return ?ClusterClientLocation Connection index, or null
+     */
+    public function clientConnections(): ?ClusterClientLocation
+    {
+        return $this->clientConnections;
+    }
+
+    /**
+     * Returns the connection lookup the signal router reads, or null when none is set.
+     *
+     * Null off-cluster, so the router's cross-node post-pass is inert and every signal to a
+     * browser stays local — the same opt-in shape {@see workerPlacement()} has.
+     *
+     * @return ?ClientLocation Connection lookup, or null
+     */
+    public function clientLocation(): ?ClientLocation
+    {
+        return $this->clientLocation;
+    }
+
+    /**
+     * Registers the local port through which this node's own browser connections are reached.
+     *
+     * The daemon registers itself here at start, because the WebSocket server the sockets live
+     * on is its own. The client-side twin of {@see registerAgentSignalSink()}, which ends at an
+     * agent instead.
+     *
+     * @param ClientSignalSink $sink Local delivery port for cross-node client signals
+     */
+    public function registerClientSignalSink(ClientSignalSink $sink): void
+    {
+        $this->clientSignalSink = $sink;
+    }
+
+    /**
+     * Returns the local delivery port for cross-node client signals, or null when none is set.
+     *
+     * @return ?ClientSignalSink Delivery port, or null
+     */
+    public function clientSignalSink(): ?ClientSignalSink
+    {
+        return $this->clientSignalSink;
+    }
+
+    /**
      * Forwards a node-joined transition to the registered observer, if any.
      *
      * @param ClusterNode $node Node that joined (or came back online)
@@ -642,6 +731,11 @@ final class ClusterContext
      * term and role; placements are empty on any non-leader, since that view is
      * leader-owned soft-state. Reports only `enabled: false` when cluster mode is off.
      *
+     * It also reports the browser side of the mesh (HIL-668): how many connections this node's
+     * index holds for each node, and how many cross-node deliveries it has accepted for its own
+     * browsers. Those two are what a scenario asserts on, because the delivery itself ends at a
+     * socket — and `demo/cluster` runs headless, with no socket to watch.
+     *
      * @return array<string, mixed> Inspection snapshot payload
      * @throws ClusterConfigurationException When enabled but node config is missing or invalid
      * @throws EnvException When a cluster env value cannot be read
@@ -677,6 +771,9 @@ final class ClusterContext
             ClusterCommandConstants::FIELD_HAS_QUORUM => $leadership->hasQuorum(),
             ClusterCommandConstants::FIELD_NODES => $nodes,
             ClusterCommandConstants::FIELD_PLACEMENTS => $this->inspectPlacements(),
+            ClusterCommandConstants::FIELD_CLIENT_INDEX => $this->clientConnections?->countsByNode() ?? [],
+            ClusterCommandConstants::FIELD_CLIENT_DELIVERIES => $this->clientConnections?->deliveries() ?? 0,
+            ClusterCommandConstants::FIELD_LAST_CLIENT_ACCEPT_KEY => $this->clientConnections?->lastAcceptKey(),
         ];
     }
 

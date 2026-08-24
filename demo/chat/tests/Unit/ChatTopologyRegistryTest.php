@@ -408,10 +408,14 @@ final class ChatTopologyRegistryTest extends TestCase
      * The whole test-only registry as one installation sees it (HIL-566).
      *
      * Chat is where this is worth pinning: it is the only demo that mounts every framework
-     * agent that owns a test-only command AND adds one of its own, so its thirteen is the full
-     * set. What the count guards is a name silently LEAVING the registry - an agent entry
+     * agent that owns a test-only command AND adds one of its own, so its seventeen are the
+     * full set. What the count guards is a name silently LEAVING the registry - an agent entry
      * rewritten back to its bare list shape drops the flag without touching a route, and the
      * route assertion above would still pass.
+     *
+     * The list is spelled out rather than read from the constants it pins, which is the whole
+     * point of a snapshot: a name added to the framework has to be added here by hand, and a
+     * name that quietly leaves has nowhere to hide.
      */
     public function testTheTestOnlyRegistryHoldsEveryFlaggedCommandAndTheMastersOwn(): void
     {
@@ -429,6 +433,10 @@ final class ChatTopologyRegistryTest extends TestCase
             CommandConstants::COMMAND_CLUSTER_INSPECT,
             CliCommands::PROTECTED_MODE_TEST_INSPECT,
             CommandConstants::COMMAND_CONNECTION_DROP,
+            CommandConstants::COMMAND_CLUSTER_CLIENT_ATTACH,
+            CommandConstants::COMMAND_CLUSTER_CLIENT_DETACH,
+            CommandConstants::COMMAND_CLUSTER_CLIENT_SEND,
+            CommandConstants::COMMAND_CLUSTER_CLIENT_FANOUT,
         ], TestOnlyCommandRegistry::commands());
     }
 

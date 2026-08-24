@@ -11,6 +11,7 @@ use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\TimeConstants;
@@ -98,6 +99,12 @@ final class ClusterPlacement implements WorkerPlacement
     /** @var array<string, float> Failover deadline (microtime) per orphaned agent id awaiting re-placement */
     private array $failoverDeadlines = [];
 
+    /** @var array<string, string> Hosting node id per agent id, as the leader last published it; empty on the leader */
+    private array $placementView = [];
+
+    /** @var ?string Fingerprint of the view this leader last published, or null when it has published none */
+    private ?string $publishedViewFingerprint = null;
+
     /** @var ?string Node id of the leader that placed this node's hosted agents, for self-fence detection */
     private ?string $placingLeaderId = null;
 
@@ -145,11 +152,12 @@ final class ClusterPlacement implements WorkerPlacement
     /**
      * Reports which node hosts an agent so the signal router can forward cross-node.
      *
-     * Reads the leader-side placement view: an agent placed on another node returns that
-     * node's id; one placed on this node, or absent from the view, returns null so the
-     * router keeps delivering it locally. Because the view is leader-owned soft-state, a
-     * non-leader answers null for everything — cluster-wide placement knowledge on every
-     * node is a later slice; this gives the leader a working forward path today.
+     * An agent placed on another node returns that node's id; one placed on this node, or one
+     * nobody has placed, returns null so the router keeps delivering it locally. The leader
+     * answers from the placement view it owns, every other node from the copy that leader
+     * publishes to it (HIL-668); {@see hostingNode()} is where the two are reconciled. Before
+     * the first copy arrives a node answers null for everything, which is the behaviour it had
+     * when there was no copy at all.
      *
      * @param string $agentType Agent type to look up
      * @param ?string $agentIndex Agent index, or null for a singleton agent
@@ -157,13 +165,9 @@ final class ClusterPlacement implements WorkerPlacement
      */
     public function nodeFor(string $agentType, ?string $agentIndex): ?string
     {
-        $record = $this->registry->get($this->agentId($agentType, $agentIndex));
-        // A degraded (unplaced) agent runs nowhere, so it has no node to forward to.
-        if ($record === null || $record->nodeId === $this->selfNodeId || $record->state === PlacementState::Unplaced) {
-            return null;
-        }
+        $nodeId = $this->hostingNode($this->agentId($agentType, $agentIndex));
 
-        return $record->nodeId;
+        return $nodeId === $this->selfNodeId ? null : $nodeId;
     }
 
     /**
@@ -372,6 +376,53 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
+     * Node side: takes the leader's picture of where every agent runs (HIL-668).
+     *
+     * Replaces the held copy whole rather than merging: the frame is the leader's complete
+     * answer, so a merge would keep an agent this leader no longer places. Ignored on the
+     * leader, whose own view is the original this one is a copy of — the same rule
+     * {@see onPlacementReport()} applies in the other direction.
+     *
+     * A frame whose own leader id is not the node it arrived from is dropped: the only sender
+     * of a view is the leader stamping itself, so the two disagreeing means it was relayed, and
+     * a relayed picture is one hop older than whatever its sender has. What is NOT checked is
+     * that the sender is the CURRENT leader, because this coordinator cannot know — leadership
+     * is the consensus layer's fact. The copy is soft state a deposed leader could briefly keep
+     * alive, and it self-corrects: a fresh leader clears its registry and reseeds it on winning
+     * the term, so its own first publish follows within a tick.
+     *
+     * @param string $fromNodeId Id of the node the view arrived from
+     * @param PeerPlacementViewDTO $frame Received placement-view frame
+     */
+    public function onPlacementView(string $fromNodeId, PeerPlacementViewDTO $frame): void
+    {
+        if ($this->isLeader) {
+            return;
+        }
+
+        if ($frame->leaderNodeId !== $fromNodeId) {
+            Logger::warning(
+                "Dropping placement view of leader '{$frame->leaderNodeId}' relayed by node '{$fromNodeId}'",
+            );
+            return;
+        }
+
+        $view = [];
+        foreach ($frame->agents as $nodeId => $entries) {
+            // Back to a string, because on the wire a node id spends a leg as an array KEY and
+            // PHP has no string key that reads as a decimal integer: a node named "2" arrives
+            // as int 2. What comes out of here is answered to {@see nodeFor()} callers, whose
+            // contract is a node id or null.
+            $nodeId = (string)$nodeId;
+            foreach ($entries as $entry) {
+                $view[$this->agentId($entry->agentType, $entry->agentIndex)] = $nodeId;
+            }
+        }
+
+        $this->placementView = $view;
+    }
+
+    /**
      * Leader side: rebuilds the placement view on winning a term.
      *
      * Placement tracking is soft-state, so a fresh leader starts from nothing: it seeds
@@ -382,6 +433,10 @@ final class ClusterPlacement implements WorkerPlacement
     {
         $this->isLeader = true;
         $this->registry->clear();
+        // The copy this node held as a follower is somebody else's answer to the question it
+        // now owns; from here the registry above is the original.
+        $this->placementView = [];
+        $this->publishedViewFingerprint = null;
         foreach ($this->hosted as $record) {
             $this->registry->put($record);
         }
@@ -402,6 +457,9 @@ final class ClusterPlacement implements WorkerPlacement
         $this->isLeader = false;
         $this->registry->clear();
         $this->failoverDeadlines = [];
+        // Publishing is the leader's duty, so this node stops; what it published stays true
+        // until the next leader publishes its own, which it does within a tick of winning.
+        $this->publishedViewFingerprint = null;
     }
 
     /**
@@ -481,25 +539,138 @@ final class ClusterPlacement implements WorkerPlacement
             $this->selfFenceDeadline = null;
             $this->selfFence();
         }
+
+        $this->publishPlacementView();
     }
 
     /**
-     * Node side: reports this node's still-hosted agents to a freshly-linked peer on rejoin.
+     * Trades pictures with a freshly-linked peer: what this node hosts, and — if it leads —
+     * where everything runs.
      *
-     * The reconcile-on-rejoin safety net: after a partition a node may still host agents the
-     * leader re-placed elsewhere, so on every new link it sends what it hosts and lets the
-     * leader ({@see onPlacementReport()}) stop the stale copies. A no-op when this node hosts
-     * nothing; a non-leader peer that receives the report simply ignores it.
+     * Node side is the reconcile-on-rejoin safety net: after a partition a node may still host
+     * agents the leader re-placed elsewhere, so on every new link it sends what it hosts and
+     * lets the leader ({@see onPlacementReport()}) stop the stale copies. A no-op when this node
+     * hosts nothing; a non-leader peer that receives the report simply ignores it.
+     *
+     * Leader side hands the newcomer the whole placement view (HIL-668), because that is the one
+     * thing the per-tick publish cannot do for it: the publish speaks only on CHANGE, so a node
+     * that linked into a quiet cluster would learn nothing until something moved.
      *
      * @param string $nodeId Node id of the peer that just handshaked
      */
     public function onPeerHandshaked(string $nodeId): void
     {
+        if ($this->isLeader) {
+            $this->mesh->sendToNode($nodeId, new PeerPlacementViewDTO($this->selfNodeId, $this->placementViewAgents()));
+        }
+
         if ($this->hosted === []) {
             return;
         }
 
         $this->mesh->sendToNode($nodeId, new PeerPlacementReportDTO($this->hostedEntries()));
+    }
+
+    /**
+     * Leader side: broadcasts the placement view whenever it has changed (HIL-668).
+     *
+     * Driven by a per-tick comparison rather than by a call at each place the registry is
+     * written, and for the reason the connection index is: the registry is written from eight
+     * places — a status reply, a rejoin report, a placement, a stop, a failover, a degrade, a
+     * retry, a fresh term — and the one that got no call would leave every other node holding a
+     * picture that is wrong forever, with nothing to correct it. A comparison cannot miss a
+     * path because it never looks at them, and it turns a failover storm into one frame.
+     *
+     * Silent when nothing moved, which is nearly every tick, and silent on a node that does not
+     * lead. The whole step costs one pass over a few dozen records.
+     */
+    private function publishPlacementView(): void
+    {
+        if (!$this->isLeader) {
+            return;
+        }
+
+        $agents = $this->placementViewAgents();
+        $fingerprint = $this->viewFingerprint($agents);
+        if ($fingerprint === $this->publishedViewFingerprint) {
+            return;
+        }
+
+        $this->publishedViewFingerprint = $fingerprint;
+        $this->mesh->broadcastToNodes(new PeerPlacementViewDTO($this->selfNodeId, $agents));
+    }
+
+    /**
+     * Groups the placements worth forwarding to by the node hosting them.
+     *
+     * Degraded (unplaced) agents are left out under the same rule {@see hostingNode()} applies
+     * on this node: an agent that runs nowhere has no node to forward to. Because both sides
+     * read this one rule, a copy answers exactly what the original would.
+     *
+     * @return array<string|int, list<PeerPlacedAgentEntry>> Hosted agent entries, by node id
+     */
+    private function placementViewAgents(): array
+    {
+        $agents = [];
+        foreach ($this->registry->all() as $record) {
+            if ($record->state === PlacementState::Unplaced) {
+                continue;
+            }
+
+            $agents[$record->nodeId][] = new PeerPlacedAgentEntry($record->agentType, $record->agentIndex);
+        }
+
+        return $agents;
+    }
+
+    /**
+     * Renders a view into a value that changes when, and only when, the view does.
+     *
+     * Sorted, so that the same placements read out in a different order — which the registry is
+     * free to do after any forget — are recognized as the same view and cost no frame.
+     *
+     * @param array<string|int, list<PeerPlacedAgentEntry>> $agents Hosted agent entries, by node id
+     * @return string Comparable rendering of the view
+     */
+    private function viewFingerprint(array $agents): string
+    {
+        $lines = [];
+        foreach ($agents as $nodeId => $entries) {
+            foreach ($entries as $entry) {
+                $lines[] = $nodeId . '/' . $this->agentId($entry->agentType, $entry->agentIndex);
+            }
+        }
+
+        sort($lines);
+
+        return implode(',', $lines);
+    }
+
+    /**
+     * Answers which node hosts an agent: from what this node placed itself, else from what the
+     * leader told it.
+     *
+     * The registry comes first because on the leader it IS the truth — the copy is derived from
+     * it — and asked first it also keeps a node that never took a term answering exactly as it
+     * did before this frame existed. The published copy answers everywhere else, which is the
+     * whole point: a non-leader used to answer null for every agent in the cluster and deliver
+     * the signal into its own empty floor.
+     *
+     * The two cannot disagree in a way that matters, because the copy is built from these very
+     * records under the rule applied here — a degraded agent runs nowhere, so it is left out of
+     * both.
+     *
+     * @param string $agentId Agent id to look up
+     * @return ?string Hosting node id, or null when nothing places it
+     */
+    private function hostingNode(string $agentId): ?string
+    {
+        $record = $this->registry->get($agentId);
+        if ($record !== null && $record->state !== PlacementState::Unplaced) {
+            return $record->nodeId;
+        }
+
+        return $this->placementView[$agentId] ?? null;
     }
 
     /**
