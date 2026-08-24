@@ -30,6 +30,12 @@ import { uniquePhone, waitForSmsCode } from './sms'
  * way settings.spec.ts pins the e2e_orphan_delete key to its seed command. */
 export const PASSWORD = 'correct horse battery'
 
+/** The deployment's session cookie name (HILOS_SESSION_COOKIE_NAME default) — the
+ * jar entry the browser carries the session in. A spec that reaches into the jar
+ * reads it from here: the name belongs to the deployment, not to whichever spec
+ * happened to need it first. */
+export const SESSION_COOKIE = 'hilos_session_token'
+
 /** A fresh, globally-unique email so parallel specs and retries never collide on
  * the shared test database (registration rejects a taken email). */
 export function uniqueEmail(): string {

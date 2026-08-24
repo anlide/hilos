@@ -1,7 +1,10 @@
-<!-- The chat main page (PAGE_MAIN). Shows the session's current user, the live
+<!-- The chat main page (PAGE_MAIN). Shows the session's identity line, the live
 event stream (messages plus registration/rename/lifecycle notices), the
 participant roster, and the active bots — each fed by a main page list, so a new
-message, registration, or presence flip appears without a refresh. The message
+message, registration, or presence flip appears without a refresh. The identity
+line has two branches (HIL-625): with an account it names the account, without
+one it says the visit is anonymous — Chat hands a guest no name, so the
+`self-user` marker is absent rather than carrying an empty one. The message
 composer is pinned to the bottom: it submits the `message` action, attaches
 files over the WebSocket `frame_binary` channel (paperclip, drag & drop, or
 paste) via the useComposerUpload engine, shows each upload's progress and the
@@ -45,7 +48,11 @@ const isConnected = computed(() => connectionState.value === 'connected')
 // Anonymous read, authenticated write (HIL-360): a guest reads the chat but
 // cannot send, so the composer is disabled until the session names a user (the
 // handshake response turns the current-user id non-null). The banner's CTA opens
-// the in-place sign-in surface through the auth gate — no 401 round-trip.
+// the in-place sign-in surface through the auth gate — no 401 round-trip. The
+// identity line branches on the same predicate (HIL-625): what decides both is
+// whether the session names a user, never whether a name string came out empty —
+// the id and the name are read off one session-scope ref, so an absent ref gives
+// a null id and an empty name together.
 const authGate = inject(hilosAuthGateKey)
 const isAuthenticated = computed(() => selfId.value !== null)
 
@@ -232,8 +239,13 @@ onUnmounted(() => {
   <div class="d-flex flex-column h-100">
     <h1 class="visually-hidden">Conversations</h1>
     <p class="flex-shrink-0">
-      Signed in as <span data-id="self-user">{{ selfName }}</span>
-      <span data-id="self-user-id" hidden>{{ selfId }}</span>
+      <template v-if="isAuthenticated">
+        Signed in as <span data-id="self-user">{{ selfName }}</span>
+        <span data-id="self-user-id" hidden>{{ selfId }}</span>
+      </template>
+      <template v-else>
+        <span data-id="self-anonymous">Browsing anonymously</span>
+      </template>
     </p>
 
     <div class="row g-3 flex-grow-1 min-h-0">

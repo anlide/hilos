@@ -1,6 +1,11 @@
 import { test, expect, type BrowserContext } from '@playwright/test'
 
-import { nameFromEmail, register, uniqueEmail } from '../helpers/session'
+import {
+  nameFromEmail,
+  register,
+  SESSION_COOKIE,
+  uniqueEmail,
+} from '../helpers/session'
 import { gotoPage } from '../helpers/page'
 
 // Session-fixation e2e (HIL-582): the leg of the rotation that only a real browser
@@ -14,9 +19,6 @@ import { gotoPage } from '../helpers/page'
 // The value of the cookie is the assertion, not its presence: fixation is precisely
 // the case where a session cookie the attacker knows keeps working after the victim
 // logs in, so what must change is the VALUE, while the person stays signed in.
-
-/** The deployment's session cookie name (HILOS_SESSION_COOKIE_NAME default). */
-const SESSION_COOKIE = 'hilos_session_token'
 
 /** The auxiliary cookie the ticket travels in (SessionRotationTicket::cookieName). */
 const ROTATE_COOKIE = 'hilos_session_token_rotate'

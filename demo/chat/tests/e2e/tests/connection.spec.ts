@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-import { signUp } from '../helpers/session'
+import { SESSION_COOKIE, signUp } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
 
 // Step-7.1 transport e2e (testing-strategy.md): the built app reaches the
@@ -18,6 +18,73 @@ test('websocket transport reaches connected', async ({ page }) => {
 test('session bootstrap resolves the current user', async ({ page }) => {
   const user = await signUp(page)
   await expect(page.getByTestId('self-user')).toHaveText(user.name)
+})
+
+// Identity-line e2e (HIL-625): the other branch of that same line. A visitor with
+// no account reads an explicit anonymous sentence, and the authenticated branch's
+// marker is ABSENT rather than empty — Chat hands a guest no name, so there is
+// nothing for `self-user` to carry, and an empty one is the bug this pins.
+test('renders the anonymous identity line for a visitor with no account', async ({
+  page,
+}) => {
+  await gotoPage(page, '/')
+
+  await expect(page.getByTestId('self-anonymous')).toHaveText(
+    'Browsing anonymously',
+  )
+  await expect(page.getByTestId('self-user')).toHaveCount(0)
+})
+
+/**
+ * A session token of the minted shape (32 lowercase hex, SessionToken::isValid)
+ * that names no session on the server.
+ *
+ * Well-formed on purpose: a malformed value is simply replaced by a freshly minted
+ * one on the 101, which would make the browser arrive as if it had carried no
+ * cookie at all — the case the test above already covers. Unique per run for the
+ * reason uniqueEmail() is: the stand is shared across specs and retries, and a
+ * repeated value could name a session another test really holds.
+ *
+ * @returns The orphan token.
+ */
+function orphanSessionToken(): string {
+  const noise = (): string =>
+    Math.floor(Math.random() * 0x100000000)
+      .toString(16)
+      .padStart(8, '0')
+
+  return Date.now().toString(16).padStart(16, '0') + noise() + noise()
+}
+
+// The case that opened HIL-625: an anonymized restore purged hilos_session while
+// the browser kept its cookie, so the jar names a session the server has never
+// heard of. The server does not refuse it — it opens a fresh anonymous session
+// under that token — and the screen has to say so rather than render a
+// "Signed in as" with nothing after it.
+//
+// The value is swapped inside the jar's real entry rather than assembled from the
+// base URL, so the domain, path and flags stay whatever the stand issued and the
+// test does not need to know its scheme or port.
+test('renders the anonymous identity line when the cookie names no session', async ({
+  page,
+  context,
+}) => {
+  await gotoPage(page, '/')
+
+  const session = (await context.cookies()).find(
+    (cookie) => cookie.name === SESSION_COOKIE,
+  )
+  if (session === undefined) {
+    throw new Error(`the stand issued no ${SESSION_COOKIE} cookie`)
+  }
+  await context.addCookies([{ ...session, value: orphanSessionToken() }])
+
+  await gotoPage(page, '/')
+
+  await expect(page.getByTestId('self-anonymous')).toHaveText(
+    'Browsing anonymously',
+  )
+  await expect(page.getByTestId('self-user')).toHaveCount(0)
 })
 
 // Step-7.3.3 page-subscription infra e2e: on cold load the app subscribes the

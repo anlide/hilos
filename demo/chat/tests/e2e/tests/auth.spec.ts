@@ -212,6 +212,28 @@ test('lets an anonymous visitor read the chat but gates sending behind the sign-
   await expect(page.getByTestId('message-signin')).toHaveCount(0)
 })
 
+// The identity line's live transition (HIL-625). Logging out is one of the four
+// ways into the anonymous state named in the ticket — purge, expiry and an
+// anonymized restore are the others — and on the wire all four are the same thing:
+// a handshake response with no current user. This is the one of them a browser can
+// walk into, and it walks into it WITHOUT a navigation: the session scope drops the
+// user, and the line re-renders off that ref the same way the shell drops the
+// profile link. What the line must not do is keep the "Signed in as" sentence with
+// the name gone from it.
+test('returns the identity line to anonymous when the session logs out', async ({
+  page,
+}) => {
+  const user = await signUp(page)
+  await expect(page.getByTestId('self-user')).toHaveText(user.name)
+
+  await logout(page)
+
+  await expect(page.getByTestId('self-anonymous')).toHaveText(
+    'Browsing anonymously',
+  )
+  await expect(page.getByTestId('self-user')).toHaveCount(0)
+})
+
 test('holds the address on submit and creates the account only on the mailed code', async ({
   page,
 }) => {
