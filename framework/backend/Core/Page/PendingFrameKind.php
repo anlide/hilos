@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Core\Page;
 
 /**
- * Which of the three identity-judged frames one parked entry holds (HIL-599).
+ * Which of the four identity-judged frames one parked entry holds (HIL-599, HIL-689).
  *
  * Names the doors that ask who is behind a connection before they act, because each
  * waits for something slightly different and reports itself differently in the log:
- * a subscribe and an action wait for the identity alone, a viewport request also
- * waits for the subscription it is addressed to ({@see PageSignalRouter::releasePendingFrames}).
+ * a subscribe, a subscription update and an action wait for the identity alone, a
+ * viewport request also waits for the subscription it is addressed to
+ * ({@see PageSignalRouter::releasePendingFrames}).
  */
 enum PendingFrameKind: string
 {
@@ -22,4 +23,7 @@ enum PendingFrameKind: string
 
     /** A table_viewport frame, whose window delivery re-checks the page guards. */
     case TableViewport = 'table_viewport';
+
+    /** A page_update_subscription frame, judged like a subscribe but on the merged params. */
+    case PageUpdateSubscription = 'page_update_subscription';
 }

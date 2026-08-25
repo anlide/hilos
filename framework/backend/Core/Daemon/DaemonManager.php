@@ -3231,8 +3231,9 @@ abstract class DaemonManager extends BaseManager implements
      *
      * Another instance is another page, and a page change arrives as a subscribe. The
      * refusal is a veto on the whole signal and not only on the record: a frame let through
-     * is applied on the far side, where the worker merges the new params into its own mirror
-     * and re-renders the page from them ({@see PageSignalRouter::dispatchPageUpdateSubscription}).
+     * is applied on the far side, where the accepted params settle into the subscription
+     * record and the page is re-rendered from them
+     * ({@see PageSignalRouter::dispatchPageUpdateSubscription}).
      * Keeping the record and delivering the frame would leave the master addressing one
      * instance while the client is shown another - a disagreement nothing later resolves.
      *

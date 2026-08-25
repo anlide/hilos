@@ -261,9 +261,10 @@ abstract class BrowserContext
      * because the caller is owed something to log ({@see PageSignalRouter::dispatchTableViewport}):
      * refusing a client's own viewport frame in silence left no trace anywhere on the
      * server, which is why this door's share of the identity race was found by accident
-     * twice and never by its own log line. Mirrors
-     * {@see PageSignalRouter::dispatchPageUpdateSubscription}, which answers the same
-     * shape of question for the update door.
+     * twice and never by its own log line. The update door settled the same question the
+     * other way ({@see PageSignalRouter::dispatchPageUpdateSubscription}): it answers no
+     * bool at all any more, and writes a log line of its own for each outcome the single
+     * bit used to blur together.
      *
      * @param string $page Page the table belongs to
      * @param string $acceptKey Subscribing WebSocket accept key

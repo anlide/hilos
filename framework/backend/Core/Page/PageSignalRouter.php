@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page;
 
+use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
+use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Auth\Throttle\ThrottleGate;
 use Hilos\Constants\ErrorConstants;
@@ -289,26 +291,65 @@ class PageSignalRouter
      * any other exception becomes a generic internal error. The subscription is
      * preserved either way, with its previous params.
      *
-     * The answer is what tells the caller whether to apply the update to the
-     * subscription mirrors: a refused set must not settle anywhere, or the next
-     * fan-out would be judged by params this connection was denied.
+     * An update that arrives before this worker learns who sent it is parked rather
+     * than judged ({@see self::parkUntilIdentified}), for the reason a subscribe is:
+     * the gate below would read an unfinished answer as "a guest" and answer 401 to
+     * somebody who is signed in. This door was the loudest of the four at that, because
+     * the client-side gate holds back only page_subscribe — a param change sent right
+     * after a reconnect arrived here with nothing in front of it. A parked frame
+     * resumes into the identical steps, so nothing here distinguishes it.
      *
      * @param WebSocketPageUpdateSubscriptionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name (page name)
-     * @return bool Whether the update was accepted and may be applied to the subscription
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
      */
-    public function dispatchPageUpdateSubscription(WebSocketPageUpdateSubscriptionSignalDTO $data, string $source, string $name): bool
+    public function dispatchPageUpdateSubscription(WebSocketPageUpdateSubscriptionSignalDTO $data, string $source, string $name): void
+    {
+        if ($this->parkUntilIdentified(PendingFrameKind::PageUpdateSubscription, $data, $source, $name)) {
+            return;
+        }
+
+        $this->runPageUpdateSubscriptionFrame($data, $source, $name);
+    }
+
+    /**
+     * Judges one subscription update and settles the accepted params, parked or not.
+     *
+     * Answers nobody but the log when there is no verdict to reach: an unnamed page, a
+     * page that does not resolve, or a connection that has since moved on. Each of those
+     * used to be the same false, and one bit could not say which had happened
+     * (docs/agents/code-style/method-contracts.md).
+     *
+     * @param WebSocketPageUpdateSubscriptionSignalDTO $data Signal data
+     * @param string $source Signal source
+     * @param string $name Signal name (page name)
+     * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     */
+    private function runPageUpdateSubscriptionFrame(WebSocketPageUpdateSubscriptionSignalDTO $data, string $source, string $name): void
     {
         $page = $name;
         if ($page === '') {
-            return false;
+            Logger::error('Page update subscription without page name');
+            return;
         }
 
         $pageInstance = $this->resolvePage($page);
         if ($pageInstance === null) {
-            return false;
+            return;
+        }
+
+        if (!$this->subscribedToPage($data->acceptKey, $page)) {
+            // The tab navigated away, or closed, before the frame was judged — a window
+            // parking widens but did not invent. Judging it would run the page's
+            // onUpdateSubscription for a page this connection no longer stands on, and the
+            // mirror write below would then fail on a record that names another page: which
+            // is exactly what the straight-through path did here, silently, before the check.
+            //
+            // Ahead of the guards on purpose. There is no verdict to reach about a page
+            // nobody is on, and reaching one anyway would answer the client about it.
+            Logger::info("Page update subscription for a page left behind: page={$page}, acceptKey={$data->acceptKey}");
+            return;
         }
 
         try {
@@ -316,10 +357,21 @@ class PageSignalRouter
             PageAccessGate::assert($pageInstance::class, $data->acceptKey);
             Hilos::$browser?->assertSubscriptionAccess($page, $data->acceptKey, $params);
             $pageInstance->onUpdateSubscription($data->acceptKey, $params);
+
+            try {
+                // Only an accepted update settles into the mirrors: a set the guards
+                // refused would otherwise judge the next fan-out for this connection.
+                // Written here, beside the verdict, and no longer by the caller — the
+                // answer that used to travel back as a bool never leaves this method.
+                Hilos::$sr?->updatePageSubscription($page, $data);
+            } catch (PageSubscriptionNotFoundException|PageSubscriptionMismatchException $e) {
+                // The registry moved under an accepted update. The client is told nothing:
+                // its update did happen, and the page already ran it.
+                Logger::error("Cannot mirror page subscription update: page={$page}, acceptKey={$data->acceptKey}, {$e->getMessage()}");
+            }
         } catch (PageSubscriptionException $e) {
             Logger::info("Page update subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
             $this->sendSubscriptionError($pageInstance, $page, $data->acceptKey, $e->httpCode, $e->errorCode, $e->getMessage());
-            return false;
         } catch (Throwable $e) {
             Logger::error("Unexpected page update subscription error: page={$page}, exception={$e->getMessage()}");
             $this->sendSubscriptionError(
@@ -330,10 +382,7 @@ class PageSignalRouter
                 'internal_error',
                 'Internal error during subscription update',
             );
-            return false;
         }
-
-        return true;
     }
 
     /**
@@ -383,7 +432,7 @@ class PageSignalRouter
      * be scoped to the rows it shows), then has the browser context build and reply
      * the table_window snapshot for that descriptor.
      *
-     * The quietest of the three identity-judged doors, and so the one parked with the
+     * The quietest of the four identity-judged doors, and so the one parked with the
      * strictest condition ({@see self::parkUntilIdentified}): the window delivery
      * re-checks the page guards, and those guards judge by the params of the page
      * subscription, so this frame waits for its subscription as well as for the
@@ -844,14 +893,15 @@ class PageSignalRouter
      * it at all, which is the framework default - never reaches the queue.
      *
      * @param PendingFrameKind $kind Which door the frame arrived at
-     * @param WebSocketPageSubscribeSignalDTO|WebSocketActionSignalDTO|WebSocketTableViewportSignalDTO $data Frame as it arrived
+     * @param WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO|WebSocketActionSignalDTO|WebSocketTableViewportSignalDTO $data
+     *     Frame as it arrived
      * @param string $source Signal source the frame was dispatched with
      * @param string $name Signal name the frame was dispatched with
      * @return bool True when the frame has been parked and must not run now
      */
     private function parkUntilIdentified(
         PendingFrameKind $kind,
-        WebSocketPageSubscribeSignalDTO|WebSocketActionSignalDTO|WebSocketTableViewportSignalDTO $data,
+        WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO|WebSocketActionSignalDTO|WebSocketTableViewportSignalDTO $data,
         string $source,
         string $name,
     ): bool {
@@ -879,7 +929,10 @@ class PageSignalRouter
     /**
      * Whether everything one frame is judged against has reached this worker.
      *
-     * Every door waits for the connection's identity. The viewport door waits for one
+     * Every door waits for the connection's identity, and three of the four wait for
+     * nothing else - a subscription update among them, because the mirror is written the
+     * moment its subscribe is dispatched, so by the time an update of the same connection
+     * is looked at the subscription is already there. The viewport door waits for one
      * thing more - the page subscription the frame is addressed to - because the window
      * delivery re-checks the page guards, and those guards read the subscription's params:
      * judged without it they judge an empty param set, which is a different question from
@@ -920,7 +973,8 @@ class PageSignalRouter
      * identity that never crossed the RT sync and a subscription that never arrived are
      * different failures with different owners, and the frame itself cannot tell them
      * apart. Both can be outstanding at once, which is why they are reported together
-     * rather than as the first one found.
+     * rather than as the first one found. Only the viewport door can be waiting on the
+     * subscription, so for the other three the line names the identity or nothing.
      *
      * @param PendingFrameKind $kind Door the frame arrived at
      * @param string $acceptKey Accept key of the connection that sent it
@@ -1029,6 +1083,8 @@ class PageSignalRouter
             try {
                 if ($data instanceof WebSocketPageSubscribeSignalDTO) {
                     $this->runPageSubscribeFrame($data, $frame->source, $frame->name);
+                } elseif ($data instanceof WebSocketPageUpdateSubscriptionSignalDTO) {
+                    $this->runPageUpdateSubscriptionFrame($data, $frame->source, $frame->name);
                 } elseif ($data instanceof WebSocketActionSignalDTO) {
                     $this->runActionFrame($data, $frame->source);
                 } else {

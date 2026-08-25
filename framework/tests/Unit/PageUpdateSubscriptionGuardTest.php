@@ -40,8 +40,9 @@ use PHPUnit\Framework\TestCase;
  * changes, so the verdict is reached on the MERGED set, and only an accepted set
  * settles into the subscription mirror.
  *
- * Driven through the worker manager rather than the router alone, because the two
- * halves of the rule live apart: the router judges, the manager applies.
+ * Driven through the worker manager rather than the router alone: judging and applying
+ * are one step in the router since HIL-689, but the manager is still what a real frame
+ * arrives through, and the agent hook it runs first is part of the path being pinned.
  */
 final class PageUpdateSubscriptionGuardTest extends TestCase
 {

@@ -11,6 +11,7 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
+use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageAgentInterface;
@@ -26,6 +27,8 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -39,6 +42,10 @@ use PHPUnit\Framework\TestCase;
  * waiting cannot reorder a connection's own frames, and - just as important - that the wait
  * has an end: an identity that never arrives costs the deadline and then exactly the verdict
  * the frame would have got before this queue existed.
+ *
+ * The subscription-update door joined them last (HIL-689) and is the one the defect was
+ * loudest at: the client-side gate holds back only page_subscribe, so a param change sent
+ * into the reconnect window reached the guards with nothing in front of it.
  */
 final class PageSignalRouterPendingFrameTest extends TestCase
 {
@@ -201,6 +208,132 @@ final class PageSignalRouterPendingFrameTest extends TestCase
         $this->assertSame([PendingFrameTestPage::TABLE_KEY], $browser->windows);
     }
 
+    public function testAnUpdateFromAnUnidentifiedConnectionIsHeldInsteadOfRefused(): void
+    {
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::pending();
+        $factory = new PendingFrameTestPageFactory(new PendingFrameTestAgent());
+        $this->registerSubscription(['tab' => 'info']);
+
+        $this->router($factory)->dispatchPageUpdateSubscription(
+            $this->updateFrame(['tab' => 'files']),
+            SignalSource::WEBSOCKET,
+            PendingFrameTestPage::PAGE,
+        );
+
+        // Neither judged nor answered. Refusing here is what the client reads as "sign in
+        // again", and it is the answer a person who has been signed in for an hour got.
+        $this->assertSame([], $this->page($factory)->handled);
+        $this->assertNull($this->queuedSubscriptionError());
+    }
+
+    public function testTheHeldUpdateAppliesItsParamsOnceTheIdentityArrives(): void
+    {
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::pending();
+        $factory = new PendingFrameTestPageFactory(new PendingFrameTestAgent());
+        $router = $this->router($factory);
+        $this->registerSubscription(['tab' => 'info']);
+
+        $router->dispatchPageUpdateSubscription(
+            $this->updateFrame(['tab' => 'files']),
+            SignalSource::WEBSOCKET,
+            PendingFrameTestPage::PAGE,
+        );
+
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $router->releasePendingFrames();
+
+        // The wait costs the update nothing but its delay: the page is refreshed and the
+        // accepted params settle, from the resumed frame exactly as from a straight one.
+        $this->assertSame(['update'], $this->page($factory)->handled);
+        $this->assertSame(['tab' => 'files'], $this->subscriptionParams());
+    }
+
+    public function testAnUpdateDoesNotOvertakeTheSubscribeItBelongsTo(): void
+    {
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::pending();
+        $factory = new PendingFrameTestPageFactory(new PendingFrameTestAgent());
+        $router = $this->router($factory);
+
+        $router->dispatchPageSubscribe(
+            new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, PendingFrameTestPage::PAGE, ['tab' => 'info']),
+            SignalSource::WEBSOCKET,
+            PendingFrameTestPage::PAGE,
+        );
+        $this->registerSubscription(['tab' => 'info']);
+
+        // The answer lands between the two frames, and the update is held anyway: it belongs
+        // behind the subscribe, whose onSubscribe is what builds the page it refreshes.
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $router->dispatchPageUpdateSubscription(
+            $this->updateFrame(['tab' => 'files']),
+            SignalSource::WEBSOCKET,
+            PendingFrameTestPage::PAGE,
+        );
+        $this->assertSame([], $this->page($factory)->handled);
+
+        $router->releasePendingFrames();
+
+        $this->assertSame(['subscribe', 'update'], $this->page($factory)->handled);
+    }
+
+    public function testARefusedUpdateLeavesTheSubscriptionOnItsOldParams(): void
+    {
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::pending();
+        $factory = new PendingFrameTestPageFactory(new PendingFrameTestAgent());
+        $router = $this->router($factory);
+        $this->registerSubscription(['tab' => 'info']);
+
+        $router->dispatchPageUpdateSubscription(
+            $this->updateFrame(['tab' => 'files']),
+            SignalSource::WEBSOCKET,
+            PendingFrameTestPage::PAGE,
+        );
+
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $browser->refuseSubscriptionAccess = true;
+        $router->releasePendingFrames();
+
+        // Waiting moves when the verdict is reached, not what it is. A refused set still
+        // settles nowhere, or the next fan-out would be judged by params this connection
+        // was denied - and the refusal still reaches the client, now as the 403 it is.
+        $this->assertSame([], $this->page($factory)->handled);
+        $this->assertSame(['tab' => 'info'], $this->subscriptionParams());
+        $this->assertSame(403, $this->queuedSubscriptionError()?->httpCode);
+    }
+
+    public function testAnUpdateForAPageTheConnectionHasLeftIsNotJudgedAtAll(): void
+    {
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::pending();
+        $factory = new PendingFrameTestPageFactory(new PendingFrameTestAgent());
+        $router = $this->router($factory);
+        $this->registerSubscription(['tab' => 'info']);
+
+        $router->dispatchPageUpdateSubscription(
+            $this->updateFrame(['tab' => 'files']),
+            SignalSource::WEBSOCKET,
+            PendingFrameTestPage::PAGE,
+        );
+
+        // The tab leaves while the frame waits. Its subscription goes with it, so there is
+        // no longer a question to answer: the page must not be refreshed for a connection
+        // that is not on it, and the client must not be told anything about a page it left.
+        Hilos::$sr?->unsubscribeFromPage(
+            PendingFrameTestPage::PAGE,
+            new WebSocketPageUnsubscribeSignalDTO(self::ACCEPT_KEY),
+        );
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $router->releasePendingFrames();
+
+        $this->assertSame([], $this->page($factory)->handled);
+        $this->assertNull($this->queuedSubscriptionError());
+        $this->assertNull(Hilos::$sr?->pageSubscription(self::ACCEPT_KEY));
+    }
+
     public function testAProjectThatResolvesIdentityAtOnceNeverReachesTheQueue(): void
     {
         $browser = $this->mountBrowser();
@@ -215,6 +348,47 @@ final class PageSignalRouterPendingFrameTest extends TestCase
 
         // No sweep in between: an answer that is already there costs the frame nothing.
         $this->assertSame(['subscribe'], $this->page($factory)->handled);
+    }
+
+    /**
+     * Puts a live page subscription for the test connection into the registry.
+     *
+     * The worker records it the moment it dispatches the subscribe, parked or not, which is
+     * exactly why an update of the same connection waits for the identity and nothing else.
+     *
+     * @param array<string, string> $params Params the subscription starts on
+     */
+    private function registerSubscription(array $params): void
+    {
+        Hilos::$sr?->subscribeToPage(
+            PendingFrameTestPage::PAGE,
+            new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, PendingFrameTestPage::PAGE, $params),
+        );
+    }
+
+    /**
+     * Builds one subscription-update frame for the test connection.
+     *
+     * @param array<string, string> $params Params the frame carries
+     * @return WebSocketPageUpdateSubscriptionSignalDTO Update frame
+     */
+    private function updateFrame(array $params): WebSocketPageUpdateSubscriptionSignalDTO
+    {
+        return new WebSocketPageUpdateSubscriptionSignalDTO(
+            self::ACCEPT_KEY,
+            PendingFrameTestPage::PAGE,
+            $params,
+        );
+    }
+
+    /**
+     * Returns the params the subscription registry holds for the test connection.
+     *
+     * @return array<string, mixed> Registered subscription params
+     */
+    private function subscriptionParams(): array
+    {
+        return Hilos::$sr?->pageSubscription(self::ACCEPT_KEY)?->params ?? [];
     }
 
     /**
@@ -324,6 +498,17 @@ final class PendingFrameTestPage extends AbstractPage
 
         return null;
     }
+
+    /**
+     * Records that the update handler ran (only reachable once the guards passed).
+     *
+     * @param string $acceptKey WebSocket accept key (unused)
+     * @param PageRouteParams $params Merged route params (unused)
+     */
+    public function onUpdateSubscription(string $acceptKey, PageRouteParams $params): void
+    {
+        $this->handled[] = 'update';
+    }
 }
 
 /**
@@ -336,6 +521,9 @@ final class PendingFrameTestBrowser extends BrowserContext
 
     /** @var list<string> Table keys whose window delivery was reached */
     public array $windows = [];
+
+    /** Whether the page guards refuse the next subscription verdict. */
+    public bool $refuseSubscriptionAccess = false;
 
     public function __construct()
     {
@@ -352,6 +540,24 @@ final class PendingFrameTestBrowser extends BrowserContext
     protected function resolveConnectionIdentity(string $acceptKey): ConnectionIdentity
     {
         return $this->identity;
+    }
+
+    /**
+     * Refuses on demand, standing in for a page guard that says no.
+     *
+     * The fixture page declares no browser config, so the real method passes everything and
+     * a refusal has to be armed by hand - which is all this test needs from a guard.
+     *
+     * @param string $page Page name from the subscription request (unused)
+     * @param string $acceptKey Subscribing WebSocket accept key (unused)
+     * @param PageRouteParams $params Route params for this page subscription (unused)
+     * @throws PageForbiddenException When the test has armed a refusal
+     */
+    public function assertSubscriptionAccess(string $page, string $acceptKey, PageRouteParams $params): void
+    {
+        if ($this->refuseSubscriptionAccess) {
+            throw new PageForbiddenException();
+        }
     }
 
     /**

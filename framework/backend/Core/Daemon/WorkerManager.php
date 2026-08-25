@@ -153,18 +153,6 @@ abstract class WorkerManager extends BaseManager
     private array $pageSignalRouters = [];
 
     /**
-     * Worker-local mirror of the current page subscription per WebSocket accept key.
-     *
-     * The daemon-side page subscription mirror overwrites state when the client
-     * sends a page subscribe signal. The worker keeps the previous page so it
-     * can run page teardown before a replacement subscribe and again on
-     * connection close when the client did not send an explicit unsubscribe.
-     *
-     * @var array<string, array{page: string, params: array<string, string>}> Accept key → last page id and route params
-     */
-    private array $pageSubscriptionByAcceptKey = [];
-
-    /**
      * Creates the worker manager and initializes worker-local framework services.
      *
      * The concrete worker supplies the signal router and agent manager factory.
@@ -1290,11 +1278,7 @@ abstract class WorkerManager extends BaseManager
             case SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION:
                 if ($signalData instanceof WebSocketPageUpdateSubscriptionSignalDTO) {
                     $agent->onSignalPageUpdateSubscription($signalData, $source, $name);
-                    // Only an accepted update settles into the mirrors: a set the guards
-                    // refused would otherwise judge the next fan-out for this connection.
-                    if ($this->getPageSignalRouter($agentId, $agent)->dispatchPageUpdateSubscription($signalData, $source, $name)) {
-                        $this->mergePageSubscriptionParamsOnUpdate($signalData);
-                    }
+                    $this->getPageSignalRouter($agentId, $agent)->dispatchPageUpdateSubscription($signalData, $source, $name);
                 } else {
                     Logger::error("onSignalPageUpdateSubscription - invalid signal data type: " . get_class($signalData));
                 }
@@ -1305,9 +1289,10 @@ abstract class WorkerManager extends BaseManager
                     $agent->onSignalPageUnsubscribe($signalData, $source, $name);
                     $this->getPageSignalRouter($agentId, $agent)->dispatchPageUnsubscribe($signalData, $source, $name);
                     if ($signalData->acceptKey !== '') {
-                        $page = $this->pageSubscriptionByAcceptKey[$signalData->acceptKey]['page'] ?? $name;
+                        // Read before the unsubscribe, because that is what removes the record
+                        // this page name is being taken from.
+                        $page = Hilos::$sr?->pageSubscription($signalData->acceptKey)?->page ?? $name;
                         Hilos::$sr?->unsubscribeFromPage($page, $signalData);
-                        unset($this->pageSubscriptionByAcceptKey[$signalData->acceptKey]);
                     }
                 } else {
                     Logger::error("onSignalPageUnsubscribe - invalid signal data type: " . get_class($signalData));
@@ -1512,7 +1497,7 @@ abstract class WorkerManager extends BaseManager
      *
      * Two arrays with the same keys and values compare equal after sorting.
      *
-     * @param array<string, string> $params Route parameters from a page subscribe DTO
+     * @param array<string, mixed> $params Route parameters, from a page subscribe DTO or from the registry record
      * @return string Serialized representation after sorting keys
      */
     private function pageParamsSignature(array $params): string
@@ -1528,6 +1513,10 @@ abstract class WorkerManager extends BaseManager
      * This matches SPA navigation where the client sends the next page subscribe
      * without an explicit unsubscribe for the previous page. No-op when there is
      * no prior subscription or when page id and params are unchanged.
+     *
+     * The previous subscription comes from the subscription registry ({@see SignalRouter::pageSubscription()}),
+     * which is also where this worker put it. A process with no registry mounted reads null
+     * and returns, exactly as it did when it had no record of its own (HIL-689).
      *
      * @param string $agentId Agent instance id in this worker process
      * @param AgentInterface $agent Agent receiving the signal
@@ -1547,15 +1536,13 @@ abstract class WorkerManager extends BaseManager
             return;
         }
 
-        $newPage = $dto->page ?? $name;
-        $newParams = $dto->params;
-        if (!isset($this->pageSubscriptionByAcceptKey[$acceptKey])) {
+        $prev = Hilos::$sr?->pageSubscription($acceptKey);
+        if ($prev === null) {
             return;
         }
 
-        $prev = $this->pageSubscriptionByAcceptKey[$acceptKey];
-        $samePage = $prev['page'] === $newPage;
-        $sameParams = $this->pageParamsSignature($prev['params']) === $this->pageParamsSignature($newParams);
+        $samePage = $prev->page === ($dto->page ?? $name);
+        $sameParams = $this->pageParamsSignature($prev->params) === $this->pageParamsSignature($dto->params);
         if ($samePage && $sameParams) {
             return;
         }
@@ -1563,20 +1550,28 @@ abstract class WorkerManager extends BaseManager
         try {
             $router = $this->getPageSignalRouter($agentId, $agent);
             $unsubDto = new WebSocketPageUnsubscribeSignalDTO(acceptKey: $acceptKey);
-            $router->dispatchPageUnsubscribe($unsubDto, $source, $prev['page']);
-            Hilos::$sr?->unsubscribeFromPage($prev['page'], $unsubDto);
+            $router->dispatchPageUnsubscribe($unsubDto, $source, $prev->page);
+            Hilos::$sr?->unsubscribeFromPage($prev->page, $unsubDto);
         } catch (PageSignalRouterNotFoundException $e) {
             Logger::error(
                 'WorkerManager: cannot dispatch synthetic page_unsubscribe before new subscribe (no page router): '
-                . "agentId={$agentId} acceptKey={$acceptKey} previousPage={$prev['page']}, {$e->getMessage()}",
+                . "agentId={$agentId} acceptKey={$acceptKey} previousPage={$prev->page}, {$e->getMessage()}",
             );
         }
     }
 
     /**
-     * Stores the current page id and params after page subscribe dispatch.
+     * Records the current page id and params after page subscribe dispatch.
      *
-     * Used by {@see self::dispatchPreviousPageUnsubscribeIfReplaced()} on subsequent subscribe signals.
+     * Writes the one subscription registry there is ({@see SignalRouter::pageSubscription()}),
+     * which is also what {@see self::dispatchPreviousPageUnsubscribeIfReplaced()} reads on
+     * subsequent subscribe signals. The worker kept a private copy of the same value until
+     * HIL-689: one quantity, born and buried at the same points, and a second holder of it
+     * only made the page router reach for somebody else's private field.
+     *
+     * The write is unconditional, unlike the update's: a refused subscribe stays alive and
+     * gets promoted into the real page the moment its guard starts passing, so the params
+     * it was refused on are exactly the ones the next fan-out has to be judged by.
      *
      * @param WebSocketPageSubscribeSignalDTO $dto Subscribe payload
      * @param string $name Signal name used as page id when the DTO page is empty
@@ -1588,39 +1583,7 @@ abstract class WorkerManager extends BaseManager
             return;
         }
 
-        $page = $dto->page ?? $name;
-        $this->pageSubscriptionByAcceptKey[$acceptKey] = [
-            'page' => $page,
-            'params' => $dto->params,
-        ];
-        Hilos::$sr?->subscribeToPage($page, $dto);
-    }
-
-    /**
-     * Merges incoming params into the tracked subscription after update dispatch.
-     *
-     * Aligns worker-side tracking with daemon {@see SignalRouter::updatePageSubscription()} merge semantics.
-     * No-op when this accept key has no tracked subscription.
-     *
-     * @param WebSocketPageUpdateSubscriptionSignalDTO $dto Update payload (acceptKey, page, params to merge)
-     */
-    private function mergePageSubscriptionParamsOnUpdate(WebSocketPageUpdateSubscriptionSignalDTO $dto): void
-    {
-        $acceptKey = $dto->acceptKey;
-        if ($acceptKey === '' || !isset($this->pageSubscriptionByAcceptKey[$acceptKey])) {
-            return;
-        }
-
-        $this->pageSubscriptionByAcceptKey[$acceptKey]['params'] = array_merge(
-            $this->pageSubscriptionByAcceptKey[$acceptKey]['params'],
-            $dto->params,
-        );
-        $page = $dto->page ?? $this->pageSubscriptionByAcceptKey[$acceptKey]['page'];
-        try {
-            Hilos::$sr?->updatePageSubscription($page, $dto);
-        } catch (Throwable $e) {
-            Logger::error("WorkerManager: cannot mirror page subscription update: acceptKey={$acceptKey} page={$page}, {$e->getMessage()}");
-        }
+        Hilos::$sr?->subscribeToPage($dto->page ?? $name, $dto);
     }
 
     /**
@@ -1628,8 +1591,8 @@ abstract class WorkerManager extends BaseManager
      *
      * Invoked before the agent connection-close hook so page cleanup runs even
      * when the client closes the tab without sending a page unsubscribe signal.
-     * Clears the worker-local subscription mirror for this accept key after
-     * dispatch.
+     * Reads the page from the subscription registry and drops every subscription
+     * this accept key held once the dispatch is done.
      *
      * @param string $agentId Agent instance id in this worker process
      * @param AgentInterface $agent Agent receiving the signal
@@ -1643,11 +1606,12 @@ abstract class WorkerManager extends BaseManager
         string $source,
     ): void {
         $acceptKey = $dto->acceptKey;
-        if ($acceptKey === '' || !isset($this->pageSubscriptionByAcceptKey[$acceptKey])) {
+        $prev = $acceptKey === '' ? null : Hilos::$sr?->pageSubscription($acceptKey);
+        if ($prev === null) {
             return;
         }
 
-        $prevPage = $this->pageSubscriptionByAcceptKey[$acceptKey]['page'];
+        $prevPage = $prev->page;
         try {
             $router = $this->getPageSignalRouter($agentId, $agent);
             $unsubDto = new WebSocketPageUnsubscribeSignalDTO(acceptKey: $acceptKey);
@@ -1659,7 +1623,6 @@ abstract class WorkerManager extends BaseManager
             );
         }
 
-        unset($this->pageSubscriptionByAcceptKey[$acceptKey]);
         Hilos::$sr?->unsubscribeFromAll($acceptKey);
     }
 
