@@ -437,6 +437,10 @@ export {
   DEFAULT_RECONNECT_OPTIONS,
   type ReconnectOptions,
 } from './connection/backoff.js'
+// The key alone, not the accessors around it: the hint is the connection's own
+// business, and the one thing outside it that has any use for the key is a test
+// or a tool that wants to seed or clear the flash it guards against.
+export { PROTECTED_MODE_HINT_STORAGE_KEY } from './connection/maintenanceHint.js'
 export {
   HilosConnection,
   type ConnectionState,

@@ -21,6 +21,7 @@ import './hilos-styles.scss'
 
 export { useConnectionState } from './useConnectionState.js'
 export { useProtectedMode } from './useProtectedMode.js'
+export { useFirstFrameHold } from './useFirstFrameHold.js'
 export { useSignal } from './useSignal.js'
 export { useEntity } from './useEntity.js'
 export { useTrackedAction, type TrackedAction } from './useTrackedAction.js'

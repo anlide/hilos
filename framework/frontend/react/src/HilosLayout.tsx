@@ -14,7 +14,11 @@
 // between the project home, the admin section, and the public pages. While the
 // connection reports protected mode the shell becomes the maintenance surface
 // (HilosMaintenance) and keeps only the connection indicator — every other
-// region of the shell links to a page the freeze has shut. Styling is Bootstrap
+// region of the shell links to a page the freeze has shut. On the very first frame
+// there is nothing to report yet, and on a browser that has met maintenance here
+// the core holds that frame back (HIL-613): the shell then renders only the
+// hidden hilos-boot-state marker, so a reload into a frozen node never flashes
+// the ordinary layout. Styling is Bootstrap
 // classes only and the shell carries no CSS of its own (styling-rules.md); the
 // status and admin icons are Bootstrap Icons (`bi-*`), shipped with the view
 // layer (src/index.ts) like Bootstrap.
@@ -38,6 +42,7 @@ import { HilosToastHost } from './HilosToastHost.js'
 import { HilosOAuthWaitModal } from './auth/HilosOAuthWaitModal.js'
 import { HilosRouterContext } from './hilosRouterContext.js'
 import { useConnectionState } from './useConnectionState.js'
+import { useFirstFrameHold } from './useFirstFrameHold.js'
 import { useProtectedMode } from './useProtectedMode.js'
 import { useSignal } from './useSignal.js'
 
@@ -122,6 +127,15 @@ export function HilosLayout({
   const protectedMode = useProtectedMode(connection)
   const underMaintenance = protectedMode.active
 
+  // Before any of that can be read there is a frame where nothing has been
+  // announced yet, and drawing the ordinary shell in it is what makes a reload
+  // into a frozen node flash (HIL-613). On a browser that has met maintenance
+  // here the core holds that frame back until the welcome lands, and the shell
+  // draws nothing at all in the meantime — not a spinner, not a placeholder: the
+  // wait is measured in the time one frame takes, and anything drawn in it is a
+  // second flash replacing the first.
+  const firstFrameHeld = useFirstFrameHold(connection)
+
   // Mirror the navigator's current page title: set it as the document title so
   // the browser tab tracks the no-refresh navigation, and render it in the live
   // region below so a screen reader announces the page change (WCAG 2.4.2).
@@ -136,118 +150,131 @@ export function HilosLayout({
   }, [pageTitle])
 
   return (
-    <div
-      className="d-flex flex-column vh-100 overflow-hidden"
-      data-id="app-root"
-    >
-      <a
-        href="#hilos-main-content"
-        className="visually-hidden-focusable position-absolute top-0 start-0 m-2 btn btn-primary btn-sm z-3"
-        data-id="skip-to-content"
-      >
-        Skip to main content
-      </a>
+    <>
+      {/* The one place the two boot outcomes are named, on the marker a test
+      waits for rather than polling for chrome that is absent by design while
+      held. */}
       <div
-        className="visually-hidden"
-        role="status"
-        aria-live="polite"
-        data-id="page-title"
-      >
-        {pageTitle}
-      </div>
-      <nav
-        className="navbar navbar-expand bg-body-tertiary border-bottom flex-shrink-0"
-        aria-label="Main"
-      >
-        <div className="container">
-          {!underMaintenance && (
-            <HilosLink
-              to="/"
-              className="navbar-brand mb-0 h1"
-              data-id="nav-brand"
-            >
-              {brand}
-            </HilosLink>
-          )}
-          {/* The auto margin lives on this region whether or not it holds
-          links, so the connection indicator keeps its place on the right while
-          the maintenance surface is up. */}
-          <div className="navbar-nav me-auto">
-            {underMaintenance ? null : nav}
-          </div>
-          <div className="d-flex align-items-center gap-3">
-            {!underMaintenance && (
-              <>
-                {user}
-                {isAdmin ? (
-                  <HilosLink
-                    className="nav-link d-inline-flex align-items-center p-0 fs-5"
-                    to={ADMIN_HREF}
-                    data-id="nav-admin"
-                    aria-label="Hilos dashboard"
-                  >
-                    <i className="bi bi-gear-fill" aria-hidden="true" />
-                    <span className="visually-hidden">Hilos dashboard</span>
-                  </HilosLink>
-                ) : null}
-              </>
-            )}
-            <span
-              className={`navbar-text d-inline-flex align-items-center fs-5 ${visual.color}`}
-              data-id="conn-state"
-              role="status"
-              aria-live="polite"
-              title={connectionState}
-            >
-              <i className={`bi ${visual.icon}`} aria-hidden="true" />
-              <span className="visually-hidden">{connectionState}</span>
-            </span>
-          </div>
-        </div>
-      </nav>
-      <main
-        id="hilos-main-content"
-        tabIndex={-1}
-        className={`container flex-grow-1 min-h-0 overflow-auto py-4${
-          underMaintenance ? ' d-flex flex-column' : ''
-        }`}
-      >
-        {underMaintenance ? (
-          <HilosMaintenance
-            status={protectedMode}
-            connection={connection}
-            adminSurface={currentRoute.admin}
-          />
-        ) : (
-          children
-        )}
-      </main>
-      {!underMaintenance && (
-        <footer
-          className="footer flex-shrink-0 border-top bg-body-tertiary py-2"
-          data-id="app-footer"
+        data-id="hilos-boot-state"
+        data-state={firstFrameHeld ? 'held' : 'ready'}
+        hidden
+      />
+      {!firstFrameHeld && (
+        <div
+          className="d-flex flex-column vh-100 overflow-hidden"
+          data-id="app-root"
         >
-          <div className="container d-flex flex-wrap justify-content-center gap-3 small">
-            {HILOS_FOOTER_LINKS.map((link) => (
-              <HilosLink
-                key={link.page}
-                className="link-secondary text-decoration-none"
-                to={HILOS_PAGE_ROUTES[link.page] ?? '/'}
-                data-id={`footer-link-${link.page}`}
-              >
-                {link.label}
-              </HilosLink>
-            ))}
+          <a
+            href="#hilos-main-content"
+            className="visually-hidden-focusable position-absolute top-0 start-0 m-2 btn btn-primary btn-sm z-3"
+            data-id="skip-to-content"
+          >
+            Skip to main content
+          </a>
+          <div
+            className="visually-hidden"
+            role="status"
+            aria-live="polite"
+            data-id="page-title"
+          >
+            {pageTitle}
           </div>
-        </footer>
+          <nav
+            className="navbar navbar-expand bg-body-tertiary border-bottom flex-shrink-0"
+            aria-label="Main"
+          >
+            <div className="container">
+              {!underMaintenance && (
+                <HilosLink
+                  to="/"
+                  className="navbar-brand mb-0 h1"
+                  data-id="nav-brand"
+                >
+                  {brand}
+                </HilosLink>
+              )}
+              {/* The auto margin lives on this region whether or not it holds
+              links, so the connection indicator keeps its place on the right
+              while the maintenance surface is up. */}
+              <div className="navbar-nav me-auto">
+                {underMaintenance ? null : nav}
+              </div>
+              <div className="d-flex align-items-center gap-3">
+                {!underMaintenance && (
+                  <>
+                    {user}
+                    {isAdmin ? (
+                      <HilosLink
+                        className="nav-link d-inline-flex align-items-center p-0 fs-5"
+                        to={ADMIN_HREF}
+                        data-id="nav-admin"
+                        aria-label="Hilos dashboard"
+                      >
+                        <i className="bi bi-gear-fill" aria-hidden="true" />
+                        <span className="visually-hidden">Hilos dashboard</span>
+                      </HilosLink>
+                    ) : null}
+                  </>
+                )}
+                <span
+                  className={`navbar-text d-inline-flex align-items-center fs-5 ${visual.color}`}
+                  data-id="conn-state"
+                  role="status"
+                  aria-live="polite"
+                  title={connectionState}
+                >
+                  <i className={`bi ${visual.icon}`} aria-hidden="true" />
+                  <span className="visually-hidden">{connectionState}</span>
+                </span>
+              </div>
+            </div>
+          </nav>
+          <main
+            id="hilos-main-content"
+            tabIndex={-1}
+            className={`container flex-grow-1 min-h-0 overflow-auto py-4${
+              underMaintenance ? ' d-flex flex-column' : ''
+            }`}
+          >
+            {underMaintenance ? (
+              <HilosMaintenance
+                status={protectedMode}
+                connection={connection}
+                adminSurface={currentRoute.admin}
+              />
+            ) : (
+              children
+            )}
+          </main>
+          {!underMaintenance && (
+            <footer
+              className="footer flex-shrink-0 border-top bg-body-tertiary py-2"
+              data-id="app-footer"
+            >
+              <div className="container d-flex flex-wrap justify-content-center gap-3 small">
+                {HILOS_FOOTER_LINKS.map((link) => (
+                  <HilosLink
+                    key={link.page}
+                    className="link-secondary text-decoration-none"
+                    to={HILOS_PAGE_ROUTES[link.page] ?? '/'}
+                    data-id={`footer-link-${link.page}`}
+                  >
+                    {link.label}
+                  </HilosLink>
+                ))}
+              </div>
+            </footer>
+          )}
+          {/* Transient notices float over the shell, so every page inside it
+          can report an outcome without owning a notification surface of its
+          own. */}
+          <HilosToastHost />
+          {/* An OAuth trip runs in another window over whatever page started
+          it, so the wait belongs to the shell too: the page underneath stays
+          subscribed and alive, and no project mounts anything (HIL-633). */}
+          <HilosOAuthWaitModal />
+        </div>
       )}
-      {/* Transient notices float over the shell, so every page inside it can
-      report an outcome without owning a notification surface of its own. */}
-      <HilosToastHost />
-      {/* An OAuth trip runs in another window over whatever page started it, so
-      the wait belongs to the shell too: the page underneath stays subscribed and
-      alive, and no project mounts anything (HIL-633). */}
-      <HilosOAuthWaitModal />
-    </div>
+    </>
   )
 }

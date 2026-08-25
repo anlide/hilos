@@ -14,9 +14,12 @@
 // and the public pages. While the connection reports protected mode the shell
 // becomes the maintenance surface (HilosMaintenance) and keeps only the
 // connection indicator — every other region of the shell links to a page the
-// freeze has shut. Styling is Bootstrap classes only and the shell carries
-// no CSS of its own (styling-rules.md); the status and admin icons are Bootstrap
-// Icons (`bi-*`).
+// freeze has shut. On the very first frame there is nothing to report yet, and on
+// a browser that has met maintenance here the core holds that frame back
+// (HIL-613): the shell then renders only the hidden hilos-boot-state marker, so a
+// reload into a frozen node never flashes the ordinary layout. Styling is
+// Bootstrap classes only and the shell carries no CSS of its own
+// (styling-rules.md); the status and admin icons are Bootstrap Icons (`bi-*`).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -67,111 +70,121 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosLink, HilosMaintenance, HilosOAuthWaitModal, HilosToastHost],
   template: `
-    <div class="d-flex flex-column vh-100 overflow-hidden" data-id="app-root">
-      <a
-        href="#hilos-main-content"
-        class="visually-hidden-focusable position-absolute top-0 start-0 m-2 btn btn-primary btn-sm z-3"
-        data-id="skip-to-content"
-        >Skip to main content</a
-      >
-      <div
-        class="visually-hidden"
-        role="status"
-        aria-live="polite"
-        data-id="page-title"
-      >
-        {{ pageTitle() }}
-      </div>
-      <nav
-        class="navbar navbar-expand bg-body-tertiary border-bottom flex-shrink-0"
-        aria-label="Main"
-      >
-        <div class="container">
-          @if (!underMaintenance()) {
-            <a hilosLink="/" class="navbar-brand mb-0 h1" data-id="nav-brand">
-              <ng-content select="[brand]">Hilos</ng-content>
-            </a>
-          }
-          <!-- The auto margin lives on this region whether or not it holds
-          links, so the connection indicator keeps its place on the right while
-          the maintenance surface is up. -->
-          <div class="navbar-nav me-auto">
-            @if (!underMaintenance()) {
-              <ng-content select="[nav]" />
-            }
-          </div>
-          <div class="d-flex align-items-center gap-3">
-            @if (!underMaintenance()) {
-              <ng-content select="[user]" />
-              @if (isAdmin()) {
-                <a
-                  [hilosLink]="adminHref"
-                  class="nav-link d-inline-flex align-items-center p-0 fs-5"
-                  data-id="nav-admin"
-                  aria-label="Hilos dashboard"
-                >
-                  <i class="bi bi-gear-fill" aria-hidden="true"></i>
-                  <span class="visually-hidden">Hilos dashboard</span>
-                </a>
-              }
-            }
-            <span
-              [class]="connSpanClass()"
-              data-id="conn-state"
-              role="status"
-              aria-live="polite"
-              [title]="connState()"
-            >
-              <i [class]="connIconClass()" aria-hidden="true"></i>
-              <span class="visually-hidden">{{ connState() }}</span>
-            </span>
-          </div>
-        </div>
-      </nav>
-      <main
-        id="hilos-main-content"
-        tabindex="-1"
-        class="container flex-grow-1 min-h-0 overflow-auto py-4"
-        [class.d-flex]="underMaintenance()"
-        [class.flex-column]="underMaintenance()"
-      >
-        @if (underMaintenance()) {
-          <hilos-maintenance
-            [status]="protectedMode()"
-            [connection]="connection()"
-            [adminSurface]="adminSurface()"
-          />
-        } @else {
-          <ng-content />
-        }
-      </main>
-      @if (!underMaintenance()) {
-        <footer
-          class="footer flex-shrink-0 border-top bg-body-tertiary py-2"
-          data-id="app-footer"
+    <!-- The one place the two boot outcomes are named, on the marker a test
+    waits for rather than polling for chrome that is absent by design while
+    held. -->
+    <div
+      data-id="hilos-boot-state"
+      [attr.data-state]="bootState()"
+      hidden
+    ></div>
+    @if (!firstFrameHeld()) {
+      <div class="d-flex flex-column vh-100 overflow-hidden" data-id="app-root">
+        <a
+          href="#hilos-main-content"
+          class="visually-hidden-focusable position-absolute top-0 start-0 m-2 btn btn-primary btn-sm z-3"
+          data-id="skip-to-content"
+          >Skip to main content</a
         >
-          <div
-            class="container d-flex flex-wrap justify-content-center gap-3 small"
-          >
-            @for (link of footerLinks; track link.page) {
-              <a
-                [hilosLink]="link.href"
-                class="link-secondary text-decoration-none"
-                [attr.data-id]="'footer-link-' + link.page"
-                >{{ link.label }}</a
-              >
+        <div
+          class="visually-hidden"
+          role="status"
+          aria-live="polite"
+          data-id="page-title"
+        >
+          {{ pageTitle() }}
+        </div>
+        <nav
+          class="navbar navbar-expand bg-body-tertiary border-bottom flex-shrink-0"
+          aria-label="Main"
+        >
+          <div class="container">
+            @if (!underMaintenance()) {
+              <a hilosLink="/" class="navbar-brand mb-0 h1" data-id="nav-brand">
+                <ng-content select="[brand]">Hilos</ng-content>
+              </a>
             }
+            <!-- The auto margin lives on this region whether or not it holds
+            links, so the connection indicator keeps its place on the right while
+            the maintenance surface is up. -->
+            <div class="navbar-nav me-auto">
+              @if (!underMaintenance()) {
+                <ng-content select="[nav]" />
+              }
+            </div>
+            <div class="d-flex align-items-center gap-3">
+              @if (!underMaintenance()) {
+                <ng-content select="[user]" />
+                @if (isAdmin()) {
+                  <a
+                    [hilosLink]="adminHref"
+                    class="nav-link d-inline-flex align-items-center p-0 fs-5"
+                    data-id="nav-admin"
+                    aria-label="Hilos dashboard"
+                  >
+                    <i class="bi bi-gear-fill" aria-hidden="true"></i>
+                    <span class="visually-hidden">Hilos dashboard</span>
+                  </a>
+                }
+              }
+              <span
+                [class]="connSpanClass()"
+                data-id="conn-state"
+                role="status"
+                aria-live="polite"
+                [title]="connState()"
+              >
+                <i [class]="connIconClass()" aria-hidden="true"></i>
+                <span class="visually-hidden">{{ connState() }}</span>
+              </span>
+            </div>
           </div>
-        </footer>
-      }
-      <!-- Transient notices float over the shell, so every page inside it can
-      report an outcome without owning a notification surface of its own. -->
-      <hilos-toast-host />
-      <!-- An OAuth trip runs in another window over whatever page started it, so
-      the wait belongs to the shell too: the page underneath stays subscribed and
-      alive, and no project mounts anything (HIL-633). -->
-      <hilos-oauth-wait-modal />
-    </div>
+        </nav>
+        <main
+          id="hilos-main-content"
+          tabindex="-1"
+          class="container flex-grow-1 min-h-0 overflow-auto py-4"
+          [class.d-flex]="underMaintenance()"
+          [class.flex-column]="underMaintenance()"
+        >
+          @if (underMaintenance()) {
+            <hilos-maintenance
+              [status]="protectedMode()"
+              [connection]="connection()"
+              [adminSurface]="adminSurface()"
+            />
+          } @else {
+            <ng-content />
+          }
+        </main>
+        @if (!underMaintenance()) {
+          <footer
+            class="footer flex-shrink-0 border-top bg-body-tertiary py-2"
+            data-id="app-footer"
+          >
+            <div
+              class="container d-flex flex-wrap justify-content-center gap-3 small"
+            >
+              @for (link of footerLinks; track link.page) {
+                <a
+                  [hilosLink]="link.href"
+                  class="link-secondary text-decoration-none"
+                  [attr.data-id]="'footer-link-' + link.page"
+                  >{{ link.label }}</a
+                >
+              }
+            </div>
+          </footer>
+        }
+        <!-- Transient notices float over the shell, so every page inside it can
+        report an outcome without owning a notification surface of its own. -->
+        <hilos-toast-host />
+        <!-- An OAuth trip runs in another window over whatever page started it, so
+        the wait belongs to the shell too: the page underneath stays subscribed and
+        alive, and no project mounts anything (HIL-633). -->
+        <hilos-oauth-wait-modal />
+      </div>
+    }
   `,
 })
 export class HilosLayout {
@@ -208,6 +221,17 @@ export class HilosLayout {
   )
   protected readonly underMaintenance = computed(
     () => this.protectedMode().active,
+  )
+  // Before any of that can be read there is a frame where nothing has been
+  // announced yet, and drawing the ordinary shell in it is what makes a reload
+  // into a frozen node flash (HIL-613). On a browser that has met maintenance
+  // here the core holds that frame back until the welcome lands, and the shell
+  // draws nothing at all in the meantime — not a spinner, not a placeholder: the
+  // wait is measured in the time one frame takes, and anything drawn in it is a
+  // second flash replacing the first.
+  protected readonly firstFrameHeld = signal(false)
+  protected readonly bootState = computed(() =>
+    this.firstFrameHeld() ? 'held' : 'ready',
   )
   protected readonly connSpanClass = computed(
     () =>
@@ -260,6 +284,19 @@ export class HilosLayout {
       onCleanup(
         connection.on('protectedMode', (next) => {
           this.protectedMode.set(next)
+        }),
+      )
+    })
+
+    // And the same for the boot hold, which the core only ever reports going
+    // down: the value it starts on is read off the connection here, before this
+    // component's template is first checked.
+    effect((onCleanup) => {
+      const connection = this.connection()
+      this.firstFrameHeld.set(connection.firstFrameHeld)
+      onCleanup(
+        connection.on('firstFrameHold', (next) => {
+          this.firstFrameHeld.set(next)
         }),
       )
     })

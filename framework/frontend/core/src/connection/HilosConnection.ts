@@ -51,6 +51,10 @@ import {
   type ReconnectOptions,
 } from './backoff.js'
 import {
+  readProtectedModeHint,
+  writeProtectedModeHint,
+} from './maintenanceHint.js'
+import {
   readStoredProtectedModePass,
   writeStoredProtectedModePass,
 } from './protectedModePass.js'
@@ -130,6 +134,14 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
    */
   protectedMode: ProtectedModeStatus
   /**
+   * The first frame is no longer held back: whatever the shell draws now, it
+   * draws with the server's answer in hand (or with the fail-open verdict of a
+   * dropped socket or the deadline). Only ever emitted `false` — the hold, when
+   * there is one, is already up before anyone can subscribe, and is read off
+   * {@link HilosConnection.firstFrameHeld}.
+   */
+  firstFrameHold: boolean
+  /**
    * The session token was rotated by a login on THIS connection, and the browser
    * has to trade the carried ticket for its new cookie (HIL-582). The consumer
    * writes the auxiliary cookie named here; the connection then reconnects by
@@ -182,6 +194,16 @@ const DEFAULT_KEEPALIVE_INTERVAL_MS = 40000
 const ROTATION_REPLY_GRACE_MS = 10000
 
 /**
+ * How long the first frame waits for the welcome that decides what to draw.
+ *
+ * A backstop, not a budget: the hold is normally released by the welcome itself,
+ * which on a reachable node arrives in a fraction of this. It is what makes a
+ * hint that can only be set — never expired, and unsettable by the server —
+ * safe to act on: the worst a stale one can cost is this wait.
+ */
+const FIRST_FRAME_HOLD_TIMEOUT_MS = 1500
+
+/**
  * One Hilos WebSocket connection.
  *
  * Owns the socket lifecycle: an explicit `connect()`, automatic reconnect with
@@ -223,6 +245,18 @@ export class HilosConnection {
   private heldRotationTimer: ReturnType<typeof setTimeout> | null = null
   private protectedModeStatus: ProtectedModeStatus = PROTECTED_MODE_INACTIVE
   /**
+   * Whether the shell is still holding its first frame back, waiting to be told
+   * what to draw.
+   *
+   * Starts from the browser's own hint rather than from any server state,
+   * because there is no server state yet — that is the whole defect: the welcome
+   * frame lands after the shell has painted. A browser with no hint holds
+   * nothing and pays nothing.
+   */
+  private firstFrameHeldFlag: boolean = readProtectedModeHint()
+  /** The backstop that lifts the hold when no frame comes to lift it. */
+  private firstFrameHoldTimer: ReturnType<typeof setTimeout> | null = null
+  /**
    * The verifier's pass presented on this browser tab, or undefined when none is.
    *
    * Mirrored in `sessionStorage` so a reload or a socket blip does not throw the
@@ -261,6 +295,19 @@ export class HilosConnection {
    */
   get protectedMode(): ProtectedModeStatus {
     return this.protectedModeStatus
+  }
+
+  /**
+   * Whether the shell should still draw nothing.
+   *
+   * True only on a browser that has met maintenance on this node before, and
+   * only until the first of three things happens: the welcome frame arrives, the
+   * socket fails, or {@link FIRST_FRAME_HOLD_TIMEOUT_MS} passes. It says nothing
+   * about whether the node is frozen — that is {@link protectedMode}, and it is
+   * only worth reading once this is false.
+   */
+  get firstFrameHeld(): boolean {
+    return this.firstFrameHeldFlag
   }
 
   /**
@@ -305,6 +352,7 @@ export class HilosConnection {
       return
     }
     this.reconnectAttempt = 0
+    this.armFirstFrameHold()
     this.setState('connecting')
     this.openSocket()
   }
@@ -581,7 +629,12 @@ export class HilosConnection {
     // A reconnect lands here: the welcome is how a connection that came back
     // learns the freeze it slept through, or that it is over.
     this.syncProtectedMode(signal.protectedMode)
+    this.rememberMaintenance(signal.protectedMode)
     this.emitter.emit('handshake', signal)
+    // Last, so that a shell woken by this release reads a connection that has
+    // already taken the welcome in: the freeze it is about to draw is the one
+    // stored two lines above, not the one from before the frame.
+    this.releaseFirstFrame()
   }
 
   /**
@@ -687,6 +740,7 @@ export class HilosConnection {
    */
   private handleProtectedMode(signal: ProtectedModeSignal): void {
     this.keepPassWhileTheWindowIsOpen(signal.state)
+    this.rememberMaintenance(signal.state)
     this.protectedModeStatus = signal.state
     this.emitter.emit('protectedMode', signal.state)
   }
@@ -815,5 +869,64 @@ export class HilosConnection {
     }
     this.currentState = state
     this.emitter.emit('state', state)
+    // Nothing is going to answer on this socket, so the hold would become a blank
+    // screen with no end to it. Fail open: draw the ordinary shell, which is
+    // exactly what an unreachable node showed before any of this existed. Last,
+    // for the same reason as on the welcome — the shell it wakes reads a
+    // connection that has already moved.
+    if (state === 'reconnecting' || state === 'disconnected') {
+      this.releaseFirstFrame()
+    }
+  }
+
+  /**
+   * Start the backstop that ends the hold when no frame does.
+   *
+   * Armed only where there is a hold to end: a browser with no hint is not
+   * waiting for anything, and giving it a timer would mean every ordinary load
+   * pays for a defect it never had.
+   */
+  private armFirstFrameHold(): void {
+    if (!this.firstFrameHeldFlag || this.firstFrameHoldTimer !== null) {
+      return
+    }
+    this.firstFrameHoldTimer = setTimeout(() => {
+      this.releaseFirstFrame()
+    }, FIRST_FRAME_HOLD_TIMEOUT_MS)
+  }
+
+  /**
+   * Let the shell draw, once and for good.
+   *
+   * Idempotent because all three of its callers race by design — the welcome, a
+   * dropped socket and the deadline are alternatives, not a sequence — and
+   * whichever gets there first is the one whose verdict the shell already drew.
+   */
+  private releaseFirstFrame(): void {
+    if (this.firstFrameHoldTimer !== null) {
+      clearTimeout(this.firstFrameHoldTimer)
+      this.firstFrameHoldTimer = null
+    }
+    if (!this.firstFrameHeldFlag) {
+      return
+    }
+    this.firstFrameHeldFlag = false
+    this.emitter.emit('firstFrameHold', false)
+  }
+
+  /**
+   * Write down what this frame said about maintenance, for the next load to act
+   * on.
+   *
+   * `acceptsPass` counts as maintenance and not only `active`, because an
+   * admitted verifier is told `active: false` — the freeze is off for this
+   * connection alone. Judged by `active` he would clear the hint on arrival and
+   * then flash the shell on every reload he makes inside the window, which is
+   * the one window where reloads are frequent.
+   *
+   * @param status The state the frame announced.
+   */
+  private rememberMaintenance(status: ProtectedModeStatus): void {
+    writeProtectedModeHint(status.active || status.acceptsPass)
   }
 }

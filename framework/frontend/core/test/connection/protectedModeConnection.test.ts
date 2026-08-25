@@ -4,6 +4,7 @@ import {
   HilosConnection,
   type WebSocketLike,
 } from '../../src/connection/HilosConnection.js'
+import { PROTECTED_MODE_HINT_STORAGE_KEY } from '../../src/connection/maintenanceHint.js'
 import { type ProtectedModeStatus } from '../../src/protocol/protectedMode.js'
 
 /** Scripted WebSocket stand-in; the test drives open/message/close explicitly. */
@@ -101,12 +102,10 @@ function openConnection() {
   return { connection, changes, socket: MockWebSocket.last }
 }
 
-beforeEach(() => {
-  vi.useFakeTimers()
-  // The core runs where there is no browser at all, so the store is optional by
-  // design; the pass cases are about what happens when there IS one.
+/** A store that answers like the browser's, backed by one map per test. */
+function installStore(name: 'localStorage' | 'sessionStorage'): void {
   const entries = new Map<string, string>()
-  Object.defineProperty(globalThis, 'sessionStorage', {
+  Object.defineProperty(globalThis, name, {
     configurable: true,
     value: {
       getItem: (key: string) => entries.get(key) ?? null,
@@ -114,11 +113,21 @@ beforeEach(() => {
       removeItem: (key: string) => void entries.delete(key),
     },
   })
+}
+
+beforeEach(() => {
+  vi.useFakeTimers()
+  // The core runs where there is no browser at all, so the stores are optional by
+  // design; these cases are about what happens when there ARE some — the pass in
+  // sessionStorage, the maintenance hint in localStorage.
+  installStore('sessionStorage')
+  installStore('localStorage')
 })
 
 afterEach(() => {
   vi.useRealTimers()
   Reflect.deleteProperty(globalThis, 'sessionStorage')
+  Reflect.deleteProperty(globalThis, 'localStorage')
 })
 
 describe('the connection holds the freeze', () => {
@@ -451,5 +460,152 @@ describe('a verifier presents a pass', () => {
     vi.runOnlyPendingTimers()
 
     expect(MockWebSocket.last.url).toBe('ws://test/ws')
+  })
+})
+
+describe('the first frame waits for the answer it is about to draw', () => {
+  /** Open a connection on a browser that remembers maintenance on this node. */
+  function openHinted() {
+    globalThis.localStorage.setItem(PROTECTED_MODE_HINT_STORAGE_KEY, '1')
+    MockWebSocket.instances = []
+    const connection = new HilosConnection({
+      url: 'ws://test/ws',
+      webSocketFactory: (url) => new MockWebSocket(url),
+      random: () => 1,
+    })
+    const releases: boolean[] = []
+    connection.on('firstFrameHold', (held) => releases.push(held))
+    connection.connect()
+    MockWebSocket.last.emit('open')
+
+    return { connection, releases, socket: MockWebSocket.last }
+  }
+
+  it('holds nothing on a browser that has never met maintenance here', () => {
+    // The ordinary load, and it must stay free: no hint, no hold, no timer.
+    const { connection } = openConnection()
+
+    expect(connection.firstFrameHeld).toBe(false)
+    vi.advanceTimersByTime(5000)
+    expect(connection.firstFrameHeld).toBe(false)
+  })
+
+  it('holds the first frame on a browser that has', () => {
+    const { connection } = openHinted()
+
+    expect(connection.firstFrameHeld).toBe(true)
+  })
+
+  it('lets go on the welcome, with the freeze already readable', () => {
+    const { connection, socket, releases } = openHinted()
+
+    socket.emit('message', {
+      data: welcome({
+        active: true,
+        operation: 'restore',
+        title: 'Restoring a backup',
+        message: 'Back shortly.',
+      }),
+    })
+
+    expect(connection.firstFrameHeld).toBe(false)
+    expect(releases).toEqual([false])
+    expect(connection.protectedMode.active).toBe(true)
+  })
+
+  it('lets go on a welcome that reports no freeze at all', () => {
+    // The common case of a stale hint: maintenance ended while no tab was open.
+    // What it costs is this one welcome, not a maintenance screen.
+    const { connection, socket } = openHinted()
+
+    socket.emit('message', {
+      data: welcome({
+        active: false,
+        operation: null,
+        title: null,
+        message: null,
+      }),
+    })
+
+    expect(connection.firstFrameHeld).toBe(false)
+    expect(connection.protectedMode.active).toBe(false)
+  })
+
+  it('lets go when the socket drops before any frame arrives', () => {
+    const { connection, socket } = openHinted()
+
+    socket.emit('close')
+
+    expect(connection.firstFrameHeld).toBe(false)
+  })
+
+  it('lets go on the deadline when nothing answers at all', () => {
+    const { connection, releases } = openHinted()
+
+    vi.advanceTimersByTime(1500)
+
+    expect(connection.firstFrameHeld).toBe(false)
+    expect(releases).toEqual([false])
+  })
+
+  it('lets go once, whichever of the three gets there first', () => {
+    const { socket, releases } = openHinted()
+
+    socket.emit('message', {
+      data: welcome({
+        active: false,
+        operation: null,
+        title: null,
+        message: null,
+      }),
+    })
+    socket.emit('close')
+    vi.advanceTimersByTime(5000)
+
+    expect(releases).toEqual([false])
+  })
+
+  it('writes the hint down from the frame that announced the freeze', () => {
+    const { socket } = openConnection()
+
+    socket.emit('message', { data: FREEZE })
+
+    expect(
+      globalThis.localStorage.getItem(PROTECTED_MODE_HINT_STORAGE_KEY),
+    ).not.toBeNull()
+  })
+
+  it('takes the hint back off when a frame says the node is fine', () => {
+    const { socket } = openHinted()
+
+    socket.emit('message', { data: LIFT })
+
+    expect(
+      globalThis.localStorage.getItem(PROTECTED_MODE_HINT_STORAGE_KEY),
+    ).toBeNull()
+  })
+
+  it('keeps the hint for an admitted verifier, who is told the freeze is off', () => {
+    // His `active: false` is about this connection alone; judged by it he would
+    // clear the hint and then flash the shell on every reload he makes inside
+    // the window — the one window where reloads are frequent.
+    const { connection, socket } = openConnection()
+    socket.emit('message', { data: VERIFYING })
+    connection.presentProtectedModePass('the-key')
+    const admitted = MockWebSocket.last
+    admitted.emit('open')
+    admitted.emit('message', {
+      data: welcome({
+        active: false,
+        operation: 'restore',
+        title: 'Restoring a backup',
+        message: 'Back shortly.',
+        acceptsPass: true,
+      }),
+    })
+
+    expect(
+      globalThis.localStorage.getItem(PROTECTED_MODE_HINT_STORAGE_KEY),
+    ).not.toBeNull()
   })
 })

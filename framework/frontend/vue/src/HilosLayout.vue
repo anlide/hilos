@@ -15,9 +15,13 @@ that leaves the socket alive — so the shell alone moves between the project ho
 the admin section, and the public pages. While the connection reports protected
 mode the shell becomes the maintenance surface (HilosMaintenance) and keeps only
 the connection indicator — every other region of the shell links to a page the
-freeze has shut. Styling is Bootstrap classes only and the shell carries no CSS
-of its own (styling-rules.md); the status and admin icons are Bootstrap Icons
-(`bi-*`), shipped with the view layer (src/index.ts) like Bootstrap. -->
+freeze has shut. On the very first frame there is nothing to report yet, and on a
+browser that has met maintenance here the core holds that frame back (HIL-613):
+the shell then renders only the hidden hilos-boot-state marker, so a reload into a
+frozen node never flashes the ordinary layout. Styling is Bootstrap classes only
+and the shell carries no CSS of its own (styling-rules.md); the status and admin
+icons are Bootstrap Icons (`bi-*`), shipped with the view layer (src/index.ts)
+like Bootstrap. -->
 <script setup lang="ts">
 import type { ConnectionState, HilosConnection } from '@hilos/core'
 import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
@@ -29,6 +33,7 @@ import HilosToastHost from './HilosToastHost.vue'
 import HilosOAuthWaitModal from './auth/HilosOAuthWaitModal.vue'
 import { hilosRouterKey } from './hilosRouterKey.js'
 import { useConnectionState } from './useConnectionState.js'
+import { useFirstFrameHold } from './useFirstFrameHold.js'
 import { useProtectedMode } from './useProtectedMode.js'
 import { useSignal } from './useSignal.js'
 
@@ -53,6 +58,18 @@ const connectionState = useConnectionState(props.connection)
 // store, so it outlives routing and subscription lifecycles.
 const protectedMode = useProtectedMode(props.connection)
 const underMaintenance = computed(() => protectedMode.value.active)
+
+// Before any of that can be read there is a frame where nothing has been
+// announced yet, and drawing the ordinary shell in it is what makes a reload
+// into a frozen node flash (HIL-613). On a browser that has met maintenance
+// here the core holds that frame back until the welcome lands, and the shell
+// draws nothing at all in the meantime — not a spinner, not a placeholder: the
+// wait is measured in the time one frame takes, and anything drawn in it is a
+// second flash replacing the first.
+const firstFrameHeld = useFirstFrameHold(props.connection)
+// The one place the two boot outcomes are named, on the marker a test waits for
+// rather than polling for chrome that is absent by design while held.
+const bootState = computed(() => (firstFrameHeld.value ? 'held' : 'ready'))
 
 // Mirror the navigator's current page title: set it as the document title so the
 // browser tab tracks the no-refresh navigation, and render it in the live region
@@ -103,7 +120,12 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
 </script>
 
 <template>
-  <div class="d-flex flex-column vh-100 overflow-hidden" data-id="app-root">
+  <div data-id="hilos-boot-state" :data-state="bootState" hidden />
+  <div
+    v-if="!firstFrameHeld"
+    class="d-flex flex-column vh-100 overflow-hidden"
+    data-id="app-root"
+  >
     <a
       href="#hilos-main-content"
       class="visually-hidden-focusable position-absolute top-0 start-0 m-2 btn btn-primary btn-sm z-3"
