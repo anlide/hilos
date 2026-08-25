@@ -197,16 +197,30 @@ final class UserVerification extends Object_
     /**
      * Marks this challenge consumed (single-use), stamping the consume time.
      *
-     * Single-use primitive: a consumed challenge is excluded from
-     * {@see UserVerifications::findActive()}, so it can never be verified or
-     * re-issued against again. A no-op for an unpersisted challenge.
+     * Single-use primitive, and the answer says who made it so: the write itself
+     * carries `consumed_at IS NULL`, so of two workers that entered
+     * {@see UserVerifications::findActive()} together exactly one changes a row and
+     * gets true. Before HIL-679 the UPDATE was unconditional and single-use rested
+     * on findActive() no longer matching the row AFTERWARDS, which is a rule the
+     * second worker had already passed. False therefore means "someone else spent
+     * it, or there was nothing to spend" — the same fact a caller gets from an
+     * absent challenge — and never that the write failed; a failing write throws.
      *
-     * @throws DatabaseException When the consume update query fails
+     * The entity is stamped either way, loser included: the row is spent, and the
+     * object has to stop reading as active for the rest of the process, because the
+     * collection caches its objects and hands this same instance back to the next
+     * {@see UserVerifications::findActive()}. The winner's exact stamp is not worth
+     * a second SELECT — a race fits inside the second this column stores.
+     *
+     * An unpersisted challenge answers false: there is no row, so nothing was spent.
+     *
+     * @return bool True when this call spent the challenge, false when it arrived late
+     * @throws DatabaseException When the consume update query fails or the row count is unreadable
      */
-    public function consume(): void
+    public function consume(): bool
     {
         if ($this->entity->id === null) {
-            return;
+            return false;
         }
 
         $now = TimeHelper::getSqlDateTime();
@@ -216,11 +230,15 @@ final class UserVerification extends Object_
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
             'UPDATE `' . EntityUserVerification::_table . '` SET `' . EntityUserVerification::consumed_at
-                . '` = ? WHERE `' . EntityUserVerification::id . '` = ?',
+                . '` = ? WHERE `' . EntityUserVerification::id . '` = ?'
+                . ' AND `' . EntityUserVerification::consumed_at . '` IS NULL',
             $params,
         );
+        $spent = Database::affectedRows() === 1;
 
         $this->entity->consumed_at = $now;
+
+        return $spent;
     }
 
     /**

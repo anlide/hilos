@@ -59,6 +59,9 @@ final class VerificationConsumeLogIntegrationTest extends FrameworkIntegrationTe
 
     private ?SignalRouter $previousSignalRouter = null;
 
+    /** A second context standing in for a parallel worker, with its own object cache */
+    private ?ConsumeLogTestDbContext $rival = null;
+
     /** Temporary main log file the assertions read the written lines back from */
     private string $logFile = '';
 
@@ -78,6 +81,8 @@ final class VerificationConsumeLogIntegrationTest extends FrameworkIntegrationTe
         $db = new ConsumeLogTestDbContext();
         $db->configure();
         Hilos::$db = $db;
+        $this->rival = new ConsumeLogTestDbContext();
+        $this->rival->configure();
         Hilos::$sr = new SignalRouter();
 
         putenv(EnvConstants::HILOS_VERIFICATION_MAX_ATTEMPTS->name . '=' . self::MAX_ATTEMPTS);
@@ -101,6 +106,7 @@ final class VerificationConsumeLogIntegrationTest extends FrameworkIntegrationTe
             putenv($knob);
         }
 
+        $this->rival = null;
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$db = $this->previousDb;
 
@@ -188,6 +194,42 @@ final class VerificationConsumeLogIntegrationTest extends FrameworkIntegrationTe
         self::assertFalse($service->verifyCode(VerificationType::MAGIC_LINK, $email, self::TOKEN));
 
         self::assertStringContainsString('reason=' . VerificationRejectReason::CONSUMED, $this->log());
+    }
+
+    /**
+     * The refusal that has nothing to do with the person who submitted: the code was
+     * right, and a parallel worker had spent the challenge a moment earlier (HIL-679).
+     *
+     * It is spelled apart from `consumed` on purpose. A second click on a stale link
+     * and a lost race look the same on the row afterwards, but they mean opposite
+     * things to whoever reads the log: one is a person doing an ordinary thing, the
+     * other is the front end submitting twice, and folding them together would have
+     * made the fix silent.
+     *
+     * @throws HilosException When the challenge insert or a verification query fails
+     */
+    public function testACodeSpentByAParallelWorkerIsWrittenAsALostRace(): void
+    {
+        $email = $this->uniqueEmail();
+        $this->seedLink($email);
+        $service = new VerificationService();
+        $mine = Hilos::$db;
+
+        // Both workers hold a live view of the row before either of them writes.
+        $this->verifications()->findActive(VerificationType::MAGIC_LINK, $email, self::MAX_ATTEMPTS);
+        Hilos::$db = $this->rival;
+        self::assertTrue($service->consumeActive(VerificationType::MAGIC_LINK, $email));
+
+        Hilos::$db = $mine;
+        self::assertFalse($service->verifyCode(VerificationType::MAGIC_LINK, $email, self::TOKEN));
+
+        $written = $this->log();
+        self::assertStringContainsString('reason=' . VerificationRejectReason::RACE_LOST, $written);
+        self::assertStringNotContainsString(
+            'verification consume accepted:',
+            $written,
+            'A consume that did not happen must not be written down as one',
+        );
     }
 
     /**

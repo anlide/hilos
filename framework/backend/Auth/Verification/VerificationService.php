@@ -287,7 +287,8 @@ class VerificationService
      * Loads the single active challenge, records the attempt, and compares the
      * code in constant time. A wrong code that reaches the attempt ceiling voids
      * the challenge; a correct code consumes it (single-use). Every failure —
-     * no active challenge, wrong code, exhausted attempts — returns null with no
+     * no active challenge, wrong code, exhausted attempts, a code that matched but
+     * was spent by a parallel worker first (HIL-679) — returns null with no
      * distinguishing signal.
      *
      * @param string $type Verification type (see VerificationType)
@@ -319,7 +320,9 @@ class VerificationService
             return null;
         }
 
-        $challenge->consume();
+        if (!$challenge->consume()) {
+            return null;
+        }
 
         return $challenge->userId;
     }
@@ -433,9 +436,14 @@ class VerificationService
      * reset, or the code died waiting), and false is that fact rather than a
      * failure to work.
      *
+     * Two sessions that read the same live challenge get that fact from the burn
+     * itself rather than from the lookup (HIL-679): the loser is told false having
+     * seen a challenge, which is the same "too late" as having seen none, and the
+     * caller above it takes the same branch either way.
+     *
      * @param string $type Verification type (see VerificationType)
      * @param string $identifier Normalized identifier (lowercased email)
-     * @return bool True when a live challenge existed and was spent, false when none was left
+     * @return bool True when this call spent a live challenge, false when none was left to spend
      * @throws DatabaseException When a verification query fails
      * @throws LogicException When the verifications object collection is unavailable
      * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
@@ -448,9 +456,7 @@ class VerificationService
             return false;
         }
 
-        $challenge->consume();
-
-        return true;
+        return $challenge->consume();
     }
 
     /**
@@ -464,6 +470,11 @@ class VerificationService
      *
      * Both rules count the ISSUE, not the delivery, so a challenge the target already
      * threw away and a transport that failed afterwards cannot buy another send.
+     *
+     * Neither rule is atomic: the count is read here and the row is written by the
+     * issue path in a separate statement, so a burst on one identifier passes the cap
+     * (docs/agents/architecture/verification-codes.md, which also says why it is left
+     * that way and what the answer would be).
      *
      * @param ObjectUserVerifications $collection Verifications persistence primitives
      * @param string $type Verification type (see VerificationType)
@@ -513,6 +524,12 @@ class VerificationService
      * flow to be added. The silence toward the PERSON is unchanged — none of this
      * reaches the wire.
      *
+     * This is also the only place a lost race is written down
+     * ({@see VerificationRejectReason::RACE_LOST}, HIL-679): a matching code that
+     * another worker spent first is refused like any other, but it is the one
+     * refusal that says nothing about the submitter, so an operator seeing them
+     * accumulate should look at the front end submitting twice.
+     *
      * @param string $type Verification type (see VerificationType)
      * @param string $identifier Normalized identifier
      * @param string $code Submitted plaintext code
@@ -560,7 +577,19 @@ class VerificationService
             return null;
         }
 
-        $challenge->consume();
+        if (!$challenge->consume()) {
+            $this->logRejected(
+                $type,
+                $identifier,
+                VerificationRejectReason::RACE_LOST,
+                $challenge->attempts,
+                $maxAttempts,
+                $challenge->id,
+            );
+
+            return null;
+        }
+
         Logger::info(
             'verification consume accepted: type=' . $type
                 . ' identifier=' . IdentifierMask::mask($identifier)
