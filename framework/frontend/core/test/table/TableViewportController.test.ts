@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { type TableViewportDescriptor } from '../../src/connection/HilosConnection.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
-import { TableViewportController } from '../../src/table/TableViewportController.js'
+import {
+  type TableSort,
+  TableViewportController,
+} from '../../src/table/TableViewportController.js'
 
-function makeController(pageSize = 10) {
+function makeController(pageSize = 10, initialSort?: TableSort) {
   const sent: TableViewportDescriptor[] = []
   const controller = new TableViewportController<TableRow>({
     resolve: (row) => row,
     sendViewport: (descriptor) => sent.push(descriptor),
     pageSize,
+    initialSort,
   })
 
   return { controller, sent }
@@ -99,6 +103,81 @@ describe('TableViewportController', () => {
     controller.setSort('key')
     expect(sent.at(-1)).toMatchObject({
       sort: { field: 'key', direction: 'desc' },
+    })
+  })
+
+  it('setSort cycles ascending, descending, then back to the table initial sort', () => {
+    const { controller, sent } = makeController(10, {
+      field: 'id',
+      direction: 'asc',
+    })
+    controller.setSort('name')
+    expect(sent.at(-1)).toMatchObject({
+      sort: { field: 'name', direction: 'asc' },
+    })
+
+    controller.setSort('name')
+    expect(sent.at(-1)).toMatchObject({
+      sort: { field: 'name', direction: 'desc' },
+    })
+
+    controller.setSort('name')
+    expect(sent.at(-1)).toMatchObject({
+      sort: { field: 'id', direction: 'asc' },
+    })
+  })
+
+  it('setSort clears the sort when the table has no initial sort', () => {
+    const { controller, sent } = makeController()
+    controller.setSort('name')
+    controller.setSort('name')
+    controller.setSort('name')
+
+    expect(sent.at(-1)).toEqual({
+      filter: {},
+      sort: null,
+      offset: 0,
+      limit: 10,
+    })
+  })
+
+  it('setSort never repeats the shown state on the initially sorted column', () => {
+    const { controller, sent } = makeController(10, {
+      field: 'created',
+      direction: 'desc',
+    })
+    controller.start()
+    controller.setSort('created')
+    expect(sent.at(-1)).toMatchObject({
+      sort: { field: 'created', direction: 'asc' },
+    })
+
+    controller.setSort('created')
+    expect(sent.at(-1)).toMatchObject({
+      sort: { field: 'created', direction: 'desc' },
+    })
+
+    const sorts = sent.map((descriptor) => JSON.stringify(descriptor.sort))
+    expect(
+      sorts.filter((sort, index) => index > 0 && sort === sorts[index - 1]),
+    ).toEqual([])
+  })
+
+  it('resetSort returns to the initial sort and the first page', () => {
+    const { controller, sent } = makeController(10, {
+      field: 'id',
+      direction: 'asc',
+    })
+    controller.ingestWindow([], 50) // 5 pages of 10
+    controller.setSort('name')
+    controller.setPage(2)
+    controller.resetSort()
+
+    expect(sent.at(-1)).toEqual({
+      filter: {},
+      sort: { field: 'id', direction: 'asc' },
+      offset: 0,
+      limit: 10,
     })
   })
 

@@ -36,6 +36,22 @@ export interface TableSort {
 const SEARCH_FILTER_KEY = 'search'
 
 /**
+ * Whether two sort states are the same state of the table — an absent sort (a
+ * table opened without an initial sort) is a state of its own, equal only to
+ * another absent sort.
+ *
+ * @param one The state to compare.
+ * @param other The state to compare it with.
+ * @returns True when both name the same field and direction, or both are absent.
+ */
+function isSameSort(
+  one: TableSort | undefined,
+  other: TableSort | undefined,
+): boolean {
+  return one?.field === other?.field && one?.direction === other?.direction
+}
+
+/**
  * One live pending row change scoped to the connection's window, normalized from
  * a `table_viewport_delta` signal (the row already reduced to references):
  *
@@ -261,23 +277,49 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
-   * Sort by a field — first click ascending, clicking the active field again
-   * flips the direction — return to the first page, then request the new window.
+   * Sort by a field — a cycle of three states on the clicked field: ascending,
+   * descending, then the sort the table opened with (no initial sort means the
+   * backend's own order). Which state comes next is read from the state on
+   * display, not from a click count: a state already on display is skipped, so
+   * the column the table opened sorted by has no dead click, and clicking any
+   * other column starts its cycle at ascending. Return to the first page, then
+   * request the new window.
    *
    * @param field The field key to sort by.
    */
   setSort(field: string): void {
     const current = this.sortSignal.get()
-    const direction: SortDirection =
-      current?.field === field && current.direction === 'asc' ? 'desc' : 'asc'
-    this.sortSignal.set({ field, direction })
+    const cycle: readonly (TableSort | undefined)[] = [
+      { field, direction: 'asc' },
+      { field, direction: 'desc' },
+      this.options.initialSort,
+    ]
+    const shown = cycle.findIndex((state) => isSameSort(state, current))
+    const next = cycle.findIndex(
+      (state, position) => position > shown && !isSameSort(state, current),
+    )
+    const state = next < 0 ? cycle[0] : cycle[next]
+    if (isSameSort(state, this.options.initialSort)) {
+      // The cycle came home, and coming home is one operation however it was
+      // asked for — through the last click of the cycle here, or through the
+      // reset a page offers on its own.
+      this.resetSort()
+
+      return
+    }
+    this.sortSignal.set(state)
     this.pageSignal.set(0)
     this.changeWindow()
   }
 
-  /** Clear the active sort, return to the first page, then request the new window. */
-  clearSort(): void {
-    this.sortSignal.set(undefined)
+  /**
+   * Return to the sort the table opened with — for a table without an initial
+   * sort that is no sort at all, the backend's own order — return to the first
+   * page, then request the new window. The last click of a column's cycle
+   * arrives here; a page is free to call it from a reset control of its own.
+   */
+  resetSort(): void {
+    this.sortSignal.set(this.options.initialSort)
     this.pageSignal.set(0)
     this.changeWindow()
   }

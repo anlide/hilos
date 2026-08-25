@@ -79,6 +79,41 @@ test('paginates the server window', async ({ page }) => {
   await expect(page.getByTestId('hilos-table-page')).toContainText('1 / 4')
 })
 
+test('a third click on a sorted header returns the table to its initial order', async ({
+  page,
+}) => {
+  await signUpAdmin(page)
+  await openSettings(page)
+
+  // The catalog opens sorted by Key ascending: that is the order the third
+  // click has to hand back.
+  const rows = page.locator('[data-id^="hilos-table-row-"]')
+  const order = (): Promise<(string | null)[]> =>
+    rows.evaluateAll((found) => found.map((row) => row.getAttribute('data-id')))
+  await expect(rows.first()).toBeVisible()
+  const initialOrder = await order()
+  const keyHeader = page.locator('th:has([data-id="hilos-table-sort-key"])')
+  const valueHeader = page.locator('th:has([data-id="hilos-table-sort-value"])')
+  const sortByValue = page.getByTestId('hilos-table-sort-value')
+
+  // aria-sort follows the click without waiting for anything, so the rows
+  // themselves are what says the server window has landed: sorting by Value
+  // rearranges the page.
+  await sortByValue.click()
+  await expect(valueHeader).toHaveAttribute('aria-sort', 'ascending')
+  await expect.poll(order).not.toEqual(initialOrder)
+
+  await sortByValue.click()
+  await expect(valueHeader).toHaveAttribute('aria-sort', 'descending')
+
+  // The third click reports no sort on Value, hands Key its opening direction
+  // back, and the window arrives in the order the page opened with.
+  await sortByValue.click()
+  await expect(valueHeader).toHaveAttribute('aria-sort', 'none')
+  await expect(keyHeader).toHaveAttribute('aria-sort', 'ascending')
+  await expect.poll(order).toEqual(initialOrder)
+})
+
 test('a tab applies its own edit at once, with no pending gate', async ({
   page,
 }) => {

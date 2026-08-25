@@ -143,11 +143,20 @@ describe('HilosViewportTable', () => {
 
     const header = container.querySelector('th')
     expect(header?.getAttribute('aria-sort')).toBe('none')
-    fireEvent.click(
-      container.querySelector('[data-id="hilos-table-sort-name"]') as Element,
-    )
+    const sortName = container.querySelector(
+      '[data-id="hilos-table-sort-name"]',
+    ) as Element
+    fireEvent.click(sortName)
     expect(container.querySelector('th')?.getAttribute('aria-sort')).toBe(
       'ascending',
+    )
+    fireEvent.click(sortName)
+    expect(container.querySelector('th')?.getAttribute('aria-sort')).toBe(
+      'descending',
+    )
+    fireEvent.click(sortName)
+    expect(container.querySelector('th')?.getAttribute('aria-sort')).toBe(
+      'none',
     )
   })
 })
