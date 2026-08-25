@@ -21,6 +21,7 @@ use Hilos\Core\CLI\Commands\ClusterTestClientAttachCommand;
 use Hilos\Core\CLI\Commands\ClusterTestClientDetachCommand;
 use Hilos\Core\CLI\Commands\ClusterTestClientFanoutCommand;
 use Hilos\Core\CLI\Commands\ClusterTestClientSendCommand;
+use Hilos\Core\CLI\Commands\ClusterTestDbAnnounceCommand;
 use Hilos\Core\CLI\Commands\ClusterTestInspectCommand;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\CLI\Commands\ConnectionTestDropCommand;
@@ -109,6 +110,7 @@ class CliManager
         $this->commands[CliCommands::CLUSTER_TEST_CLIENT_DETACH] = new ClusterTestClientDetachCommand();
         $this->commands[CliCommands::CLUSTER_TEST_CLIENT_SEND] = new ClusterTestClientSendCommand();
         $this->commands[CliCommands::CLUSTER_TEST_CLIENT_FANOUT] = new ClusterTestClientFanoutCommand();
+        $this->commands[CliCommands::CLUSTER_TEST_DB_ANNOUNCE] = new ClusterTestDbAnnounceCommand();
         $this->commands[CliCommands::MIGRATION_UP] = new MigrationUpCommand();
         $this->commands[CliCommands::MIGRATION_DOWN] = new MigrationDownCommand();
         $this->commands[CliCommands::MIGRATION_STATUS] = new MigrationStatusCommand();

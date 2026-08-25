@@ -23,6 +23,7 @@ use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
 use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbReReadMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
@@ -108,6 +109,7 @@ abstract class WorkerDTO extends BaseDTO
             WorkerDbSyncDeletedMessageDTO::MESSAGE_TYPE => WorkerDbSyncDeletedMessageDTO::fromArray($data),
             WorkerDbSyncClearedMessageDTO::MESSAGE_TYPE => WorkerDbSyncClearedMessageDTO::fromArray($data),
             WorkerDbReHydrateMessageDTO::MESSAGE_TYPE => WorkerDbReHydrateMessageDTO::fromArray($data),
+            WorkerDbReReadMessageDTO::MESSAGE_TYPE => WorkerDbReReadMessageDTO::fromArray($data),
             WorkerPageAccessReassessMessageDTO::MESSAGE_TYPE => WorkerPageAccessReassessMessageDTO::fromArray($data),
             WorkerPageAccessReassessConnectionsMessageDTO::MESSAGE_TYPE
                 => WorkerPageAccessReassessConnectionsMessageDTO::fromArray($data),

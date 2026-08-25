@@ -95,6 +95,15 @@ final class ClusterContext
     /** @var ?RtSyncSink Local apply port for cross-node RT replicas, registered by the daemon at start. */
     private ?RtSyncSink $rtSyncSink = null;
 
+    /** @var ?DbSyncSink Local apply port for cross-node DB replicas, registered by the daemon at start. */
+    private ?DbSyncSink $dbSyncSink = null;
+
+    /** @var int DB replicas from other nodes this one has accepted, for the acceptance inspector */
+    private int $dbReplicas = 0;
+
+    /** @var ?string Collection the last accepted DB replica named, or null when none has arrived */
+    private ?string $lastDbReplicaCollection = null;
+
     /** @var ?ClusterClientLocation Cluster-wide index of which node each browser connection is attached to, registered by the daemon at start. */
     private ?ClusterClientLocation $clientConnections = null;
 
@@ -553,6 +562,49 @@ final class ClusterContext
     }
 
     /**
+     * Registers the local apply port for DB replicas broadcast from other nodes.
+     *
+     * The daemon registers itself here at start, on the same terms as
+     * {@see registerRtSyncSink()}: the master applies the fact to the rows it holds and fans it
+     * out to its own workers. It is a separate seam from the RT one rather than a second method
+     * on it because the two answer to different rules - an RT collection has one owner and a
+     * replica from a second one is refused, while a database row has already been written and
+     * refusing the news of it would only leave this node disagreeing with the disk.
+     *
+     * @param DbSyncSink $sink Local apply port for cross-node DB replicas
+     */
+    public function registerDbSyncSink(DbSyncSink $sink): void
+    {
+        $this->dbSyncSink = $sink;
+    }
+
+    /**
+     * Returns the local apply port for cross-node DB replicas, or null when none is set.
+     *
+     * @return ?DbSyncSink Apply port, or null
+     */
+    public function dbSyncSink(): ?DbSyncSink
+    {
+        return $this->dbSyncSink;
+    }
+
+    /**
+     * Records that a DB replica from another node was accepted here.
+     *
+     * Counted for the acceptance inspector and for nothing else: on a stand where each node has
+     * a schema of its own, whether the ROW landed is not a question the stand can ask, so what
+     * it checks is that the frame arrived and named the collection it was sent about. Whether
+     * the row lands is settled by unit tests, against a collection whose fullness is known.
+     *
+     * @param ?string $collectionKey Collection the accepted replica named, or null when it named none
+     */
+    public function noteDbReplica(?string $collectionKey): void
+    {
+        $this->dbReplicas++;
+        $this->lastDbReplicaCollection = $collectionKey;
+    }
+
+    /**
      * Installs the cluster connection index.
      *
      * The write/track side, separate from {@see registerClientLocation()} the way
@@ -774,6 +826,8 @@ final class ClusterContext
             ClusterCommandConstants::FIELD_CLIENT_INDEX => $this->clientConnections?->countsByNode() ?? [],
             ClusterCommandConstants::FIELD_CLIENT_DELIVERIES => $this->clientConnections?->deliveries() ?? 0,
             ClusterCommandConstants::FIELD_LAST_CLIENT_ACCEPT_KEY => $this->clientConnections?->lastAcceptKey(),
+            ClusterCommandConstants::FIELD_DB_REPLICAS => $this->dbReplicas,
+            ClusterCommandConstants::FIELD_LAST_DB_REPLICA_COLLECTION => $this->lastDbReplicaCollection,
         ];
     }
 

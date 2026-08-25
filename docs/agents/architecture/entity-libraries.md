@@ -259,21 +259,28 @@ agent signal:
 |---|---|---|
 | `SignalConstants::LIBRARY_ROW_CHANGED` | `'library_row_changed'` | `collection` (collection key), `id` (row key, as a string), `mutation` (`Hilos\Core\Table\Mutation\TableMutationType`) |
 
-An explicit signal, and **no cross-node database sync** — none exists and none is
-introduced. The signal is chosen because an agent signal already has a cross-node
-path: `SignalRouter::applyPlacement()` rewrites a destination that resolves to
-another node into a remote one, and `PeerServer::sendSignalToNode()` carries it.
-Delivery there is best-effort by construction — an unlinked node is dropped and
-logged — which is a property the implementing leaf inherits rather than one it
-may assume away.
+An explicit signal, and it stays explicit: the announcement to the holder is a
+statement about one library's set, not a database fact, and it is addressed to the
+one agent that owns that set. The signal is chosen because an agent signal already
+has a cross-node path: `SignalRouter::applyPlacement()` rewrites a destination that
+resolves to another node into a remote one, and `PeerServer::sendSignalToNode()`
+carries it. Delivery there is best-effort by construction — an unlinked node is
+dropped and logged — which is a property the implementing leaf inherits rather than
+one it may assume away.
 
-**That path runs from the leader only, and the approach depends on it running
-from anywhere.** `applyPlacement()` asks `ClusterPlacement::nodeFor()`, which
-reads `PlacementRegistry` — the leader-side view of where agents are placed. On a
-follower the registry holds no record, `nodeFor()` returns null, and the
-destination stays local: an owner living on a follower would announce its write
-to nobody, silently, with no dropped-frame log to show for it. This is the second
-open precondition below.
+**Cross-node database sync exists as of HIL-670**, and it is a different mechanism
+answering a different question: the four DB sync facts a worker raises after a write
+travel the mesh (`peer_db_sync`) so that every node's own in-memory copies stop being
+stale. It carries no library semantics and replaces nothing above — a holder learns
+that its SET changed from the signal, and learns that a ROW it holds changed from the
+sync. The mechanism is precondition 3 below.
+
+**Both paths run from anywhere, not only from the leader.** `applyPlacement()` asks
+`ClusterPlacement::locate()`, which answers from the placement view the leader
+publishes to every node (HIL-668) and from the agent's own declared axes (HIL-667).
+Where the answer is not known it says so rather than falling back to local delivery
+(HIL-670) — an owner on a follower announcing to nobody was exactly the silent case
+that made the fallback wrong.
 
 ## Refusals
 
@@ -296,15 +303,15 @@ mechanism.
 ## On A Single Node
 
 The whole silhouette works on a single node today and needs nothing from the
-cluster: `nodeFor()` returns null, so `applyPlacement()` leaves every destination
-local, delivery never touches the peer channel, there is no second node to hold a
-stale cache, and every cluster precondition below is invisible. A single-node
-project therefore gets one entity, one library, the read rule and the refusals
-immediately; what it does not get is a holder on a node other than its own, which
-it has no use for.
+cluster: `locate()` answers "here" for every agent, so `applyPlacement()` leaves
+every destination local, delivery never touches the peer channel, no DB fact is
+announced to anyone, there is no second node to hold a stale cache, and every
+cluster precondition below is invisible. A single-node project therefore gets one
+entity, one library, the read rule and the refusals immediately; what it does not
+get is a holder on a node other than its own, which it has no use for.
 
 This is also the honest warning attached to it: an approach validated only on one
-node has not exercised a single one of its four open preconditions.
+node has not exercised a single one of its four preconditions.
 
 ## Open Preconditions, And Who Owns Them
 
@@ -336,15 +343,40 @@ invisible until a second node exists. Three are now closed; the third is not.
    anywhere else. Of the two ways out the page named — followers learn
    placements, or the frame is relayed through the leader — the first was taken.
    The leader publishes its whole placement view (`peer_placement_view`) whenever
-   it changes and to every node that links, and `nodeFor()` answers from the
-   registry it owns or, off the leader, from that published copy. A node that has
-   not been handed one yet still answers null, which is what it did when there
-   was no copy at all.
-3. **A row cached on one node is never invalidated by a write on another.** DB
-   sync reaches this daemon's own workers and stops there; `framework/backend/Cluster`
-   has none. Until this is answered, "read the database" means *query* for
-   anything that must not be stale, and the by-key path is safe only for rows this
-   node has not read before.
+   it changes and to every node that links, and the lookup answers from the registry
+   it owns or, off the leader, from that published copy. A node that has not been
+   handed one yet knows of no placement — which HIL-670 then made a distinct answer
+   from "the agent is here", because the two had been the same null and the second
+   reading delivered the signal into a node running no such agent.
+3. **A row cached on one node was never invalidated by a write on another —
+   closed by HIL-670.** DB sync used to reach this daemon's own workers and stop
+   there, so a row this node had read by key stayed as it first read it, for the
+   life of the process; a rename made elsewhere was invisible and nothing anywhere
+   said so. The same four facts now travel the mesh as `peer_db_sync`, are applied
+   by the receiving master and handed to its own workers, and go no further — one
+   hop, as every other replica frame. No ownership is checked on arrival, which is
+   the difference from the RT twin: the write already happened in the database both
+   nodes read, so refusing the news of it would only leave this node disagreeing
+   with the disk.
+
+   **The border of the apply.** A change or a removal reaches a row the process is
+   already holding, or it reaches nothing — which is what the intra-node applicator
+   always did. A creation is the one fact with a choice in it, and a row created on
+   another node enters only a collection that claims to hold the whole set
+   (`Objects::isAllLoaded()`): that copy is what a list is drawn from, and a list
+   missing a row that exists is a list that lies, while a lazy copy is entitled not
+   to hold a row nobody asked for. Nothing is lost either way — the row is in the
+   database, and a read fetches it. Which is exactly why a library's set, declared
+   full by `preloadAll()`, is the copy that must take it.
+
+   **A missed frame.** Delivery is best-effort, so a node that could not be reached
+   simply did not get the fact. It does not work out what it missed: on every
+   completed peer handshake it stops believing its database rows altogether and
+   re-reads them — the master its own, the workers through `db_re_read`. A lazy
+   collection forgets and fetches on next access; an eager one, and one declared
+   full, reloads at once. The price is named and accepted: a burst of queries after
+   every reconnect, including a pointless one for a brand new node that missed
+   nothing.
 4. **An agent could not answer a client attached to another node — closed by
    HIL-668.** The one peer frame that carried a signal was addressed to an agent
    (`PeerServer::sendSignalToNode()`), while the reply to a browser was local, and
@@ -365,9 +397,9 @@ invisible until a second node exists. Three are now closed; the third is not.
    spinning. Holding and retrying what was in flight to a node that fell over is
    durable delivery and belongs to HIL-347.
 
-Three of the four are landed: HIL-667 for the first, HIL-668 for the second and
-the fourth. The third surfaced while this page was being written and has no leaf
-yet; it is for the owner to place.
+All four are landed: HIL-667 for the first, HIL-668 for the second and the fourth,
+HIL-670 for the third. The third surfaced while this page was being written and had
+no leaf at the time.
 
 ## What This Approach Does Not Decide
 

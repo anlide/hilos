@@ -88,4 +88,19 @@ final class ClusterCommandConstants
 
     /** @var string Inspect reply key: browser the last addressed cross-node delivery was for */
     public const string FIELD_LAST_CLIENT_ACCEPT_KEY = 'lastClientAcceptKey';
+
+    /** @var string Inspect reply key: DB replicas from other nodes this one has accepted */
+    public const string FIELD_DB_REPLICAS = 'dbReplicas';
+
+    /** @var string Inspect reply key: collection the last accepted DB replica named */
+    public const string FIELD_LAST_DB_REPLICA_COLLECTION = 'lastDbReplicaCollection';
+
+    /**
+     * @var string Column a test DB announcement puts its row id in, so the payload is not empty.
+     *
+     * A sync payload with no changed column is dropped before it is announced, so the drill has
+     * to change something. It changes the primary key of a row that does not exist, which is the
+     * one value guaranteed to land nowhere.
+     */
+    public const string FIELD_DB_ANNOUNCE_COLUMN = 'id';
 }

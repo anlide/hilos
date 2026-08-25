@@ -18,12 +18,16 @@ use Hilos\Cluster\Connections\ClusterClientLocation;
 use Hilos\Cluster\LeadershipObserver;
 use Hilos\Cluster\MembershipObserver;
 use Hilos\Cluster\NodeLifecycleState;
+use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Cluster\Peer\PeerServer;
+use Hilos\Cluster\Placement\AgentLocationKind;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementObserver;
 use Hilos\Cluster\Placement\PlacementState;
+use Hilos\Cluster\DbSyncMesh;
+use Hilos\Cluster\DbSyncSink;
 use Hilos\Cluster\RtSyncMesh;
 use Hilos\Cluster\RtSyncSink;
 use Hilos\Constants\EnvConstants;
@@ -63,6 +67,7 @@ use Hilos\Core\Router\Destination\SessionClientsDestination;
 use Hilos\Core\Router\Destination\CommandReplyDestination;
 use Hilos\Core\Router\Destination\RemoteAgentDestination;
 use Hilos\Core\Router\Destination\RemoteClientDestination;
+use Hilos\Core\Router\Destination\UnknownAgentDestination;
 use Hilos\Core\Router\Destination\RemoteFanoutDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -130,6 +135,7 @@ use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\DaemonWorkerSignalDTO;
 use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbReReadMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
@@ -177,6 +183,7 @@ abstract class DaemonManager extends BaseManager implements
     ProtectedModeAdmissionRecorder,
     ProtectedModeClientNotifier,
     RtSyncSink,
+    DbSyncSink,
     ClientSignalSink
 {
     /** @var string Error code a browser is answered with when the node serving its page cannot be reached */
@@ -187,6 +194,16 @@ abstract class DaemonManager extends BaseManager implements
 
     /** @var string How the master facade's log line names "every worker of this node" as an addressee */
     private const string MASTER_SIGNAL_WORKERS_LABEL = 'workers';
+
+    /**
+     * @var string Why a signal to an agent was refused when no node is known to host it.
+     *
+     * One reason covers every way the address can be missing - a follower with no placement view
+     * yet, a cluster mid-election with no leader to name, an agent nothing has placed. They are
+     * one outcome to the sender and a second reason code would only invite treating them apart,
+     * which nothing here can do (HIL-670).
+     */
+    private const string AGENT_NO_KNOWN_NODE_REASON = 'no known node';
 
     /** @var string Address of the loop iteration on the card of a failure contained there */
     private const string LOOP_FAILURE_ADDRESS = 'daemon loop';
@@ -493,6 +510,9 @@ abstract class DaemonManager extends BaseManager implements
         // Expose this daemon as the port an RT replica from another node is applied through: the
         // copy a receiving node holds lives in the master, and the workers are fed from here.
         Hilos::$cluster?->registerRtSyncSink($this);
+        // And the same for a DB replica (HIL-670). Two ports rather than one because the two
+        // facts answer to different rules on arrival, not because they arrive differently.
+        Hilos::$cluster?->registerDbSyncSink($this);
         // Build this node's half of the cluster connection index and expose the daemon as the
         // port its own browser connections are reached through (HIL-668). Both are the daemon's
         // because the sockets are: the diff that keeps the index true reads the WebSocket server
@@ -901,11 +921,13 @@ abstract class DaemonManager extends BaseManager implements
      * Sends a signal to one agent, wherever in the cluster it is running.
      *
      * Implements {@see MasterSignalSender}. Placement answers where the agent lives and the
-     * branch that follows is the one {@see dispatchSignals()} takes for a routed signal: a
-     * null answer (local, unplaced, or unknown) delivers over this node's worker link, a node
-     * id forwards over the peer channel. The branch matters rather than being a formality -
+     * branch that follows is the one {@see dispatchSignals()} takes for a routed signal: here
+     * delivers over this node's worker link, a named node forwards over the peer channel, and
+     * an unknown address delivers nowhere. The branch matters rather than being a formality -
      * delivering locally to an agent placed elsewhere would START a second copy of it here,
-     * which for a singleton agent is the one outcome placement exists to prevent.
+     * which for a singleton agent is the one outcome placement exists to prevent. That is also
+     * why an unknown address is refused instead of falling back to local (HIL-670): the fallback
+     * is indistinguishable from the case it is meant to serve.
      *
      * Nothing is raised out of here, whatever the delivery path decides: this runs on the
      * master loop, where an escaping exception ends run() and takes the node down. A refusal
@@ -939,7 +961,14 @@ abstract class DaemonManager extends BaseManager implements
                 Hilos::$ac?->captureSignalMeta() ?? [],
             );
 
-            $nodeId = Hilos::$cluster?->workerPlacement()?->nodeFor($agentType, $agentIndex);
+            $location = Hilos::$cluster?->workerPlacement()?->locate($agentType, $agentIndex);
+            if ($location?->kind === AgentLocationKind::Unknown) {
+                $this->reportMasterSignalDropped($signalName, $agentLabel, self::AGENT_NO_KNOWN_NODE_REASON);
+
+                return;
+            }
+
+            $nodeId = $location?->nodeId;
             if ($nodeId !== null) {
                 $this->forwardMasterSignalToNode($nodeId, $agentType, $agentIndex, $signal, $agentLabel);
 
@@ -1459,6 +1488,7 @@ abstract class DaemonManager extends BaseManager implements
      * @throws AgentException When routing a signal to its agent fails (no suitable
      *     worker, daemon creation, agent lookup, or worker-link failure)
      * @throws InvalidArgumentException When the unsubscribe of a replaced subscription cannot be named
+     * @throws EnvException When resolving a destination reads cluster configuration and it is invalid
      * @throws HilosException Whatever the project's agent-daemon factory raises reaching an agent
      */
     private function dispatchSignals(): void
@@ -1540,6 +1570,7 @@ abstract class DaemonManager extends BaseManager implements
                 $this->sendSyncToWorkers($workerServer, $signal);
                 $this->handleDaemonSignal($signal);
                 $this->broadcastRtSyncToPeers($peerServer, $signal);
+                $this->broadcastDbSyncToPeers($peerServer, $signal);
             }
 
             // The access re-decision announcement is fanned out and nothing more (HIL-644): the
@@ -1614,6 +1645,15 @@ abstract class DaemonManager extends BaseManager implements
                 if ($destination instanceof AgentDestination) {
                     $agentsDelivered[] = $destination;
                     $skipSignal = $this->sendSignalToAgentDestination($workerServer, $destination, $signal);
+                } elseif ($destination instanceof UnknownAgentDestination) {
+                    // Nobody on this node knows where that agent runs, so there is no delivery to
+                    // attempt - not even the local one, which is what used to happen here and is
+                    // the defect (HIL-670): it succeeds against workers running no such agent.
+                    // A subscription waiting on the answer is told, exactly as an unreachable
+                    // node's would be; anything else stays dropped with this line.
+                    Logger::warning("Signal dropped: {$signalType}/{$signalName}"
+                        . " -> agent {$destination->agentType} has no known node");
+                    $this->answerUnreachableSubscription($signal);
                 } elseif ($destination instanceof RemoteAgentDestination) {
                     // Forward the signal to the agent on its host node over the peer channel.
                     // Best-effort: no live link (offline node / no peer server) drops and logs,
@@ -1767,22 +1807,29 @@ abstract class DaemonManager extends BaseManager implements
      * @param WorkerServer $workerServer Worker server instance
      * @param SignalDTO $signal Signal DTO to send
      */
-    private function sendSyncToWorkers(WorkerServer $workerServer, SignalDTO $signal): void
-    {
+    private function sendSyncToWorkers(
+        WorkerServer $workerServer,
+        SignalDTO $signal,
+        ?string $originNodeId = null,
+    ): void {
         $signalName = $signal->signalName->getName();
 
         $dto = match ($signalName) {
             SignalConstants::DB_SYNC_CREATED => new WorkerDbSyncCreatedMessageDTO(
                 self::syncSignalData($signal->data, DbSyncCreatedSignalData::class),
+                $originNodeId,
             ),
             SignalConstants::DB_SYNC_UPDATED => new WorkerDbSyncUpdatedMessageDTO(
                 self::syncSignalData($signal->data, DbSyncUpdatedSignalData::class),
+                $originNodeId,
             ),
             SignalConstants::DB_SYNC_DELETED => new WorkerDbSyncDeletedMessageDTO(
                 self::syncSignalData($signal->data, DbSyncDeletedSignalData::class),
+                $originNodeId,
             ),
             SignalConstants::DB_SYNC_CLEARED => new WorkerDbSyncClearedMessageDTO(
                 self::syncSignalData($signal->data, DbSyncClearedSignalData::class),
+                $originNodeId,
             ),
             // The one sync-family frame with no collection to unwrap: the database was replaced
             // (HIL-479), and all the signal names is the agent waiting to hear that everybody
@@ -1868,6 +1915,39 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Announces a local DB sync fact to the rest of the mesh, and nothing else.
+     *
+     * Sits in the same branch as {@see broadcastRtSyncToPeers()} and filters the other half of
+     * it. There is no ownership question to ask here, which is the whole difference between the
+     * two: an RT collection has a truth source and this node may have no business speaking for
+     * it, whereas a DB row was just written to the database every node reads - the fact is not
+     * this node's opinion, it is what the disk now says.
+     *
+     * The re-hydrate fact is not among the four and does not travel: replacing the database is a
+     * restore, which has its own peer protocol and its own barrier. Off-cluster there is no peer
+     * server and nothing is announced.
+     *
+     * Protected for the reason {@see broadcastRtSyncToPeers()} is: it is how a subclass sees
+     * what this node tells the mesh.
+     *
+     * @param ?DbSyncMesh $mesh Peer server found for this dispatch pass, or null off-cluster
+     * @param SignalDTO $signal Signal being dispatched
+     */
+    protected function broadcastDbSyncToPeers(?DbSyncMesh $mesh, SignalDTO $signal): void
+    {
+        if ($mesh === null) {
+            return;
+        }
+
+        $signalType = $signal->signalType->getType();
+        if (!in_array($signalType, PeerDbSyncDTO::SIGNAL_TYPES, true)) {
+            return;
+        }
+
+        $mesh->broadcastDbSync($signalType, $signal);
+    }
+
+    /**
      * Hands every RT collection this node owns to one other node of the mesh.
      *
      * Only the WHOLE owner offers a collection, and only to the node it just linked to: everybody
@@ -1900,23 +1980,28 @@ abstract class DaemonManager extends BaseManager implements
      * Default dispatches DB/RT sync and the DB re-hydrate signal to their apply methods.
      *
      * @param SignalDTO $signal Signal DTO
+     * @param ?string $originNodeId Node the write happened on, or null when it was this one
      * @throws HilosException When a collection refuses to be re-read from the replaced database
      */
-    protected function handleDaemonSignal(SignalDTO $signal): void
+    protected function handleDaemonSignal(SignalDTO $signal, ?string $originNodeId = null): void
     {
         $signalType = $signal->signalType->getType();
         match ($signalType) {
             SignalTypeConstants::DB_SYNC_CREATED => DbSyncApplicator::applyCreated(
                 self::syncSignalData($signal->data, DbSyncCreatedSignalData::class),
+                originNodeId: $originNodeId,
             ),
             SignalTypeConstants::DB_SYNC_UPDATED => DbSyncApplicator::applyUpdated(
                 self::syncSignalData($signal->data, DbSyncUpdatedSignalData::class),
+                originNodeId: $originNodeId,
             ),
             SignalTypeConstants::DB_SYNC_DELETED => DbSyncApplicator::applyDeleted(
                 self::syncSignalData($signal->data, DbSyncDeletedSignalData::class),
+                originNodeId: $originNodeId,
             ),
             SignalTypeConstants::DB_SYNC_CLEARED => DbSyncApplicator::applyCleared(
                 self::syncSignalData($signal->data, DbSyncClearedSignalData::class),
+                originNodeId: $originNodeId,
             ),
             SignalTypeConstants::DB_REHYDRATE => $this->applyReHydrateContained(),
             SignalTypeConstants::RT_SYNC_CREATED => RtSyncApplicator::applyCreated(
@@ -2023,6 +2108,106 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         $this->handleDaemonSignal($signal);
+    }
+
+    /**
+     * Applies one DB sync fact written on another node to the rows this node holds.
+     *
+     * Implements {@see DbSyncSink}. The same two steps as {@see applyRemoteRtSync()} — feed this
+     * node's workers, then apply to the master's own copy — and the same seam check on the way
+     * in: a frame whose inner signal is not the DB sync type it declares is dropped, because the
+     * seam is reachable from the wire and applying an arbitrary sync signal by another node's
+     * word is the one thing it must not do. The name is checked beside the type because
+     * {@see sendSyncToWorkers()} builds its frame from the signal NAME, so a signal named after
+     * another sync fact would reach the workers as that fact however well its type checked out.
+     *
+     * What is deliberately absent is any ownership refusal. The row was written to the database
+     * both nodes read, so refusing the news of it would not undo the write - it would leave this
+     * node's copy disagreeing with the disk, which is the very defect being closed. The guard
+     * against two writers stands where the write happens.
+     *
+     * The origin travels with the fact all the way through, and that is what makes the border of
+     * the apply expressible: a created row is a row this node has never seen, and only a
+     * collection that claims to hold the full set has any reason to take it.
+     *
+     * The acceptance counter is bumped once the frame has passed the seam check and before
+     * anything is applied, because what it exists to report is arrival: on a stand whose nodes
+     * carry different schemas, whether the row landed is not a question that can be asked.
+     *
+     * @param string $originNodeId Id of the node the write happened on
+     * @param string $signalType DB sync signal type the frame carried
+     * @param SignalDTO $signal DB sync signal to apply and fan out locally
+     * @throws HilosException When a collection refuses the fact it is handed
+     */
+    public function applyRemoteDbSync(string $originNodeId, string $signalType, SignalDTO $signal): void
+    {
+        $carriedType = $signal->signalType->getType();
+        $carriedName = $signal->signalName->getName();
+        if (
+            $carriedType !== $signalType
+            || $carriedName !== $signalType
+            || !in_array($carriedType, PeerDbSyncDTO::SIGNAL_TYPES, true)
+        ) {
+            Logger::warning(
+                "Dropping peer DB sync from node '{$originNodeId}': declared '{$signalType}',"
+                . " carried type '{$carriedType}' name '{$carriedName}'"
+                . ' - only a matching DB sync fact is applied',
+            );
+
+            return;
+        }
+
+        $syncData = $signal->data instanceof SyncSignalDataInterface ? $signal->data : null;
+        Hilos::$cluster?->noteDbReplica($syncData?->collectionKey);
+
+        $workerServer = $this->findWorkerServer();
+        if ($workerServer !== null) {
+            $this->sendSyncToWorkers($workerServer, $signal, $originNodeId);
+        }
+
+        $this->handleDaemonSignal($signal, $originNodeId);
+    }
+
+    /**
+     * Stops believing this node's own copies of database rows, on a link being established.
+     *
+     * Implements {@see DbSyncSink}. Nothing is asked of the peer and nothing is asked about the
+     * gap: the node re-reads from the database, which is where a row comes from in the first
+     * place, so the answer is right whatever it missed while the link was down. Lazy collections
+     * simply forget and fetch on the next read; eager ones re-read at once.
+     *
+     * The whole node re-reads, not just the master. Every process of it holds its own copies and
+     * every one of them was equally deaf, so the workers are told through a frame of their own -
+     * a write into each link's buffer, which is all the master does here besides re-reading what
+     * it holds itself.
+     *
+     * No barrier, unlike a restore's re-hydrate: a barrier exists to hold a freeze until every
+     * process has re-read, and here nobody is waiting on the answer. That is also why the
+     * failure is contained rather than raised, on the same grounds as
+     * {@see applyReHydrateContained()}: this runs on the master loop, from the peer handshake
+     * handler, and an exception leaving here would end run() and take the node down the moment
+     * a peer links. A node that could not re-read keeps rows it should not trust, which is bad;
+     * a node that is dead is worse.
+     *
+     * @param string $nodeId Node this one has just linked to
+     */
+    public function reReadAfterLink(string $nodeId): void
+    {
+        Logger::info("Re-reading database-backed collections after linking to node '{$nodeId}'");
+
+        $workerServer = $this->findWorkerServer();
+        if ($workerServer !== null) {
+            $this->writeFrameToWorkers($workerServer, new WorkerDbReReadMessageDTO());
+        }
+
+        try {
+            Hilos::$db?->reHydrateDbBackedCollections();
+        } catch (HilosException $e) {
+            Logger::error(
+                "Could not re-read database-backed collections after linking to node '{$nodeId}':"
+                . " {$e->getMessage()}",
+            );
+        }
     }
 
     /**

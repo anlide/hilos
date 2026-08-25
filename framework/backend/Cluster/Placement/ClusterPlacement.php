@@ -15,9 +15,14 @@ use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Utils\Logger;
 use Throwable;
@@ -45,7 +50,7 @@ use Throwable;
  * Automatic node-choosing is HIL-182's {@see PlacementPolicy}, which this coordinator
  * delegates the "which node" question to for both {@see placeAgentOnBestNode()} and failover.
  * It also serves as the read side of {@see WorkerPlacement}: the signal router asks
- * {@see nodeFor()} where a placed agent lives so HIL-180 can forward work signals cross-node.
+ * {@see locate()} where an agent lives so HIL-180 can forward work signals cross-node.
  *
  * Crash-failover (HIL-183) hangs off the same two sides. Driven by node up/down transitions
  * ({@see noteNodeOffline()} / {@see noteNodeOnline()}) and a grace-timer {@see tick()}: the
@@ -150,24 +155,44 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
-     * Reports which node hosts an agent so the signal router can forward cross-node.
+     * Answers where an agent runs, so the signal router can forward cross-node or refuse.
      *
-     * An agent placed on another node returns that node's id; one placed on this node, or one
-     * nobody has placed, returns null so the router keeps delivering it locally. The leader
-     * answers from the placement view it owns, every other node from the copy that leader
-     * publishes to it (HIL-668); {@see hostingNode()} is where the two are reconciled. Before
-     * the first copy arrives a node answers null for everything, which is the behaviour it had
-     * when there was no copy at all.
+     * The answer is derived from the agent's own declaration ({@see AgentScope} and
+     * {@see AgentPlacement}, HIL-667) rather than guessed from whether a placement record
+     * happens to exist, because the absence of a record means something different in each cell:
+     *
+     * - {@see AgentScope::NODE} — a replica runs on every node, so it always runs here, and no
+     *   record is expected for it at all;
+     * - {@see AgentScope::CLUSTER} + {@see AgentPlacement::LEADER} — it runs wherever leadership
+     *   sits, which the placement view never carries because a leader-hosted singleton does not
+     *   start through placement. Leadership is asked directly; a cluster mid-election knows no
+     *   leader and the answer is unknown;
+     * - {@see AgentScope::CLUSTER} + {@see AgentPlacement::POLICY} — the placement view answers,
+     *   and a view with no entry for it is the honest "nobody has placed it, or nobody has told
+     *   me yet".
+     *
+     * The leader reads the view it owns, every other node the copy that leader publishes to it
+     * (HIL-668); {@see hostingNode()} is where the two are reconciled.
      *
      * @param string $agentType Agent type to look up
      * @param ?string $agentIndex Agent index, or null for a singleton agent
-     * @return ?string Hosting node id when remote, or null for local / unknown / unplaced
+     * @return AgentLocation Location of that agent as this node currently knows it
+     * @throws EnvException When the cluster-enabled flag value is invalid
      */
-    public function nodeFor(string $agentType, ?string $agentIndex): ?string
+    public function locate(string $agentType, ?string $agentIndex): AgentLocation
     {
-        $nodeId = $this->hostingNode($this->agentId($agentType, $agentIndex));
+        $registryEntry = Hilos::appClass()::AGENTS[$agentType] ?? null;
+        if (AgentRegistry::scope($registryEntry) === AgentScope::NODE) {
+            return AgentLocation::here();
+        }
 
-        return $nodeId === $this->selfNodeId ? null : $nodeId;
+        if (AgentRegistry::placement($registryEntry) === AgentPlacement::LEADER) {
+            $leaderId = Hilos::$cluster?->leadership()->leaderId();
+
+            return $this->locationOfNode($leaderId);
+        }
+
+        return $this->locationOfNode($this->hostingNode($this->agentId($agentType, $agentIndex)));
     }
 
     /**
@@ -411,8 +436,8 @@ final class ClusterPlacement implements WorkerPlacement
         foreach ($frame->agents as $nodeId => $entries) {
             // Back to a string, because on the wire a node id spends a leg as an array KEY and
             // PHP has no string key that reads as a decimal integer: a node named "2" arrives
-            // as int 2. What comes out of here is answered to {@see nodeFor()} callers, whose
-            // contract is a node id or null.
+            // as int 2. What comes out of here is answered to {@see locate()} callers, whose
+            // contract names a node id or none.
             $nodeId = (string)$nodeId;
             foreach ($entries as $entry) {
                 $view[$this->agentId($entry->agentType, $entry->agentIndex)] = $nodeId;
@@ -671,6 +696,25 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         return $this->placementView[$agentId] ?? null;
+    }
+
+    /**
+     * Turns a hosting node id — or the absence of one — into the location its holder means.
+     *
+     * The one place the self-node comparison lives, so that "the node hosting it is this node"
+     * and "no node hosts it" cannot be conflated again: both arrive here as a node id or null,
+     * and leave as two different cases.
+     *
+     * @param ?string $nodeId Node id hosting the agent, or null when none is known
+     * @return AgentLocation Here for this node, on that node for another, unknown for null
+     */
+    private function locationOfNode(?string $nodeId): AgentLocation
+    {
+        if ($nodeId === null) {
+            return AgentLocation::unknown();
+        }
+
+        return $nodeId === $this->selfNodeId ? AgentLocation::here() : AgentLocation::onNode($nodeId);
     }
 
     /**

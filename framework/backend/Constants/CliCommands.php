@@ -48,6 +48,9 @@ final class CliCommands
     /** @var string Command: Broadcast a signal to every browser of the cluster (test-only) */
     public const string CLUSTER_TEST_CLIENT_FANOUT = 'test:cluster:client:fanout';
 
+    /** @var string Command: Announce a database row change to the other nodes (test-only) */
+    public const string CLUSTER_TEST_DB_ANNOUNCE = 'test:cluster:db:announce';
+
     /** @var string Command: Show help information */
     public const string HELP = 'help';
 

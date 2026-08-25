@@ -7,6 +7,7 @@ namespace Hilos\Socket\Client;
 use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -16,6 +17,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Environment\NonProductionGate;
 use Hilos\Hilos;
@@ -203,6 +205,16 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
+            if ($request->command === CommandConstants::COMMAND_CLUSTER_DB_ANNOUNCE) {
+                // Test-only: raise the DB sync fact a worker raises after writing a row, and let
+                // the dispatch pass carry it to the mesh (HIL-670). Answered here for the same
+                // reason the client signals above are - what is being exercised is the master's
+                // own dispatch, and the cluster demo registers no agent to park it at.
+                $reply = $this->answerDbAnnounce($request);
+                $this->writeBuffer .= $reply->toJson() . "\n";
+                continue;
+            }
+
             if ($request->command === CliCommands::PROTECTED_MODE_TEST_INSPECT) {
                 // Test-only read of the master's own view of protected mode. Answered here and
                 // not parked, because parking routes to an agent and a freeze stops every agent
@@ -329,6 +341,56 @@ class CommandClient extends AbstractClient implements CommandClientInterface
 
         return CommandReplyDTO::ok($request->correlationId, [
             CommandConstants::FIELD_TEXT => $text,
+        ]);
+    }
+
+    /**
+     * Raises the DB sync fact a worker raises after writing a row, so it travels the mesh.
+     *
+     * The row id is expected to name nothing: the drill is about the frame crossing, and a stand
+     * whose nodes carry different schemas cannot ask whether a row landed anyway. Naming a real
+     * row would let the drill overwrite a neighbour's copy of somebody's settings, which is a
+     * price no acceptance check should pay.
+     *
+     * The payload is an ordinary update fact, so nothing downstream knows this came from a
+     * command line: the announce filter, the frame, the seam check and the apply are the ones
+     * production uses.
+     *
+     * @param CommandRequestDTO $request Announce request naming a collection and a row id
+     * @return CommandReplyDTO Reply naming what was raised, or the error to answer instead
+     */
+    private function answerDbAnnounce(CommandRequestDTO $request): CommandReplyDTO
+    {
+        // external-boundary: a test harness's command line, checked on the very next lines
+        $collection = $request->payload[CommandConstants::FIELD_COLLECTION] ?? null;
+        if (!is_string($collection) || $collection === '') {
+            return CommandReplyDTO::error($request->correlationId, 'Missing collection');
+        }
+
+        // external-boundary: the same command line, checked on the very next lines
+        $rowId = $request->payload[CommandConstants::FIELD_ROW_ID] ?? null;
+        if (!is_string($rowId) || $rowId === '') {
+            return CommandReplyDTO::error($request->correlationId, 'Missing rowId');
+        }
+
+        try {
+            Hilos::$sr->queueSignal(
+                signalSource: new SignalSource(SignalSource::DAEMON),
+                signalType: new SignalType(SignalTypeConstants::DB_SYNC_UPDATED),
+                signalName: new SignalName(SignalConstants::DB_SYNC_UPDATED),
+                signalData: new DbSyncUpdatedSignalData(
+                    $collection,
+                    $rowId,
+                    [ClusterCommandConstants::FIELD_DB_ANNOUNCE_COLUMN => $rowId],
+                ),
+            );
+        } catch (HilosException $e) {
+            return CommandReplyDTO::error($request->correlationId, $e->getMessage());
+        }
+
+        return CommandReplyDTO::ok($request->correlationId, [
+            CommandConstants::FIELD_COLLECTION => $collection,
+            CommandConstants::FIELD_ROW_ID => $rowId,
         ]);
     }
 

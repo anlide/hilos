@@ -20,6 +20,7 @@ use Hilos\Cluster\Peer\DTO\PeerClientFanoutDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientSignalDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsSnapshotDTO;
+use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydratedDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydrateDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
@@ -48,6 +49,8 @@ use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementMesh;
+use Hilos\Cluster\DbSyncMesh;
+use Hilos\Cluster\DbSyncSink;
 use Hilos\Cluster\RtSyncMesh;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalConstants;
@@ -109,6 +112,7 @@ final class PeerServer extends AbstractServer implements
     PlacementMesh,
     ProtectedModeMesh,
     RtSyncMesh,
+    DbSyncMesh,
     ClientMesh
 {
     /** @var float Seconds to wait before retrying a failed or dropped seed dial */
@@ -665,6 +669,11 @@ final class PeerServer extends AbstractServer implements
         // them the peer resolves every one of this node's clients as unknown and answers them
         // locally, into nothing.
         Hilos::$cluster?->clientSignalSink()?->handOverConnections($remote->nodeId);
+
+        // Nothing is handed over for the database - the peer reads the same one - but this is
+        // where the window in which DB facts could not reach this node closes, so it is where
+        // the rows it kept through that window stop being believed (HIL-670).
+        Hilos::$cluster?->dbSyncSink()?->reReadAfterLink($remote->nodeId);
     }
 
     /**
@@ -1689,6 +1698,52 @@ final class PeerServer extends AbstractServer implements
             );
         } catch (Throwable $e) {
             Logger::warning("Failed to apply peer RT sync from node '{$frame->originNodeId}': {$e->getMessage()}");
+        }
+    }
+
+    /**
+     * Announces one DB sync fact written on this node to every other node of the mesh.
+     *
+     * Implements {@see DbSyncMesh}. The twin of {@see broadcastRtSync()} and unaddressed for a
+     * different reason: the row lives in the database all the nodes share, so the fact concerns
+     * whichever of them is holding that row in memory, and only each of them knows whether it
+     * is. Delivery is best-effort — a node that is not linked right now does not get this fact,
+     * and what covers the gap is that it stops trusting its rows when the link comes back
+     * ({@see DbSyncSink::reReadAfterLink()}) rather than any redelivery here.
+     *
+     * @param string $signalType DB sync signal type being announced
+     * @param SignalDTO $signal DB sync signal the other nodes apply
+     */
+    public function broadcastDbSync(string $signalType, SignalDTO $signal): void
+    {
+        $this->broadcastToNodes(new PeerDbSyncDTO($this->localIdentity->nodeId, $signalType, $signal));
+    }
+
+    /**
+     * Applies a received DB replica to the rows this node holds.
+     *
+     * Hands the frame to the local apply port and stops there, exactly as
+     * {@see onRtSyncReceived()} does: the writing node already announced the fact to everyone,
+     * so passing it on would be an echo. An unregistered sink or a failing apply is dropped and
+     * logged, so a bad frame cannot end the daemon loop.
+     *
+     * @param PeerLink $link Link the replica arrived on
+     * @param PeerDbSyncDTO $frame Received DB sync frame
+     */
+    public function onDbSyncReceived(PeerLink $link, PeerDbSyncDTO $frame): void
+    {
+        $sink = Hilos::$cluster?->dbSyncSink();
+        if ($sink === null) {
+            Logger::warning(
+                "Dropping peer DB sync from node '{$frame->originNodeId}': no local DB sync sink registered",
+            );
+            return;
+        }
+
+        try {
+            $sink->applyRemoteDbSync($frame->originNodeId, $frame->signalType, $frame->signal);
+        } catch (Throwable $e) {
+            Logger::warning("Failed to apply peer DB sync from node '{$frame->originNodeId}': {$e->getMessage()}");
         }
     }
 

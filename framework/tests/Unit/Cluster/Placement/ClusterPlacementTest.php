@@ -12,14 +12,19 @@ use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
+use Hilos\Cluster\Placement\AgentLocationKind;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementMesh;
 use Hilos\Cluster\Placement\PlacementObserver;
 use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Cluster\Placement\ResourceProfile;
+use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
+use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 use Throwable;
 
 /**
@@ -28,10 +33,31 @@ use Throwable;
  * The coordinator is driven against a fake mesh and executor, so the leader placement
  * side and the node execution side are exercised without a peer socket or a worker pool.
  * The self node is 'leader'; 'gpu-node' is a data-plane node advertising a capability.
+ *
+ * Both agent types are declared policy-placed, because that is the one cell whose location is
+ * answered from what this coordinator tracks (HIL-670): an every-node replica is always here
+ * and a leader-hosted singleton is wherever leadership sits, neither of which passes through
+ * the placement registry at all.
  */
 final class ClusterPlacementTest extends TestCase
 {
     private const string SELF = 'leader';
+
+    /** @var class-string<Hilos> App class bound before this test touched it */
+    private string $boundAppClass;
+
+    protected function setUp(): void
+    {
+        $this->boundAppClass = Hilos::appClass();
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, PlacementTestHilos::class);
+    }
+
+    protected function tearDown(): void
+    {
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->boundAppClass);
+
+        parent::tearDown();
+    }
 
     public function testLocalPlacementRunsTheLocalStartPathAndTracksStarted(): void
     {
@@ -199,29 +225,33 @@ final class ClusterPlacementTest extends TestCase
         $this->assertSame(PlacementState::Started, $record?->state);
     }
 
-    public function testNodeForReportsTheHostingNodeOfARemotelyPlacedAgent(): void
+    public function testLocateReportsTheHostingNodeOfARemotelyPlacedAgent(): void
     {
         $placement = new ClusterPlacement(self::SELF, new FakePlacementMesh([]), new FakePlacementExecutor());
         $placement->onAgentStatus('gpu-node', PeerAgentStatusDTO::started('render', '9', 5));
 
-        $this->assertSame('gpu-node', $placement->nodeFor('render', '9'));
+        $this->assertSame('gpu-node', $placement->locate('render', '9')->nodeId);
     }
 
-    public function testNodeForReturnsNullForALocallyPlacedAgent(): void
+    public function testLocateAnswersHereForALocallyPlacedAgent(): void
     {
         $mesh = new FakePlacementMesh([self::SELF => []]);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->placeAgentOnNode('chat', '1', self::SELF);
 
         // The self short-circuit lives in the lookup, so a local agent routes locally.
-        $this->assertNull($placement->nodeFor('chat', '1'));
+        $this->assertSame(AgentLocationKind::Here, $placement->locate('chat', '1')->kind);
     }
 
-    public function testNodeForReturnsNullForAnUnknownAgent(): void
+    /**
+     * An agent nobody placed is not the same as an agent placed here, and the lookup says so:
+     * answering "here" would deliver its signals into workers that are not running it.
+     */
+    public function testLocateAnswersUnknownForAnAgentNobodyPlaced(): void
     {
         $placement = new ClusterPlacement(self::SELF, new FakePlacementMesh([]), new FakePlacementExecutor());
 
-        $this->assertNull($placement->nodeFor('never_placed', null));
+        $this->assertSame(AgentLocationKind::Unknown, $placement->locate('never_placed', null)->kind);
     }
 
     public function testLeaderReplacesADeadNodesAgentOnlyAfterTheFailoverGrace(): void
@@ -291,7 +321,11 @@ final class ClusterPlacementTest extends TestCase
 
         $this->assertSame(PlacementState::Unplaced, $placement->registry()->get('render:9')?->state);
         $this->assertSame([['render', '9']], $observer->degraded, 'The degradation is reported to the observer');
-        $this->assertNull($placement->nodeFor('render', '9'), 'An unplaced agent routes nowhere');
+        $this->assertSame(
+            AgentLocationKind::Unknown,
+            $placement->locate('render', '9')->kind,
+            'An unplaced agent routes nowhere',
+        );
 
         // A capable node joins: the leader retries the unplaced agent onto it.
         $mesh->capabilities['node-c'] = ['gpu'];
@@ -602,4 +636,23 @@ final class FakePlacementExecutor implements PlacementExecutor
     {
         $this->revoked[] = [$agentType, $agentIndex];
     }
+}
+
+/**
+ * Project facade declaring the two agent types these cases place as policy-placed.
+ *
+ * Abstract because only its registry constant is read: nothing here builds a database.
+ */
+abstract class PlacementTestHilos extends Hilos
+{
+    public const array AGENTS = [
+        'render' => [
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        'chat' => [
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+    ];
 }

@@ -249,8 +249,9 @@ final class RestoreProgressDeliveryTestManager extends DaemonManager
      * Swallows the master's own handling: this file is about what leaves the master.
      *
      * @param SignalDTO $signal Signal being dispatched
+     * @param ?string $originNodeId Node the write happened on, or null when it was this one
      */
-    protected function handleDaemonSignal(SignalDTO $signal): void
+    protected function handleDaemonSignal(SignalDTO $signal, ?string $originNodeId = null): void
     {
     }
 

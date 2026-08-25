@@ -618,9 +618,15 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * db-reset or restore), or another process reported a truncate.
      *
      * Unlike clearInMemory(), which drops rows this process just deleted itself, this
-     * re-reads the DB so the daemon stops holding rows it only assumes. Strategy-aware:
-     * an eager (LAZY_STRATEGY_NONE) collection reloads now via loadAllFromDB(); a lazy
-     * collection drops its rows and reloads them from the fresh DB on next access.
+     * re-reads the DB so the daemon stops holding rows it only assumes.
+     *
+     * Two collections reload at once: an eager one (LAZY_STRATEGY_NONE), and a lazy one that
+     * somebody had declared full by {@see preloadAll()}. The second is the one worth naming
+     * (HIL-670): fullness there is a declaration, not a strategy, and something is drawing a
+     * list from it on the strength of that declaration. A reset that only remembered the
+     * strategy would leave such a collection quietly no longer whole, and a list drawn from it
+     * would be missing rows with nothing to say so. Every other lazy collection drops its rows
+     * and fetches them from the fresh DB on next access, exactly as before.
      *
      * @throws LogicException When the entity collection class is not configured (eager reload)
      * @throws DatabaseException If reloading the full collection from the fresh DB fails (eager reload)
@@ -628,13 +634,17 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     public function reHydrate(): void
     {
+        // Read before the line below drops it: what has to survive the reset is the CLAIM this
+        // collection was making about itself, and that claim is gone one statement later.
+        $wasAllLoaded = $this->_allLoaded;
+
         $this->objects = [];
         // Dropped before the reload, not after: a failed read then leaves the collection
         // empty AND not loaded, so the next access reads the DB again. Left true, a failed
         // read would pin an empty mirror over a non-empty table for the process lifetime.
         $this->_allLoaded = false;
 
-        if ($this->_lazyStrategy === self::LAZY_STRATEGY_NONE) {
+        if ($this->_lazyStrategy === self::LAZY_STRATEGY_NONE || $wasAllLoaded) {
             $this->loadAllFromDB();
         }
     }

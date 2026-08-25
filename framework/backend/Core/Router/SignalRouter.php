@@ -7,6 +7,7 @@ namespace Hilos\Core\Router;
 use Hilos\API\Router\Exception\GroupSubscriptionNotFoundException;
 use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
 use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
+use Hilos\Cluster\Placement\AgentLocationKind;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\BrokenSignalPayloadDtoException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
@@ -22,9 +23,11 @@ use Hilos\Core\Router\Destination\RemoteAgentDestination;
 use Hilos\Core\Router\Destination\RemoteClientDestination;
 use Hilos\Core\Router\Destination\RemoteFanoutDestination;
 use Hilos\Core\Router\Destination\SessionClientsDestination;
+use Hilos\Core\Router\Destination\UnknownAgentDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
@@ -694,6 +697,7 @@ class SignalRouter
      *
      * @param SignalDTO $signal Signal DTO
      * @return list<Destination> Resolved delivery targets (agent and/or WebSocket), de-duplicated
+     * @throws EnvException When the placement post-pass reads cluster configuration and it is invalid
      */
     public function getDestinations(SignalDTO $signal): array
     {
@@ -755,20 +759,28 @@ class SignalRouter
     }
 
     /**
-     * Rewrites agent destinations that resolve to another node into remote destinations.
+     * Rewrites agent destinations by where the placement lookup says the agent runs.
      *
      * Cross-node routing preserves the declarative route-by-sender model: destinations are
      * resolved exactly as before, then this post-pass asks the placement lookup where each
-     * agent lives. An agent on another node becomes a {@see RemoteAgentDestination} the
-     * daemon forwards over the peer channel; a local agent (or any target when the lookup
-     * reports null) stays an {@see AgentDestination} and is delivered locally. Off-cluster,
-     * or on a node with no registered lookup, there is no lookup and the list is returned
-     * untouched, so single-node behaviour is unchanged. Only {@see AgentDestination} is
-     * eligible: a browser is placed by its own post-pass ({@see applyClientLocation()}) and a
-     * command reply is bound to the connection this node is holding open.
+     * agent lives, and the three answers become three destinations. An agent on another node
+     * becomes a {@see RemoteAgentDestination} the daemon forwards over the peer channel; an
+     * agent of unknown whereabouts becomes an {@see UnknownAgentDestination} the daemon drops
+     * with a log; a local agent stays an {@see AgentDestination} and is delivered here.
+     *
+     * The unknown case is the one worth naming (HIL-670): it used to be the local case, because
+     * the lookup answered null for both, so a node with no placement picture delivered the
+     * signal into its own workers — which run no such agent, and say nothing about it.
+     * Off-cluster, or on a node with no registered lookup, there is no lookup and the list is
+     * returned untouched, so single-node behaviour is unchanged.
+     *
+     * Only {@see AgentDestination} is eligible: a browser is placed by its own post-pass
+     * ({@see applyClientLocation()}) and a command reply is bound to the connection this node is
+     * holding open.
      *
      * @param list<Destination> $destinations Resolved destinations before placement
-     * @return list<Destination> Destinations with cross-node agents rewritten to remote
+     * @return list<Destination> Destinations with cross-node and unaddressable agents rewritten
+     * @throws EnvException When the placement lookup reads cluster configuration and it is invalid
      */
     private function applyPlacement(array $destinations): array
     {
@@ -782,10 +794,17 @@ class SignalRouter
                 continue;
             }
 
-            $nodeId = $placement->nodeFor($destination->agentType, $destination->agentIndex);
-            if ($nodeId !== null) {
-                $destinations[$index] = new RemoteAgentDestination($nodeId, $destination->agentType, $destination->agentIndex);
+            $location = $placement->locate($destination->agentType, $destination->agentIndex);
+            if ($location->kind === AgentLocationKind::Here) {
+                continue;
             }
+
+            // A location naming a node carries its id and no other location does, so reading the
+            // id is how the remaining two cases are told apart - not a second opinion about what
+            // the lookup already answered.
+            $destinations[$index] = $location->nodeId !== null
+                ? new RemoteAgentDestination($location->nodeId, $destination->agentType, $destination->agentIndex)
+                : new UnknownAgentDestination($destination->agentType, $destination->agentIndex);
         }
 
         return $destinations;

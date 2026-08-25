@@ -8,6 +8,7 @@ use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\PeerServer;
+use Hilos\Cluster\Placement\AgentLocation;
 use Hilos\Cluster\WorkerPlacement;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
@@ -111,7 +112,7 @@ final class DaemonManagerSignalFacadeTest extends TestCase
         $manager = new DaemonManagerSignalFacadeTestManager();
         $manager->addWorkerServer();
         $manager->addPeerServer();
-        $this->installPlacement([self::AGENT_TYPE . ':7' => 'node-b']);
+        $this->installPlacement([self::AGENT_TYPE . ':7' => AgentLocation::onNode('node-b')]);
 
         $manager->sendToAgent(self::AGENT_TYPE, '7', self::SIGNAL_NAME, new SignalData([]));
 
@@ -128,7 +129,7 @@ final class DaemonManagerSignalFacadeTest extends TestCase
     {
         $manager = new DaemonManagerSignalFacadeTestManager();
         $manager->addWorkerServer();
-        $this->installPlacement([self::AGENT_TYPE => 'node-b']);
+        $this->installPlacement([self::AGENT_TYPE => AgentLocation::onNode('node-b')]);
 
         $manager->sendToAgent(self::AGENT_TYPE, null, self::SIGNAL_NAME, new SignalData([]));
 
@@ -223,26 +224,29 @@ final class DaemonManagerSignalFacadeTest extends TestCase
     }
 
     /**
-     * Registers a fake placement lookup mapping "type:index" (or "type") to a node id.
+     * Registers a fake placement lookup mapping "type:index" (or "type") to a location.
      *
-     * @param array<string, string> $placements Agent id to hosting node id
+     * An agent the map does not name is answered "here", so the cases that assert local
+     * delivery need no entry of their own.
+     *
+     * @param array<string, AgentLocation> $placements Agent id to the location it is at
      */
     private function installPlacement(array $placements): void
     {
         $context = new ClusterContext();
         $context->registerWorkerPlacement(new class ($placements) implements WorkerPlacement {
             /**
-             * @param array<string, string> $placements Agent id to hosting node id
+             * @param array<string, AgentLocation> $placements Agent id to the location it is at
              */
             public function __construct(private readonly array $placements)
             {
             }
 
-            public function nodeFor(string $agentType, ?string $agentIndex): ?string
+            public function locate(string $agentType, ?string $agentIndex): AgentLocation
             {
                 $agentId = $agentIndex !== null ? "{$agentType}:{$agentIndex}" : $agentType;
 
-                return $this->placements[$agentId] ?? null;
+                return $this->placements[$agentId] ?? AgentLocation::here();
             }
         });
 

@@ -10,6 +10,7 @@ use Hilos\Cluster\WorkerPlacement;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\Destination;
 use Hilos\Core\Router\Destination\RemoteAgentDestination;
+use Hilos\Core\Router\Destination\UnknownAgentDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
@@ -21,15 +22,15 @@ use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Tests the cross-node routing post-pass in SignalRouter::getDestinations() (HIL-180).
+ * The routing post-pass's third answer: an agent nobody knows how to reach (HIL-670).
  *
- * The router resolves destinations exactly as before, then rewrites any agent that the
- * placement lookup reports on another node into a RemoteAgentDestination. An agent the
- * lookup places here and non-agent destinations are left untouched; off-cluster the
- * post-pass is inert. The lookup's third answer - nobody knows where the agent runs - is
- * {@see SignalRouterUnknownAgentTest}.
+ * {@see SignalRouterCrossNodeRoutingTest} covers the two answers that existed before — here and
+ * on a named node. This one covers the answer that used to collapse into "here": a node with no
+ * placement picture delivered the signal into its own workers, which run no such agent, and the
+ * send reported success. The post-pass now marks it undeliverable so the daemon can drop it with
+ * a line and answer a browser that is waiting.
  */
-final class SignalRouterCrossNodeRoutingTest extends TestCase
+final class SignalRouterUnknownAgentTest extends TestCase
 {
     public function tearDown(): void
     {
@@ -38,52 +39,52 @@ final class SignalRouterCrossNodeRoutingTest extends TestCase
         parent::tearDown();
     }
 
-    public function testRemoteAgentDestinationReplacesAgentOnAnotherNode(): void
+    public function testAnAgentOfUnknownWhereaboutsBecomesAnUndeliverableDestination(): void
     {
-        $this->installPlacement(['remote_agent:7' => AgentLocation::onNode('node-B')]);
+        $this->installPlacement([
+            'remote_agent:7' => AgentLocation::unknown(),
+            'local_agent' => AgentLocation::here(),
+        ]);
 
-        $destinations = new CrossNodeTestRouter()->getDestinations($this->noopSignal());
+        $destinations = new UnknownAgentTestRouter()->getDestinations($this->noopSignal());
 
         $this->assertEquals([
-            new RemoteAgentDestination('node-B', 'remote_agent', '7'),
+            new UnknownAgentDestination('remote_agent', '7'),
             new AgentDestination('local_agent'),
             new WebSocketDestination('ws-key'),
         ], $destinations);
     }
 
-    public function testLocalAgentStaysAgentDestinationWhenLookupPlacesItHere(): void
+    /**
+     * The unknown answer touches only the agent it was given for. A signal fanning out to several
+     * places must still reach the ones that ARE reachable — dropping the lot would turn one
+     * missing address into a whole undelivered signal.
+     */
+    public function testTheOtherDestinationsOfTheSameSignalAreUntouched(): void
     {
-        // No mapping: every locate() answers "here", so nothing is rewritten.
-        $this->installPlacement([]);
+        $this->installPlacement([
+            'remote_agent:7' => AgentLocation::unknown(),
+            'local_agent' => AgentLocation::onNode('node-B'),
+        ]);
 
-        $destinations = new CrossNodeTestRouter()->getDestinations($this->noopSignal());
+        $destinations = new UnknownAgentTestRouter()->getDestinations($this->noopSignal());
 
         $this->assertEquals([
-            new AgentDestination('remote_agent', '7'),
-            new AgentDestination('local_agent'),
+            new UnknownAgentDestination('remote_agent', '7'),
+            new RemoteAgentDestination('node-B', 'local_agent'),
             new WebSocketDestination('ws-key'),
         ], $destinations);
     }
 
-    public function testDestinationsAreUnchangedOffCluster(): void
+    /**
+     * Off-cluster there is no lookup to ask, so no agent is ever unknown and the post-pass stays
+     * inert: a single node runs what it runs, and "here" is the only address there is.
+     */
+    public function testNothingIsUnknownOffCluster(): void
     {
         Hilos::$cluster = null;
 
-        $destinations = new CrossNodeTestRouter()->getDestinations($this->noopSignal());
-
-        $this->assertEquals([
-            new AgentDestination('remote_agent', '7'),
-            new AgentDestination('local_agent'),
-            new WebSocketDestination('ws-key'),
-        ], $destinations);
-    }
-
-    public function testDestinationsAreUnchangedWhenNoPlacementRegistered(): void
-    {
-        // Cluster context present, but no worker-placement lookup registered (opt-in).
-        Hilos::$cluster = new ClusterContext();
-
-        $destinations = new CrossNodeTestRouter()->getDestinations($this->noopSignal());
+        $destinations = new UnknownAgentTestRouter()->getDestinations($this->noopSignal());
 
         $this->assertEquals([
             new AgentDestination('remote_agent', '7'),
@@ -94,9 +95,6 @@ final class SignalRouterCrossNodeRoutingTest extends TestCase
 
     /**
      * Registers a fake placement lookup mapping "type:index" (or "type") to a location.
-     *
-     * An agent the map does not name is answered "here", which is what an ordinary single
-     * node answers for everything it runs.
      *
      * @param array<string, AgentLocation> $placements Agent id to the location it is at
      */
@@ -124,6 +122,8 @@ final class SignalRouterCrossNodeRoutingTest extends TestCase
 
     /**
      * Builds a benign signal that trips no framework routing contributor.
+     *
+     * @return SignalDTO Signal carrying nothing any contributor claims
      */
     private function noopSignal(): SignalDTO
     {
@@ -137,10 +137,10 @@ final class SignalRouterCrossNodeRoutingTest extends TestCase
 }
 
 /**
- * Router that contributes a fixed mix of agent and WebSocket destinations, so the test
- * exercises the placement post-pass without wiring project topology.
+ * Router contributing a fixed mix of agent and WebSocket destinations, so the post-pass is
+ * exercised without wiring project topology.
  */
-final class CrossNodeTestRouter extends SignalRouter
+final class UnknownAgentTestRouter extends SignalRouter
 {
     /**
      * @param SignalDTO $signal Signal DTO

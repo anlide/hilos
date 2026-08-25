@@ -307,8 +307,9 @@ final class PageAccessReassessBroadcastTestManager extends DaemonManager
      * master, and applying a row would ask for a database nobody mounted here.
      *
      * @param SignalDTO $signal Signal being dispatched
+     * @param ?string $originNodeId Node the write happened on, or null when it was this one
      */
-    protected function handleDaemonSignal(SignalDTO $signal): void
+    protected function handleDaemonSignal(SignalDTO $signal, ?string $originNodeId = null): void
     {
     }
 

@@ -38,6 +38,7 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeVerifyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
+use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
@@ -286,6 +287,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerPlacementViewDTO => $this->onPlacementView($frame),
             $frame instanceof PeerSignalDTO => $this->onSignal($frame),
             $frame instanceof PeerRtSyncDTO => $this->onRtSync($frame),
+            $frame instanceof PeerDbSyncDTO => $this->onDbSync($frame),
             $frame instanceof PeerRtSnapshotDTO => $this->onRtSnapshot($frame),
             $frame instanceof PeerClientSignalDTO => $this->onClientSignal($frame),
             $frame instanceof PeerClientFanoutDTO => $this->onClientFanout($frame),
@@ -511,6 +513,18 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('RT sync');
         $this->server->onRtSyncReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received DB replica to the server for the rows this node holds to be updated.
+     *
+     * @param PeerDbSyncDTO $frame Incoming DB sync frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onDbSync(PeerDbSyncDTO $frame): void
+    {
+        $this->requireHandshaked('DB sync');
+        $this->server->onDbSyncReceived($this, $frame);
     }
 
     /**

@@ -225,6 +225,12 @@ def client_deliveries(views, node):
     return -1 if view is None else int(view.get("clientDeliveries", 0))
 
 
+def db_replicas(views, node):
+    """Cross-node DB replicas a node reports having accepted, or -1 when unreachable."""
+    view = views.get(node)
+    return -1 if view is None else int(view.get("dbReplicas", 0))
+
+
 def indexed_for(views, watcher, holder):
     """How many browser connections one node's index holds for another node."""
     view = views.get(watcher)
@@ -551,6 +557,65 @@ def scenario_10_cross_node_browser():
         client(holder, "test:cluster:client:detach", key)
 
 
+def scenario_11_cross_node_db_fact():
+    """A database row changed on one node must be announced to every other (HIL-670).
+
+    The defect this closes is the quietest of the set. The nodes share a database but not the
+    rows they have read out of it: each keeps its own copy in memory, so a row one node changed
+    stayed as another node first read it, for the life of that process. Nothing fails, nothing is
+    logged, and a person sees a rename that "did not happen".
+
+    What the stand can check is that the FACT crosses, and that is deliberate rather than a
+    shortcut: the nodes of this stand carry schemas of their own (HIL-712), so whether the row
+    landed is not a question that can be asked here. Whether it lands - and in which collection,
+    since a created row enters only a copy that claims to hold the whole set - is settled by unit
+    tests, where the collection's fullness is known. So the drill names a row id that exists
+    nowhere: nothing is written, and no node's own copy of that collection is disturbed.
+
+    The second half is the part with no other cover at all. Delivery is best-effort, so a node
+    that was unreachable simply missed whatever was announced while it was away; what is asserted
+    here is that the mesh comes back and starts carrying facts again, which is the state the
+    re-read on link is there to make safe.
+    """
+    collection, row_id = "settings", "999999"
+    sender, watcher = "m1", "m2"
+    wait_converge(ALL_NODES)
+
+    views = inspect_all()
+    before = {n: db_replicas(views, n) for n in ALL_NODES}
+    assert client(sender, "test:cluster:db:announce", collection, row_id), \
+        f"could not announce a DB fact on {sender}"
+
+    def announced_arrived(views):
+        return all(db_replicas(views, n) > before[n]
+                   and (views.get(n) or {}).get("lastDbReplicaCollection") == collection
+                   for n in ALL_NODES if n != sender)
+
+    receivers = [n for n in ALL_NODES if n != sender]
+    wait_until(announced_arrived, CONVERGE_TIMEOUT,
+               f"every node but {sender} takes in the DB fact it announced",
+               nodes=receivers)
+
+    assert db_replicas(inspect_all([sender]), sender) == before[sender], \
+        f"{sender} counted its own announcement as a replica; the fact must not come back to it"
+
+    # And again across a link that went away and came back, which is the case the whole re-read
+    # on link exists for: what was announced while the node was gone is simply lost, so the only
+    # thing that can be asserted is that the channel carries facts again afterwards.
+    print(f"    recreating {watcher} to break and re-establish its links")
+    ctl("recreate", watcher)
+    wait_converge(ALL_NODES)
+
+    before = db_replicas(inspect_all([watcher]), watcher)
+    assert client(sender, "test:cluster:db:announce", collection, row_id), \
+        f"could not announce a DB fact on {sender} after the reconnect"
+    wait_until(lambda v: db_replicas(v, watcher) > before, CONVERGE_TIMEOUT,
+               f"{watcher} takes in a DB fact again after re-linking", nodes=[watcher])
+
+    return (f"{sender} announced a DB fact to all {len(receivers)} other nodes, "
+            f"and to {watcher} again after it re-linked")
+
+
 SCENARIOS = [
     ("1 master-slave mesh", scenario_1_master_slave_mesh),
     ("2 master-master", scenario_2_master_master),
@@ -562,6 +627,7 @@ SCENARIOS = [
     ("8 split-brain prevention", scenario_8_split_brain),
     ("9 daemon-crash self-heal", scenario_9_daemon_crash_selfheal),
     ("10 cross-node browser", scenario_10_cross_node_browser),
+    ("11 cross-node db fact", scenario_11_cross_node_db_fact),
 ]
 
 # Park a scenario here (name -> reason) to skip it as known timing-flaky -- the

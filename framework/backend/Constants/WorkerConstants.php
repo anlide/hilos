@@ -86,6 +86,14 @@ final class WorkerConstants
     /** @var string Aggregated re-hydrate verdict, addressed to the agent that announced the swap */
     public const string MESSAGE_DB_REHYDRATE_COMPLETE = 'db_rehydrate_complete';
 
+    /**
+     * @var string Stop trusting the database rows you hold (daemon -> workers), after a peer link.
+     *
+     * A value of its own rather than a reuse of the re-hydrate one: the database has not been
+     * replaced, so nothing is waiting on an answer and no barrier is open (HIL-670).
+     */
+    public const string MESSAGE_DB_RE_READ = 'db_re_read';
+
     /** @var string RT sync created (daemon/worker broadcast); canonical value in SignalTypeConstants */
     public const string MESSAGE_RT_SYNC_CREATED = SignalTypeConstants::RT_SYNC_CREATED;
 

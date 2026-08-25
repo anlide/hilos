@@ -8,11 +8,16 @@ use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
+use Hilos\Cluster\Placement\AgentLocationKind;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementMesh;
 use Hilos\Cluster\Placement\ResourceProfile;
+use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 
 /**
  * The leader's picture of where every agent runs, handed down to the nodes that do not lead
@@ -33,13 +38,32 @@ final class ClusterPlacementViewTest extends TestCase
 {
     private const string SELF = 'node-a';
 
+    /** @var class-string<Hilos> App class bound before this test touched it */
+    private string $boundAppClass;
+
+    protected function setUp(): void
+    {
+        // Both types are declared policy-placed, because the published view is what the lookup
+        // reads for that cell alone (HIL-670): an every-node replica is always here and a
+        // leader-hosted singleton is wherever leadership sits, and no view carries either.
+        $this->boundAppClass = Hilos::appClass();
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, PlacementViewTestHilos::class);
+    }
+
+    protected function tearDown(): void
+    {
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->boundAppClass);
+
+        parent::tearDown();
+    }
+
     public function testANonLeaderAnswersLookupsFromTheViewItWasHanded(): void
     {
         $placement = $this->follower();
 
         $placement->onPlacementView('leader', $this->view(['node-b' => [['render', '9']]]));
 
-        $this->assertSame('node-b', $placement->nodeFor('render', '9'));
+        $this->assertSame('node-b', $placement->locate('render', '9')->nodeId);
     }
 
     /**
@@ -53,13 +77,13 @@ final class ClusterPlacementViewTest extends TestCase
 
         $placement->onPlacementView('leader', $this->view([self::SELF => [['chat', null]]]));
 
-        $this->assertNull($placement->nodeFor('chat', null));
+        $this->assertSame(AgentLocationKind::Here, $placement->locate('chat', null)->kind);
     }
 
     /**
      * A node id that reads as a number arrives as an int, because on the wire it spends a leg
      * as an array KEY and PHP has no string key shaped like a decimal integer. What
-     * {@see ClusterPlacement::nodeFor()} answers is a node id or null, so the int has to become
+     * {@see ClusterPlacement::locate()} answers names a node id or none, so the int has to become
      * a string again before it gets there — a cluster named 1/2/3 is an ordinary cluster.
      */
     public function testAViewNamingNodesWithNumbersAnswersWithTheirIds(): void
@@ -68,17 +92,17 @@ final class ClusterPlacementViewTest extends TestCase
 
         $placement->onPlacementView('leader', $this->view([2 => [['render', '9']]]));
 
-        $this->assertSame('2', $placement->nodeFor('render', '9'));
+        $this->assertSame('2', $placement->locate('render', '9')->nodeId);
     }
 
     /**
      * Before any view arrives — a node that has just started, or one that has never seen a
-     * leader — every lookup answers null and delivery stays local. That is exactly what the
-     * node did before this frame existed, so a cluster mid-election is no worse off than it was.
+     * leader — every lookup answers "I do not know". It used to answer null, which the router
+     * read as local, and the signal went to workers running no such agent (HIL-670).
      */
-    public function testANodeWithNoViewAnswersNullAsItAlwaysDid(): void
+    public function testANodeWithNoViewKnowsOfNoPlacementAtAll(): void
     {
-        $this->assertNull($this->follower()->nodeFor('render', '9'));
+        $this->assertSame(AgentLocationKind::Unknown, $this->follower()->locate('render', '9')->kind);
     }
 
     /**
@@ -93,8 +117,8 @@ final class ClusterPlacementViewTest extends TestCase
 
         $placement->onPlacementView('leader', $this->view(['node-c' => [['chat', null]]]));
 
-        $this->assertNull($placement->nodeFor('render', '9'));
-        $this->assertSame('node-c', $placement->nodeFor('chat', null));
+        $this->assertSame(AgentLocationKind::Unknown, $placement->locate('render', '9')->kind);
+        $this->assertSame('node-c', $placement->locate('chat', null)->nodeId);
     }
 
     /**
@@ -108,7 +132,7 @@ final class ClusterPlacementViewTest extends TestCase
 
         $placement->onPlacementView('node-d', $this->view(['node-b' => [['render', '9']]]));
 
-        $this->assertNull($placement->nodeFor('render', '9'));
+        $this->assertSame(AgentLocationKind::Unknown, $placement->locate('render', '9')->kind);
     }
 
     /**
@@ -124,7 +148,7 @@ final class ClusterPlacementViewTest extends TestCase
 
         $placement->onPlacementView('other', $this->view(['node-c' => [['render', '9']]], 'other'));
 
-        $this->assertSame('node-b', $placement->nodeFor('render', '9'));
+        $this->assertSame('node-b', $placement->locate('render', '9')->nodeId);
     }
 
     public function testTheLeaderPublishesTheViewOnceItChanges(): void
@@ -365,4 +389,20 @@ final class PlacementViewTestExecutor implements PlacementExecutor
     public function revokePlacement(string $agentType, ?string $agentIndex): void
     {
     }
+}
+
+/**
+ * Project facade declaring the two agent types these cases publish as policy-placed.
+ *
+ * Abstract because only its registry constant is read: nothing here builds a database.
+ */
+abstract class PlacementViewTestHilos extends Hilos
+{
+    public const array AGENTS = [
+        'render' => [
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        'chat' => [AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY],
+    ];
 }

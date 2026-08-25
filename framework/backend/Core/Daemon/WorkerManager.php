@@ -81,6 +81,7 @@ use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbReReadMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
@@ -560,6 +561,14 @@ abstract class WorkerManager extends BaseManager
                 $this->handleDbReHydrateMessage();
                 break;
 
+            case WorkerConstants::MESSAGE_DB_RE_READ:
+                if (!$data instanceof WorkerDbReReadMessageDTO) {
+                    Logger::error("handleDbReReadMessage - unexpected type: " . get_class($data));
+                    break;
+                }
+                $this->handleDbReReadMessage();
+                break;
+
             case WorkerConstants::MESSAGE_DB_REHYDRATE_COMPLETE:
                 if (!$data instanceof DbReHydrateCompleteDTO) {
                     Logger::error("handleDbReHydrateComplete - unexpected type: " . get_class($data));
@@ -735,6 +744,12 @@ abstract class WorkerManager extends BaseManager
      * applicator runs, the browser invalidation is recorded after it, and agents
      * are notified last.
      *
+     * The frame's origin is passed to the applicator rather than dropped here: this worker's
+     * copy of a collection is its own, so whether it takes a row created elsewhere in the
+     * cluster is its own question to answer (HIL-670). Everything after the apply is unchanged
+     * by it - a browser looking at a row and an agent listening for it care that the fact
+     * happened, not which node it happened on.
+     *
      * @param WorkerDbSyncMessageInterface $data Worker-level DB sync message (create, update or delete)
      */
     private function handleDbSyncMessage(WorkerDbSyncMessageInterface $data): void
@@ -746,14 +761,17 @@ abstract class WorkerManager extends BaseManager
             $data->signalData instanceof DbSyncCreatedSignalData => DbSyncApplicator::applyCreated(
                 $data->signalData,
                 skipSelfBroadcastCheck: false,
+                originNodeId: $data->originNodeId,
             ),
             $data->signalData instanceof DbSyncUpdatedSignalData => DbSyncApplicator::applyUpdated(
                 $data->signalData,
                 skipSelfBroadcastCheck: false,
+                originNodeId: $data->originNodeId,
             ),
             $data->signalData instanceof DbSyncDeletedSignalData => DbSyncApplicator::applyDeleted(
                 $data->signalData,
                 skipSelfBroadcastCheck: false,
+                originNodeId: $data->originNodeId,
             ),
             default => Logger::error(
                 'handleDbSyncMessage - unexpected payload: ' . get_class($data->signalData),
@@ -777,7 +795,11 @@ abstract class WorkerManager extends BaseManager
         if ($this->isOwnDbSyncClearEcho($data->signalData)) {
             return;
         }
-        DbSyncApplicator::applyCleared($data->signalData, skipSelfBroadcastCheck: false);
+        DbSyncApplicator::applyCleared(
+            $data->signalData,
+            skipSelfBroadcastCheck: false,
+            originNodeId: $data->originNodeId,
+        );
         $this->recordBrowserSourceChange($data->signalData);
     }
 
@@ -804,6 +826,25 @@ abstract class WorkerManager extends BaseManager
         } catch (DatabaseException | LogicException $e) {
             Logger::error('handleDbReHydrateMessage - could not re-read the database: ' . $e->getMessage());
             $this->daemonClient->send(new WorkerDbReHydratedDTO(ok: false, error: $e->getMessage()));
+        }
+    }
+
+    /**
+     * Stops trusting the database rows this worker holds, after its node linked to a peer.
+     *
+     * The same re-read as {@see handleDbReHydrateMessage()} and deliberately without its two
+     * companions (HIL-670). Nothing is answered, because nothing is waiting: the database was
+     * not replaced, no freeze is being held open, and there is no barrier to close. And the
+     * failure is only logged for the same reason it is there — a worker that dies because one
+     * query failed costs its node the agents and connections it was holding, while the rows it
+     * kept are caught at their first collision by the generation fallback.
+     */
+    private function handleDbReReadMessage(): void
+    {
+        try {
+            DbSyncApplicator::applyReHydrate();
+        } catch (DatabaseException | LogicException $e) {
+            Logger::error('handleDbReReadMessage - could not re-read the database: ' . $e->getMessage());
         }
     }
 

@@ -72,8 +72,17 @@ final class CommandConstants
     /** @var string Test-only command: the master raises a broadcast for every browser of the cluster */
     public const string COMMAND_CLUSTER_CLIENT_FANOUT = 'test:cluster:client:fanout';
 
+    /** @var string Test-only command: the master announces a database row change to the other nodes */
+    public const string COMMAND_CLUSTER_DB_ANNOUNCE = 'test:cluster:db:announce';
+
     /** @var string Request payload key: text a test client signal carries */
     public const string FIELD_TEXT = 'text';
+
+    /** @var string Request payload key: database collection a test DB announcement names */
+    public const string FIELD_COLLECTION = 'collection';
+
+    /** @var string Request payload key: row id a test DB announcement names */
+    public const string FIELD_ROW_ID = 'rowId';
 
     /**
      * The prefix every test-only command name carries on the wire.
@@ -108,6 +117,7 @@ final class CommandConstants
         self::COMMAND_CLUSTER_CLIENT_DETACH,
         self::COMMAND_CLUSTER_CLIENT_SEND,
         self::COMMAND_CLUSTER_CLIENT_FANOUT,
+        self::COMMAND_CLUSTER_DB_ANNOUNCE,
     ];
 
     /**

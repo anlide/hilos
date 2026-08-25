@@ -50,6 +50,7 @@ final class TestOnlyCommandRegistryTest extends TestCase
         $this->assertContains(CommandConstants::COMMAND_CLUSTER_CLIENT_DETACH, $commands);
         $this->assertContains(CommandConstants::COMMAND_CLUSTER_CLIENT_SEND, $commands);
         $this->assertContains(CommandConstants::COMMAND_CLUSTER_CLIENT_FANOUT, $commands);
+        $this->assertContains(CommandConstants::COMMAND_CLUSTER_DB_ANNOUNCE, $commands);
     }
 
     public function testAProjectsFlaggedAgentCommandsJoinTheMastersOwn(): void
@@ -65,6 +66,7 @@ final class TestOnlyCommandRegistryTest extends TestCase
             CommandConstants::COMMAND_CLUSTER_CLIENT_DETACH,
             CommandConstants::COMMAND_CLUSTER_CLIENT_SEND,
             CommandConstants::COMMAND_CLUSTER_CLIENT_FANOUT,
+            CommandConstants::COMMAND_CLUSTER_DB_ANNOUNCE,
         ], TestOnlyCommandRegistry::commands());
     }
 
