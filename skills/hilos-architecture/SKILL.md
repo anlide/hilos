@@ -14,6 +14,8 @@ Use this skill only inside a Hilos repository. Start by reading `agents.md`, the
 - Agent creation, lifecycle hooks, signal sending: `docs/agents/architecture/agent-lifecycle.md`
 - Sockets, event loop, I/O, blocking operations: `docs/agents/architecture/event-loop.md`
 - Freezing a node for a destructive operation: `docs/agents/architecture/protected-mode.md`
+- Guarding an expensive auth action against brute force, and why there is no
+  captcha: `docs/agents/architecture/auth-throttle.md`
 - Spreading the holders of entities across cluster nodes, and what a caller
   on another node may read: `docs/agents/architecture/entity-libraries.md`
 - Blocking risks in handlers or ticks: `docs/agents/antipatterns/blocking-in-ontick.md`

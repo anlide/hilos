@@ -22,10 +22,11 @@ use Hilos\Log\LogRotationTriggerPolicy;
  * happened to a given key lives in the runtime counters, not here.
  *
  * The ladder deliberately does not run off its own end: a key that breaches again while
- * already at the last step stays on that step. Design point 7 reserves the step beyond the
- * ladder for a challenge, and until that leaf exists there is nothing to escalate a client
- * to - the honest behavior is to keep refusing for the longest configured duration rather
- * than to invent a punishment the plan does not name.
+ * already at the last step stays on that step, refused for the longest configured duration.
+ * That last step is the end of the framework's answer and not a placeholder - Hilos ships no
+ * captcha and reserves no step for one (owner's decision 2026-08-22, HIL-660). Why the
+ * boundary is drawn there, and where a project that wants a challenge puts its own, is in
+ * docs/agents/architecture/auth-throttle.md.
  */
 final class ThrottlePolicy
 {

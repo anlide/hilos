@@ -46,6 +46,7 @@ Both exceptions are about `git commit` only. The push ban has none.
 | [architecture/filesystem-watch.md](docs/agents/architecture/filesystem-watch.md) | making an agent notice a change on disk it did not make itself: the one door over inotify and polling, the discard-then-read ordering, the coalescing window and the periodic backstop |
 | [architecture/entity-libraries.md](docs/agents/architecture/entity-libraries.md) | an entity is read or written by something other than the owner of its instance — lists, searches, creation, commands with no addressee: one entity one library, the two placement axes, the read path, and the refusal on an incomplete set |
 | [architecture/verification-codes.md](docs/agents/architecture/verification-codes.md) | issuing, checking or spending a one-time code or link: the atomic single-use spend and its outcome, the attempt ceiling, and the send cap that is deliberately not atomic |
+| [architecture/auth-throttle.md](docs/agents/architecture/auth-throttle.md) | anti-abuse of expensive auth actions: the (scope, identity, action) key and its two scopes, the ladder and its day of forgiveness, where the guarded doors are declared, and why the framework ships no captcha |
 
 ## Framework Development
 
