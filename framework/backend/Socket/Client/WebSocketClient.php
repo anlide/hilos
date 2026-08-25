@@ -437,7 +437,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             $headers,
             $acceptKey,
             $cookies,
-            $this->resolveClientIp(),
+            $this->resolveClientIp($headers),
             $queryParams,
             $sessionToken,
             $inheritedAck,
@@ -1526,20 +1526,46 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
-     * Reads the peer address, turning the "no peer name" answer into an absent one.
+     * Decides the address this connection is answered for: the peer, or what a trusted peer forwards.
      *
-     * {@see AbstractClient::getClientIp()} reports an unavailable peer as a blank
-     * string, so the blank is normalized here and never travels any further.
+     * {@see AbstractClient::getClientIp()} reports an unavailable peer as a blank string,
+     * and that blank is the end of the question rather than an invitation to read a
+     * header: with no peer to check against the list, nothing can be trusted, so the
+     * address is absent. A peer outside the configured networks is the address itself,
+     * which is what a deployment facing the network directly always gets. Only a peer
+     * inside them speaks for someone else, and only its X-Real-IP is read - a value that
+     * has to parse as an address, since anything else is a misconfigured proxy rather
+     * than a visitor.
      *
-     * @return ?string Client IP (IPv4 or IPv6), or null when the peer name is unavailable
+     * @param array<string, string> $headers HTTP headers from handshake request (lowercase header names)
+     * @return ?string Effective client IP (IPv4 or IPv6), or null when the peer name is unavailable
+     * @throws EnvException When the trusted-proxy list cannot be read from the environment
+     * @throws SocketException When the peer name cannot be read
      */
-    private function resolveClientIp(): ?string
+    private function resolveClientIp(array $headers): ?string
     {
-        $clientIp = $this->getClientIp();
+        $peerIp = $this->getClientIp();
+        if ($peerIp === '') {
+            return null;
+        }
 
-        return $clientIp !== '' ? $clientIp : null;
+        if (!TrustedProxies::fromEnv()->trusts($peerIp)) {
+            return $peerIp;
+        }
+
+        $forwarded = HttpHeaderHelper::get($headers, HttpConstants::HEADER_X_REAL_IP);
+
+        return $forwarded !== null && filter_var($forwarded, FILTER_VALIDATE_IP) !== false ? $forwarded : $peerIp;
     }
 
+    /**
+     * Reports the connection's effective address to analytics, which is the one settled on the 101.
+     *
+     * The peer is deliberately not re-read here. Behind a trusted proxy every frame of
+     * every visitor arrives from the same peer, so re-reading it would record a change of
+     * address on the first frame of anyone the proxy speaks for - the effective address
+     * belongs to the connection and was fixed when the connection was accepted.
+     */
     private function trackCurrentClientIp(): void
     {
         if ($this->acceptKey === '') {
@@ -1547,9 +1573,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         }
 
         try {
-            Hilos::$ac?->trackWsConnectionIpChange($this->acceptKey, $this->resolveClientIp());
+            Hilos::$ac?->trackWsConnectionIpChange($this->acceptKey, $this->handshakeClientIp);
         } catch (Throwable) {
-            // Ignore peer-name lookup errors during analytics tracking.
+            // Ignore analytics tracking errors; they must not cost the connection a frame.
         }
     }
 }

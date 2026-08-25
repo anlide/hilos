@@ -139,6 +139,9 @@ final class HttpConstants
     /** @var string HTTP header User-Agent */
     public const string HEADER_USER_AGENT = 'User-Agent';
 
+    /** @var string HTTP header X-Real-IP, the one forwarded address a trusted proxy may name */
+    public const string HEADER_X_REAL_IP = 'X-Real-IP';
+
     /** @var string HTTP header Accept-Language */
     public const string HEADER_ACCEPT_LANGUAGE = 'Accept-Language';
 

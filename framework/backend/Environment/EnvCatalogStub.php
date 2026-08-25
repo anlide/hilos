@@ -253,6 +253,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::HILOS_AUTH_THROTTLE_MAX_IP->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 30, emptyIsMissing: true),
             EnvConstants::HILOS_AUTH_THROTTLE_STEPS->name => self::entry(EnvCatalogConstants::TYPE_STRING, '30,120,600,3600', emptyIsMissing: true),
             EnvConstants::HILOS_AUTH_THROTTLE_VERDICT_TIMEOUT_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 1000, emptyIsMissing: true),
+            EnvConstants::HILOS_TRUSTED_PROXIES->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::BACKUP_DIR->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::BACKUP_ENABLED->name => self::entry(EnvCatalogConstants::TYPE_BOOLEAN, false, emptyIsMissing: true),
             EnvConstants::BACKUP_RESTORE_TIMEOUT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 3600, emptyIsMissing: true),

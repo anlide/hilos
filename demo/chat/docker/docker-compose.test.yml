@@ -116,6 +116,15 @@ services:
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
       - WEBSOCKET_PORT=8092
+      # Trust the stand's own nginx to name the visitor behind it, so every e2e run
+      # takes the real proxied path (HIL-680). The two ranges are the pools compose
+      # hands its bridge networks their subnets from; naming the pools rather than the
+      # container address is what survives the network being recreated.
+      # DO NOT COPY THIS VALUE INTO A DEPLOYMENT. It trusts every RFC1918 peer, which
+      # here is acceptable only because the port below is published on loopback and a
+      # stand holds nothing worth spoofing an address for. A real deployment names the
+      # network of its own proxy and nothing else.
+      - HILOS_TRUSTED_PROXIES=172.16.0.0/12,192.168.0.0/16
       # The CLI command channel, the socket admin:create / admin:grant /
       # admin:revoke / protected-mode:open speak.
       - COMMAND_HOST=0.0.0.0

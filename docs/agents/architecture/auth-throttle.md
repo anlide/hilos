@@ -22,7 +22,9 @@ parked until the verdict lands, or let straight through.
 
 A throttle key is the triple `(scope, identity, action)`. There are exactly two
 scopes (`ThrottleScope`): `ip`, keyed on the client address and shared by
-everyone behind one NAT, and `session`, keyed on one browser.
+everyone behind one NAT, and `session`, keyed on one browser. Which address counts
+as the client's is a configured decision behind a proxy — see *Which Address The IP
+Scope Counts*.
 
 An action is keyed once per scope, and **both are counted**: passing one limit
 does not excuse the other, and a refusal by either refuses the action. An IP is
@@ -177,6 +179,51 @@ default. The test environment turns the layer **off** deliberately
 would, and counters carried across a run would make every test depend on the ones
 before it.
 
+### Which Address The IP Scope Counts
+
+The `ip` scope is only as good as the address it is keyed on, and behind a proxy
+that address is the proxy. `HILOS_TRUSTED_PROXIES` names the networks allowed to say
+otherwise: a comma-separated list in CIDR notation, a single address written as
+`/32` or `/128`, host names not accepted (resolving one would block the master's
+accept loop). It is empty by default.
+
+There is no wildcard, and `0.0.0.0/0` is not the missing one: it parses, it trusts
+every peer there is, and it therefore lets any client name its own address — the
+exact hole this variable exists to close. Name the network your proxy connects
+from, however small; if that is one machine, write it as `/32`.
+
+The rule is one sentence, and it is applied once per connection, on the 101:
+**a peer inside one of those networks names the visitor through `X-Real-IP`;
+every other peer names only itself.** "Every other" is literal — the list is empty,
+the peer is outside it, the header is absent, or its value does not parse as an
+address: all four answer with the address of the TCP peer, which is the behavior a
+deployment had before this variable existed. Only `X-Real-IP` is read, and only
+because nginx overwrites it wholesale; `X-Forwarded-For` is not read at all, since
+nginx *appends* to it and the beginning of that chain belongs to the client.
+
+The address settled here is the connection's for as long as it lives, and it is the
+one both consumers see — this layer's `ip` scope and the analytics journal. Changing
+the environment under a running daemon does not rewrite connections already open.
+
+What a deployment has to do:
+
+- **Facing the network directly.** Nothing. The empty default is already correct,
+  and it ignores an `X-Real-IP` a client sends of its own accord.
+- **Behind your own nginx.** Put that nginx's network in the variable, and have it
+  send the header (`proxy_set_header X-Real-IP $remote_addr;` — the three demo
+  templates carry that line in their `/ws` location).
+- **Behind someone else's proxy or a CDN.** Same variable, naming the network that
+  actually connects to you. Unrolling a chain of proxies is nginx's own job
+  (`set_real_ip_from` + `real_ip_header`), not the framework's; by the time the
+  handshake is read there is one peer and one header.
+
+**A deployment that sits behind a proxy and leaves this empty gives every visitor it
+has the same throttle key.** The ladder then counts the whole audience as a single
+client, and the first person to trip it blocks all of them — a misconfiguration
+that looks exactly like a working one until the day it refuses everybody. An entry
+that cannot be parsed is dropped and logged once per process, for the same reason:
+a narrowed list keeps serving traffic and says nothing about itself.
+
 ## No Captcha, By Decision
 
 Owner's decision of 2026-08-22, taken on the acceptance of HIL-420 and written down
@@ -245,6 +292,8 @@ theirs to document; these are signposts only.
 `composer run test:framework:unit` — the window and ladder arithmetic
 (`AuthThrottleLadderTest`), the deferred-action pool
 (`PageSignalRouterThrottlePoolTest`), the agent-action guard rails
-(`AgentActionRailsTest`), and the markdown rules that keep this file's links intact.
+(`AgentActionRailsTest`), the trusted-proxy list and the address the handshake
+settles on (`TrustedProxiesTest`, `WebSocketClientHandshakeClientIpTest`), and the
+markdown rules that keep this file's links intact.
 In `demo/chat`, `composer run test:unit` pins the topology snapshot that carries the
 throttle agent, its signals and its test-only reset command.

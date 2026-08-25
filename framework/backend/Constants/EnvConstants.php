@@ -359,6 +359,15 @@ enum EnvConstants
      */
     case HILOS_AUTH_THROTTLE_VERDICT_TIMEOUT_MS;
 
+    /**
+     * Networks whose X-Real-IP header names the visitor, comma-separated, each in
+     * CIDR notation and a single address written as /32 or /128 (HIL-680). Empty by
+     * default, which trusts nobody and leaves every connection counted by the address
+     * of its TCP peer. A deployment behind its own nginx puts that nginx's network
+     * here; one that leaves it empty counts everyone behind the proxy as one client.
+     */
+    case HILOS_TRUSTED_PROXIES;
+
     // ── Backup ───────────────────────────────────────────────────────────────
 
     /**
