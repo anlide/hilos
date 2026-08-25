@@ -44,6 +44,7 @@ import {
   formatBackupProgressLabel,
   formatBackupSize,
   formatRestoreCliCommand,
+  copyToClipboard,
   hasBackupFailureDetail,
   hasRestoreOutcome,
   isBackupChecksumMismatch,
@@ -337,8 +338,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
     if (!cliRow) {
       return
     }
-    await navigator.clipboard.writeText(formatRestoreCliCommand(cliRow))
-    setCliCopied(true)
+    setCliCopied(await copyToClipboard(formatRestoreCliCommand(cliRow)))
   }
 
   // Restore-outcome dialog: how the last restore of this archive ended, read from

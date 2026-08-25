@@ -82,6 +82,7 @@ export {
 } from './primitives/modal.js'
 export { FocusTrap, focusableElements, focusInitial } from './dom/focusTrap.js'
 export { lockBodyScroll, unlockBodyScroll } from './dom/scrollLock.js'
+export { copyToClipboard } from './dom/clipboard.js'
 export {
   PageSubscription,
   type PageSubscriptionConnection,

@@ -41,6 +41,7 @@ import {
   formatBackupProgressLabel,
   formatBackupSize,
   formatRestoreCliCommand,
+  copyToClipboard,
   hasBackupFailureDetail,
   hasRestoreOutcome,
   HILOS_BACKUP_SCOPES,
@@ -319,8 +320,7 @@ async function copyCliCommand(): Promise<void> {
   if (!row) {
     return
   }
-  await navigator.clipboard.writeText(formatRestoreCliCommand(row))
-  cliCopied.value = true
+  cliCopied.value = await copyToClipboard(formatRestoreCliCommand(row))
 }
 
 // Restore-outcome dialog: how the last restore of this archive ended, read from the

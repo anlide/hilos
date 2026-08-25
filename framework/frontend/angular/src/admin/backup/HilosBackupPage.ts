@@ -51,6 +51,7 @@ import {
   formatBackupProgressLabel,
   formatBackupSize,
   formatRestoreCliCommand,
+  copyToClipboard,
   hasBackupFailureDetail,
   hasRestoreOutcome,
   isBackupChecksumMismatch,
@@ -802,8 +803,7 @@ export class HilosBackupPage {
   }
 
   protected async copyCliCommand(): Promise<void> {
-    await navigator.clipboard.writeText(this.cliCommand())
-    this.cliCopied.set(true)
+    this.cliCopied.set(await copyToClipboard(this.cliCommand()))
   }
 
   // Authoritative-backend: dispatch the tracked action, close on its `::success`
