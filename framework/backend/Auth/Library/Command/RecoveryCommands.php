@@ -61,6 +61,7 @@ final class RecoveryCommands extends AbstractLibraryCommands
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws ValidationException When no account at the address has a password
      * @throws RandomException When the platform CSPRNG cannot produce a code
+     * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When identity lookup, code issuing, or the runtime write fails
      */
     public function requestPasswordReset(string $acceptKey, RequestPasswordResetActionDTO $dto): AuthFlowOutcome
@@ -77,7 +78,12 @@ final class RecoveryCommands extends AbstractLibraryCommands
             return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, AuthMessages::SEND_CAP);
         }
 
+        // Two halves of one park since HIL-685: this library may add the row and may not
+        // edit one, so the frame is what re-points a tab that asked for a second code on
+        // another address. The answer below is still the library's - it never stood on
+        // the row, which exists for the OTHER tabs of this session.
         Hilos::$rt->hilosRecoveryWaiters->actions->park($acting->acceptKey, $email, $acting->sessionToken);
+        $this->library->announceRecoveryWaitMoved($acting, $email);
 
         return AuthFlowOutcome::sent(
             $outcome->resendAt(),
@@ -99,9 +105,12 @@ final class RecoveryCommands extends AbstractLibraryCommands
      * never told it made a typo.
      *
      * The grant is written for THIS address only - a session with a second tab parked on
-     * another address must not have that one opened by a code proven here. The connection
-     * is (re-)parked first, because a browser that reconnected between the code and this
-     * submit lost the row its grant would be written on.
+     * another address must not have that one opened by a code proven here - and it is
+     * written by the session holder rather than here (HIL-685): it edits parked rows,
+     * which this library may add and remove but not amend, and the holder is already
+     * walking those very rows to converge the session's other tabs. Making sure the
+     * initiator has a row at all, which a browser that reconnected between the code and
+     * this submit would have lost, moved with it.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ConfirmPasswordResetActionDTO $dto Parsed confirm payload (email, code)
@@ -131,8 +140,6 @@ final class RecoveryCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::INVALID_CODE);
         }
 
-        Hilos::$rt->hilosRecoveryWaiters->actions->park($acting->acceptKey, $email, $acting->sessionToken);
-        Hilos::$rt->hilosRecoveryWaiters->actions->acceptCodeForSession($acting->sessionToken, $email);
         $this->library->announceRecoveryGranted(
             $acting,
             $email,

@@ -232,6 +232,16 @@ registration that covers no row and allows `TruthSourceOperation::Add`, and the
 guard that refuses a write names the operation it refused along with the ones the
 source does hold.
 
+**Every runtime collection has exactly ONE full truth source, and an add/remove
+co-owner is allowed as long as it is declared** (owner's decision, 2026-08-25).
+Two claims on one collection are not a smell to be argued each time: the holder of
+the entity holds it whole, and a library beside it holds adding and removing so it
+can park what it just created. What the co-owner may NOT do is edit - a row that is
+already there is the full owner's, and the library says what changed in a frame
+instead (HIL-685 is the first pair: `hilos_auth_registration_wait_moved` and
+`hilos_auth_recovery_wait_moved`). Checking this by machine is HIL-696; today it is
+read off the two `register()` calls with the eye.
+
 `AbstractAgent::registerDbTruthSource()` is the helper for the write half only;
 there is no create-side helper on the agent today, and adding one is the
 implementing leaf's business, not a decision this approach makes. What the helper

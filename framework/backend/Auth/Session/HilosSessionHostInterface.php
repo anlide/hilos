@@ -7,8 +7,10 @@ namespace Hilos\Auth\Session;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
+use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationAbandonedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Session\Exception\SessionTokenExhaustedException;
 use Hilos\Constants\HilosSignalConstants;
@@ -22,7 +24,7 @@ use Random\RandomException;
  * handshake, and a handshake is routed to exactly one agent - so the sign-in commands, which
  * live in {@see AbstractUsersLibraryAgent}, cannot take them. A command therefore ends in a
  * frame addressed to this holder: bind this session to this user, converge these tabs, drop
- * this wait. What the holder is asked to do is exactly this list.
+ * this wait, re-point that one. What the holder is asked to do is exactly this list.
  *
  * Implemented by {@see HilosSessionHost}, the trait a project's agent already mixes in, so a
  * project that hosts sessions gains the contract by declaring it rather than by writing
@@ -49,6 +51,8 @@ interface HilosSessionHostInterface
         HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED => AuthRecoveryGrantedSignalData::class,
         HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED => AuthPasswordChangedSignalData::class,
         HilosSignalConstants::HILOS_AUTH_REGISTRATION_ABANDONED => AuthRegistrationAbandonedSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_MOVED => AuthRegistrationWaitMovedSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => AuthRecoveryWaitMovedSignalData::class,
     ];
 
     /**

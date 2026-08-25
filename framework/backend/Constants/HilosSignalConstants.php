@@ -8,8 +8,10 @@ use Hilos\Auth\Code\DTO\AuthCodeResultSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
+use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationAbandonedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
@@ -477,6 +479,19 @@ final class HilosSignalConstants
     public const string HILOS_AUTH_REGISTRATION_LANDED = 'hilos_auth_registration_landed';
 
     /**
+     * Users library → the session holder: this browser now waits on THAT address.
+     *
+     * Sent whenever a command parks a browser on a registration code step, and it exists
+     * for the one case parking cannot answer for itself (HIL-685): the row is already
+     * there and points somewhere else. Editing it is the holder's, because the holder is
+     * the collection's one full truth source and the library holds adding and removing
+     * only, so the library adds what is missing and says the rest here. One-way, and
+     * idempotent - a frame repeating what the row says writes nothing.
+     * Carried by {@see AuthRegistrationWaitMovedSignalData}.
+     */
+    public const string HILOS_AUTH_REGISTRATION_WAIT_MOVED = 'hilos_auth_registration_wait_moved';
+
+    /**
      * Users library → the session holder: this recovery is granted, move its tabs along.
      *
      * The recovery counterpart of {@see HILOS_AUTH_REGISTRATION_LANDED}: the code was
@@ -484,6 +499,17 @@ final class HilosSignalConstants
      * Carried by {@see AuthRecoveryGrantedSignalData}.
      */
     public const string HILOS_AUTH_RECOVERY_GRANTED = 'hilos_auth_recovery_granted';
+
+    /**
+     * Users library → the session holder: this browser now recovers THAT address.
+     *
+     * The recovery counterpart of {@see HILOS_AUTH_REGISTRATION_WAIT_MOVED}, and it
+     * carries one consequence more: the grant belongs to the address it was earned for,
+     * so re-pointing a waiter drops it. That is the whole reason a second code asked for
+     * on another address from the same tab cannot open the password step of the first.
+     * Carried by {@see AuthRecoveryWaitMovedSignalData}.
+     */
+    public const string HILOS_AUTH_RECOVERY_WAIT_MOVED = 'hilos_auth_recovery_wait_moved';
 
     /**
      * Users library → the session holder: the password changed, drop the other sessions.

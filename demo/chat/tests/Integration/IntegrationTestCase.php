@@ -143,8 +143,10 @@ abstract class IntegrationTestCase extends TestCase
                 $signal->data instanceof AgentSignalData
                 && array_key_exists($name, HilosSessionHostInterface::SESSION_HOST_SIGNALS)
             ) {
-                // Read off the wire form rather than the frame class: all five carry the
-                // answer under the same key, and this is the shape the other process sees.
+                // Read off the wire form rather than the frame class: a frame that ends a
+                // tracked action carries the answer under the same key whichever frame it
+                // is, and this is the shape the other process sees. The ones that end
+                // nothing - a moved wait, say - carry no such key and hand nothing over.
                 $handedOver = $signal->data->data->toArray()['outcome'] ?? null;
                 $outcome = is_array($handedOver) ? AuthFlowOutcome::fromArray($handedOver) : $outcome;
                 $holder->onSignalAgent($signal->data, '', $name);

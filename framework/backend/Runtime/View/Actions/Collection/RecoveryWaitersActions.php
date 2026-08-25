@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Actions\Collection;
 
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\HilosException;
-use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
@@ -24,6 +24,11 @@ use Hilos\Runtime\View\Item\RecoveryWaiter;
  * and it is released ({@see release()}) - because somebody saved a new password, or
  * because the connection went away and the owning agent's tick reclaims the row.
  *
+ * Two of those four are the session holder's alone ({@see repoint()} and
+ * {@see acceptCodeForSession()}), because both EDIT a row that is already there and the
+ * holder is this collection's one full truth source (HIL-685). The users library adds
+ * and removes, and says the rest in a frame.
+ *
  * The grant is addressed by session and not by connection on purpose: proving a code
  * in one tab opens the password step in every tab of that session and in no tab of
  * anyone else's, which is the session-binding this flow is named for.
@@ -34,42 +39,89 @@ use Hilos\Runtime\View\Item\RecoveryWaiter;
 final class RecoveryWaitersActions extends RtActions
 {
     /**
-     * Parks a connection on the code step of a recovery.
+     * Parks a connection on the code step of a recovery, unless it is parked already.
      *
-     * Idempotent per connection: asking again, or re-sending the code, re-parks the
-     * same accept key rather than adding a second row, so a broadcast reaches each
-     * connection exactly once. A connection that changed its mind about the address
-     * is re-pointed IN PLACE rather than removed and re-added, because the view keeps
-     * its items keyed by id - and the grant goes with the address it was earned for:
-     * re-parking clears `codeAccepted`, since the code that was proven belonged to
-     * the identifier the person just left.
+     * Idempotent per connection: asking again, or re-sending the code, leaves the one
+     * row of that accept key where it is rather than adding a second, so a broadcast
+     * reaches each connection exactly once.
+     *
+     * What it no longer does is re-point a row that is already there (HIL-685). Adding
+     * and removing is the whole of what the users library may do to this collection -
+     * the session holder is its one FULL truth source - so the three cases a caller can
+     * meet end in two outcomes here: no row is added, a row that says the same thing is
+     * left alone, and a row that says something else is not written at all. The last one
+     * is not lost: the library sends {@see HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED}
+     * beside this call and the holder does the edit in {@see repoint()}.
      *
      * @param string $acceptKey Accept key of the waiting connection
      * @param string $identifier Normalized identifier being recovered (lowercased email)
      * @param string $sessionToken Session token the grant is bound to
-     * @throws RtActionsCallbackNotSetException When the collection's forget-cached-item callback is not configured
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     */
+    public function park(string $acceptKey, string $identifier, string $sessionToken): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->stateCollection->get($acceptKey) !== null) {
+            return;
+        }
+
+        $this->addStateToCollection(StateRecoveryWaiter::create($acceptKey, $identifier, $sessionToken));
+    }
+
+    /**
+     * Points one waiting connection at the address it waits on NOW.
+     *
+     * The holder's half of {@see park()}, and the reason the pair is split (HIL-685):
+     * this one edits a row that already exists, and editing this collection belongs to
+     * its full truth source alone. It runs off the frame the users library sends
+     * whenever it parks a browser, so the person who asked for a second code on another
+     * address is re-pointed IN PLACE rather than removed and re-added - the view keeps
+     * its items keyed by id, and a replaced row would leave the collection answering
+     * with an item still bound to the address the person left.
+     *
+     * The grant goes with the address it was earned for, so re-pointing clears
+     * `codeAccepted`: the code that was proven belonged to the identifier the person
+     * just left, and asking for a new one is a new fact rather than a repeat of the old.
+     * A frame that says exactly what the row already says writes nothing - which is what
+     * makes it safe for the library to send one on every park.
+     *
+     * @param string $acceptKey Accept key of the waiting connection
+     * @param string $identifier Normalized identifier being recovered (lowercased email)
+     * @param string $sessionToken Session token the grant is bound to
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      * @throws HilosException Whatever the concrete state's read of the diff raises
      */
-    public function park(string $acceptKey, string $identifier, string $sessionToken): void
+    public function repoint(string $acceptKey, string $identifier, string $sessionToken): void
     {
         $this->ensureCanWrite();
 
         $parked = $this->stateCollection->get($acceptKey);
-        if ($parked !== null) {
-            $this->applyDiffToState($parked, [
-                StateRecoveryWaiter::identifier => $identifier,
-                StateRecoveryWaiter::sessionToken => $sessionToken,
-                StateRecoveryWaiter::codeAccepted => false,
-            ]);
+        if ($parked === null) {
+            $this->addStateToCollection(StateRecoveryWaiter::create($acceptKey, $identifier, $sessionToken));
 
             return;
         }
 
-        $this->addStateToCollection(StateRecoveryWaiter::create($acceptKey, $identifier, $sessionToken));
+        if (
+            $parked->identifier === $identifier
+            && $parked->sessionToken === $sessionToken
+            && !$parked->codeAccepted
+        ) {
+            return;
+        }
+
+        $this->applyDiffToState($parked, [
+            StateRecoveryWaiter::identifier => $identifier,
+            StateRecoveryWaiter::sessionToken => $sessionToken,
+            StateRecoveryWaiter::codeAccepted => false,
+        ]);
     }
 
     /**

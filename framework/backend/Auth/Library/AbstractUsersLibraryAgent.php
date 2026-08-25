@@ -18,8 +18,10 @@ use Hilos\Auth\Library\Command\RecoveryCommands;
 use Hilos\Auth\Library\DTO\AbandonRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
+use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationAbandonedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\CompletePasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmMagicLinkActionDTO;
@@ -223,9 +225,13 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * The two parked-surface collections are claimed because a command parks a browser on the
      * code step it just opened, and a runtime write with no claim behind it is refused. The
      * session holder claims them too, and for its own half - it parks a reconnecting socket
-     * and releases every wait a converge or a dead connection ends. Two agents on one runtime
-     * collection is new (HIL-622, P-125): sync is a per-row field diff, so the halves do not
-     * overwrite one another, but which of the two OWNS the wait is a question for the owner.
+     * and releases every wait a converge or a dead connection ends.
+     *
+     * Which of the two OWNS the wait was open when this was written (HIL-622, P-125) and is
+     * answered now: the holder does, wholly, and this library is a declared add/remove
+     * co-owner beside it (HIL-685). So the pair is not two writers of one row - what the
+     * library brings into being it may also take away, and everything else about a row that
+     * already exists it says in a frame.
      *
      * @throws HilosException On database or runtime startup failure
      */
@@ -513,6 +519,50 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 $this->currentAction,
                 $outcome?->toArray(),
             ),
+        );
+    }
+
+    /**
+     * Tells the session holder which address one browser is now waiting to confirm.
+     *
+     * Sent beside every park, and it is not a hand-off: the browser that submitted is
+     * answered by the library itself, here and now, because the answer never stood on the
+     * parked row. What the row is for is the OTHER tabs of that session, which a converge
+     * reaches through it, and those are the holder's.
+     *
+     * It exists for the one case parking cannot serve alone (HIL-685): the row is already
+     * there and points at another address. Editing this collection belongs to its one full
+     * truth source, so the library adds what is missing and says the rest in this frame.
+     *
+     * @param ActingSession $acting Browser being parked
+     * @param string $identifier Normalized identifier it waits on now
+     * @throws InvalidArgumentException When the frame cannot be named or queued
+     */
+    public function announceRegistrationWaitMoved(ActingSession $acting, string $identifier): void
+    {
+        $this->sendToAgent(
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_MOVED,
+            new AuthRegistrationWaitMovedSignalData($acting->acceptKey, $identifier, $acting->sessionToken),
+        );
+    }
+
+    /**
+     * Tells the session holder which address one browser is now recovering.
+     *
+     * The recovery twin of {@see announceRegistrationWaitMoved()}, and it carries one
+     * consequence more: re-pointing a recovery waiter drops the grant on it, so a second
+     * code asked for from the same tab cannot open the password step of the address the
+     * person just left. Not a hand-off either - the library answers the send itself.
+     *
+     * @param ActingSession $acting Browser being parked
+     * @param string $identifier Normalized address it recovers now
+     * @throws InvalidArgumentException When the frame cannot be named or queued
+     */
+    public function announceRecoveryWaitMoved(ActingSession $acting, string $identifier): void
+    {
+        $this->sendToAgent(
+            HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED,
+            new AuthRecoveryWaitMovedSignalData($acting->acceptKey, $identifier, $acting->sessionToken),
         );
     }
 

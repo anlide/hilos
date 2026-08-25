@@ -12,8 +12,10 @@ use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
+use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationAbandonedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
@@ -1181,7 +1183,7 @@ trait HilosSessionHost
     /**
      * Routes one frame the users library addressed to this holder (HIL-622).
      *
-     * Called from the owning agent's `onSignalAgent()`, under the five cases that
+     * Called from the owning agent's `onSignalAgent()`, under the seven cases that
      * {@see HilosSessionHostInterface::SESSION_HOST_SIGNALS} names. The switch lives here
      * rather than in the project because what each frame means is the framework's: the
      * library ends a ceremony by saying what happened, and the order the holder then acts
@@ -1258,6 +1260,32 @@ trait HilosSessionHost
                 }
 
                 $this->dropAbandonedRegistration($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_MOVED:
+                if (!$data->data instanceof AuthRegistrationWaitMovedSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        AuthRegistrationWaitMovedSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->moveRegistrationWait($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED:
+                if (!$data->data instanceof AuthRecoveryWaitMovedSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        AuthRecoveryWaitMovedSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->moveRecoveryWait($data->data);
 
                 return;
 
@@ -1442,12 +1470,36 @@ trait HilosSessionHost
     /**
      * Opens the password step for a browser whose recovery code was just accepted.
      *
+     * Four steps, and the order is the mechanism (HIL-416, HIL-685). The initiator's row
+     * is made to say THIS address first - a browser that reconnected between asking for
+     * the code and proving it lost the row its grant is written on, and one whose
+     * wait-moved frame never arrived has a row naming the address it walked away from.
+     * Re-pointing rather than parking is what makes this handler answer for itself: the
+     * frame that carries a moved wait is best-effort, and the grant below is written by
+     * matching that very address, so a stale row would silently un-grant the person who
+     * just proved a code. Then the grant itself is written - on every row of this session
+     * standing on this address, and taken off every row of it standing on another, since a
+     * session is on one recovery at a time. Then the neighbouring tabs are moved onto the
+     * password step. The answer to the tab that submitted goes LAST, because it is what
+     * opens that step, and a grant that arrived after it would be a password screen with
+     * nothing behind it.
+     *
+     * The grant moved here from the library with the write it needs (HIL-685): it edits
+     * rows, the library may only add and remove them, and the holder was already touching
+     * these very rows one line below.
+     *
      * @param AuthRecoveryGrantedSignalData $frame Address, session, and the answer to give
      * @throws HilosException On runtime failure
      * @throws InvalidArgumentException When a converge or reply frame cannot be named
      */
     private function openRecoveryPasswordStep(AuthRecoveryGrantedSignalData $frame): void
     {
+        Hilos::$rt->hilosRecoveryWaiters->actions->repoint(
+            $frame->initiatorAcceptKey,
+            $frame->identifier,
+            $frame->sessionToken,
+        );
+        Hilos::$rt->hilosRecoveryWaiters->actions->acceptCodeForSession($frame->sessionToken, $frame->identifier);
         $this->grantRecoveryToSession($frame->identifier, $frame->sessionToken, $frame->initiatorAcceptKey);
         $this->answerLibraryAction($frame->initiatorAcceptKey, $frame->action, $frame->requestId, $frame->outcome);
     }
@@ -1491,6 +1543,50 @@ trait HilosSessionHost
     {
         $this->abandonRegistration($frame->sessionToken, $frame->initiatorAcceptKey);
         $this->answerLibraryAction($frame->initiatorAcceptKey, $frame->action, $frame->requestId, $frame->outcome);
+    }
+
+    /**
+     * Makes one registration waiter say the address its browser is on now (HIL-685).
+     *
+     * The edit half of parking, which the users library may not do: it adds rows to this
+     * collection and removes them, and the row of a browser that submitted a second
+     * address is already there. So the library parks what is missing, sends this, and the
+     * two together are the upsert that used to sit inside `park()`.
+     *
+     * Nothing is answered. The browser that asked was told its code went out by the
+     * library itself, because that answer never stood on the wait: the row is what a
+     * converge reaches the OTHER tabs of the session through.
+     *
+     * @param AuthRegistrationWaitMovedSignalData $frame Connection, address, and session it waits on now
+     * @throws HilosException On runtime failure
+     */
+    private function moveRegistrationWait(AuthRegistrationWaitMovedSignalData $frame): void
+    {
+        Hilos::$rt->hilosRegistrationWaiters->actions->repoint(
+            $frame->acceptKey,
+            $frame->identifier,
+            $frame->sessionToken,
+        );
+    }
+
+    /**
+     * Makes one recovery waiter say the address its browser is on now, un-granted (HIL-685).
+     *
+     * The recovery twin of {@see moveRegistrationWait()}, and it takes one thing more away:
+     * re-pointing clears the grant, because a proven code buys the password step of the
+     * address it was proven for and of no other. A person who asks for a second code from
+     * the same tab has left the first address, and the grant does not follow them.
+     *
+     * @param AuthRecoveryWaitMovedSignalData $frame Connection, address, and session it recovers now
+     * @throws HilosException On runtime failure
+     */
+    private function moveRecoveryWait(AuthRecoveryWaitMovedSignalData $frame): void
+    {
+        Hilos::$rt->hilosRecoveryWaiters->actions->repoint(
+            $frame->acceptKey,
+            $frame->identifier,
+            $frame->sessionToken,
+        );
     }
 
     /**

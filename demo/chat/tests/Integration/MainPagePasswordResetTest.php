@@ -18,9 +18,15 @@ use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Context\HilosDbContext;
@@ -36,7 +42,10 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Random\RandomException;
 
 /**
  * Integration tests for recovery by code (HIL-416): the code is accepted on one
@@ -198,6 +207,114 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
                 password_verify(self::OLD_PASSWORD, (string)$this->readSecret($theirs)),
                 'The other address keeps its password',
             );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * A second code asked for from the same tab moves the wait and shuts the first address.
+     *
+     * The one branch the wait-moved frame exists for (HIL-685). The tab is parked once, so
+     * the row is already there when the person changes their mind - which the library may
+     * not edit, and which the holder edits on the frame instead. Two things have to be true
+     * afterwards: the row names the SECOND address, and the code of the first one no longer
+     * opens anything, because a wait that moved took its grant with it.
+     *
+     * @throws HilosException When setup or reset handling fails
+     */
+    public function testAskingForASecondCodeOnAnotherAddressMovesTheWait(): void
+    {
+        $agent = $this->bootAgent();
+        $first = $this->uniqueEmail();
+        $second = $this->uniqueEmail();
+        $this->seedUserWithPassword($first);
+        $this->seedUserWithPassword($second);
+        $this->openSession($agent, 'moved-ak');
+
+        try {
+            $this->requestReset($agent, 'moved-ak', $first);
+            $this->assertSame($first, Hilos::$rt->hilosRecoveryWaiters['moved-ak']?->identifier);
+
+            $this->requestReset($agent, 'moved-ak', $second);
+
+            $this->assertSame(
+                $second,
+                Hilos::$rt->hilosRecoveryWaiters['moved-ak']?->identifier,
+                'The wait follows the address the person is actually on',
+            );
+            $this->assertFalse(Hilos::$rt->hilosRecoveryWaiters['moved-ak']?->codeAccepted);
+
+            // The code of the SECOND address is the only one that opens the step now.
+            $this->seedKnownCode($second);
+            $outcome = $this->confirm($agent, 'moved-ak', $second, self::CODE);
+
+            $this->assertTrue($outcome->ok);
+            $this->assertSame(AuthFlowStep::SET_PASSWORD, $outcome->step);
+            $this->assertTrue(Hilos::$rt->hilosRecoveryWaiters['moved-ak']?->codeAccepted);
+
+            $this->complete($agent, 'moved-ak', self::NEW_PASSWORD);
+
+            $this->assertTrue(
+                password_verify(self::NEW_PASSWORD, (string)$this->readSecret($second)),
+                'The save lands on the address the wait moved to',
+            );
+            $this->assertTrue(
+                password_verify(self::OLD_PASSWORD, (string)$this->readSecret($first)),
+                'The address the person left keeps its password',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * A lost wait-moved frame still costs the neighbours, never the person who proved a code.
+     *
+     * The frame is best-effort by construction, so the holder's grant step may not lean on
+     * it: it re-points the initiator's row itself before writing the grant. A row left
+     * naming the address the person walked away from would otherwise be UN-granted by the
+     * very submit that proved a code, and the password screen would open onto nothing.
+     * The loss is staged the only honest way - by putting the row back the way a dropped
+     * frame would have left it.
+     *
+     * @throws HilosException When setup or reset handling fails
+     */
+    public function testAProvenCodeOpensThePasswordStepEvenIfTheWaitMovedFrameWasLost(): void
+    {
+        $agent = $this->bootAgent();
+        $first = $this->uniqueEmail();
+        $second = $this->uniqueEmail();
+        $this->seedUserWithPassword($first);
+        $this->seedUserWithPassword($second);
+        $this->openSession($agent, 'lost-frame-ak');
+
+        try {
+            $this->requestReset($agent, 'lost-frame-ak', $first);
+            $this->requestReset($agent, 'lost-frame-ak', $second);
+
+            // The frame never arrived: the row still names the address that was left.
+            ExecutionContext::setCurrentAgentId($agent->getId());
+            Hilos::$rt->hilosRecoveryWaiters->actions->repoint(
+                'lost-frame-ak',
+                $first,
+                (string)$this->sessionOf('lost-frame-ak')?->token,
+            );
+            ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
+
+            $this->seedKnownCode($second);
+            $outcome = $this->confirm($agent, 'lost-frame-ak', $second, self::CODE);
+
+            $this->assertTrue($outcome->ok);
+            $this->assertSame(AuthFlowStep::SET_PASSWORD, $outcome->step);
+            $this->assertTrue(
+                Hilos::$rt->hilosRecoveryWaiters['lost-frame-ak']?->codeAccepted,
+                'The grant lands on the address the code was proven for, stale row or not',
+            );
+
+            $this->complete($agent, 'lost-frame-ak', self::NEW_PASSWORD);
+
+            $this->assertTrue(password_verify(self::NEW_PASSWORD, (string)$this->readSecret($second)));
         } finally {
             $this->cleanUp();
         }
@@ -371,9 +488,29 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
      */
     private function bootAgent(): ChatAgent
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(ChatRtContext::userStates, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(StateRecoveryWaiter::RT_COLLECTION, true, self::TEST_AGENT_ID);
+        $agent = new ChatAgent();
+
+        // Claimed under the REAL agent ids as well, and that is not decoration (HIL-685):
+        // this flow stands on the split between the holder's full right over the parked
+        // surfaces and the library's [add, remove], and a run where one all-powerful id
+        // writes everything cannot meet a single refusal production meets. The dispatch
+        // helpers below put the current id where the worker would put it.
+        foreach ([
+            ChatRtContext::connections,
+            ChatRtContext::userStates,
+            StateRecoveryWaiter::RT_COLLECTION,
+            // Claimed by the holder's own onStart() in a node, through startSessionRotations();
+            // a login rotates the session token and writes here on the way out.
+            StateHilosSessionRotation::RT_COLLECTION,
+        ] as $collection) {
+            RtTruthSourceRegistry::register($collection, true, self::TEST_AGENT_ID);
+            RtTruthSourceRegistry::register($collection, true, $agent->getId());
+        }
+
+        // Built here rather than on first dispatch: onStart() is what lays down the
+        // library's own narrower claim, and a claim that arrives after the first write
+        // proves nothing.
+        $this->usersLibrary();
         Hilos::$rt->connections->actions->clear();
 
         ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
@@ -386,7 +523,52 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
             [],
         ));
 
-        return new ChatAgent();
+        return $agent;
+    }
+
+    /**
+     * Runs one sign-in action the way two workers run it: the library, then the holder.
+     *
+     * The current agent id is what the truth-source registry judges a write by, and in a
+     * node it is set per callback by the worker ({@see WorkerManager}). Setting it here
+     * too is the whole reason this file can see a refusal at all - under one shared id the
+     * library was silently allowed to edit the holder's rows, which is how a dead password
+     * recovery passed this suite for a week (HIL-685).
+     *
+     * @param ChatAgent $agent Agent holding this project's sessions
+     * @param string $acceptKey Accept key the action arrives on
+     * @param string $action Action name from the library's own list
+     * @param ActionPayloadDTO $dto Parsed action payload
+     * @return ?AuthFlowOutcome Where the surface goes next, from whichever of the two answered
+     * @throws AgentUnknownActionException When the library does not own the action
+     * @throws AgentUnknownSignalException When the holder is handed a frame it does not know
+     * @throws InvalidActionPayloadException When the payload does not match the action name
+     * @throws InvalidArgumentException When a queued signal cannot be named
+     * @throws InvalidFormatException When a frame's outcome cannot be read back
+     * @throws ValidationException When the command refuses what was submitted
+     * @throws RandomException When a code or a rotated token cannot draw from the CSPRNG
+     * @throws HilosException When a command or a frame exposes database or runtime failure
+     */
+    private function runLibraryAction(
+        ChatAgent $agent,
+        string $acceptKey,
+        string $action,
+        ActionPayloadDTO $dto,
+    ): ?AuthFlowOutcome {
+        ExecutionContext::setCurrentAgentId($this->usersLibrary()->getId());
+        try {
+            $reply = $this->usersLibrary()->onAgentAction($acceptKey, $action, $dto);
+        } finally {
+            ExecutionContext::setCurrentAgentId($agent->getId());
+        }
+
+        try {
+            $handedOver = $this->deliverLibraryFrames($agent);
+        } finally {
+            ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
+        }
+
+        return $reply instanceof AuthFlowOutcome ? $reply : $handedOver;
     }
 
     /**
@@ -404,18 +586,25 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
     private function openSession(ChatAgent $agent, string $acceptKey, ?string $sessionToken = null): string
     {
         $token = $sessionToken ?? RandomHelper::hex(16);
-        $agent->onSignalHandshake(
-            new WebSocketHandshakeSignalDTO(
-                headers: [],
-                acceptKey: $acceptKey,
-                cookies: [],
-                clientIp: '127.0.0.1',
-                queryParams: RequestQueryParams::empty(),
-                sessionToken: $token,
-            ),
-            '',
-            '',
-        );
+        // Under the holder's own id: a handshake is the holder's callback, and what it
+        // writes - the connection row, a wait restored from the session - is the holder's.
+        ExecutionContext::setCurrentAgentId($agent->getId());
+        try {
+            $agent->onSignalHandshake(
+                new WebSocketHandshakeSignalDTO(
+                    headers: [],
+                    acceptKey: $acceptKey,
+                    cookies: [],
+                    clientIp: '127.0.0.1',
+                    queryParams: RequestQueryParams::empty(),
+                    sessionToken: $token,
+                ),
+                '',
+                '',
+            );
+        } finally {
+            ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
+        }
         ExecutionContext::setCurrentAcceptKey($acceptKey);
 
         return $token;
@@ -431,12 +620,12 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
      */
     private function requestReset(ChatAgent $agent, string $acceptKey, string $email): void
     {
-        $this->usersLibrary()->onAgentAction(
+        $this->runLibraryAction(
+            $agent,
             $acceptKey,
             HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET,
             new RequestPasswordResetActionDTO($email),
         );
-        $this->deliverLibraryFrames($agent);
     }
 
     /**
@@ -451,13 +640,12 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
      */
     private function confirm(ChatAgent $agent, string $acceptKey, string $email, string $code): AuthFlowOutcome
     {
-        $reply = $this->usersLibrary()->onAgentAction(
+        $outcome = $this->runLibraryAction(
+            $agent,
             $acceptKey,
             HilosSignalConstants::HILOS_CONFIRM_PASSWORD_RESET,
             new ConfirmPasswordResetActionDTO($email, $code),
         );
-        $handedOver = $this->deliverLibraryFrames($agent);
-        $outcome = $reply ?? $handedOver;
         $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);
 
         return $outcome;
@@ -474,13 +662,12 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
      */
     private function complete(ChatAgent $agent, string $acceptKey, string $password): AuthFlowOutcome
     {
-        $reply = $this->usersLibrary()->onAgentAction(
+        $outcome = $this->runLibraryAction(
+            $agent,
             $acceptKey,
             HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET,
             new CompletePasswordResetActionDTO($password),
         );
-        $handedOver = $this->deliverLibraryFrames($agent);
-        $outcome = $reply ?? $handedOver;
         $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);
 
         return $outcome;

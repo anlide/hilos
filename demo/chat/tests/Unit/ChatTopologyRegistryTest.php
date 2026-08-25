@@ -46,8 +46,10 @@ use Hilos\Auth\Library\DTO\RequestPhoneCodeActionDTO;
 use Hilos\Auth\Library\DTO\RequestRegisterConfirmActionDTO;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
+use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationAbandonedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleCheckSignalData;
@@ -357,6 +359,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED => AgentType::CHAT,
             HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED => AgentType::CHAT,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_ABANDONED => AgentType::CHAT,
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_MOVED => AgentType::CHAT,
+            HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => AgentType::CHAT,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => HilosAgentType::HILOS_USERS_LIBRARY,
             ChatSignalConstants::BOT_AGENT_START => AgentType::BOT,
@@ -484,6 +488,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED => AuthRecoveryGrantedSignalData::class,
             HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED => AuthPasswordChangedSignalData::class,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_ABANDONED => AuthRegistrationAbandonedSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_MOVED => AuthRegistrationWaitMovedSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => AuthRecoveryWaitMovedSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
             HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
             ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,

@@ -985,6 +985,16 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
+        // Asked of the map rather than of five case labels (HIL-685): the frames are spread
+        // into AGENT_SIGNALS from that same map, and a second list of them here would be
+        // this project restating a contract the framework already states - one that grew by
+        // two the moment a wait learned to move.
+        if (array_key_exists($name, HilosSessionHostInterface::SESSION_HOST_SIGNALS)) {
+            $this->handleSessionHostFrame($data, $name);
+
+            return;
+        }
+
         switch ($name) {
             case ChatSignalConstants::MODERATION_RESULT:
             case ChatSignalConstants::RENAME_MODERATION_RESULT:
@@ -996,13 +1006,6 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
                     );
                 }
                 $this->handleBotMessage($data->data);
-                return;
-            case HilosSignalConstants::HILOS_AUTH_SESSION_GRANT:
-            case HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED:
-            case HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED:
-            case HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED:
-            case HilosSignalConstants::HILOS_AUTH_REGISTRATION_ABANDONED:
-                $this->handleSessionHostFrame($data, $name);
                 return;
             case ChatSignalConstants::ACCOUNT_MERGE_REQUEST:
                 if (!$data->data instanceof AccountMergeSignalData) {

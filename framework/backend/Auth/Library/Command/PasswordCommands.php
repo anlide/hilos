@@ -124,6 +124,7 @@ final class PasswordCommands extends AbstractLibraryCommands
      * @throws InvalidFormatException When the email is not a valid address
      * @throws ValidationException When the password is too short
      * @throws RandomException When the platform CSPRNG cannot produce a code
+     * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When identity lookup, the reservation, or the runtime write fails
      */
     public function register(string $acceptKey, RegisterActionDTO $dto): AuthFlowOutcome
@@ -192,6 +193,7 @@ final class PasswordCommands extends AbstractLibraryCommands
      * @return AuthFlowOutcome Where the surface goes next
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws RandomException When the platform CSPRNG cannot produce a code
+     * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When the reservation, verification, or runtime write fails
      */
     public function requestRegisterConfirm(string $acceptKey, RequestRegisterConfirmActionDTO $dto): AuthFlowOutcome
@@ -346,13 +348,21 @@ final class PasswordCommands extends AbstractLibraryCommands
      * reconnect with the code screen it left. Two callers do this identically and a third
      * would have.
      *
+     * The runtime half takes two steps since HIL-685, and the pair is one park. This
+     * library may bring a waiter row into being and take it away; it may not edit one, and
+     * a browser that submits a second address already HAS a row. So the missing row is
+     * added here and the frame beside it asks the session holder - the collection's one
+     * full truth source - to make an existing one say the new address.
+     *
      * @param ActingSession $acting Browser being parked
      * @param string $identifier Normalized address it is registering
+     * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When the runtime park or the durable hold fails
      */
     private function parkRegistrationWait(ActingSession $acting, string $identifier): void
     {
         Hilos::$rt->hilosRegistrationWaiters->actions->park($acting->acceptKey, $identifier, $acting->sessionToken);
+        $this->library->announceRegistrationWaitMoved($acting, $identifier);
         Hilos::$db->sessions->findByToken($acting->sessionToken)?->actions->holdPendingRegistration($identifier);
     }
 }
