@@ -180,7 +180,7 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
     private static function openConnection(): void
     {
         if (Hilos::$env === null) {
-            Hilos::initEnv(dirname(__DIR__), copyExample: false);
+            Hilos::initEnv(dirname(__DIR__));
         }
 
         Database::configure(

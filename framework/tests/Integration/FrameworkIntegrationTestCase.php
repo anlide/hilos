@@ -34,7 +34,7 @@ abstract class FrameworkIntegrationTestCase extends TestCase
         parent::setUp();
 
         if (Hilos::$env === null) {
-            Hilos::initEnv(dirname(__DIR__), copyExample: false);
+            Hilos::initEnv(dirname(__DIR__));
         }
 
         Database::configure(

@@ -18,11 +18,14 @@ x-node-base: &node-base
       condition: service_healthy
 
 x-node-env: &node-env
-  # APP_ENV is required of every node (HIL-566), and the value has to be `dev`, not
-  # `test`: on `test` the daemon loads tests/.env, whose DB_DATABASE would override
-  # every node's per-schema value. `dev` is not production-like, so the nodes still
-  # admit the test-only commands this harness drives. Only the cluster-cli container
-  # runs as APP_ENV=test, and it has no per-schema database to lose.
+  # APP_ENV is required of every node (HIL-566), and the value is `dev`, not `test`:
+  # `dev` is not production-like, so the nodes admit the test-only commands this
+  # harness drives. It used to be forced as well - on `test` the daemon loads
+  # tests/.env, whose DB_DATABASE would have overridden every node's per-schema value
+  # - but that reason is gone since the compose environment outranks any env file, and
+  # moving the nodes to `test` is a separate question for this harness. Only the
+  # cluster-cli container runs as APP_ENV=test, and it has no per-schema database to
+  # lose.
   APP_ENV: dev
   DB_HOST: cluster-mysql
   DB_PORT: "3306"

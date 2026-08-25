@@ -1004,9 +1004,8 @@ abstract class Hilos
      * Initializes the environment accessor before storage and daemon layers.
      *
      * @param ?string $rootPath Directory that contains .env and .env.example
-     * @param bool $copyExample If true, copy .env.example to .env when .env is missing
      */
-    public static function initEnv(?string $rootPath = null, bool $copyExample = true): void
+    public static function initEnv(?string $rootPath = null): void
     {
         // The earliest point every process spine passes through while still naming the project
         // facade, and therefore where {@see appClass()} has to be captured. Capturing it in
@@ -1020,7 +1019,7 @@ abstract class Hilos
             static::$env = static::createEnv();
         }
 
-        static::$env->init($rootPath, $copyExample);
+        static::$env->init($rootPath);
 
         if (static::$llm === null) {
             static::$llm = static::createLlm();

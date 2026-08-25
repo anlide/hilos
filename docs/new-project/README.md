@@ -121,8 +121,9 @@ bind-mounted at `data/mysql`, `mysql/init.sql`), phpMyAdmin, the daemon, a cli
 service (profile `cli`), the prod-parity nginx (profile `full`), and the
 frontend dev server (no profile — `composer run daemon-start` brings the whole
 stack up). The daemon/cli `env_file` uses the long form with
-`required: false`: a fresh checkout boots because `Hilos::initEnv` copies
-`.env.example` to `.env` in-container.
+`required: false`: a fresh checkout boots on the compose environment plus
+`.env.example`, and `.env` itself appears only when someone runs
+`composer run setup-env`.
 
 **Test** (`docker-compose.test.yml`, the agent/CI lane): mysql (named volume,
 healthcheck), the daemon (`env_file: ../tests/.env` — must exist; created by
@@ -153,10 +154,14 @@ cli reaches the daemon by a static IP (`HILOS_DAEMON_HOST`).
 **Worker pool.** The daemon pre-starts `WORKER_MIN_REGULAR` regular and
 `WORKER_MIN_MONOPOLISTIC` monopolistic workers (regular ones scale up to
 `WORKER_MAX_REGULAR`). Set these in the daemon's compose `environment`, NOT in
-`.env`/`.env.example`: `EnvAccessor` resolves a key as `.env` → container env
-(compose) → `.env.example` → catalog default, so a value pinned in an env file
-out-ranks — and silently overrides — the compose setting. The framework catalog
-defaults are 3 / 2 / 10.
+`.env`/`.env.example`: `EnvAccessor` resolves a key as container env (compose) →
+`.env` → `.env.example` → catalog default, so the stack that launched the node
+has the last word and a value pinned in an env file is only a default. The
+framework catalog defaults are 3 / 2 / 10.
+
+The price of that single rule, named here so it is read rather than discovered:
+on a running stack, editing `.env` no longer changes anything for a variable the
+compose file sets. Change it where the stack sets it, or unset it there.
 
 Monopolistic sizing is load-bearing: each monopolistic agent claims its own
 monopolistic worker (one holding zero agents), and there is no on-demand spawn —

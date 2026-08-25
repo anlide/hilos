@@ -30,7 +30,7 @@ require_once $autoload;
 
 try {
     // framework/tests holds .env / .env.example; initEnv loads it directly.
-    Hilos::initEnv(dirname(__DIR__, 2) . '/tests', copyExample: false);
+    Hilos::initEnv(dirname(__DIR__, 2) . '/tests');
 } catch (Throwable $e) {
     Logger::error('Framework PHPUnit bootstrap failed: ' . $e->getMessage(), [
         ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),

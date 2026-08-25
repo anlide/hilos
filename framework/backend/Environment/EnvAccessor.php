@@ -62,18 +62,16 @@ class EnvAccessor implements ArrayAccess
     /**
      * Initializes .env and .env.example caches for a project root.
      *
+     * A missing .env is read as an empty cache, never written: the only way to get that
+     * file is the explicit `composer run setup-env` step.
+     *
      * @param ?string $rootPath Directory that contains .env and .env.example
-     * @param bool $copyExample If true, copy .env.example to .env when .env is missing
      */
-    public function init(?string $rootPath = null, bool $copyExample = true): void
+    public function init(?string $rootPath = null): void
     {
         $this->rootPath = $rootPath ?? dirname(__DIR__, 3);
         $this->envPath = $this->rootPath . '/.env';
         $this->examplePath = $this->rootPath . '/.env.example';
-
-        if ($copyExample && !file_exists($this->envPath) && file_exists($this->examplePath)) {
-            copy($this->examplePath, $this->envPath);
-        }
 
         $this->envCache = file_exists($this->envPath) ? $this->parseEnvFile($this->envPath) : [];
         $this->exampleCache = null;
@@ -81,6 +79,9 @@ class EnvAccessor implements ArrayAccess
 
     /**
      * Loads an explicit env file as the active .env cache.
+     *
+     * The file lands on the same rank as .env, which is below the process environment:
+     * it names what the launching stack left unsaid, it does not overrule it.
      *
      * @param string $envFilePath Path to env file
      * @throws EnvInvalidValueException When the env file is missing
@@ -415,18 +416,24 @@ class EnvAccessor implements ArrayAccess
     }
 
     /**
+     * Answers with the first source that names the key: process environment → env file
+     * → .env.example → null, leaving the catalog default to the caller.
+     *
+     * An empty string from the process environment is an answer, not silence; whether it
+     * counts as missing is decided by the catalog's emptyIsMissing flag.
+     *
      * @param string $key Environment variable name
-     * @return ?string Raw value from .env, system env, or .env.example
+     * @return ?string Raw value from the process environment, .env, or .env.example
      */
     private function rawValue(string $key): ?string
     {
-        if ($this->envCache !== null && array_key_exists($key, $this->envCache)) {
-            return $this->envCache[$key];
-        }
-
         $value = getenv($key);
         if ($value !== false) {
             return $value;
+        }
+
+        if ($this->envCache !== null && array_key_exists($key, $this->envCache)) {
+            return $this->envCache[$key];
         }
 
         return $this->exampleValue($key);

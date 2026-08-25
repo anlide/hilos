@@ -86,9 +86,9 @@ services:
     networks:
       - hilos-tasks-local-network
 
-  # The Hilos daemon. The .env file is optional at the compose level: when it
-  # is missing, the in-container bootstrap copies .env.example to .env itself
-  # (Hilos::initEnv), so a fresh checkout starts without a setup step.
+  # The Hilos daemon. The .env file is optional at the compose level: nothing
+  # creates it for you, and a fresh checkout starts without one - the values
+  # come from this stack and, for anything it does not name, from .env.example.
   tasks-daemon-local:
     build: .
     env_file:

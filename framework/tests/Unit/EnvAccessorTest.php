@@ -26,6 +26,9 @@ final class EnvAccessorTest extends TestCase
     private const string REQUIRED_KEY = 'HILOS_TEST_ENV_REQUIRED';
     private const string EMPTY_ALLOWED_KEY = 'HILOS_TEST_ENV_EMPTY_ALLOWED';
 
+    /** @var ?string Directory holding the .env and .env.example written by a test */
+    private ?string $envRoot = null;
+
     protected function tearDown(): void
     {
         foreach ([
@@ -37,6 +40,14 @@ final class EnvAccessorTest extends TestCase
             self::EMPTY_ALLOWED_KEY,
         ] as $key) {
             putenv($key);
+        }
+
+        if ($this->envRoot !== null) {
+            foreach (array_diff(scandir($this->envRoot) ?: [], ['.', '..']) as $name) {
+                unlink($this->envRoot . '/' . $name);
+            }
+            rmdir($this->envRoot);
+            $this->envRoot = null;
         }
 
         parent::tearDown();
@@ -147,6 +158,71 @@ final class EnvAccessorTest extends TestCase
         $this->env([])[self::STRING_KEY];
     }
 
+    public function testProcessEnvironmentOutranksEnvFile(): void
+    {
+        $root = $this->envRootWith([
+            '.env' => self::STRING_KEY . '=from-file',
+            '.env.example' => self::STRING_KEY . '=from-example',
+        ]);
+        putenv(self::STRING_KEY . '=from-process');
+        $env = $this->env([
+            self::STRING_KEY => $this->entry(EnvCatalogConstants::TYPE_STRING, 'fallback', emptyIsMissing: true),
+        ]);
+        $env->init($root);
+
+        $this->assertSame('from-process', $env[self::STRING_KEY]);
+    }
+
+    public function testEnvFileOutranksExample(): void
+    {
+        $root = $this->envRootWith([
+            '.env' => self::STRING_KEY . '=from-file',
+            '.env.example' => self::STRING_KEY . '=from-example',
+        ]);
+        $env = $this->env([
+            self::STRING_KEY => $this->entry(EnvCatalogConstants::TYPE_STRING, 'fallback', emptyIsMissing: true),
+        ]);
+        $env->init($root);
+
+        $this->assertSame('from-file', $env[self::STRING_KEY]);
+    }
+
+    public function testInitDoesNotCreateEnvFile(): void
+    {
+        $root = $this->envRootWith(['.env.example' => self::STRING_KEY . '=from-example']);
+        $env = $this->env([
+            self::STRING_KEY => $this->entry(EnvCatalogConstants::TYPE_STRING, 'fallback', emptyIsMissing: true),
+        ]);
+        $env->init($root);
+
+        $this->assertFileDoesNotExist($root . '/.env');
+        $this->assertSame('from-example', $env[self::STRING_KEY]);
+    }
+
+    public function testEmptyProcessValueAnswersInsteadOfLettingTheEnvFileSpeak(): void
+    {
+        $root = $this->envRootWith(['.env' => self::STRING_KEY . '=from-file']);
+        putenv(self::STRING_KEY . '=');
+        $env = $this->env([
+            self::STRING_KEY => $this->entry(EnvCatalogConstants::TYPE_STRING, 'fallback', emptyIsMissing: true),
+        ]);
+        $env->init($root);
+
+        $this->assertSame('fallback', $env[self::STRING_KEY]);
+    }
+
+    public function testExplicitlyLoadedFileStaysBelowProcessEnvironment(): void
+    {
+        $root = $this->envRootWith(['tests.env' => self::STRING_KEY . '=from-loaded']);
+        putenv(self::STRING_KEY . '=from-process');
+        $env = $this->env([
+            self::STRING_KEY => $this->entry(EnvCatalogConstants::TYPE_STRING, 'fallback', emptyIsMissing: true),
+        ]);
+        $env->load($root . '/tests.env');
+
+        $this->assertSame('from-process', $env[self::STRING_KEY]);
+    }
+
     public function testMutationIsRejected(): void
     {
         $env = $this->env([
@@ -156,6 +232,23 @@ final class EnvAccessorTest extends TestCase
         $this->expectException(EnvMutationNotSupportedException::class);
 
         $env[self::STRING_KEY] = 'changed';
+    }
+
+    /**
+     * Writes env files into a throwaway directory removed by {@see tearDown()}.
+     *
+     * @param array<string, string> $files File name inside the directory => its contents
+     * @return string Path of the directory
+     */
+    private function envRootWith(array $files): string
+    {
+        $this->envRoot = sys_get_temp_dir() . '/hilos-env-' . uniqid();
+        mkdir($this->envRoot);
+        foreach ($files as $name => $contents) {
+            file_put_contents($this->envRoot . '/' . $name, $contents . "\n");
+        }
+
+        return $this->envRoot;
     }
 
     /**

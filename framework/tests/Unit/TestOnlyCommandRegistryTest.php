@@ -34,7 +34,7 @@ final class TestOnlyCommandRegistryTest extends TestCase
     protected function tearDown(): void
     {
         // Hand the captured project facade back, or the next test reads this one's agents.
-        HilosFacade::initEnv(dirname(__DIR__), copyExample: false);
+        HilosFacade::initEnv(dirname(__DIR__));
 
         parent::tearDown();
     }
@@ -55,7 +55,7 @@ final class TestOnlyCommandRegistryTest extends TestCase
 
     public function testAProjectsFlaggedAgentCommandsJoinTheMastersOwn(): void
     {
-        TestOnlyRegistryHilos::initEnv(dirname(__DIR__), copyExample: false);
+        TestOnlyRegistryHilos::initEnv(dirname(__DIR__));
 
         $this->assertSame([
             'registry_flagged_command',
@@ -72,7 +72,7 @@ final class TestOnlyCommandRegistryTest extends TestCase
 
     public function testAnUnflaggedAgentCommandIsNotTestOnly(): void
     {
-        TestOnlyRegistryHilos::initEnv(dirname(__DIR__), copyExample: false);
+        TestOnlyRegistryHilos::initEnv(dirname(__DIR__));
 
         $this->assertTrue(TestOnlyCommandRegistry::isTestOnly('registry_flagged_command'));
         $this->assertFalse(TestOnlyCommandRegistry::isTestOnly('registry_plain_command'));

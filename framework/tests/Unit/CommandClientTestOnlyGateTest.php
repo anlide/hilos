@@ -57,7 +57,7 @@ final class CommandClientTestOnlyGateTest extends TestCase
         Hilos::$env = $this->previousEnv;
         Hilos::$sr = null;
         // Hand the captured project facade back, or the next test reads this fixture's agents.
-        Hilos::initEnv(dirname(__DIR__), copyExample: false);
+        Hilos::initEnv(dirname(__DIR__));
         putenv('SOCKET_READ_BUFFER_SIZE');
         putenv('APP_ENV=test');
 
@@ -194,7 +194,7 @@ final class CommandClientTestOnlyGateTest extends TestCase
      */
     public function testAnAgentOwnedTestOnlyCommandIsRefusedBeforeItIsParked(): void
     {
-        GateFixtureHilos::initEnv(dirname(__DIR__), copyExample: false);
+        GateFixtureHilos::initEnv(dirname(__DIR__));
         $client = $this->clientOn('prod');
 
         $client->feed([
@@ -211,7 +211,7 @@ final class CommandClientTestOnlyGateTest extends TestCase
 
     public function testAnAgentOwnedTestOnlyCommandIsParkedOnATestNode(): void
     {
-        GateFixtureHilos::initEnv(dirname(__DIR__), copyExample: false);
+        GateFixtureHilos::initEnv(dirname(__DIR__));
         Hilos::$sr = new SignalRouter();
         $client = $this->clientOn('test');
 
