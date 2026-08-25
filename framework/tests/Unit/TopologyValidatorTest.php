@@ -747,6 +747,23 @@ final class TopologyValidatorTest extends TestCase
         );
     }
 
+    public function testPageGuardKeyMustNameARequiredPageParam(): void
+    {
+        $path = 'PAGES[' . TopologyBrowserGuardKeyPage::PAGE . '] class ' . TopologyBrowserGuardKeyPage::class
+            . '::BROWSER';
+
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyBrowserGuardKeyHilos::validateTopology();
+            },
+            [
+                "{$path} guards[0] key page_param botId is not declared in params",
+                "{$path} guards[0] key page_param botId must be declared required in params",
+                "{$path} guards[1] key page_param tab must be declared required in params",
+            ],
+        );
+    }
+
     public function testBrowserSourceDeclarationShapeIsJudged(): void
     {
         $path = 'BROWSER_LISTS[' . TopologyBrowserBrokenList::LIST . '] class ' . TopologyBrowserBrokenList::class
@@ -2387,6 +2404,46 @@ final class TopologyBrowserBrokenPage extends AbstractPage
     ];
 }
 
+final class TopologyBrowserGuardKeyPage extends AbstractPage
+{
+    public const string PAGE = 'browser_guard_key_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const array BROWSER = [
+        BrowserConfigKey::PARAMS => [
+            'tab' => [
+                BrowserParamKey::TYPE => BrowserParamType::STRING,
+                BrowserParamKey::REQUIRED => false,
+            ],
+        ],
+        BrowserConfigKey::GUARDS => [
+            [
+                BrowserGuardKey::TYPE => BrowserGuardType::DB_EXISTS,
+                BrowserGuardKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                    BrowserSourceKey::KEY => 'owners',
+                ],
+                BrowserGuardKey::KEY => [
+                    BrowserRefKey::TYPE => BrowserRefType::PAGE_PARAM,
+                    BrowserRefKey::KEY => 'botId',
+                ],
+            ],
+            [
+                BrowserGuardKey::TYPE => BrowserGuardType::DB_EXISTS,
+                BrowserGuardKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                    BrowserSourceKey::KEY => 'owners',
+                ],
+                BrowserGuardKey::KEY => [
+                    BrowserRefKey::TYPE => BrowserRefType::PAGE_PARAM,
+                    BrowserRefKey::KEY => 'tab',
+                ],
+            ],
+        ],
+    ];
+}
+
 final class TopologyBrowserBrokenList
 {
     public const string LIST = 'browser_broken_list';
@@ -2504,6 +2561,30 @@ final class TopologyBrowserBrokenPageHilos extends HilosFacade
 {
     public const array PAGES = [
         TopologyBrowserBrokenPage::PAGE => TopologyBrowserBrokenPage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyBrowserGuardKeyHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyBrowserGuardKeyPage::PAGE => TopologyBrowserGuardKeyPage::class,
     ];
 
     public const array AGENTS = [

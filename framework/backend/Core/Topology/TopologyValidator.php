@@ -32,6 +32,7 @@ use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\Config\PageAgentIndexKey;
@@ -635,7 +636,8 @@ final class TopologyValidator
                 $errors[] = "{$path} signal must be a non-empty string";
             }
 
-            $this->validateBrowserParamDeclarations($browser[BrowserConfigKey::PARAMS] ?? [], $path, $errors);
+            $params = $browser[BrowserConfigKey::PARAMS] ?? [];
+            $this->validateBrowserParamDeclarations($params, $path, $errors);
 
             $guards = $browser[BrowserConfigKey::GUARDS] ?? [];
             if (!is_array($guards)) {
@@ -644,7 +646,12 @@ final class TopologyValidator
             }
 
             foreach ($guards as $index => $guard) {
-                $this->validateBrowserGuard($guard, "{$path} guards[{$index}]", $errors);
+                $this->validateBrowserGuard(
+                    $guard,
+                    "{$path} guards[{$index}]",
+                    is_array($params) ? $params : [],
+                    $errors,
+                );
             }
         }
     }
@@ -899,9 +906,10 @@ final class TopologyValidator
      *
      * @param mixed $guard Declared guard entry
      * @param string $path Topology path for error messages
+     * @param array<array-key, mixed> $pageParams Param declarations of the page that owns this guard
      * @param list<string> $errors Validation error accumulator
      */
-    private function validateBrowserGuard(mixed $guard, string $path, array &$errors): void
+    private function validateBrowserGuard(mixed $guard, string $path, array $pageParams, array &$errors): void
     {
         $knownTypes = [BrowserGuardType::DB_EXISTS, BrowserGuardType::ACCESS, BrowserGuardType::AUTHENTICATED];
         $type = is_array($guard) ? ($guard[BrowserGuardKey::TYPE] ?? null) : null;
@@ -936,18 +944,53 @@ final class TopologyValidator
             return;
         }
 
-        $this->validateBrowserRef(
-            $guard[BrowserGuardKey::KEY] ?? null,
-            "{$path} " . BrowserGuardKey::KEY,
-            [],
-            [],
-            $errors,
-        );
+        $keyPath = "{$path} " . BrowserGuardKey::KEY;
+        $key = $guard[BrowserGuardKey::KEY] ?? null;
+        $this->validateBrowserRef($key, $keyPath, [], array_keys($pageParams), $errors);
+        $this->validateGuardKeyIsRequiredParam($key, $keyPath, $pageParams, $errors);
 
         $knownErrors = [BrowserSubscriptionError::NOT_FOUND, BrowserSubscriptionError::FORBIDDEN];
         if (array_key_exists(BrowserGuardKey::ERROR, $guard)
             && !in_array($guard[BrowserGuardKey::ERROR], $knownErrors, true)) {
             $errors[] = "{$path} " . BrowserGuardKey::ERROR . ' must be one of ' . implode(', ', $knownErrors);
+        }
+    }
+
+    /**
+     * Refuses a guard key that names a param this page does not require.
+     *
+     * A guard whose key resolves to nothing is skipped whole at runtime
+     * ({@see BrowserContext::assertDbExistsGuard()} returns on a null key), so a key naming a
+     * param the page never declared - or declared as optional and simply never sent - reads as a
+     * guarded page and serves an unguarded one. Both cases move to startup here, where the
+     * difference is a refused topology instead of a silently open door. A key that is not a
+     * page param (an `accept_key` ref) always resolves and is left alone.
+     *
+     * @param mixed $ref Declared guard key reference
+     * @param string $path Topology path of the key itself
+     * @param array<array-key, mixed> $pageParams Param declarations of the page that owns this guard
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateGuardKeyIsRequiredParam(
+        mixed $ref,
+        string $path,
+        array $pageParams,
+        array &$errors,
+    ): void {
+        if (!is_array($ref) || ($ref[BrowserRefKey::TYPE] ?? null) !== BrowserRefType::PAGE_PARAM) {
+            return;
+        }
+
+        $name = $ref[BrowserRefKey::KEY] ?? null;
+        if (!is_string($name) || $name === '') {
+            return;
+        }
+
+        $declaration = $pageParams[$name] ?? null;
+        $required = is_array($declaration) ? ($declaration[BrowserParamKey::REQUIRED] ?? false) : false;
+        if ($required !== true) {
+            $errors[] = "{$path} " . BrowserRefType::PAGE_PARAM . " {$name} must be declared "
+                . BrowserParamKey::REQUIRED . ' in ' . BrowserParamKey::PARAMS;
         }
     }
 
@@ -978,8 +1021,8 @@ final class TopologyValidator
      * A `table_param` name is always judged: the params it can name belong to the source that
      * owns the declaration, so an empty list there means the source declares none and the
      * reference is broken. A `page_param` name is judged only where a page is in scope - a
-     * source row and a page guard are read without one - and an empty list means no page rather
-     * than a page declaring nothing.
+     * source row is read without one - and an empty list means no page rather than a page
+     * declaring nothing.
      *
      * @param mixed $ref Declared reference
      * @param string $path Topology path of the reference itself
