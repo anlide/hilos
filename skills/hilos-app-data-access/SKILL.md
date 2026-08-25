@@ -42,9 +42,12 @@ switch to the focused data-layer skill first.
 - `Hilos::$rt` is the live runtime state entry point. Use it for active
   connections, upload progress, pending UI flags, and state that can be rebuilt
   or safely lost.
-- On a cluster, an `Hilos::$rt` collection is shared by every node, but only the
-  node hosting its truth source writes it; everywhere else it is a read-only
-  replica kept current by the daemon. Reads look the same on every node.
+- On a cluster, an `Hilos::$rt` collection is shared by every node, but a row is
+  written only where its truth source runs; everywhere else it is a read-only
+  replica kept current by the daemon. One collection may be written from several
+  nodes when each owns its own rows by key. Reads look the same on every node,
+  including a replica whose owner is unreachable — it is served frozen and
+  unmarked (`docs/agents/runtime/rt-context.md`).
 - A *set* of an entity is not the rows this process happens to hold. Ask the
   agent that holds that set, or query the database; iterating a lazy collection
   returns whatever was loaded earlier, and the end of it cannot be told apart

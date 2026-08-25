@@ -125,6 +125,68 @@ final class RtSnapshotViewRepairTest extends TestCase
     }
 
     /**
+     * The scoped hand-over of an owner of named rows (HIL-589), in one case: the scope is brought
+     * in line with what the frame carries, and the collection around it is left alone. Replacing
+     * the whole collection here would delete the rows this node writes itself.
+     *
+     * @throws HilosException When the fixture context cannot represent its own collection
+     */
+    public function testAScopedSnapshotReplacesItsScopeAndLeavesTheRestAsItWas(): void
+    {
+        $collection = $this->arrangeRuntime();
+        RtSnapshot::replace(SnapshotRepairRtContext::COLLECTION, [
+            'a' => ['id' => 'a', 'mark' => 'ours'],
+            'b' => ['id' => 'b', 'mark' => 'stale'],
+            'c' => ['id' => 'c', 'mark' => 'first'],
+        ]);
+        // Seeds the wrapper cache for every key the hand-over below touches or spares.
+        $this->assertSame('ours', $collection['a']?->mark());
+        $this->assertSame('stale', $collection['b']?->mark());
+        $this->assertSame('first', $collection['c']?->mark());
+
+        RtSnapshot::replaceScope(SnapshotRepairRtContext::COLLECTION, ['b', 'c'], [
+            'c' => ['id' => 'c', 'mark' => 'second'],
+        ]);
+
+        $this->assertSame('ours', $collection['a']?->mark(), 'A row outside the scope is none of the frame\'s business');
+        $this->assertNull($collection['b'], 'A row of the scope the frame does not carry is gone');
+        $this->assertSame('second', $collection['c']?->mark());
+    }
+
+    /**
+     * The scope is the whole authority of the frame: a row carried past it is dropped rather
+     * than written, because nothing judged it - the two-owner question the daemon asks is asked
+     * of the scope. Taken, such a row would let any frame overwrite a row this node owns by
+     * simply not naming it.
+     *
+     * An empty scope is therefore a frame that speaks for nothing. The wire's other meaning of
+     * an empty scope - "this is the whole collection" - is the caller's reading, and the caller
+     * answers it by taking the {@see RtSnapshot::replace()} road instead.
+     *
+     * @throws HilosException When the fixture context cannot represent its own collection
+     */
+    public function testAFrameThatCarriesARowPastItsScopeDoesNotWriteIt(): void
+    {
+        $collection = $this->arrangeRuntime();
+        RtSnapshot::replace(SnapshotRepairRtContext::COLLECTION, ['a' => ['id' => 'a', 'mark' => 'ours']]);
+        // Seeds the wrapper cache around the row the frame below reaches for without naming it.
+        $this->assertSame('ours', $collection['a']?->mark());
+
+        RtSnapshot::replaceScope(SnapshotRepairRtContext::COLLECTION, ['c'], [
+            'a' => ['id' => 'a', 'mark' => 'stolen'],
+            'c' => ['id' => 'c', 'mark' => 'theirs'],
+        ]);
+
+        $this->assertSame('ours', $collection['a']?->mark(), 'A row the frame never claimed stands as it was');
+        $this->assertSame('theirs', $collection['c']?->mark());
+
+        RtSnapshot::replaceScope(SnapshotRepairRtContext::COLLECTION, [], ['b' => ['id' => 'b', 'mark' => 'nobody']]);
+
+        $this->assertNull($collection['b'], 'A scope of no rows speaks for no rows');
+        $this->assertSame('ours', $collection['a']?->mark());
+    }
+
+    /**
      * Mounts the runtime a hand-over arrives into, exactly as facade init() leaves it.
      *
      * @return SnapshotRepairCollection Mounted view collection, empty

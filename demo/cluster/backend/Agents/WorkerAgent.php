@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Demo\Cluster\Agents;
 
 use Demo\Cluster\Constants\AgentType;
+use Demo\Cluster\Hilos;
+use Demo\Cluster\Runtime\View\Context\ClusterRtContext;
 use Hilos\Constants\CliCommands;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
+use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Utils\Logger;
@@ -63,6 +66,9 @@ final class WorkerAgent extends AbstractAgent
     /** @var int Jobs finished since the last report */
     private int $jobsDone = 0;
 
+    /** @var int Jobs finished since this instance started, as the runtime row reports them */
+    private int $jobsDoneTotal = 0;
+
     /** @var float Microtime the next throughput report is due */
     private float $reportDueAt = 0.0;
 
@@ -80,11 +86,20 @@ final class WorkerAgent extends AbstractAgent
     }
 
     /**
-     * Logs that this unit of work came up on this data-plane node and arms the report.
+     * Takes ownership of this member's row, publishes it, and arms the report.
+     *
+     * The claim names one key - this member's index - and that is the whole point of the fleet
+     * here: every node runs members of the same collection, each owning its own rows, so the
+     * collection converges across the mesh without any node ever claiming another's row
+     * (HIL-589).
+     *
+     * @throws HilosException When the first report cannot be written
      */
     public function onStart(): void
     {
         $this->reportDueAt = microtime(true) + self::REPORT_INTERVAL_SEC;
+        $this->registerRtTruthSource(ClusterRtContext::workerStatuses, [$this->agentIndex]);
+        $this->report();
 
         Logger::info("Worker {$this->getId()} started on this node: it is now carrying load");
     }
@@ -95,6 +110,8 @@ final class WorkerAgent extends AbstractAgent
      *
      * The drive is served before the synthetic job, not after: the job blocks this worker for
      * up to a quarter of a second, and the drive's own wait window is measured in seconds.
+     *
+     * @throws HilosException When the throughput report cannot be written
      */
     public function onTick(): void
     {
@@ -102,6 +119,7 @@ final class WorkerAgent extends AbstractAgent
 
         usleep(mt_rand(self::JOB_MIN_USEC, self::JOB_MAX_USEC));
         $this->jobsDone++;
+        $this->jobsDoneTotal++;
 
         $now = microtime(true);
         if ($now < $this->reportDueAt) {
@@ -110,8 +128,28 @@ final class WorkerAgent extends AbstractAgent
 
         Logger::info("Worker {$this->getId()} finished {$this->jobsDone} job(s) in the last "
             . self::REPORT_INTERVAL_SEC . 's');
+        $this->report();
         $this->jobsDone = 0;
         $this->reportDueAt = $now + self::REPORT_INTERVAL_SEC;
+    }
+
+    /**
+     * Writes this member's row: what it has done, and how much of the fleet it can see.
+     *
+     * The second number is the one an acceptance run cannot get any other way. The inspect
+     * command reads the master's copy, so it proves a write reached the other node's MASTER; a
+     * count taken here, in the worker, is the only thing that says the write reached the other
+     * node's WORKERS - the processes an application actually reads runtime state from.
+     *
+     * @throws HilosException When a subscriber to the collection's announcement raises
+     */
+    private function report(): void
+    {
+        Hilos::$rt->workerStatuses->actions->report(
+            $this->agentIndex,
+            $this->jobsDoneTotal,
+            count(Hilos::$rt->workerStatuses),
+        );
     }
 
     /**

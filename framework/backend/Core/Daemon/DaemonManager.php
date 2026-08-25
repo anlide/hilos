@@ -13,6 +13,7 @@ use Hilos\Backup\Exception\BackupScheduleException;
 use Hilos\Cluster\AgentSignalSink;
 use Hilos\Cluster\ClientMesh;
 use Hilos\Cluster\ClientSignalSink;
+use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\Connections\ClusterClientLocation;
 use Hilos\Cluster\LeadershipObserver;
@@ -28,6 +29,7 @@ use Hilos\Cluster\Placement\PlacementObserver;
 use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Cluster\DbSyncMesh;
 use Hilos\Cluster\DbSyncSink;
+use Hilos\Cluster\RtReplicaInspector;
 use Hilos\Cluster\RtSyncMesh;
 use Hilos\Cluster\RtSyncSink;
 use Hilos\Constants\EnvConstants;
@@ -86,6 +88,7 @@ use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
 use Hilos\Database\DatabaseException;
@@ -183,6 +186,7 @@ abstract class DaemonManager extends BaseManager implements
     ProtectedModeAdmissionRecorder,
     ProtectedModeClientNotifier,
     RtSyncSink,
+    RtReplicaInspector,
     DbSyncSink,
     ClientSignalSink
 {
@@ -289,6 +293,15 @@ abstract class DaemonManager extends BaseManager implements
 
     /** @var ?float microtime of the last stuck-readiness log line; null until the first one */
     private ?float $lastReadinessLogAt = null;
+
+    /** @var ?string What this node owned when it last offered its RT state; null before the first pass */
+    private ?string $rtOwnershipSignature = null;
+
+    /** @var int Remote RT frames this node has applied to the copy it holds */
+    private int $rtFramesApplied = 0;
+
+    /** @var int Remote RT frames this node refused because it writes what they carried */
+    private int $rtFramesRefused = 0;
 
     /** @var ?float Seconds to wait for required agents before opening the WebSocket degraded; null = wait forever */
     protected ?float $readinessTimeout = null;
@@ -510,6 +523,9 @@ abstract class DaemonManager extends BaseManager implements
         // Expose this daemon as the port an RT replica from another node is applied through: the
         // copy a receiving node holds lives in the master, and the workers are fed from here.
         Hilos::$cluster?->registerRtSyncSink($this);
+        // And as the port the inspect command reads that copy back through - the same state, the
+        // other direction, and no link involved (HIL-589).
+        Hilos::$cluster?->registerRtReplicaInspector($this);
         // And the same for a DB replica (HIL-670). Two ports rather than one because the two
         // facts answer to different rules on arrival, not because they arrive differently.
         Hilos::$cluster?->registerDbSyncSink($this);
@@ -611,6 +627,10 @@ abstract class DaemonManager extends BaseManager implements
             // through the peers' copy of this index, so the closer that copy is to this tick,
             // the fewer answers go to a node that no longer holds the socket.
             $this->announceConnectionChanges($this->findPeerServer());
+
+            // And offer what this node has just started owning to nodes already linked to it
+            // (HIL-589).
+            $this->offerRtSnapshotsOnOwnershipChange($this->findPeerServer());
 
             // Dispatch accumulated signals
             $this->dispatchSignals();
@@ -1884,6 +1904,11 @@ abstract class DaemonManager extends BaseManager implements
      * all: the wire carries facts a receiving node applies by their owner's word, so an
      * unattributable one has no owner to speak for it.
      *
+     * The frame says how completely this node owns what it wrote, and a claim by keys counts as
+     * partial there for the same reason a claim short of an operation does: the rest of the
+     * collection belongs to somebody, and the receiving node must not read this fact as a claim
+     * over it.
+     *
      * Protected rather than private so that what this node tells the mesh can be observed from a
      * subclass; the port it announces through is an interface for the same reason.
      *
@@ -1948,14 +1973,23 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Hands every RT collection this node owns to one other node of the mesh.
+     * Hands what this node owns of every RT collection to one other node of the mesh.
      *
-     * Only the WHOLE owner offers a collection, and only to the node it just linked to: everybody
-     * else has been kept current by the deltas. What this node merely holds a copy of is not
-     * offered at all — passing on somebody else's collection would make this node a second source
-     * of it, which is the very thing the map is here to prevent. A collection this node owns only
-     * partly is left out for a quieter reason: a snapshot claims to be the whole collection, and
-     * the rows the other owner writes may be missing from this node's copy.
+     * Only the owner offers anything, and only to the node it just linked to: everybody else has
+     * been kept current by the deltas. What this node merely holds a copy of is not offered at
+     * all — passing on somebody else's collection would make this node a second source of it,
+     * which is the very thing the map is here to prevent.
+     *
+     * What "the owner" covers is answered on both axes of the right. The whole owner offers the
+     * collection with no scope, and the frame is the collection. An owner of named rows offers
+     * those rows under their own scope: the collection around them is other nodes' to write, and
+     * claiming it would delete their rows on the receiver. An owner short of an OPERATION offers
+     * nothing at all, because even about the rows it writes, its copy may be missing what the
+     * co-owner wrote (that case belongs to HIL-696).
+     *
+     * Without the scoped half of this, a fleet of one-row owners never converged: nothing was
+     * ever handed over, delivery is best-effort with no retries (HIL-183), and so everything
+     * written during a broken link was lost for good.
      *
      * Protected for the reason {@see broadcastRtSyncToPeers()} is: it is how a subclass sees
      * what this node hands over.
@@ -1969,8 +2003,26 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        foreach ($this->agentManagerDaemon->rtNodeSourceMap()->fullyOwnedCollections() as $collectionKey) {
+        $map = $this->agentManagerDaemon->rtNodeSourceMap();
+        foreach ($map->fullyOwnedCollections() as $collectionKey) {
+            if (!self::isHandedOverInSnapshot($collectionKey)) {
+                continue;
+            }
+
             $mesh->sendRtSnapshotToNode($nodeId, $collectionKey, RtSnapshot::rows($collectionKey));
+        }
+
+        foreach ($map->keyScopedCollections() as $collectionKey => $scopeKeys) {
+            if (!self::isHandedOverInSnapshot($collectionKey)) {
+                continue;
+            }
+
+            $mesh->sendRtSnapshotToNode(
+                $nodeId,
+                $collectionKey,
+                array_intersect_key(RtSnapshot::rows($collectionKey), array_flip($scopeKeys)),
+                $scopeKeys,
+            );
         }
     }
 
@@ -2051,6 +2103,13 @@ abstract class DaemonManager extends BaseManager implements
      * node's write a split. Accepting a partial owner's frame is normal traffic and is not
      * logged - a line per legitimate write would drown the one line that means something.
      *
+     * What is judged is the ROW the frame carries, not the collection it belongs to (HIL-589).
+     * An agent claiming keys owns those entities and nothing around them, so the fleet pattern -
+     * every node writing its own rows of one shared collection - is ordinary traffic rather than
+     * a split, while a frame about a row this node does own is refused exactly as before, with
+     * the same line. A payload naming no row is judged by the collection, as everything was
+     * before there were rows to judge: it says nothing this node could narrow the question with.
+     *
      * @param string $originNodeId Id of the node the write happened on
      * @param string $signalType RT sync signal type the frame carried
      * @param SignalDTO $signal RT sync signal to apply and fan out locally
@@ -2089,11 +2148,13 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
+        $stateId = $syncData instanceof RtSyncSignalDataInterface ? $syncData->stateId : null;
         if (
             !$partialOwner
-            && $this->agentManagerDaemon->rtNodeSourceMap()->ownsFully($syncData->collectionKey)
+            && $this->agentManagerDaemon->rtNodeSourceMap()->ownsFully($syncData->collectionKey, $stateId)
             && !self::isMasterCoWritten($syncData->collectionKey)
         ) {
+            $this->rtFramesRefused++;
             Logger::warning(
                 "RT collection {$syncData->collectionKey} has truth sources on two nodes:"
                 . " local and {$originNodeId}",
@@ -2101,6 +2162,8 @@ abstract class DaemonManager extends BaseManager implements
 
             return;
         }
+
+        $this->rtFramesApplied++;
 
         $workerServer = $this->findWorkerServer();
         if ($workerServer !== null) {
@@ -2211,30 +2274,48 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Replaces this node's copy of one RT collection with the one its owner handed over.
+     * Replaces this node's copy of one RT collection, or of the rows named, with the owner's.
      *
      * Implements {@see RtSyncSink}. Replacement, not merge: the owner's copy is the whole truth
-     * about the collection, so what this node held and the snapshot does not carry is gone.
-     * The workers are told the same thing the only way the wire says it — every row this node
-     * held is deleted, then every row the owner sent is created — because a create alone leaves
-     * a row a worker already has untouched, and this node's copy would then agree with the
-     * owner while its workers did not.
+     * about what it sent, so what this node held there and the snapshot does not carry is gone.
+     * The workers are told the same thing the only way the wire says it — every row that goes is
+     * deleted, then every row the owner sent is created — because a create alone leaves a row a
+     * worker already has untouched, and this node's copy would then agree with the owner while
+     * its workers did not.
      *
-     * A snapshot for a collection this node owns is refused exactly as a delta is, and for the
-     * same reason: two owners is the defect, not an input. The exemption a delta of the
-     * co-written collection gets ({@see isMasterCoWritten()}) has no place here: a snapshot is
-     * only ever offered by the node whose own agent owns the collection
-     * ({@see sendRtSnapshotsToNode()}), so one arriving for a collection this node's agent owns
-     * is that split and not a master's half of a shared store.
+     * The scope says what "what it sent" covers. Empty, it is the collection, and this is the
+     * hand-over as it has always been. Named, the frame speaks for those rows only: they are
+     * swept and rewritten, and every other row of the collection — written by other nodes of a
+     * fleet, or by this one — is left untouched, workers and all. Replacing the collection on a
+     * scoped frame would delete exactly the rows the sender never claimed.
+     *
+     * A row carried outside the declared scope is dropped before anything is written, here and
+     * not only in the runtime: the two-owner question below is asked of the SCOPE, so a row
+     * reaching past it would be one nobody judged - and this node's workers would be told to
+     * create it even where the row belongs to this node itself.
+     *
+     * A snapshot for what this node owns is refused exactly as a delta is, and for the same
+     * reason: two owners is the defect, not an input. Refused by the ROW where the frame names
+     * rows (HIL-589) — the question is whether this node owns any row the frame speaks for, so a
+     * fleet member accepts its neighbours' rows and still refuses a frame reaching for its own.
+     * The exemption a delta of the co-written collection gets ({@see isMasterCoWritten()}) has no
+     * place here: a snapshot is only ever offered by the node whose own agent owns what it sends
+     * ({@see sendRtSnapshotsToNode()}), so one arriving for what this node's agent owns is that
+     * split and not a master's half of a shared store.
      *
      * @param string $originNodeId Id of the node that owns the collection
      * @param string $collectionKey RT collection being replaced
      * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
+     * @param list<string> $scopeKeys Rows the snapshot speaks for; empty for the whole collection
      * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
-    public function applyRemoteRtSnapshot(string $originNodeId, string $collectionKey, array $rows): void
-    {
-        if ($this->agentManagerDaemon->rtNodeSourceMap()->ownsFully($collectionKey)) {
+    public function applyRemoteRtSnapshot(
+        string $originNodeId,
+        string $collectionKey,
+        array $rows,
+        array $scopeKeys = [],
+    ): void {
+        if ($this->ownsAnyOfSnapshotScope($collectionKey, $scopeKeys)) {
             Logger::warning(
                 "RT collection {$collectionKey} has truth sources on two nodes:"
                 . " local and {$originNodeId}",
@@ -2243,8 +2324,15 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        $held = RtSnapshot::rows($collectionKey);
-        RtSnapshot::replace($collectionKey, $rows);
+        if ($scopeKeys === []) {
+            $held = RtSnapshot::rows($collectionKey);
+            RtSnapshot::replace($collectionKey, $rows);
+        } else {
+            $scope = array_flip($scopeKeys);
+            $held = array_intersect_key(RtSnapshot::rows($collectionKey), $scope);
+            $rows = array_intersect_key($rows, $scope);
+            RtSnapshot::replaceScope($collectionKey, $scopeKeys, $rows);
+        }
 
         $workerServer = $this->findWorkerServer();
         if ($workerServer === null) {
@@ -2262,6 +2350,120 @@ abstract class DaemonManager extends BaseManager implements
                 new RtSyncCreatedSignalData($collectionKey, (string)$stateId, $row),
             ));
         }
+    }
+
+    /**
+     * Offers this node's RT state to every linked peer when what it owns has just changed.
+     *
+     * The hand-over hangs off the handshake ({@see handOverRtSnapshots()}), which answers "a node
+     * appeared" and cannot answer the other order: an OWNER appearing while the nodes are already
+     * linked. Both orders are ordinary. An agent registers seconds after its node joined, and a
+     * placed agent moves to a node that has been in the mesh all along.
+     *
+     * Without this, that second order loses the row for good. The very first write of a row is
+     * a CREATE, and it is announced only if the master already knows its collection is owned here
+     * - which is a report travelling from the same worker, in the same breath. Lose that race and
+     * the create is never announced; every write after it is an UPDATE, and a node without the row
+     * drops updates for it ({@see RtSyncApplicator::applyUpdated()}). Nothing else would ever
+     * bring it, because delivery has no retries (HIL-183) and the next hand-over is the next
+     * handshake, which may never come.
+     *
+     * The signature is what this node owns, not the rows: an offer per write would be a snapshot
+     * per delta. So the check costs one walk over a handful of claims per loop pass, and the
+     * hand-over itself happens on the rare pass where an agent started, stopped or moved.
+     *
+     * Protected for the reason {@see sendRtSnapshotsToNode()} is: it is how a subclass sees what
+     * this node hands over.
+     *
+     * @param ?RtSyncMesh $mesh Peer server of this node, or null off-cluster
+     */
+    protected function offerRtSnapshotsOnOwnershipChange(?RtSyncMesh $mesh): void
+    {
+        $map = $this->agentManagerDaemon->rtNodeSourceMap();
+        $signature = json_encode([$map->fullyOwnedCollections(), $map->keyScopedCollections()]);
+        if ($signature === $this->rtOwnershipSignature) {
+            return;
+        }
+
+        $this->rtOwnershipSignature = $signature;
+        if ($mesh === null) {
+            return;
+        }
+
+        foreach ($mesh->linkedNodeIds() as $nodeId) {
+            $this->sendRtSnapshotsToNode($mesh, $nodeId);
+        }
+    }
+
+    /**
+     * Whether a snapshot reaches for anything an agent of this node owns wholly.
+     *
+     * The two-owner question, asked of a hand-over. A frame naming no rows claims the collection,
+     * so the collection is what it is judged by; a frame naming rows is judged row by row, and
+     * one row held here is enough to refuse the whole frame — the sender believes it owns what
+     * this node writes, and no part of that belief is safe to act on.
+     *
+     * @param string $collectionKey RT collection the snapshot is for
+     * @param list<string> $scopeKeys Rows the snapshot speaks for; empty for the whole collection
+     * @return bool True when this node owns the collection, or any row the frame speaks for
+     */
+    private function ownsAnyOfSnapshotScope(string $collectionKey, array $scopeKeys): bool
+    {
+        $map = $this->agentManagerDaemon->rtNodeSourceMap();
+        if ($scopeKeys === []) {
+            return $map->ownsFully($collectionKey);
+        }
+
+        foreach ($scopeKeys as $stateId) {
+            if ($map->ownsFully($collectionKey, $stateId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Reports what this node holds of every replicated RT collection, and how it judged frames.
+     *
+     * Implements {@see RtReplicaInspector}. Every mounted collection is named, not just the ones
+     * this node owns: what a scenario asks is whether a write made on another node arrived here,
+     * and that is a collection this node holds a copy of and owns nothing in. Ownership is asked
+     * of the node map and the rows of the copy itself, so the two halves of the answer come from
+     * the same places the replication logic reads.
+     *
+     * The rows travel with their values, not as a list of ids: whether a replica ARRIVED is the
+     * smaller half of the question, and whether it arrived CURRENT is the half a converging
+     * cluster is actually judged by. A scenario watching a link go down and come back compares
+     * the same field over time, which a list of ids cannot answer. The ids stay beside them
+     * because most checks are about presence and read plainly that way.
+     *
+     * The two counters are about DELTAS. Ordinary traffic is what carries a split into the open -
+     * frame after frame, for as long as both owners keep writing - so a refusal count of zero over
+     * a run is the assertion worth making, and it is also how the absence of an echo is seen: a
+     * node that passed replicas on would be refusing its own writes back within seconds.
+     *
+     * @return array<string, mixed> Collections by key, plus the applied and refused counts
+     */
+    public function inspectRtReplicas(): array
+    {
+        $map = $this->agentManagerDaemon->rtNodeSourceMap();
+        $collections = [];
+        foreach (Hilos::$rt?->collectionKeys() ?? [] as $collectionKey) {
+            $rows = RtSnapshot::rows($collectionKey);
+            $collections[$collectionKey] = [
+                ClusterCommandConstants::FIELD_RT_OWNED => $map->owns($collectionKey),
+                ClusterCommandConstants::FIELD_RT_FULLY_OWNED => $map->ownsFully($collectionKey),
+                ClusterCommandConstants::FIELD_RT_ROW_IDS => array_map(strval(...), array_keys($rows)),
+                ClusterCommandConstants::FIELD_RT_ROWS => $rows,
+            ];
+        }
+
+        return [
+            ClusterCommandConstants::FIELD_RT_COLLECTIONS => $collections,
+            ClusterCommandConstants::FIELD_RT_APPLIED => $this->rtFramesApplied,
+            ClusterCommandConstants::FIELD_RT_REFUSED => $this->rtFramesRefused,
+        ];
     }
 
     /**
@@ -4154,6 +4356,29 @@ abstract class DaemonManager extends BaseManager implements
     private static function isMasterCoWritten(string $collectionKey): bool
     {
         return $collectionKey === StateHilosSessionRotation::RT_COLLECTION;
+    }
+
+    /**
+     * Names the runtime collections a node hands over when another node links to it.
+     *
+     * The rotation store is the one that is not, and its reason is its own (HIL-589): a ticket
+     * lives for seconds and is spent once, so a node that just came up has no use for the ones
+     * outstanding before it existed - the deltas bring it whatever is issued from now on, which
+     * is everything it can ever trade. Handing the store over would replace a live store with a
+     * list of tickets about to expire, for no reader.
+     *
+     * A separate predicate from {@see isMasterCoWritten()}, which names the same collection
+     * today. They answer different questions - who may write it, and what is offered on a new
+     * link - and a single predicate serving both would answer one of them wrongly for the very
+     * next store that needs only one of the two. If a third such list appears, that is the
+     * signal to stop naming stores here and give the rows tombstones instead.
+     *
+     * @param string $collectionKey Runtime collection a hand-over would carry
+     * @return bool True when a node linking to this one is offered the collection
+     */
+    private static function isHandedOverInSnapshot(string $collectionKey): bool
+    {
+        return $collectionKey !== StateHilosSessionRotation::RT_COLLECTION;
     }
 
     /**

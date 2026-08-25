@@ -110,6 +110,76 @@ final class RtSnapshot
     }
 
     /**
+     * Replaces only the named rows of an RT collection with the ones their owner handed over.
+     *
+     * The narrow twin of {@see replace()}, for a node that owns entities rather than the
+     * collection around them (HIL-589): what it knows to be the whole truth is those rows, so
+     * those rows are all it may speak for. Inside the scope the rule is the one above — a row
+     * of the scope the frame does not carry is a row that no longer exists — and outside it
+     * nothing is touched, because the rows another node writes are none of this frame's
+     * business and clearing them is exactly the split that would follow.
+     *
+     * A row the frame carries outside its own scope is DROPPED. The scope is the authority the
+     * sender claims, and a row beyond it is one the sender does not speak for - taking it would
+     * let a frame reach past the very thing the receiver judged it by, and overwrite a row this
+     * node owns. A malformed row inside the scope costs that row and is logged, the same bargain
+     * {@see replace()} strikes and for the same reason.
+     *
+     * The deletions run inside the applied-remote window along with the writes, and unlike
+     * {@see replace()} they HAVE to: that one empties the collection with a clear, which
+     * announces nothing, while a scoped sweep removes rows one by one and every removal is an
+     * announcement. Made as a local write it would go straight back onto the mesh as this
+     * node's own delta about a row it does not own — the echo, arriving as a deletion.
+     *
+     * The whole wrapper cache is dropped rather than the scope's keys, again as in
+     * {@see replace()}: the wrappers that need repairing are the ones for rows this frame
+     * DELETED, and those are precisely the keys nothing below walks.
+     *
+     * @param string $collectionKey RT collection to replace within
+     * @param list<string> $scopeKeys Rows this snapshot speaks for
+     * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     */
+    public static function replaceScope(string $collectionKey, array $scopeKeys, array $rows): void
+    {
+        $stateCollection = Hilos::$rt?->getStateCollection($collectionKey);
+        if ($stateCollection === null) {
+            self::replaceStandaloneItem($collectionKey, $rows);
+
+            return;
+        }
+
+        $stateClass = $stateCollection::STATE_CLASS;
+        if (!is_subclass_of($stateClass, RtState::class)) {
+            return;
+        }
+
+        Hilos::$rt?->getRtCollection($collectionKey)?->clearCache();
+
+        /** @var class-string<RtState> $stateClass */
+        SourceChangeBus::whileApplyingRemote(
+            static function () use ($collectionKey, $scopeKeys, $rows, $stateClass, $stateCollection): void {
+                foreach ($scopeKeys as $stateId) {
+                    if (!isset($rows[$stateId])) {
+                        $stateCollection->remove($stateId);
+
+                        continue;
+                    }
+
+                    try {
+                        $stateCollection->add($stateClass::fromRow($rows[$stateId]));
+                    } catch (InvalidFormatException $e) {
+                        Logger::warning(
+                            'RT snapshot row refused for collection ' . $collectionKey
+                            . ' id ' . $stateId . ': ' . $e->getMessage(),
+                        );
+                    }
+                }
+            },
+        );
+    }
+
+    /**
      * Writes the one row of a snapshot onto a standalone RT item.
      *
      * A truth source may be registered for a single item rather than a collection (the backup

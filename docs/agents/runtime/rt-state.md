@@ -257,17 +257,19 @@ The node dimension changes nothing about how a row is written and one thing abou
 where: a collection is shared by the whole cluster, the right to write it is
 claimed cluster-wide, and every other node holds a read-only replica (see
 [rt-context.md](rt-context.md)). A claim covers a set of rows and a set of
-operations (HIL-688), so two nodes may each hold a piece of it - one adding and
-removing, another editing - and neither is the two-owner split the node map
+operations, so two nodes may each hold a piece of it - one owning the rows it
+writes and leaving its neighbour's alone (HIL-589), or one adding and removing
+while another edits (HIL-688) - and neither is the two-owner split the node map
 refuses. So `fromRow()` has to hold on a payload that
 arrived from another machine, not just another process, and a row it refuses is
 dropped and logged rather than hydrated as zeros — the same trap, one hop wider.
 
-A node that joins is handed each collection whole and **replaces** its copy with
+A node that joins is handed what each owner holds and **replaces** its copy with
 it, row by row through `fromRow()`. Nothing is merged: the owner's copy is the
-truth about the collection. Only a node holding the WHOLE right hands one over -
-a partial owner's copy may be missing the rows the other owner writes, and
-offering it as the collection would delete them on the receiving node.
+truth about what it sent. An owner of the whole collection sends the collection;
+an owner of named rows sends those rows under a scope, and only they are replaced.
+A node short of an OPERATION hands over nothing at all - even about the rows it
+writes, its copy may be missing what its co-owner wrote.
 
 ## markRtSyncBaseline()
 

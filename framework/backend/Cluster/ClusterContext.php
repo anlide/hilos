@@ -95,6 +95,9 @@ final class ClusterContext
     /** @var ?RtSyncSink Local apply port for cross-node RT replicas, registered by the daemon at start. */
     private ?RtSyncSink $rtSyncSink = null;
 
+    /** Port the inspect command reads this node's RT replication state through */
+    private ?RtReplicaInspector $rtReplicaInspector = null;
+
     /** @var ?DbSyncSink Local apply port for cross-node DB replicas, registered by the daemon at start. */
     private ?DbSyncSink $dbSyncSink = null;
 
@@ -562,6 +565,30 @@ final class ClusterContext
     }
 
     /**
+     * Registers the port the inspect command reads this node's RT replication state through.
+     *
+     * The daemon registers itself here at start, beside {@see registerRtSyncSink()} and apart
+     * from it: what a peer frame crosses and what a command asks about are two questions, and
+     * the transport has no business in the second.
+     *
+     * @param RtReplicaInspector $inspector Port answering for this node's RT replicas
+     */
+    public function registerRtReplicaInspector(RtReplicaInspector $inspector): void
+    {
+        $this->rtReplicaInspector = $inspector;
+    }
+
+    /**
+     * Returns the port answering for this node's RT replicas, or null when none is set.
+     *
+     * @return ?RtReplicaInspector Inspection port, or null
+     */
+    public function rtReplicaInspector(): ?RtReplicaInspector
+    {
+        return $this->rtReplicaInspector;
+    }
+
+    /**
      * Registers the local apply port for DB replicas broadcast from other nodes.
      *
      * The daemon registers itself here at start, on the same terms as
@@ -801,6 +828,7 @@ final class ClusterContext
 
         $leadership = $this->leadership();
         $consensus = $leadership instanceof ConsensusInspection ? $leadership : null;
+        $replicas = $this->rtReplicaInspector?->inspectRtReplicas() ?? [];
 
         $nodes = [];
         foreach ($this->registry()->snapshot() as $node) {
@@ -826,6 +854,10 @@ final class ClusterContext
             ClusterCommandConstants::FIELD_CLIENT_INDEX => $this->clientConnections?->countsByNode() ?? [],
             ClusterCommandConstants::FIELD_CLIENT_DELIVERIES => $this->clientConnections?->deliveries() ?? 0,
             ClusterCommandConstants::FIELD_LAST_CLIENT_ACCEPT_KEY => $this->clientConnections?->lastAcceptKey(),
+            ClusterCommandConstants::FIELD_RT_COLLECTIONS => $replicas[ClusterCommandConstants::FIELD_RT_COLLECTIONS]
+                ?? [],
+            ClusterCommandConstants::FIELD_RT_APPLIED => $replicas[ClusterCommandConstants::FIELD_RT_APPLIED] ?? 0,
+            ClusterCommandConstants::FIELD_RT_REFUSED => $replicas[ClusterCommandConstants::FIELD_RT_REFUSED] ?? 0,
             ClusterCommandConstants::FIELD_DB_REPLICAS => $this->dbReplicas,
             ClusterCommandConstants::FIELD_LAST_DB_REPLICA_COLLECTION => $this->lastDbReplicaCollection,
         ];

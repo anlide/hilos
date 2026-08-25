@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-cluster_e2e.py - the 9-scenario assertion matrix for the daemon-cluster e2e
+cluster_e2e.py - the 13-scenario assertion matrix for the daemon-cluster e2e
 harness (HIL-185).
 
 It assumes the stack is already up (via `cluster up`) and drives it: for each
@@ -34,9 +34,13 @@ Covers the full spike-HIL-176 matrix:
   7 quorum-loss                a minority stops leading; no new leader
   8 split-brain prevention     the majority keeps one leader; the minority steps down
 
-Plus one scenario beyond that matrix:
+Plus scenarios beyond that matrix:
   9 daemon-crash self-heal     a node whose daemon is SIGKILLed rebinds and rejoins
                                inside the same container (HIL-450)
+ 10 cross-node browser         a browser attached to one node is answered from another (HIL-668)
+ 11 cross-node db fact         a row changed on one node is announced to every other (HIL-670)
+ 12 rt replication             every node holds every fleet member's runtime row (HIL-589)
+ 13 rt partition converges     a cut-off node serves its replica frozen and catches up (HIL-589)
 
 Exit code 0 when every scenario passes, 1 otherwise.
 """
@@ -58,6 +62,10 @@ ALL_NODES = MASTERS + SLAVES
 WORKER_AGENT_TYPE = "worker"
 # Fleet size the leader keeps placed; mirrors ClusterDaemonManager::WORKER_FLEET_SIZE.
 WORKER_FLEET_SIZE = 10
+# RT collection every fleet member owns one row of; mirrors ClusterRtContext::workerStatuses.
+WORKER_STATUSES = "workerStatuses"
+# Seconds a fleet member waits between reports; mirrors WorkerAgent::REPORT_INTERVAL_SEC.
+WORKER_REPORT_INTERVAL_SEC = 5.0
 
 
 # ------------------------------------------------------- adaptive timing (HIL-367)
@@ -219,6 +227,41 @@ def hosted_by(views, node):
             if row.get("nodeId") == node and row.get("state") == "started"}
 
 
+def rt_collection(views, node, key=WORKER_STATUSES):
+    """One node's report about an RT collection: {} when the node is unreachable."""
+    view = views.get(node)
+    if not view:
+        return {}
+    return (view.get("rtCollections") or {}).get(key) or {}
+
+
+def rt_rows(views, node, key=WORKER_STATUSES):
+    """The rows one node holds of an RT collection, keyed by row id.
+
+    The reply carries them either way round, and that is not a choice anyone made: a PHP array
+    whose keys are exactly 0..n-1 IN ORDER serialises as a JSON array rather than an object,
+    and these row ids are fleet indices - so the same collection comes back as a map or as a
+    list depending on the order the node happened to receive its members in. The list form
+    carries each id in its own index, so it is turned back into the map every caller reads.
+    """
+    rows = rt_collection(views, node, key).get("rows") or {}
+    if isinstance(rows, list):
+        return {str(index): row for index, row in enumerate(rows)}
+
+    return rows
+
+
+def rt_refused(views, node):
+    """Remote RT frames a node refused as a two-owner split, or -1 when unreachable."""
+    view = views.get(node)
+    return -1 if view is None else int(view.get("rtRefused", 0))
+
+
+def fleet_rows_everywhere(views, nodes=ALL_NODES):
+    """Predicate: every node holds a status row for every fleet member."""
+    return all(len(rt_rows(views, n)) == WORKER_FLEET_SIZE for n in nodes)
+
+
 def client_deliveries(views, node):
     """Cross-node client deliveries a node reports having accepted, or -1 when unreachable."""
     view = views.get(node)
@@ -297,6 +340,33 @@ def summarize(views):
         parts.append(f"{n}[{v.get('lifecycleState')},leader={v.get('leaderId')},"
                      f"quorum={v.get('hasQuorum')}{(',pl=' + p) if p else ''}]")
     return " ".join(parts)
+
+
+def wait_fleet_rows():
+    """Wait until every node holds a status row for every fleet member.
+
+    Rows rather than the leader's placement table, because the table can lie: a data-plane
+    container recreated faster than the failover grace comes back WITHOUT its agents, and
+    nothing re-places them - the leader goes on reporting them `started` on a node that runs
+    nothing (P-152). A row is written by a live member, so waiting for rows waits for the
+    fleet itself, which is what the two RT scenarios are about.
+
+    That defect is also why they run where they do (see SCENARIOS): once the fleet is dead
+    the collection has no owner at all, and then nothing can repair it - the nodes still
+    holding a copy may not hand it over, since passing on somebody else's rows is precisely
+    what makes a second source of them.
+    """
+    try:
+        return wait_until(fleet_rows_everywhere, CONVERGE_TIMEOUT,
+                          "every node holds a status row for every fleet member")
+    except ScenarioTimeout as timeout:
+        # The topology summary a timeout prints says nothing about RT, and the question here is
+        # always the same one: which node is short of rows, and does the node writing them know
+        # it owns them. Both come from the same reply, so the answer costs one more poll.
+        views = inspect_all()
+        held = {node: len(rt_rows(views, node)) for node in ALL_NODES}
+        owned = {node: rt_collection(views, node).get("owned") for node in ALL_NODES}
+        raise ScenarioTimeout(f"{timeout}\nrows per node: {held}\nowns the collection: {owned}") from timeout
 
 
 # ------------------------------------------------------------------ scenarios
@@ -557,6 +627,149 @@ def scenario_10_cross_node_browser():
         client(holder, "test:cluster:client:detach", key)
 
 
+def scenario_12_rt_replication():
+    """A runtime row written on one node must reach every other node, and its workers (HIL-589).
+
+    Every fleet member owns exactly ONE row of `workerStatuses`, by its own index, and the fleet
+    is spread over the data-plane nodes - so this collection has a truth source on several nodes
+    at once, each for its own rows. Before the row axis of ownership existed, a node holding any
+    of it claimed the whole collection: every neighbour's frame read as "two truth sources" and
+    was dropped, and the collection never converged anywhere.
+
+    Two things are asserted, and the second is the load-bearing one. Every node's MASTER holding
+    a row per member says the frames arrived. Each row's `rowsSeen` equal to the fleet size says
+    they went on to the WORKERS: that number is what a member counted in its own process, so a
+    member on s1 reporting ten has seen the rows s2's members wrote. The inspect reply alone
+    could never say that - it is read from the master.
+
+    `rtRefused` is zero because nothing here is a split, and that is also how the absence of an
+    echo shows: a node passing replicas on would be refusing its own writes back within seconds.
+    """
+    wait_converge(ALL_NODES)
+    wait_fleet_rows()
+
+    def every_member_sees_the_fleet(v):
+        return all(row.get("rowsSeen") == WORKER_FLEET_SIZE
+                   for node in ALL_NODES for row in rt_rows(v, node).values())
+
+    views = wait_until(every_member_sees_the_fleet,
+                       CONVERGE_TIMEOUT + WORKER_REPORT_INTERVAL_SEC,
+                       "every fleet member reports seeing the whole fleet")
+
+    for node in ALL_NODES:
+        assert rt_refused(views, node) == 0, \
+            f"{node} refused an RT frame as a two-owner split: {rt_refused(views, node)}"
+        owned = rt_collection(views, node).get("fullyOwned")
+        assert owned is False, \
+            f"{node} claims the whole collection ({owned}); each node owns only its members' rows"
+
+    return (f"all {WORKER_FLEET_SIZE} rows on every node, every member seeing the whole fleet, "
+            f"nothing refused as a split")
+
+
+def scenario_13_rt_partition_converges():
+    """A node cut off from the mesh keeps serving what it has, and catches up on return (HIL-589).
+
+    The reader's side of a dead link is the decision this ticket locked: the replica is served AS
+    IS, frozen and indistinguishable from fresh - no staleness mark, no refusal, and nothing swept
+    when the owner goes away. The first half asserts that positively rather than staying silent
+    about it, because the rejected alternatives (marking rows stale, refusing the reader) will one
+    day be built, and a change of behaviour must fail a test rather than pass unnoticed.
+
+    The second half is the hole this ticket had to close. Delivery is best-effort with no retries
+    (HIL-183), so everything written while the link was down is lost for good; catching up is the
+    hand-over's job, and until now a node owning rows rather than collections handed over NOTHING.
+    The rows would have stayed frozen forever.
+
+    The victim is a MASTER on purpose, though it is a data-plane node that hosts the writers. A
+    partitioned slave has its fleet members re-placed onto its neighbours by the leader, and a
+    re-placed member is a second writer of the same rows whose counter starts at zero - the
+    scenario would then be measuring placement, not replication. A master owns no row of this
+    collection, so what it holds is a pure replica, which is exactly what the reader's side is
+    about.
+    """
+    victim = "m3"
+    others = [n for n in ALL_NODES if n != victim]
+    wait_converge(ALL_NODES)
+    wait_fleet_rows()
+
+    print(f"    partitioning {victim} off the network while the fleet keeps writing")
+    ctl("partition", victim)
+    try:
+        # Frozen, not gone: the rows of an unreachable owner stay exactly as they were.
+        frozen = rt_rows({victim: inspect_local(victim)}, victim)
+        assert len(frozen) == WORKER_FLEET_SIZE, \
+            f"{victim} lost rows the moment it was cut off: {sorted(frozen)}"
+        time.sleep(WORKER_REPORT_INTERVAL_SEC * 2)
+        still = rt_rows({victim: inspect_local(victim)}, victim)
+        assert still == frozen, \
+            f"{victim} kept changing rows nobody could have sent it"
+
+        # And the connected side keeps moving, so the two really are apart. Any node still on
+        # the network answers this: whichever of them hosts the fleet, they all hold its rows.
+        # Measured by the report clock rather than by the job counter, for the reason the
+        # catch-up below is: a member that gets re-placed starts counting jobs from zero, and
+        # that is a restart rather than a report going backwards.
+        def majority_moved(v):
+            return any(row.get("updatedAt", 0) > frozen[rid].get("updatedAt", 0)
+                       for node in others
+                       for rid, row in rt_rows(v, node).items() if rid in frozen)
+
+        wait_until(majority_moved, CONVERGE_TIMEOUT,
+                   "the connected side goes on writing while the split holds", nodes=others)
+
+        print(f"    healing {victim} back into the mesh")
+        ctl("heal", victim)
+        # Twice the usual cap, because a mesh healed by reconnecting the interface comes back
+        # slower than one that converges from a clean start: both sides still hold half-open TCP
+        # to the node that was cut off (the reason scenario 8 recreates instead), so the links
+        # have to time out on the keepalive before anyone re-dials and handshakes.
+        wait_converge(ALL_NODES, CONVERGE_TIMEOUT * 2)
+
+        # Catching up is what the hand-over owes, and no sample may go backwards on the way:
+        # a snapshot arriving behind a delta would show up here as a row whose report is older
+        # than the one this node already had.
+        #
+        # The report CLOCK is what says that, not the job counter. A fleet member that is
+        # re-placed - which a partition can cause on its own - comes up as a fresh instance and
+        # starts counting jobs from zero, so a counter going down is a member restarting and not
+        # a state rolled back. Its clock still only moves forward, whoever writes the row.
+        seen = dict(frozen)
+
+        def caught_up(v):
+            rows = rt_rows(v, victim)
+            if len(rows) != WORKER_FLEET_SIZE:
+                return False
+            for rid, row in rows.items():
+                before = seen.get(rid, {}).get("updatedAt", 0)
+                now = row.get("updatedAt", 0)
+                assert now >= before, \
+                    f"{victim} row {rid} was rolled back after the heal: reported at {before}, then {now}"
+                seen[rid] = row
+            return all(row.get("updatedAt", 0) > frozen[rid].get("updatedAt", 0)
+                       for rid, row in rows.items() if rid in frozen)
+
+        wait_until(caught_up, CONVERGE_TIMEOUT + WORKER_REPORT_INTERVAL_SEC,
+                   f"{victim} catches up with what was written while it was cut off")
+
+        return (f"{victim} served its replica frozen through the split and caught up after the "
+                f"heal, never going backwards")
+    finally:
+        # The reconnect is what this scenario is about, and it is also why the node cannot be
+        # left as it is: `heal` puts the interface back with half-open TCP on both sides, and a
+        # node in that state stops coming back from the next kill - which is what scenario 8
+        # recreates for. So the assertions are made on the healed node, and then it is replaced
+        # by a pristine one. A recreate also covers the path where an assertion above failed
+        # with the partition still on.
+        #
+        # Twice the usual cap here as well, and for a longer wait than the heal above: a brand-new
+        # container has no links at all, so all four peers have to notice the old ones die, re-dial
+        # and handshake again. Under the plain cap this is what a loaded box fails on, and it fails
+        # the scenarios AFTER this one rather than this one - they open on a mesh still settling.
+        ctl("recreate", victim)
+        wait_converge(ALL_NODES, CONVERGE_TIMEOUT * 2)
+
+
 def scenario_11_cross_node_db_fact():
     """A database row changed on one node must be announced to every other (HIL-670).
 
@@ -616,10 +829,18 @@ def scenario_11_cross_node_db_fact():
             f"and to {watcher} again after it re-linked")
 
 
+# Numbered by when they were written, ORDERED by what they need. The two RT scenarios run
+# right after placement, while the fleet the leader just placed is still alive: they are the
+# only ones that need running agents rather than a converged topology, and scenario 9 leaves
+# the fleet dead behind it (P-152 - a recreated data-plane container comes back without its
+# agents, and the leader goes on calling them started). Everything from 4 on perturbs the
+# topology and cares nothing about who is writing.
 SCENARIOS = [
     ("1 master-slave mesh", scenario_1_master_slave_mesh),
     ("2 master-master", scenario_2_master_master),
     ("3 placement", scenario_3_placement),
+    ("12 rt replication", scenario_12_rt_replication),
+    ("13 rt partition converges", scenario_13_rt_partition_converges),
     ("4 slave-kill failover", scenario_4_slave_kill_failover),
     ("5 leader-kill re-election", scenario_5_leader_kill_reelection),
     ("6 hot-join", scenario_6_hot_join),

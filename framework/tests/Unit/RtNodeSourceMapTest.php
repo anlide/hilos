@@ -243,6 +243,117 @@ final class RtNodeSourceMapTest extends TestCase
     }
 
     /**
+     * The width axis of one registration, as the worker reads it out for the master: a claim
+     * naming keys is ownership of those entities, so the keys have to travel. A claim on the
+     * whole collection names none and is absent, the way silence means "all of it" everywhere
+     * else in the registry.
+     */
+    public function testTheRegistryNamesTheRowsAClaimCovers(): void
+    {
+        RtTruthSourceRegistry::register(self::COLLECTION, ['7', '9'], self::AGENT);
+        RtTruthSourceRegistry::register('unitRtNodeSourceOther', true, self::AGENT);
+
+        $this->assertSame([self::COLLECTION => ['7', '9']], RtTruthSourceRegistry::keysByCollectionOf(self::AGENT));
+    }
+
+    /**
+     * The map judges the ROW once the report carries keys: the owner of one entity refuses a
+     * frame about that entity and lets every other row of the same collection through. This is
+     * the fleet arrangement working — each node writes its own rows of one shared collection —
+     * and before HIL-589 every one of those frames read as a split.
+     */
+    public function testTheMapJudgesTheRowAClaimNamesRatherThanTheCollection(): void
+    {
+        $map = new RtNodeSourceMap();
+
+        $map->note(self::AGENT, [self::COLLECTION], [], [self::COLLECTION => ['7']]);
+
+        $this->assertTrue($map->owns(self::COLLECTION), 'Something here does write the collection');
+        $this->assertTrue($map->owns(self::COLLECTION, '7'));
+        $this->assertFalse($map->owns(self::COLLECTION, '9'), 'The rows it did not claim are somebody else\'s');
+        $this->assertTrue($map->ownsFully(self::COLLECTION, '7'));
+        $this->assertFalse($map->ownsFully(self::COLLECTION, '9'));
+    }
+
+    /**
+     * Asked about the collection around its keys, a key-scoped claim answers no: what it holds
+     * wholly is three entities, and the collection is not those three entities. That is what
+     * keeps such a node from handing the collection over and from refusing its neighbours.
+     */
+    public function testAKeyScopedClaimNeverOwnsTheCollectionAroundItsRows(): void
+    {
+        $map = new RtNodeSourceMap();
+
+        $map->note(self::AGENT, [self::COLLECTION], [], [self::COLLECTION => ['7']]);
+
+        $this->assertFalse($map->ownsFully(self::COLLECTION));
+        $this->assertSame([], $map->fullyOwnedCollections());
+        $this->assertSame([self::COLLECTION => ['7']], $map->keyScopedCollections());
+    }
+
+    /**
+     * Two axes, and each of them alone is enough to make a claim less than whole: the rows are
+     * named AND an operation is missing, so even about those rows this node's copy is not the
+     * whole truth and it hands nothing over.
+     */
+    public function testAClaimShortOfAnOperationHandsOverNothingEvenAboutItsOwnRows(): void
+    {
+        $map = new RtNodeSourceMap();
+
+        $map->note(self::AGENT, [self::COLLECTION], [self::COLLECTION], [self::COLLECTION => ['7']]);
+
+        $this->assertFalse($map->ownsFully(self::COLLECTION, '7'));
+        $this->assertSame([], $map->keyScopedCollections());
+    }
+
+    /**
+     * One node, two agents, the rows of one collection split between them: the node hands over
+     * the union of what they claimed, once, and still does not claim the collection itself.
+     */
+    public function testTheRowsOfTwoAgentsHereMakeOneScope(): void
+    {
+        $map = new RtNodeSourceMap();
+
+        $map->note(self::AGENT, [self::COLLECTION], [], [self::COLLECTION => ['7']]);
+        $map->note(self::OTHER_AGENT, [self::COLLECTION], [], [self::COLLECTION => ['9']]);
+
+        $this->assertSame([self::COLLECTION => ['7', '9']], $map->keyScopedCollections());
+        $this->assertFalse($map->ownsFully(self::COLLECTION));
+    }
+
+    /**
+     * A whole claim beside a key-scoped one leaves the collection handed over whole, and the
+     * scope list silent about it: offering the same rows twice under two scopes would have the
+     * receiver apply the narrow snapshot over the wide one.
+     */
+    public function testAWholeClaimHereKeepsTheCollectionOffTheScopeList(): void
+    {
+        $map = new RtNodeSourceMap();
+
+        $map->note(self::AGENT, [self::COLLECTION], [], [self::COLLECTION => ['7']]);
+        $map->note(self::OTHER_AGENT, [self::COLLECTION]);
+
+        $this->assertSame([self::COLLECTION], $map->fullyOwnedCollections());
+        $this->assertSame([], $map->keyScopedCollections());
+    }
+
+    /**
+     * A stopped agent takes its rows with it, exactly as it takes its collections: a claim that
+     * outlives the process holding it makes this node refuse frames about rows nobody here
+     * writes any more.
+     */
+    public function testAStoppedAgentTakesItsRowsWithIt(): void
+    {
+        $map = new RtNodeSourceMap();
+        $map->note(self::AGENT, [self::COLLECTION], [], [self::COLLECTION => ['7']]);
+
+        $map->release(self::AGENT);
+
+        $this->assertFalse($map->owns(self::COLLECTION, '7'));
+        $this->assertSame([], $map->keyScopedCollections());
+    }
+
+    /**
      * @throws InvalidFormatException When the frame is not the object its DTO needs
      */
     public function testThePartialClaimsRoundTripToTheMaster(): void
@@ -269,6 +380,46 @@ final class RtNodeSourceMapTest extends TestCase
         ]);
 
         $this->assertSame([], $parsed->partialCollectionKeys);
+        $this->assertSame([], $parsed->keysByCollection, 'A build that names no rows claims none by name');
+    }
+
+    /**
+     * @throws InvalidFormatException When the frame is not the object its DTO needs
+     */
+    public function testTheClaimedRowsRoundTripToTheMaster(): void
+    {
+        $dto = new WorkerRtSourceRegisteredDTO(self::AGENT, [self::COLLECTION], [], [self::COLLECTION => ['7', '9']]);
+
+        $parsed = WorkerDTO::factoryWorkerDTO($dto->toJson());
+
+        $this->assertInstanceOf(WorkerRtSourceRegisteredDTO::class, $parsed);
+        $this->assertSame([self::COLLECTION => ['7', '9']], $parsed->keysByCollection);
+    }
+
+    /**
+     * The whole trip in one case: what the agent registered, what its worker read out of the
+     * registry, and what the master remembers - the three parts that have to agree for a fleet
+     * of one-row owners to replicate at all.
+     *
+     * @throws InvalidFormatException When the frame is not the object its DTO needs
+     */
+    public function testTheRowsAnAgentClaimedReachTheMastersMap(): void
+    {
+        RtTruthSourceRegistry::register(self::COLLECTION, ['7'], self::AGENT);
+        $map = new RtNodeSourceMap();
+
+        $parsed = WorkerDTO::factoryWorkerDTO(new WorkerRtSourceRegisteredDTO(
+            self::AGENT,
+            RtTruthSourceRegistry::collectionsOf(self::AGENT),
+            RtTruthSourceRegistry::partialCollectionsOf(self::AGENT),
+            RtTruthSourceRegistry::keysByCollectionOf(self::AGENT),
+        )->toJson());
+        $this->assertInstanceOf(WorkerRtSourceRegisteredDTO::class, $parsed);
+        $map->note($parsed->agentId, $parsed->collectionKeys, $parsed->partialCollectionKeys, $parsed->keysByCollection);
+
+        $this->assertTrue($map->ownsFully(self::COLLECTION, '7'));
+        $this->assertFalse($map->ownsFully(self::COLLECTION, '9'));
+        $this->assertFalse($map->ownsFully(self::COLLECTION));
     }
 }
 

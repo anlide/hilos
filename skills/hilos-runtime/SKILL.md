@@ -27,13 +27,17 @@ Start with `agents.md`, then read the matching runtime guide.
   calling `setRepresentItem()`; collection-backed aliases auto-attach to their
   represented parent collection when one exists.
 - `RtStates` stores runtime-only `RtState` rows in memory.
-- A runtime collection is shared by the whole **cluster**, not by one node: its
-  truth source is unique cluster-wide, every other node holds a read-only
-  replica, and the daemon replicates each write one way from the owner. There is
+- A runtime collection is shared by the whole **cluster**, not by one node: it is
+  written where its truth source runs, every other node holds a read-only replica,
+  and the daemon replicates each write one way from the owner. There is
   no per-node collection and no flag that makes one. What travels is what an
   agent of the node owns; the two collections the daemon master registers itself
   are framework-owned exceptions, named in `DaemonManager` and explained in
   `docs/agents/runtime/rt-context.md`.
+- Ownership is claimed per collection OR per row: `register()` with a list of keys
+  owns those entities, which is how a fleet splits one collection across nodes,
+  each member writing its own rows. A replica of an unreachable owner is served
+  as it is, frozen and unmarked. Both in `docs/agents/runtime/rt-context.md`.
 - `RtCollection` and `RtItem` expose read-oriented app APIs around the backing
   state rows. RT View collection reads treat `null` offsets as missing optional
   keys.
@@ -200,11 +204,12 @@ of duplicating runtime mutation logic in the page/table layer.
 - Never write to an `RtStates` collection directly (`add()`, `remove()`,
   `clear()`): those queue no RT sync, so the change exists in the writing worker
   and nowhere else. Write through the collection or item actions.
-- An agent that registers as a truth source must run on exactly one node: keep
+- An agent that claims a WHOLE collection must run on exactly one node: keep
   `AgentRegistryKey::SCOPE` at its default `AgentScope::CLUSTER`. Two nodes owning
-  one collection WHOLLY is the split the daemon can only refuse and log
-  (`RT collection <key> has truth sources on two nodes`); two nodes each holding
-  part of the operations are lawful co-owners, and the frame says which is which.
+  one row WHOLLY is the split the daemon can only refuse and log
+  (`RT collection <key> has truth sources on two nodes`); two nodes owning
+  different rows of one collection, or different operations over it, are lawful
+  co-owners, and the frame says which is which.
 - To change a collection this node does not own, send a signal to the owning
   agent. A replica is read-only, and writing it raises
   `RtTruthSourceWriteNotAllowedException`.

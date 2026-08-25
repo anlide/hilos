@@ -337,6 +337,87 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     }
 
     /**
+     * The fleet arrangement, which is what the row axis is for: every node of the mesh runs an
+     * agent writing its own rows of one shared collection. A frame about a row this node did not
+     * claim is ordinary traffic and is applied, workers and all - before HIL-589 the map knew
+     * only collections, so this very frame read as a split and the fleet never converged.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAReplicaAboutARowThisNodeDidNotClaimIsApplied(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->noteOwnAgent(
+            'worker_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]],
+        );
+
+        ob_start();
+        $daemon->receive($daemon->rtSyncCreated('Grace', '9'));
+        $logged = (string)ob_get_clean();
+
+        $this->assertTrue($collection->has('9'), 'The rows this node never claimed are the neighbour\'s to write');
+        $this->assertSame([WorkerConstants::MESSAGE_RT_SYNC_CREATED], $daemon->workerServer->frameTypes());
+        $this->assertStringNotContainsString('truth sources on two nodes', $logged);
+    }
+
+    /**
+     * And the same claim still refuses a frame about the row it does hold: two nodes writing one
+     * entity is the split, told apart from the case above by the row alone. The line is the one
+     * the collection-wide guard has always printed - what changed is the question, not the form
+     * of the answer.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAReplicaAboutTheRowThisNodeClaimedIsDroppedAndTheSplitIsNamed(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->noteOwnAgent(
+            'worker_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]],
+        );
+
+        ob_start();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $logged = (string)ob_get_clean();
+
+        $this->assertFalse($collection->has(self::ROW_ID), 'The entity this node owns stays as this node wrote it');
+        $this->assertSame([], $daemon->workerServer->frameTypes());
+        $this->assertStringContainsString(DaemonManagerRtSyncPeerTestRtContext::ROWS, $logged);
+        $this->assertStringContainsString('truth sources on two nodes', $logged);
+        $this->assertStringContainsString(self::REMOTE_NODE, $logged);
+    }
+
+    /**
+     * An owner of named rows announces its writes as a partial owner would, because that is what
+     * it is on the row axis: the rest of the collection belongs to somebody, and the receiving
+     * node must not read this fact as a claim over it.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAnOwnerOfNamedRowsAnnouncesWithTheMark(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->noteOwnAgent(
+            'worker_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]],
+        );
+
+        $daemon->announce($daemon->rtSyncCreated('Ada'));
+
+        $this->assertTrue($daemon->mesh->singleAnnouncement()->partialOwner);
+    }
+
+    /**
      * What this node announces says how completely it owns what it wrote, because the node on
      * the other end judges the frame by exactly that.
      *
@@ -545,6 +626,142 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         );
     }
 
+    /**
+     * A scoped snapshot speaks for its own rows and no others: what the sender named is brought
+     * in line with what it sent, and every other row of the collection - this node's own, or a
+     * third node's - is left exactly as it was, workers and all.
+     *
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     */
+    public function testAScopedSnapshotReplacesItsOwnRowsAndLeavesTheRestAlone(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $collection->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => self::ROW_ID, 'name' => 'Ada']));
+        $collection->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => '8', 'name' => 'stale']));
+        $daemon->noteOwnAgent(
+            'worker_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]],
+        );
+
+        $daemon->receiveSnapshot(
+            DaemonManagerRtSyncPeerTestRtContext::ROWS,
+            ['9' => ['id' => '9', 'name' => 'Grace']],
+            ['8', '9'],
+        );
+
+        $this->assertTrue($collection->has(self::ROW_ID), 'The row this node owns is outside the scope');
+        $this->assertFalse($collection->has('8'), 'A row of the scope the frame does not carry is gone');
+        $this->assertTrue($collection->has('9'));
+        $this->assertSame(
+            [WorkerConstants::MESSAGE_RT_SYNC_DELETED, WorkerConstants::MESSAGE_RT_SYNC_CREATED],
+            $daemon->workerServer->frameTypes(),
+            'The workers hear about the scope only: one row dropped, one row written',
+        );
+    }
+
+    /**
+     * A row carried past the scope the frame declares is dropped, and this is the case that says
+     * why: the two-owner refusal is asked of the SCOPE, so a row outside it was judged by nobody.
+     * Taken, it would let any frame overwrite a row this node owns by simply not naming it -
+     * and would tell this node's workers to create it.
+     *
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     */
+    public function testAScopedSnapshotDoesNotReachPastItsOwnScope(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $collection->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => self::ROW_ID, 'name' => 'Ada']));
+        $daemon->noteOwnAgent(
+            'worker_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]],
+        );
+
+        ob_start();
+        $daemon->receiveSnapshot(
+            DaemonManagerRtSyncPeerTestRtContext::ROWS,
+            [
+                '9' => ['id' => '9', 'name' => 'Grace'],
+                self::ROW_ID => ['id' => self::ROW_ID, 'name' => 'stolen'],
+            ],
+            ['9'],
+        );
+        $logged = (string)ob_get_clean();
+
+        $this->assertTrue($collection->has('9'), 'What the frame speaks for is applied');
+        $this->assertSame(
+            'Ada',
+            $collection[self::ROW_ID]->name,
+            'The row this node owns is untouched: the frame never claimed to speak for it',
+        );
+        $this->assertSame(
+            [WorkerConstants::MESSAGE_RT_SYNC_CREATED],
+            $daemon->workerServer->frameTypes(),
+            'And the workers hear about the scope alone',
+        );
+        $this->assertStringNotContainsString('truth sources on two nodes', $logged);
+    }
+
+    /**
+     * The two-owner refusal, asked of a scoped frame: a fleet member takes its neighbours' rows
+     * and refuses a frame reaching for one of its own. Judging such a frame by the collection
+     * would refuse every hand-over the fleet ever makes.
+     */
+    public function testAScopedSnapshotReachingForARowThisNodeOwnsIsRefused(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->noteOwnAgent(
+            'worker_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]],
+        );
+
+        ob_start();
+        $daemon->receiveSnapshot(
+            DaemonManagerRtSyncPeerTestRtContext::ROWS,
+            [self::ROW_ID => ['id' => self::ROW_ID, 'name' => 'Grace']],
+            [self::ROW_ID],
+        );
+        $logged = (string)ob_get_clean();
+
+        $this->assertFalse($collection->has(self::ROW_ID), 'Nobody hands this node the row it writes itself');
+        $this->assertStringContainsString('truth sources on two nodes', $logged);
+    }
+
+    /**
+     * And the same node takes a scoped frame about rows it never claimed - the ordinary case of
+     * a fleet reconnecting, and what makes the convergence the ticket asks for possible at all.
+     */
+    public function testAScopedSnapshotAboutOtherRowsIsAcceptedWhereRowsAreOwned(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->noteOwnAgent(
+            'worker_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]],
+        );
+
+        ob_start();
+        $daemon->receiveSnapshot(
+            DaemonManagerRtSyncPeerTestRtContext::ROWS,
+            ['9' => ['id' => '9', 'name' => 'Grace']],
+            ['9'],
+        );
+        $logged = (string)ob_get_clean();
+
+        $this->assertTrue($collection->has('9'));
+        $this->assertStringNotContainsString('truth sources on two nodes', $logged);
+    }
+
     public function testASnapshotForACollectionThisNodeOwnsIsRefused(): void
     {
         $daemon = new DaemonManagerRtSyncPeerTestManager();
@@ -606,10 +823,87 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
                 'nodeId' => 'node-c',
                 'collectionKey' => DaemonManagerRtSyncPeerTestRtContext::ROWS,
                 'rows' => [self::ROW_ID => ['id' => self::ROW_ID, 'name' => 'Ada']],
+                'scopeKeys' => [],
             ]],
             $daemon->mesh->snapshots,
-            'The collection this node owns travels whole, rows and all',
+            'The collection this node owns travels whole, rows and all, under no scope',
         );
+    }
+
+    /**
+     * An owner of named rows hands over those rows and says so with the scope. Without this the
+     * fleet never converged: nothing was handed over at all, delivery has no retries (HIL-183),
+     * and everything written while a link was down stayed lost.
+     *
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     */
+    public function testAnOwnerOfNamedRowsHandsOverThoseRowsUnderTheirScope(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $collection->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => self::ROW_ID, 'name' => 'Ada']));
+        $collection->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => '9', 'name' => 'Grace']));
+        $daemon->noteOwnAgent(
+            'worker_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]],
+        );
+
+        $daemon->handshaked('node-c');
+
+        $this->assertSame(
+            [[
+                'nodeId' => 'node-c',
+                'collectionKey' => DaemonManagerRtSyncPeerTestRtContext::ROWS,
+                'rows' => [self::ROW_ID => ['id' => self::ROW_ID, 'name' => 'Ada']],
+                'scopeKeys' => [self::ROW_ID],
+            ]],
+            $daemon->mesh->snapshots,
+            'The neighbour\'s row is held here but is not this node\'s to hand over',
+        );
+    }
+
+    /**
+     * The rotation store is not handed over on a new link (P-084): a ticket lives for seconds
+     * and is spent once, so the tickets outstanding before a node existed are of no use to it,
+     * and the deltas bring it everything it can ever trade.
+     *
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     */
+    public function testTheRotationStoreIsNotHandedOverToANodeThatJustLinked(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $rotations = $daemon->mountRotationStore();
+        $rotations->add(StateHilosSessionRotation::create(self::TICKET, 'session-token', [], 0.0));
+        $daemon->noteOwnAgent('session_agent', [StateHilosSessionRotation::RT_COLLECTION]);
+
+        $daemon->handshaked('node-c');
+
+        $this->assertSame([], $daemon->mesh->snapshots);
+    }
+
+    /**
+     * And it stays out of the hand-over on the scoped branch as well - the exclusion is about
+     * the collection, not about the shape of the claim over it.
+     *
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     */
+    public function testTheRotationStoreIsNotHandedOverUnderAScopeEither(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $rotations = $daemon->mountRotationStore();
+        $rotations->add(StateHilosSessionRotation::create(self::TICKET, 'session-token', [], 0.0));
+        $daemon->noteOwnAgent(
+            'session_agent',
+            [StateHilosSessionRotation::RT_COLLECTION],
+            [],
+            [StateHilosSessionRotation::RT_COLLECTION => [self::TICKET]],
+        );
+
+        $daemon->handshaked('node-c');
+
+        $this->assertSame([], $daemon->mesh->snapshots);
     }
 
     /**
@@ -644,6 +938,67 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         $daemon->handshaked('node-c');
 
         $this->assertSame([], $daemon->mesh->snapshots);
+    }
+
+    /**
+     * The other order, and the one a fleet meets every time it starts (HIL-589): the nodes are
+     * already linked, and an OWNER appears afterwards. The hand-over hangs off the handshake, so
+     * nothing would ask again - and the row's only CREATE may already have gone unannounced,
+     * having been written in the same breath as the claim that lets this node announce it. Every
+     * write after that is an UPDATE, which a node without the row drops.
+     *
+     * @throws AgentException When routing the loop pass fails
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     */
+    public function testAClaimThatArrivesAfterTheLinkIsOfferedToTheNodesAlreadyLinked(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $collection->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => self::ROW_ID, 'name' => 'Ada']));
+        $daemon->mesh->linked = ['node-c'];
+        $daemon->offerOnOwnershipChange();
+        $this->assertSame([], $daemon->mesh->snapshots, 'A node that owns nothing offers nothing');
+
+        $daemon->noteOwnAgent(
+            'worker_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]],
+        );
+        $daemon->offerOnOwnershipChange();
+
+        $this->assertSame(
+            [[
+                'nodeId' => 'node-c',
+                'collectionKey' => DaemonManagerRtSyncPeerTestRtContext::ROWS,
+                'rows' => [self::ROW_ID => ['id' => self::ROW_ID, 'name' => 'Ada']],
+                'scopeKeys' => [self::ROW_ID],
+            ]],
+            $daemon->mesh->snapshots,
+            'The rows it has just started owning go to the node it was already linked to',
+        );
+    }
+
+    /**
+     * And nothing is offered while the ownership stands still, or a snapshot would follow every
+     * delta - the deltas are what keeps a linked node current.
+     *
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     */
+    public function testOwnershipThatHasNotChangedOffersNothing(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $collection->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => self::ROW_ID, 'name' => 'Ada']));
+        $daemon->mesh->linked = ['node-c'];
+        $daemon->noteOwnAgent('rooms_agent', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
+        $daemon->offerOnOwnershipChange();
+        $this->assertCount(1, $daemon->mesh->snapshots);
+
+        $daemon->offerOnOwnershipChange();
+        $daemon->offerOnOwnershipChange();
+
+        $this->assertCount(1, $daemon->mesh->snapshots, 'The same ownership is offered once, not per pass');
     }
 
     /**
@@ -751,10 +1106,11 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
      * Builds the RT sync fact these cases travel, as the runtime of the owning node produces it.
      *
      * @param string $name Row label the fact carries
+     * @param string $stateId Row the fact is about
      * @return SignalDTO Signal announcing that row
      * @throws InvalidArgumentException When the signal name is empty
      */
-    public function rtSyncCreated(string $name): SignalDTO
+    public function rtSyncCreated(string $name, string $stateId = DaemonManagerRtSyncPeerTest::ROW_ID): SignalDTO
     {
         return new SignalDTO(
             new SignalSource(SignalSource::RT),
@@ -762,9 +1118,9 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
             new SignalName(SignalConstants::RT_SYNC_CREATED),
             new RtSyncCreatedSignalData(
                 DaemonManagerRtSyncPeerTestRtContext::ROWS,
-                DaemonManagerRtSyncPeerTest::ROW_ID,
+                $stateId,
                 [
-                    DaemonManagerRtSyncPeerTestState::id => DaemonManagerRtSyncPeerTest::ROW_ID,
+                    DaemonManagerRtSyncPeerTestState::id => $stateId,
                     DaemonManagerRtSyncPeerTestState::name => $name,
                 ],
             ),
@@ -870,12 +1226,25 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
      * @param string $agentId Agent that registered here
      * @param list<string> $collectionKeys RT collections it owns
      * @param list<string> $partialCollectionKeys Those of them it owns with only part of the operations
+     * @param array<string, list<string>> $keysByCollection Those of them it claimed by key, and the keys
      */
-    public function noteOwnAgent(string $agentId, array $collectionKeys, array $partialCollectionKeys = []): void
-    {
+    public function noteOwnAgent(
+        string $agentId,
+        array $collectionKeys,
+        array $partialCollectionKeys = [],
+        array $keysByCollection = [],
+    ): void {
         $this->agentManagerDaemon->handleRtSourceRegistered(
-            new WorkerRtSourceRegisteredDTO($agentId, $collectionKeys, $partialCollectionKeys),
+            new WorkerRtSourceRegisteredDTO($agentId, $collectionKeys, $partialCollectionKeys, $keysByCollection),
         );
+    }
+
+    /**
+     * Runs the loop step that offers this node's RT state when its ownership has changed.
+     */
+    public function offerOnOwnershipChange(): void
+    {
+        $this->offerRtSnapshotsOnOwnershipChange($this->mesh);
     }
 
     /**
@@ -899,13 +1268,15 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
      *
      * @param string $collectionKey RT collection the owner hands over
      * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
+     * @param list<string> $scopeKeys Rows the owner speaks for; empty when it hands over the collection
      */
-    public function receiveSnapshot(string $collectionKey, array $rows): void
+    public function receiveSnapshot(string $collectionKey, array $rows, array $scopeKeys = []): void
     {
         $this->applyRemoteRtSnapshot(
             DaemonManagerRtSyncPeerTest::REMOTE_NODE,
             $collectionKey,
             $rows,
+            $scopeKeys,
         );
     }
 
@@ -1035,6 +1406,9 @@ final class DaemonManagerRtSyncPeerTestOpaqueSignalData implements SignalDataInt
  */
 final class DaemonManagerRtSyncPeerTestMesh implements RtSyncMesh
 {
+    /** @var list<string> Nodes this stand-in reports a live link to */
+    public array $linked = [];
+
     /** @var list<DaemonManagerRtSyncPeerTestAnnouncement> Facts offered to the mesh, in order */
     public array $announcements = [];
 
@@ -1052,13 +1426,31 @@ final class DaemonManagerRtSyncPeerTestMesh implements RtSyncMesh
     }
 
     /**
+     * @return list<string> Nodes this stand-in has been told are reachable
+     */
+    public function linkedNodeIds(): array
+    {
+        return $this->linked;
+    }
+
+    /**
      * @param string $nodeId Node that joined
      * @param string $collectionKey RT collection this node owns
      * @param array<string, array<string, mixed>> $rows Rows by state id
+     * @param list<string> $scopeKeys Rows this node speaks for; empty when it owns the collection
      */
-    public function sendRtSnapshotToNode(string $nodeId, string $collectionKey, array $rows): void
-    {
-        $this->snapshots[] = ['nodeId' => $nodeId, 'collectionKey' => $collectionKey, 'rows' => $rows];
+    public function sendRtSnapshotToNode(
+        string $nodeId,
+        string $collectionKey,
+        array $rows,
+        array $scopeKeys = [],
+    ): void {
+        $this->snapshots[] = [
+            'nodeId' => $nodeId,
+            'collectionKey' => $collectionKey,
+            'rows' => $rows,
+            'scopeKeys' => $scopeKeys,
+        ];
     }
 
     /**

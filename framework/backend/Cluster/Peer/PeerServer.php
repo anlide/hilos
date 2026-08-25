@@ -1748,7 +1748,7 @@ final class PeerServer extends AbstractServer implements
     }
 
     /**
-     * Hands one whole RT collection to the node that just joined the mesh.
+     * Hands one RT collection, or the rows of it this node owns, to the node that just joined.
      *
      * Implements {@see RtSyncMesh}. Addressed rather than broadcast: only the joining node is
      * behind on this collection, and the others would be told to replace a copy that is already
@@ -1758,10 +1758,18 @@ final class PeerServer extends AbstractServer implements
      * @param string $nodeId Node that joined and is being handed the collection
      * @param string $collectionKey RT collection this node owns
      * @param array<string, array<string, mixed>> $rows Rows by state id, as this node holds them
+     * @param list<string> $scopeKeys Rows this node speaks for; empty when it owns the collection
      */
-    public function sendRtSnapshotToNode(string $nodeId, string $collectionKey, array $rows): void
-    {
-        $this->sendToNode($nodeId, new PeerRtSnapshotDTO($this->localIdentity->nodeId, $collectionKey, $rows));
+    public function sendRtSnapshotToNode(
+        string $nodeId,
+        string $collectionKey,
+        array $rows,
+        array $scopeKeys = [],
+    ): void {
+        $this->sendToNode(
+            $nodeId,
+            new PeerRtSnapshotDTO($this->localIdentity->nodeId, $collectionKey, $rows, $scopeKeys),
+        );
     }
 
     /**
@@ -1785,7 +1793,12 @@ final class PeerServer extends AbstractServer implements
         }
 
         try {
-            $sink->applyRemoteRtSnapshot($frame->originNodeId, $frame->collectionKey, $frame->rows);
+            $sink->applyRemoteRtSnapshot(
+                $frame->originNodeId,
+                $frame->collectionKey,
+                $frame->rows,
+                $frame->scopeKeys,
+            );
         } catch (Throwable $e) {
             Logger::warning(
                 "Failed to apply peer RT snapshot from node '{$frame->originNodeId}': {$e->getMessage()}",
@@ -2034,6 +2047,32 @@ final class PeerServer extends AbstractServer implements
         foreach ($registry->snapshot() as $node) {
             if ($node->online) {
                 $ids[] = $node->nodeId;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Returns the ids of the nodes this one currently holds a handshaked link to.
+     *
+     * Narrower than {@see onlineNodeIds()}, and a different question: membership says who is in
+     * the mesh - learned from gossip, and true of nodes this one has no link to - while this says
+     * who can be reached right now, which is what an addressed frame needs. The local node is
+     * never among them: a node holds no link to itself.
+     *
+     * @return list<string> Node ids behind a handshaked link, each named once
+     */
+    public function linkedNodeIds(): array
+    {
+        $ids = [];
+        foreach ($this->clients as $client) {
+            if (!$client instanceof PeerLink) {
+                continue;
+            }
+            $nodeId = $client->remoteIdentity()?->nodeId;
+            if ($nodeId !== null && !in_array($nodeId, $ids, true)) {
+                $ids[] = $nodeId;
             }
         }
 

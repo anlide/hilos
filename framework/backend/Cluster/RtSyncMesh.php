@@ -30,7 +30,18 @@ interface RtSyncMesh
     public function broadcastRtSync(string $signalType, SignalDTO $signal, bool $partialOwner = false): void;
 
     /**
-     * Hands one whole RT collection this node owns to a node that just joined.
+     * Names the nodes this one can hand something to right now.
+     *
+     * Membership is the wrong answer here and the transport knows the right one: a node is a
+     * member from the moment a peer mentions it, which on a mesh of three is well before there
+     * is a link to it, and a frame sent then reaches nothing.
+     *
+     * @return list<string> Node ids behind a handshaked link, each named once
+     */
+    public function linkedNodeIds(): array;
+
+    /**
+     * Hands one RT collection this node owns, or the rows of it it owns, to a node that joined.
      *
      * Addressed, unlike the announcement above: a node that has just come up is the only one
      * behind on the collection, and the others hold a copy the deltas have kept current.
@@ -38,6 +49,12 @@ interface RtSyncMesh
      * @param string $nodeId Node that joined
      * @param string $collectionKey RT collection this node owns
      * @param array<string, array<string, mixed>> $rows Rows by state id, as this node holds them
+     * @param list<string> $scopeKeys Rows this node speaks for; empty when it owns the collection
      */
-    public function sendRtSnapshotToNode(string $nodeId, string $collectionKey, array $rows): void;
+    public function sendRtSnapshotToNode(
+        string $nodeId,
+        string $collectionKey,
+        array $rows,
+        array $scopeKeys = [],
+    ): void;
 }

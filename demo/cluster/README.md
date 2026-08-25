@@ -32,7 +32,7 @@ composer -d demo/cluster run install-deps      # generate the lock (once)
 composer -d demo/cluster run test:unit         # topology + placement-contract unit tests
 demo/cluster/docker/cluster up                 # build + start mysql, 5 nodes, cli
 demo/cluster/docker/cluster status             # roster + leader + placements per node
-demo/cluster/docker/cluster scenarios          # the 9-scenario matrix
+demo/cluster/docker/cluster scenarios          # the 13-scenario matrix
 demo/cluster/docker/cluster down --volumes     # tear everything down
 ```
 
@@ -51,6 +51,19 @@ scenario matrix. From the repo root: `composer run test:cluster:all`.
 8. split-brain prevention — the majority keeps one leader; the minority steps down
 9. daemon-crash self-heal — a node whose daemon is SIGKILLed rebinds and rejoins
    inside the *same* container, then takes the whole fleet (HIL-450)
+10. cross-node browser — a browser attached to one node is answered from another,
+   and a fan-out reaches every node (HIL-668)
+11. cross-node db fact — a database row changed on one node is announced to every
+   other, and again to a node that re-linked (HIL-670)
+12. rt replication — every node holds a runtime row for every fleet member, and
+   every member sees the whole fleet from its own process (HIL-589)
+13. rt partition converges — a node cut off from the mesh serves its replica
+   frozen, and catches up from the hand-over once it is back (HIL-589)
+
+They run in the order the driver lists them, which is not the order they are
+numbered: the two RT scenarios go right after placement, while the fleet the
+leader just placed is still alive. Every run starts from a fresh stack, because
+the matrix leaves that fleet dead behind it (P-152).
 
 ### Timing on a loaded host (HIL-367)
 

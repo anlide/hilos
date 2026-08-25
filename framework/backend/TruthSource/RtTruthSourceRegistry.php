@@ -98,9 +98,11 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
     /**
      * Lists the runtime collections one agent is a truth source for.
      *
-     * The granularity of the registration is dropped on purpose: whether an agent owns a whole
-     * collection or three of its keys, the collection has an owner in this process, and that is
-     * the whole question the node-level map ({@see RtNodeSourceMap}) puts to it.
+     * Whether an agent owns a whole collection or three of its keys, the collection has an owner
+     * in this process, and that is the first of the two questions the node-level map
+     * ({@see RtNodeSourceMap}) puts to it. How wide that claim runs is the second, and it is
+     * answered separately by {@see keysByCollectionOf()}: an agent registered for three keys owns
+     * those three entities, not the collection around them.
      *
      * @param string $agentId Agent to ask about
      * @return list<string> Collections it is registered for, each named once
@@ -146,6 +148,33 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
         }
 
         return $collections;
+    }
+
+    /**
+     * Lists the rows one agent claimed by name, collection by collection.
+     *
+     * The width axis of the same registration {@see collectionsOf()} names, and asked for the
+     * node-level map: a claim by keys is ownership of those entities, so the node holding it may
+     * neither refuse another node's rows nor hand over the collection as a whole. A claim on the
+     * whole collection names no keys and is absent here — silence means "all of it", the way it
+     * does in the grant itself.
+     *
+     * @param string $agentId Agent to ask about
+     * @return array<string, list<string>> Collections it claimed by key, and the keys of each
+     */
+    public static function keysByCollectionOf(string $agentId): array
+    {
+        $keysByCollection = [];
+        $sources = &self::getSources();
+        foreach ($sources as $collection => $agents) {
+            $grant = $agents[$agentId] ?? null;
+            if ($grant === null || $grant->keys === true) {
+                continue;
+            }
+            $keysByCollection[(string)$collection] = $grant->keys;
+        }
+
+        return $keysByCollection;
     }
 
     /**

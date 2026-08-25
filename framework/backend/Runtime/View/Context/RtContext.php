@@ -509,6 +509,26 @@ abstract class RtContext
     }
 
     /**
+     * Names every runtime collection this context mounts, replicas of other nodes' included.
+     *
+     * For a caller that has to walk what is mounted rather than ask about a key it already
+     * knows - the cluster inspect command is the one, and most of what it reports is collections
+     * this node does not own, so no ownership list could stand in for this. Names only: what the
+     * rows are is a question for the state itself, and answering it here would hand a backing
+     * store outward, which is the very thing the RT-STATE-REACH guard refuses.
+     *
+     * Item aliases are left out. A standalone item is runtime state under a key of its own, but
+     * it is one row rather than a collection, and reporting it beside collections would describe
+     * a shape no caller here can act on.
+     *
+     * @return list<string> Keys of the mounted runtime collections, in mount order
+     */
+    final public function collectionKeys(): array
+    {
+        return array_map(strval(...), array_keys($this->_stateCollections));
+    }
+
+    /**
      * Reports whether a name is a runtime source this context mounts - a represented collection
      * or a declared item alias, the two things {@see self::__get()} can answer with.
      *

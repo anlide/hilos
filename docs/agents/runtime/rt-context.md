@@ -402,14 +402,15 @@ What this means when you write an agent that owns a collection:
   Cross-node signal delivery already exists; it is the only write path to
   somebody else's collection.
 
-A node that receives a replica for a collection it owns itself refuses it and
+A node that receives a replica for a row it owns itself refuses it and
 writes `RT collection <key> has truth sources on two nodes: local and <node>`.
-That line means an agent is registered as a source on two nodes at once — look
-at its `AgentRegistryKey::SCOPE` first.
+That line means the same row has a source on two nodes at once — look
+at the owning agent's `AgentRegistryKey::SCOPE` first. A frame about a row this
+node does not own is ordinary traffic (see the two axes below).
 
-A node joining the mesh is handed each collection whole by its owner, because it
-has no history for the deltas to apply to. That hand-over **replaces** the
-receiver's copy: a row the owner does not send is a row that no longer exists.
+A node joining the mesh is handed what each owner holds, because it has no history
+for the deltas to apply to. That hand-over **replaces** what it speaks for: a row
+inside its scope that the owner does not send is a row that no longer exists.
 
 **What travels is what an agent owns.** The node announces a write only for the
 collections its own agents registered, so a project's collection is replicated
@@ -432,13 +433,30 @@ on every node and no agent stands behind them:
 Both are framework-owned and both are named in `DaemonManager`; an application
 collection has no such case, and adding one is not a knob that exists.
 
-**Ownership travels per collection, not per key.** `register()` accepts a list of
-keys, and on one node that is exactly what it means — but the node-level map
-knows only collections, so an agent registered for three keys makes its node
-claim the whole collection cluster-wide. Two nodes owning different keys of one
-collection therefore read as the split the guard exists to name: each refuses
-the other's rows, and a hand-over offers the collection whole. Until that is
-decided, keep a key-scoped truth source on one node.
+**Ownership is claimed on two axes: which rows, and which operations.** A claim
+naming keys is ownership of THOSE ENTITIES and is meant to be used that way
+(HIL-589): a fleet of agents may split one collection between nodes, each owning
+the rows it writes. A claim short of an operation is the other axis (HIL-688):
+one node adds and removes, another edits, and neither is a second owner. The
+node-level map answers both, and only a claim of every row AND every operation
+is ownership of the collection itself.
+
+A frame is judged by what it carries. A delta naming a row is judged by that row,
+so a neighbour's rows are ordinary traffic and only a frame about a row this node
+owns is the split. A hand-over from an owner of named rows carries a SCOPE: it
+speaks for those rows alone, and the receiver replaces them and leaves the rest of
+the collection as it found it. An owner of the whole collection sends no scope,
+and then the frame is the collection, as it has always been.
+
+**A replica whose owner cannot be reached is served exactly as it is.** Nothing
+marks it stale, nothing refuses the reader, and nothing sweeps it when the node
+that wrote it leaves the mesh — what this node can no longer hear about, it goes
+on answering with. The cost is real and accepted: a frozen row is indistinguishable
+from a fresh one, so a presence field can say "online" about a node that is gone.
+Revisiting that (a staleness mark on the row, or a refusal to the reader) is
+HIL-711. When the owner comes back, its hand-over brings the copy back in line —
+which is why a hand-over has to cover rows and not only whole collections, since
+delivery has no retries and everything written during the break is otherwise lost.
 
 Application code should write through runtime actions, typed `RtState` fields,
 and `sync()`. Reserve `applyDiff()` / `applyDiffToState()` for inbound RT

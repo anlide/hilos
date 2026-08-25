@@ -23,10 +23,13 @@ use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
  * ({@see RtSyncSink}) — a wrong answer, but the only honest one, since accepting it would let
  * two owners overwrite each other silently for as long as both keep running.
  *
- * Fully is the load-bearing word since HIL-688. A claim may cover only part of the operations —
- * a library adds and removes rows it never edits — and then another node holding the rest is
- * not a split but the arrangement working. So the map remembers not just what this node owns
- * but how completely, and only two claims of the WHOLE right can be the defect.
+ * Fully is the load-bearing word, and it is answered on TWO axes. Which OPERATIONS a claim
+ * covers is one (HIL-688): a library adds and removes rows it never edits, and another node
+ * holding the rest is not a split but the arrangement working. Which ROWS it covers is the
+ * other (HIL-589): a claim naming keys is ownership of those entities, so an agent owning three
+ * rows of a collection leaves every other row of it to whoever writes those. A node owns a
+ * collection fully when it holds all the operations over all the rows, and only two such claims
+ * can be the defect.
  */
 final class RtNodeSourceMap
 {
@@ -36,15 +39,23 @@ final class RtNodeSourceMap
     /** @var array<string, list<string>> Of those, the ones owned only partly, keyed by the same agent */
     private array $partialByAgent = [];
 
+    /** @var array<string, array<string, list<string>>> Of those, the ones claimed by key, keyed by the same agent */
+    private array $keysByAgent = [];
+
     /**
      * Records what one agent of this node owns, replacing whatever it owned before.
      *
      * @param string $agentId Agent that registered as a truth source
      * @param list<string> $collectionKeys RT collections it owns
      * @param list<string> $partialCollectionKeys Those of them it owns with only part of the operations
+     * @param array<string, list<string>> $keysByCollection Those of them it claimed by key, and the keys
      */
-    public function note(string $agentId, array $collectionKeys, array $partialCollectionKeys = []): void
-    {
+    public function note(
+        string $agentId,
+        array $collectionKeys,
+        array $partialCollectionKeys = [],
+        array $keysByCollection = [],
+    ): void {
         if ($collectionKeys === []) {
             $this->release($agentId);
 
@@ -53,6 +64,7 @@ final class RtNodeSourceMap
 
         $this->byAgent[$agentId] = $collectionKeys;
         $this->partialByAgent[$agentId] = $partialCollectionKeys;
+        $this->keysByAgent[$agentId] = $keysByCollection;
     }
 
     /**
@@ -62,17 +74,28 @@ final class RtNodeSourceMap
      */
     public function release(string $agentId): void
     {
-        unset($this->byAgent[$agentId], $this->partialByAgent[$agentId]);
+        unset($this->byAgent[$agentId], $this->partialByAgent[$agentId], $this->keysByAgent[$agentId]);
     }
 
     /**
+     * Whether an agent of this node is the truth source for a collection, or for one row of it.
+     *
+     * Asked without a row id the question is about the collection: does anything here write it
+     * at all. Asked with one it narrows to that row, and only then does a claim by keys answer
+     * for what it actually holds — the rows it named, and no others.
+     *
      * @param string $collectionKey RT collection to ask about
+     * @param ?string $stateId Row to narrow the question to, or null to ask about the collection
      * @return bool True when an agent of this node is the truth source for it
      */
-    public function owns(string $collectionKey): bool
+    public function owns(string $collectionKey, ?string $stateId = null): bool
     {
-        foreach ($this->byAgent as $collectionKeys) {
-            if (in_array($collectionKey, $collectionKeys, true)) {
+        foreach ($this->byAgent as $agentId => $collectionKeys) {
+            if (!in_array($collectionKey, $collectionKeys, true)) {
+                continue;
+            }
+            $claimedKeys = $this->keysByAgent[$agentId][$collectionKey] ?? null;
+            if ($claimedKeys === null || $stateId === null || in_array($stateId, $claimedKeys, true)) {
                 return true;
             }
         }
@@ -81,22 +104,36 @@ final class RtNodeSourceMap
     }
 
     /**
-     * Whether an agent of this node holds the WHOLE right over a collection.
+     * Whether an agent of this node holds the WHOLE right over a collection, or over one row.
      *
      * The question a frame from another node is judged by: a node holding only part of the
      * right has no ground to refuse the holder of the rest, while two claims of the whole right
-     * are the split the map exists to name.
+     * are the split the map exists to name. Whole means both axes at once — every operation, and
+     * every row — so an agent that named its keys never answers yes about the collection around
+     * them, however complete its right over each of them is.
+     *
+     * With a row id the question narrows to that row, and that is how a delta is judged: the
+     * owner of three entities refuses a frame about one of those three and lets every other row
+     * of the collection through.
      *
      * @param string $collectionKey RT collection to ask about
+     * @param ?string $stateId Row to narrow the question to, or null to ask about the collection
      * @return bool True when at least one agent of this node owns it with every operation
      */
-    public function ownsFully(string $collectionKey): bool
+    public function ownsFully(string $collectionKey, ?string $stateId = null): bool
     {
         foreach ($this->byAgent as $agentId => $collectionKeys) {
             if (!in_array($collectionKey, $collectionKeys, true)) {
                 continue;
             }
-            if (!in_array($collectionKey, $this->partialByAgent[$agentId] ?? [], true)) {
+            if (in_array($collectionKey, $this->partialByAgent[$agentId] ?? [], true)) {
+                continue;
+            }
+            $claimedKeys = $this->keysByAgent[$agentId][$collectionKey] ?? null;
+            if ($claimedKeys === null) {
+                return true;
+            }
+            if ($stateId !== null && in_array($stateId, $claimedKeys, true)) {
                 return true;
             }
         }
@@ -126,8 +163,9 @@ final class RtNodeSourceMap
      *
      * Narrower than {@see collections()} on purpose: a snapshot claims to be the collection,
      * and a partial owner's copy is not - the rows only the other owner writes may be missing
-     * from it. Announcing a delta stays the wider question, because both co-owners announce
-     * what each of them wrote.
+     * from it. That holds on either axis, so a collection claimed by keys is left out here too;
+     * it is handed over as its own rows instead ({@see keyScopedCollections()}). Announcing a
+     * delta stays the wider question, because both co-owners announce what each of them wrote.
      *
      * @return list<string> RT collections this node owns with every operation, each named once
      */
@@ -141,5 +179,45 @@ final class RtNodeSourceMap
         }
 
         return $collections;
+    }
+
+    /**
+     * Collections this node owns by named rows, and which rows those are.
+     *
+     * The other half of what may be handed over, and the scope it is handed over under: what
+     * this node knows to be the whole truth is not the collection but those rows, so a snapshot
+     * of them speaks for them alone and leaves the rest of the collection as the receiver found
+     * it. Disjoint from {@see fullyOwnedCollections()} by construction — a collection some agent
+     * here owns whole is handed over whole, and naming it twice would offer the same rows under
+     * two different scopes.
+     *
+     * A claim short of an operation is left out on both lists alike: the rows it names are
+     * written by another node too, so even about those this node's copy is not the whole truth.
+     *
+     * @return array<string, list<string>> RT collections owned by key, with every key claimed here
+     */
+    public function keyScopedCollections(): array
+    {
+        $keysByCollection = [];
+        foreach ($this->keysByAgent as $agentId => $claims) {
+            foreach ($claims as $collectionKey => $claimedKeys) {
+                if (
+                    !in_array($collectionKey, $this->byAgent[$agentId] ?? [], true)
+                    || in_array($collectionKey, $this->partialByAgent[$agentId] ?? [], true)
+                    || $this->ownsFully($collectionKey)
+                ) {
+                    continue;
+                }
+                $collected = $keysByCollection[$collectionKey] ?? [];
+                foreach ($claimedKeys as $stateId) {
+                    if (!in_array($stateId, $collected, true)) {
+                        $collected[] = $stateId;
+                    }
+                }
+                $keysByCollection[$collectionKey] = $collected;
+            }
+        }
+
+        return $keysByCollection;
     }
 }

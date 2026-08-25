@@ -46,7 +46,10 @@ Use this skill for agent business logic and registration work. Start by reading 
    therefore own no RT collection — a second owner splits it, and all the daemon
    can do about that is refuse the other node's writes and log
    `RT collection <key> has truth sources on two nodes` — and only when both nodes
-   claim the WHOLE right, since a claim may cover part of the operations.
+   claim the same ROW with every operation. A claim by keys is the way to have
+   one collection written from several nodes: an indexed agent registers its own
+   index (`registerRtTruthSource($key, [$this->agentIndex])`) and owns those rows
+   alone, which is what makes a placed fleet's state converge across the mesh.
    Say what the agent may DO with the rows it claims when that is less than
    everything: `AbstractAgent::defaultTruthSourceOperations()` is the one place a
    kind of agent answers, and `AbstractUsersLibraryAgent` overrides it with adding
@@ -76,5 +79,8 @@ Use this skill for agent business logic and registration work. Start by reading 
 - Never let non-truth-source agents write to a DB/RT collection they do not own.
 - Never register an RT truth source in an agent declared `AgentScope::NODE`; a
   per-node replica may read a shared collection, and changes what it does not own
-  by signalling the owner.
+  by signalling the owner. An agent that owns rows rather than a collection claims
+  them by key and still keeps `AgentScope::CLUSTER`: what may not be duplicated is
+  the claim over a row, and a NODE-scoped agent would claim the same keys on every
+  node.
 - Never add Repository or Service layers above `DbCollection`.

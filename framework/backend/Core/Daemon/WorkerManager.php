@@ -1718,6 +1718,7 @@ abstract class WorkerManager extends BaseManager
             $agentId,
             $collectionKeys,
             RtTruthSourceRegistry::partialCollectionsOf($agentId),
+            RtTruthSourceRegistry::keysByCollectionOf($agentId),
         ));
     }
 

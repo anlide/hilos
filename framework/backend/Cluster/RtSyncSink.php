@@ -41,17 +41,25 @@ interface RtSyncSink
     ): void;
 
     /**
-     * Replaces this node's copy of one RT collection with the one its owner handed over.
+     * Replaces this node's copy of one RT collection, or of the rows named, with the owner's.
      *
-     * Replacement rather than merge: the owner's copy is the whole truth about the collection,
-     * so a row the snapshot does not carry is a row that no longer exists.
+     * Replacement rather than merge: the owner's copy is the whole truth about what it sent, so
+     * a row the snapshot does not carry is a row that no longer exists. The scope says what "what
+     * it sent" covers — the collection when it is empty, and only the named rows otherwise, with
+     * everything outside them left as this node holds it.
      *
      * @param string $originNodeId Id of the node that owns the collection
      * @param string $collectionKey RT collection being replaced
      * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
+     * @param list<string> $scopeKeys Rows the snapshot speaks for; empty for the whole collection
      * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
-    public function applyRemoteRtSnapshot(string $originNodeId, string $collectionKey, array $rows): void;
+    public function applyRemoteRtSnapshot(
+        string $originNodeId,
+        string $collectionKey,
+        array $rows,
+        array $scopeKeys = [],
+    ): void;
 
     /**
      * Hands every RT collection this node owns to a node the mesh has just linked to.

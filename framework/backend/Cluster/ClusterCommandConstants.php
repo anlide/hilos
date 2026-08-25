@@ -89,6 +89,27 @@ final class ClusterCommandConstants
     /** @var string Inspect reply key: browser the last addressed cross-node delivery was for */
     public const string FIELD_LAST_CLIENT_ACCEPT_KEY = 'lastClientAcceptKey';
 
+    /** @var string Inspect reply key: what this node holds of each replicated RT collection */
+    public const string FIELD_RT_COLLECTIONS = 'rtCollections';
+
+    /** @var string Inspect reply key: remote RT frames this node has applied */
+    public const string FIELD_RT_APPLIED = 'rtApplied';
+
+    /** @var string Inspect reply key: remote RT frames this node refused as a two-owner split */
+    public const string FIELD_RT_REFUSED = 'rtRefused';
+
+    /** @var string RT-collection-row key: whether an agent of this node writes the collection */
+    public const string FIELD_RT_OWNED = 'owned';
+
+    /** @var string RT-collection-row key: whether this node owns it on both axes, rows and operations */
+    public const string FIELD_RT_FULLY_OWNED = 'fullyOwned';
+
+    /** @var string RT-collection-row key: ids of the rows this node holds under the collection */
+    public const string FIELD_RT_ROW_IDS = 'rowIds';
+
+    /** @var string RT-collection-row key: those rows themselves, keyed by id */
+    public const string FIELD_RT_ROWS = 'rows';
+
     /** @var string Inspect reply key: DB replicas from other nodes this one has accepted */
     public const string FIELD_DB_REPLICAS = 'dbReplicas';
 
