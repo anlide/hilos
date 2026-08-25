@@ -166,7 +166,13 @@ final class IdentifierDetector
     }
 
     /**
-     * Lists the enabled methods this account can be signed in with THROUGH this identifier.
+     * Lists the enabled methods this account can be signed in with.
+     *
+     * The account's, not the identifier's, and the promise now says so (HIL-692). It used
+     * to promise "through THIS identifier" while counting by account, and the promise was
+     * the wrong half: a password belongs to the person, so whichever of their addresses
+     * was typed, it is the one they answer with. Kind still gates two keys below, but a
+     * kind is a shape of identifier and not a particular one.
      *
      * Kind gates two of the keys, and both gates are the mockup's
      * (`hilos-ops/mockups/framework/guest/index.html`): a number never carries a
@@ -229,6 +235,8 @@ final class IdentifierDetector
             // that was typed, and the account is already known to answer at it, so
             // whether one was ever set up is not a question that exists here.
             AuthMethodKey::MAGIC_LINK => $kind === IdentifierDetection::KIND_EMAIL,
+            // Any password row the account holds answers for every address it holds: an
+            // account has at most one (HIL-692), and the sign-in reads it by account too.
             AuthMethodKey::PASSWORD => $kind === IdentifierDetection::KIND_EMAIL
                 && $this->holdsType($identities, IdentityType::PASSWORD),
             AuthMethodKey::SMS => $kind === IdentifierDetection::KIND_PHONE,

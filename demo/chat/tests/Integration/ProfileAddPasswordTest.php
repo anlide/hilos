@@ -167,6 +167,55 @@ final class ProfileAddPasswordTest extends IntegrationTestCase
     }
 
     /**
+     * An account that already has a password is refused a second one, in its own words.
+     *
+     * The refusal used to be "that email is already in use", which was answering about the
+     * wrong thing entirely (HIL-692): the address here is free, and what is taken is the
+     * one password slot the account has. The code survives the refusal, because the answer
+     * never depended on it - spending it here would cost the person a round trip to learn
+     * something the account already knew.
+     *
+     * @throws HilosException When setup or the confirm handler fails
+     */
+    public function testConfirmRefusesASecondPasswordForTheAccount(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $firstEmail = $this->uniqueEmail();
+        $token = $this->openSession($agent, 'add-pw-second-ak');
+
+        try {
+            $userId = (int)Hilos::$db->users->actions->createWithName('Password User')->id;
+            $agent->authenticateSession($token, $userId, null);
+            Hilos::$db->identities->createPasswordIdentity($userId, $firstEmail, self::NEW_PASSWORD)->markVerified();
+            $this->issueChallenge($email, $userId);
+
+            $rejected = false;
+            try {
+                new ProfilePage($agent)->onAction(
+                    'add-pw-second-ak',
+                    ChatSignalConstants::ADD_PASSWORD_CONFIRM,
+                    new ConfirmAddPasswordActionDTO($email, self::CODE, self::NEW_PASSWORD),
+                );
+            } catch (ValidationException $exception) {
+                $rejected = true;
+                $this->assertStringContainsString('already has a password', $exception->getMessage());
+            }
+            $this->assertTrue($rejected, 'A second password must be refused');
+
+            $this->assertNull(Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email));
+            $this->assertSame($firstEmail, Hilos::$db->identities->findPasswordByUser($userId)?->identifier);
+            $this->assertNotNull(
+                $this->verifications()->findActive(VerificationType::EMAIL_ADD, $email, self::MAX_ATTEMPTS),
+                'A refusal the code could not have changed must not burn it',
+            );
+            $this->assertNull($this->takeQueuedWebSocketSignal(ChatSignalConstants::PASSWORD_UPDATED));
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
      * A confirm with a weak password is refused before the code is verified/burned.
      *
      * @throws HilosException When setup fails

@@ -204,6 +204,44 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
     }
 
     /**
+     * A recovery started from the account's other address changes its one password (HIL-692).
+     *
+     * The other half of the same dead end: an address a person can sign in with had to be
+     * an address they can recover through, or the fix would have been half a fix. The code
+     * goes to the address that was typed - it is already proven to be theirs - and lands
+     * on the password of the account behind it.
+     *
+     * @throws HilosException When setup or reset handling fails
+     */
+    public function testRecoveryThroughASecondAddressChangesTheAccountsPassword(): void
+    {
+        $agent = $this->bootAgent();
+        $passwordEmail = $this->uniqueEmail();
+        $secondEmail = $this->uniqueEmail();
+        $userId = $this->seedUserWithPassword($passwordEmail);
+        Hilos::$db->identities->createMagicLinkIdentity($userId, $secondEmail)->markVerified();
+
+        $this->openSession($agent, 'second-address-reset-ak');
+
+        try {
+            ExecutionContext::setCurrentAcceptKey('second-address-reset-ak');
+            $this->requestReset($agent, 'second-address-reset-ak', $secondEmail);
+            $this->seedKnownCode($secondEmail);
+
+            $this->confirm($agent, 'second-address-reset-ak', $secondEmail, self::CODE);
+            $outcome = $this->complete($agent, 'second-address-reset-ak', self::NEW_PASSWORD);
+
+            $this->assertTrue($outcome->ok);
+            $this->assertTrue(
+                password_verify(self::NEW_PASSWORD, (string)$this->readSecret($passwordEmail)),
+                'The save lands on the account\'s one password, wherever it is written',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
      * Both devices reach the password screen; the second one to save is told why not.
      *
      * @throws HilosException When setup or reset handling fails

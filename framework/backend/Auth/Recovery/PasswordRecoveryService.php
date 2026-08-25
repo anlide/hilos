@@ -13,7 +13,6 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
-use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Environment\Exception\EnvException;
@@ -43,10 +42,13 @@ use Random\RandomException;
  * - a wrong code costs an attempt on the accepting step exactly as it does on a
  * consuming one.
  *
- * Only `password` identities: an address whose account was built by a link, a provider
- * or a phone has no password to reset, and this refuses it rather than mailing a code
- * that could not lead anywhere ({@see requestCode()} answers null and the surface says
- * so out loud - the detection in front of the form already told the person as much).
+ * Only an account that has a password: one built by a link, a provider or a phone has
+ * nothing to reset, and this refuses it rather than mailing a code that could not lead
+ * anywhere ({@see requestCode()} answers null and the surface says so out loud - the
+ * detection in front of the form already told the person as much). The question is asked
+ * of the ACCOUNT the address belongs to and not of the address (HIL-692), so whichever of
+ * their addresses a person types, the code arrives there and changes the one password
+ * they have.
  */
 final class PasswordRecoveryService
 {
@@ -149,9 +151,9 @@ final class PasswordRecoveryService
      */
     public function complete(string $email, string $newPassword): ?int
     {
-        $identity = $this->identities()->findByIdentity(IdentityType::PASSWORD, $email);
-        $userId = $identity?->userId;
-        if ($identity === null || $userId === null) {
+        $userId = $this->identities()->findAccountIdByEmail($email);
+        $identity = $userId === null ? null : $this->identities()->findPasswordByUser($userId);
+        if ($userId === null || $identity === null) {
             return null;
         }
 
@@ -167,14 +169,24 @@ final class PasswordRecoveryService
     /**
      * The account behind an address that can be recovered, if any.
      *
+     * Two questions in order, and the order is the rule (HIL-692): the address says WHOSE
+     * account this is, and the account says whether there is a password to reset. Asking
+     * for "the password of this address" instead would refuse a code to somebody typing
+     * their own second address, so a person could sign in with it but never recover
+     * through it - half of the dead end left standing.
+     *
      * @param string $email Normalized address (lowercased)
-     * @return ?int Owning user id of the address's password identity, or null when it has none
+     * @return ?int Owning user id when the address's account has a password, or null when it has none
      * @throws DatabaseException When an identity query fails
      * @throws LogicException When the identities object collection is unavailable
      */
     private function passwordUserId(string $email): ?int
     {
-        return $this->identities()->findByIdentity(IdentityType::PASSWORD, $email)?->userId;
+        $userId = $this->identities()->findAccountIdByEmail($email);
+
+        return $userId !== null && $this->identities()->findPasswordByUser($userId) !== null
+            ? $userId
+            : null;
     }
 
     /**

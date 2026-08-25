@@ -45,9 +45,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Database\DatabaseException;
-use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Verification\VerificationType;
-use Hilos\Database\View\Item\Identity;
 use Hilos\HilosException;
 use Hilos\Notification\DTO\NotificationChannelPreferenceActionDTO;
 use Hilos\Notification\DTO\NotificationPreferencesChangedSignalData;
@@ -358,11 +356,15 @@ final class ProfilePage extends AbstractHilosProfilePage
      * identity projection that could confirm it; a refusal surfaces through the default
      * framework action_error contract.
      *
+     * Which password it changes is the framework's answer and no longer this page's own
+     * search (HIL-692): an account holds one, and asking for it by account is what makes
+     * "your password is changed" true even for data written before the rule.
+     *
      * @param string $acceptKey Accept key
      * @param SetPasswordActionDTO $dto Set-password DTO (new password + optional current)
      * @throws ItemNotFoundForUpdateException When the user session is missing
      * @throws ValidationException When the new password is too weak, the current password is wrong, or the user has no verified email
-     * @throws DatabaseException When an identity read or secret write query fails
+     * @throws HilosException When an identity read or secret write query fails
      */
     private function handleSetPassword(string $acceptKey, SetPasswordActionDTO $dto): void
     {
@@ -376,7 +378,7 @@ final class ProfilePage extends AbstractHilosProfilePage
             throw new ValidationException('Password must be at least ' . PasswordPolicy::MIN_LENGTH . ' characters');
         }
 
-        $passwordIdentity = $this->findPasswordIdentity($userId);
+        $passwordIdentity = Hilos::$db->identities->findPasswordByUser($userId);
         if ($passwordIdentity !== null) {
             if ($dto->currentPassword === '' || !$passwordIdentity->verifyPassword($dto->currentPassword)) {
                 throw new ValidationException('Current password is incorrect');
@@ -399,24 +401,6 @@ final class ProfilePage extends AbstractHilosProfilePage
                 new PasswordUpdatedSignalData($mode),
             );
         }
-    }
-
-    /**
-     * Finds the signed-in user's `password` identity, if any.
-     *
-     * @param int $userId Owning user id
-     * @return ?Identity The user's password identity, or null when they have none
-     * @throws DatabaseException When the identity lookup query fails
-     */
-    private function findPasswordIdentity(int $userId): ?Identity
-    {
-        foreach (Hilos::$db->identities->listByUser($userId) as $identity) {
-            if ($identity->type === IdentityType::PASSWORD) {
-                return $identity;
-            }
-        }
-
-        return null;
     }
 
     /**
@@ -598,13 +582,18 @@ final class ProfilePage extends AbstractHilosProfilePage
      *
      * Server-authoritative and self-only: the owning user is read from the session.
      * The new password is length-checked FIRST so a weak password never burns the
-     * code. The submitted code is verified against the `email_add` challenge; a
-     * missing/expired/wrong code — or a challenge minted for a different user than
-     * this session — is refused with the same generic message. Uniqueness is
-     * re-checked after verify (a magic_link-verified collision on the same email
-     * would slip past createPasswordIdentity's password-scoped duplicate guard)
-     * before the write. On success a verified `password` identity is attached to the
-     * session user on the now-proven email and a
+     * code, and an account that already HAS a password is refused next, for the same
+     * reason and in its own words (HIL-692): this flow adds a password, an account holds
+     * one, and the answer does not depend on which address was typed - so spending the
+     * code to find that out would burn it over a question already settled. The old
+     * refusal, "that email is already in use", was about the wrong thing entirely; the
+     * address may be perfectly free. The submitted code is then verified against the
+     * `email_add` challenge; a missing/expired/wrong code — or a challenge minted for a
+     * different user than this session — is refused with the same generic message.
+     * Uniqueness is re-checked after verify (a magic_link-verified collision on the same
+     * email would slip past createPasswordIdentity's password-scoped duplicate guard)
+     * before the write. On success a verified `password`
+     * identity is attached to the session user on the now-proven email and a
      * {@see ChatSignalConstants::PASSWORD_UPDATED} signal (MODE_ADDED, reusing the
      * HIL-402 success signal) is fanned to all the user's connections, which clears
      * the form and flips the section to change-mode; the new identity also arrives
@@ -613,7 +602,8 @@ final class ProfilePage extends AbstractHilosProfilePage
      * @param string $acceptKey Accept key
      * @param ConfirmAddPasswordActionDTO $dto Add-password confirm DTO (email, code, new password)
      * @throws ItemNotFoundForUpdateException When the user session is missing
-     * @throws ValidationException When the password is too weak, the code is invalid/expired, or the email is already in use
+     * @throws ValidationException When the password is too weak, the account already has a
+     *     password, the code is invalid/expired, or the email is already in use
      * @throws HilosException When a verification or identity query fails
      */
     private function handleConfirmAddPassword(string $acceptKey, ConfirmAddPasswordActionDTO $dto): void
@@ -626,6 +616,10 @@ final class ProfilePage extends AbstractHilosProfilePage
 
         if (strlen($dto->newPassword) < PasswordPolicy::MIN_LENGTH) {
             throw new ValidationException('Password must be at least ' . PasswordPolicy::MIN_LENGTH . ' characters');
+        }
+
+        if (Hilos::$db->identities->findPasswordByUser($userId) !== null) {
+            throw new ValidationException('This account already has a password');
         }
 
         $email = strtolower($dto->email);

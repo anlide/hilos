@@ -11,6 +11,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\View\Item\Identity;
@@ -112,6 +113,33 @@ final class Identities extends DbCollection
         }
 
         return $result;
+    }
+
+    /**
+     * Resolves an account's one password identity (HIL-692).
+     *
+     * The read every password flow asks now: delegates to the object collection's
+     * {@see ObjectIdentities::findPasswordByUser()} primitive, which answers "which
+     * secret is THIS PERSON's?" — an address only names them. Null when the account has
+     * no password: a person who has only ever used a link, a provider or a phone.
+     *
+     * @param int $userId Owning user id
+     * @return ?Identity The account's password identity as a read-facing Db item, or null when it has none
+     * @throws DatabaseException On database error while resolving the identity
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
+     */
+    public function findPasswordByUser(int $userId): ?Identity
+    {
+        $objectIdentity = $this->objectCollection->findPasswordByUser($userId);
+
+        if ($objectIdentity?->id === null) {
+            return null;
+        }
+
+        /** @var ?Identity $identity */
+        $identity = $this->getItemForKey($objectIdentity->id);
+        return $identity;
     }
 
     /**
@@ -424,16 +452,42 @@ final class Identities extends DbCollection
      *
      * Account-merge write path: delegates to the object collection's
      * {@see ObjectIdentities::rePointToUser()} primitive, which owns the
-     * duplicate-drop guard and the targeted user_id move.
+     * duplicate-drop guard, the password settlement, and the targeted user_id move.
+     *
+     * `$passwordFate` is passed through without a default of its own (HIL-692) — the
+     * write-path parity guard only watches the `create*` methods, so a default invented
+     * here would diverge from the object collection silently and hand every caller on
+     * this side an answer nobody chose.
      *
      * @param int $fromUserId Loser user id whose identities are absorbed
      * @param int $toUserId Survivor user id that receives the identities
+     * @param ?PasswordFate $passwordFate Whose password stays, or null when neither account pair holds two
      * @return int Number of identities re-pointed to the survivor
+     * @throws LogicException When both accounts hold a password and no fate was named
      * @throws DatabaseException On database error while re-pointing the identities
      */
-    public function rePointToUser(int $fromUserId, int $toUserId): int
+    public function rePointToUser(int $fromUserId, int $toUserId, ?PasswordFate $passwordFate): int
     {
-        return $this->objectCollection->rePointToUser($fromUserId, $toUserId);
+        return $this->objectCollection->rePointToUser($fromUserId, $toUserId, $passwordFate);
+    }
+
+    /**
+     * Whether a merge of these two accounts has to be told whose password stays (HIL-692).
+     *
+     * Merge-guard read accessor: delegates to the object collection's
+     * {@see ObjectIdentities::passwordFateNeeded()} primitive, which answers "do both
+     * accounts hold a password?" — the one case where a merge cannot decide for itself.
+     * A caller asks it before opening its transaction, so the refusal is worded by the
+     * surface that has the operator's attention.
+     *
+     * @param int $fromUserId Loser user id whose identities would be absorbed
+     * @param int $toUserId Survivor user id that would receive them
+     * @return bool True when both accounts hold a password and one of them must give way
+     * @throws DatabaseException On database error while resolving the identities
+     */
+    public function passwordFateNeeded(int $fromUserId, int $toUserId): bool
+    {
+        return $this->objectCollection->passwordFateNeeded($fromUserId, $toUserId);
     }
 
     /**

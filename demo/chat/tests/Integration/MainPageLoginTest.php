@@ -114,6 +114,37 @@ final class MainPageLoginTest extends IntegrationTestCase
     }
 
     /**
+     * A second address of the same account signs in with that account's password (HIL-692).
+     *
+     * The case the leaf was written for: an address that arrived by a merge used to show a
+     * password field that always answered "this account has no password", because the
+     * lookup asked for the password OF THAT ADDRESS. The address names the person now.
+     *
+     * @throws HilosException When setup or login handling fails
+     */
+    public function testASecondAddressSignsInWithTheAccountsPassword(): void
+    {
+        $agent = $this->bootAgent();
+        $passwordEmail = $this->uniqueEmail();
+        $secondEmail = $this->uniqueEmail();
+        $userId = $this->seedUserWithPassword(
+            $passwordEmail,
+            self::PASSWORD,
+            password_hash(self::PASSWORD, PASSWORD_DEFAULT),
+        );
+        Hilos::$db->identities->createMagicLinkIdentity($userId, $secondEmail)->markVerified();
+        $this->openSession($agent, 'second-address-ak');
+
+        try {
+            $this->login($agent, 'second-address-ak', $secondEmail, self::PASSWORD);
+
+            $this->assertSame($userId, $this->sessionOf('second-address-ak')?->userId);
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
      * A successful login silently upgrades an outdated (low-cost) hash.
      *
      * @throws HilosException When setup or login handling fails

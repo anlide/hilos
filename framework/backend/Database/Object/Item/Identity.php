@@ -209,6 +209,33 @@ final class Identity extends Object_
     }
 
     /**
+     * Erases this identity's secret, leaving the row and its address in place (HIL-692).
+     *
+     * The demotion half of an account merge: a password that did not survive stops being
+     * a credential, while the address it carries stays the person's. Deleting the row
+     * instead would take away their way in through that address altogether. Written with
+     * the same targeted UPDATE {@see setPassword()} uses, so the secret column stays out
+     * of the ORM columns, the object/view surface, and the cross-worker sync bus - here
+     * the split matters in the other direction, since the erase must reach the column
+     * that no sync carries. A no-op for an unpersisted identity.
+     *
+     * @throws DatabaseException When the secret update query fails
+     */
+    public function clearPassword(): void
+    {
+        if ($this->entity->id === null) {
+            return;
+        }
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::int($this->entity->id));
+        Database::sql(
+            'UPDATE `' . EntityIdentity::_table . '` SET `' . EntityIdentity::secret . '` = NULL WHERE `' . EntityIdentity::id . '` = ?',
+            $params,
+        );
+    }
+
+    /**
      * Marks this identity verified (idempotent), flipping the `verified` flag.
      *
      * Verify-flip write path of the identity layer, opened by the register-confirm

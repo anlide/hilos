@@ -49,6 +49,12 @@ final class PasswordCommands extends AbstractLibraryCommands
      * that question now - so vagueness withheld nothing and only left the person guessing
      * which half of what they typed was wrong.
      *
+     * The address names the PERSON and the secret is theirs, not the address's (HIL-692).
+     * It used to ask for "the password of this address", which meant a second address -
+     * one that arrived by a merge, say - showed a password field that always answered
+     * "this account has no password", with nothing the person could type to change that.
+     * The three sentences are unchanged; what moved is what each is computed from.
+     *
      * The hash is re-computed when the cost parameters have moved on, which is the one
      * write a successful login does here. Everything else about becoming that user - the
      * rotated token, the re-pointed sockets, the answer to this action - belongs to the
@@ -66,14 +72,17 @@ final class PasswordCommands extends AbstractLibraryCommands
         $acting = $this->acting($acceptKey);
 
         $email = strtolower($dto->email);
-        $identity = $email !== ''
-            ? Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email)
+        $userId = $email !== ''
+            ? Hilos::$db->identities->findAccountIdByEmail($email)
             : null;
 
+        if ($userId === null) {
+            throw new ValidationException(AuthMessages::UNKNOWN_EMAIL);
+        }
+
+        $identity = Hilos::$db->identities->findPasswordByUser($userId);
         if ($identity === null) {
-            throw new ValidationException($this->emailBelongsToAccount($email)
-                ? AuthMessages::NO_PASSWORD
-                : AuthMessages::UNKNOWN_EMAIL);
+            throw new ValidationException(AuthMessages::NO_PASSWORD);
         }
 
         if (!$identity->verifyPassword($dto->password)) {
@@ -81,11 +90,6 @@ final class PasswordCommands extends AbstractLibraryCommands
         }
 
         $identity->rehashPasswordIfNeeded($dto->password);
-
-        $userId = $identity->userId;
-        if ($userId === null) {
-            throw new ValidationException(AuthMessages::WRONG_PASSWORD);
-        }
 
         $this->library->grantSession($acting, $userId);
     }

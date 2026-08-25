@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Collection;
 
+use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\PhoneNumber;
 use Hilos\Core\CLI\Commands\UserTestSeedCommand;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -16,11 +18,13 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\Identities as EntityIdentities;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 use Hilos\HilosException;
+use Hilos\Utils\Logger;
 
 /**
  * Identities object collection.
@@ -87,7 +91,7 @@ final class Identities extends Objects
      * @param string $plainSecret Plaintext password to hash and store
      * @return ObjectIdentity The created identity object
      * @throws EmptyValueException When identifier or secret is empty
-     * @throws DuplicateValueException When an identity already exists for (password, identifier)
+     * @throws DuplicateValueException When the address is taken, or the account already has a password
      * @throws DatabaseException If the insert or secret write query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws HilosException Whatever a subscriber to the store announcement raises
@@ -116,12 +120,20 @@ final class Identities extends Objects
      * as after a real password registration. Uniqueness is per (type, identifier); a
      * caller must lowercase the email before calling.
      *
+     * THE place where "an account holds at most one password" is held (HIL-692). It is
+     * one guard rather than three because every road that mints a password comes through
+     * here - the registration, the profile's add-password, the test seed - and the rule
+     * has to be a property of the write, not a habit of its callers. What made it a rule
+     * is that a second secret is invisible from the surface and unremovable through it:
+     * the profile changes the FIRST password row it finds, answers "password changed",
+     * and the other one keeps letting someone in through the other address.
+     *
      * @param int $userId Owning user id
      * @param string $identifier Normalized identifier (lowercased email)
      * @param string $passwordHash Precomputed `password_hash()` value to store as the secret
      * @return ObjectIdentity The created identity object
      * @throws EmptyValueException When identifier is empty
-     * @throws DuplicateValueException When an identity already exists for (password, identifier)
+     * @throws DuplicateValueException When the address is taken, or the account already has a password
      * @throws DatabaseException If the insert or secret write query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws HilosException Whatever a subscriber to the store announcement raises
@@ -134,6 +146,10 @@ final class Identities extends Objects
 
         if ($this->findByIdentity(IdentityType::PASSWORD, $identifier) !== null) {
             throw new DuplicateValueException('email already used');
+        }
+
+        if ($this->findPasswordByUser($userId) !== null) {
+            throw new DuplicateValueException('account already has a password');
         }
 
         $identity = ObjectIdentity::create();
@@ -409,15 +425,28 @@ final class Identities extends Objects
      * hard-deleted rather than moved (HIL-282 "never move a link"). Returns the
      * number of identities actually moved; dropped duplicates are not counted.
      *
+     * The passwords are settled BEFORE anything moves (HIL-692), because moving them
+     * first would build the very state the one-password rule forbids and then ask this
+     * method to unbuild it. `$passwordFate` has no default on purpose: an account merge
+     * has to name what happens to a password even when the answer is "nothing to name",
+     * and a default would let the one caller that forgot look exactly like the ones that
+     * decided. Null is that "nothing to name" and is only legal when at most one of the
+     * two accounts has a password - {@see passwordFateNeeded()} is how a caller asks
+     * that in time to refuse in its own words.
+     *
      * @param int $fromUserId Loser user id whose identities are absorbed
      * @param int $toUserId Survivor user id that receives the identities
+     * @param ?PasswordFate $passwordFate Whose password stays, or null when neither pair of accounts holds two
      * @return int Number of identities re-pointed to the survivor
-     * @throws DatabaseException If a lookup, move, or delete query fails
+     * @throws LogicException When both accounts hold a password and no fate was named
+     * @throws DatabaseException If a lookup, move, demote, or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws HilosException Whatever a subscriber to the store announcement raises
      */
-    public function rePointToUser(int $fromUserId, int $toUserId): int
+    public function rePointToUser(int $fromUserId, int $toUserId, ?PasswordFate $passwordFate): int
     {
+        $this->settlePasswords($fromUserId, $toUserId, $passwordFate);
+
         $moved = 0;
         foreach ($this->listByUser($fromUserId) as $identity) {
             $existing = $this->findByIdentity($identity->type, $identity->identifier);
@@ -435,6 +464,152 @@ final class Identities extends Objects
         }
 
         return $moved;
+    }
+
+    /**
+     * Whether a merge of these two accounts has to be told whose password stays (HIL-692).
+     *
+     * The question a merge asks its operator BEFORE it opens a transaction: only two
+     * passwords force a choice, and while at most one exists it survives on its own and
+     * the command keeps the shape it always had. Asked of the accounts rather than of
+     * the addresses, which is the whole rule in one line.
+     *
+     * @param int $fromUserId Loser user id whose identities would be absorbed
+     * @param int $toUserId Survivor user id that would receive them
+     * @return bool True when both accounts hold a password and one of them must give way
+     * @throws DatabaseException If a lookup query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function passwordFateNeeded(int $fromUserId, int $toUserId): bool
+    {
+        return $this->findPasswordByUser($fromUserId) !== null
+            && $this->findPasswordByUser($toUserId) !== null;
+    }
+
+    /**
+     * Resolves an account's one password identity (HIL-692).
+     *
+     * The read the one-password rule makes possible, and the one every password flow now
+     * asks: an address names the PERSON, and the secret checked against it is theirs, not
+     * the address's. Signing in, resetting, and the write guard all go through here, so
+     * "the account's password" has a single meaning wherever it is said.
+     *
+     * Data predating the rule is read deterministically rather than refused: the lowest
+     * id wins and the violation is logged, so exactly one secret opens the account and
+     * the extra one stops letting anybody in - which is why the leaf carries no migration
+     * for such accounts. Reads over {@see listByUser()} rather than a query of its own,
+     * so the objects it hands back are the collection's own and a write through them is
+     * seen by everyone holding the same row.
+     *
+     * @param int $userId Owning user id
+     * @return ?ObjectIdentity The account's password identity, or null when it has none
+     * @throws DatabaseException If a lookup query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function findPasswordByUser(int $userId): ?ObjectIdentity
+    {
+        $password = null;
+        $passwordId = null;
+        $held = 0;
+
+        foreach ($this->listByUser($userId) as $identity) {
+            $id = $identity->id;
+            if ($identity->type !== IdentityType::PASSWORD || $id === null) {
+                continue;
+            }
+
+            $held++;
+            if ($passwordId === null || $id < $passwordId) {
+                $password = $identity;
+                $passwordId = $id;
+            }
+        }
+
+        if ($held > 1) {
+            Logger::error('Account holds more than one password identity', [
+                'userId' => $userId,
+                'held' => $held,
+                'usedIdentityId' => $passwordId,
+            ]);
+        }
+
+        return $password;
+    }
+
+    /**
+     * Turns a password identity into a plain carrier of its address (HIL-692).
+     *
+     * What "this password does not stay" means mechanically, and it is deliberately not
+     * "a password row with an empty secret": a row is counted by its TYPE
+     * ({@see IdentifierDetector}), so an emptied password row would keep offering a
+     * password field that nothing can answer - the exact dead end the one-password rule
+     * exists to close. The row becomes a `magic_link` for the same address and keeps its
+     * `verified` flag, so the address stays proven and stays the person's.
+     *
+     * The secret is erased before the type flips, so no window exists in which a
+     * `magic_link` row carries one. Should a `magic_link` for that address already exist,
+     * the row is deleted instead - (type, identifier) is globally unique and the address
+     * is already carried by the row that is there, which is the same reasoning
+     * {@see rePointToUser()} uses for a duplicate it declines to move.
+     *
+     * @param ObjectIdentity $identity Password identity that did not survive the merge
+     * @throws DatabaseException If a lookup, erase, delete, or update query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
+     */
+    public function demotePasswordToMagicLink(ObjectIdentity $identity): void
+    {
+        if ($this->findByIdentity(IdentityType::MAGIC_LINK, $identity->identifier) !== null) {
+            $id = $identity->id;
+            $identity->delete();
+            if ($id !== null) {
+                unset($this[$id]);
+            }
+
+            return;
+        }
+
+        $identity->clearPassword();
+        $identity->type = IdentityType::MAGIC_LINK;
+        $identity->sync();
+    }
+
+    /**
+     * Applies the named fate to the two accounts' passwords, before any identity moves.
+     *
+     * One reading of the name for all three cases, and no refusals of its own: the value
+     * says whose password STAYS, so the other one is demoted whether or not the account
+     * naming it has a password of its own. "Keep the survivor's, and the survivor has
+     * none" is an outcome the operator is entitled to ask for, not a typo to reject.
+     *
+     * @param int $fromUserId Loser user id whose identities are absorbed
+     * @param int $toUserId Survivor user id that receives them
+     * @param ?PasswordFate $passwordFate Whose password stays, or null when nobody had to choose
+     * @throws LogicException When both accounts hold a password and no fate was named
+     * @throws DatabaseException If a lookup, erase, delete, or update query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws HilosException Whatever a subscriber to the store announcement raises
+     */
+    private function settlePasswords(int $fromUserId, int $toUserId, ?PasswordFate $passwordFate): void
+    {
+        $loserPassword = $this->findPasswordByUser($fromUserId);
+        $survivorPassword = $this->findPasswordByUser($toUserId);
+
+        if ($passwordFate === null) {
+            if ($loserPassword !== null && $survivorPassword !== null) {
+                throw new LogicException('Merging two accounts with a password each needs a password fate');
+            }
+
+            return;
+        }
+
+        if ($survivorPassword !== null && $passwordFate !== PasswordFate::SURVIVOR) {
+            $this->demotePasswordToMagicLink($survivorPassword);
+        }
+
+        if ($loserPassword !== null && $passwordFate !== PasswordFate::LOSER) {
+            $this->demotePasswordToMagicLink($loserPassword);
+        }
     }
 
     /**

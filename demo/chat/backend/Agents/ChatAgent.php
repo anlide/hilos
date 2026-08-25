@@ -42,6 +42,7 @@ use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Database\Database;
+use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
@@ -412,25 +413,29 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
      * partial write). Reached from the `account:merge` CLI command over the daemon
      * command channel; authorization is the channel's (operator-only) job.
      *
+     * An absent password key is the operator not naming a fate, which is a legitimate
+     * request and not a missing field (HIL-692) — the merge refuses on its own if the
+     * two accounts turn out to need one. An unreadable value is the command's to reject
+     * before it sends, so a value arriving here has already been through the enum.
+     *
      * @param CommandRequestDTO $data Command request carrying the survivor and loser user ids
      */
     private function handleAccountMergeCommand(CommandRequestDTO $data): void
     {
         $survivorId = (int)($data->payload[ChatCommandConstants::FIELD_SURVIVOR_USER_ID] ?? 0);
         $loserId = (int)($data->payload[ChatCommandConstants::FIELD_LOSER_USER_ID] ?? 0);
+        // external-boundary: an operator may omit the fate; the merge refuses if it needed one
+        $passwordFate = PasswordFate::tryFrom((string)($data->payload[ChatCommandConstants::FIELD_PASSWORD_FATE] ?? ''));
 
         try {
-            $summary = $this->handleAccountMerge($survivorId, $loserId);
+            $summary = $this->handleAccountMerge($survivorId, $loserId, $passwordFate);
         } catch (HilosException $e) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
 
             return;
         }
 
-        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
-            ChatCommandConstants::FIELD_IDENTITIES_MOVED => $summary->identitiesMoved,
-            ChatCommandConstants::FIELD_MESSAGES_MOVED => $summary->messagesMoved,
-        ]));
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, $summary->toArray()));
     }
 
     /**
@@ -449,7 +454,7 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
     private function handleAccountMergeRequest(AccountMergeSignalData $request): void
     {
         try {
-            $summary = $this->handleAccountMerge($request->survivorUserId, $request->loserUserId);
+            $summary = $this->handleAccountMerge($request->survivorUserId, $request->loserUserId, null);
         } catch (HilosException $e) {
             $this->sendToUser(
                 ChatSignalConstants::ACCOUNT_MERGE_FAIL,
@@ -484,6 +489,15 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
      * is the entry point's job (the CLI channel is admin-only; the table action is
      * admin-gated), matching how the raw ids arrive here already trusted.
      *
+     * One guard is about the merge rather than about the ids (HIL-692): an account holds
+     * at most one password, so two accounts that each have one cannot both be right and
+     * this refuses until the operator says which stays. It refuses only there — while one
+     * of the two has a password at most, that one survives and the command keeps the shape
+     * it always had. What comes back is the OUTCOME and not the request: the account is
+     * asked afterwards which password it now carries, so a fate naming an account that had
+     * none reports the truth ({@see PasswordFate::NONE}) rather than the word that was
+     * typed.
+     *
      * The transfer is one explicit transaction so a half-merged account can never
      * survive a mid-way failure: identity re-point, message re-point, and the
      * loser tombstone either all commit or all roll back. Ordering is free — the
@@ -496,11 +510,12 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
      *
      * @param int $survivorId Survivor user id that absorbs the loser
      * @param int $loserId Loser user id folded into the survivor
-     * @return AccountMergeSummary Counts of identities and messages moved
-     * @throws ValidationException When a guard rejects the merge (bad ids, missing or already-merged user)
+     * @param ?PasswordFate $passwordFate Whose password to keep, or null when the operator named none
+     * @return AccountMergeSummary Counts of what moved, and whose password the account kept
+     * @throws ValidationException When a guard rejects the merge (bad ids, missing or already-merged user, two passwords and no fate)
      * @throws HilosException On database or truth-source failure (transaction rolled back)
      */
-    public function handleAccountMerge(int $survivorId, int $loserId): AccountMergeSummary
+    public function handleAccountMerge(int $survivorId, int $loserId, ?PasswordFate $passwordFate): AccountMergeSummary
     {
         if ($survivorId === $loserId) {
             throw new ValidationException('Cannot merge a user into itself');
@@ -522,9 +537,15 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
             throw new ValidationException("Loser {$loserId} is already merged");
         }
 
+        if ($passwordFate === null && Hilos::$db->identities->passwordFateNeeded($loserId, $survivorId)) {
+            throw new ValidationException('Both accounts have a password: pass --password=survivor|loser|none');
+        }
+
+        $survivorPasswordId = Hilos::$db->identities->findPasswordByUser($survivorId)?->id;
+
         Database::transactionStart();
         try {
-            $identitiesMoved = Hilos::$db->identities->rePointToUser($loserId, $survivorId);
+            $identitiesMoved = Hilos::$db->identities->rePointToUser($loserId, $survivorId, $passwordFate);
             $messagesMoved = Hilos::$db->eventMessages->actions->rePointAuthor($loserId, $survivorId);
             $loser->actions->tombstone($survivorId);
             Database::transactionCommit();
@@ -538,17 +559,25 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
             throw $e;
         }
 
+        $keptPasswordId = Hilos::$db->identities->findPasswordByUser($survivorId)?->id;
+        $passwordKept = match (true) {
+            $keptPasswordId === null => PasswordFate::NONE,
+            $keptPasswordId === $survivorPasswordId => PasswordFate::SURVIVOR,
+            default => PasswordFate::LOSER,
+        };
+
         $this->logAgentInfo('account_merge ' . json_encode([
             'event' => 'account_merge',
             'survivor' => $survivorId,
             'loser' => $loserId,
             'identitiesMoved' => $identitiesMoved,
             'messagesMoved' => $messagesMoved,
+            ChatCommandConstants::FIELD_PASSWORD_KEPT => $passwordKept->value,
         ]));
 
         $this->killUserSessions($loserId);
 
-        return new AccountMergeSummary($identitiesMoved, $messagesMoved);
+        return new AccountMergeSummary($identitiesMoved, $messagesMoved, $passwordKept);
     }
 
     /**

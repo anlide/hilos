@@ -56,4 +56,13 @@ final class ChatCommandConstants
 
     /** @var string Reply key: messages re-pointed to the survivor by an account merge */
     public const string FIELD_MESSAGES_MOVED = 'messagesMoved';
+
+    /** @var string Payload key: whose password the operator asked an account merge to keep */
+    public const string FIELD_PASSWORD_FATE = 'passwordFate';
+
+    /** @var string Reply key: whose password an account merge actually kept */
+    public const string FIELD_PASSWORD_KEPT = 'passwordKept';
+
+    /** @var string Option name: whose password to keep, on the account-merge command line */
+    public const string OPTION_PASSWORD = 'password';
 }
