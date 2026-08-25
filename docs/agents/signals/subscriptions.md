@@ -74,8 +74,8 @@ Into the page's own answer, assembled on the backend:
 
 - `AbstractPage::buildPagePayload()` — the page builds its payload and reads
   whatever foreign source it needs while building it;
-- `AbstractPage::onSubscribe()` — when the assembly needs the accept key or the
-  subscription itself.
+- `AbstractPage::onSubscribeBeforeResponse()` — when the assembly needs the
+  accept key or the subscription itself.
 
 `AbstractPage::withPageIdentity()` is the worked example: the label, lead, and
 breadcrumb that a project's admin page catalog owns are folded into the payload

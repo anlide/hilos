@@ -58,8 +58,8 @@ children: `PageBadRequestException` (400), `PageUnauthorizedException` (401),
 `PageInternalErrorException` (500), plus the route-param pair
 `MissingPageRouteParamException` / `InvalidPageRouteParamException` (both 400).
 
-This is intentional public API for projects to throw from `onSubscribe()` /
-`onUpdateSubscription()` domain checks. Some classes are not thrown anywhere in
+This is intentional public API for projects to throw from
+`onSubscribeBeforeResponse()` / `onUpdateSubscription()` domain checks. Some classes are not thrown anywhere in
 framework or demo code yet — that is expected. Do not delete them as "dead code":
 they exist so a project always has the right status class without re-inventing
 one, and `PageSignalRouter` maps each to a `subscription_page_error` signal.

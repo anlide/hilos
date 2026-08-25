@@ -123,16 +123,29 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     }
 
     /**
-     * Register subscriber and send the current overview snapshot over the WebSocket.
+     * Drop subscriber state when the client leaves this page (explicit unsubscribe or synthetic unsubscribe on navigate).
+     *
+     * @param string $acceptKey WebSocket accept key
+     */
+    public function onUnsubscribe(string $acceptKey): void
+    {
+        $this->logAgentInfo("hilos_logs onUnsubscribe acceptKey={$acceptKey}");
+        self::removeSubscriber($acceptKey);
+    }
+
+    /**
+     * Send the current overview snapshot over the WebSocket, ahead of the page_response frame.
+     *
+     * The overview rides a signal of its own and must reach the client before the frame that
+     * releases the page, because that frame means the subscription is answered in full.
      *
      * @param string $acceptKey Target connection accept key
      * @param PageRouteParams $params Route parameters (unused for this page)
      * @throws InvalidArgumentException When the overview signal cannot be named
      */
-    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
+    protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
         $this->logAgentInfo("hilos_logs onSubscribe acceptKey={$acceptKey}");
-        self::$logsOverviewSubscribers[$acceptKey] = true;
         self::refreshOverview();
         self::$lastOverviewFingerprint = self::overviewFingerprint();
 
@@ -144,14 +157,17 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     }
 
     /**
-     * Drop subscriber state when the client leaves this page (explicit unsubscribe or synthetic unsubscribe on navigate).
+     * Register the connection for the live pushes of {@see self::onAgentTick()}.
      *
-     * @param string $acceptKey WebSocket accept key
+     * Runs after the answer so a subscription that was refused leaves no subscriber behind:
+     * {@see self::removeSubscriber()} only ever hears about a connection that closed.
+     *
+     * @param string $acceptKey Target connection accept key
+     * @param PageRouteParams $params Route parameters (unused for this page)
      */
-    public function onUnsubscribe(string $acceptKey): void
+    protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
     {
-        $this->logAgentInfo("hilos_logs onUnsubscribe acceptKey={$acceptKey}");
-        self::removeSubscriber($acceptKey);
+        self::$logsOverviewSubscribers[$acceptKey] = true;
     }
 
     /**

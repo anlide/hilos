@@ -24,7 +24,6 @@ use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
-use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageRouteParams;
 
 /**
@@ -67,19 +66,17 @@ final class BotPage extends AbstractPage
     ];
 
     /**
-     * Validates the route param DTO before emitting the browser snapshot.
+     * Validates the route param DTO before the page is answered, so a malformed id refuses the
+     * subscription instead of being answered and then failing.
      *
-     * @param string $acceptKey WebSocket accept key
+     * @param string $acceptKey WebSocket accept key (unused; the parse reads params only)
      * @param PageRouteParams $params Route params for the page subscription
      * @throws MissingPageRouteParamException When `id` is absent
      * @throws InvalidPageRouteParamException When `id` is non-numeric or `<= 0`
-     * @throws PageSubscriptionException When the browser snapshot rejects the subscription
      */
-    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
+    protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
         BotPageSubscribeParams::fromPageRouteParams($params);
-
-        parent::onSubscribe($acceptKey, $params);
     }
 
     /**

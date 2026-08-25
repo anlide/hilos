@@ -22,7 +22,7 @@ final class BrowserPageSubscriptionContractTest extends TestCase
             if (
                 $contents === false
                 || !str_contains($contents, 'public const array BROWSER')
-                || !str_contains($contents, 'function onSubscribe')
+                || !$this->declaresSubscribeHook($contents)
                 || !str_contains($contents, 'new ChatEventSignalDTO')
             ) {
                 continue;
@@ -68,12 +68,22 @@ final class BrowserPageSubscriptionContractTest extends TestCase
         if (!str_contains($contents, 'public const array BROWSER')) {
             return false;
         }
-        if (!str_contains($contents, 'function onSubscribe')) {
+        if (!$this->declaresSubscribeHook($contents)) {
             return false;
         }
 
         return str_contains($contents, 'new SignalData()')
             || str_contains($contents, 'new BrowserPageSignalData()');
+    }
+
+    /**
+     * Detects a page that puts work into either subscribe hook. AbstractPage::onSubscribe()
+     * is final, so a page's subscribe work lives in one of these two and nowhere else.
+     */
+    private function declaresSubscribeHook(string $contents): bool
+    {
+        return str_contains($contents, 'function onSubscribeBeforeResponse(')
+            || str_contains($contents, 'function onSubscribeAfterResponse(');
     }
 
     /**

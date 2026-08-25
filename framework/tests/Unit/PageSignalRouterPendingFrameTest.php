@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Page\AbstractPage;
@@ -101,6 +102,13 @@ final class PageSignalRouterPendingFrameTest extends TestCase
         $router->releasePendingFrames();
 
         $this->assertSame(['subscribe'], $this->page($factory)->handled);
+
+        // Released means answered: the page_response the client has been waiting on all
+        // along rides this same run, and nothing else follows it.
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
@@ -479,7 +487,7 @@ final class PendingFrameTestPage extends AbstractPage
      * @param string $acceptKey WebSocket accept key (unused)
      * @param PageRouteParams $params Route params (unused)
      */
-    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
+    protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
         $this->handled[] = 'subscribe';
     }

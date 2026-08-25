@@ -66,4 +66,5 @@ Use this skill for every change that affects signal shape, route, subscription, 
 - Preserve envelope metadata when DTOs cross worker and daemon boundaries.
 - Do not add a signal or an action a page waits for in order to draw its first
   render. One page subscription answers in one `page_response`; data the page
-  is missing is read in its own `buildPagePayload()` / `onSubscribe()`.
+  is missing is read in its own `buildPagePayload()` /
+  `onSubscribeBeforeResponse()`.

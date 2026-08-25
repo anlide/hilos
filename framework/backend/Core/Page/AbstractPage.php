@@ -225,9 +225,14 @@ abstract class AbstractPage implements ActionHostInterface
     /**
      * Handles page subscription.
      *
-     * Default behavior delegates to the browser layer. Override in concrete
-     * pages to add domain or routing parameter checks before or instead of
-     * delegating to browser state.
+     * Final: the frame below is the contract, and an override that forgot to
+     * call the parent used to drop it silently. A concrete page extends the
+     * subscription through onSubscribeBeforeResponse() and
+     * onSubscribeAfterResponse() instead, and picks between them by the frame:
+     * whatever must hold before the client is released - a route-param check
+     * that refuses the subscription, a snapshot of the page's own that has to
+     * be on the wire first - goes before it, and whatever may only run once the
+     * subscription is answered goes after it.
      *
      * Route params are available through the typed accessors on
      * PageRouteParams; family-level abstract pages typically convert
@@ -253,12 +258,13 @@ abstract class AbstractPage implements ActionHostInterface
      *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params from page subscription
-     * @throws PageSubscriptionException When browser snapshot rejects the subscription
+     * @throws PageSubscriptionException When the before-response hook or the browser snapshot refuses the subscription
      * @throws InvalidArgumentException When the page-response signal cannot be named
-     * @throws HilosException Whatever else the concrete page's payload build raises
+     * @throws HilosException Whatever else the before-response hook or the concrete page's payload build raises
      */
-    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
+    final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
+        $this->onSubscribeBeforeResponse($acceptKey, $params);
         $payload = $this->withPageIdentity($this->buildPagePayload($params));
         Hilos::$browser?->subscribeSnapshot(static::PAGE, $acceptKey, $params);
         $this->sendToUser(
@@ -266,6 +272,7 @@ abstract class AbstractPage implements ActionHostInterface
             $acceptKey,
             new PageResponseSignalData(static::PAGE, $payload),
         );
+        $this->onSubscribeAfterResponse($acceptKey, $params);
     }
 
     /**
@@ -286,6 +293,38 @@ abstract class AbstractPage implements ActionHostInterface
     protected function buildPagePayload(PageRouteParams $params): ?PagePayload
     {
         return null;
+    }
+
+    /**
+     * Runs page-specific work before the page_response frame goes out.
+     *
+     * Default intentionally does nothing. Override to refuse the subscription on
+     * the page's own terms before any answer is sent, or to put a snapshot of the
+     * page's own ahead of the frame that releases the page.
+     *
+     * @param string $acceptKey WebSocket accept key
+     * @param PageRouteParams $params Route params from page subscription
+     * @throws PageSubscriptionException When the override refuses the subscription on its own terms
+     * @throws HilosException Whatever else the override's own work raises
+     */
+    protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
+    {
+    }
+
+    /**
+     * Runs page-specific work after the page_response frame has gone out.
+     *
+     * Default intentionally does nothing. Override for a side effect a refused
+     * subscription must not leave behind - putting the connection on a live push
+     * list, for one. An exception raised here travels up as it is, even though
+     * the client has already been answered.
+     *
+     * @param string $acceptKey WebSocket accept key
+     * @param PageRouteParams $params Route params from page subscription
+     * @throws HilosException Whatever the override's own work raises
+     */
+    protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
+    {
     }
 
     /**

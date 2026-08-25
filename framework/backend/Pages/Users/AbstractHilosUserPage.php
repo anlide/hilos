@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Pages\Users;
 
 use Hilos\Constants\HilosPageConstants;
-use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
-use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\HilosException;
 use Hilos\Pages\Users\DTO\HilosUserPageSubscribeParams;
@@ -17,30 +15,27 @@ use Hilos\Pages\Users\DTO\HilosUserPageSubscribeParams;
 /**
  * Base class for the framework Hilos single-user page.
  *
- * The default subscription path emits the configured snapshot, parses the
- * `userId` route param, and then calls {@see self::onHilosUserSubscribe()}.
+ * The default subscription path answers the client, parses the `userId` route
+ * param, and then calls {@see self::onHilosUserSubscribe()}.
  */
 abstract class AbstractHilosUserPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_USER;
 
     /**
-     * Emits the configured snapshot, parses route params, and runs the typed hook.
+     * Parses route params and runs the typed hook, once the client has been answered.
      *
      * Final: subclasses customize subscribe behavior through
      * {@see self::onHilosUserSubscribe()}, not this method.
      *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params for the page subscription
-     * @throws PageSubscriptionException When the page subscription snapshot rejects the subscription
      * @throws MissingPageRouteParamException When `userId` is absent
      * @throws InvalidPageRouteParamException When `userId` is non-numeric or `<= 0`
-     * @throws InvalidArgumentException When the page-response signal cannot be named
-     * @throws HilosException Whatever else the concrete page's payload build or typed hook raises
+     * @throws HilosException Whatever else the typed hook raises
      */
-    final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
+    final protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
     {
-        parent::onSubscribe($acceptKey, $params);
         $this->onHilosUserSubscribe(
             $acceptKey,
             HilosUserPageSubscribeParams::fromPageRouteParams($params),
@@ -48,7 +43,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
     }
 
     /**
-     * Runs optional project-specific subscribe behavior after the initial snapshot.
+     * Runs optional project-specific subscribe behavior after the page has been answered.
      *
      * Default intentionally does nothing.
      *

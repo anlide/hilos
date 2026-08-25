@@ -14,7 +14,6 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\Exception\PageNotFoundException;
-use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
@@ -212,16 +211,6 @@ final class WorkerManagerConnectionCloseTestPage extends AbstractPage
 
     /** @var list<string> Accept keys the page was torn down for */
     public array $unsubscribedAcceptKeys = [];
-
-    /**
-     * Accepts the subscription without the browser answer the base page sends.
-     *
-     * @param string $acceptKey WebSocket accept key (unused)
-     * @param PageRouteParams $params Route params (unused)
-     */
-    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
-    {
-    }
 
     /**
      * Records the teardown so the test can assert it ran for the closed connection.

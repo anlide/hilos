@@ -9,8 +9,10 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\Exception\PageBadRequestException;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
@@ -199,6 +201,71 @@ final class AbstractPagePageResponseEmitTest extends TestCase
             $sections[0][PageCatalogConstants::SECTION_ITEMS][0],
         );
     }
+
+    /**
+     * The before-response hook answers ahead of the frame, which is the seam a page needs when a
+     * snapshot of its own has to reach the client before the page is released.
+     */
+    public function testTheBeforeResponseHookAnswersAheadOfTheFrame(): void
+    {
+        $page = new AbstractPagePageResponseEmitTestHookPage(new AbstractPagePageResponseEmitTestAgent());
+
+        $page->onSubscribe('ak-1', new PageRouteParams([]));
+
+        $names = $this->queuedSignalNames();
+
+        $this->assertSame(AbstractPagePageResponseEmitTestHookPage::SIGNAL_BEFORE, $names[0] ?? null);
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $names[1] ?? null);
+    }
+
+    /**
+     * The after-response hook answers behind the frame, so a side effect a refused subscription
+     * must not leave behind runs only once the client has been answered.
+     */
+    public function testTheAfterResponseHookAnswersBehindTheFrame(): void
+    {
+        $page = new AbstractPagePageResponseEmitTestHookPage(new AbstractPagePageResponseEmitTestAgent());
+
+        $page->onSubscribe('ak-1', new PageRouteParams([]));
+
+        $names = $this->queuedSignalNames();
+
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $names[1] ?? null);
+        $this->assertSame(AbstractPagePageResponseEmitTestHookPage::SIGNAL_AFTER, $names[2] ?? null);
+    }
+
+    /**
+     * A refusal in the before-response hook sends no answer at all: the client waits on the
+     * subscription_page_error the router makes of it, not on a frame that says the page is ready.
+     */
+    public function testARefusalInTheBeforeResponseHookLeavesTheQueueWithoutAFrame(): void
+    {
+        $page = new AbstractPagePageResponseEmitTestRefusingPage(new AbstractPagePageResponseEmitTestAgent());
+
+        try {
+            $page->onSubscribe('ak-1', new PageRouteParams([]));
+            $this->fail('The refusing hook must not let the subscription through.');
+        } catch (PageBadRequestException $exception) {
+            $this->assertSame('Refused before the answer', $exception->getMessage());
+        }
+
+        $this->assertSame([], $this->queuedSignalNames());
+    }
+
+    /**
+     * Drains the queue into the signal names it holds.
+     *
+     * @return list<string> Queued signal names, oldest first
+     */
+    private function queuedSignalNames(): array
+    {
+        $names = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $names[] = $signal->signalName->getName();
+        }
+
+        return $names;
+    }
 }
 
 /**
@@ -240,6 +307,42 @@ final class AbstractPagePageResponseEmitTestOwnLabelPage extends AbstractPage
     protected function buildPagePayload(PageRouteParams $params): ?PagePayload
     {
         return new PagePayload(data: [PageCatalogConstants::WIRE_PAGE_LABEL => 'Russian']);
+    }
+}
+
+/**
+ * Test page that answers from both subscribe hooks, so the queue shows where each hook sits
+ * relative to the frame.
+ */
+final class AbstractPagePageResponseEmitTestHookPage extends AbstractPage
+{
+    public const string PAGE = 'probe_hooks';
+
+    public const string SIGNAL_BEFORE = 'probe_hook_before';
+
+    public const string SIGNAL_AFTER = 'probe_hook_after';
+
+    protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
+    {
+        $this->sendToUser(self::SIGNAL_BEFORE, $acceptKey, new SignalData());
+    }
+
+    protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
+    {
+        $this->sendToUser(self::SIGNAL_AFTER, $acceptKey, new SignalData());
+    }
+}
+
+/**
+ * Test page whose before-response hook refuses the subscription, the way a route-param check does.
+ */
+final class AbstractPagePageResponseEmitTestRefusingPage extends AbstractPage
+{
+    public const string PAGE = 'probe_refusing';
+
+    protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
+    {
+        throw new PageBadRequestException('Refused before the answer');
     }
 }
 

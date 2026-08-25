@@ -288,16 +288,6 @@ final class UpdateSubscriptionGuardTestPage extends AbstractPage
     public array $updatedWith = [];
 
     /**
-     * Accepts the subscription without the browser answer the base page sends.
-     *
-     * @param string $acceptKey WebSocket accept key (unused)
-     * @param PageRouteParams $params Route params (unused)
-     */
-    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
-    {
-    }
-
-    /**
      * Records the param set the refresh was handed, so the merge is assertable.
      *
      * @param string $acceptKey WebSocket accept key (unused)

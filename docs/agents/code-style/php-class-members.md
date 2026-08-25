@@ -50,7 +50,7 @@ final class ExamplePage extends AbstractPage
         $this->agent = $agent;
     }
 
-    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
+    public function onUnsubscribe(string $acceptKey): void
     {
         // ...
     }

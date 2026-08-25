@@ -8,13 +8,10 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
-use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
-use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\HilosException;
 use Hilos\Pages\DTO\HilosGuardianAgentPageSubscribeParams;
 
 /**
@@ -34,21 +31,17 @@ abstract class AbstractHilosGuardianAgentPage extends AbstractHilosPage
     ];
 
     /**
-     * Parses route params into {@see HilosGuardianAgentPageSubscribeParams} before emitting
-     * the browser snapshot. Final: subclasses customize page state through browser config.
+     * Parses route params into {@see HilosGuardianAgentPageSubscribeParams} before the page is
+     * answered, so a malformed id refuses the subscription instead of being answered and then
+     * failing. Final: subclasses customize page state through browser config.
      *
-     * @param string $acceptKey WebSocket accept key
+     * @param string $acceptKey WebSocket accept key (unused; the parse reads params only)
      * @param PageRouteParams $params Route params for the page subscription
      * @throws MissingPageRouteParamException When `agentId` is absent or empty
      * @throws InvalidPageRouteParamException Reserved for future typed constraints on the id
-     * @throws PageSubscriptionException When browser snapshot rejects the subscription
-     * @throws InvalidArgumentException When the page-response signal cannot be named
-     * @throws HilosException Whatever else the concrete page's payload build raises
      */
-    final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
+    final protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
         HilosGuardianAgentPageSubscribeParams::fromPageRouteParams($params);
-
-        parent::onSubscribe($acceptKey, $params);
     }
 }

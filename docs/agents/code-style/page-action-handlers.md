@@ -90,9 +90,20 @@ public function onActionException(string $acceptKey, string $action, ActionPaylo
 
 Most pages should rely on the default `AbstractPage::onSubscribe()` and declare
 browser tables in `PAGE_TABLES` instead of hand-rolling subscription payloads.
-Override `onSubscribe()` when route params or domain checks are required, or
-when the page needs specialized subscribe behavior; then prefer
-`parent::onSubscribe()` for browser snapshots.
+
+`AbstractPage::onSubscribe()` is `final`, because the `page_response` frame it
+sends is what the client waits on and an override that forgot to call the parent
+dropped that frame silently. A page that needs route-param or domain checks, or
+any other specialized subscribe behavior, overrides one of the two hooks
+instead, and picks between them by the frame:
+
+- `onSubscribeBeforeResponse()` — everything that must hold before the client is
+  released: a check that refuses the subscription, or a snapshot of the page's
+  own that has to be on the wire ahead of the frame.
+- `onSubscribeAfterResponse()` — everything that may only run once the
+  subscription is answered, such as putting the connection on a live push list.
+  An exception raised here still travels up, but the client has already been
+  answered.
 
 `AbstractPage::onSubscribe()` and `AbstractPage::onUpdateSubscription()` receive
 a typed `PageRouteParams` value object, not a raw `array<string, string>`. All
@@ -113,8 +124,8 @@ signal without tearing down the connection.
 
 Pages with real route params should not read `PageRouteParams` inline. Define
 an `AbstractPageSubscribeParamsDTO` subclass alongside the abstract page, parse
-everything inside `fromPageRouteParams()`, and expose a `final onSubscribe()` in
-the abstract class that dispatches to a typed hook:
+everything inside `fromPageRouteParams()`, and expose a final subscribe hook in
+the abstract class that dispatches to a typed hook of its own:
 
 ```php
 final class HilosUserPageSubscribeParams extends AbstractPageSubscribeParamsDTO
@@ -131,9 +142,8 @@ final class HilosUserPageSubscribeParams extends AbstractPageSubscribeParamsDTO
 
 abstract class AbstractHilosUserPage extends AbstractHilosPage
 {
-    final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
+    final protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
     {
-        parent::onSubscribe($acceptKey, $params);
         $this->onHilosUserSubscribe(
             $acceptKey,
             HilosUserPageSubscribeParams::fromPageRouteParams($params),

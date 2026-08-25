@@ -6,7 +6,7 @@ description: Work with Hilos page subscription params, page registration and rou
 # Hilos Page Subscribe Params
 
 Use this skill when adding a new page that accepts route params, changing an
-existing page's route param contract, reviewing `onSubscribe()` /
+existing page's route param contract, reviewing subscribe hook or
 `onUpdateSubscription()` implementations, or tracing `subscription_page_error`
 signals back to their source.
 
@@ -30,9 +30,9 @@ signals back to their source.
 
 ## Workflow
 
-1. Decide whether the page has real route params. If it has none, omit
-   `onSubscribe()` and rely on `AbstractPage::onSubscribe()` unless the page
-   needs specialized subscribe behavior; skip the DTO in that case.
+1. Decide whether the page has real route params. If it has none, add no
+   subscribe hook at all and rely on `AbstractPage::onSubscribe()` unless the
+   page needs specialized subscribe behavior; skip the DTO in that case.
 2. When adding a page or changing its subscription owner, update project
    topology through `Hilos::PAGES` and page `SUBSCRIPTION_AGENT_TYPE` as
    described in `docs/agents/app-topology.md`; `SignalRouter` reads these
@@ -48,8 +48,8 @@ signals back to their source.
    the param is optional. `require*` is missing-safe (throws
    `MissingPageRouteParamException`); any accessor throws
    `InvalidPageRouteParamException` on malformed non-empty values.
-6. In the abstract page class, make `onSubscribe()` `final` and dispatch to a
-   `protected abstract function onSomePageSubscribe(string $acceptKey,
+6. In the abstract page class, declare the subscribe hook `final` and dispatch
+   to a `protected abstract function onSomePageSubscribe(string $acceptKey,
    SomePageSubscribeParams $params): void`. Do the same for
    `onUpdateSubscription()` when the page uses it.
 7. Keep domain checks (entity exists, permissions, lookup by id) inside the
@@ -59,12 +59,12 @@ signals back to their source.
 8. `PageRouteParams` never performs DB lookups. Do not import collections,
    actions, or `Hilos::$db` inside `fromPageRouteParams()`.
 9. When the concrete page has no subclasses and no shared subscribe logic,
-   parse the DTO directly in its own `onSubscribe()` and call
-   `parent::onSubscribe()` when browser snapshots are needed; reserve the
+   parse the DTO directly in its own subscribe hook; reserve the
    `final`/`abstract` split for abstract pages with more than one concrete
    subclass.
-10. Prefer `parent::onSubscribe()` over manual `sendToUser()` with empty
-    `SignalData` or `BrowserPageSignalData` for subscription acks.
+10. Let `AbstractPage::onSubscribe()` answer the subscription. Do not send an
+    ack of your own through `sendToUser()` with empty `SignalData` or
+    `BrowserPageSignalData`.
 11. Run `composer test:framework:unit` after changing `PageRouteParams`, its
    DTOs, or any abstract page's subscribe contract.
 
@@ -81,10 +81,16 @@ signals back to their source.
 - Do not keep page subscription ownership in project SignalRouter code for
   registered pages; keep it on page `SUBSCRIPTION_AGENT_TYPE` and let
   `SignalRouter` read `Hilos::getPageRoutes()`.
-- Once an abstract page introduces a typed subscribe DTO, keep its
-  `onSubscribe()` / `onUpdateSubscription()` `final` so subclasses cannot
-  bypass the parsed DTO.
+- `AbstractPage::onSubscribe()` is `final` and cannot be overridden: extend a
+  subscription through `onSubscribeBeforeResponse()` (work that must hold before
+  the client is released, including a check that refuses the subscription) or
+  `onSubscribeAfterResponse()` (work that may only run once the subscription is
+  answered).
+- Once an abstract page introduces a typed subscribe DTO, keep its subscribe
+  hook and `onUpdateSubscription()` `final` so subclasses cannot bypass the
+  parsed DTO.
 - Do not answer a page's first render with a second round trip: no extra
   client→server action, no companion signal the client waits for alongside
   `page_response`, no standalone catalog request. Read the foreign source in
-  that page's `buildPagePayload()` / `onSubscribe()` and send one frame.
+  that page's `buildPagePayload()` / `onSubscribeBeforeResponse()` and send one
+  frame.

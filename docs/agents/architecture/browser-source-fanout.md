@@ -61,22 +61,22 @@ It must not query daemon state directly.
 
 ## Page Snapshots
 
-The default `AbstractPage::onSubscribe()` delegates to
-`Hilos::$browser?->subscribeSnapshot(...)` for page-shaped browser payloads.
+`AbstractPage::onSubscribe()` delegates to
+`Hilos::$browser?->subscribeSnapshot(...)` for page-shaped browser payloads. It
+is `final`, so `subscribeSnapshot()` and the `page_response` frame after it
+cannot be lost by an override that forgets `parent::`.
 
-Prefer leaving that default in place. Override `onSubscribe()` when the page
-needs route-param validation, domain checks, or specialized subscribe behavior
-(for example a custom snapshot that is not browser-table shaped). After
-validation, call `parent::onSubscribe()` so `subscribeSnapshot()` still owns
-page-shaped payloads. The access checks no longer ride on that call:
+A page that needs route-param validation, domain checks, or specialized
+subscribe behavior (for example a custom snapshot that is not browser-table
+shaped) puts that work in `onSubscribeBeforeResponse()`, which runs ahead of the
+snapshot; work that may only run once the subscription is answered goes in
+`onSubscribeAfterResponse()`. The access checks ride on neither:
 `PageSignalRouter` reaches the whole verdict — level, freeze, declared params,
-declared guards — before `onSubscribe()` runs, so an override that forgets
-`parent::` loses its snapshot, not its guards.
+declared guards — before `onSubscribe()` runs at all.
 
-As a convention, avoid overriding `onSubscribe()` only to send an empty
-subscription ack via `sendToUser()` with blank `SignalData` or
-`BrowserPageSignalData`. Hub pages without `PAGE_TABLES` normally send no
-initial snapshot, and that is fine.
+As a convention, do not use either hook only to send an empty subscription ack
+via `sendToUser()` with blank `SignalData` or `BrowserPageSignalData`. Hub pages
+without `PAGE_TABLES` normally send no initial snapshot, and that is fine.
 
 ## Browser Tables
 

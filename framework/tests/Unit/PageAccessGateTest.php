@@ -234,7 +234,7 @@ final class AccessGateTestAdminPage extends AbstractPage
      * @param string $acceptKey WebSocket accept key (unused)
      * @param PageRouteParams $params Route params (unused)
      */
-    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
+    protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
         $this->subscribed = true;
     }

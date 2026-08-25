@@ -80,7 +80,7 @@ Topic documents are referenced by filename; several are still being authored.
   missing data, a companion signal the client additionally waits for, or a
   standalone catalog request used to draw the page is a **violation**; the data
   is assembled on the backend in that page's `buildPagePayload()` /
-  `onSubscribe()`. Lazily opened modals, a scrolled-to table window, and
+  `onSubscribeBeforeResponse()`. Lazily opened modals, a scrolled-to table window, and
   downloaded files are outside the rule; a table's *first* window is not. See
   [signals/subscriptions.md](../signals/subscriptions.md).
 - **Auth seam: framework machinery, project credential.** The framework owns

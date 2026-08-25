@@ -288,7 +288,7 @@ refused answers with `subscription_page_error` instead, and the client waits on
 that the same way; a page that answered neither would leave the client with
 nothing to wait for.
 
-A page contributes the payload from the framework default `onSubscribe` via the
+A page contributes the payload from the framework's `onSubscribe` via the
 `buildPagePayload` hook, so a page never hand-rolls the signal. The `tables`
 section rides the same envelope but the frontend consumes it last (the heavy
 windowed primitive); see [data-model.md](data-model.md).

@@ -19,10 +19,8 @@ THROWS-PROPAGATION demo/chat/backend/Database/View/Item/User.php 1 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Environment/ChatLlmProfileOverrideSource.php 2 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Http/ChatAttachmentDownloadHandler.php 1 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Pages/AdminUsersPage.php 1 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Pages/BotPage.php 2 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Pages/Hilos/Guardian/GuardianAgentPage.php 1 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Pages/Hilos/Users/UserPage.php 2 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Pages/UserPage.php 2 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Runtime/State/Collection/AttachmentDrafts.php 2 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Runtime/State/Collection/BotAgentStatuses.php 2 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Runtime/State/Collection/Connections.php 2 # HIL-449
