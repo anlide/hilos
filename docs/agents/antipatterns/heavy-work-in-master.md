@@ -61,6 +61,10 @@ that needs no I/O — a random token — and let the worker persist and verify i
   so the work can leave. The facade does not exempt anything from this rule: sending
   to a stopped agent starts it, and the project's agent-daemon factory then runs
   right here, on the master loop.
+- **A frame going to several addressees is packed once per broadcast**, not once per
+  link: the string is the same for all of them, and the second `json_encode` is work the
+  master pays for nothing. `DaemonManager::writeFrameToWorkers()` is where this is done for
+  the worker links, and `encodeSignalFrame()` / `sendToAllClients()` for the WebSocket ones.
 - **The master now also asks** (HIL-619): `onContainedFailure()` tells the project
   about a failure a master guard swallowed, and it is master-loop code like the hooks
   above — a line or a counter, and `MasterSignalSender` for anything more. It is called

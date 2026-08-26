@@ -1879,14 +1879,28 @@ abstract class DaemonManager extends BaseManager implements
     /**
      * Writes one already-built frame to every worker of this node.
      *
+     * The frame is packed once per broadcast rather than once per link, because it is the same
+     * string for every worker: the DTO is built by the caller before the loop and knows nothing
+     * about which worker receives it, and {@see WorkerClient::send()} only appends the string to
+     * an output buffer. This method sits on the master loop, which every sync signal passes
+     * through, so a second json_encode of an identical frame is work the master pays for nothing.
+     * It is the same shape the WebSocket side already uses here: {@see encodeSignalFrame()} packs
+     * once and {@see sendToAllClients()} / {@see sendToSessionClients()} carry the ready string.
+     *
+     * Packing is lazy instead of unconditional before the loop so that a node with no registered
+     * worker link yet - daemon startup - does not pay for a frame nobody will receive.
+     *
      * @param WorkerServer $workerServer Worker server instance
      * @param WorkerDTO $dto Frame to write to each worker link
      */
     private function writeFrameToWorkers(WorkerServer $workerServer, WorkerDTO $dto): void
     {
+        $frame = null;
+
         foreach ($workerServer->getClients() as $client) {
             if ($client instanceof WorkerClient) {
-                $client->send($dto->toJson());
+                $frame ??= $dto->toJson();
+                $client->send($frame);
             }
         }
     }
