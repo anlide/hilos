@@ -291,6 +291,11 @@ class VerificationService
      * was spent by a parallel worker first (HIL-679) — returns null with no
      * distinguishing signal.
      *
+     * The attempt is recorded first, and the row decides whether there was budget
+     * for it (HIL-715): an attempt the ceiling refuses voids the challenge and never
+     * reaches the comparison, so a worker whose own count was behind the row's spends
+     * no bcrypt on a guess the budget had already run out for.
+     *
      * @param string $type Verification type (see VerificationType)
      * @param string $identifier Normalized identifier (lowercased email)
      * @param string $code Submitted plaintext code
@@ -310,7 +315,11 @@ class VerificationService
             return null;
         }
 
-        $challenge->incrementAttempts();
+        if (!$challenge->incrementAttempts($maxAttempts)) {
+            $challenge->consume();
+
+            return null;
+        }
 
         if (!$challenge->verifyCode($code)) {
             if ($challenge->attempts >= $maxAttempts) {
@@ -394,6 +403,11 @@ class VerificationService
      * on the last permitted attempt, put the challenge over the ceiling and leave the
      * person holding a password step with nothing left to spend.
      *
+     * That order has a deliberate consequence now that the row and not the worker's
+     * mirror holds the budget (HIL-715): a worker whose mirror is behind will accept a
+     * CORRECT code against a row that is already exhausted. It is the right trade —
+     * the ceiling exists to bound guessing, and knowing the code is not guessing.
+     *
      * @param string $type Verification type (see VerificationType)
      * @param string $identifier Normalized identifier (lowercased email)
      * @param string $code Submitted plaintext code
@@ -417,7 +431,12 @@ class VerificationService
             return true;
         }
 
-        $challenge->incrementAttempts();
+        if (!$challenge->incrementAttempts($maxAttempts)) {
+            $challenge->consume();
+
+            return false;
+        }
+
         if ($challenge->attempts >= $maxAttempts) {
             $challenge->consume();
         }
@@ -530,6 +549,11 @@ class VerificationService
      * refusal that says nothing about the submitter, so an operator seeing them
      * accumulate should look at the front end submitting twice.
      *
+     * An attempt the row itself refuses (HIL-715) is logged as the exhaustion it is,
+     * with the count read back from the row rather than from this worker's mirror.
+     * The set of reasons does not grow for it: what changed is which of them notices —
+     * the write's condition rather than a number the worker remembered.
+     *
      * @param string $type Verification type (see VerificationType)
      * @param string $identifier Normalized identifier
      * @param string $code Submitted plaintext code
@@ -556,7 +580,19 @@ class VerificationService
             return null;
         }
 
-        $challenge->incrementAttempts();
+        if (!$challenge->incrementAttempts($maxAttempts)) {
+            $challenge->consume();
+            $this->logRejected(
+                $type,
+                $identifier,
+                VerificationRejectReason::ATTEMPTS_EXHAUSTED,
+                $challenge->attempts,
+                $maxAttempts,
+                $challenge->id,
+            );
+
+            return null;
+        }
 
         if (!$challenge->verifyCode($code)) {
             $exhausted = $challenge->attempts >= $maxAttempts;

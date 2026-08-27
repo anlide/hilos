@@ -26,7 +26,7 @@ ignores its answer is handing the same one-time ticket out twice.
 | Guard | Where it lives | What it stops | Holds under contention? |
 |---|---|---|---|
 | Single-use | `UserVerification::consume()` | one code being spent twice | **yes** — one conditional UPDATE |
-| Attempt ceiling | `VerificationService::verify()` / `matchCode()` / `consumeIfMatches()` | guessing a code | no — per worker, see below |
+| Attempt ceiling | `UserVerification::incrementAttempts()` | guessing a code | **yes** — one conditional UPDATE |
 | Resend cooldown | `VerificationService::refuseBySendGate()` | a resend button held down | no |
 | Send cap per window | `VerificationService::refuseBySendGate()` | a script asking for code after code | no — see below |
 
@@ -53,9 +53,11 @@ buy the same result the WHERE clause buys for nothing.
 
 Three callers pass the outcome outward — `verify()`, `consumeIfMatches()` (behind
 `verifyCode()`), and `consumeActive()`. The rest ignore it on purpose, and should
-keep ignoring it: they consume in order to *void* a challenge (the three
-attempt-ceiling branches and `UserVerifications::voidActive()`), and a neighbor
-that voided it first did the job they wanted done.
+keep ignoring it: they consume in order to *void* a challenge (the ceiling branches
+of those same three methods, each of which now has two — one for a count that
+reached the ceiling and one for an attempt the row refused — plus
+`UserVerifications::voidActive()`), and a neighbor that voided it first did the job
+they wanted done.
 
 A lost race is written to the operator log as
 `VerificationRejectReason::RACE_LOST`, apart from `CONSUMED`. The two look the
@@ -63,24 +65,45 @@ same on the row afterwards and mean opposite things: `consumed` is a person
 clicking a stale link, `race_lost` is a front end submitting twice. Keep them
 apart, or the difference stops being countable.
 
-## What Is Not Protected: The Attempt Ceiling Is Per Worker
+### The ceiling is the write's condition too, and the row owns the budget
 
-`incrementAttempts()` writes `attempts = attempts + 1`, which is atomic, and then
-mirrors the new value on the loaded object. The ceiling is checked against that
-**mirror**, not against the row — and a collection caches its objects, so a worker
-that has looked the challenge up once counts only the attempts *it* made. Two
-workers therefore get the ceiling each: measured against the real table with a
-ceiling of 3, two contexts recorded 6 attempts on one challenge before either was
-refused.
+`incrementAttempts(int $maxAttempts): bool` writes
+`SET attempts = attempts + 1 WHERE id = ? AND attempts < ?` and reads
+`Database::affectedRows()`. The budget of guesses therefore belongs to the **row**,
+and every worker spends from the same one. `false` means the row was already at the
+ceiling — the same "too late" `consume()` answers a lost race with, never a failed
+write — and the caller voids the challenge and refuses without comparing the code,
+so a refused guess costs no bcrypt.
 
-The guesses still have to be right to be worth anything, and the ceiling still
-bounds each worker, so what an attacker buys is a multiplier equal to how many
-workers they can spread across — not an unlimited run. Nothing here has been
-changed to fix it; it is written down so that no one reads the ceiling as a global
-budget when sizing anything that depends on one.
+Until HIL-715 the UPDATE was unconditional and the ceiling was judged against the
+**mirror** on the loaded object; a collection caches its objects, so a worker that
+had looked the challenge up once counted only the attempts *it* made. Two workers
+got the ceiling each: measured against the real table with a ceiling of 3, two
+contexts recorded 6 attempts on one challenge before either was refused. That
+measurement is why the cure has the shape it does — the object was never going to
+be the right place to hold a number several objects share.
 
-The cure, when it is worth paying for, is the same shape as the one for the cap
-below: make the check part of the write, so the row and not the object decides.
+The mirror is re-read from the row after every write, refused caller included,
+with a targeted `SELECT attempts`. That half is not optional: four readers judge a
+challenge by the mirror — `isActive()`, `UserVerifications::findActive()`,
+`VerificationService::hasActive()` and `UserVerifications::describeInactive()` — so
+a worker left holding a stale count would go on offering a person a live code on an
+exhausted row. A row that is gone by then leaves the mirror where it was; the count
+is not something to invent.
+
+`matchCode()` keeps checking the code *before* it counts, which has a deliberate
+consequence: a worker whose mirror is behind will accept a **correct** code against
+an exhausted row. That is the right trade — the ceiling exists to bound guessing,
+and knowing the code is not guessing.
+
+**The guard is temporary, and is meant to stay small enough to remove** (owner's
+call, 2026-08-26). Once the user library and the per-user agents arrive, one writer
+owns the row and this increment is purely local however it is written. So it must
+not grow a transaction, a row lock, a broadcast frame or a cache of its own — all
+of which would then have to be dug back out of the architecture. When that horizon
+arrives is not this page's to say (proposal P-163): the confirmed child entities of
+a user agent (HIL-630) do not include verifications, and the SMS-login and
+registration challenges carry no `user_id` at all, so the epic HIL-626 owns it.
 
 ## What Is Not Protected: The Send Cap
 
@@ -120,11 +143,16 @@ twice on its own.
 - Do not add a distinguishing outcome for a lost race on the wire. The silence
   toward the person is the anti-enumeration posture the whole service is built
   on; the distinction belongs in the log and nowhere else.
-- Do not read the cap as a spend guarantee when sizing anything that costs money,
-  and do not read the attempt ceiling as a global guess budget.
+- Do not read the cap as a spend guarantee when sizing anything that costs money.
 
 ## Validation
 
 `composer run test:framework:integration` — `VerificationSpendRaceIntegrationTest`
 drives the race with two `DbContext` instances over one row, and
 `VerificationConsumeLogIntegrationTest` pins what each outcome writes to the log.
+
+The ceiling is pinned on that same fixture:
+`testTwoWorkersShareOneAttemptBudgetRatherThanGettingOneEach` is the measurement
+above turned into a case, `testAnAttemptRefusedByTheCeilingLeavesTheRowUnchanged`
+holds the primitive, and `testTheRefusedWorkerStopsSeeingTheChallengeAsLive` holds
+the re-read of the mirror.

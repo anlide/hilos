@@ -19,7 +19,8 @@ use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
- * Two workers racing for one code, and only one of them getting it (HIL-679).
+ * Two workers racing for one code, and only one of them getting it (HIL-679), and
+ * spending one budget of guesses between them rather than a budget each (HIL-715).
  *
  * Single-use used to rest on {@see ObjectUserVerifications::findActive()} no longer
  * matching a spent row, which is a rule the second worker had already passed by the
@@ -40,6 +41,11 @@ use Hilos\Utils\Helpers\RandomHelper;
  * and an affected-row count; a double would assert that the test knows what it
  * seeded. The challenge is seeded through the object collection rather than issued,
  * because an issued code is only ever mailed and a test cannot know it.
+ *
+ * The attempt ceiling is the same defect one door earlier and is pinned here on the
+ * same fixture (HIL-715): it too was judged against each worker's cached copy, so two
+ * workers got the ceiling each and the row recorded twice as many guesses as it was
+ * ever supposed to allow.
  */
 final class VerificationSpendRaceIntegrationTest extends FrameworkIntegrationTestCase
 {
@@ -47,6 +53,9 @@ final class VerificationSpendRaceIntegrationTest extends FrameworkIntegrationTes
     private const array TABLES = ['hilos_user_verification'];
 
     private const string CODE = '424242';
+
+    /** A code that is not {@see CODE}: what a guess looks like. */
+    private const string WRONG_CODE = '000000';
 
     private const int TTL_SECONDS = 900;
 
@@ -165,8 +174,8 @@ final class VerificationSpendRaceIntegrationTest extends FrameworkIntegrationTes
     {
         $email = $this->seedRacedCode();
 
-        $winner = $this->challengeSeenBy($this->first, $email);
-        $loser = $this->challengeSeenBy($this->second, $email);
+        $winner = $this->challengeSeenBy($this->first, $email, VerificationType::PASSWORD_RESET);
+        $loser = $this->challengeSeenBy($this->second, $email, VerificationType::PASSWORD_RESET);
         self::assertSame($winner->id, $loser->id, 'Both workers must be racing for one row');
 
         self::assertTrue($winner->consume());
@@ -178,6 +187,100 @@ final class VerificationSpendRaceIntegrationTest extends FrameworkIntegrationTes
             $loser->consumedAt,
             'The loser still has to stop reading as live, or its cached copy loops forever',
         );
+    }
+
+    /**
+     * The report's own probe: two workers guessing at one code, turn by turn.
+     *
+     * Each of them submits a wrong code as many times as the ceiling allows, so a
+     * ceiling held per worker would let the row record twice the ceiling — which is
+     * what it did, measured, before the budget moved into the write's condition.
+     *
+     * @throws HilosException When the challenge insert or a verification query fails
+     */
+    public function testTwoWorkersShareOneAttemptBudgetRatherThanGettingOneEach(): void
+    {
+        $email = $this->seedRacedCode();
+        $service = new VerificationService();
+        $id = (int)$this->challengeSeenBy($this->first, $email, VerificationType::MAGIC_LINK)->id;
+
+        for ($round = 0; $round < self::MAX_ATTEMPTS; $round++) {
+            foreach ([$this->first, $this->second] as $worker) {
+                $this->asWorker($worker);
+                self::assertFalse($service->verifyCode(VerificationType::MAGIC_LINK, $email, self::WRONG_CODE));
+            }
+        }
+
+        self::assertSame(
+            self::MAX_ATTEMPTS,
+            $this->storedAttemptsOf($id),
+            'One code is one budget of guesses: a ceiling held per worker records twice it',
+        );
+    }
+
+    /**
+     * The primitive itself: an attempt the ceiling refuses costs the row nothing.
+     *
+     * @throws HilosException When the challenge insert or a verification query fails
+     */
+    public function testAnAttemptRefusedByTheCeilingLeavesTheRowUnchanged(): void
+    {
+        $email = $this->seedRacedCode();
+        $challenge = $this->challengeSeenBy($this->first, $email, VerificationType::PASSWORD_RESET);
+        $id = (int)$challenge->id;
+
+        for ($attempt = 0; $attempt < self::MAX_ATTEMPTS; $attempt++) {
+            self::assertTrue($challenge->incrementAttempts(self::MAX_ATTEMPTS));
+        }
+        self::assertSame(self::MAX_ATTEMPTS, $this->storedAttemptsOf($id));
+
+        self::assertFalse(
+            $challenge->incrementAttempts(self::MAX_ATTEMPTS),
+            'A row standing at the ceiling has nothing left to record an attempt against',
+        );
+        self::assertSame(
+            self::MAX_ATTEMPTS,
+            $this->storedAttemptsOf($id),
+            'A refused attempt must leave the counter exactly where it found it',
+        );
+    }
+
+    /**
+     * The refusal has to reach the worker's own copy, not just the row.
+     *
+     * A worker whose cached challenge is behind the row is the one that gets refused,
+     * and it is also the one still telling a person the code is live. So the refusal
+     * re-reads the counter onto that copy, and every reader judging by it — the
+     * collection's lookup and {@see VerificationService::hasActive()} — turns over
+     * with it.
+     *
+     * @throws HilosException When the challenge insert or a verification query fails
+     */
+    public function testTheRefusedWorkerStopsSeeingTheChallengeAsLive(): void
+    {
+        $email = $this->seedRacedCode();
+        $service = new VerificationService();
+
+        $ahead = $this->challengeSeenBy($this->first, $email, VerificationType::PASSWORD_RESET);
+        $behind = $this->challengeSeenBy($this->second, $email, VerificationType::PASSWORD_RESET);
+
+        $this->asWorker($this->first);
+        for ($attempt = 0; $attempt < self::MAX_ATTEMPTS; $attempt++) {
+            self::assertTrue($ahead->incrementAttempts(self::MAX_ATTEMPTS));
+        }
+
+        $this->asWorker($this->second);
+        self::assertFalse($behind->incrementAttempts(self::MAX_ATTEMPTS));
+        self::assertSame(
+            self::MAX_ATTEMPTS,
+            $behind->attempts,
+            'A refused worker has to take the row\'s count for its own, or it keeps promising a live code',
+        );
+        self::assertNull(
+            $this->verifications()->findActive(VerificationType::PASSWORD_RESET, $email, self::MAX_ATTEMPTS),
+            'The exhausted challenge must stop being found by the worker that was refused',
+        );
+        self::assertFalse($service->hasActive(VerificationType::PASSWORD_RESET, $email));
     }
 
     /**
@@ -223,13 +326,17 @@ final class VerificationSpendRaceIntegrationTest extends FrameworkIntegrationTes
     /**
      * @param ?SpendRaceTestDbContext $worker Context whose cached view of the row is wanted
      * @param string $email Address the challenge belongs to
-     * @return ObjectUserVerification The recovery challenge as that worker sees it
+     * @param string $type Verification type the challenge was seeded under (see VerificationType)
+     * @return ObjectUserVerification The challenge as that worker sees it
      * @throws HilosException When the lookup fails or the worker no longer sees a live challenge
      */
-    private function challengeSeenBy(?SpendRaceTestDbContext $worker, string $email): ObjectUserVerification
-    {
+    private function challengeSeenBy(
+        ?SpendRaceTestDbContext $worker,
+        string $email,
+        string $type,
+    ): ObjectUserVerification {
         $this->asWorker($worker);
-        $challenge = $this->verifications()->findActive(VerificationType::PASSWORD_RESET, $email, self::MAX_ATTEMPTS);
+        $challenge = $this->verifications()->findActive($type, $email, self::MAX_ATTEMPTS);
         self::assertNotNull($challenge);
 
         return $challenge;
@@ -272,6 +379,24 @@ final class VerificationSpendRaceIntegrationTest extends FrameworkIntegrationTes
         $stamp = $row[EntityUserVerification::consumed_at];
 
         return $stamp === null ? null : (string)$stamp;
+    }
+
+    /**
+     * @param int $id Challenge row to read
+     * @return int Attempts recorded on the row
+     * @throws HilosException When the query fails
+     */
+    private function storedAttemptsOf(int $id): int
+    {
+        Database::sql(
+            'SELECT `' . EntityUserVerification::attempts . '` FROM `' . EntityUserVerification::_table
+                . '` WHERE `' . EntityUserVerification::id . '` = ?',
+            [$id],
+        );
+        $row = Database::row();
+        self::assertNotNull($row);
+
+        return (int)$row[EntityUserVerification::attempts];
     }
 
     /**

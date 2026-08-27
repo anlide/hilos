@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
+use Hilos\Auth\Verification\VerificationService;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -167,31 +168,92 @@ final class UserVerification extends Object_
     }
 
     /**
-     * Records one verification attempt against this challenge.
+     * Records one verification attempt against this challenge, if the row has budget left.
      *
-     * Attempt-throttle primitive: increments the counter with a targeted UPDATE
-     * and mirrors it on the loaded entity, so a caller can read the new count to
-     * decide whether the ceiling has been reached. A no-op for an unpersisted
-     * challenge.
+     * Attempt-throttle primitive, and the ceiling is the write's own condition: the
+     * UPDATE carries `attempts < ?`, so the guess budget belongs to the ROW and every
+     * worker spends from the same one. Before HIL-715 the write was unconditional and
+     * the ceiling was judged against the mirror on the loaded object — and a collection
+     * caches its objects, so a worker counted only the attempts IT had made. Two workers
+     * therefore got a ceiling each: measured with a ceiling of 3, two contexts recorded
+     * 6 attempts on one challenge before either was refused.
      *
-     * @throws DatabaseException When the attempt update query fails
+     * False therefore means "too late — the row was already at the ceiling", the same
+     * word {@see consume()} answers a lost race with, and never that the write failed;
+     * a failing write throws. An unpersisted challenge answers false: there is no row,
+     * so there is nothing to count against.
+     *
+     * The mirror is re-read from the row afterwards either way, refused caller included,
+     * because four readers judge the challenge by it — {@see isActive()},
+     * {@see UserVerifications::findActive()}, {@see VerificationService::hasActive()} and
+     * {@see UserVerifications::describeInactive()}. Without the re-read a worker that lost
+     * the count would go on promising a person a live code on an exhausted row. A row that
+     * is gone by then leaves the mirror as it was: the count is not something to invent.
+     *
+     * The guard is TEMPORARY, and it is meant to stay small enough to remove. Once the
+     * user library and the per-user agents arrive, one writer owns the row and this
+     * increment becomes purely local however it is written — so this must not grow a
+     * transaction, a row lock, a broadcast frame or a cache of its own, all of which
+     * would then have to be dug back out of the architecture. What that horizon depends
+     * on is not this leaf's to decide (proposal P-163): the confirmed child entities of
+     * a user agent (HIL-630) do not include verifications, and the SMS-login and
+     * registration challenges carry no `user_id` at all, so the epic HIL-626 owns it.
+     *
+     * @param int $maxAttempts Attempt ceiling the row is judged against
+     * @return bool True when this call recorded an attempt, false when the row was already at the ceiling
+     * @throws DatabaseException When the attempt update, the row count or the read-back fails
      */
-    public function incrementAttempts(): void
+    public function incrementAttempts(int $maxAttempts): bool
     {
         if ($this->entity->id === null) {
-            return;
+            return false;
         }
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::int($this->entity->id));
+        $params->add(SqlParam::int($maxAttempts));
         Database::sql(
             'UPDATE `' . EntityUserVerification::_table
                 . '` SET `' . EntityUserVerification::attempts . '` = `' . EntityUserVerification::attempts
-                . '` + 1 WHERE `' . EntityUserVerification::id . '` = ?',
+                . '` + 1 WHERE `' . EntityUserVerification::id . '` = ?'
+                . ' AND `' . EntityUserVerification::attempts . '` < ?',
             $params,
         );
+        $counted = Database::affectedRows() === 1;
 
-        $this->entity->attempts++;
+        $this->mirrorStoredAttempts($this->entity->id);
+
+        return $counted;
+    }
+
+    /**
+     * Re-reads the attempt counter from the row onto the loaded entity.
+     *
+     * Targeted read of a single column, the shape {@see verifyCode()} already uses for
+     * the code hash. A row that is no longer there leaves the mirror untouched.
+     *
+     * @param int $id Challenge row to read the counter from
+     * @throws DatabaseException When the attempt lookup query fails
+     */
+    private function mirrorStoredAttempts(int $id): void
+    {
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::int($id));
+        $resultSet = Database::sql(
+            'SELECT `' . EntityUserVerification::attempts . '` FROM `' . EntityUserVerification::_table
+                . '` WHERE `' . EntityUserVerification::id . '` = ?',
+            $params,
+        )->first();
+        if ($resultSet === null) {
+            return;
+        }
+
+        $row = $resultSet->first();
+        if ($row === null) {
+            return;
+        }
+
+        $this->entity->attempts = (int)$row[EntityUserVerification::attempts];
     }
 
     /**
