@@ -8,6 +8,9 @@ use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -23,8 +26,37 @@ final class AgentTruthSourceOperationsTest extends TestCase
         ExecutionContext::setCurrentAgentId(null);
         RtTruthSourceRegistry::unregisterAgent(AgentTruthSourceOperationsTestAgent::AGENT_TYPE);
         RtTruthSourceRegistry::unregisterAgent(AgentTruthSourceOperationsTestLibrary::AGENT_TYPE);
+        // A claim is a reader interest too, so it is given back here beside the claim itself.
+        SourceInterestRegistry::readsWhatItMounts();
+        SourceInterestRegistry::releaseConsumer(
+            SourceConsumer::agent(AgentTruthSourceOperationsTestAgent::AGENT_TYPE),
+        );
+        SourceInterestRegistry::releaseConsumer(
+            SourceConsumer::agent(AgentTruthSourceOperationsTestLibrary::AGENT_TYPE),
+        );
 
         parent::tearDown();
+    }
+
+    /**
+     * A writer may read what it writes the moment it has claimed it, with nothing to wait for.
+     *
+     * The case a live run found (HIL-717): an agent publishing its first row inside onStart()
+     * reads the collection before the worker has told the master anything, so an interest raised
+     * at that report would come too late and the agent would be refused its own collection. What
+     * makes the claim enough is that the writer IS the state - there is no copy travelling to it.
+     */
+    public function testAClaimedCollectionIsReadableAtOnce(): void
+    {
+        SourceInterestRegistry::readsWhatIsDelivered();
+        $agent = new AgentTruthSourceOperationsTestAgent();
+
+        $agent->onStart();
+
+        $this->assertTrue(SourceInterestRegistry::isReady(
+            SourceChange::KIND_RT,
+            AgentTruthSourceOperationsTestAgent::RT_COLLECTION,
+        ));
     }
 
     public function testOrdinaryAgentClaimsEveryOperation(): void

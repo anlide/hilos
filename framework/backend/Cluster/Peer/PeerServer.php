@@ -45,6 +45,7 @@ use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
+use Hilos\Cluster\Peer\DTO\PeerSourceInterestDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
@@ -52,16 +53,21 @@ use Hilos\Cluster\Placement\PlacementMesh;
 use Hilos\Cluster\DbSyncMesh;
 use Hilos\Cluster\DbSyncSink;
 use Hilos\Cluster\RtSyncMesh;
+use Hilos\Cluster\SourceInterestMesh;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Source\Interest\SourceReaderMap;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
+use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
 use Hilos\Database\ReHydrateBarrierSink;
 use Hilos\Database\ReHydrateRound;
 use Hilos\Environment\Exception\EnvException;
@@ -113,6 +119,7 @@ final class PeerServer extends AbstractServer implements
     ProtectedModeMesh,
     RtSyncMesh,
     DbSyncMesh,
+    SourceInterestMesh,
     ClientMesh
 {
     /** @var float Seconds to wait before retrying a failed or dropped seed dial */
@@ -149,6 +156,26 @@ final class PeerServer extends AbstractServer implements
     private ?ReHydrateBarrierSink $reHydrateBarrier = null;
 
     /**
+     * @var SourceReaderMap What RT collections each other node reads, as that node reported it.
+     *
+     * The node-level twin of the map the daemon master keeps for its workers, and the same class
+     * because the two levels of one fan-out ask the same question. This is the half of it that
+     * lives out here rather than in the daemon: the answer arrives on a link, and what it decides
+     * is whether a frame is worth a hop ({@see broadcastToNodesHolding()}).
+     */
+    private SourceReaderMap $nodeReaderMap;
+
+    /**
+     * @var list<string> RT collections this node last told the mesh it reads.
+     *
+     * Kept so a peer that handshakes later hears it too. The announcement is a broadcast, so it
+     * only ever reaches nodes already linked; a node that joins afterwards would otherwise know
+     * nothing of this one's interest and would filter every frame away from it, and nothing would
+     * ask again until the interest happened to change.
+     */
+    private array $announcedRtInterest = [];
+
+    /**
      * @param string $host Host to bind the peer listener
      * @param int $port Port to bind the peer listener
      * @param NodeIdentity $localIdentity Local node identity to announce to peers
@@ -162,6 +189,7 @@ final class PeerServer extends AbstractServer implements
         $this->localIdentity = $localIdentity;
         $this->seeds = $seeds;
         $this->connectionPolicy = $connectionPolicy ?? new FullMeshConnectionPolicy();
+        $this->nodeReaderMap = new SourceReaderMap();
     }
 
     /**
@@ -660,9 +688,21 @@ final class PeerServer extends AbstractServer implements
         // other end can stop any that it has already re-placed elsewhere (a no-op otherwise).
         $this->placement?->onPeerHandshaked($remote->nodeId);
 
-        // Hand the peer the RT collections this node owns (HIL-586). Unconditional for the same
-        // reason the line above is: the peer may be a member already, but this link is what lets
-        // anything reach it, and nothing else will ask later.
+        // Tell the peer what this node reads, so it starts sending those frames here (HIL-717).
+        // The announcement is a broadcast and reached only the nodes linked at the time it was
+        // made; this link is younger than all of them, so without this the peer would filter
+        // every RT frame away from this node until its interest happened to change again.
+        if ($this->announcedRtInterest !== []) {
+            $link->sendFrame(
+                new PeerSourceInterestDTO($this->localIdentity->nodeId, $this->announcedRtInterest),
+            );
+        }
+
+        // Hand the peer the RT collections this node owns (HIL-586). Off the handshake and not
+        // off the membership change for the same reason the line above is: the peer may be a
+        // member already, but this link is what lets anything reach it. What of it actually goes
+        // out is what that peer reads ({@see sendRtSnapshotToNode()}), and a peer this node has
+        // yet to hear from asks again with its own announcement a moment later.
         Hilos::$cluster?->rtSyncSink()?->handOverRtSnapshots($remote->nodeId);
 
         // And the browser connections it holds (HIL-668), on exactly the same terms: without
@@ -1449,6 +1489,12 @@ final class PeerServer extends AbstractServer implements
      */
     private function notifyLeft(NodeIdentity $identity, float $now): void
     {
+        // What that node read goes with it (HIL-717). Here rather than at the link closing,
+        // because a dropped link is re-dialed and a node whose interest was forgotten meanwhile
+        // would be filtered out of every frame written during the gap - while a node that really
+        // left announces itself again on the handshake if it ever comes back.
+        $this->nodeReaderMap->release($identity->nodeId);
+
         Hilos::$cluster?->notifyNodeLeft(ClusterNode::fromIdentity($identity, false, $now));
     }
 
@@ -1681,9 +1727,66 @@ final class PeerServer extends AbstractServer implements
      */
     public function broadcastRtSync(string $signalType, SignalDTO $signal, bool $partialOwner = false): void
     {
-        $this->broadcastToNodes(
-            new PeerRtSyncDTO($this->localIdentity->nodeId, $signalType, $signal, $partialOwner),
-        );
+        $frame = new PeerRtSyncDTO($this->localIdentity->nodeId, $signalType, $signal, $partialOwner);
+        $collectionKey = $signal->data instanceof SyncSignalDataInterface ? $signal->data->collectionKey : null;
+        if ($collectionKey === null) {
+            // Nothing to match an interest against, so the old address stands: everybody. The
+            // daemon never produces such a fact - it refuses to announce one whose payload names
+            // no collection - and if one ever arrives here, replicating it too widely is the side
+            // of the mistake a receiver can still recover from.
+            $this->broadcastToNodes($frame);
+
+            return;
+        }
+
+        $this->broadcastToNodesHolding($frame, SourceChange::KIND_RT, $collectionKey);
+    }
+
+    /**
+     * Tells every peer which RT collections this node reads, replacing what it said before.
+     *
+     * Implements {@see SourceInterestMesh}. Called off the daemon loop, which is where the union
+     * of what this node's workers read is known
+     * ({@see AgentManagerDaemon::consumeChangedReaderInterest()}).
+     *
+     * The list is remembered as well as sent, because a broadcast only reaches the nodes linked
+     * right now and a peer joining later would otherwise never hear it ({@see onHandshakeComplete()}).
+     *
+     * @param list<string> $rtCollections RT collections the processes of this node read
+     */
+    public function announceSourceInterest(array $rtCollections): void
+    {
+        $this->announcedRtInterest = $rtCollections;
+        $this->broadcastToNodes(new PeerSourceInterestDTO($this->localIdentity->nodeId, $rtCollections));
+    }
+
+    /**
+     * Records what another node reads, and offers it whatever this node owns of the new keys.
+     *
+     * The frame carries the whole of what that node reads, so it replaces its entry rather than
+     * adding to it: a key it no longer names is a key it stopped reading, and merging would keep
+     * sending frames for it until the node died.
+     *
+     * A collection that is new for that node is one it holds no copy of, so a delta would land on
+     * nothing - which is why the hand-over runs here as well as off the handshake. It is a
+     * top-up and not a condition of anything: the reader's own master decides when the reader may
+     * read, out of the replica it already holds.
+     *
+     * The node id is taken from the frame rather than from the link for the reason the RT sync
+     * frames do it: what a node says about itself is what the rest of the mesh keys its map by,
+     * and reading it off the link would key this one differently from everybody else's.
+     *
+     * @param PeerLink $link Link the interest arrived on
+     * @param PeerSourceInterestDTO $frame Received reader-interest frame
+     */
+    public function onSourceInterestReceived(PeerLink $link, PeerSourceInterestDTO $frame): void
+    {
+        $added = $this->nodeReaderMap->note($frame->nodeId, SourceChange::KIND_RT, $frame->rtCollections);
+        if ($added === []) {
+            return;
+        }
+
+        Hilos::$cluster?->rtSyncSink()?->handOverRtSnapshots($frame->nodeId);
     }
 
     /**
@@ -1766,14 +1869,22 @@ final class PeerServer extends AbstractServer implements
     }
 
     /**
-     * Hands one RT collection, or the rows of it this node owns, to the node that just joined.
+     * Hands one RT collection, or the rows of it this node owns, to a node that reads it.
      *
      * Implements {@see RtSyncMesh}. Addressed rather than broadcast: only the joining node is
      * behind on this collection, and the others would be told to replace a copy that is already
      * current. A node that is not linked is silently skipped — it cannot be behind on anything
      * it is not connected for, and it will be offered the collection when it does join.
      *
-     * @param string $nodeId Node that joined and is being handed the collection
+     * A node that does not read the collection is skipped for a different reason, and it is the
+     * one that makes the addressing whole (HIL-717): a copy sent there would be the last thing
+     * that node ever heard about it, since the deltas after it go only to readers. A copy nobody
+     * maintains is worse than none - it stays exactly as current as the second it arrived, and
+     * whatever reads it later would be served that. The reader this node has yet to hear from is
+     * not lost by this: a node announces its interest as its handshake completes and again
+     * whenever it moves, and either announcement asks for the hand-over again.
+     *
+     * @param string $nodeId Node being handed the collection
      * @param string $collectionKey RT collection this node owns
      * @param array<string, array<string, mixed>> $rows Rows by state id, as this node holds them
      * @param list<string> $scopeKeys Rows this node speaks for; empty when it owns the collection
@@ -1784,6 +1895,10 @@ final class PeerServer extends AbstractServer implements
         array $rows,
         array $scopeKeys = [],
     ): void {
+        if (!$this->nodeReaderMap->holds($nodeId, SourceChange::KIND_RT, $collectionKey)) {
+            return;
+        }
+
         $this->sendToNode(
             $nodeId,
             new PeerRtSnapshotDTO($this->localIdentity->nodeId, $collectionKey, $rows, $scopeKeys),
@@ -2017,6 +2132,33 @@ final class PeerServer extends AbstractServer implements
     {
         foreach ($this->clients as $client) {
             if ($client->remoteIdentity() !== null) {
+                $client->sendFrame($frame);
+            }
+        }
+    }
+
+    /**
+     * Delivers a frame about one collection only to the peers that said they read it.
+     *
+     * The addressed form of {@see broadcastToNodes()}, and the reason the two are separate rather
+     * than one method with an optional key: membership decides who gets a placement frame, while
+     * interest decides who gets a replica, and a frame sent by the wrong question either wakes a
+     * node that has no use for it or never reaches one that does.
+     *
+     * A node absent from the map reads nothing of this kind and is skipped, which is the same
+     * answer the map gives for a node that has not spoken yet. That silence is not a gap: a node
+     * announces its interest as its handshake completes and again whenever it moves, and until it
+     * has, it holds no copy for a delta to land on anyway.
+     *
+     * @param PeerDTO $frame Frame to deliver
+     * @param string $kind Source kind of the collection, KIND_DB or KIND_RT of {@see SourceChange}
+     * @param string $collectionKey Collection the frame is about
+     */
+    public function broadcastToNodesHolding(PeerDTO $frame, string $kind, string $collectionKey): void
+    {
+        foreach ($this->clients as $client) {
+            $nodeId = $client->remoteIdentity()?->nodeId;
+            if ($nodeId !== null && $this->nodeReaderMap->holds($nodeId, $kind, $collectionKey)) {
                 $client->sendFrame($frame);
             }
         }

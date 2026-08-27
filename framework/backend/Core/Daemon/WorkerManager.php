@@ -20,6 +20,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Runtime\ConnectionRosterReconciler;
+use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Router\AgentSignalData;
@@ -32,6 +33,9 @@ use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
@@ -82,6 +86,8 @@ use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReReadMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSnapshotMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
@@ -130,6 +136,18 @@ abstract class WorkerManager extends BaseManager
 {
     /** Seconds between parent-process checks; the loop itself spins every 10 ms. */
     private const float PARENT_CHECK_INTERVAL_SECONDS = 1.0;
+
+    /**
+     * Seconds a start or a subscription waits for the state of what it reads.
+     *
+     * Long enough that only a master in real trouble misses it - the answer is one round trip
+     * over a link this worker is already reading - and short enough that a browser is told the
+     * page cannot be served rather than left holding an open request.
+     */
+    private const float SOURCE_INTEREST_DEADLINE_SECONDS = 5.0;
+
+    /** Microseconds the same wait sleeps between rounds of the daemon link. */
+    private const int SOURCE_INTEREST_POLL_US = 1000;
 
     /** Worker index assigned by the daemon supervisor. */
     protected int $workerIndex;
@@ -209,6 +227,12 @@ abstract class WorkerManager extends BaseManager
      */
     public function run(): void
     {
+        // The one process whose runtime collections are copies of somebody else's, and therefore
+        // the one where reading before the copy arrives is possible at all. Said here rather than
+        // at construction because that is what makes it a statement about the process: nothing
+        // else in this tree reaches this line.
+        SourceInterestRegistry::readsWhatIsDelivered();
+
         // Check the availability of required functions
         $this->checkRequiredFunctions(['posix_getppid']);
 
@@ -565,6 +589,14 @@ abstract class WorkerManager extends BaseManager
                 $this->handleDbReHydrateComplete($data);
                 break;
 
+            case WorkerConstants::MESSAGE_RT_SNAPSHOT:
+                if (!$data instanceof WorkerRtSnapshotMessageDTO) {
+                    Logger::error("handleRtSnapshotMessage - unexpected type: " . get_class($data));
+                    break;
+                }
+                $this->handleRtSnapshotMessage($data);
+                break;
+
             case WorkerConstants::MESSAGE_RT_SYNC_CREATED:
                 if (!$data instanceof WorkerRtSyncCreatedMessageDTO) {
                     Logger::error("handleRtSyncMessage - unexpected type: " . get_class($data));
@@ -609,6 +641,18 @@ abstract class WorkerManager extends BaseManager
             'workerIndex' => $this->workerIndex,
             'isMonopolistic' => $this->isMonopolistic,
         ]);
+
+        // The framework declared its own readers while mounting, long before there was a link to
+        // say so on. This is the first moment there is one, and the wait is here rather than at
+        // the first read because these rows are the framework's own - the handshake, the
+        // throttle, the waiters - and a worker that starts serving without them refuses work it
+        // is perfectly able to do.
+        $mounted = SourceInterestRegistry::collections(SourceChange::KIND_RT);
+        $this->notifySourceInterest();
+        $this->awaitSourceInterest($mounted);
+        if (!$this->sourcesReady($mounted)) {
+            Logger::error('Worker started without the runtime state it reads: ' . implode(', ', $mounted));
+        }
     }
 
     /**
@@ -635,6 +679,20 @@ abstract class WorkerManager extends BaseManager
         $parsed = $this->agentManager->parseAgentId($agentId);
         $agentType = $parsed->type;
         $agentIndex = $parsed->index;
+
+        // Before the instance exists, because an agent is handed its data rather than asked to
+        // run without it: what the class says it reads is taken up here, and waited for, so
+        // onStart() opens on a collection and not on the emptiness before one.
+        $readsRt = $this->agentReadsRt($agentType);
+        $this->raiseSourceInterest(SourceConsumer::agent($agentId), $readsRt);
+        $this->awaitSourceInterest($readsRt);
+        if (!$this->sourcesReady($readsRt)) {
+            // Nothing has been created yet, so nothing has to be unwound but the interest: an
+            // agent that never started must not leave this worker asking for frames on its behalf.
+            $this->releaseSourceInterest(SourceConsumer::agent($agentId));
+
+            throw new AgentCreationFailedException($agentType, $agentIndex);
+        }
 
         // Create agent using factory method
         $agent = $this->agentManager->createAndAddAgent($agentType, $agentIndex);
@@ -702,6 +760,24 @@ abstract class WorkerManager extends BaseManager
 
         // Notify daemon that agent stopped
         $this->notifyAgentStopped($agentId);
+    }
+
+    /**
+     * Writes the initial state of one RT collection this worker has just started reading.
+     *
+     * The moment a reader here becomes readable, and the only one: until this lands the process
+     * holds nothing of the collection, and answering a read out of that emptiness would look
+     * exactly like a collection whose rows are all gone. An empty snapshot is still an answer -
+     * a collection nobody has written yet is empty, and its readers must not wait for a row that
+     * is never coming.
+     *
+     * @param WorkerRtSnapshotMessageDTO $data Snapshot of one RT collection, as the master holds it
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     */
+    private function handleRtSnapshotMessage(WorkerRtSnapshotMessageDTO $data): void
+    {
+        RtSnapshot::replace($data->collectionKey, $data->rows);
+        SourceInterestRegistry::markReady(SourceChange::KIND_RT, $data->collectionKey);
     }
 
     /**
@@ -1143,6 +1219,7 @@ abstract class WorkerManager extends BaseManager
      * @throws PageSignalRouterNotFoundException When page routing is requested for an unsupported agent
      * @throws TableRowKeyMissingException When a windowed table row is a placeholder and carries no key
      * @throws InvalidArgumentException When a command handler cannot name its reply
+     * @throws HilosException Whatever a subscriber to a dropped collection's announcement raises
      */
     private function handleAgentMessage(DaemonAgentMessageDTO $data): void
     {
@@ -1263,6 +1340,10 @@ abstract class WorkerManager extends BaseManager
             case SignalTypeConstants::PAGE_SUBSCRIBE:
                 if ($signalData instanceof WebSocketPageSubscribeSignalDTO) {
                     $this->dispatchPreviousPageUnsubscribeIfReplaced($agentId, $agent, $signalData, $name, $source);
+                    // After the page it replaces has let go, and before anything is asked of the
+                    // new one: the hooks below read the collections this takes up, and the frame
+                    // is judged out of them.
+                    $this->takeUpPageSources($signalData->page ?? $name, $signalData->acceptKey);
                     $agent->onSignalPageSubscribe($signalData, $source, $name);
                     $this->getPageSignalRouter($agentId, $agent)->dispatchPageSubscribe($signalData, $source, $name);
                     $this->rememberPageSubscriptionAfterSubscribe($signalData, $name);
@@ -1301,6 +1382,7 @@ abstract class WorkerManager extends BaseManager
                         // this page name is being taken from.
                         $page = Hilos::$sr?->pageSubscription($signalData->acceptKey)?->page ?? $name;
                         Hilos::$sr?->unsubscribeFromPage($page, $signalData);
+                        $this->releaseSourceInterest(SourceConsumer::page($signalData->acceptKey));
                     }
                 } else {
                     Logger::error("onSignalPageUnsubscribe - invalid signal data type: " . get_class($signalData));
@@ -1531,6 +1613,7 @@ abstract class WorkerManager extends BaseManager
      * @param WebSocketPageSubscribeSignalDTO $dto Incoming subscribe payload
      * @param string $name Signal name used as page id when the DTO page is empty
      * @param string $source Signal source identifier
+     * @throws HilosException Whatever a subscriber to a dropped collection's announcement raises
      */
     private function dispatchPreviousPageUnsubscribeIfReplaced(
         string $agentId,
@@ -1560,6 +1643,12 @@ abstract class WorkerManager extends BaseManager
             $unsubDto = new WebSocketPageUnsubscribeSignalDTO(acceptKey: $acceptKey);
             $router->dispatchPageUnsubscribe($unsubDto, $source, $prev->page);
             Hilos::$sr?->unsubscribeFromPage($prev->page, $unsubDto);
+            // The page that leaves takes its interest with it, exactly as an explicit
+            // unsubscribe does: this connection is one consumer, and what it reads is what the
+            // page it is on reads. Nothing here is torn down when the page is unchanged - the
+            // early return above already left - so a reconnect onto the same page keeps the
+            // copies it had rather than paying for them again.
+            $this->releaseSourceInterest(SourceConsumer::page($acceptKey));
         } catch (PageSignalRouterNotFoundException $e) {
             Logger::error(
                 'WorkerManager: cannot dispatch synthetic page_unsubscribe before new subscribe (no page router): '
@@ -1722,11 +1811,224 @@ abstract class WorkerManager extends BaseManager
             return;
         }
 
+        // A writer is a reader of what it writes, and needs no declaration of its own: the claim
+        // already registered the interest, so what is left here is telling the master about it.
+        // The claim does it rather than this line because an agent that publishes its first row
+        // inside onStart() reads the collection before this line is reached at all
+        // ({@see AbstractAgent::registerRtTruthSource()}).
+        $this->raiseSourceInterest(SourceConsumer::agent($agentId), $collectionKeys);
+
         $this->daemonClient->send(new WorkerRtSourceRegisteredDTO(
             $agentId,
             $collectionKeys,
             RtTruthSourceRegistry::partialCollectionsOf($agentId),
             RtTruthSourceRegistry::keysByCollectionOf($agentId),
+        ));
+    }
+
+    /**
+     * Takes up what one page reads on behalf of its connection, and holds the frame until it lands.
+     *
+     * The page names its collections in topology and not by reading them, so the interest can be
+     * raised before the page instance is touched - which is the only order that works, since the
+     * reading is exactly what has to wait.
+     *
+     * No verdict is returned or logged here. Whether the state made it in time is asked again,
+     * of the state itself, where the subscription is judged
+     * ({@see BrowserContext::assertSubscriptionAccess()}); a refusal decided here would have to
+     * be carried to that same place to be turned into an answer the client understands.
+     *
+     * @param string $page Page being subscribed to
+     * @param string $acceptKey Subscribing WebSocket accept key, which is the consumer
+     */
+    private function takeUpPageSources(string $page, string $acceptKey): void
+    {
+        $collectionKeys = Hilos::$browser?->rtSourceKeysOfPage($page) ?? [];
+        $this->raiseSourceInterest(SourceConsumer::page($acceptKey), $collectionKeys);
+        $this->awaitSourceInterest($collectionKeys);
+    }
+
+    /**
+     * Takes up an interest in RT collections on behalf of one consumer, and tells the daemon.
+     *
+     * The report is the whole of what this worker reads and not the collections named here: a
+     * consumer joining a collection somebody else already reads changes nothing the master has
+     * to know, and sending the list unconditionally is what keeps the two sides from having to
+     * agree on which changes were worth a frame.
+     *
+     * @param string $consumerId Consumer taking up the interest, named by {@see SourceConsumer}
+     * @param list<string> $collectionKeys RT collections it reads
+     */
+    private function raiseSourceInterest(string $consumerId, array $collectionKeys): void
+    {
+        if ($collectionKeys === []) {
+            return;
+        }
+
+        foreach ($collectionKeys as $collectionKey) {
+            SourceInterestRegistry::register(SourceChange::KIND_RT, $collectionKey, $consumerId);
+        }
+
+        $this->notifySourceInterest();
+    }
+
+    /**
+     * Waits until this process holds the state of every named RT collection.
+     *
+     * Blocking, and the socket it waits on is pumped here rather than left to the main loop:
+     * both callers owe somebody an answer they are in the middle of giving - a start, a
+     * subscription - and neither can be resumed later out of a queue nothing drains in order.
+     * What they wait for arrives on the same daemon link this manager already reads, so the
+     * wait reads it.
+     *
+     * Every frame the pump yields is handled by the ordinary handler, in the order it arrived.
+     * Taking the snapshot out of the queue first would be faster and wrong: a delta sent before
+     * the snapshot is already inside it, and applying that delta afterwards would put a row back
+     * the way it was several changes ago.
+     *
+     * The execution frame is put back before returning, because a frame handled in the pump sets
+     * its own and the caller is still inside the one it started in.
+     *
+     * Returns on arrival or on the deadline without saying which: the caller asks
+     * {@see self::sourcesReady()} afterwards, and asks it of the state rather than of the wait.
+     * The two answers differ in the case that matters - state landing between the last poll and
+     * the question - and the reader deserves the later one.
+     *
+     * @param list<string> $collectionKeys RT collections the caller cannot be answered without
+     */
+    private function awaitSourceInterest(array $collectionKeys): void
+    {
+        if ($collectionKeys === [] || $this->daemonClient === null) {
+            return;
+        }
+
+        $agentId = ExecutionContext::currentAgentId();
+        $acceptKey = ExecutionContext::currentAcceptKey();
+        $deadline = microtime(true) + self::SOURCE_INTEREST_DEADLINE_SECONDS;
+
+        try {
+            while (!$this->sourcesReady($collectionKeys)) {
+                if (microtime(true) >= $deadline || !$this->daemonClient->isConnected()) {
+                    return;
+                }
+
+                $this->pumpDaemonLink();
+                usleep(self::SOURCE_INTEREST_POLL_US);
+            }
+        } finally {
+            ExecutionContext::setCurrentAgentId($agentId);
+            ExecutionContext::setCurrentAcceptKey($acceptKey);
+        }
+    }
+
+    /**
+     * @param list<string> $collectionKeys RT collections to ask about
+     * @return bool True when the state of every one of them has arrived in this process
+     */
+    private function sourcesReady(array $collectionKeys): bool
+    {
+        foreach ($collectionKeys as $collectionKey) {
+            if (!SourceInterestRegistry::isReady(SourceChange::KIND_RT, $collectionKey)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Moves one round of frames over the daemon link, as the main loop would have.
+     *
+     * A failure is contained exactly as the loop contains it: the wait is inside a message being
+     * handled, and letting an unrelated frame's failure out of here would end the very answer
+     * that is waiting.
+     */
+    private function pumpDaemonLink(): void
+    {
+        if ($this->daemonClient === null) {
+            return;
+        }
+
+        try {
+            $this->daemonClient->write();
+            $this->daemonClient->read();
+        } catch (Throwable $failure) {
+            $this->containFailure(WorkerTickUnit::DAEMON_MESSAGE, 'source interest wait', $failure);
+
+            return;
+        }
+
+        while (($message = $this->daemonClient->getNextMessage()) !== null) {
+            try {
+                $this->handleDaemonMessage($message);
+            } catch (Throwable $failure) {
+                $this->containFailure(WorkerTickUnit::DAEMON_MESSAGE, $message->getType(), $failure);
+            }
+        }
+    }
+
+    /**
+     * Reads what one agent type declares it reads, off the class and not off an instance.
+     *
+     * An unregistered type reads nothing rather than raising: what a start does with a type the
+     * topology does not know is decided by the factory a moment later, and answering that
+     * question twice would put the refusal in the wrong place.
+     *
+     * @param string $agentType Agent type about to start here
+     * @return list<string> RT collections its class declares, or none when the type is unknown
+     */
+    private function agentReadsRt(string $agentType): array
+    {
+        $workerClass = AgentRegistry::workerClass(Hilos::appClass()::AGENTS[$agentType] ?? null);
+
+        return $workerClass === null ? [] : $workerClass::READS_RT;
+    }
+
+    /**
+     * Lets go of everything one consumer read, and drops the copies nobody is left reading.
+     *
+     * A copy does not outlive the interest that brought it here. It would go stale the moment
+     * the master stops addressing frames to this worker, and a stale copy is worse than none:
+     * the next reader of the collection would be handed rows that stopped being true at a moment
+     * nothing recorded, instead of waiting the one round trip a fresh snapshot costs.
+     *
+     * @param string $consumerId Consumer that ended, named by {@see SourceConsumer}
+     * @throws HilosException Whatever a subscriber to a dropped collection's announcement raises
+     */
+    private function releaseSourceInterest(string $consumerId): void
+    {
+        $held = SourceInterestRegistry::collections(SourceChange::KIND_RT);
+        SourceInterestRegistry::releaseConsumer($consumerId);
+
+        $dropped = false;
+        foreach ($held as $collectionKey) {
+            if (SourceInterestRegistry::hasConsumers(SourceChange::KIND_RT, $collectionKey)) {
+                continue;
+            }
+            RtSnapshot::replace($collectionKey, []);
+            $dropped = true;
+        }
+
+        if ($dropped) {
+            $this->notifySourceInterest();
+        }
+    }
+
+    /**
+     * Reports to the daemon every RT collection this worker reads.
+     *
+     * Whole and not as a delta, for the reason {@see WorkerSourceInterestDTO} spells out. An
+     * empty list is sent like any other: it is how the last reader of this worker announces
+     * that frames may stop coming.
+     */
+    private function notifySourceInterest(): void
+    {
+        if ($this->daemonClient === null || !$this->daemonClient->isConnected()) {
+            return;
+        }
+
+        $this->daemonClient->send(new WorkerSourceInterestDTO(
+            SourceInterestRegistry::collections(SourceChange::KIND_RT),
         ));
     }
 
@@ -1824,6 +2126,7 @@ abstract class WorkerManager extends BaseManager
         } finally {
             TruthSourceRegistry::unregisterAgent($agent->getId());
             RtTruthSourceRegistry::unregisterAgent($agent->getId());
+            $this->releaseSourceInterest(SourceConsumer::agent($agent->getId()));
             $this->notifyRtSourcesReleased($agent->getId());
         }
     }

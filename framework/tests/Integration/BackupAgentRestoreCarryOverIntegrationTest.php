@@ -97,6 +97,10 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
         $this->previousRt = Hilos::$rt;
         $rt = new CarryOverTestRtContext();
         $rt->configure();
+        // What the facade does for a live process right after configure(): the framework reads
+        // the project's connections wherever they are mounted, and that interest is what keeps
+        // the rows here when the agent that owns them leaves (HIL-664, HIL-717).
+        $rt->declareProcessWideReads();
         // The index is mounted empty on purpose: the archive these cases restore was never
         // scanned into it, so the supervisor finds no row to write this restore's duration onto
         // and says so - which is the quiet half of the same path a real installation takes.

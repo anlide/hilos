@@ -109,6 +109,16 @@ final class WorkerConstants
     /** @var string Worker reporting that a stopped agent owns no RT collection any more */
     public const string MESSAGE_RT_SOURCE_RELEASED = 'rt_source_released';
 
+    /**
+     * @var string Worker reporting everything its consumers read, whole and not as a delta
+     *     (HIL-717). Beside the two above rather than folded into them: those say who OWNS a
+     *     collection here, this says who NEEDS it, and a worker holding neither reads none.
+     */
+    public const string MESSAGE_SOURCE_INTEREST = 'source_interest';
+
+    /** @var string Initial state of one RT collection, sent to a worker that has just asked to read it */
+    public const string MESSAGE_RT_SNAPSHOT = 'rt_snapshot';
+
     // Message types from worker to daemon
     /** @var string Worker registration request */
     public const string MESSAGE_WORKER_REGISTER = 'worker_register';

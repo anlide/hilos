@@ -23,6 +23,9 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
@@ -81,6 +84,20 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
 
     /** @var list<string> Agent signal names owned directly by this agent. */
     public const array AGENT_SIGNALS = [];
+
+    /**
+     * @var list<string> RT collection keys this agent reads. Declared on the class and not
+     *     registered from onStart(), because the worker has to raise the interest and wait for
+     *     the state to arrive BEFORE the instance exists - an agent asked to start without its
+     *     data would have to know how to run without it. Writing stays imperative
+     *     ({@see self::registerRtTruthSource()}): a claim is made by the agent that holds it,
+     *     while what it reads is a fact about the class.
+     *
+     *     A collection this agent claims does not belong here: a claim holds the copy already, and
+     *     two lists for one fact would have to be kept in step. What belongs here is what the agent
+     *     reads out of somebody else's collection.
+     */
+    public const array READS_RT = [];
 
     /** @var list<string> CLI command names owned directly by this agent. */
     public const array AGENT_COMMANDS = [];
@@ -192,12 +209,21 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     /**
      * Register this agent as truth source for a runtime collection.
      *
+     * The claim is its own reader interest, and a ready one (HIL-717): a writer holds the copy of
+     * what it writes, so there is no state on its way here for it to wait for. Raised at the
+     * claim rather than at the report that follows it, because an agent publishing its first row
+     * inside onStart() reads the collection before that report is even built - the report goes
+     * out once the hook has returned ({@see WorkerManager::handleAgentStart()}).
+     *
      * @param string $collection Runtime collection name
      * @param list<string>|true $keys Specific writable keys or true for all keys
      */
     protected function registerRtTruthSource(string $collection, array|true $keys = true): void
     {
         RtTruthSourceRegistry::register($collection, $keys, $this->getId(), $this->defaultTruthSourceOperations());
+
+        SourceInterestRegistry::register(SourceChange::KIND_RT, $collection, SourceConsumer::agent($this->getId()));
+        SourceInterestRegistry::markReady(SourceChange::KIND_RT, $collection);
     }
 
     /**

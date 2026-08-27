@@ -6,10 +6,12 @@ namespace Hilos\Tests\Unit;
 
 use Closure;
 use Hilos\Cluster\ClusterNode;
+use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\RtSyncMesh;
+use Hilos\Cluster\SourceInterestMesh;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
@@ -40,6 +42,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
+use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -227,6 +230,41 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     }
 
     /**
+     * The other half of the same rule (HIL-717): a worker that does not read the collection is not
+     * written to. It could not apply the frame - it holds no copy to apply it into - so the frame
+     * would be a socket write, a decode and a lookup, all of it to reach nobody.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAReplicaSkipsAWorkerThatDoesNotReadTheCollection(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->workerReads(StateHilosSessionRotation::RT_COLLECTION);
+
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+
+        $this->assertSame([], $daemon->workerServer->frameTypes());
+    }
+
+    /**
+     * A worker that let go of one collection keeps receiving the others: the report replaces the
+     * whole list, so the frames have to follow the list and not the last thing that changed.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAWorkerThatDroppedOneCollectionStillHearsAboutTheRest(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->workerReads(DaemonManagerRtSyncPeerTestRtContext::ROWS);
+
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+
+        $this->assertSame([WorkerConstants::MESSAGE_RT_SYNC_CREATED], $daemon->workerServer->frameTypes());
+    }
+
+    /**
      * @throws InvalidArgumentException When the signal name is empty
      */
     public function testAReplicaFromAnotherNodeIsNotAnnouncedOnwards(): void
@@ -240,6 +278,107 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
             [],
             $daemon->mesh->announcements,
             'A received replica is applied, never passed on: one hop is the whole echo defense',
+        );
+    }
+
+    /**
+     * The node-level half of the same addressing: what this node reads is told to the mesh, so
+     * the nodes writing those collections know a frame about them is worth a hop here.
+     */
+    public function testTheMeshIsToldWhichCollectionsThisNodeReads(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+
+        $daemon->announceInterest();
+
+        $this->assertSame(
+            [[DaemonManagerRtSyncPeerTestRtContext::ROWS, StateHilosSessionRotation::RT_COLLECTION]],
+            $daemon->mesh->interests,
+        );
+    }
+
+    /**
+     * And only when it moved. The loop runs this step every pass, and a node whose readers are
+     * settled would otherwise announce the same list a thousand times a second.
+     */
+    public function testAUnionThatHasNotMovedIsAnnouncedOnlyOnce(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+
+        $daemon->announceInterest();
+        $daemon->announceInterest();
+
+        $this->assertCount(1, $daemon->mesh->interests);
+    }
+
+    /**
+     * A second worker taking up a collection this node already read changes who holds it here,
+     * not whether the node does - and the mesh is told the latter. This is the ordinary case: a
+     * page subscribing on another worker would otherwise be a frame to every peer.
+     */
+    public function testASecondWorkerReadingWhatIsAlreadyReadIsNotNewsForTheMesh(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->announceInterest();
+
+        $daemon->anotherWorkerReads(DaemonManagerRtSyncPeerTestRtContext::ROWS);
+        $daemon->announceInterest();
+
+        $this->assertCount(1, $daemon->mesh->interests);
+    }
+
+    /**
+     * The collection whose last reader here went away is announced as gone, and the peers stop
+     * spending hops on it.
+     */
+    public function testACollectionNobodyReadsAnyMoreIsTakenOutOfTheAnnouncement(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->announceInterest();
+
+        $daemon->workerReads(DaemonManagerRtSyncPeerTestRtContext::ROWS);
+        $daemon->announceInterest();
+
+        $this->assertSame(
+            [[DaemonManagerRtSyncPeerTestRtContext::ROWS]],
+            array_slice($daemon->mesh->interests, 1),
+        );
+    }
+
+    /**
+     * A worker that died reports nothing, so its link gives its list back - and the node that is
+     * left reading nothing says exactly that. An empty list is not the absence of news: without
+     * it the mesh would go on addressing this node forever.
+     */
+    public function testANodeLeftReadingNothingAnnouncesAnEmptyList(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->announceInterest();
+
+        $daemon->workerLinkClosed(DaemonManagerRtSyncPeerTestWorkerClient::WORKER_INDEX);
+        $daemon->announceInterest();
+
+        $this->assertSame([[]], array_slice($daemon->mesh->interests, 1));
+    }
+
+    /**
+     * What a node reads stands beside what it owns in the inspect reply, and that is the whole
+     * outside view of addressing: an operator asking why a row did or did not arrive on a node is
+     * asking this flag. Both halves come from the maps the delivery logic itself reads.
+     */
+    public function testTheInspectReplyNamesWhatThisNodeReadsBesideWhatItOwns(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->workerReads(DaemonManagerRtSyncPeerTestRtContext::ROWS);
+
+        $collections = $daemon->inspectRtReplicas()[ClusterCommandConstants::FIELD_RT_COLLECTIONS];
+
+        $this->assertTrue(
+            $collections[DaemonManagerRtSyncPeerTestRtContext::ROWS][ClusterCommandConstants::FIELD_RT_READ],
+        );
+        $this->assertFalse(
+            $collections[StateHilosSessionRotation::RT_COLLECTION][ClusterCommandConstants::FIELD_RT_READ],
         );
     }
 
@@ -1064,6 +1203,10 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
         $this->workerServer = new DaemonManagerRtSyncPeerTestWorkerServer();
         $this->workerServer->addWorker();
         $this->registerServer($this->workerServer);
+        // A frame goes to the workers that read the collection, so a pool whose worker never said
+        // what it reads would receive nothing at all - and every case below would pass for the
+        // wrong reason. This is that worker's report, in the shape its own link would deliver.
+        $this->workerReads(DaemonManagerRtSyncPeerTestRtContext::ROWS, StateHilosSessionRotation::RT_COLLECTION);
 
         $this->peerServer = new PeerServer(
             '127.0.0.1',
@@ -1072,6 +1215,56 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
             [],
         );
         $this->registerServer($this->peerServer);
+    }
+
+    /**
+     * Records what the one worker of this pool reads, as its own report to the master would.
+     *
+     * Replacement and not a delta, because that is what the report is: the list a worker sends is
+     * everything it reads, so calling this again says what the worker reads NOW.
+     *
+     * @param string ...$collectionKeys RT collections that worker reads
+     */
+    public function workerReads(string ...$collectionKeys): void
+    {
+        $this->getAgentManagerDaemon()->handleSourceInterest(
+            new WorkerSourceInterestDTO(array_values($collectionKeys)),
+            DaemonManagerRtSyncPeerTestWorkerClient::WORKER_INDEX,
+        );
+    }
+
+    /**
+     * Records what a SECOND worker of this pool reads, so the union has two holders behind it.
+     *
+     * No client stands behind this index, and none is wanted: what the cases using it are about
+     * is what the node announces to the mesh, which is the map's business and not the pool's.
+     *
+     * @param string ...$collectionKeys RT collections that worker reads
+     */
+    public function anotherWorkerReads(string ...$collectionKeys): void
+    {
+        $this->getAgentManagerDaemon()->handleSourceInterest(
+            new WorkerSourceInterestDTO(array_values($collectionKeys)),
+            DaemonManagerRtSyncPeerTestWorkerClient::WORKER_INDEX + 1,
+        );
+    }
+
+    /**
+     * Drops what one worker of this pool read, as the closing of its link would.
+     *
+     * @param int $workerIndex Index of the worker whose link closed
+     */
+    public function workerLinkClosed(int $workerIndex): void
+    {
+        $this->getAgentManagerDaemon()->releaseReaderInterestOfWorker($workerIndex);
+    }
+
+    /**
+     * Runs the loop step that tells the mesh what this node reads.
+     */
+    public function announceInterest(): void
+    {
+        $this->announceReaderInterest($this->mesh);
     }
 
     /**
@@ -1404,10 +1597,21 @@ final class DaemonManagerRtSyncPeerTestOpaqueSignalData implements SignalDataInt
 /**
  * A mesh that keeps what was announced to it instead of holding links to other nodes.
  */
-final class DaemonManagerRtSyncPeerTestMesh implements RtSyncMesh
+final class DaemonManagerRtSyncPeerTestMesh implements RtSyncMesh, SourceInterestMesh
 {
     /** @var list<string> Nodes this stand-in reports a live link to */
     public array $linked = [];
+
+    /** @var list<list<string>> Reader-interest lists announced to the mesh, in order */
+    public array $interests = [];
+
+    /**
+     * @param list<string> $rtCollections RT collections the announcing node reads
+     */
+    public function announceSourceInterest(array $rtCollections): void
+    {
+        $this->interests[] = $rtCollections;
+    }
 
     /** @var list<DaemonManagerRtSyncPeerTestAnnouncement> Facts offered to the mesh, in order */
     public array $announcements = [];
@@ -1527,12 +1731,15 @@ final class DaemonManagerRtSyncPeerTestWorkerServer extends WorkerServer
  */
 final class DaemonManagerRtSyncPeerTestWorkerClient extends WorkerClient
 {
+    /** @var int Index the daemon addresses this link by, and the key its reader interest is held under */
+    public const int WORKER_INDEX = 1;
+
     /** @var list<string> Raw frames the daemon wrote to this link, in order */
     private array $written = [];
 
     public function __construct()
     {
-        $this->setWorkerIndex(1);
+        $this->setWorkerIndex(self::WORKER_INDEX);
     }
 
     public function isRegistered(): bool

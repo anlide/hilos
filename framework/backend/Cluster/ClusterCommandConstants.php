@@ -104,6 +104,9 @@ final class ClusterCommandConstants
     /** @var string RT-collection-row key: whether this node owns it on both axes, rows and operations */
     public const string FIELD_RT_FULLY_OWNED = 'fullyOwned';
 
+    /** @var string RT-collection-row key: whether a worker of this node reads the collection */
+    public const string FIELD_RT_READ = 'read';
+
     /** @var string RT-collection-row key: ids of the rows this node holds under the collection */
     public const string FIELD_RT_ROW_IDS = 'rowIds';
 

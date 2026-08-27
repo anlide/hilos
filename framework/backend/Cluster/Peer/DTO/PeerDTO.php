@@ -89,6 +89,7 @@ abstract class PeerDTO extends BaseDTO
             PeerRtSyncDTO::MESSAGE_TYPE => PeerRtSyncDTO::fromArray($data),
             PeerDbSyncDTO::MESSAGE_TYPE => PeerDbSyncDTO::fromArray($data),
             PeerRtSnapshotDTO::MESSAGE_TYPE => PeerRtSnapshotDTO::fromArray($data),
+            PeerSourceInterestDTO::MESSAGE_TYPE => PeerSourceInterestDTO::fromArray($data),
             PeerClientSignalDTO::MESSAGE_TYPE => PeerClientSignalDTO::fromArray($data),
             PeerClientFanoutDTO::MESSAGE_TYPE => PeerClientFanoutDTO::fromArray($data),
             PeerConnectionsSnapshotDTO::MESSAGE_TYPE => PeerConnectionsSnapshotDTO::fromArray($data),

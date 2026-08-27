@@ -13,6 +13,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\ReHydrateRound;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Runtime\RtSnapshot;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
@@ -38,11 +39,13 @@ use Hilos\Socket\Worker\DTO\WorkerProtectedModeRefreezeDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeVerifyDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSnapshotMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Utils\Logger;
 
@@ -209,6 +212,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerRtSyncDeletedMessageDTO => $this->handleWorkerRtSyncDeletedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSourceRegisteredDTO => $this->handleWorkerRtSourceRegisteredMessage($workerDTO),
             $workerDTO instanceof WorkerRtSourceReleasedDTO => $this->handleWorkerRtSourceReleasedMessage($workerDTO),
+            $workerDTO instanceof WorkerSourceInterestDTO => $this->handleWorkerSourceInterestMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeEnableDTO => $this->handleProtectedModeEnableMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeDisableDTO => $this->handleProtectedModeDisableMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeVerifyDTO => $this->handleProtectedModeVerifyMessage($workerDTO),
@@ -440,6 +444,27 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
+     * Handle everything one worker reads, and answer the collections it has just taken up.
+     *
+     * The two steps are one and nothing may be written to this worker between them: the map
+     * entry is what starts addressing deltas here, and a delta reaching the worker before the
+     * snapshot would land on a collection it holds nothing of. Sending the snapshot second is
+     * what makes that impossible - by the time the frame after it can be produced, the state it
+     * applies to is already queued ahead of it on this same socket.
+     *
+     * @param WorkerSourceInterestDTO $dto DTO with every RT collection that worker reads
+     */
+    private function handleWorkerSourceInterestMessage(WorkerSourceInterestDTO $dto): void
+    {
+        foreach ($this->agentManager->handleSourceInterest($dto, $this->workerIndex) as $collectionKey) {
+            $this->send((new WorkerRtSnapshotMessageDTO(
+                collectionKey: $collectionKey,
+                rows: RtSnapshot::rows($collectionKey),
+            ))->toJson());
+        }
+    }
+
+    /**
      * Handle protected-mode enable request from an initiator worker.
      *
      * Hands the carried initiator identity to this node's freeze switch, which freezes the single
@@ -634,5 +659,6 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
 
         $this->agentManager->dropReHydrateParticipant(ReHydrateRound::workerParticipant($this->workerIndex));
         $this->agentManager->releaseRtSourcesOfWorker($this->workerIndex, $this->isMonopolistic);
+        $this->agentManager->releaseReaderInterestOfWorker($this->workerIndex);
     }
 }

@@ -23,9 +23,11 @@ use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceKind;
 use Hilos\Core\Browser\Config\BrowserSourceType;
+use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Daemon\ContainedFailure;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Daemon\Worker\WorkerTickUnit;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\DTO\PagePayload;
@@ -39,6 +41,7 @@ use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeSet;
 use Hilos\Core\Router\SignalDataInterface;
@@ -128,10 +131,15 @@ abstract class BrowserContext
      * which is the point of judging here rather than inside the snapshot: the snapshot
      * has nothing to send for such a page and used to leave it unjudged entirely.
      *
+     * The state the page draws rows from is judged before its own guards and not after,
+     * because the guards read those rows too: a guard reaching a collection this process
+     * does not hold yet would be refused by the read guard and answer the subscription an
+     * internal error, where the truth is that the page is a moment early.
+     *
      * @param string $page Page name from the subscription request
      * @param string $acceptKey Subscribing WebSocket accept key
      * @param PageRouteParams $params Route params for this page subscription
-     * @throws PageServiceUnavailableException When the protected-mode freeze locks this connection out
+     * @throws PageServiceUnavailableException When the freeze locks this connection out, or a collection the page reads is not here yet
      * @throws PageSubscriptionException When a param or a guard rejects the subscription, or a declaration is malformed
      */
     public function assertSubscriptionAccess(string $page, string $acceptKey, PageRouteParams $params): void
@@ -140,6 +148,8 @@ abstract class BrowserContext
             throw new PageServiceUnavailableException();
         }
 
+        $this->assertPageSourcesReady($page);
+
         $pageConfig = $this->pageConfig($page);
         if ($pageConfig === null) {
             return;
@@ -147,6 +157,38 @@ abstract class BrowserContext
 
         $this->validateParams($pageConfig->paramConfigs(), $params);
         $this->assertGuardConfigs($pageConfig, $acceptKey, $params->toArray());
+    }
+
+    /**
+     * Refuses a subscription this process cannot yet answer out of its own copy.
+     *
+     * The worker takes up what the page reads and waits for it before the frame is judged
+     * ({@see WorkerManager::takeUpPageSources}), so reaching this refusal means the state did not arrive inside
+     * that wait. The answer is the transient one the freeze already uses: nothing about the
+     * request is wrong, the process is simply a moment early, and the client is told to try
+     * the page again rather than shown a page built out of rows nobody has.
+     *
+     * Which collection is missing stays in the log. The message crosses the wire, and the
+     * wire protocol keeps engine detail off it.
+     *
+     * @param string $page Page name from the subscription request
+     * @throws PageServiceUnavailableException When a collection the page reads has not arrived here yet
+     */
+    private function assertPageSourcesReady(string $page): void
+    {
+        foreach ($this->rtSourceKeysOfPage($page) as $collectionKey) {
+            if (SourceInterestRegistry::isReady(SourceChange::KIND_RT, $collectionKey)) {
+                continue;
+            }
+
+            Logger::error(
+                'Page subscription is ahead of its state: '
+                    . "page={$page}, collection={$collectionKey}, "
+                    . 'declared=' . (SourceInterestRegistry::isDeclared(SourceChange::KIND_RT, $collectionKey) ? 'yes' : 'no'),
+            );
+
+            throw new PageServiceUnavailableException();
+        }
     }
 
     /**
@@ -738,6 +780,46 @@ abstract class BrowserContext
             + (is_array($data) ? $data : []);
 
         return BrowserPageBindings::fromArray($bindings);
+    }
+
+    /**
+     * Names the RT collections one page reads, from topology alone.
+     *
+     * Asked before the page runs and by a caller that must not run it: a worker has to hold a
+     * collection before a subscription can be answered out of it, and finding out what a page
+     * reads by letting it read is the one order that cannot work. Topology carries the answer
+     * already - every source a page's rows draw from is declared - so this walks the same
+     * declarations {@see TopologyValidator} judges rather than any live state.
+     *
+     * Only RT is named. A DB source is read out of the shared database, so a worker owes it no
+     * copy and nothing has to arrive before the page may be answered.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @return list<string> RT collection keys the page reads, each named once
+     */
+    final public function rtSourceKeysOfPage(string $page): array
+    {
+        $collectionKeys = [];
+        foreach ($this->resolveBrowserPageBindings($page) as $binding) {
+            $sourceConfig = $this->resolveBrowserOnlyConfig($binding->browserKey);
+            if ($sourceConfig === null) {
+                continue;
+            }
+
+            foreach ($sourceConfig->rowConfigs() as $rowConfig) {
+                $source = $rowConfig[BrowserFieldKey::SOURCE] ?? null;
+                if (!is_array($source) || $this->sourceType($source) !== BrowserSourceType::RT) {
+                    continue;
+                }
+
+                $collectionKey = $this->sourceKey($source);
+                if ($collectionKey !== null && !in_array($collectionKey, $collectionKeys, true)) {
+                    $collectionKeys[] = $collectionKey;
+                }
+            }
+        }
+
+        return $collectionKeys;
     }
 
     /**

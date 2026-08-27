@@ -7,6 +7,7 @@ namespace Demo\SimplePoll\Agents\Hilos;
 use Demo\SimplePoll\Constants\PollSignalConstants;
 use Demo\SimplePoll\Database\PollDbContext;
 use Demo\SimplePoll\Hilos;
+use Demo\SimplePoll\Runtime\View\Context\PollRtContext;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\HilosException;
@@ -22,6 +23,9 @@ use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
  */
 final class DemoHilosAgent extends AbstractHilosIndexAgent
 {
+    /** @var list<string> Reaches the sockets of a renamed user through connections, and owns none of them. */
+    public const array READS_RT = [PollRtContext::connections];
+
     /**
      * Registers the rename-audit collection as this agent's truth source.
      */

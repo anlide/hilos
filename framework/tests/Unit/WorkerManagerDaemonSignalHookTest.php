@@ -14,6 +14,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Hilos;
 use Hilos\Socket\Worker\DaemonConnectionState;
 use Hilos\Socket\Worker\DTO\DaemonWorkerSignalDTO;
@@ -53,6 +54,10 @@ final class WorkerManagerDaemonSignalHookTest extends TestCase
         // The manager's constructor registers its signal router globally; left set, it outlives
         // this file.
         Hilos::$sr = null;
+        // run() states what kind of process this is, and the statement is process-wide: left
+        // standing, every case after this file reads as a worker and is refused collections
+        // no master is here to deliver.
+        SourceInterestRegistry::readsWhatItMounts();
         Logger::resetLogFile();
         WorkerTickFailureLog::reset();
         ExecutionContext::clear();

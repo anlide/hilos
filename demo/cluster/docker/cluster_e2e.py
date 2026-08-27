@@ -39,7 +39,7 @@ Plus scenarios beyond that matrix:
                                inside the same container (HIL-450)
  10 cross-node browser         a browser attached to one node is answered from another (HIL-668)
  11 cross-node db fact         a row changed on one node is announced to every other (HIL-670)
- 12 rt replication             every node holds every fleet member's runtime row (HIL-589)
+ 12 rt replication             a fleet row reaches the nodes that read it, and only them
  13 rt partition converges     a cut-off node serves its replica frozen and catches up (HIL-589)
 
 Exit code 0 when every scenario passes, 1 otherwise.
@@ -257,9 +257,35 @@ def rt_refused(views, node):
     return -1 if view is None else int(view.get("rtRefused", 0))
 
 
-def fleet_rows_everywhere(views, nodes=ALL_NODES):
-    """Predicate: every node holds a status row for every fleet member."""
-    return all(len(rt_rows(views, n)) == WORKER_FLEET_SIZE for n in nodes)
+def rt_read_by(views, node, key=WORKER_STATUSES):
+    """Whether a worker of one node reads an RT collection, as that node reports it."""
+    return bool(rt_collection(views, node, key).get("read"))
+
+
+def reading_nodes(views, nodes=ALL_NODES, key=WORKER_STATUSES):
+    """The nodes that say a worker of theirs reads an RT collection."""
+    return [n for n in nodes if rt_read_by(views, n, key)]
+
+
+def fleet_rows_where_read(views, nodes=ALL_NODES):
+    """Predicate: the nodes reading the collection hold every fleet member's row, and the
+    nodes reading none hold nothing (HIL-717).
+
+    Both halves, because together they ARE the addressing. A frame about a collection is
+    delivered only to the nodes that said they read it - the deltas and the hand-over
+    alike - so a node running nothing that reads holds no copy at all, and a node hosting
+    fleet members holds the whole of it. The old form of this predicate asked every node
+    for all ten rows, which was the right question while every frame went everywhere.
+
+    Nobody reading it is not a pass. The fleet is what reads this collection, and a run
+    where no node claims to read it is one where the fleet is not up.
+    """
+    readers = reading_nodes(views, nodes)
+    if not readers:
+        return False
+
+    return (all(len(rt_rows(views, n)) == WORKER_FLEET_SIZE for n in readers)
+            and all(len(rt_rows(views, n)) == 0 for n in nodes if n not in readers))
 
 
 def client_deliveries(views, node):
@@ -357,16 +383,19 @@ def wait_fleet_rows():
     what makes a second source of them.
     """
     try:
-        return wait_until(fleet_rows_everywhere, CONVERGE_TIMEOUT,
-                          "every node holds a status row for every fleet member")
+        return wait_until(fleet_rows_where_read, CONVERGE_TIMEOUT,
+                          "every node reading the collection holds a row for every fleet member")
     except ScenarioTimeout as timeout:
         # The topology summary a timeout prints says nothing about RT, and the question here is
-        # always the same one: which node is short of rows, and does the node writing them know
-        # it owns them. Both come from the same reply, so the answer costs one more poll.
+        # always the same one: which node is short of rows, does the node writing them know it
+        # owns them, and - since HIL-717 - does the node short of them ask for them at all. All
+        # three come from the same reply, so the answer costs one more poll.
         views = inspect_all()
         held = {node: len(rt_rows(views, node)) for node in ALL_NODES}
         owned = {node: rt_collection(views, node).get("owned") for node in ALL_NODES}
-        raise ScenarioTimeout(f"{timeout}\nrows per node: {held}\nowns the collection: {owned}") from timeout
+        read = {node: rt_read_by(views, node) for node in ALL_NODES}
+        raise ScenarioTimeout(f"{timeout}\nrows per node: {held}\nowns the collection: {owned}"
+                              f"\nreads the collection: {read}") from timeout
 
 
 # ------------------------------------------------------------------ scenarios
@@ -628,43 +657,68 @@ def scenario_10_cross_node_browser():
 
 
 def scenario_12_rt_replication():
-    """A runtime row written on one node must reach every other node, and its workers (HIL-589).
+    """A runtime row written on one node reaches every node that READS it, and its workers.
 
     Every fleet member owns exactly ONE row of `workerStatuses`, by its own index, and the fleet
     is spread over the data-plane nodes - so this collection has a truth source on several nodes
     at once, each for its own rows. Before the row axis of ownership existed, a node holding any
     of it claimed the whole collection: every neighbour's frame read as "two truth sources" and
-    was dropped, and the collection never converged anywhere.
+    was dropped, and the collection never converged anywhere (HIL-589).
 
-    Two things are asserted, and the second is the load-bearing one. Every node's MASTER holding
-    a row per member says the frames arrived. Each row's `rowsSeen` equal to the fleet size says
-    they went on to the WORKERS: that number is what a member counted in its own process, so a
-    member on s1 reporting ten has seen the rows s2's members wrote. The inspect reply alone
-    could never say that - it is read from the master.
+    Who a frame goes to is the second half, and it is what makes the shape above visible from
+    outside (HIL-717). A node is sent a collection only while a worker of its own reads one - the
+    deltas and the hand-over alike - so the fleet hosts hold the whole of it and the masters, who
+    run nothing that reads it, hold none of it. That is asserted rather than assumed, because the
+    failure it guards against is silent in both directions: a node kept in the fan-out costs a hop
+    per write forever, and a node wrongly dropped from it stops converging with no error anywhere.
+
+    Two more things are asserted, and the first is the load-bearing one. Each row's `rowsSeen`
+    equal to the fleet size says the frames went on to the WORKERS: that number is what a member
+    counted in its own process, so a member on s1 reporting ten has seen the rows s2's members
+    wrote. The inspect reply alone could never say that - it is read from the master.
 
     `rtRefused` is zero because nothing here is a split, and that is also how the absence of an
     echo shows: a node passing replicas on would be refusing its own writes back within seconds.
     """
     wait_converge(ALL_NODES)
-    wait_fleet_rows()
+    views = wait_fleet_rows()
+    readers = reading_nodes(views)
 
     def every_member_sees_the_fleet(v):
         return all(row.get("rowsSeen") == WORKER_FLEET_SIZE
-                   for node in ALL_NODES for row in rt_rows(v, node).values())
+                   for node in readers for row in rt_rows(v, node).values())
 
-    views = wait_until(every_member_sees_the_fleet,
-                       CONVERGE_TIMEOUT + WORKER_REPORT_INTERVAL_SEC,
-                       "every fleet member reports seeing the whole fleet")
+    wait_until(every_member_sees_the_fleet,
+               CONVERGE_TIMEOUT + WORKER_REPORT_INTERVAL_SEC,
+               "every fleet member reports seeing the whole fleet",
+               nodes=readers)
+
+    # The whole mesh again, not just the readers the poll above narrowed to: the placement table
+    # the assertion below reads is the LEADER's, and the leader is a master, which reads none of
+    # this collection and so is not among them.
+    views = inspect_all()
+    readers = reading_nodes(views)
+
+    # Reading it and hosting a writer of it are the same set here, and that is the point: the
+    # only thing in this demo that reads the collection is a fleet member, and a member reads
+    # what it claims. So the leader's placement table is an independent answer to the same
+    # question the `read` flag answers, and the two agreeing is what says the flag is real.
+    hosts = sorted(n for n in ALL_NODES if hosted_by(views, n))
+    assert sorted(readers) == hosts, \
+        f"the nodes reading the collection are {sorted(readers)}, the nodes hosting writers {hosts}"
 
     for node in ALL_NODES:
         assert rt_refused(views, node) == 0, \
             f"{node} refused an RT frame as a two-owner split: {rt_refused(views, node)}"
+        if node not in readers:
+            continue
         owned = rt_collection(views, node).get("fullyOwned")
         assert owned is False, \
             f"{node} claims the whole collection ({owned}); each node owns only its members' rows"
 
-    return (f"all {WORKER_FLEET_SIZE} rows on every node, every member seeing the whole fleet, "
-            f"nothing refused as a split")
+    quiet = [n for n in ALL_NODES if n not in readers]
+    return (f"all {WORKER_FLEET_SIZE} rows on {', '.join(sorted(readers))}, every member seeing "
+            f"the whole fleet, nothing sent to {', '.join(quiet)} which read none of it")
 
 
 def scenario_13_rt_partition_converges():
@@ -867,6 +921,13 @@ FLAKY_SKIP = {
     # question the interview never answered - what a collection nobody claims right now
     # belongs to - so it is parked rather than guessed at. Until then this scenario
     # guards nothing, and RT convergence after a partition has no other cover.
+    #
+    # Whoever pays this loan off rewrites the scenario as well as fixing the defect: since
+    # HIL-717 a node is sent a collection only while a worker of its own reads one, and the
+    # victim here is a master, which reads nothing of this one and so holds no replica to
+    # freeze. The victim has to become a node that reads it - which in this demo means a
+    # fleet host, and a partitioned fleet host has its members re-placed onto its neighbour,
+    # so the rows it is judged by must be the ones it does NOT own.
     "13 rt partition converges": "P-169: an owner with no claim hands over nothing",
 }
 

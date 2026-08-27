@@ -41,6 +41,7 @@ use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
+use Hilos\Cluster\Peer\DTO\PeerSourceInterestDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
@@ -289,6 +290,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerRtSyncDTO => $this->onRtSync($frame),
             $frame instanceof PeerDbSyncDTO => $this->onDbSync($frame),
             $frame instanceof PeerRtSnapshotDTO => $this->onRtSnapshot($frame),
+            $frame instanceof PeerSourceInterestDTO => $this->onSourceInterest($frame),
             $frame instanceof PeerClientSignalDTO => $this->onClientSignal($frame),
             $frame instanceof PeerClientFanoutDTO => $this->onClientFanout($frame),
             $frame instanceof PeerConnectionsSnapshotDTO => $this->onConnectionsSnapshot($frame),
@@ -537,6 +539,18 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('RT snapshot');
         $this->server->onRtSnapshotReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received list of the collections a node reads to the server's map of readers.
+     *
+     * @param PeerSourceInterestDTO $frame Incoming reader-interest frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onSourceInterest(PeerSourceInterestDTO $frame): void
+    {
+        $this->requireHandshaked('source interest');
+        $this->server->onSourceInterestReceived($this, $frame);
     }
 
     /**

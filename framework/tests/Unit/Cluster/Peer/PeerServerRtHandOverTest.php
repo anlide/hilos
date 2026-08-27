@@ -12,6 +12,7 @@ use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
+use Hilos\Cluster\Peer\DTO\PeerSourceInterestDTO;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerProtocol;
 use Hilos\Cluster\Peer\PeerServer;
@@ -40,6 +41,10 @@ use Socket;
  * which is before this node holds any link to it. The hand-over sent at that moment reaches
  * nothing, and the handshake that finally opens the link changes no membership, so nothing asks
  * again - the two nodes would sit forever without each other's collections.
+ *
+ * The cases about what a delta does are here for the same reason (HIL-717): a delta now leaves
+ * only toward a node that said it reads the collection, so the snapshot and the delta - the
+ * unaddressed half and the addressed half of one link - are judged side by side.
  */
 final class PeerServerRtHandOverTest extends TestCase
 {
@@ -142,6 +147,7 @@ final class PeerServerRtHandOverTest extends TestCase
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
         $this->handshake($link, $far);
+        $this->declareInterest($server, $link);
         $link->write();
         // Clears the welcome and roster the handshake itself queued, so what is asserted below is
         // the two frames these cases are about and nothing else.
@@ -175,6 +181,7 @@ final class PeerServerRtHandOverTest extends TestCase
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
         $this->handshake($link, $far);
+        $this->declareInterest($server, $link);
         $link->write();
         $this->drain($far);
 
@@ -183,6 +190,176 @@ final class PeerServerRtHandOverTest extends TestCase
         $server->broadcastRtSync(SignalTypeConstants::RT_SYNC_UPDATED, $this->rtSyncUpdated(), partialOwner: true);
 
         $this->assertSame([], $this->frameTypesOf($far), 'A discarded link is nobody\'s address any more');
+    }
+
+    /**
+     * The filter itself: a node that never said it reads the collection is written to at all.
+     *
+     * Both halves are asserted at once on purpose. Skipping the delta alone would leave the node
+     * holding a copy that stays exactly as current as the second it arrived, and whatever started
+     * reading it later would be served that - so the hand-over answers to the same interest the
+     * delta does, and a node that reads nothing holds nothing.
+     *
+     * @throws SocketException When the pair under test refuses the queued frames
+     * @throws HilosException When a queued frame refuses to become wire input
+     */
+    public function testANodeThatNeverSaidItReadsTheCollectionIsSentNothingAboutIt(): void
+    {
+        $this->registerSink();
+        $local = NodeIdentity::of('node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        [$link, $far] = $this->makeLinkedPair($server, $local);
+        $this->attach($server, $link);
+        $this->handshake($link, $far);
+        $link->write();
+        $this->drain($far);
+
+        $server->sendRtSnapshotToNode('node-b', 'unitRows', ['7' => ['id' => '7']], ['7']);
+        $server->broadcastRtSync(SignalTypeConstants::RT_SYNC_UPDATED, $this->rtSyncUpdated(), partialOwner: true);
+        $link->write();
+
+        $this->assertSame(
+            [],
+            $this->frameTypesOf($far),
+            'Neither the copy nor the deltas after it: a node that reads nothing holds nothing',
+        );
+    }
+
+    /**
+     * And the same node, once it says what it reads, is handed the collection it now holds.
+     *
+     * The pair with the case above: what the filter turns on is the report, not the link, so the
+     * hand-over a node missed by being silent is not lost - its own announcement asks again.
+     *
+     * @throws SocketException When the pair under test refuses the queued frames
+     * @throws HilosException When a queued frame refuses to become wire input
+     */
+    public function testANodeThatSaidItReadsTheCollectionIsHandedIt(): void
+    {
+        $this->registerSink();
+        $local = NodeIdentity::of('node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        [$link, $far] = $this->makeLinkedPair($server, $local);
+        $this->attach($server, $link);
+        $this->handshake($link, $far);
+        $this->declareInterest($server, $link);
+        $link->write();
+        $this->drain($far);
+
+        $server->sendRtSnapshotToNode('node-b', 'unitRows', ['7' => ['id' => '7']], ['7']);
+        $link->write();
+
+        $this->assertSame([PeerRtSnapshotDTO::MESSAGE_TYPE], $this->frameTypesOf($far));
+    }
+
+    /**
+     * A node reporting a shorter list has stopped reading what it left out, and stops being told.
+     *
+     * The report is a replacement, so this is the only way a reader ever goes away short of the
+     * node itself leaving - and it is the ordinary one: the last page reading a collection closes
+     * and the node goes on running everything else.
+     *
+     * @throws SocketException When the pair under test refuses the queued frames
+     * @throws HilosException When a queued frame refuses to become wire input
+     */
+    public function testANodeThatStoppedReadingIsNoLongerToldAboutTheCollection(): void
+    {
+        $this->registerSink();
+        $local = NodeIdentity::of('node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        [$link, $far] = $this->makeLinkedPair($server, $local);
+        $this->attach($server, $link);
+        $this->handshake($link, $far);
+        $this->declareInterest($server, $link);
+        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', []));
+        $link->write();
+        $this->drain($far);
+
+        $server->broadcastRtSync(SignalTypeConstants::RT_SYNC_UPDATED, $this->rtSyncUpdated(), partialOwner: true);
+        $link->write();
+
+        $this->assertSame([], $this->frameTypesOf($far), 'A key left out of a report is a key that stopped being read');
+    }
+
+    /**
+     * Interest naming a collection for the first time asks the owner to hand it over.
+     *
+     * A node that has just started reading holds no copy, so the delta stream alone would land on
+     * nothing: every write after the first is an update, and a node without the row drops it. The
+     * hand-over is what gives the deltas something to land on.
+     */
+    public function testInterestNamingANewCollectionAsksTheDaemonToHandItOver(): void
+    {
+        $sink = $this->registerSink();
+        $local = NodeIdentity::of('node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $link = new PeerLink($this->makeSocket(), $server, $local, dialer: false);
+
+        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows']));
+
+        $this->assertSame(['node-b'], $sink->handedOverTo);
+    }
+
+    /**
+     * Interest that names nothing new does not, because the node already holds those copies.
+     *
+     * A node re-announces its whole list every time any part of it moves, so most reports repeat
+     * keys the sender is already current on. Handing those over again would replace a copy the
+     * deltas have kept fresh with one built before the frames in flight.
+     */
+    public function testInterestRepeatingWhatANodeAlreadyReadsHandsOverNothing(): void
+    {
+        $sink = $this->registerSink();
+        $local = NodeIdentity::of('node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $link = new PeerLink($this->makeSocket(), $server, $local, dialer: false);
+
+        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows']));
+        $sink->handedOverTo = [];
+        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows']));
+
+        $this->assertSame([], $sink->handedOverTo);
+    }
+
+    /**
+     * What this node reads is told to a peer that links up later, not only to the ones linked now.
+     *
+     * The announcement is a broadcast, so it reaches the links of its own moment and no others. A
+     * node joining afterwards would filter every frame away from this one, and nothing would ask
+     * again until the interest happened to move - which on a settled node it never does.
+     *
+     * @throws SocketException When the pair under test refuses the queued frames
+     * @throws HilosException When a queued frame refuses to become wire input
+     */
+    public function testAPeerLinkingUpLaterIsToldWhatThisNodeReads(): void
+    {
+        $this->registerSink();
+        $local = NodeIdentity::of('node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $server->announceSourceInterest(['unitRows']);
+
+        [$link, $far] = $this->makeLinkedPair($server, $local);
+        $this->attach($server, $link);
+        $this->handshake($link, $far);
+        $server->onHandshakeComplete($link, NodeIdentity::of('node-b', NodeRole::Master, []));
+        $link->write();
+
+        $this->assertContains(
+            PeerSourceInterestDTO::MESSAGE_TYPE,
+            $this->frameTypesOf($far),
+            'A peer that linked up after the announcement hears it on its handshake',
+        );
+    }
+
+    /**
+     * Delivers a peer's report that it reads the collection these cases replicate.
+     *
+     * @param PeerServer $server Server holding the node reader map
+     * @param PeerLink $link Link the report is treated as having arrived on
+     */
+    private function declareInterest(PeerServer $server, PeerLink $link): void
+    {
+        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows']));
     }
 
     /**

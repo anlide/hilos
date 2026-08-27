@@ -7,6 +7,7 @@ namespace Demo\Tasks\Agents\Hilos;
 use Demo\Tasks\Constants\TasksSignalConstants;
 use Demo\Tasks\Database\TasksDbContext;
 use Demo\Tasks\Hilos;
+use Demo\Tasks\Runtime\View\Context\TasksRtContext;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\HilosException;
@@ -22,6 +23,9 @@ use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
  */
 final class DemoHilosAgent extends AbstractHilosIndexAgent
 {
+    /** @var list<string> Reaches the sockets of a renamed user through connections, and owns none of them. */
+    public const array READS_RT = [TasksRtContext::connections];
+
     /**
      * Registers the rename-audit collection as this agent's truth source.
      */

@@ -859,6 +859,7 @@ abstract class Hilos
                 static::$rt->mountFeatureRuntime($definitions);
                 static::$rt->configure();
                 static::$rt->assertFeatureRuntimeIntact();
+                static::$rt->declareProcessWideReads();
                 static::$rt->bindStateCollectionNames();
             }
         }

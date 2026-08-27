@@ -41,6 +41,14 @@ final class ModeratorAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = AgentType::MODERATOR;
 
+    /**
+     * Connections carry the moderation requests this agent answers, and the drafts hang off the
+     * connection being moderated; it owns neither.
+     *
+     * @var list<string>
+     */
+    public const array READS_RT = [ChatRtContext::connections, ChatRtContext::attachmentDrafts];
+
     private const string REASON_SERVICE_UNAVAILABLE = 'service_unavailable';
     private const string REASON_UNKNOWN = 'unknown';
     private const string REQUEST_TYPE_MESSAGE = 'message';

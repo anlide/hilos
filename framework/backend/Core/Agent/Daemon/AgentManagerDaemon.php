@@ -15,6 +15,8 @@ use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Source\Interest\SourceReaderMap;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
 use Hilos\Database\DTO\ReHydrateVerdict;
@@ -39,6 +41,7 @@ use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\TruthSource\RtNodeSourceMap;
 use Hilos\Utils\Logger;
 
@@ -85,6 +88,26 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * keyed by agent because that is what a report names - which is also this class's subject.
      */
     private ?RtNodeSourceMap $rtNodeSourceMap = null;
+
+    /**
+     * @var ?SourceReaderMap What RT collections the workers of this node read, built lazily.
+     *
+     * The reading half of the map above, kept apart from it because the two answer different
+     * questions about different things: that one is keyed by agent and says what this NODE
+     * owns, this one is keyed by worker and says where a frame is worth writing.
+     */
+    private ?SourceReaderMap $workerReaderMap = null;
+
+    /**
+     * @var ?list<string> RT collections this node reads that the mesh has not been told about yet.
+     *
+     * What the map above adds up to, kept beside it so the loop can ask in one property read
+     * whether there is anything to announce. The union moves far more rarely than the map does -
+     * a page subscribing on a second worker changes who reads a collection, not whether this node
+     * does - so this stays null through nearly every report, and the master pays a null check per
+     * pass instead of walking the map ({@see consumeChangedReaderInterest()}).
+     */
+    private ?array $changedReaderInterest = null;
 
     /**
      * @var ?ProtectedModeAgentStopSink Who to tell that an agent stopped, or null when nobody asked.
@@ -671,6 +694,96 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     }
 
     /**
+     * Records everything one worker reads, replacing what it read before.
+     *
+     * The returned collections are the ones this worker has just started reading, and its link
+     * owes each of them an initial state: it holds no copy of a collection it never asked for,
+     * and a delta would land on nothing.
+     *
+     * @param WorkerSourceInterestDTO $dto DTO with every RT collection that worker reads
+     * @param int $workerIndex Index of the worker that reported
+     * @return list<string> RT collections that worker did not read before
+     */
+    public function handleSourceInterest(WorkerSourceInterestDTO $dto, int $workerIndex): array
+    {
+        $announced = $this->workerReaderMap()->collections(SourceChange::KIND_RT);
+        $added = $this->workerReaderMap()->note(
+            self::workerHolderId($workerIndex),
+            SourceChange::KIND_RT,
+            $dto->rtCollections,
+        );
+        $this->noteReaderInterestChange($announced);
+
+        return $added;
+    }
+
+    /**
+     * Drops what one worker read, because that worker is gone.
+     *
+     * Its own step next to {@see self::releaseRtSourcesOfWorker()} and not folded into it: a
+     * worker owns collections through the agents it hosts and reads them through pages too, so
+     * the two lists empty on the same event but neither implies the other.
+     *
+     * @param int $workerIndex Index of the worker whose link closed
+     */
+    public function releaseReaderInterestOfWorker(int $workerIndex): void
+    {
+        $announced = $this->workerReaderMap()->collections(SourceChange::KIND_RT);
+        $this->workerReaderMap()->release(self::workerHolderId($workerIndex));
+        $this->noteReaderInterestChange($announced);
+    }
+
+    /**
+     * Records the union for the mesh when a report moved it, and stays quiet when it did not.
+     *
+     * The lists are compared as they stand rather than as sets: a union that came back in another
+     * order says the same thing, and announcing it again costs one frame on an event that is
+     * already rare, while a set that really changed cannot come back looking identical.
+     *
+     * @param list<string> $announced RT collections this node read before the report
+     */
+    private function noteReaderInterestChange(array $announced): void
+    {
+        $reads = $this->workerReaderMap()->collections(SourceChange::KIND_RT);
+        if ($reads !== $announced) {
+            $this->changedReaderInterest = $reads;
+        }
+    }
+
+    /**
+     * Hands over the RT collections this node reads, once, when they have changed.
+     *
+     * Consuming rather than asking twice, because the caller is the daemon loop and the answer is
+     * a duty: what it takes here it has to announce, and an answer left in place would be
+     * announced again on every pass. Null is not an empty list - a node whose last reader went
+     * away reads nothing and must say so, or the mesh goes on sending it frames forever.
+     *
+     * @return ?list<string> RT collections this node reads, or null when the mesh already knows
+     */
+    public function consumeChangedReaderInterest(): ?array
+    {
+        $reads = $this->changedReaderInterest;
+        $this->changedReaderInterest = null;
+
+        return $reads;
+    }
+
+    /**
+     * Names one worker as a holder of collections.
+     *
+     * A holder id is a plain string because the same map serves nodes as well as workers
+     * ({@see SourceReaderMap}), so the prefix is what keeps a worker index from reading as a
+     * node id in a map that ever held both.
+     *
+     * @param int $workerIndex Index of the worker
+     * @return string Holder id of that worker
+     */
+    public static function workerHolderId(int $workerIndex): string
+    {
+        return 'worker:' . $workerIndex;
+    }
+
+    /**
      * Records that an agent stopped here and owns nothing any more.
      *
      * @param WorkerRtSourceReleasedDTO $dto DTO with the agent that stopped
@@ -709,5 +822,19 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     public function rtNodeSourceMap(): RtNodeSourceMap
     {
         return $this->rtNodeSourceMap ??= new RtNodeSourceMap();
+    }
+
+    /**
+     * Returns which of this node's workers read which RT collection.
+     *
+     * Kept here for the reason the ownership map is kept here: a worker link talks to this
+     * manager and to nothing else, so this is the one place both halves of what a worker
+     * reports can be written down.
+     *
+     * @return SourceReaderMap Map of the RT collections read by the workers of this node
+     */
+    public function workerReaderMap(): SourceReaderMap
+    {
+        return $this->workerReaderMap ??= new SourceReaderMap();
     }
 }

@@ -32,6 +32,7 @@ use Hilos\Cluster\DbSyncSink;
 use Hilos\Cluster\RtReplicaInspector;
 use Hilos\Cluster\RtSyncMesh;
 use Hilos\Cluster\RtSyncSink;
+use Hilos\Cluster\SourceInterestMesh;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
@@ -77,6 +78,7 @@ use Hilos\Core\Router\PageAgentAddress;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
@@ -631,6 +633,13 @@ abstract class DaemonManager extends BaseManager implements
             // And offer what this node has just started owning to nodes already linked to it
             // (HIL-589).
             $this->offerRtSnapshotsOnOwnershipChange($this->findPeerServer());
+
+            // And tell them what this node has started or stopped READING, so their frames about
+            // a collection reach only the nodes holding a copy of it (HIL-717). After the offer
+            // above rather than before it: an owner appearing here hands its rows over on this
+            // same pass, and doing it in the other order would send them to a node whose interest
+            // the mesh had not learned yet.
+            $this->announceReaderInterest($this->findPeerServer());
 
             // Dispatch accumulated signals
             $this->dispatchSignals();
@@ -1873,7 +1882,20 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        $this->writeFrameToWorkers($workerServer, $dto);
+        // Only the RT half is addressed. A DB fact names a collection too, but a worker reads
+        // those rows out of the shared database rather than out of a copy, so there is no
+        // interest to match it against until HIL-750 gives DB one of its own - and a frame
+        // matched against an interest nobody declares would reach nobody at all.
+        $rtCollectionKey = $signal->data instanceof RtSyncSignalDataInterface
+            ? $signal->data->collectionKey
+            : null;
+
+        $this->writeFrameToWorkers(
+            $workerServer,
+            $dto,
+            $rtCollectionKey === null ? null : SourceChange::KIND_RT,
+            $rtCollectionKey,
+        );
     }
 
     /**
@@ -1890,18 +1912,46 @@ abstract class DaemonManager extends BaseManager implements
      * Packing is lazy instead of unconditional before the loop so that a node with no registered
      * worker link yet - daemon startup - does not pay for a frame nobody will receive.
      *
+     * A frame that names a collection goes only to the workers that read it (HIL-717). Naming it
+     * is the caller's business and not this method's: the same link carries frames that belong to
+     * no collection at all - a signal to an agent, the re-read after a database swap, an access
+     * decision - and those still go to everybody, because there is no interest they could be
+     * matched against.
+     *
+     * The map is the master's, not the worker's word taken on trust: a worker's list arrives on
+     * the same link and is written into {@see AgentManagerDaemon::workerReaderMap()} before its
+     * snapshot goes out, so a worker missing from it here is one that has not asked yet - and a
+     * frame it has not asked for is one it could not apply.
+     *
      * @param WorkerServer $workerServer Worker server instance
      * @param WorkerDTO $dto Frame to write to each worker link
+     * @param ?string $kind Source kind of the collection the frame belongs to, or null when it belongs to none
+     * @param ?string $collectionKey Collection the frame belongs to, or null when it belongs to none
      */
-    private function writeFrameToWorkers(WorkerServer $workerServer, WorkerDTO $dto): void
-    {
+    private function writeFrameToWorkers(
+        WorkerServer $workerServer,
+        WorkerDTO $dto,
+        ?string $kind = null,
+        ?string $collectionKey = null,
+    ): void {
         $frame = null;
+        $readerMap = $this->agentManagerDaemon->workerReaderMap();
 
         foreach ($workerServer->getClients() as $client) {
-            if ($client instanceof WorkerClient) {
-                $frame ??= $dto->toJson();
-                $client->send($frame);
+            if (!$client instanceof WorkerClient) {
+                continue;
             }
+
+            if ($kind !== null && $collectionKey !== null && !$readerMap->holds(
+                AgentManagerDaemon::workerHolderId($client->getWorkerIndex()),
+                $kind,
+                $collectionKey,
+            )) {
+                continue;
+            }
+
+            $frame ??= $dto->toJson();
+            $client->send($frame);
         }
     }
 
@@ -2362,15 +2412,21 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         foreach (array_keys($held) as $stateId) {
-            $this->writeFrameToWorkers($workerServer, new WorkerRtSyncDeletedMessageDTO(
-                new RtSyncDeletedSignalData($collectionKey, (string)$stateId),
-            ));
+            $this->writeFrameToWorkers(
+                $workerServer,
+                new WorkerRtSyncDeletedMessageDTO(new RtSyncDeletedSignalData($collectionKey, (string)$stateId)),
+                SourceChange::KIND_RT,
+                $collectionKey,
+            );
         }
 
         foreach ($rows as $stateId => $row) {
-            $this->writeFrameToWorkers($workerServer, new WorkerRtSyncCreatedMessageDTO(
-                new RtSyncCreatedSignalData($collectionKey, (string)$stateId, $row),
-            ));
+            $this->writeFrameToWorkers(
+                $workerServer,
+                new WorkerRtSyncCreatedMessageDTO(new RtSyncCreatedSignalData($collectionKey, (string)$stateId, $row)),
+                SourceChange::KIND_RT,
+                $collectionKey,
+            );
         }
     }
 
@@ -2434,6 +2490,33 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Tells the mesh what this node reads, on the pass where that has changed.
+     *
+     * The union of what its workers read, and only when it moved: the map behind it moves far
+     * more often than the union does - a page subscribing on a second worker changes who reads a
+     * collection here, not whether this node does - so an unconditional announcement would be a
+     * frame per subscription for a list the peers already hold.
+     *
+     * The answer is taken whether or not there is a mesh to tell, so that a node running
+     * off-cluster does not accumulate one: what the daemon has consumed here it has announced,
+     * and leaving it would announce the same list again on the pass a mesh appeared.
+     *
+     * Protected for the reason {@see offerRtSnapshotsOnOwnershipChange()} is: it is how a
+     * subclass sees what this node tells the mesh.
+     *
+     * @param ?SourceInterestMesh $mesh Peer server of this node, or null off-cluster
+     */
+    protected function announceReaderInterest(?SourceInterestMesh $mesh): void
+    {
+        $reads = $this->agentManagerDaemon->consumeChangedReaderInterest();
+        if ($reads === null || $mesh === null) {
+            return;
+        }
+
+        $mesh->announceSourceInterest($reads);
+    }
+
+    /**
      * Whether a snapshot reaches for anything an agent of this node owns wholly.
      *
      * The two-owner question, asked of a hand-over. A frame naming no rows claims the collection,
@@ -2470,6 +2553,11 @@ abstract class DaemonManager extends BaseManager implements
      * of the node map and the rows of the copy itself, so the two halves of the answer come from
      * the same places the replication logic reads.
      *
+     * Beside what this node WRITES stands what it READS (HIL-717), and that is the whole outside
+     * view of addressing: a delta now leaves a peer only toward the nodes that said they read the
+     * collection, so a scenario asking why a row did or did not arrive here is asking about this
+     * flag. It is the union its workers reported, which is exactly what the mesh was told.
+     *
      * The rows travel with their values, not as a list of ids: whether a replica ARRIVED is the
      * smaller half of the question, and whether it arrived CURRENT is the half a converging
      * cluster is actually judged by. A scenario watching a link go down and come back compares
@@ -2486,12 +2574,14 @@ abstract class DaemonManager extends BaseManager implements
     public function inspectRtReplicas(): array
     {
         $map = $this->agentManagerDaemon->rtNodeSourceMap();
+        $reads = $this->agentManagerDaemon->workerReaderMap()->collections(SourceChange::KIND_RT);
         $collections = [];
         foreach (Hilos::$rt?->collectionKeys() ?? [] as $collectionKey) {
             $rows = RtSnapshot::rows($collectionKey);
             $collections[$collectionKey] = [
                 ClusterCommandConstants::FIELD_RT_OWNED => $map->owns($collectionKey),
                 ClusterCommandConstants::FIELD_RT_FULLY_OWNED => $map->ownsFully($collectionKey),
+                ClusterCommandConstants::FIELD_RT_READ => in_array($collectionKey, $reads, true),
                 ClusterCommandConstants::FIELD_RT_ROW_IDS => array_map(strval(...), array_keys($rows)),
                 ClusterCommandConstants::FIELD_RT_ROWS => $rows,
             ];

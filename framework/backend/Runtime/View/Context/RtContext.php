@@ -5,14 +5,19 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Context;
 
 use Closure;
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Feature\Exception\FeatureRuntimeOverwrittenException;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Rt\RtCloneException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateItemNotFoundException;
 use Hilos\Runtime\State\Collection\HilosConnections;
@@ -244,6 +249,12 @@ abstract class RtContext
      * of reaching into the context. A project never calls this - it registers its own state in
      * {@see self::configure()}, and a key that belongs to a feature is refused there.
      *
+     * The mount is also the framework's declaration that it reads the collection here. It is the
+     * one collection kind whose readers are the same in every process - the handshake, the
+     * throttle, the waiters all live wherever the framework does - so there is no later moment
+     * at which the interest could be raised more precisely, and a feature row that only some
+     * processes held would be a row the framework cannot rely on.
+     *
      * @param string $name Collection name owned by the feature
      * @param RtStates $collection State collection instance to mount
      */
@@ -251,6 +262,63 @@ abstract class RtContext
     {
         $this->_stateCollections[$name] = $collection;
         $this->_featureCollections[$name] = ['feature' => $this->_mountingFeature, 'state' => $collection];
+        SourceInterestRegistry::register(
+            SourceChange::KIND_RT,
+            $name,
+            SourceConsumer::feature($this->_mountingFeature?->value ?? $name),
+        );
+    }
+
+    /**
+     * Declares what this process holds because it mounted it, rather than because somebody asked.
+     *
+     * Called once per process right after {@see self::configure()}, and the counterpart of the
+     * declaration {@see self::mountFeatureCollection()} makes at its own mount. Two things are
+     * held that way, and both would otherwise be addressed to nobody (HIL-717).
+     *
+     * A mounted runtime ITEM is a singleton, and a singleton is held wherever it is mounted:
+     * there is no reader map for it to be narrowed by, and the freeze switch, the backup runtime
+     * and the project's own context row are read by whatever happens to be running. Declared
+     * here rather than in {@see self::mountFeatureItem()} because a project mounts its aliases
+     * straight into the map, and this is the one place that sees the framework's and the
+     * project's together. A resolver closure is not a mount of a row and is skipped - what it
+     * returns belongs to a collection, which answers for itself.
+     *
+     * The connections COLLECTION is held everywhere for a different reason: its key belongs to
+     * the project while its readers are the framework's own, and they run everywhere - the
+     * session host resolves a token by accept key, a library command finds the connection that
+     * is acting, an agent asks which session a frame arrived on. None of that is named by a
+     * page's topology or by an agent's {@see AbstractAgent::READS_RT}, so without this a
+     * monopolistic worker held no connections at all and answered every one of those questions
+     * with "not found".
+     */
+    final public function declareProcessWideReads(): void
+    {
+        foreach ($this->_stateItems as $alias => $item) {
+            if ($item instanceof RtState) {
+                $this->declareHeldHere((string)$alias);
+            }
+        }
+
+        foreach ($this->_stateCollections as $name => $collection) {
+            if ($collection instanceof HilosConnections) {
+                $this->declareHeldHere((string)$name);
+            }
+        }
+    }
+
+    /**
+     * Registers the process itself as a reader of one runtime key, for the life of the process.
+     *
+     * The interest is never given back, and that is what it is for: a collection loses its copy
+     * when its last reader lets go, and these are the ones that must survive every agent and
+     * every page that comes and goes here (HIL-664).
+     *
+     * @param string $name Runtime collection key or item alias mounted here
+     */
+    private function declareHeldHere(string $name): void
+    {
+        SourceInterestRegistry::register(SourceChange::KIND_RT, $name, SourceConsumer::feature($name));
     }
 
     /**
@@ -552,10 +620,13 @@ abstract class RtContext
      * @param string $name Collection or item alias name
      * @return RtCollection|RtItem|null Runtime collection, item alias result, or null for a missing item alias
      * @throws RtCollectionNotFoundException When name is neither a collection nor an item alias
+     * @throws RtCollectionNotReadableException When nothing here reads the collection, or its state is still on its way
      */
     public function __get(string $name): RtCollection|RtItem|null
     {
         if (isset($this->_rtCollections[$name])) {
+            $this->assertReadable($name);
+
             return $this->_rtCollections[$name];
         }
         if (isset($this->_rtItems[$name])) {
@@ -563,6 +634,35 @@ abstract class RtContext
         }
 
         throw new RtCollectionNotFoundException("Runtime collection or item [{$name}] does not exist");
+    }
+
+    /**
+     * Refuses a collection this process does not hold, rather than answering out of an empty one.
+     *
+     * The reading half of the write guard, and refused for the same reason: a collection nobody
+     * here reads is not kept up to date by anybody, so what is in it is not old data but data
+     * that was never data. Answering it would be worse than raising, because the caller has no
+     * way of telling the two apart - an empty collection is a perfectly ordinary state.
+     *
+     * Only mounted collections reach here, so the refusal is always about wiring: either no
+     * consumer declared this collection ({@see AbstractAgent::READS_RT}, a page's browser
+     * sources, a feature's mount) or one did and the master's snapshot has not landed yet. The
+     * two are separate defects and the messages say which.
+     *
+     * @param string $name Mounted collection name being read
+     * @throws RtCollectionNotReadableException When nothing here reads it, or its state is still on its way
+     */
+    private function assertReadable(string $name): void
+    {
+        if (SourceInterestRegistry::isReady(SourceChange::KIND_RT, $name)) {
+            return;
+        }
+
+        throw new RtCollectionNotReadableException(
+            SourceInterestRegistry::isDeclared(SourceChange::KIND_RT, $name)
+                ? "runtime collection '{$name}' was declared but its state has not arrived yet"
+                : "no reader interest is registered for runtime collection '{$name}'",
+        );
     }
 
     /**

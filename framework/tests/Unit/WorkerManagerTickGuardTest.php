@@ -13,6 +13,7 @@ use Hilos\Core\Daemon\Worker\WorkerTickUnit;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Hilos;
 use Hilos\Socket\Worker\DaemonConnectionState;
 use Hilos\Socket\Worker\WorkerDaemonClient;
@@ -51,6 +52,10 @@ final class WorkerManagerTickGuardTest extends TestCase
         // reads the browser context from the same place: left set, both outlive this file.
         Hilos::$sr = null;
         Hilos::$browser = null;
+        // run() states what kind of process this is, and the statement is process-wide: left
+        // standing, every case after this file reads as a worker and is refused collections
+        // no master is here to deliver.
+        SourceInterestRegistry::readsWhatItMounts();
         Logger::resetLogFile();
         WorkerTickFailureLog::reset();
         ExecutionContext::clear();
