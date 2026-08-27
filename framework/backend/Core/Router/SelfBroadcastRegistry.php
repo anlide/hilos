@@ -51,6 +51,24 @@ final class SelfBroadcastRegistry
     }
 
     /**
+     * Reports a pending registration without spending it.
+     *
+     * Lets a caller tell "a foreign fact arrived for a row this process is still
+     * awaiting its own echo of" from "a foreign fact arrived for a row nobody here
+     * wrote": the first is a real two-writer race and worth saying out loud, the second
+     * is ordinary traffic. Looking must not consume, because the echo of our own write
+     * is still to come and the registration is what will suppress it.
+     *
+     * @param string $collectionKey Collection key for sync
+     * @param string $id Entity id (idString for DB, stateId for RT)
+     * @return bool True if a registration for this pair is still pending
+     */
+    public function has(string $collectionKey, string $id): bool
+    {
+        return isset($this->ids[$collectionKey . ':' . $id]);
+    }
+
+    /**
      * Consumes a registration; true when this id was our own broadcast.
      *
      * @param string $collectionKey Collection key for sync

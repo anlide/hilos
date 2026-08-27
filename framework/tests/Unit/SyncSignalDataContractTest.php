@@ -9,6 +9,7 @@ use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Sync\DTO\EmitterStampedSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
@@ -45,6 +46,39 @@ final class SyncSignalDataContractTest extends TestCase
             new DbSyncDeletedSignalData(self::COLLECTION_KEY, '1', ['name' => 'Grace']),
         ] as $signalData) {
             $this->assertInstanceOf(DbSyncSignalDataInterface::class, $signalData);
+        }
+    }
+
+    /**
+     * Every DB sync fact carries the identity of the process that broadcast it — the row
+     * ones as well as the collection-scoped clear, since HIL-737. The declaration is what
+     * lets the send path stamp any of them through one call, so a payload that forgets the
+     * line would silently leave unstamped and be applied back to its own sender.
+     */
+    public function testEveryDbPayloadDeclaresTheEmitterStamp(): void
+    {
+        foreach ([
+            new DbSyncCreatedSignalData(self::COLLECTION_KEY, '1', ['name' => 'Ada']),
+            new DbSyncUpdatedSignalData(self::COLLECTION_KEY, '1', ['name' => 'Grace']),
+            new DbSyncDeletedSignalData(self::COLLECTION_KEY, '1', ['name' => 'Grace']),
+            new DbSyncClearedSignalData(self::COLLECTION_KEY),
+        ] as $signalData) {
+            $this->assertInstanceOf(EmitterStampedSyncSignalDataInterface::class, $signalData);
+        }
+    }
+
+    /**
+     * RT sync frames stay out of it: they do not travel between nodes and are keyed by
+     * the state id alone, so nothing on their path has an emitter to compare.
+     */
+    public function testRtPayloadsDoNotDeclareTheEmitterStamp(): void
+    {
+        foreach ([
+            new RtSyncCreatedSignalData(self::COLLECTION_KEY, 'ak-1', ['userId' => 1]),
+            new RtSyncUpdatedSignalData(self::COLLECTION_KEY, 'ak-1', ['presence' => 'online']),
+            new RtSyncDeletedSignalData(self::COLLECTION_KEY, 'ak-1', ['presence' => 'online']),
+        ] as $signalData) {
+            $this->assertNotInstanceOf(EmitterStampedSyncSignalDataInterface::class, $signalData);
         }
     }
 

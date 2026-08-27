@@ -143,7 +143,7 @@ class SignalRouter
     private SubscriptionRegistry $subscriptions;
 
     /**
-     * @var string Identity of this process as the emitter of collection-scoped syncs.
+     * @var string Identity of this process as the emitter of the DB syncs it sends.
      *
      * A clear fact has no row id, so the self-broadcast registry cannot key it the way
      * row syncs are keyed. The emitter identity replaces that registration entirely:
@@ -151,6 +151,10 @@ class SignalRouter
      * state that could be evicted. Random rather than the worker index because indexes
      * are reused after a worker restart, and an echo from the dead worker would then
      * suppress a legitimate clear in its successor.
+     *
+     * A row sync carries the same stamp, but there it narrows the registration rather
+     * than replacing it: the registry says a row is awaited back, the stamp says by
+     * whom, and only both together mean "my own echo".
      */
     private readonly string $emitter;
 
@@ -168,7 +172,7 @@ class SignalRouter
     }
 
     /**
-     * Returns the emitter identity stamped on collection-scoped syncs this process sends.
+     * Returns the emitter identity stamped on the DB syncs this process sends.
      *
      * @return string Emitter identity of this process
      */
@@ -356,6 +360,11 @@ class SignalRouter
      * self-apply guard, exactly as before, because a payload that cannot be deduped
      * still has to reach the other processes.
      *
+     * Stamps the payload with this process's emitter identity, the way
+     * {@see self::queueDbSyncClearedSignal()} does: the registration alone says a row
+     * is awaited back, not from whom, so the receiving side needs the stamp to tell
+     * this process's own echo from another writer's change to the same row.
+     *
      * @param string $signalName Signal name (e.g. SignalConstants::DB_SYNC_CREATED)
      * @param DbSyncSignalDataInterface $signalData Signal data with collectionKey and idString
      * @throws InvalidArgumentException When the signal name is empty
@@ -374,19 +383,45 @@ class SignalRouter
             signalSource: new SignalSource(SignalSource::DB),
             signalType: new SignalType($signalName),
             signalName: new SignalName($signalName),
-            signalData: $signalData,
+            signalData: $signalData->withEmitter($this->emitter),
         );
     }
 
     /**
      * Check if apply should be skipped (self-broadcast) and remove from registry.
      *
+     * The verdict is keyed by the PAIR "emitter stamp, then pending registration". The
+     * stamp is compared first, and a foreign or missing one returns before the registry
+     * is read at all — which is the whole point of the order. A frame from another
+     * writer used to consume the registration standing for THIS process's write to the
+     * same row, so two changes were lost at once: the foreign one was dropped as an own
+     * echo, and this process's own echo later passed through unsuppressed and reached
+     * the agents as someone else's fact.
+     *
+     * An unstamped frame counts as someone else's, the same way an unstamped clear does
+     * ({@see self::shouldSkipDbSyncClearApply()}).
+     *
      * @param string $collectionKey Collection key for sync
      * @param string $idString Entity ID string
+     * @param ?string $emitter Emitter identity from the sync payload, null when unstamped
      * @return bool True if this was our broadcast, skip apply
      */
-    public function shouldSkipDbSyncApply(string $collectionKey, string $idString): bool
+    public function shouldSkipDbSyncApply(string $collectionKey, string $idString, ?string $emitter): bool
     {
+        if ($emitter !== $this->emitter) {
+            if ($this->dbSelfBroadcast->has($collectionKey, $idString)) {
+                // The only place a genuine two-writer race on one row is visible from
+                // the outside: this process is still waiting for the echo of its own
+                // write when someone else's change to the same row arrives.
+                Logger::warning(
+                    "DB sync: a foreign write to row {$idString} of collection {$collectionKey} arrived "
+                    . 'while this process was still awaiting the echo of its own write to that row',
+                );
+            }
+
+            return false;
+        }
+
         return $this->dbSelfBroadcast->consume($collectionKey, $idString);
     }
 

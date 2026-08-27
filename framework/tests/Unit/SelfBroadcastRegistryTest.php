@@ -21,6 +21,29 @@ final class SelfBroadcastRegistryTest extends TestCase
         $this->assertFalse($registry->consume('users', '5'));
     }
 
+    /**
+     * Looking must not spend the note. The row-sync verdict asks this before it knows
+     * whose fact arrived: a foreign write to a row we are still awaiting an echo for is
+     * worth a warning, and taking the note there would let our own echo through.
+     */
+    public function testHasLeavesTheRegistrationForTheLaterConsume(): void
+    {
+        $registry = new SelfBroadcastRegistry();
+        $registry->register('users', '5');
+
+        $this->assertTrue($registry->has('users', '5'));
+        $this->assertTrue($registry->has('users', '5'));
+        $this->assertTrue($registry->consume('users', '5'));
+        $this->assertFalse($registry->has('users', '5'));
+    }
+
+    public function testHasUnknownIsFalse(): void
+    {
+        $registry = new SelfBroadcastRegistry();
+
+        $this->assertFalse($registry->has('users', '5'));
+    }
+
     public function testConsumeUnknownIsFalse(): void
     {
         $registry = new SelfBroadcastRegistry();

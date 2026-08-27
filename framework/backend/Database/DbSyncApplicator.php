@@ -51,7 +51,15 @@ final class DbSyncApplicator
         bool $skipSelfBroadcastCheck = true,
         ?string $originNodeId = null,
     ): void {
-        if (!self::shouldApplyDbSyncRow($data->collectionKey, $data->idString, $data->row, $skipSelfBroadcastCheck)) {
+        if (
+            !self::shouldApplyDbSyncRow(
+                $data->collectionKey,
+                $data->idString,
+                $data->row,
+                $data->emitter,
+                $skipSelfBroadcastCheck,
+            )
+        ) {
             return;
         }
 
@@ -104,7 +112,15 @@ final class DbSyncApplicator
         bool $skipSelfBroadcastCheck = true,
         ?string $originNodeId = null,
     ): void {
-        if (!self::shouldApplyDbSyncRow($data->collectionKey, $data->idString, $data->row, $skipSelfBroadcastCheck)) {
+        if (
+            !self::shouldApplyDbSyncRow(
+                $data->collectionKey,
+                $data->idString,
+                $data->row,
+                $data->emitter,
+                $skipSelfBroadcastCheck,
+            )
+        ) {
             return;
         }
 
@@ -138,7 +154,7 @@ final class DbSyncApplicator
         bool $skipSelfBroadcastCheck = true,
         ?string $originNodeId = null,
     ): void {
-        if (!self::shouldApplyDbSync($data->collectionKey, $data->idString, $skipSelfBroadcastCheck)) {
+        if (!self::shouldApplyDbSync($data->collectionKey, $data->idString, $data->emitter, $skipSelfBroadcastCheck)) {
             return;
         }
 
@@ -218,6 +234,7 @@ final class DbSyncApplicator
      * @param string $collectionKey DB collection key from sync payload
      * @param string $idString Target object id from sync payload
      * @param array<string, mixed> $row Full row or diff row
+     * @param ?string $emitter Emitter identity from sync payload, null when unstamped
      * @param bool $skipSelfBroadcastCheck When true, applies self-broadcast guard from Hilos::$sr
      * @return bool Whether sync row should be applied
      */
@@ -225,31 +242,42 @@ final class DbSyncApplicator
         string $collectionKey,
         string $idString,
         array $row,
+        ?string $emitter,
         bool $skipSelfBroadcastCheck,
     ): bool {
         if ($collectionKey === '' || $idString === '' || $row === []) {
             return false;
         }
 
-        return self::shouldApplyDbSync($collectionKey, $idString, $skipSelfBroadcastCheck);
+        return self::shouldApplyDbSync($collectionKey, $idString, $emitter, $skipSelfBroadcastCheck);
     }
 
     /**
+     * The emitter stamp travels down here rather than being read off the registry alone:
+     * a row this process is awaiting an echo for can also be written by someone else, and
+     * only the stamp separates the two.
+     *
      * @param string $collectionKey DB collection key from sync payload
      * @param string $idString Target object id from sync payload
+     * @param ?string $emitter Emitter identity from sync payload, null when unstamped
      * @param bool $skipSelfBroadcastCheck When true, applies self-broadcast guard from Hilos::$sr
      * @return bool Whether sync should be applied
      */
     private static function shouldApplyDbSync(
         string $collectionKey,
         string $idString,
+        ?string $emitter,
         bool $skipSelfBroadcastCheck,
     ): bool {
         if ($collectionKey === '' || $idString === '') {
             return false;
         }
 
-        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipDbSyncApply($collectionKey, $idString)) {
+        if (
+            $skipSelfBroadcastCheck
+            && Hilos::$sr !== null
+            && Hilos::$sr->shouldSkipDbSyncApply($collectionKey, $idString, $emitter)
+        ) {
             return false;
         }
 

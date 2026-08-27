@@ -10,7 +10,7 @@ namespace Hilos\Core\Sync\DTO;
  * DbSyncClearedSignalData is deliberately outside this interface — a truncate is
  * collection-scoped and carries neither a row id nor row data.
  */
-interface DbSyncSignalDataInterface extends SyncSignalDataInterface
+interface DbSyncSignalDataInterface extends EmitterStampedSyncSignalDataInterface
 {
     /** @var string Row ID from Object::getIdString() */
     public string $idString { get; }

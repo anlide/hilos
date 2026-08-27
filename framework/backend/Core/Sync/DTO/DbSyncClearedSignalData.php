@@ -19,7 +19,7 @@ use Hilos\Core\Exception\InvalidFormatException;
  * identity of the process that broadcast the signal — the field a receiver
  * compares with its own identity to drop its own echo.
  */
-class DbSyncClearedSignalData extends BaseDTO implements SyncSignalDataInterface
+class DbSyncClearedSignalData extends BaseDTO implements EmitterStampedSyncSignalDataInterface
 {
     /**
      * Creates DB sync cleared signal data.

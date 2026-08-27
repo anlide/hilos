@@ -21,13 +21,32 @@ class DbSyncCreatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
      * @param string $idString Row ID from Object::getIdString()
      * @param array<string, mixed> $row Full row data (all columns)
      * @param ?string $origin Accept key of the writing connection, or null when unattended
+     * @param ?string $emitter Identity of the process that sent this fact, or null when unstamped
      */
     public function __construct(
         public readonly string $collectionKey,
         public readonly string $idString,
         public readonly array $row,
         public readonly ?string $origin = null,
+        public readonly ?string $emitter = null,
     ) {
+    }
+
+    /**
+     * Returns a copy stamped with the identity of the sending process.
+     *
+     * @param string $emitter Identity of the sending process
+     * @return static Copy carrying the emitter stamp
+     */
+    public function withEmitter(string $emitter): static
+    {
+        return new static(
+            collectionKey: $this->collectionKey,
+            idString: $this->idString,
+            row: $this->row,
+            origin: $this->origin,
+            emitter: $emitter,
+        );
     }
 
     /**
@@ -42,6 +61,7 @@ class DbSyncCreatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
             SyncSignalDataKey::ID_STRING => $this->idString,
             SyncSignalDataKey::ROW => $this->row,
             SyncSignalDataKey::ORIGIN => $this->origin,
+            SyncSignalDataKey::EMITTER => $this->emitter,
         ];
     }
 
@@ -59,6 +79,7 @@ class DbSyncCreatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
             idString: self::requireString($data, SyncSignalDataKey::ID_STRING),
             row: self::requireArray($data, SyncSignalDataKey::ROW),
             origin: self::optionalString($data, SyncSignalDataKey::ORIGIN),
+            emitter: self::optionalString($data, SyncSignalDataKey::EMITTER),
         );
     }
 }

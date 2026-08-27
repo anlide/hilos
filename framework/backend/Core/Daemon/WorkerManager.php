@@ -979,6 +979,10 @@ abstract class WorkerManager extends BaseManager
      * state when it sent the sync to the daemon. The echoed worker message
      * must therefore neither re-apply nor re-emit the same fact.
      *
+     * Whose fact this is comes from the emitter stamp in the payload, not from the
+     * pending registration alone: another worker writing the same row must not be
+     * mistaken for this one's echo, nor spend the registration that suppresses it.
+     *
      * The emptiness check stays until HIL-532 rules on whether an incomplete
      * signal payload must be rejected by fromArray(): this side reads a payload
      * off the pipe, so an empty key here is broken input, not a sentinel this
@@ -993,7 +997,11 @@ abstract class WorkerManager extends BaseManager
             return false;
         }
 
-        return Hilos::$sr?->shouldSkipDbSyncApply($signalData->collectionKey, $signalData->idString) ?? false;
+        return Hilos::$sr?->shouldSkipDbSyncApply(
+            $signalData->collectionKey,
+            $signalData->idString,
+            $signalData->emitter,
+        ) ?? false;
     }
 
     /**

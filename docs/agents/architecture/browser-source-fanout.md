@@ -25,10 +25,13 @@ state and does not decide which frontend collections changed.
    own browser context.
 
 The originating worker receives its daemon echo too, but it recognizes its own
-broadcast and does not record the fact a second time. A row sync is recognized by
-consuming the `(collectionKey, id)` self-broadcast marker; a collection clear
-carries no row id, so it is recognized by the `emitter` identity in its payload,
-compared with the receiving process's own.
+broadcast and does not record the fact a second time. Every DB sync payload
+carries the `emitter` identity of the process that broadcast it, compared with
+the receiving process's own. A collection clear carries no row id and is
+recognized by that identity alone; a row sync needs the pair — the stamp says
+whose fact it is, and only then is the `(collectionKey, id)` self-broadcast
+marker consumed. An unstamped payload counts as someone else's, so a fact that
+cannot be attributed is applied rather than swallowed.
 
 ## Delivery
 
