@@ -727,6 +727,19 @@ final class PeerServer extends AbstractServer implements
     /**
      * Merges a received roster and re-announces every entry that was new to us.
      *
+     * Liveness is observed, not relayed — the same rule {@see onAnnounceReceived()}
+     * states, and for the same reason: the mesh is full, so a peer speaks
+     * authoritatively only about itself. An entry describing a third node this one
+     * already holds a handshaked link to is dropped, because the local link is the
+     * better evidence. Without that, a roster is the one frame that can overwrite
+     * directly observed liveness: a node that was cut off still carries the view it
+     * had while it was away, hands it over on the handshake that heals the split,
+     * and every node it names offline is flipped offline here — while the links to
+     * them are alive and carrying frames. Nothing re-observes them afterwards
+     * (liveness is only stamped on a handshake), so the roster of the node they
+     * gossip through stays wrong until something restarts, which is what left the
+     * cluster scenarios waiting on a leader whose roster called half the mesh gone.
+     *
      * @param PeerLink $link Link the roster arrived on
      * @param PeerRosterDTO $roster Received roster
      */
@@ -738,7 +751,12 @@ final class PeerServer extends AbstractServer implements
         }
 
         $now = microtime(true);
+        $sender = $link->remoteIdentity()?->nodeId;
         foreach ($roster->nodes as $entry) {
+            if ($entry->nodeId !== $sender && $this->hasHandshakedLinkToNode($entry->nodeId)) {
+                continue;
+            }
+
             if ($this->mergeEntry($registry, $entry, $now)) {
                 $this->broadcastAnnounce($entry, $link);
             }
