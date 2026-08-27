@@ -15,6 +15,7 @@
         "ext-posix": "*",
         "ext-pcntl": "*",
         "ext-sockets": "*",
+        "ext-event": "*",
         "ext-mbstring": "*",
         "ext-mysqli": "*",
         "ext-ctype": "*",

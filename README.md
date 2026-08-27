@@ -74,7 +74,7 @@ Hilos is designed to run in Docker. If you need to run it outside Docker, you wi
   - `ext-mysqli` — MySQL database
   - `ext-mbstring` — String operations
   - `ext-ctype` — Character type checking
-- PHP Event extension (for epoll-based event loop)
+  - `ext-event` — Epoll-based event loop
 
 ## 🚀 Quick Start
 

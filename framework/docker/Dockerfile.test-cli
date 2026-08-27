@@ -3,6 +3,10 @@
 
 FROM php:8.4-cli
 
+# libevent-dev is what ext-event compiles against; libssl-dev answers the pecl
+# prompt's default (event-openssl=yes), which otherwise stops the build looking
+# for OpenSSL.
+#
 # default-mysql-client provides the `mysql` binary the restore engine integration
 # tests replay dumps through (BackupRestorer); the dumps themselves are hand-written
 # fixtures, so mysqldump is not needed here.
@@ -11,6 +15,8 @@ FROM php:8.4-cli
 # run really copies an archive to sshd-framework-test, which is only a proof if the
 # runner ships with what a deployment would have to install.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    libevent-dev \
+    libssl-dev \
     git \
     zip \
     unzip \
@@ -30,11 +36,23 @@ RUN docker-php-ext-install -j$(nproc) \
     pdo \
     pdo_mysql
 
+# PHP reads conf.d alphabetically, so 30-event.ini would sort BEFORE the generated
+# docker-php-ext-sockets.ini and event would load without sockets. Renumbering
+# sockets to 20- puts the pair back in dependency order.
+RUN rm -f /usr/local/etc/php/conf.d/docker-php-ext-sockets.ini \
+ && echo "extension=sockets" > /usr/local/etc/php/conf.d/20-sockets.ini
+
+# ext-event carries the epoll-based event loop the daemon runs on, and the root
+# composer.json requires it: without it `composer install` refuses in this image.
+RUN pecl channel-update pecl.php.net \
+ && yes "" | pecl install -o -f event \
+ && rm -f /usr/local/etc/php/conf.d/docker-php-ext-event.ini \
+ && echo "extension=event" > /usr/local/etc/php/conf.d/30-event.ini
+
 # ext-inotify is optional for the framework (composer suggest): the filesystem watch
 # falls back to polling without it. The test image installs it so the suite exercises
 # BOTH engines for real instead of only the fallback.
-RUN pecl channel-update pecl.php.net \
- && yes "" | pecl install -o -f inotify \
+RUN yes "" | pecl install -o -f inotify \
  && rm -f /usr/local/etc/php/conf.d/docker-php-ext-inotify.ini \
  && echo "extension=inotify" > /usr/local/etc/php/conf.d/30-inotify.ini
 
