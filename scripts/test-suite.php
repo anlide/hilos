@@ -23,16 +23,18 @@ declare(strict_types=1);
  *            does not skip its group-mates.
  *   tags     selectors: `run-test-suite.php frontend` runs everything tagged
  *            `frontend` plus whatever those steps depend on.
- *   seconds  the last measured duration (HIL-547, 2026-08-09). A scheduling HINT
- *            only — the longest ready step starts first, so that chat-e2e does not
- *            become the tail. A stale number costs wall clock, never correctness.
+ *   seconds  the last measured duration (HIL-733, 2026-08-27), read off a GREEN
+ *            single-lane run so it is the step's own cost rather than an overlap
+ *            with whoever shared the box. A scheduling HINT only — the longest
+ *            ready step starts first, so that chat-e2e does not become the tail.
+ *            A stale number costs wall clock, never correctness.
  */
 
 /** Demos carrying a tests/e2e suite, with their measured per-step durations. */
 $demos = [
-    'chat' => ['check' => 17, 'php' => 32, 'e2e' => 233],
-    'tasks' => ['check' => 12, 'php' => 10, 'e2e' => 53],
-    'simple-poll' => ['check' => 14, 'php' => 10, 'e2e' => 57],
+    'chat' => ['check' => 19, 'php' => 169, 'e2e' => 618],
+    'tasks' => ['check' => 14, 'php' => 15, 'e2e' => 104],
+    'simple-poll' => ['check' => 34, 'php' => 15, 'e2e' => 117],
 ];
 
 $steps = [
@@ -57,7 +59,7 @@ $steps = [
         'deps' => ['framework-image'],
         'group' => null,
         'tags' => ['framework', 'backend'],
-        'seconds' => 19,
+        'seconds' => 96,
     ],
     [
         'id' => 'fe-install',
@@ -66,7 +68,7 @@ $steps = [
         'deps' => [],
         'group' => null,
         'tags' => ['framework', 'frontend'],
-        'seconds' => 3,
+        'seconds' => 2,
     ],
     [
         'id' => 'fe-build',
@@ -75,7 +77,7 @@ $steps = [
         'deps' => ['fe-install'],
         'group' => null,
         'tags' => ['framework', 'frontend'],
-        'seconds' => 54,
+        'seconds' => 61,
     ],
     [
         'id' => 'fe-checks',
@@ -84,11 +86,16 @@ $steps = [
         'deps' => ['fe-install'],
         'group' => null,
         'tags' => ['framework', 'frontend'],
-        'seconds' => 93,
+        'seconds' => 100,
     ],
-    // The best free neighbour in the graph: the cluster suite is wall-clock-bound
-    // rather than CPU-bound — it polls convergence once a second and waits out the
-    // grace windows it exists to verify — so it costs a lane and almost no cores.
+    // Not the free neighbour this comment used to promise. The suite holds five node
+    // daemons, a mysql, a cli container and a fleet of ten agents, so it costs real
+    // cores as well as a lane — and it still runs green beside a neighbour: measured
+    // 2026-08-27, green next to chat-php at two lanes. The red this step produced for
+    // three weeks was a cluster defect (HIL-746 roster liveness, HIL-747 hand-over
+    // scope), not a busy box, so do not reach for lanes when it goes red again. The
+    // 178s below is measured with scenario 13 parked (P-169); returning it moves the
+    // number.
     [
         'id' => 'cluster',
         'command' => 'composer run test:cluster:all',
@@ -96,7 +103,7 @@ $steps = [
         'deps' => [],
         'group' => null,
         'tags' => ['cluster', 'backend'],
-        'seconds' => 127,
+        'seconds' => 178,
     ],
 ];
 
