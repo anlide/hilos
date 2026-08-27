@@ -125,7 +125,12 @@ final class BackupHistoryStateTest extends TestCase
         $this->assertSame(524288, $history->dumpBytes);
 
         // A legacy row without the key reads back as 0 ("no data"), never a throw.
-        $this->assertSame(0, BackupHistory::fromRow([BackupHistory::id => 'legacy'])->dumpBytes);
+        $this->assertSame(0, BackupHistory::fromRow([
+            BackupHistory::id => 'legacy',
+            BackupHistory::createdAt => '2026-08-01T00:00:00+00:00',
+            BackupHistory::env => 'prod',
+            BackupHistory::status => 'success',
+        ])->dumpBytes);
     }
 
     public function testVerificationFieldsTransferFromMetadataRoundTripAndUpdateViaDiff(): void
@@ -168,7 +173,12 @@ final class BackupHistoryStateTest extends TestCase
         $this->assertNull($history->sha256);
 
         // A row written before checksums existed carries none of the three, and does not throw.
-        $legacy = BackupHistory::fromRow([BackupHistory::id => 'legacy']);
+        $legacy = BackupHistory::fromRow([
+            BackupHistory::id => 'legacy',
+            BackupHistory::createdAt => '2026-08-01T00:00:00+00:00',
+            BackupHistory::env => 'prod',
+            BackupHistory::status => 'success',
+        ]);
         $this->assertNull($legacy->sha256);
         $this->assertNull($legacy->verifiedAt);
         $this->assertNull($legacy->verifyOutcome);
@@ -213,6 +223,7 @@ final class BackupHistoryStateTest extends TestCase
         $legacy = BackupHistory::fromRow([
             BackupHistory::id => 'legacy',
             BackupHistory::createdAt => '2026-08-01T00:00:00+00:00',
+            BackupHistory::env => 'prod',
             BackupHistory::status => 'success',
         ]);
         $this->assertNull($legacy->shippedAt);

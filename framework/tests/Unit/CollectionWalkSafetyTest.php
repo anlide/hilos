@@ -193,8 +193,12 @@ final class CollectionWalkSafetyTest extends TestCase
         $collection = WalkDbCollection::initEmpty();
         $this->assertSame([], array_keys(iterator_to_array($collection)));
 
-        $collection->add(new WalkDbItem(WalkObject::fromEntity(WalkEntity::withId(1))));
-        $collection->add(new WalkDbItem(WalkObject::fromEntity(WalkEntity::withId(2))));
+        // Each object needs its own variable: DbItem binds the argument by reference, so a shared
+        // variable would point every item at one object.
+        $first = WalkObject::fromEntity(WalkEntity::withId(1));
+        $collection->add(new WalkDbItem($first));
+        $second = WalkObject::fromEntity(WalkEntity::withId(2));
+        $collection->add(new WalkDbItem($second));
 
         // The keys are integers, not the strings add() derives them from: a numeric string is
         // an integer once it is an array key, and the walk hands back what the store holds.
@@ -202,7 +206,8 @@ final class CollectionWalkSafetyTest extends TestCase
         foreach ($collection as $key => $item) {
             $walked[] = $key;
             if ($key === 1) {
-                $collection->add(new WalkDbItem(WalkObject::fromEntity(WalkEntity::withId(3))));
+                $third = WalkObject::fromEntity(WalkEntity::withId(3));
+                $collection->add(new WalkDbItem($third));
             }
         }
 

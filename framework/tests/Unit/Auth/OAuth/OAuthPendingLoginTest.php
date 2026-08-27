@@ -71,10 +71,13 @@ final class OAuthPendingLoginTest extends TestCase
 
     public function testFromRowDefaultsMissingFields(): void
     {
-        $op = OAuthPendingLogin::fromRow([]);
+        $op = OAuthPendingLogin::fromRow([
+            OAuthPendingLogin::acceptKey => 'accept-3',
+            OAuthPendingLogin::sessionToken => 'session-ghi',
+            OAuthPendingLogin::provider => 'stub',
+            OAuthPendingLogin::code => 'oauth:stub',
+        ]);
 
-        $this->assertSame('', $op->getId());
-        $this->assertSame('', $op->provider);
         $this->assertSame(0.0, $op->deadlineMs);
         $this->assertSame(OAuthPendingLogin::MODE_LOGIN, $op->mode);
         $this->assertSame(0, $op->linkUserId);

@@ -79,6 +79,40 @@ person's hand-written decision. Full command and the `--user` caveat are in
 
 ---
 
+## An issue fails the run
+
+Every `phpunit.xml` in the repository — `framework/tests` and each demo's
+`tests` — sets `failOnDeprecation`, `failOnNotice` and `failOnWarning` to
+`true`. A deprecated call, a notice or a warning is therefore a red run, not a
+line in a summary nobody reads. PHPUnit prints the details itself: each
+`failOn*` raises the matching `displayDetailsOn*`, so the output names the
+file, the line and the test that triggered the issue.
+
+`failOnAllIssues` is deliberately **not** used: it also turns on
+`failOnSkipped`, `failOnIncomplete`, `failOnRisky` and
+`failOnEmptyTestSuite`, and the tree carries 15 deliberate skips that each have
+their own reason. `failOnPhpunitDeprecation` is not used either — PHPUnit's own
+deprecations arrive with a version bump, not with a change someone made, so the
+line would go red on a defect nobody introduced.
+
+**The way out is per test, never per config.** A test that must live with an
+issue carries `#[IgnoreDeprecations]` (class or method) for a deprecation, or
+`#[WithoutErrorHandler]` (method) for a warning or a notice, with a comment
+saying why. PHPUnit 11 has no narrower attribute for warnings and notices.
+Removing one of the three attributes from a configuration is **not** a way out
+— it is undoing the gate, and it takes a person's decision.
+
+`PhpunitIssueGateTest` in the framework unit suite keeps the gate on: it reads
+all five configurations and requires the three attributes. A sixth demo is
+added to the list inside that test — a demo born without its gate fails there
+instead of running quiet.
+
+*Why the gate exists.* The warning that a walk over a mutating collection was
+skipping a row was printed on every run and counted by nobody, and it stayed in
+the tree until it cost a wrong session (HIL-673).
+
+---
+
 ## Selective testing — what to run for which change
 
 Match the test set to what changed; do not run everything for every edit. The
