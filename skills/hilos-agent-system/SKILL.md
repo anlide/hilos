@@ -1,6 +1,6 @@
 ---
 name: hilos-agent-system
-description: Add, modify, or review Hilos agents, AgentDaemon classes, AgentType constants, AgentManager factories, onStart/onTick/onStop hooks, signal handlers, truth sources, monopolistic agents, and long-running agent workflows. Use when creating a new agent type or changing agent lifecycle behavior, and when declaring an agent that answers for a whole set of an entity rather than for one instance, where how many of it run and which node runs it are two separate questions.
+description: Add, modify, or review Hilos agents, AgentDaemon classes, AgentType constants, AgentManager factories, onStart/onTick/onStop hooks, signal handlers, truth sources, monopolistic agents, and long-running agent workflows. Use when creating a new agent type or changing agent lifecycle behavior, when declaring an agent that answers for a whole set of an entity rather than for one instance, where how many of it run and which node runs it are two separate questions, and when an agent serves one instance of something — a user, a document, a room — and you do not want one of them alive for every instance that was ever opened.
 ---
 
 # Hilos Agent System
@@ -12,7 +12,8 @@ Use this skill for agent business logic and registration work. Start by reading 
 - Adding a new agent type: `docs/agents/agent-system/adding-agent.md`
 - Writing or reviewing `onTick()`: `docs/agents/agent-system/ontick-rule.md`
 - Truth sources, shared state, long operations: `docs/agents/agent-system/monopolistic-agent.md`
-- Agent lifecycle and signal methods: `docs/agents/architecture/agent-lifecycle.md`
+- Agent lifecycle and signal methods, and how long an agent that serves one
+  instance stays alive: `docs/agents/architecture/agent-lifecycle.md`
 - An agent that holds a whole entity's set — one entity one library, and which
   of the two placement axes is yours: `docs/agents/architecture/entity-libraries.md`
 - The agent writes a fact somebody has on screen right now — when the server
@@ -61,13 +62,23 @@ Use this skill for agent business logic and registration work. Start by reading 
    `docs/agents/architecture/entity-libraries.md` before writing its registry
    entry. One entity gets one such agent, and how many instances run is a
    separate question from which node runs them.
-8. When a handler or a tick writes a fact instead of answering the request that
+8. When the agent answers for ONE instance — this user, this document, this
+   room — decide how long it lives before writing the entry, because nothing
+   else in the registry asks. Declaring `AgentRegistryKey::IDLE_TIMEOUT` is the
+   whole of it: the agent starts on the first frame addressed to it and stops
+   after that many seconds of silence with no subscriber left, and without the
+   key it lives as long as the worker does. Give it
+   `AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC` unless the agent has its own reason
+   for a number, and override `hasWorkInFlight()` when it runs a long job
+   nobody is talking to it about — see the idle-stop section of
+   `docs/agents/architecture/agent-lifecycle.md`.
+9. When a handler or a tick writes a fact instead of answering the request that
    asked for it, ask who is on an open screen that fact devalues. A screen that
    declared what you changed as its own source is served by the browser fan-out;
    one that did not, and whose next action now fails, is moved by the server —
    see `docs/agents/signals/screen-invalidation.md`.
-9. Add focused tests through composer scripts when behavior changes.
-10. After registering the agent or its `AGENT_SIGNALS` in the topology, update the
+10. Add focused tests through composer scripts when behavior changes.
+11. After registering the agent or its `AGENT_SIGNALS` in the topology, update the
    demo's `*TopologyRegistryTest` snapshot and run its `test:unit` — a shared
    cross-ticket guard. See `docs/agents/app-topology.md` step 12.
 

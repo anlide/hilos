@@ -60,6 +60,17 @@ interface AgentInterface
     public function onTick(): void;
 
     /**
+     * Whether the agent is in the middle of work that no frame and no subscriber account for.
+     *
+     * Asked in the same process at the moment the idle verdict is taken, so there is no round
+     * trip to race with and no timestamp kept on two sides. Only an agent that runs long work
+     * unaddressed needs to answer true; everything else is held alive by the frames it receives.
+     *
+     * @return bool True while the agent must not be stopped for idleness
+     */
+    public function hasWorkInFlight(): bool;
+
+    /**
      * Called when agent is started
      *
      * Called once when agent is created and started.

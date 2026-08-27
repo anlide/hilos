@@ -7,6 +7,7 @@ namespace Hilos\Core\Agent\Daemon;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentDaemonNotRegisteredException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -376,6 +377,13 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
         // one sink there is watches a freeze whose initiator may legally start again, which is
         // why this fact has to travel as an event and not as something re-read later (HIL-482).
         $this->agentStopSink?->onAgentStopped($dto->agentId);
+
+        // The placement map is told separately rather than through that sink, which belongs to
+        // the freeze watchdog alone: an agent that stopped itself after its declared silence
+        // (HIL-628) leaves a map naming a host it no longer runs on, and a second meaning inside
+        // one seam is how the freeze would start reacting to ordinary idleness.
+        $stopped = AgentId::fromId($dto->agentId);
+        Hilos::$cluster?->placement()?->noteAgentStopped($stopped->type, $stopped->index);
 
         Logger::info("Agent '{$dto->agentId}' stopped on worker #{$workerIndex}");
     }

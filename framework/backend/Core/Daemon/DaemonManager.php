@@ -993,6 +993,9 @@ abstract class DaemonManager extends BaseManager implements
             $location = Hilos::$cluster?->workerPlacement()?->locate($agentType, $agentIndex);
             if ($location?->kind === AgentLocationKind::Unknown) {
                 $this->reportMasterSignalDropped($signalName, $agentLabel, self::AGENT_NO_KNOWN_NODE_REASON);
+                // This signal stays dropped, but an agent that starts by being addressed is asked
+                // for here, so the address the next one asks about can exist (HIL-628).
+                $this->requireOnDemandPlacement($agentType, $agentIndex);
 
                 return;
             }
@@ -1683,6 +1686,10 @@ abstract class DaemonManager extends BaseManager implements
                     Logger::warning("Signal dropped: {$signalType}/{$signalName}"
                         . " -> agent {$destination->agentType} has no known node");
                     $this->answerUnreachableSubscription($signal);
+                    // The drop above stands. What is added here is the reason it need not repeat:
+                    // an agent that starts by being addressed is asked for, so the address the
+                    // next frame asks about can exist (HIL-628). Holding THIS frame is HIL-629.
+                    $this->requireOnDemandPlacement($destination->agentType, $destination->agentIndex);
                 } elseif ($destination instanceof RemoteAgentDestination) {
                     // Forward the signal to the agent on its host node over the peer channel.
                     // Best-effort: no live link (offline node / no peer server) drops and logs,
@@ -2651,6 +2658,38 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         $this->sendSignalToWebSocketClient($webSocketServer, $signal, $acceptKey);
+    }
+
+    /**
+     * Asks the cluster to place an agent nobody could address, when the agent is one that starts
+     * by being addressed (HIL-628).
+     *
+     * The other half of the two branches that meet an unknown address: they say the frame goes
+     * nowhere, and this says why it might go somewhere next time. An instance agent has no
+     * bootstrap that brings it up — the first frame to it IS its start — so on a cluster the very
+     * first address is answered before the agent exists anywhere, and without this the answer
+     * would never change.
+     *
+     * The three keys are asked together because each rules out a different agent that must NOT be
+     * placed on demand: an unindexed one has no instance to place, one with no declared window
+     * lives forever and so was already started by something else, and a leader-hosted one runs
+     * wherever leadership sits rather than where a policy puts it. An agent failing any of them is
+     * unreachable for an ordinary reason, and the branch's log line is the whole of the answer.
+     *
+     * @param string $agentType Agent type that could not be addressed
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @throws EnvException When the cluster-enabled flag value is invalid
+     */
+    private function requireOnDemandPlacement(string $agentType, ?string $agentIndex): void
+    {
+        $registryEntry = Hilos::appClass()::AGENTS[$agentType] ?? null;
+        if (!AgentRegistry::requiresIndex($registryEntry)
+            || AgentRegistry::idleTimeout($registryEntry) === null
+            || AgentRegistry::placement($registryEntry) !== AgentPlacement::POLICY) {
+            return;
+        }
+
+        Hilos::$cluster?->placement()?->requirePlacement($agentType, $agentIndex);
     }
 
     /**

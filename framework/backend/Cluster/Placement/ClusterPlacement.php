@@ -11,6 +11,7 @@ use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Constants\AgentConstants;
@@ -47,6 +48,12 @@ use Throwable;
  *   a {@see PeerAgentStatusDTO}; a rebuild query is answered from the node's own hosted
  *   set. This is what a data-plane slave does with the placements a leader hands it.
  *
+ * On-demand placement (HIL-628) is a third way in, and it spans both sides: an instance agent is
+ * started by being ADDRESSED, so a node that finds no address for one asks through
+ * {@see requirePlacement()} and the leader answers through {@see onPlacementRequest()}; when that
+ * agent later stops itself after its declared silence, the node it ran on reports it back through
+ * {@see noteAgentStopped()} so the view stops naming a host that has none.
+ *
  * Automatic node-choosing is HIL-182's {@see PlacementPolicy}, which this coordinator
  * delegates the "which node" question to for both {@see placeAgentOnBestNode()} and failover.
  * It also serves as the read side of {@see WorkerPlacement}: the signal router asks
@@ -70,6 +77,9 @@ final class ClusterPlacement implements WorkerPlacement
 
     /** @var int Default slave self-fence grace in ms when none is configured */
     private const int DEFAULT_SLAVE_WORK_GRACE_MS = 6000;
+
+    /** @var float Seconds one agent's placement ask silences the next one for */
+    private const float PLACEMENT_ASK_INTERVAL_SEC = 5.0;
 
     /** @var string Id of the node this coordinator runs on */
     private string $selfNodeId;
@@ -115,6 +125,9 @@ final class ClusterPlacement implements WorkerPlacement
 
     /** @var ?float Self-fence deadline (microtime) after the placing leader was lost, or null when not isolated */
     private ?float $selfFenceDeadline = null;
+
+    /** @var array<string, float> Deadline (microtime) an agent's placement counts as already asked for until */
+    private array $placementAsks = [];
 
     /**
      * @param string $selfNodeId Id of the node this coordinator runs on
@@ -266,6 +279,65 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
+     * Makes sure an agent somebody just addressed is placed somewhere, on whichever node the
+     * frame that addressed it happened to land (HIL-628).
+     *
+     * An instance agent is started by being addressed, and on a cluster the address is answered
+     * before the agent exists: {@see locate()} says {@see AgentLocationKind::Unknown} and there is
+     * nothing to forward to. This is what the caller does about it — the leader places the agent
+     * itself, any other node asks the leader to, because the placement view is leader-owned and a
+     * node that placed on its own initiative would be a second placer.
+     *
+     * Asking is remembered for {@see self::PLACEMENT_ASK_INTERVAL_SEC} per agent, because the
+     * address is asked once per FRAME: a page opening sends several in a row, and each one would
+     * otherwise repeat the ask before the first placement could have landed. The memory is the whole of the
+     * bookkeeping — an ask is never confirmed or retried on a schedule, since the next frame to
+     * the same agent is the retry, and a placement that succeeded is answered by {@see locate()}
+     * from then on.
+     *
+     * The frame that provoked this is still dropped by its caller: holding it until an address
+     * exists is HIL-629.
+     *
+     * @param string $agentType Agent type that was addressed
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @throws EnvException When the cluster-enabled flag value is invalid
+     */
+    public function requirePlacement(string $agentType, ?string $agentIndex): void
+    {
+        $now = microtime(true);
+        // Expiry is swept here rather than on a timer, which keeps the map to the asks of the
+        // last few seconds: an instance agent per user would otherwise leave a row per user id
+        // this node ever addressed.
+        foreach ($this->placementAsks as $askedAgentId => $deadline) {
+            if ($now >= $deadline) {
+                unset($this->placementAsks[$askedAgentId]);
+            }
+        }
+
+        $agentId = $this->agentId($agentType, $agentIndex);
+        if (isset($this->placementAsks[$agentId])) {
+            return;
+        }
+
+        $this->placementAsks[$agentId] = $now + self::PLACEMENT_ASK_INTERVAL_SEC;
+
+        if ($this->isLeader) {
+            $this->placeOnDemand($agentType, $agentIndex);
+
+            return;
+        }
+
+        $leaderId = Hilos::$cluster?->leadership()->leaderId();
+        if ($leaderId === null) {
+            Logger::info("No leader to ask for the placement of agent '{$agentId}'");
+
+            return;
+        }
+
+        $this->mesh->sendToNode($leaderId, new PeerPlacementRequestDTO($agentType, $agentIndex));
+    }
+
+    /**
      * Stops a placed agent on a named node.
      *
      * A stop at this node runs the local revoke synchronously; any other node id sends a
@@ -286,6 +358,52 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         $this->registry->forget($this->agentId($agentType, $agentIndex));
+    }
+
+    /**
+     * Node side: takes note that an agent this node hosts has stopped on its own (HIL-628).
+     *
+     * The mirror of a leader-driven stop, arriving from the other end: {@see stopAgentOnNode()}
+     * is the leader asking, this is the agent having already gone — an instance agent stopping
+     * itself after its declared silence. The node drops it from what it hosts and tells the
+     * leader with the same stopped status a revoke would send, which the leader folds into its
+     * view through {@see onAgentStatus()}.
+     *
+     * Nothing is revoked here, because there is nothing left to revoke: the worker ran the whole
+     * stop path before this fact travelled. An agent this node does not host is not news to
+     * anybody, which is what filters out the node stops that reach here for a replica, a
+     * leader-hosted singleton, or anything else placement never put here.
+     *
+     * The report is addressed to the leader that PLACED this node's work, exactly as
+     * {@see onStopAgent()} answers the leader that asked, and not to whoever leads at this
+     * instant — that would make this class read a global to say something about its own state.
+     * The difference only shows after a term change, and it corrects itself: the agent is gone
+     * from what this node hosts, so the next rebuild query answers without it, and a frame
+     * addressed to the agent in the meantime restarts it on the node the stale view still names.
+     *
+     * @param string $agentType Agent type that stopped
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     */
+    public function noteAgentStopped(string $agentType, ?string $agentIndex): void
+    {
+        $agentId = $this->agentId($agentType, $agentIndex);
+        if (!isset($this->hosted[$agentId])) {
+            return;
+        }
+
+        unset($this->hosted[$agentId]);
+
+        if ($this->isLeader) {
+            $this->registry->forget($agentId);
+
+            return;
+        }
+
+        if ($this->placingLeaderId === null) {
+            return;
+        }
+
+        $this->mesh->sendToNode($this->placingLeaderId, PeerAgentStatusDTO::stopped($agentType, $agentIndex));
     }
 
     /**
@@ -363,6 +481,28 @@ final class ClusterPlacement implements WorkerPlacement
     public function onPlacementQuery(string $fromNodeId): void
     {
         $this->mesh->sendToNode($fromNodeId, new PeerPlacementReportDTO($this->hostedEntries()));
+    }
+
+    /**
+     * Leader side: places an agent another node asked for, having been unable to address it.
+     *
+     * The receiving end of {@see requirePlacement()}. Ignored on a node that does not lead: the
+     * placement view is somebody else's, and placing against it would be a second placer.
+     *
+     * @param string $fromNodeId Id of the node that asked
+     * @param PeerPlacementRequestDTO $frame Received placement-request frame
+     */
+    public function onPlacementRequest(string $fromNodeId, PeerPlacementRequestDTO $frame): void
+    {
+        if (!$this->isLeader) {
+            $agentId = $this->agentId($frame->agentType, $frame->agentIndex);
+            Logger::info("Ignoring placement request for '{$agentId}' from node '{$fromNodeId}':"
+                . ' this node does not lead');
+
+            return;
+        }
+
+        $this->placeOnDemand($frame->agentType, $frame->agentIndex);
     }
 
     /**
@@ -902,6 +1042,41 @@ final class ClusterPlacement implements WorkerPlacement
 
         if ($shortfalls !== []) {
             throw PlacementCapabilityException::unmetResources($nodeId, $this->agentId($agentType, $agentIndex), $shortfalls);
+        }
+    }
+
+    /**
+     * Leader side: places an agent that was addressed, unless the view already places it.
+     *
+     * The one body behind both on-demand entries — this node's own {@see requirePlacement()} and
+     * another node's {@see onPlacementRequest()} — because the guard belongs to neither of them
+     * separately. The asking node's ignorance is not the leader's: a published view lags by a
+     * tick, so an agent that has been placed for a while is still Unknown to a node that has not
+     * been handed the new picture, and placing it again would start a SECOND copy of it — the one
+     * outcome placement exists to prevent. What counts as already placed is read exactly as
+     * {@see pickBestNode()} reads occupancy: a failed or stopped record has released whatever it
+     * held, so it is not a placement.
+     *
+     * Errors are caught and written rather than raised: both callers are on the master loop,
+     * where an escaping exception ends run() and takes the node down, and a placement that cannot
+     * run is the same non-event as one no capable node fits.
+     *
+     * @param string $agentType Agent type to place
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     */
+    private function placeOnDemand(string $agentType, ?string $agentIndex): void
+    {
+        $agentId = $this->agentId($agentType, $agentIndex);
+        $record = $this->registry->get($agentId);
+        if ($record !== null
+            && ($record->state === PlacementState::Placing || $record->state === PlacementState::Started)) {
+            return;
+        }
+
+        try {
+            $this->placeAgentOnBestNode($agentType, $agentIndex);
+        } catch (Throwable $e) {
+            Logger::warning("On-demand placement of '{$agentId}' failed: {$e->getMessage()}");
         }
     }
 

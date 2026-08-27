@@ -21,7 +21,18 @@ final class AgentRegistry
         AgentRegistryKey::INDEXED,
         AgentRegistryKey::SCOPE,
         AgentRegistryKey::PLACEMENT,
+        AgentRegistryKey::IDLE_TIMEOUT,
     ];
+
+    /**
+     * Seconds of silence after which an instance agent that declares no number of its own is
+     * stopped.
+     *
+     * The framework carries the number so a project declares the policy by pointing at it rather
+     * than by inventing a duration it has no way to reason about. Taken from the user task of the
+     * hleb installation, which has run this exact shape of life for years.
+     */
+    public const int DEFAULT_IDLE_TIMEOUT_SEC = 240;
 
     /**
      * @return ?class-string<AbstractAgent>
@@ -100,6 +111,28 @@ final class AgentRegistry
         $placement = $registryEntry[AgentRegistryKey::PLACEMENT] ?? null;
 
         return $placement instanceof AgentPlacement ? $placement : AgentPlacement::LEADER;
+    }
+
+    /**
+     * How long the agent may sit unaddressed before it is stopped, or null when it lives forever.
+     *
+     * Null is the answer for an entry that declares nothing, and equally for one whose value is
+     * not a positive whole number of seconds: an undeclared or malformed window must leave the
+     * agent alive rather than guess a duration at which to kill it. Topology validation is what
+     * reports the malformed declaration, exactly as it does for {@see self::scope()}.
+     *
+     * @param mixed $registryEntry Raw Hilos::AGENTS entry for one agent type
+     * @return ?int Declared idle window in seconds, or null when the agent declares none
+     */
+    public static function idleTimeout(mixed $registryEntry): ?int
+    {
+        if (!is_array($registryEntry)) {
+            return null;
+        }
+
+        $idleTimeout = $registryEntry[AgentRegistryKey::IDLE_TIMEOUT] ?? null;
+
+        return is_int($idleTimeout) && $idleTimeout > 0 ? $idleTimeout : null;
     }
 
     /**

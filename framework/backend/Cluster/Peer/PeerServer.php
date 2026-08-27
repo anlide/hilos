@@ -29,6 +29,7 @@ use Hilos\Cluster\Peer\DTO\PeerNodeEntry;
 use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
@@ -959,6 +960,20 @@ final class PeerServer extends AbstractServer implements
         $from = $link->remoteIdentity()?->nodeId;
         if ($from !== null) {
             $this->placement?->onPlacementQuery($from);
+        }
+    }
+
+    /**
+     * Routes a received placement request to the placement coordinator for the leader to place.
+     *
+     * @param PeerLink $link Link the request arrived on
+     * @param PeerPlacementRequestDTO $frame Received placement-request frame
+     */
+    public function onPlacementRequestReceived(PeerLink $link, PeerPlacementRequestDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->placement?->onPlacementRequest($from, $frame);
         }
     }
 

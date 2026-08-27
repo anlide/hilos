@@ -20,6 +20,7 @@ use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
 use Hilos\Cluster\Peer\DTO\PeerPingDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerPongDTO;
@@ -286,6 +287,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerPlacementQueryDTO => $this->onPlacementQuery($frame),
             $frame instanceof PeerPlacementReportDTO => $this->onPlacementReport($frame),
             $frame instanceof PeerPlacementViewDTO => $this->onPlacementView($frame),
+            $frame instanceof PeerPlacementRequestDTO => $this->onPlacementRequest($frame),
             $frame instanceof PeerSignalDTO => $this->onSignal($frame),
             $frame instanceof PeerRtSyncDTO => $this->onRtSync($frame),
             $frame instanceof PeerDbSyncDTO => $this->onDbSync($frame),
@@ -479,6 +481,18 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('placement query');
         $this->server->onPlacementQueryReceived($this);
+    }
+
+    /**
+     * Hands a received placement request to the server so the leader places the wanted agent.
+     *
+     * @param PeerPlacementRequestDTO $frame Incoming placement-request frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onPlacementRequest(PeerPlacementRequestDTO $frame): void
+    {
+        $this->requireHandshaked('placement request');
+        $this->server->onPlacementRequestReceived($this, $frame);
     }
 
     /**

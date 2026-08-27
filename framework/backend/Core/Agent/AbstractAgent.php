@@ -708,6 +708,21 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     }
 
     /**
+     * Default implementation - the agent claims no work of its own.
+     *
+     * Override in an agent that runs long work nobody addresses it about, and only there: an
+     * agent kept busy by frames or watched by a subscriber is already held alive without this.
+     * Missing the override costs one restart, not the work — the stop goes through the ordinary
+     * path, so onStop() runs and the truth sources are handed back.
+     *
+     * @return bool True while the agent must not be stopped for idleness
+     */
+    public function hasWorkInFlight(): bool
+    {
+        return false;
+    }
+
+    /**
      * Default implementation - no action on start.
      *
      * Child classes can override this method.

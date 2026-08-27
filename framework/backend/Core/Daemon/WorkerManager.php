@@ -10,6 +10,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Agent\AgentIdleTracker;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
@@ -20,6 +21,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Runtime\ConnectionRosterReconciler;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
@@ -167,6 +169,9 @@ abstract class WorkerManager extends BaseManager
     /** Agent manager for worker-local agent instances. */
     protected AgentManager $agentManager;
 
+    /** When each worker-local agent was last needed, for the agents that declare an idle window. */
+    private AgentIdleTracker $agentIdleTracker;
+
     /** @var array<string, PageSignalRouter> Page routers by agent id */
     private array $pageSignalRouters = [];
 
@@ -184,6 +189,7 @@ abstract class WorkerManager extends BaseManager
         $this->isMonopolistic = ArgumentHelper::isMonopolistic($argv);
         Hilos::initSignalRouter($this->createSignalRouter());
         $this->agentManager = $this->createAgentManager();
+        $this->agentIdleTracker = new AgentIdleTracker();
     }
 
     /**
@@ -312,38 +318,7 @@ abstract class WorkerManager extends BaseManager
                 }
 
                 // Tick all agents
-                foreach ($this->agentManager->getAgents() as $agentId => $agent) {
-                    $this->setCurrentAgentId($agent->getId());
-
-                    try {
-                        $agent->onTick();
-                        $this->releaseDeferredWork($agentId);
-
-                        // Check if agent requested stop
-                        if ($agent->shouldStop()) {
-                            try {
-                                $this->runAgentStopHook($agent);
-                            } catch (Throwable $failure) {
-                                // Contained one level in, not by the guard around the agent: the
-                                // stop was asked for by the agent itself, and the steps below are
-                                // what grant it. Letting the guard take them would leave an agent
-                                // that wants to be gone in the manager, asking again every tick.
-                                $this->containFailure(WorkerTickUnit::AGENT, $agent->getId(), $failure);
-                            }
-                            Logger::logAgentStop($agent->getId(), $agent->getType());
-                            Hilos::$ac?->closeAgentSession($agent->getType(), $agent->getIndex());
-                            $this->agentManager->removeAgent($agentId);
-                            Logger::info("Agent {$agentId} stopped (self-requested)");
-                            Logger::logAgentInfo($agentId, "Agent stopped (self-requested) on worker [workerIndex={$this->workerIndex}]");
-                            $this->notifyAgentStopped($agentId);
-                        }
-                    } catch (Throwable $failure) {
-                        // The agent stays in the manager: it is not a connection, dropping it
-                        // would lose the truth sources it owns and the work it had started, and
-                        // the decision to stop belongs to the agent and its owner, not here.
-                        $this->containFailure(WorkerTickUnit::AGENT, $agent->getId(), $failure);
-                    }
-                }
+                $this->tickAgents();
 
                 // Dispatch accumulated signals (send to daemon)
                 $this->setCurrentAgentId(null);
@@ -698,6 +673,9 @@ abstract class WorkerManager extends BaseManager
         $agent = $this->agentManager->createAndAddAgent($agentType, $agentIndex);
 
         Logger::logAgentStart($agent->getId(), $agent->getType());
+        // Before the start hook rather than after it: an agent whose onStart() throws is still an
+        // agent this worker holds, and one the tracker has never heard of is never idle.
+        $this->agentIdleTracker->noteStarted($agentId, microtime(true));
         $agent->onStart();
         Hilos::$ac?->openAgentSession($agentType, $agentIndex);
         Logger::info("Agent '{$agentId}' started");
@@ -754,6 +732,7 @@ abstract class WorkerManager extends BaseManager
         Logger::logAgentStop($agent->getId(), $agent->getType());
         Hilos::$ac?->closeAgentSession($agent->getType(), $agent->getIndex());
         $this->agentManager->removeAgent($agentId);
+        $this->agentIdleTracker->forget($agentId);
         Logger::info("Agent {$agentId} stopped");
         // Additional agent log from worker side
         Logger::logAgentInfo($agentId, "Agent stopped on worker [workerIndex={$this->workerIndex}]");
@@ -1236,6 +1215,13 @@ abstract class WorkerManager extends BaseManager
             return;
         }
 
+        // The one door every addressed frame comes through - action, page subscribe, handshake,
+        // connection close, agent signal, cron - so being needed is decided in a single place.
+        // The db_sync and rt_sync broadcasts the daemon fans out to every agent arrive by their
+        // own methods and are deliberately not marked: counted as being addressed, they would
+        // mean no installation with traffic ever reaches an idle moment.
+        $this->agentIdleTracker->noteAddressed($agentId, microtime(true));
+
         $signalType = $data->signal->signalType->getType();
         $source = $data->signal->signalSource->getSource();
         $name = $data->signal->signalName->getName();
@@ -1302,6 +1288,7 @@ abstract class WorkerManager extends BaseManager
                         // held frames would otherwise sit out their deadline and then be
                         // dispatched at a socket nobody is listening on.
                         ($this->pageSignalRouters[$agentId] ?? null)?->dropPendingFrames($signalData->acceptKey);
+                        $this->agentIdleTracker->dropSubscriber($agentId, $signalData->acceptKey, microtime(true));
                     }
                     $agent->onSignalConnectionClose($signalData, $source, $name);
                 } else {
@@ -1347,6 +1334,7 @@ abstract class WorkerManager extends BaseManager
                     $agent->onSignalPageSubscribe($signalData, $source, $name);
                     $this->getPageSignalRouter($agentId, $agent)->dispatchPageSubscribe($signalData, $source, $name);
                     $this->rememberPageSubscriptionAfterSubscribe($signalData, $name);
+                    $this->agentIdleTracker->noteSubscriber($agentId, $signalData->acceptKey, microtime(true));
                 } else {
                     Logger::error("onSignalPageSubscribe - invalid signal data type: " . get_class($signalData));
                 }
@@ -1383,6 +1371,7 @@ abstract class WorkerManager extends BaseManager
                         $page = Hilos::$sr?->pageSubscription($signalData->acceptKey)?->page ?? $name;
                         Hilos::$sr?->unsubscribeFromPage($page, $signalData);
                         $this->releaseSourceInterest(SourceConsumer::page($signalData->acceptKey));
+                        $this->agentIdleTracker->dropSubscriber($agentId, $signalData->acceptKey, microtime(true));
                     }
                 } else {
                     Logger::error("onSignalPageUnsubscribe - invalid signal data type: " . get_class($signalData));
@@ -2129,6 +2118,118 @@ abstract class WorkerManager extends BaseManager
             $this->releaseSourceInterest(SourceConsumer::agent($agent->getId()));
             $this->notifyRtSourcesReleased($agent->getId());
         }
+    }
+
+    /**
+     * Runs one tick pass over every worker-local agent and takes the stop decision for each.
+     *
+     * Two ways an agent leaves here and no third: it asked, or it has sat unaddressed past the
+     * window its type declared. Both go out through {@see self::stopAgentLocally()}.
+     */
+    private function tickAgents(): void
+    {
+        foreach ($this->agentManager->getAgents() as $agentId => $agent) {
+            $this->setCurrentAgentId($agent->getId());
+
+            try {
+                $agent->onTick();
+                $this->releaseDeferredWork($agentId);
+
+                // Check if agent requested stop
+                if ($agent->shouldStop()) {
+                    $this->stopAgentLocally($agentId, $agent, 'self-requested');
+                } else {
+                    $expiredWindow = $this->expiredIdleWindow($agentId, $agent);
+                    if ($expiredWindow !== null) {
+                        $this->stopAgentLocally($agentId, $agent, "idle for {$expiredWindow}s");
+                    }
+                }
+            } catch (Throwable $failure) {
+                // The agent stays in the manager: it is not a connection, dropping it
+                // would lose the truth sources it owns and the work it had started, and
+                // the decision to stop belongs to the agent and its owner, not here.
+                $this->containFailure(WorkerTickUnit::AGENT, $agent->getId(), $failure);
+            }
+        }
+    }
+
+    /**
+     * Removes one worker-local agent that has asked to go, or whose idle window has expired.
+     *
+     * The one death an agent dies on this side, shared by both reasons on purpose: an idle stop
+     * that took its own path would hand back truth sources, close the analytics session and tell
+     * the daemon in its own words, and the two spellings would drift.
+     *
+     * @param string $agentId Agent id as the manager keys it
+     * @param AgentInterface $agent Agent being stopped
+     * @param string $reason Why it is being stopped, for the log line
+     */
+    private function stopAgentLocally(string $agentId, AgentInterface $agent, string $reason): void
+    {
+        try {
+            $this->runAgentStopHook($agent);
+        } catch (Throwable $failure) {
+            // Contained one level in, not by the guard around the agent: the stop was decided
+            // here, and the steps below are what grant it. Letting the guard take them would
+            // leave an agent that must be gone in the manager, asked to leave again every tick.
+            $this->containFailure(WorkerTickUnit::AGENT, $agent->getId(), $failure);
+        }
+        Logger::logAgentStop($agent->getId(), $agent->getType());
+        Hilos::$ac?->closeAgentSession($agent->getType(), $agent->getIndex());
+        $this->agentManager->removeAgent($agentId);
+        $this->agentIdleTracker->forget($agentId);
+        Logger::info("Agent {$agentId} stopped ({$reason})");
+        Logger::logAgentInfo($agentId, "Agent stopped ({$reason}) on worker [workerIndex={$this->workerIndex}]");
+        $this->notifyAgentStopped($agentId);
+    }
+
+    /**
+     * The declared idle window this agent has outlived, or null when it must stay up.
+     *
+     * Four things have to agree before an agent is stopped for idleness, and each answers a
+     * different way of being needed: the type declares a window at all, nothing has addressed or
+     * subscribed to the agent for that long, the agent itself claims no work in flight, and the
+     * node is not frozen. The freeze is last and load-bearing — it has already refused starts
+     * ({@see WorkerServer}), so stopping under it would take down what nothing can bring back.
+     *
+     * @param string $agentId Agent id as the manager keys it
+     * @param AgentInterface $agent Agent being judged
+     * @return ?int The declared window in seconds when the agent is to be stopped, else null
+     */
+    private function expiredIdleWindow(string $agentId, AgentInterface $agent): ?int
+    {
+        $idleTimeout = AgentRegistry::idleTimeout(Hilos::appClass()::AGENTS[$agent->getType()] ?? null);
+        if ($idleTimeout === null) {
+            return null;
+        }
+
+        if (!$this->agentIdleTracker->isIdle($agentId, $idleTimeout, microtime(true))) {
+            return null;
+        }
+
+        if ($agent->hasWorkInFlight() || $this->protectedModeHoldsNode()) {
+            return null;
+        }
+
+        return $idleTimeout;
+    }
+
+    /**
+     * Whether the freeze is holding this node, so nothing may be stopped for idleness.
+     *
+     * Read from the same phases as {@see WorkerServer::protectedModeRefusesStart()}, and with no
+     * per-agent exception beside it: the mail pool is let through a freeze because an alert must
+     * still leave the node, which is a reason to start an agent and not a reason to end one.
+     *
+     * @return bool True while a freeze is in progress on this node
+     */
+    private function protectedModeHoldsNode(): bool
+    {
+        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+
+        return $freeze !== null
+            && $freeze->phase !== StateProtectedModeRuntime::PHASE_INACTIVE
+            && $freeze->phase !== StateProtectedModeRuntime::PHASE_VERIFYING;
     }
 
     /**

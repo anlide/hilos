@@ -502,6 +502,50 @@ final class TopologyValidatorTest extends TestCase
         TopologyPerNodePlacedHilos::validateTopology();
     }
 
+    public function testIdleWindowedInstanceAgentPassesValidation(): void
+    {
+        TopologyIdleWindowedAgentHilos::validateTopology();
+
+        $this->assertSame(
+            AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC,
+            AgentRegistry::idleTimeout(TopologyIdleWindowedAgentHilos::AGENTS[TopologyIndexedFactoryAgent::AGENT_TYPE]),
+        );
+    }
+
+    public function testIdleWindowIsRefusedOnANonIndexedAgent(): void
+    {
+        // A node replica and a set-wide library come up from the bootstrap, and nothing addresses
+        // them back into existence - so a window on one reads as an agent that never returns.
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(
+            'cannot set ' . AgentRegistryKey::IDLE_TIMEOUT . ' without ' . AgentRegistryKey::INDEXED,
+        );
+
+        TopologyIdleTimeoutWithoutIndexHilos::validateTopology();
+    }
+
+    public function testIdleWindowMustBeAPositiveIntegerNumberOfSeconds(): void
+    {
+        // Refused rather than quietly ignored: a project that wrote '240' meant to declare the
+        // policy, and an ignored key would leave the agent living forever with no word said.
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(
+            AgentRegistryKey::IDLE_TIMEOUT . '] must be a positive integer number of seconds',
+        );
+
+        TopologyIdleTimeoutNotAnIntHilos::validateTopology();
+    }
+
+    public function testIdleWindowOfZeroSecondsIsRefused(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(
+            AgentRegistryKey::IDLE_TIMEOUT . '] must be a positive integer number of seconds',
+        );
+
+        TopologyIdleTimeoutNotPositiveHilos::validateTopology();
+    }
+
     public function testPageTablesRejectUnknownPages(): void
     {
         $this->assertTopologyErrors(
@@ -1404,6 +1448,93 @@ final class TopologyPlacementNotACaseHilos extends HilosFacade
             AgentRegistryKey::WORKER => TopologyValidAgent::class,
             AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => 'policy',
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyIdleWindowedAgentHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyIndexedFactoryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyIndexedFactoryAgent::class,
+            AgentRegistryKey::DAEMON => TopologyIndexedFactoryAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::IDLE_TIMEOUT => AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyIdleTimeoutWithoutIndexHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+            AgentRegistryKey::IDLE_TIMEOUT => 240,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyIdleTimeoutNotAnIntHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyIndexedFactoryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyIndexedFactoryAgent::class,
+            AgentRegistryKey::DAEMON => TopologyIndexedFactoryAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::IDLE_TIMEOUT => '240',
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyIdleTimeoutNotPositiveHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyIndexedFactoryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyIndexedFactoryAgent::class,
+            AgentRegistryKey::DAEMON => TopologyIndexedFactoryAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::IDLE_TIMEOUT => 0,
         ],
     ];
 

@@ -516,6 +516,17 @@ final class TopologyValidator
                     . ' with scope ' . AgentScope::NODE->name
                     . ': a replica runs on every node, so no node is picked';
             }
+
+            $idleTimeout = $registryEntry[AgentRegistryKey::IDLE_TIMEOUT] ?? null;
+            if ($idleTimeout !== null && (!is_int($idleTimeout) || $idleTimeout <= 0)) {
+                $errors[] = 'AGENTS[' . $agentType . '][' . AgentRegistryKey::IDLE_TIMEOUT
+                    . '] must be a positive integer number of seconds';
+            } elseif ($idleTimeout !== null && $indexed !== true) {
+                $errors[] = 'AGENTS[' . $agentType . '] cannot set ' . AgentRegistryKey::IDLE_TIMEOUT
+                    . ' without ' . AgentRegistryKey::INDEXED
+                    . ': an idle window is declared on an instance agent, and only an addressed'
+                    . ' frame brings one back';
+            }
         }
     }
 
