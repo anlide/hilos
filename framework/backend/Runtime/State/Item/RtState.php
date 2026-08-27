@@ -6,6 +6,7 @@ namespace Hilos\Runtime\State\Item;
 
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -191,4 +192,361 @@ abstract class RtState
      * @return array<string, mixed> State fields as associative array
      */
     abstract public function toArray(): array;
+
+    /**
+     * Reads a string field of a runtime row that the state cannot be built without.
+     *
+     * A runtime row is written by {@see toArray()} on another node, so a key that is absent
+     * or holds another type is a row that lost the field on the way, not a row that never
+     * had it. A cast would hand every reader below a value that never arrived, and the row
+     * would look like a state somebody chose rather than like a frame that broke.
+     *
+     * Refusal is the whole contract of this family, and the state has two more beside it:
+     * a field that is legitimately empty is nullable and read by {@see self::optionalString()}
+     * and its siblings, and a field a partial diff simply did not carry is read by
+     * {@see self::patchString()} and its siblings, which leave it as it was.
+     *
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
+     * @return string Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds a non-string
+     */
+    final protected static function requireString(array $source, string $key): string
+    {
+        $value = $source[$key] ?? null;
+        if (!is_string($value)) {
+            throw new InvalidFormatException('Runtime row carries no string under key ' . $key);
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
+     * @return int Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds a non-integer
+     */
+    final protected static function requireInt(array $source, string $key): int
+    {
+        $value = $source[$key] ?? null;
+        if (!is_int($value)) {
+            throw new InvalidFormatException('Runtime row carries no integer under key ' . $key);
+        }
+
+        return $value;
+    }
+
+    /**
+     * Reads a floating-point field of a runtime row that the state cannot be built without.
+     *
+     * An integer is widened rather than refused: the row crosses the nodes as JSON, where
+     * `json_encode(0.0)` writes `0`, so a whole number comes back an integer and a strict
+     * `is_float()` would refuse a row our own {@see toArray()} wrote. A string of digits
+     * stays refused - that is a sender writing a number as text, not the format losing the
+     * fraction.
+     *
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
+     * @return float Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds neither a float nor an integer
+     */
+    final protected static function requireFloat(array $source, string $key): float
+    {
+        $value = $source[$key] ?? null;
+        if (!is_float($value) && !is_int($value)) {
+            throw new InvalidFormatException('Runtime row carries no number under key ' . $key);
+        }
+
+        return (float)$value;
+    }
+
+    /**
+     * Reads a boolean field of a runtime row that the state cannot be built without.
+     *
+     * `false` is a flag the sending node lowered, not the absence of one, so it passes
+     * through untouched. That is why a boolean needs a reader of its own: `?? false` reads
+     * a lost field and a deliberately lowered flag as the same thing.
+     *
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
+     * @return bool Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds a non-boolean
+     */
+    final protected static function requireBool(array $source, string $key): bool
+    {
+        $value = $source[$key] ?? null;
+        if (!is_bool($value)) {
+            throw new InvalidFormatException('Runtime row carries no boolean under key ' . $key);
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
+     * @return array<string, mixed> Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds a non-array
+     */
+    final protected static function requireArray(array $source, string $key): array
+    {
+        $value = $source[$key] ?? null;
+        if (!is_array($value)) {
+            throw new InvalidFormatException('Runtime row carries no array under key ' . $key);
+        }
+
+        return $value;
+    }
+
+    /**
+     * Reads a list of strings the state cannot be built without.
+     *
+     * An empty list is a value: a node with nothing to list writes `[]`, and the field is
+     * present and read. What is refused is an array that is not a list at all, or one whose
+     * elements are not strings - both mean the row no longer holds what this state reads.
+     *
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
+     * @return list<string> Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds anything but a list of strings
+     */
+    final protected static function requireStringList(array $source, string $key): array
+    {
+        $value = $source[$key] ?? null;
+        if (!is_array($value) || !array_is_list($value)) {
+            throw new InvalidFormatException('Runtime row carries no list of strings under key ' . $key);
+        }
+        foreach ($value as $item) {
+            if (!is_string($item)) {
+                throw new InvalidFormatException('Runtime row carries no list of strings under key ' . $key);
+            }
+        }
+
+        return $value;
+    }
+
+    /**
+     * Reads a string field of a runtime row that is allowed to be absent.
+     *
+     * Absence answers `null` - that is what the field being optional means, and a node
+     * running an older version simply does not write a field it does not know yet, so a
+     * strict read would refuse its whole row. A key that is present and holds the wrong
+     * type is not absence: the sender filled the field with something this state cannot
+     * read, and the row is refused exactly as a lost required field is.
+     *
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
+     * @return ?string Value stored under the key, or null when the key is absent
+     * @throws InvalidFormatException When the key is present and holds a non-string
+     */
+    final protected static function optionalString(array $source, string $key): ?string
+    {
+        $value = $source[$key] ?? null;
+        if ($value !== null && !is_string($value)) {
+            throw new InvalidFormatException('Runtime row carries a non-string under key ' . $key);
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
+     * @return ?int Value stored under the key, or null when the key is absent
+     * @throws InvalidFormatException When the key is present and holds a non-integer
+     */
+    final protected static function optionalInt(array $source, string $key): ?int
+    {
+        $value = $source[$key] ?? null;
+        if ($value !== null && !is_int($value)) {
+            throw new InvalidFormatException('Runtime row carries a non-integer under key ' . $key);
+        }
+
+        return $value;
+    }
+
+    /**
+     * Reads a floating-point field of a runtime row that is allowed to be absent.
+     *
+     * An integer is widened for the same reason it is in {@see self::requireFloat()}: JSON
+     * does not keep a whole float a float.
+     *
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
+     * @return ?float Value stored under the key, or null when the key is absent
+     * @throws InvalidFormatException When the key is present and holds neither a float nor an integer
+     */
+    final protected static function optionalFloat(array $source, string $key): ?float
+    {
+        $value = $source[$key] ?? null;
+        if ($value !== null && !is_float($value) && !is_int($value)) {
+            throw new InvalidFormatException('Runtime row carries a non-number under key ' . $key);
+        }
+
+        return $value !== null ? (float)$value : null;
+    }
+
+    /**
+     * Reads a string field out of a diff, or keeps the value the state already holds.
+     *
+     * A diff carries the fields that changed, so a key it does not carry means the field did
+     * not change - not that it was emptied. The two are told apart here and nowhere else:
+     * an `array_key_exists()` written by hand at every field holds only as long as its
+     * author remembers it, and the one it forgets looks like an ordinary assignment while
+     * it silently clears the field. No test tells that apart from a diff that really did
+     * carry a zero.
+     *
+     * The value comes back rather than being written through a reference, so the field being
+     * patched is visible in the calling line: `$this->x = self::patchString($diff, self::x, $this->x);`
+     *
+     * @param array<string, mixed> $diff Partial update
+     * @param string $key Row key holding the field
+     * @param string $current Value the state holds now
+     * @return string Value from the diff, or the current one when the diff does not carry the key
+     * @throws InvalidFormatException When the diff carries the key and it holds a non-string
+     */
+    final protected static function patchString(array $diff, string $key, string $current): string
+    {
+        if (!array_key_exists($key, $diff)) {
+            return $current;
+        }
+
+        return self::requireString($diff, $key);
+    }
+
+    /**
+     * @param array<string, mixed> $diff Partial update
+     * @param string $key Row key holding the field
+     * @param int $current Value the state holds now
+     * @return int Value from the diff, or the current one when the diff does not carry the key
+     * @throws InvalidFormatException When the diff carries the key and it holds a non-integer
+     */
+    final protected static function patchInt(array $diff, string $key, int $current): int
+    {
+        if (!array_key_exists($key, $diff)) {
+            return $current;
+        }
+
+        return self::requireInt($diff, $key);
+    }
+
+    /**
+     * @param array<string, mixed> $diff Partial update
+     * @param string $key Row key holding the field
+     * @param float $current Value the state holds now
+     * @return float Value from the diff, or the current one when the diff does not carry the key
+     * @throws InvalidFormatException When the diff carries the key and it holds neither a float nor an integer
+     */
+    final protected static function patchFloat(array $diff, string $key, float $current): float
+    {
+        if (!array_key_exists($key, $diff)) {
+            return $current;
+        }
+
+        return self::requireFloat($diff, $key);
+    }
+
+    /**
+     * @param array<string, mixed> $diff Partial update
+     * @param string $key Row key holding the field
+     * @param bool $current Value the state holds now
+     * @return bool Value from the diff, or the current one when the diff does not carry the key
+     * @throws InvalidFormatException When the diff carries the key and it holds a non-boolean
+     */
+    final protected static function patchBool(array $diff, string $key, bool $current): bool
+    {
+        if (!array_key_exists($key, $diff)) {
+            return $current;
+        }
+
+        return self::requireBool($diff, $key);
+    }
+
+    /**
+     * @param array<string, mixed> $diff Partial update
+     * @param string $key Row key holding the field
+     * @param array<string, mixed> $current Value the state holds now
+     * @return array<string, mixed> Value from the diff, or the current one when the diff does not carry the key
+     * @throws InvalidFormatException When the diff carries the key and it holds a non-array
+     */
+    final protected static function patchArray(array $diff, string $key, array $current): array
+    {
+        if (!array_key_exists($key, $diff)) {
+            return $current;
+        }
+
+        return self::requireArray($diff, $key);
+    }
+
+    /**
+     * @param array<string, mixed> $diff Partial update
+     * @param string $key Row key holding the field
+     * @param list<string> $current Value the state holds now
+     * @return list<string> Value from the diff, or the current one when the diff does not carry the key
+     * @throws InvalidFormatException When the diff carries the key and it holds anything but a list of strings
+     */
+    final protected static function patchStringList(array $diff, string $key, array $current): array
+    {
+        if (!array_key_exists($key, $diff)) {
+            return $current;
+        }
+
+        return self::requireStringList($diff, $key);
+    }
+
+    /**
+     * Reads an optional string out of a diff, or keeps the value the state already holds.
+     *
+     * This is where the two kinds of emptiness stop looking alike: a diff without the key
+     * leaves the field as it was, while a diff carrying the key with `null` clears it on
+     * purpose. Reading the field with {@see self::optionalString()} alone would answer null
+     * to both and turn every unrelated diff into an erasure.
+     *
+     * @param array<string, mixed> $diff Partial update
+     * @param string $key Row key holding the field
+     * @param ?string $current Value the state holds now
+     * @return ?string Value from the diff, or the current one when the diff does not carry the key
+     * @throws InvalidFormatException When the diff carries the key and it holds a non-string
+     */
+    final protected static function patchOptionalString(array $diff, string $key, ?string $current): ?string
+    {
+        if (!array_key_exists($key, $diff)) {
+            return $current;
+        }
+
+        return self::optionalString($diff, $key);
+    }
+
+    /**
+     * @param array<string, mixed> $diff Partial update
+     * @param string $key Row key holding the field
+     * @param ?int $current Value the state holds now
+     * @return ?int Value from the diff, or the current one when the diff does not carry the key
+     * @throws InvalidFormatException When the diff carries the key and it holds a non-integer
+     */
+    final protected static function patchOptionalInt(array $diff, string $key, ?int $current): ?int
+    {
+        if (!array_key_exists($key, $diff)) {
+            return $current;
+        }
+
+        return self::optionalInt($diff, $key);
+    }
+
+    /**
+     * @param array<string, mixed> $diff Partial update
+     * @param string $key Row key holding the field
+     * @param ?float $current Value the state holds now
+     * @return ?float Value from the diff, or the current one when the diff does not carry the key
+     * @throws InvalidFormatException When the diff carries the key and it holds neither a float nor an integer
+     */
+    final protected static function patchOptionalFloat(array $diff, string $key, ?float $current): ?float
+    {
+        if (!array_key_exists($key, $diff)) {
+            return $current;
+        }
+
+        return self::optionalFloat($diff, $key);
+    }
 }

@@ -205,6 +205,72 @@ same rows.
 Checked automatically: `RT-STATE-MUTATE`, see
 [automated-checks.md](../code-style/automated-checks.md).
 
+## Reading a row: required, optional, and a patch
+
+A runtime row was written by `toArray()` on another node, so reading it back asks
+one question per key, and there are exactly three answers a field can have. Never
+a fourth: a default minted in place of a value that did not arrive hands every
+reader below it a value nobody sent. `RtState` carries all three families as
+`final protected static` readers, so the state declares which contract a field
+has by which reader it calls.
+
+| Family | Key absent | Key holds `null` | Key holds another type | What the field is |
+|---|---|---|---|---|
+| `require*` | refuses the row | refuses the row | refuses the row | the state cannot be built without it |
+| `optional*` | reads `null` | reads `null` | refuses the row | it is legitimately empty |
+| `patch*` | leaves the field as it was | reads its own `require*` / `optional*` | refuses the diff | a partial update did or did not carry it |
+
+Full-row readers are `requireString`, `requireInt`, `requireFloat`,
+`requireBool`, `requireArray`, `requireStringList`, `optionalString`,
+`optionalInt` and `optionalFloat`; each has a `patch*` twin
+(`patchOptionalString` for `optionalString`, and so on). A number is the one
+widening: `requireFloat` and `optionalFloat` take an integer, because
+`json_encode(0.0)` writes `0` and a whole float comes back from the wire an
+integer. A number written as text stays refused.
+
+**Do not mint `''`, `0` or `false` for a key that did not arrive.** A field that
+is allowed to be empty is declared nullable and read with `optional*`; a field
+that is not allowed to be empty is read with `require*` and refuses the row. The
+empty string is a value the sender chose, and a state that mints one turns a
+frame that broke into a phase somebody selected.
+
+```php
+public static function fromRow(array $row): static
+{
+    $instance = new static();
+    $instance->id = self::requireString($row, self::id);
+    $instance->jobsDone = self::requireInt($row, self::jobsDone);
+    $instance->note = self::optionalString($row, self::note);
+    $instance->markRtSyncBaseline();
+
+    return $instance;
+}
+```
+
+**Inside `applyDiff()` read every field with `patch*`.** A diff carries the
+fields that changed, so a key it does not carry means the field did not change —
+which is not the same as the field being empty, and `optional*` cannot tell the
+two apart. Reading a nullable field of a diff with `optionalString()` answers
+`null` to every diff about some other field, and the state clears a field nobody
+touched. The patch reader returns the value instead of writing through a
+reference, so the field being patched is visible in the calling line:
+
+```php
+public function applyDiff(array $diff): void
+{
+    $this->jobsDone = self::patchInt($diff, self::jobsDone, $this->jobsDone);
+    $this->note = self::patchOptionalString($diff, self::note, $this->note);
+}
+```
+
+A refusal is an `InvalidFormatException`, and it has four doors to come out of:
+`RtSyncApplicator::applyCreated()` and `applyUpdated()` for a row that arrived
+over sync, `RtSnapshot::replace()` and `replaceScope()` for one handed over at
+startup. All four trap it around the single row: the row is dropped, the
+collection keeps what it had, and the collection key, the row id and the reason
+are named in a warning by `RtSyncApplicator::logRefusedRow()`. One broken row of
+one collection therefore costs that row, not the worker.
+
 ## Reading from state
 
 Application code normally reads through the view item or collection:

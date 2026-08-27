@@ -296,36 +296,4 @@ final class InvalidRowTestState extends RtState
             self::seenAt => $this->seenAt,
         ];
     }
-
-    /**
-     * @param array<string, mixed> $source Runtime row or diff
-     * @param string $key Row key holding the field
-     * @return string Value stored under the key
-     * @throws InvalidFormatException When the key is absent or holds a non-string
-     */
-    private static function requireString(array $source, string $key): string
-    {
-        $value = $source[$key] ?? null;
-        if (!is_string($value)) {
-            throw new InvalidFormatException('Runtime row carries no string under key ' . $key);
-        }
-
-        return $value;
-    }
-
-    /**
-     * @param array<string, mixed> $source Runtime row or diff
-     * @param string $key Row key holding the field
-     * @return int Value stored under the key
-     * @throws InvalidFormatException When the key is absent or holds a non-integer
-     */
-    private static function requireInt(array $source, string $key): int
-    {
-        $value = $source[$key] ?? null;
-        if (!is_int($value)) {
-            throw new InvalidFormatException('Runtime row carries no integer under key ' . $key);
-        }
-
-        return $value;
-    }
 }

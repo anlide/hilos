@@ -1643,20 +1643,4 @@ final class DaemonManagerRtSyncPeerTestState extends RtState
             self::name => $this->name,
         ];
     }
-
-    /**
-     * @param array<string, mixed> $source Runtime row
-     * @param string $key Row key holding the field
-     * @return string Value stored under the key
-     * @throws InvalidFormatException When the key is absent or holds a non-string
-     */
-    private static function requireString(array $source, string $key): string
-    {
-        $value = $source[$key] ?? null;
-        if (!is_string($value)) {
-            throw new InvalidFormatException('Runtime row carries no string under key ' . $key);
-        }
-
-        return $value;
-    }
 }

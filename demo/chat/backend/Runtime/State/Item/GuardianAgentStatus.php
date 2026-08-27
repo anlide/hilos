@@ -110,43 +110,4 @@ final class GuardianAgentStatus extends RtState
     {
         return GuardianRunStatus::tryFrom($status)?->value ?? GuardianRunStatus::NOT_STARTED->value;
     }
-
-    /**
-     * Reads one field of a runtime row or diff that the row cannot be built without.
-     *
-     * A runtime row is written by {@see toArray()} on another worker, so a key
-     * that is absent or holds another type is a row that lost the field on the
-     * way, not a row that never had it. There is nothing to fall back to, and a
-     * cast would only turn the loss into a guardian id nobody registered.
-     *
-     * @param array<string, mixed> $source Runtime row or diff
-     * @param string $key Row key holding the field
-     * @return string Value stored under the key
-     * @throws InvalidFormatException When the key is absent or holds a non-string
-     */
-    private static function requireString(array $source, string $key): string
-    {
-        $value = $source[$key] ?? null;
-        if (!is_string($value)) {
-            throw new InvalidFormatException('Runtime row carries no string under key ' . $key);
-        }
-
-        return $value;
-    }
-
-    /**
-     * @param array<string, mixed> $source Runtime row or diff
-     * @param string $key Row key holding the field
-     * @return int Value stored under the key
-     * @throws InvalidFormatException When the key is absent or holds a non-integer
-     */
-    private static function requireInt(array $source, string $key): int
-    {
-        $value = $source[$key] ?? null;
-        if (!is_int($value)) {
-            throw new InvalidFormatException('Runtime row carries no integer under key ' . $key);
-        }
-
-        return $value;
-    }
 }

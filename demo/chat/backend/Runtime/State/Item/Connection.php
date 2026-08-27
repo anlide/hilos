@@ -317,65 +317,6 @@ final class Connection extends HilosSessionConnection
     }
 
     /**
-     * Reads one field of a runtime row or diff that the row cannot be built without.
-     *
-     * The row is written by {@see ownToArray()} on another worker, so a key that
-     * is absent or holds another type is a row that lost the field on the way,
-     * not a row that never had it. A cast would turn that loss into a phase this
-     * socket is not in, and every reader below would act on it.
-     *
-     * @param array<string, mixed> $source Runtime row or diff
-     * @param string $key Row key holding the field
-     * @return string Value stored under the key
-     * @throws InvalidFormatException When the key is absent or holds a non-string
-     */
-    private static function requireString(array $source, string $key): string
-    {
-        $value = $source[$key] ?? null;
-        if (!is_string($value)) {
-            throw new InvalidFormatException('Runtime row carries no string under key ' . $key);
-        }
-
-        return $value;
-    }
-
-    /**
-     * @param array<string, mixed> $source Runtime row or diff
-     * @param string $key Row key holding the field
-     * @return int Value stored under the key
-     * @throws InvalidFormatException When the key is absent or holds a non-integer
-     */
-    private static function requireInt(array $source, string $key): int
-    {
-        $value = $source[$key] ?? null;
-        if (!is_int($value)) {
-            throw new InvalidFormatException('Runtime row carries no integer under key ' . $key);
-        }
-
-        return $value;
-    }
-
-    /**
-     * An integer is widened rather than refused: the row crosses the workers as
-     * JSON, where `json_encode(0.0)` writes `0`, so a whole throttle stamp comes
-     * back as an integer and refusing it would refuse the row this class wrote.
-     *
-     * @param array<string, mixed> $source Runtime row or diff
-     * @param string $key Row key holding the field
-     * @return float Value stored under the key
-     * @throws InvalidFormatException When the key is absent or holds neither a float nor an integer
-     */
-    private static function requireFloat(array $source, string $key): float
-    {
-        $value = $source[$key] ?? null;
-        if (!is_float($value) && !is_int($value)) {
-            throw new InvalidFormatException('Runtime row carries no number under key ' . $key);
-        }
-
-        return (float)$value;
-    }
-
-    /**
      * Reads one optional field of a runtime row or diff. A row written by a node
      * that has not been restarted yet still spells "no value" as the empty string
      * where this class now writes null, and the two say the same thing.
