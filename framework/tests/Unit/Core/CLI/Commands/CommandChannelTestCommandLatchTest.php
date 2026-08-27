@@ -123,6 +123,6 @@ final class LatchFixtureCommand extends AbstractCommandChannelTestCommand
      */
     protected function run(array $options, array $args): int
     {
-        return $this->sendCommand($this->wireName, []) === null ? ExitCode::ERROR : ExitCode::SUCCESS;
+        return $this->sendCommand($this->wireName, [])->reply === null ? ExitCode::ERROR : ExitCode::SUCCESS;
     }
 }

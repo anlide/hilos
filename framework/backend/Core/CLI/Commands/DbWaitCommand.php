@@ -40,6 +40,18 @@ class DbWaitCommand implements CommandInterface, DatabaseFreeCommand
     }
 
     /**
+     * Declares the departure: this reading happens in the CLI process, for the reason it names.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::cliRead(
+            'polls a database that is still coming up, which is exactly when nothing - the daemon included - can reach it',
+        );
+    }
+
+    /**
      * Returns short command description for help listing.
      *
      * @return string One-line description

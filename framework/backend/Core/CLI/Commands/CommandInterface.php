@@ -40,6 +40,19 @@ interface CommandInterface
     public function getName(): string;
 
     /**
+     * Declares where the command's work happens, and why there when it is not the daemon.
+     *
+     * The project rule is that the daemon does the work and the CLI process only initiates it;
+     * a command that departs from it says so here and names the reason. The declaration is a
+     * contract method rather than something read off the class hierarchy because reading it
+     * that way needs Reflection, which this project forbids, and because a command outside the
+     * framework's own class tree owes the same answer.
+     *
+     * @return CommandExecution Execution site of this command's work, with the reason for a departure
+     */
+    public function execution(): CommandExecution;
+
+    /**
      * Returns short command description for command listing.
      *
      * @return string One-line description for command listing

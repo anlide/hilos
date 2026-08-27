@@ -90,6 +90,16 @@ class BackupRestoreCommand implements CommandInterface
     }
 
     /**
+     * Declares the rule: the daemon does the work and this process only initiates it and prints.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::daemon();
+    }
+
+    /**
      * Returns short command description for help listing.
      *
      * @return string One-line description
@@ -548,7 +558,11 @@ HELP;
             $payload[BackupConstants::FIELD_MIGRATION_INDEX] = $migrationIndex;
         }
 
-        $reply = $this->sendCommand(BackupConstants::RESTORE_REQUEST_COMMAND, $payload);
+        // Not printChannelFailure(): a refused restore has a second road, and naming it is the
+        // whole point of the sentence. The shared text says the channel is down; this one says
+        // what to do about it.
+        $result = $this->sendCommand(BackupConstants::RESTORE_REQUEST_COMMAND, $payload);
+        $reply = $result->reply;
         if ($reply === null) {
             echo "Error: the daemon did not answer; start it, or restore with --cold\n";
 
@@ -583,7 +597,7 @@ HELP;
         $silentPolls = 0;
 
         while (true) {
-            $reply = $this->sendCommand(BackupConstants::RESTORE_STATUS_COMMAND, []);
+            $reply = $this->sendCommand(BackupConstants::RESTORE_STATUS_COMMAND, [])->reply;
             if ($reply === null) {
                 if (++$silentPolls >= self::MONITOR_MAX_SILENCE) {
                     echo "Error: the daemon stopped answering; the restore may still be running\n";

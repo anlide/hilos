@@ -8,7 +8,6 @@ use Hilos\Constants\CommandConstants;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Environment\Exception\EnvException;
-use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Command\TestOnlyCommandRegistry;
 
@@ -27,6 +26,21 @@ abstract class AbstractCommandChannelTestCommand extends TestOnlyCommand
 {
     use CommandChannelClientTrait {
         sendCommand as private sendChannelCommand;
+    }
+
+    /**
+     * Declares the rule for the whole family: every command here drives a running agent.
+     *
+     * Final, and stated once rather than in each subclass, because membership in this hierarchy
+     * IS the declaration - {@see sendCommand()} below is the only way out of these classes, and
+     * it puts the name on the command channel. A subclass that wanted another site would have to
+     * stop sending, and then it does not belong here.
+     *
+     * @return CommandExecution Where this family's work happens
+     */
+    final public function execution(): CommandExecution
+    {
+        return CommandExecution::daemon();
     }
 
     /**
@@ -50,11 +64,11 @@ abstract class AbstractCommandChannelTestCommand extends TestOnlyCommand
      *
      * @param string $command Command-channel wire name routed to the owning agent
      * @param array<string, mixed> $payload Request payload delivered to the agent
-     * @return ?CommandReplyDTO Reply, or null on timeout / transport failure
+     * @return CommandChannelResult Reply, or why none arrived
      * @throws CommandException When the command name does not carry the test-only prefix
      * @throws EnvException When daemon host/port env values are missing or invalid
      */
-    protected function sendCommand(string $command, array $payload): ?CommandReplyDTO
+    protected function sendCommand(string $command, array $payload): CommandChannelResult
     {
         if (!str_starts_with($command, CommandConstants::TEST_ONLY_PREFIX)) {
             throw new CommandException(

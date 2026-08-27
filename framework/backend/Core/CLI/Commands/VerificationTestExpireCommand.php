@@ -39,6 +39,18 @@ class VerificationTestExpireCommand extends TestOnlyCommand
     }
 
     /**
+     * Declares the departure: this write happens in the CLI process, and only while the daemon is down.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::cliOfflineWrite(
+            'ages a verification row in place for a stand scenario, beside the other fixtures that prepare the database before the daemon starts',
+        );
+    }
+
+    /**
      * Returns short command description for help listing.
      *
      * @return string One-line description

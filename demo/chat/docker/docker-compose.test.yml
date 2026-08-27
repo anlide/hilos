@@ -241,6 +241,12 @@ services:
     working_dir: /app
     environment:
       - APP_ENV=test
+      # Where the daemon answers, so a command that writes state the daemon owns can ask
+      # whether one is running before it starts (HIL-728). The check is fail-closed: without
+      # this pair the CLI refuses such a command rather than risk a second writer, so
+      # test:db-prepare needs it even though it runs before the daemon exists.
+      - HILOS_DAEMON_HOST=chat-test
+      - COMMAND_PORT=8094
       - DB_HOST=mysql-test
       - DB_PORT=3306
       - DB_DATABASE=${MYSQL_TEST_DATABASE:-hilos-demo-chat-test}

@@ -26,6 +26,16 @@ class MonitorCommand implements CommandInterface
     }
 
     /**
+     * Declares the rule: the daemon does the work and this process only initiates it and prints.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::daemon();
+    }
+
+    /**
      * Returns short command description for help listing.
      *
      * @return string One-line description

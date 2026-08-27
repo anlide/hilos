@@ -120,7 +120,7 @@ HELP;
         }
 
         try {
-            $reply = $this->sendCommand($this->getName(), [
+            $result = $this->sendCommand($this->getName(), [
                 ProtectedModeCommandConstants::FIELD_OPERATION => $operation,
                 CommandConstants::FIELD_ACCEPT_KEY => $acceptKey,
             ]);
@@ -130,11 +130,11 @@ HELP;
             return ExitCode::CONFIG_ERROR;
         }
 
-        if ($reply === null) {
-            echo "No reply from daemon (is it running?)\n";
-
-            return ExitCode::ERROR;
+        if ($result->reply === null) {
+            return $this->printChannelFailure($result, $this->getName());
         }
+
+        $reply = $result->reply;
 
         if (!$reply->isOk()) {
             $detail = (string)($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');

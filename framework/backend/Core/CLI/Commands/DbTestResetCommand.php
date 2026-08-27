@@ -51,6 +51,18 @@ class DbTestResetCommand extends TestOnlyCommand implements DatabaseFreeCommand
     }
 
     /**
+     * Declares the departure: this write happens in the CLI process, and only while the daemon is down.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::cliOfflineWrite(
+            'drops and recreates the very database a running daemon would be holding its connections to',
+        );
+    }
+
+    /**
      * Returns short command description for help listing.
      *
      * @return string One-line description

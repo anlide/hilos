@@ -8,6 +8,7 @@ use Demo\Chat\Constants\ChatCliCommands;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\HilosException;
@@ -31,6 +32,18 @@ final class SessionExpireCommand extends TestOnlyCommand
     public function getName(): string
     {
         return ChatCliCommands::SESSION_EXPIRE;
+    }
+
+    /**
+     * Declares the departure: this write happens in the CLI process, and only while the daemon is down.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::cliOfflineWrite(
+            "temporary until HIL-729 moves chat's CLI into the framework: ages a session row straight in the table",
+        );
     }
 
     public function getDescription(): string

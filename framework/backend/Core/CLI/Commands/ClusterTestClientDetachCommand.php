@@ -83,7 +83,7 @@ HELP;
         }
 
         try {
-            $reply = $this->sendCommand(
+            $result = $this->sendCommand(
                 CommandConstants::COMMAND_CLUSTER_CLIENT_DETACH,
                 [CommandConstants::FIELD_ACCEPT_KEY => $acceptKey],
             );
@@ -92,10 +92,11 @@ HELP;
             return ExitCode::CONFIG_ERROR;
         }
 
-        if ($reply === null) {
-            echo "No reply from daemon (is it running?)\n";
-            return ExitCode::ERROR;
+        if ($result->reply === null) {
+            return $this->printChannelFailure($result, CommandConstants::COMMAND_CLUSTER_CLIENT_DETACH);
         }
+
+        $reply = $result->reply;
 
         if (!$reply->isOk()) {
             $detail = (string)($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');

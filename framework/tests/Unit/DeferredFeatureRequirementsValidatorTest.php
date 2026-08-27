@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\CLI\CliManager;
+use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\Feature\DeferredFeatureRequirementsValidator;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
@@ -399,6 +400,14 @@ final class DeferredRequirementsTestCommand implements CommandInterface
     public function getName(): string
     {
         return self::NAME;
+    }
+
+    /**
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::daemon();
     }
 
     /**

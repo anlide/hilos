@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\ExitCode;
+use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Environment\EnvAccessor;
@@ -87,6 +88,11 @@ final class TestOnlyCommandGuardTest extends TestCase
             public function getName(): string
             {
                 return 'test:guard-fixture';
+            }
+
+            public function execution(): CommandExecution
+            {
+                return CommandExecution::cliOfflineWrite('guard fixture: the non-production gate is what this exercises, not a site');
             }
 
             public function getDescription(): string

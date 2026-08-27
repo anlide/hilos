@@ -29,6 +29,18 @@ class SeedApplyCommand implements CommandInterface
     }
 
     /**
+     * Declares the departure: this write happens in the CLI process, and only while the daemon is down.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::cliOfflineWrite(
+            'seeds the schema the daemon boots on, from the same process that migrated it and before the daemon starts',
+        );
+    }
+
+    /**
      * Get short command description.
      *
      * @return string Description for help output

@@ -8,6 +8,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\CLI\Commands\ClusterTestInspectCommand;
+use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\CLI\Commands\DatabaseFreeCommand;
 use Hilos\Core\CLI\Commands\DbTestResetCommand;
@@ -98,6 +99,11 @@ final class CliManagerDatabaseGateTest extends TestCase
                         return ExitCode::SUCCESS;
                     }
 
+                    public function execution(): CommandExecution
+                    {
+                        return CommandExecution::daemon();
+                    }
+
                     public function getName(): string
                     {
                         return CliManagerDatabaseGateTest::PROJECT_FREE_COMMAND;
@@ -118,6 +124,11 @@ final class CliManagerDatabaseGateTest extends TestCase
                     public function execute(array $options, array $args): int
                     {
                         return ExitCode::SUCCESS;
+                    }
+
+                    public function execution(): CommandExecution
+                    {
+                        return CommandExecution::daemon();
                     }
 
                     public function getName(): string

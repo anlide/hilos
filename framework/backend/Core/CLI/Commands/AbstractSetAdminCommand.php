@@ -28,6 +28,16 @@ abstract class AbstractSetAdminCommand implements CommandInterface, DatabaseFree
     use CommandChannelClientTrait;
 
     /**
+     * Declares the rule for both subclasses: the daemon flips the flag, this process asks it to.
+     *
+     * @return CommandExecution Where this family's work happens
+     */
+    final public function execution(): CommandExecution
+    {
+        return CommandExecution::daemon();
+    }
+
+    /**
      * Sets the target user's admin flag through the daemon command channel.
      *
      * @param array<string, mixed> $options Parsed options (unused)
@@ -48,7 +58,7 @@ abstract class AbstractSetAdminCommand implements CommandInterface, DatabaseFree
         echo "{$verb} user #{$userId}...\n";
 
         try {
-            $reply = $this->sendCommand($this->getName(), [
+            $result = $this->sendCommand($this->getName(), [
                 AdminCommandConstants::FIELD_USER_ID => $userId,
                 AdminCommandConstants::FIELD_ADMIN => $this->targetAdmin(),
             ]);
@@ -58,11 +68,11 @@ abstract class AbstractSetAdminCommand implements CommandInterface, DatabaseFree
             return ExitCode::CONFIG_ERROR;
         }
 
-        if ($reply === null) {
-            echo "No reply from daemon (is it running?)\n";
-
-            return ExitCode::ERROR;
+        if ($result->reply === null) {
+            return $this->printChannelFailure($result, $this->getName());
         }
+
+        $reply = $result->reply;
 
         if (!$reply->isOk()) {
             $detail = (string)($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');

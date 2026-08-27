@@ -9,6 +9,7 @@ use Hilos\Constants\CommandConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -33,6 +34,17 @@ abstract class AbstractImpersonateCommand implements CommandInterface
 
     /** @var int Poll sleep between ticks in microseconds */
     private const int POLL_INTERVAL_US = 10000;
+
+    /**
+     * Declares the rule for both subclasses: the daemon starts and stops the impersonation,
+     * this process only asks it to.
+     *
+     * @return CommandExecution Where this family's work happens
+     */
+    final public function execution(): CommandExecution
+    {
+        return CommandExecution::daemon();
+    }
 
     /**
      * The command-channel command name this CLI command sends.

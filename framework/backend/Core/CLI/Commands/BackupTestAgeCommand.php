@@ -7,42 +7,29 @@ namespace Hilos\Core\CLI\Commands;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Exception;
+use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\BackupConstants;
-use Hilos\Backup\BackupHistoryScanner;
-use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupScope;
-use Hilos\Backup\Exception\BackupException;
 use Hilos\Constants\CliCommands;
-use Hilos\Constants\EnvConstants;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
-use Hilos\Environment\Exception\EnvInvalidValueException;
-use Hilos\Environment\Exception\EnvKeyInvalidException;
-use Hilos\Environment\Exception\EnvNotInCatalogException;
-use Hilos\Environment\Exception\EnvTypeMismatchException;
-use Hilos\Environment\Exception\MissingEnvironmentVariableException;
-use Hilos\Fs\FsException;
-use Hilos\Fs\FsPath;
-use Hilos\Hilos;
+use Hilos\Core\CLI\Exception\CommandException;
+use Hilos\Environment\Exception\EnvException;
 
 /**
  * BackupTestAgeCommand - age a stored backup's sidecar createdAt into the past (test-only).
  *
- * The retention buckets a backup by its sidecar createdAt (files=truth), which the create
- * path stamps at capture time. To assert rotation without waiting out real days or mocking
- * the clock, a test needs an existing backup to *look* older. This fixture primitive rewrites
- * only the createdAt of a stored sidecar in place, atomically (temp file in the same directory,
- * then rename), leaving every other field untouched; a following `test:backup:prune` then sees
- * the aged backup as a rotation candidate. It never touches runtime state - the agent's own
- * rescan re-mirrors the index from the rewritten sidecar (files=truth).
+ * Retention buckets a backup by its sidecar createdAt (files=truth), which the create path stamps
+ * at capture time. To assert rotation without waiting out real days or mocking the clock, a test
+ * needs an existing backup to *look* older. This asks the running {@see BackupAgent} to rewrite
+ * that one field, then prints what was written.
  *
- * The backup id resolves to at most one sidecar; when the same id exists under more than one
- * scope subdirectory, `--scope` disambiguates. Test-only ({@see TestOnlyCommand}).
+ * The rewrite happens in the agent and not here because the catalog is the agent's to own: a CLI
+ * process editing sidecars beside it would be racing its rescan. This half parses `--at` / `--days`
+ * / `--scope` and renders the reply. Test-only ({@see AbstractCommandChannelTestCommand}).
  */
-class BackupTestAgeCommand extends TestOnlyCommand
+class BackupTestAgeCommand extends AbstractCommandChannelTestCommand
 {
-    /** Temp-file prefix for the atomic in-place sidecar rewrite. */
-    private const string TEMP_PREFIX = '.tmp-age-';
-
     /**
      * Returns command name for CLI routing.
      *
@@ -74,9 +61,9 @@ class BackupTestAgeCommand extends TestOnlyCommand
 Command: test:backup:age <id> (--at=<ISO-8601> | --days=<N>) [--scope=<scope>]
 
 Description:
-  Rewrite a stored backup's sidecar createdAt so retention treats it as older, driving
-  rotation without waiting out real time. Rewrites only createdAt, atomically; runtime
-  state is untouched (the agent re-mirrors the index from the sidecar). Refuses on a
+  Ask the running backup agent to rewrite a stored backup's sidecar createdAt, so retention
+  treats it as older and rotation can be driven without waiting out real time. Only createdAt
+  changes, and the agent re-mirrors its index from the rewritten sidecar. Refuses on a
   production-like environment.
 
 Arguments:
@@ -95,16 +82,12 @@ HELP;
     }
 
     /**
-     * Resolves the aged createdAt from the options and rewrites the target sidecar.
+     * Sends the age request to the agent and prints the createdAt it wrote.
      *
      * @param array<string, mixed> $options Parsed options (--at | --days, optional --scope)
      * @param list<string> $args Positional args: [0] backup id
      * @return int Exit code (0 on success)
-     * @throws EnvInvalidValueException When the backup-directory catalog entry or value is invalid
-     * @throws EnvKeyInvalidException When the backup-directory key is invalid
-     * @throws EnvNotInCatalogException When the backup-directory key is not declared in the catalog
-     * @throws EnvTypeMismatchException When the backup-directory key is not cataloged as string
-     * @throws MissingEnvironmentVariableException When the backup directory is required but missing
+     * @throws CommandException When the command name is not registered as test-only
      */
     protected function run(array $options, array $args): int
     {
@@ -115,13 +98,13 @@ HELP;
             return ExitCode::INVALID_ARGUMENT;
         }
 
-        $createdAt = $this->resolveCreatedAt($options);
-        if ($createdAt === null) {
+        $instant = self::resolveInstantPayload($options);
+        if ($instant === null) {
             echo "Specify exactly one of --at=<ISO-8601> or --days=<N>\n";
             return ExitCode::INVALID_ARGUMENT;
         }
 
-        $scope = null;
+        $payload = $instant + [BackupConstants::FIELD_BACKUP_ID => $id];
         $scopeOption = $options[BackupConstants::SCOPE_OPTION] ?? null;
         if ($scopeOption !== null) {
             $scope = is_string($scopeOption) ? BackupScope::fromString($scopeOption) : null;
@@ -129,96 +112,59 @@ HELP;
                 echo "Unknown scope: {$scopeOption}\n";
                 return ExitCode::INVALID_ARGUMENT;
             }
-        }
-
-        $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
-        if ($root === '') {
-            echo "Backup directory (BACKUP_DIR) is not configured\n";
-            return ExitCode::CONFIG_ERROR;
+            $payload[BackupConstants::FIELD_SCOPE] = $scope->value;
         }
 
         try {
-            $sidecarPath = $this->retimeSidecar($root, $id, $scope, $createdAt);
-        } catch (BackupException $e) {
-            echo $e->getMessage() . "\n";
+            $result = $this->sendCommand(CliCommands::BACKUP_TEST_AGE, $payload);
+        } catch (EnvException $e) {
+            echo "Error: {$e->getMessage()}\n";
+            return ExitCode::CONFIG_ERROR;
+        }
+
+        if ($result->reply === null) {
+            return $this->printChannelFailure($result, CliCommands::BACKUP_TEST_AGE);
+        }
+
+        $reply = $result->reply;
+
+        if (!$reply->isOk()) {
+            $detail = (string)($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');
+            echo "Command failed: {$detail}\n";
             return ExitCode::ERROR;
         }
 
-        echo sprintf("Aged backup %s createdAt=%s (%s)\n", $id, $createdAt->format(DateTimeInterface::ATOM), $sidecarPath);
+        // The instant the agent actually stamped, echoed back. A reply without it is a broken
+        // command channel, not an aging with nothing to report - and "createdAt=" would read as
+        // a sidecar that was rewritten to nothing.
+        $agedAt = $reply->payload[BackupConstants::FIELD_AGE_AT] ?? null;
+        if (!is_string($agedAt)) {
+            echo "Command failed: the reply carries no aged createdAt\n";
+
+            return ExitCode::ERROR;
+        }
+
+        echo "Aged backup {$id} createdAt={$agedAt}\n";
+
         return ExitCode::SUCCESS;
     }
 
     /**
-     * Rewrites the createdAt of the single sidecar matching the id, atomically, in place.
+     * Turns exactly one of --at / --days into the payload key the agent reads it under.
      *
-     * Globs each candidate scope subdirectory for `<id>-*.json`; exactly one match is
-     * required. The rewrite preserves every other sidecar field and is published over the
-     * same temp+fsync+rename idiom the create path uses, so a reader never sees a partial write.
+     * The operator's own input is checked HERE, in the process the operator is standing in front
+     * of, even though the agent checks the payload again on arrival. The two are not a duplicate:
+     * this one keeps a typo from costing a round-trip and lets the answer name the option that was
+     * typed, while the agent's guards a wire that has callers other than this command and can only
+     * speak in payload keys.
      *
-     * @param string $root Backup storage root
-     * @param string $id Backup id whose sidecar is retimed
-     * @param ?BackupScope $scope Scope to search, or null to search every scope
-     * @param DateTimeImmutable $createdAt New creation instant to stamp
-     * @return string Absolute path of the rewritten sidecar
-     * @throws BackupException When no sidecar matches, more than one matches, or the rewrite fails
-     */
-    public function retimeSidecar(string $root, string $id, ?BackupScope $scope, DateTimeImmutable $createdAt): string
-    {
-        $scopes = $scope !== null ? [$scope] : BackupScope::cases();
-
-        $matches = [];
-        foreach ($scopes as $candidateScope) {
-            $pattern = $root . '/' . $candidateScope->value . '/' . $id . '-*' . BackupHistoryScanner::SIDECAR_EXTENSION;
-            foreach (glob($pattern) ?: [] as $path) {
-                $matches[] = $path;
-            }
-        }
-
-        if ($matches === []) {
-            // external-boundary: the neutral element of the message below — an unscoped search says so
-            $where = $scope !== null ? " in scope '{$scope->value}'" : '';
-            throw new BackupException("No backup sidecar found for id '{$id}'{$where}");
-        }
-        if (count($matches) > 1) {
-            throw new BackupException("Ambiguous backup id '{$id}' matches multiple sidecars; pass --scope to disambiguate");
-        }
-
-        $sidecarPath = $matches[0];
-        $metadata = $this->readSidecar($sidecarPath);
-
-        // Named, and every field listed: a positional copy silently dropped whatever the DTO
-        // grew since it was written (it had already lost failureReason and dumpBytes, and would
-        // have lost the checksum fields next), while the docblock kept promising the opposite.
-        $rewritten = new BackupMetadata(
-            id: $metadata->id,
-            createdAt: $createdAt->format(DateTimeInterface::ATOM),
-            env: $metadata->env,
-            scope: $metadata->scope,
-            connections: $metadata->connections,
-            sizeBytes: $metadata->sizeBytes,
-            durationSeconds: $metadata->durationSeconds,
-            keep: $metadata->keep,
-            status: $metadata->status,
-            warnings: $metadata->warnings,
-            failureReason: $metadata->failureReason,
-            dumpBytes: $metadata->dumpBytes,
-            sha256: $metadata->sha256,
-            verifiedAt: $metadata->verifiedAt,
-            verifyOutcome: $metadata->verifyOutcome,
-        );
-
-        $this->publishAtomically($sidecarPath, $rewritten->toArray());
-
-        return $sidecarPath;
-    }
-
-    /**
-     * Resolves the new createdAt from exactly one of --at / --days, or null when invalid.
+     * The scope option is left out on purpose: it is optional, while the instant is what the
+     * request is FOR, so its absence is a usage error rather than a default.
      *
      * @param array<string, mixed> $options Parsed options
-     * @return ?DateTimeImmutable New instant, or null when neither/both/malformed
+     * @return ?array<string, string|int> Single-key payload fragment, or null when neither/both/malformed
      */
-    private function resolveCreatedAt(array $options): ?DateTimeImmutable
+    private static function resolveInstantPayload(array $options): ?array
     {
         $atGiven = array_key_exists(BackupConstants::AT_OPTION, $options);
         $daysGiven = array_key_exists(BackupConstants::DAYS_OPTION, $options);
@@ -231,11 +177,16 @@ HELP;
             if (!is_string($at)) {
                 return null;
             }
+
+            // Parsed and re-formatted rather than forwarded as typed: a string the agent cannot
+            // read has to be refused while the operator can still see which option they typed.
             try {
-                return new DateTimeImmutable($at);
+                $instant = new DateTimeImmutable($at);
             } catch (Exception) {
                 return null;
             }
+
+            return [BackupConstants::FIELD_AGE_AT => $instant->format(DateTimeInterface::ATOM)];
         }
 
         $days = $options[BackupConstants::DAYS_OPTION];
@@ -243,58 +194,6 @@ HELP;
             return null;
         }
 
-        return new DateTimeImmutable()->modify('-' . (int)$days . ' days');
-    }
-
-    /**
-     * Reads and decodes one backup sidecar into its metadata.
-     *
-     * @param string $sidecarPath Absolute sidecar path
-     * @return BackupMetadata Decoded sidecar metadata
-     * @throws BackupException When the sidecar is missing or not valid JSON
-     */
-    private function readSidecar(string $sidecarPath): BackupMetadata
-    {
-        try {
-            $raw = FsPath::read($sidecarPath);
-        } catch (FsException $failure) {
-            throw new BackupException("Backup sidecar not found: {$sidecarPath}", 0, $failure);
-        }
-
-        $decoded = json_decode($raw, true);
-        if (!is_array($decoded)) {
-            throw new BackupException("Backup sidecar is not valid JSON: {$sidecarPath}");
-        }
-
-        return BackupMetadata::fromArray($decoded);
-    }
-
-    /**
-     * Writes JSON to a same-directory temp file, then publishes it over the target through the Fs seam.
-     *
-     * @param string $path Final sidecar path
-     * @param array<string, mixed> $data Sidecar payload
-     * @throws BackupException When encoding, writing, or renaming fails
-     */
-    private function publishAtomically(string $path, array $data): void
-    {
-        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        if ($json === false) {
-            throw new BackupException("Failed to encode JSON for {$path}");
-        }
-
-        $tmpPath = dirname($path) . '/' . self::TEMP_PREFIX . basename($path) . '-' . getmypid();
-
-        try {
-            FsPath::write($tmpPath, $json);
-        } catch (FsException $failure) {
-            throw new BackupException("Failed to write {$tmpPath}", 0, $failure);
-        }
-
-        try {
-            FsPath::publish($tmpPath, $path);
-        } catch (FsException $failure) {
-            throw new BackupException("Failed to publish {$path}", 0, $failure);
-        }
+        return [BackupConstants::FIELD_AGE_DAYS => (int)$days];
     }
 }

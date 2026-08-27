@@ -94,7 +94,7 @@ HELP;
         }
 
         try {
-            $reply = $this->sendCommand(CommandConstants::COMMAND_CLUSTER_DB_ANNOUNCE, [
+            $result = $this->sendCommand(CommandConstants::COMMAND_CLUSTER_DB_ANNOUNCE, [
                 CommandConstants::FIELD_COLLECTION => $collection,
                 CommandConstants::FIELD_ROW_ID => $rowId,
             ]);
@@ -103,10 +103,11 @@ HELP;
             return ExitCode::CONFIG_ERROR;
         }
 
-        if ($reply === null) {
-            echo "No reply from daemon (is it running?)\n";
-            return ExitCode::ERROR;
+        if ($result->reply === null) {
+            return $this->printChannelFailure($result, CommandConstants::COMMAND_CLUSTER_DB_ANNOUNCE);
         }
+
+        $reply = $result->reply;
 
         if (!$reply->isOk()) {
             $detail = (string)($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');

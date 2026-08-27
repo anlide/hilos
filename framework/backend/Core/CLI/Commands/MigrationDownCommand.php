@@ -28,6 +28,18 @@ class MigrationDownCommand implements CommandInterface
     }
 
     /**
+     * Declares the departure: this write happens in the CLI process, and only while the daemon is down.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::cliOfflineWrite(
+            'rolls back the schema the daemon boots on, from the same process that applied it and before the daemon starts',
+        );
+    }
+
+    /**
      * Returns short command description for help listing.
      *
      * @return string One-line description

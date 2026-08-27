@@ -8,6 +8,7 @@ use Hilos\Backup\BackupConstants;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\BackupTestRunScheduleCommand;
+use Hilos\Core\CLI\Commands\CommandChannelResult;
 use Hilos\Core\CLI\Commands\PingCommand;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use PHPUnit\Framework\TestCase;
@@ -91,6 +92,9 @@ final class CommandReplyReadTest extends TestCase
  */
 final class PingCommandStub extends PingCommand
 {
+    /** Address the canned round-trip reports itself as having used. */
+    private const string ADDRESS = '127.0.0.1:8094';
+
     /**
      * @param CommandReplyDTO $reply Canned reply the ping resolves to
      */
@@ -107,12 +111,13 @@ final class PingCommandStub extends PingCommand
     }
 
     /**
-     * @param string $message Echo message (ignored; the canned reply stands in for the round-trip)
-     * @return ?CommandReplyDTO Canned reply
+     * @param string $command Command-channel wire name (ignored)
+     * @param array<string, mixed> $payload Request payload (ignored)
+     * @return CommandChannelResult Canned reply
      */
-    protected function sendPing(string $message): ?CommandReplyDTO
+    protected function sendCommand(string $command, array $payload): CommandChannelResult
     {
-        return $this->reply;
+        return CommandChannelResult::replied($this->reply, self::ADDRESS);
     }
 }
 
@@ -121,6 +126,9 @@ final class PingCommandStub extends PingCommand
  */
 final class RunScheduleCommandStub extends BackupTestRunScheduleCommand
 {
+    /** Address the canned round-trip reports itself as having used. */
+    private const string ADDRESS = '127.0.0.1:8094';
+
     /**
      * @param CommandReplyDTO $reply Canned reply the command resolves to
      */
@@ -139,10 +147,10 @@ final class RunScheduleCommandStub extends BackupTestRunScheduleCommand
     /**
      * @param string $command Command-channel wire name (ignored)
      * @param array<string, mixed> $payload Request payload (ignored)
-     * @return ?CommandReplyDTO Canned reply
+     * @return CommandChannelResult Canned reply
      */
-    protected function sendCommand(string $command, array $payload): ?CommandReplyDTO
+    protected function sendCommand(string $command, array $payload): CommandChannelResult
     {
-        return $this->reply;
+        return CommandChannelResult::replied($this->reply, self::ADDRESS);
     }
 }

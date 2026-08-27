@@ -15,6 +15,7 @@ use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Backup\RestorePhase;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\Process;
 
@@ -56,6 +57,18 @@ final class BackupRestoreRunCommand implements CommandInterface
     public function getName(): string
     {
         return ChatCliCommands::BACKUP_RESTORE_RUN;
+    }
+
+    /**
+     * Declares the departure: the daemon spawns this process itself, with no operator at its entrance.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::daemonSpawned(
+            "the backup agent spawns this child itself; a restore writes to the database with the daemon up, legitimately, under protected mode",
+        );
     }
 
     /**

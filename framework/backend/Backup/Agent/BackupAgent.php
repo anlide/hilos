@@ -7,6 +7,7 @@ namespace Hilos\Backup\Agent;
 use DateTimeImmutable;
 use DateTimeInterface;
 use DateTimeZone;
+use Exception;
 use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Auth\Session\SessionCarryover;
 use Hilos\Auth\Session\SessionIdentityRef;
@@ -27,6 +28,7 @@ use Hilos\Backup\BackupScanResult;
 use Hilos\Backup\BackupSchedule;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupShipOutcome;
+use Hilos\Backup\BackupSidecarRetimer;
 use Hilos\Backup\BackupSpaceDecision;
 use Hilos\Backup\BackupSpaceGuard;
 use Hilos\Backup\BackupSpacePolicy;
@@ -38,6 +40,7 @@ use Hilos\Backup\Ship\BackupShipStep;
 use Hilos\Backup\Ship\BackupShipTarget;
 use Hilos\Backup\Ship\BackupShipperFactory;
 use Hilos\Backup\Ship\BackupShipperInterface;
+use Hilos\Backup\Exception\BackupException;
 use Hilos\Backup\Exception\BackupScheduleException;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Backup\RestoreNotifier;
@@ -152,6 +155,7 @@ final class BackupAgent extends AbstractAgent
      * may drive it ({@see ProtectedModeOperatorTrait}).
      */
     public const array AGENT_COMMANDS = [
+        CliCommands::BACKUP_TEST_AGE => [AgentCommandConfigKey::TEST_ONLY => true],
         BackupConstants::PRUNE_COMMAND => [AgentCommandConfigKey::TEST_ONLY => true],
         BackupConstants::SHIP_COMMAND => [AgentCommandConfigKey::TEST_ONLY => true],
         BackupConstants::RUN_SCHEDULE_COMMAND => [AgentCommandConfigKey::TEST_ONLY => true],
@@ -569,6 +573,11 @@ final class BackupAgent extends AbstractAgent
 
                 return;
 
+            case CliCommands::BACKUP_TEST_AGE:
+                $this->handleAgeCommand($data);
+
+                return;
+
             case BackupConstants::PRUNE_COMMAND:
                 $this->handlePruneCommand($data);
 
@@ -612,6 +621,108 @@ final class BackupAgent extends AbstractAgent
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
             BackupConstants::FIELD_PRUNED_COUNT => $prunedCount,
         ]));
+    }
+
+    /**
+     * Ages one stored backup's sidecar createdAt into the past and replies with what it wrote.
+     *
+     * The catalog is this agent's to own, so the rewrite happens here rather than in the CLI
+     * process that asked for it: a second writer walking the same directory would be racing the
+     * agent's own rescan. Afterwards the index is re-mirrored from the sidecar (files=truth), so
+     * a following prune sees the aged backup without waiting for a filesystem-watch tick.
+     *
+     * @param CommandRequestDTO $data Command request carrying the backup id, the new instant, and an optional scope
+     */
+    private function handleAgeCommand(CommandRequestDTO $data): void
+    {
+        $id = $data->payload[BackupConstants::FIELD_BACKUP_ID] ?? null;
+        if (!is_string($id) || $id === '') {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Backup id is required'));
+
+            return;
+        }
+
+        $createdAt = self::resolveAgedInstant($data->payload);
+        if ($createdAt === null) {
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                'Exactly one of ' . BackupConstants::FIELD_AGE_AT . ' or ' . BackupConstants::FIELD_AGE_DAYS . ' is required',
+            ));
+
+            return;
+        }
+
+        $scope = null;
+        $scopeValue = $data->payload[BackupConstants::FIELD_SCOPE] ?? null;
+        if ($scopeValue !== null) {
+            $scope = is_string($scopeValue) ? BackupScope::fromString($scopeValue) : null;
+            if ($scope === null) {
+                $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown scope: {$scopeValue}"));
+
+                return;
+            }
+        }
+
+        $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+        if ($root === '') {
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                'Backup directory (' . EnvConstants::BACKUP_DIR->name . ') is not configured',
+            ));
+
+            return;
+        }
+
+        try {
+            new BackupSidecarRetimer()->retime($root, $id, $scope, $createdAt);
+        } catch (BackupException $failure) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+
+            return;
+        }
+
+        $this->refreshHistory();
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            BackupConstants::FIELD_BACKUP_ID => $id,
+            BackupConstants::FIELD_AGE_AT => $createdAt->format(DateTimeInterface::ATOM),
+        ]));
+    }
+
+    /**
+     * Resolves the instant an age request asks for, from exactly one of its two payload keys.
+     *
+     * Exactly one, not "the first one present": a request carrying both says two different things
+     * and the fixture would silently honour one of them.
+     *
+     * @param array<string, mixed> $payload Age request payload
+     * @return ?DateTimeImmutable Instant to stamp, or null when neither, both, or malformed
+     */
+    private static function resolveAgedInstant(array $payload): ?DateTimeImmutable
+    {
+        $at = $payload[BackupConstants::FIELD_AGE_AT] ?? null;
+        $days = $payload[BackupConstants::FIELD_AGE_DAYS] ?? null;
+        if (($at === null) === ($days === null)) {
+            return null;
+        }
+
+        if ($at !== null) {
+            if (!is_string($at)) {
+                return null;
+            }
+
+            try {
+                return new DateTimeImmutable($at);
+            } catch (Exception) {
+                return null;
+            }
+        }
+
+        if (!is_int($days) || $days < 0) {
+            return null;
+        }
+
+        return new DateTimeImmutable()->modify("-{$days} days");
     }
 
     /**

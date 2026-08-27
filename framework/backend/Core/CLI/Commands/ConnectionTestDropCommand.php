@@ -4,17 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
-use Hilos\API\AsyncCommandClient;
 use Hilos\Constants\CommandConstants;
-use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
-use Hilos\Constants\TimeConstants;
+use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Environment\Exception\EnvException;
-use Hilos\Hilos;
-use Hilos\Socket\Command\DTO\CommandReplyDTO;
-use Hilos\Socket\Command\DTO\CommandRequestDTO;
-use Hilos\Utils\Helpers\RandomHelper;
-use Throwable;
 
 /**
  * ConnectionTestDropCommand - force-close a live WebSocket connection by acceptKey.
@@ -27,11 +20,8 @@ use Throwable;
  * channel; the master finds the matching live client and closes it, then answers whether a
  * connection was actually dropped.
  */
-class ConnectionTestDropCommand extends TestOnlyCommand
+class ConnectionTestDropCommand extends AbstractCommandChannelTestCommand
 {
-    /** @var float Wall-clock wait budget for a reply in milliseconds */
-    private const float MAX_WAIT_MS = 2000.0;
-
     /**
      * Returns command name for CLI routing.
      *
@@ -83,6 +73,7 @@ HELP;
      * @param array<string, mixed> $options Parsed options (unused)
      * @param list<string> $args Positional args; the first is the target acceptKey
      * @return int Exit code (0 when a connection was dropped)
+     * @throws CommandException When the command name is not registered as test-only
      */
     protected function run(array $options, array $args): int
     {
@@ -94,16 +85,20 @@ HELP;
         }
 
         try {
-            $reply = $this->sendRequest($acceptKey);
+            $result = $this->sendCommand(
+                CommandConstants::COMMAND_CONNECTION_DROP,
+                [CommandConstants::FIELD_ACCEPT_KEY => $acceptKey],
+            );
         } catch (EnvException $e) {
             echo "Error: {$e->getMessage()}\n";
             return ExitCode::CONFIG_ERROR;
         }
 
-        if ($reply === null) {
-            echo "No reply from daemon (is it running?)\n";
-            return ExitCode::ERROR;
+        if ($result->reply === null) {
+            return $this->printChannelFailure($result, CommandConstants::COMMAND_CONNECTION_DROP);
         }
+
+        $reply = $result->reply;
 
         if (!$reply->isOk()) {
             $detail = (string) ($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');
@@ -120,43 +115,5 @@ HELP;
         echo "Dropped connection {$acceptKey}\n";
 
         return ExitCode::SUCCESS;
-    }
-
-    /**
-     * Sends test:connection:drop over the command channel and waits for the reply.
-     *
-     * @param string $acceptKey Target connection identifier
-     * @return ?CommandReplyDTO Reply, or null on timeout / transport failure
-     * @throws EnvException When daemon host/port env values are missing or invalid
-     */
-    private function sendRequest(string $acceptKey): ?CommandReplyDTO
-    {
-        $host = Hilos::$env[EnvConstants::HILOS_DAEMON_HOST];
-        $port = Hilos::$env->int(EnvConstants::COMMAND_PORT);
-
-        $client = new AsyncCommandClient($host, $port);
-        $request = new CommandRequestDTO(
-            correlationId: RandomHelper::hex(8),
-            command: CommandConstants::COMMAND_CONNECTION_DROP,
-            payload: [CommandConstants::FIELD_ACCEPT_KEY => $acceptKey],
-        );
-
-        try {
-            $client->startRequest($request);
-
-            $startedAtMs = microtime(true) * TimeConstants::MS_PER_SECOND;
-            while (!$client->hasResult()) {
-                if ((microtime(true) * TimeConstants::MS_PER_SECOND - $startedAtMs) > self::MAX_WAIT_MS) {
-                    return null;
-                }
-
-                $client->tick();
-                usleep(CommandConstants::POLL_INTERVAL_US);
-            }
-
-            return $client->consumeResult();
-        } catch (Throwable) {
-            return null;
-        }
     }
 }

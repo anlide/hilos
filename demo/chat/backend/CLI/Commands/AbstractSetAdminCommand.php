@@ -10,6 +10,7 @@ use Hilos\Constants\CommandConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -34,6 +35,16 @@ abstract class AbstractSetAdminCommand implements CommandInterface
 
     /** @var int Poll sleep between ticks in microseconds */
     private const int POLL_INTERVAL_US = 10000;
+
+    /**
+     * Declares the rule for both subclasses: the daemon flips the flag, this process asks it to.
+     *
+     * @return CommandExecution Where this family's work happens
+     */
+    final public function execution(): CommandExecution
+    {
+        return CommandExecution::daemon();
+    }
 
     /**
      * The admin flag this command sets on the target user.

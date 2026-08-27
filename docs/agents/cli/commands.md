@@ -2,41 +2,48 @@
 
 Run via: `php Backend/Bootstrap/cli.php <command> [options]`
 
+Every command below carries a **site**: the process its work actually happens in. `daemon`
+is the rule and needs no explanation; the other three are departures, each with a written
+reason in its `execution()` declaration. See
+[command-execution.md](command-execution.md) for the rule, the guard behind it, and why a
+`cli-offline-write` command refuses to start while a daemon is running.
+
 ## Migration commands
 
-| Command | Description |
-|---|---|
-| `db:migration:up` | Apply all pending migrations |
-| `db:migration:down` | Roll back last applied migration |
-| `db:migration:status` | Show applied / pending migrations |
-| `db:migration:retry` | Retry a failed migration |
+| Command | Site | Description |
+|---|---|---|
+| `db:migration:up` | `cli-offline-write` | Apply all pending migrations |
+| `db:migration:down` | `cli-offline-write` | Roll back last applied migration |
+| `db:migration:status` | `cli-read` | Show applied / pending migrations |
+| `db:migration:retry` | `cli-offline-write` | Retry a failed migration |
 
 ## Schema / Entity commands
 
-| Command | Description |
-|---|---|
-| `db:schema:status` | Check DB schema vs expected structure |
+| Command | Site | Description |
+|---|---|---|
+| `db:schema:status` | `cli-read` | Check DB schema vs expected structure |
 
 ## Seed commands
 
-| Command | Description |
-|---|---|
-| `db:seed:apply <n>` | Apply seed number N |
+| Command | Site | Description |
+|---|---|---|
+| `db:seed:apply <n>` | `cli-offline-write` | Apply seed number N |
 
 ## DB utility commands
 
-| Command | Description |
-|---|---|
-| `db:test:reset` | DROP all tables → migrate → seed (test env only) — runs before the database exists, but needs the server up |
-| `db:wait` | Wait until MySQL is accepting connections — runs while the server is still down |
+| Command | Site | Description |
+|---|---|---|
+| `db:test:reset` | `cli-offline-write` | DROP all tables → migrate → seed (test env only) — runs before the database exists, but needs the server up |
+| `db:wait` | `cli-read` | Wait until MySQL is accepting connections — runs while the server is still down |
 
 ## System commands
 
-| Command | Description |
-|---|---|
-| `daemon:status` | Show daemon status (workers, memory, uptime) |
-| `daemon:monitor` | Live monitoring of daemon (continuous blocking watch — use `daemon:status` for a one-shot check, not for an AI agent) |
-| `help` | List available commands — runs while the server is still down |
+| Command | Site | Description |
+|---|---|---|
+| `daemon:status` | `daemon` | Show daemon status (workers, memory, uptime) — over the HTTP status endpoint, which is a transport and not a site |
+| `daemon:monitor` | `daemon` | Live monitoring of daemon (continuous blocking watch — use `daemon:status` for a one-shot check, not for an AI agent) |
+| `daemon:ping` | `daemon` | Probe the command channel itself |
+| `help` | `cli-read` | List available commands — runs while the server is still down |
 
 ## Test-only commands
 
@@ -135,3 +142,14 @@ php cli.php db:migration:up
 # Reset test database:
 php cli.php db:test:reset
 ```
+
+## Declaring a new command
+
+Three declarations, all made by the command about itself, all read by the spine:
+
+1. **the site** — `execution()`, always; a departure from the daemon rule carries its
+   reason ([command-execution.md](command-execution.md));
+2. **the database** — implement `DatabaseFreeCommand` when the bootstrap must not connect
+   (above);
+3. **test-only** — extend `TestOnlyCommand`, plus the `test:` prefix and the
+   `AgentCommandConfigKey::TEST_ONLY` flag when it reaches an agent (above).

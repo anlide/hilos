@@ -15,6 +15,7 @@ use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Backup\RestorePhase;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\BackupRestoreCommand;
+use Hilos\Core\CLI\Commands\CommandChannelResult;
 use Hilos\Database\Migration;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
@@ -37,16 +38,23 @@ final class BackupRestoreCommandProbe extends BackupRestoreCommand
     /** @var list<?CommandReplyDTO> Replies consumed in order; empty means "daemon silent" */
     public array $replies = [];
 
+    /** Address the canned round-trip reports itself as having used. */
+    private const string ADDRESS = '127.0.0.1:8094';
+
     /**
      * @param string $command Command-channel wire name
      * @param array<string, mixed> $payload Request payload
-     * @return ?CommandReplyDTO Next canned reply, or null when none remain
+     * @return CommandChannelResult Next canned reply, or an unreachable channel when none remain
      */
-    protected function sendCommand(string $command, array $payload): ?CommandReplyDTO
+    protected function sendCommand(string $command, array $payload): CommandChannelResult
     {
         $this->sent[] = ['command' => $command, 'payload' => $payload];
 
-        return array_shift($this->replies);
+        $reply = array_shift($this->replies);
+
+        return $reply === null
+            ? CommandChannelResult::unreachable(self::ADDRESS)
+            : CommandChannelResult::replied($reply, self::ADDRESS);
     }
 }
 

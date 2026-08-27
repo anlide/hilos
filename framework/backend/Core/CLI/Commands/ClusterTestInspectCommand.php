@@ -4,18 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
-use Hilos\API\AsyncCommandClient;
 use Hilos\Constants\CommandConstants;
-use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
-use Hilos\Constants\TimeConstants;
+use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Environment\Exception\EnvException;
-use Hilos\Hilos;
-use Hilos\Socket\Command\DTO\CommandReplyDTO;
-use Hilos\Socket\Command\DTO\CommandRequestDTO;
-use Hilos\Utils\Helpers\RandomHelper;
 use JsonException;
-use Throwable;
 
 /**
  * ClusterTestInspectCommand - dump the daemon's cluster/consensus/placement state as JSON.
@@ -31,11 +24,8 @@ use Throwable;
  * what lets the harness inspect a network-partitioned node from inside its own container —
  * that node cannot reach MySQL either, and its answer is the point of the scenario.
  */
-class ClusterTestInspectCommand extends TestOnlyCommand implements DatabaseFreeCommand
+class ClusterTestInspectCommand extends AbstractCommandChannelTestCommand implements DatabaseFreeCommand
 {
-    /** @var float Wall-clock wait budget for a reply in milliseconds */
-    private const float MAX_WAIT_MS = 2000.0;
-
     /**
      * Returns command name for CLI routing.
      *
@@ -84,21 +74,23 @@ HELP;
      * @param array<string, mixed> $options Parsed options (unused)
      * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
+     * @throws CommandException When the command name is not registered as test-only
      * @throws JsonException When the reply payload cannot be encoded to JSON
      */
     protected function run(array $options, array $args): int
     {
         try {
-            $reply = $this->sendRequest();
+            $result = $this->sendCommand(CommandConstants::COMMAND_CLUSTER_INSPECT, []);
         } catch (EnvException $e) {
             echo "Error: {$e->getMessage()}\n";
             return ExitCode::CONFIG_ERROR;
         }
 
-        if ($reply === null) {
-            echo "No reply from daemon (is it running?)\n";
-            return ExitCode::ERROR;
+        if ($result->reply === null) {
+            return $this->printChannelFailure($result, CommandConstants::COMMAND_CLUSTER_INSPECT);
         }
+
+        $reply = $result->reply;
 
         if (!$reply->isOk()) {
             $detail = (string) ($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');
@@ -109,42 +101,5 @@ HELP;
         echo json_encode($reply->payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
 
         return ExitCode::SUCCESS;
-    }
-
-    /**
-     * Sends test:cluster:inspect over the command channel and waits for the reply.
-     *
-     * @return ?CommandReplyDTO Reply, or null on timeout / transport failure
-     * @throws EnvException When daemon host/port env values are missing or invalid
-     */
-    private function sendRequest(): ?CommandReplyDTO
-    {
-        $host = Hilos::$env[EnvConstants::HILOS_DAEMON_HOST];
-        $port = Hilos::$env->int(EnvConstants::COMMAND_PORT);
-
-        $client = new AsyncCommandClient($host, $port);
-        $request = new CommandRequestDTO(
-            correlationId: RandomHelper::hex(8),
-            command: CommandConstants::COMMAND_CLUSTER_INSPECT,
-            payload: [],
-        );
-
-        try {
-            $client->startRequest($request);
-
-            $startedAtMs = microtime(true) * TimeConstants::MS_PER_SECOND;
-            while (!$client->hasResult()) {
-                if ((microtime(true) * TimeConstants::MS_PER_SECOND - $startedAtMs) > self::MAX_WAIT_MS) {
-                    return null;
-                }
-
-                $client->tick();
-                usleep(CommandConstants::POLL_INTERVAL_US);
-            }
-
-            return $client->consumeResult();
-        } catch (Throwable) {
-            return null;
-        }
     }
 }

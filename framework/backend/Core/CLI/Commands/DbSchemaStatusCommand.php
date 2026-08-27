@@ -31,6 +31,18 @@ class DbSchemaStatusCommand implements CommandInterface
     }
 
     /**
+     * Declares the departure: this reading happens in the CLI process, for the reason it names.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::cliRead(
+            'reads the schema of an installation whose daemon did not start, which is when the answer is wanted',
+        );
+    }
+
+    /**
      * Returns short command description for help listing.
      *
      * @return string One-line description

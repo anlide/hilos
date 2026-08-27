@@ -6,6 +6,7 @@ namespace Demo\Chat\CLI\Commands;
 
 use Demo\Chat\Constants\ChatCliCommands;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
@@ -31,6 +32,18 @@ final class DeleteOrphanSettingCommand extends TestOnlyCommand
     public function getName(): string
     {
         return ChatCliCommands::DELETE_ORPHAN_SETTING;
+    }
+
+    /**
+     * Declares the departure: this write happens in the CLI process, and only while the daemon is down.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::cliOfflineWrite(
+            "temporary until HIL-729 moves chat's CLI into the framework: deletes the seeded cataloged row straight from the table",
+        );
     }
 
     public function getDescription(): string

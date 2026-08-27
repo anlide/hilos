@@ -68,6 +68,17 @@ final class BackupConstants
     /** `--days=<N>` option: the age fixture writes a createdAt N days before now. */
     public const string DAYS_OPTION = 'days';
 
+    /**
+     * Request payload key: the explicit ISO-8601 createdAt the age fixture writes into a sidecar.
+     *
+     * Distinct from {@see AT_OPTION}, which names the same thing on the operator's command line:
+     * one is what a human types, the other is what goes on the wire, and they are free to diverge.
+     */
+    public const string FIELD_AGE_AT = 'ageAt';
+
+    /** Request payload key: the age fixture writes a createdAt this many days before now. */
+    public const string FIELD_AGE_DAYS = 'ageDays';
+
     /** Reply key: number of backups the forced prune removed. */
     public const string FIELD_PRUNED_COUNT = 'prunedCount';
 

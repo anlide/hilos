@@ -12,6 +12,13 @@ the HTTP-status and WebSocket servers.
 - `COMMAND_HOST` / `COMMAND_PORT` env (catalog defaults, so projects that do not
   use commands need no env changes).
 
+**This page is the transport.** Which process a command's work happens in is a separate
+question with its own rule — the daemon does the work, the CLI initiates it — and its own
+page: [../cli/command-execution.md](../cli/command-execution.md). The two are independent
+on purpose: `daemon:status` reaches the daemon over the HTTP status endpoint and is no less
+daemon-executed for it, and the presence probe in front of a CLI-side write opens a socket
+here without ever speaking the protocol above.
+
 ## Request / reply DTOs
 
 ```php

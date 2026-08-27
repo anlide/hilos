@@ -52,6 +52,18 @@ final class UserTestSeedCommand extends TestOnlyCommand
         return CliCommands::USER_TEST_SEED;
     }
 
+    /**
+     * Declares the departure: this write happens in the CLI process, and only while the daemon is down.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::cliOfflineWrite(
+            'seeds stand accounts from composer test:db-prepare, which runs before the stand\'s daemon comes up',
+        );
+    }
+
     public function getDescription(): string
     {
         return 'Bulk-seed N fixture users with password identities (test-only)';

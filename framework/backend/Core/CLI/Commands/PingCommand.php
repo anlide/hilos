@@ -6,15 +6,8 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\API\AsyncCommandClient;
 use Hilos\Constants\CommandConstants;
-use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
-use Hilos\Constants\TimeConstants;
 use Hilos\Environment\Exception\EnvException;
-use Hilos\Hilos;
-use Hilos\Socket\Command\DTO\CommandReplyDTO;
-use Hilos\Socket\Command\DTO\CommandRequestDTO;
-use Hilos\Utils\Helpers\RandomHelper;
-use Throwable;
 
 /**
  * PingCommand - probe the daemon command channel.
@@ -25,8 +18,7 @@ use Throwable;
  */
 class PingCommand implements CommandInterface
 {
-    /** @var float Wall-clock wait budget for a reply in milliseconds */
-    private const float MAX_WAIT_MS = 2000.0;
+    use CommandChannelClientTrait;
 
     /**
      * Returns command name for CLI routing.
@@ -36,6 +28,16 @@ class PingCommand implements CommandInterface
     public function getName(): string
     {
         return 'daemon:ping';
+    }
+
+    /**
+     * Declares the rule: the daemon does the work and this process only initiates it and prints.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::daemon();
     }
 
     /**
@@ -85,16 +87,17 @@ HELP;
         echo "Pinging daemon command channel...\n";
 
         try {
-            $reply = $this->sendPing($message);
+            $result = $this->sendCommand(CommandConstants::COMMAND_PING, [CommandConstants::FIELD_MESSAGE => $message]);
         } catch (EnvException $e) {
             echo "Error: {$e->getMessage()}\n";
             return ExitCode::CONFIG_ERROR;
         }
 
-        if ($reply === null) {
-            echo "No reply from daemon (is it running?)\n";
-            return ExitCode::ERROR;
+        if ($result->reply === null) {
+            return $this->printChannelFailure($result, CommandConstants::COMMAND_PING);
         }
+
+        $reply = $result->reply;
 
         if (!$reply->isOk()) {
             $detail = (string) ($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');
@@ -115,46 +118,5 @@ HELP;
         echo "Reply (ok): {$echoed}\n";
 
         return ExitCode::SUCCESS;
-    }
-
-    /**
-     * Sends a ping over the command channel and waits for the reply.
-     *
-     * Protected for the same reason the sibling commands take their round-trip from a
-     * protected trait method: it is the seam a test stands a canned reply in at.
-     *
-     * @param string $message Echo message
-     * @return ?CommandReplyDTO Reply, or null on timeout / transport failure
-     * @throws EnvException When daemon host/port env values are missing or invalid
-     */
-    protected function sendPing(string $message): ?CommandReplyDTO
-    {
-        $host = Hilos::$env[EnvConstants::HILOS_DAEMON_HOST];
-        $port = Hilos::$env->int(EnvConstants::COMMAND_PORT);
-
-        $client = new AsyncCommandClient($host, $port);
-        $request = new CommandRequestDTO(
-            correlationId: RandomHelper::hex(8),
-            command: CommandConstants::COMMAND_PING,
-            payload: [CommandConstants::FIELD_MESSAGE => $message],
-        );
-
-        try {
-            $client->startRequest($request);
-
-            $startedAtMs = microtime(true) * TimeConstants::MS_PER_SECOND;
-            while (!$client->hasResult()) {
-                if ((microtime(true) * TimeConstants::MS_PER_SECOND - $startedAtMs) > self::MAX_WAIT_MS) {
-                    return null;
-                }
-
-                $client->tick();
-                usleep(CommandConstants::POLL_INTERVAL_US);
-            }
-
-            return $client->consumeResult();
-        } catch (Throwable) {
-            return null;
-        }
     }
 }

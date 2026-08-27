@@ -56,6 +56,18 @@ class BackupVerifyCommand implements CommandInterface
     }
 
     /**
+     * Declares the departure: this reading happens in the CLI process, for the reason it names.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::cliRead(
+            'hashing gigabytes must not run inside the monopolistic backup agent\'s loop (BackupVerifier)',
+        );
+    }
+
+    /**
      * Returns short command description for help listing.
      *
      * @return string One-line description

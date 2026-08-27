@@ -395,6 +395,7 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::PROTECTED_MODE_TEST_PASS => AgentType::HILOS_INDEX,
             CliCommands::ADMIN_GRANT => AgentType::HILOS_INDEX,
             CliCommands::ADMIN_REVOKE => AgentType::HILOS_INDEX,
+            CliCommands::BACKUP_TEST_AGE => AgentType::HILOS_BACKUP,
             BackupConstants::PRUNE_COMMAND => AgentType::HILOS_BACKUP,
             BackupConstants::SHIP_COMMAND => AgentType::HILOS_BACKUP,
             BackupConstants::RUN_SCHEDULE_COMMAND => AgentType::HILOS_BACKUP,
@@ -412,7 +413,7 @@ final class ChatTopologyRegistryTest extends TestCase
      * The whole test-only registry as one installation sees it (HIL-566).
      *
      * Chat is where this is worth pinning: it is the only demo that mounts every framework
-     * agent that owns a test-only command AND adds one of its own, so its seventeen are the
+     * agent that owns a test-only command AND adds one of its own, so its eighteen are the
      * full set. What the count guards is a name silently LEAVING the registry - an agent entry
      * rewritten back to its bare list shape drops the flag without touching a route, and the
      * route assertion above would still pass.
@@ -430,6 +431,7 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::PROTECTED_MODE_TEST_LEAVE,
             CliCommands::PROTECTED_MODE_TEST_OPEN,
             CliCommands::PROTECTED_MODE_TEST_PASS,
+            CliCommands::BACKUP_TEST_AGE,
             BackupConstants::PRUNE_COMMAND,
             BackupConstants::SHIP_COMMAND,
             BackupConstants::RUN_SCHEDULE_COMMAND,

@@ -12,6 +12,7 @@ use Hilos\Backup\BackupProgressMarker;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\Exception\BackupException;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\Process;
 
@@ -32,6 +33,18 @@ final class BackupRunCommand implements CommandInterface
     public function getName(): string
     {
         return ChatCliCommands::BACKUP_RUN;
+    }
+
+    /**
+     * Declares the departure: the daemon spawns this process itself, with no operator at its entrance.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::daemonSpawned(
+            "the backup agent spawns this child itself, so writing a whole archive never runs inside its loop",
+        );
     }
 
     public function getDescription(): string

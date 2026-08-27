@@ -11,6 +11,7 @@ use Hilos\Constants\CommandConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -36,6 +37,16 @@ final class EchoCommand extends TestOnlyCommand
     public function getName(): string
     {
         return ChatCliCommands::COMMAND_ECHO;
+    }
+
+    /**
+     * Declares the rule: the daemon does the work and this process only initiates it and prints.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::daemon();
     }
 
     public function getDescription(): string

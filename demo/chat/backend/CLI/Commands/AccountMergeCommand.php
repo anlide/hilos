@@ -11,6 +11,7 @@ use Hilos\Constants\CommandConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Database\Identity\PasswordFate;
 use Hilos\Environment\Exception\EnvException;
@@ -46,6 +47,16 @@ final class AccountMergeCommand implements CommandInterface
     public function getName(): string
     {
         return ChatCliCommands::ACCOUNT_MERGE;
+    }
+
+    /**
+     * Declares the rule: the daemon does the work and this process only initiates it and prints.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::daemon();
     }
 
     public function getDescription(): string

@@ -57,7 +57,7 @@ class AdminCreateCommand implements CommandInterface, DatabaseFreeCommand
         echo "Making the session an administrator...\n";
 
         try {
-            $reply = $this->sendCommand($this->getName(), [
+            $result = $this->sendCommand($this->getName(), [
                 AdminCommandConstants::FIELD_SESSION_TOKEN => $sessionToken,
             ]);
         } catch (EnvException $e) {
@@ -66,11 +66,11 @@ class AdminCreateCommand implements CommandInterface, DatabaseFreeCommand
             return ExitCode::CONFIG_ERROR;
         }
 
-        if ($reply === null) {
-            echo "No reply from daemon (is it running?)\n";
-
-            return ExitCode::ERROR;
+        if ($result->reply === null) {
+            return $this->printChannelFailure($result, $this->getName());
         }
+
+        $reply = $result->reply;
 
         if (!$reply->isOk()) {
             $detail = (string)($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');
@@ -96,6 +96,16 @@ class AdminCreateCommand implements CommandInterface, DatabaseFreeCommand
     public function getName(): string
     {
         return CliCommands::ADMIN_CREATE;
+    }
+
+    /**
+     * Declares the rule: the daemon does the work and this process only initiates it and prints.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::daemon();
     }
 
     /**

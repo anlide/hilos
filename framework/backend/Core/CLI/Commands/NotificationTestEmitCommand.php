@@ -193,18 +193,18 @@ HELP;
         }
 
         try {
-            $reply = $this->sendCommand($this->getName(), $payload);
+            $result = $this->sendCommand($this->getName(), $payload);
         } catch (EnvException $e) {
             echo "Error: {$e->getMessage()}\n";
 
             return ExitCode::CONFIG_ERROR;
         }
 
-        if ($reply === null) {
-            echo "No reply from daemon (is it running?)\n";
-
-            return ExitCode::ERROR;
+        if ($result->reply === null) {
+            return $this->printChannelFailure($result, $this->getName());
         }
+
+        $reply = $result->reply;
 
         if (!$reply->isOk()) {
             $detail = (string)($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');

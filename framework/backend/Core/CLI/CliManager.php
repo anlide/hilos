@@ -23,6 +23,7 @@ use Hilos\Core\CLI\Commands\ClusterTestClientFanoutCommand;
 use Hilos\Core\CLI\Commands\ClusterTestClientSendCommand;
 use Hilos\Core\CLI\Commands\ClusterTestDbAnnounceCommand;
 use Hilos\Core\CLI\Commands\ClusterTestInspectCommand;
+use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\CLI\Commands\ConnectionTestDropCommand;
 use Hilos\Core\CLI\Commands\DatabaseFreeCommand;
@@ -199,6 +200,44 @@ class CliManager
         }
 
         return !($this->commands[$name] instanceof DatabaseFreeCommand);
+    }
+
+    /**
+     * Hands out what every registered command declares about where its work happens.
+     *
+     * The registry answers for itself, framework and project commands alike, because nothing
+     * else can: the execution site is a per-command declaration, and collecting it any other
+     * way would mean walking the class tree with Reflection, which this project forbids
+     * (HIL-538). The guard test asks this, and so does anything that needs the whole picture
+     * rather than one command's answer.
+     *
+     * @return array<string, CommandExecution> Execution declaration per registered command name
+     */
+    public function executions(): array
+    {
+        $executions = [];
+        foreach ($this->commands as $name => $command) {
+            $executions[$name] = $command->execution();
+        }
+
+        return $executions;
+    }
+
+    /**
+     * Reports where the named command's work happens, so the CLI spine can gate on it.
+     *
+     * An unregistered name answers null, the same way {@see requiresDatabase()} answers false
+     * for one: a typo has to reach the "Unknown command" reply rather than die in a gate that
+     * has no command to judge.
+     *
+     * @param ?string $command Command name from argv, or null when none was named
+     * @return ?CommandExecution Declaration of the named command, or null when it is not registered
+     */
+    public function execution(?string $command): ?CommandExecution
+    {
+        $name = $command ?? CliCommands::HELP;
+
+        return ($this->commands[$name] ?? null)?->execution();
     }
 
     /**

@@ -42,6 +42,18 @@ class HelpCommand implements CommandInterface, DatabaseFreeCommand
     }
 
     /**
+     * Declares the departure: this reading happens in the CLI process, for the reason it names.
+     *
+     * @return CommandExecution Where this command's work happens
+     */
+    public function execution(): CommandExecution
+    {
+        return CommandExecution::cliRead(
+            'the command list is the registry this process already holds, so there is nothing to ask the daemon',
+        );
+    }
+
+    /**
      * Returns short command description for help listing.
      *
      * @return string One-line description
