@@ -444,6 +444,7 @@ final class ChatTopologyRegistryTest extends TestCase
             CommandConstants::COMMAND_CLUSTER_CLIENT_SEND,
             CommandConstants::COMMAND_CLUSTER_CLIENT_FANOUT,
             CommandConstants::COMMAND_CLUSTER_DB_ANNOUNCE,
+            CommandConstants::COMMAND_CLUSTER_AGENT_PLACE,
         ], TestOnlyCommandRegistry::commands());
     }
 

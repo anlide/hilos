@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Demo\Cluster\Tests\Unit;
 
+use Demo\Cluster\Agents\ClaimerAgent;
 use Demo\Cluster\Agents\WorkerAgent;
 use Demo\Cluster\Constants\AgentType;
+use Demo\Cluster\Constants\ClusterCapability;
+use Demo\Cluster\Core\Agent\Daemon\ClaimerAgentDaemon;
 use Demo\Cluster\Core\Agent\Daemon\WorkerAgentDaemon;
 use Demo\Cluster\Core\Router\ClusterSignalRouter;
 use Demo\Cluster\Hilos;
@@ -54,9 +57,9 @@ final class ClusterTopologyRegistryTest extends TestCase
         ], Hilos::getCommandAgentRoutes());
     }
 
-    public function testAgentRegistryHasOnlyThePlaceableWorker(): void
+    public function testAgentRegistryHasThePlaceableWorkerAndTheClaimer(): void
     {
-        $this->assertSame([AgentType::WORKER], array_keys(Hilos::AGENTS));
+        $this->assertSame([AgentType::WORKER, AgentType::CLAIMER], array_keys(Hilos::AGENTS));
 
         $entry = Hilos::AGENTS[AgentType::WORKER];
         $this->assertSame(WorkerAgent::class, AgentRegistry::workerClass($entry));
@@ -69,6 +72,31 @@ final class ClusterTopologyRegistryTest extends TestCase
         $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
         $this->assertTrue(is_subclass_of(WorkerAgentDaemon::class, AbstractAgentDaemon::class));
         $this->assertSame(AgentType::WORKER, WorkerAgent::AGENT_TYPE);
+    }
+
+    public function testTheClaimerIsDeclaredSoThatNothingStartsItByItself(): void
+    {
+        $entry = Hilos::AGENTS[AgentType::CLAIMER];
+        $this->assertSame(ClaimerAgent::class, AgentRegistry::workerClass($entry));
+        $this->assertSame(ClaimerAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        $this->assertTrue(is_subclass_of(ClaimerAgentDaemon::class, AbstractAgentDaemon::class));
+        $this->assertSame(AgentType::CLAIMER, ClaimerAgent::AGENT_TYPE);
+
+        // The load-bearing pair, and the reason this agent can live in the registry at all: an
+        // agent that stages a two-owner split must reach the mesh only when a scenario asks for
+        // it. INDEXED keeps it out of the framework's policy-placement sweep, which places the
+        // unindexed ones by itself, and POLICY keeps it off the leader's own node - it has to
+        // land on the data plane, where the fleet writes, or it would clash with nobody.
+        $this->assertTrue(AgentRegistry::requiresIndex($entry));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+
+        // Gated to the data plane like a fleet member, because that is where the rows it means
+        // to claim are already written; a claimer the policy could only put on a coordination
+        // node would clash with nobody and the scenario would pass on nothing.
+        $daemon = new ClaimerAgentDaemon('0');
+        $this->assertSame([ClusterCapability::WORKER], $daemon->requiredCapabilities());
+        $this->assertFalse($daemon->requiresMonopolisticProcess());
     }
 
     public function testNoAgentIsStartedOnTheBootstrapSignal(): void

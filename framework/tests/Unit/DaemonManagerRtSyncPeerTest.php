@@ -9,7 +9,10 @@ use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
+use Hilos\Cluster\Peer\DTO\PeerRtClaimEntry;
+use Hilos\Cluster\Peer\DTO\PeerRtClaimRefusedDTO;
 use Hilos\Cluster\Peer\PeerServer;
+use Hilos\Cluster\RtClaimMesh;
 use Hilos\Cluster\RtSyncMesh;
 use Hilos\Cluster\SourceInterestMesh;
 use Hilos\Constants\SignalConstants;
@@ -1175,6 +1178,134 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
             new DbSyncCreatedSignalData('users', self::ROW_ID, ['id' => self::ROW_ID]),
         );
     }
+
+    /**
+     * The claim itself is what the leader is told, and it is told per agent (HIL-696): the
+     * verdict it may reach stops ONE agent, so a node-level answer would name nobody to stop.
+     * Both axes travel with it, and the identity a placement frame is addressed with comes off
+     * the agent id, which is the only identity a worker report carries.
+     */
+    public function testWhatThisNodeReportsIsEachAgentsOwnClaim(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->noteOwnAgent(
+            'rooms_agent:4',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS, StateHilosSessionRotation::RT_COLLECTION],
+            [StateHilosSessionRotation::RT_COLLECTION],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]],
+        );
+
+        $claims = $daemon->ownClaims();
+
+        $this->assertCount(1, $claims);
+        $this->assertSame('rooms_agent:4', $claims[0]->agentId);
+        $this->assertSame('rooms_agent', $claims[0]->agentType);
+        $this->assertSame('4', $claims[0]->agentIndex);
+        $this->assertSame(
+            [StateHilosSessionRotation::RT_COLLECTION],
+            $claims[0]->partialCollectionKeys,
+            'A claim short of an operation says so, or a legitimate co-owner would read as a split',
+        );
+        $this->assertSame(
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]],
+            $claims[0]->keysByCollection,
+        );
+    }
+
+    /**
+     * An agent that stopped claims nothing, and the report says so rather than falling silent:
+     * silence would leave the leader holding a right nobody has, and the next node to claim it
+     * would be refused in favour of an agent that is gone.
+     */
+    public function testANodeWhoseAgentsStoppedReportsAnEmptyClaim(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->noteOwnAgent('rooms_agent', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
+        $daemon->noteOwnAgent('rooms_agent', []);
+
+        $this->assertSame([], $daemon->ownClaims());
+    }
+
+    /**
+     * The whole point of the guard, seen from the counter an acceptance run reads: the split is
+     * named from the DECLARATIONS, before either owner has written anything, so the counter that
+     * moves is the claim one and the replica counters stay where they were.
+     */
+    public function testTheLeaderNamesTheSplitBeforeAnyReplicaHasBeenSent(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = DaemonManagerRtSyncPeerTestRtContext::ROWS;
+
+        $daemon->applyRemoteRtClaims('node-b', [new PeerRtClaimEntry('library', 'library', null, [$collection])]);
+        $daemon->applyRemoteRtClaims('node-c', [new PeerRtClaimEntry('twin', 'twin', null, [$collection])]);
+
+        $inspect = $daemon->inspectRtReplicas();
+        $this->assertSame(1, $inspect[ClusterCommandConstants::FIELD_RT_CLAIM_CONFLICTS]);
+        $this->assertSame(
+            0,
+            $inspect[ClusterCommandConstants::FIELD_RT_REFUSED],
+            'Nothing was written, so the replica path had nothing to refuse',
+        );
+    }
+
+    /**
+     * And the node the verdict is against counts it at its own end, which is what an operator
+     * reading one node has to go on.
+     */
+    public function testTheRefusedNodeCountsTheVerdictAgainstIt(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+
+        $daemon->applyRtClaimRefusal(new PeerRtClaimRefusedDTO(
+            collectionKey: DaemonManagerRtSyncPeerTestRtContext::ROWS,
+            stateIds: [],
+            agentType: 'twin',
+            agentIndex: null,
+            agentId: 'twin',
+            holderNodeId: 'node-b',
+            holderAgentId: 'library',
+        ));
+
+        $this->assertSame(1, $daemon->inspectRtReplicas()[ClusterCommandConstants::FIELD_RT_CLAIM_REFUSALS]);
+    }
+
+    /**
+     * A claim is ANNOUNCED to everybody, not addressed at the leader, and that is the difference
+     * between a guard that works and one that is silent exactly where it is needed (HIL-696).
+     * Consensus runs on the master set alone, so a data-plane node keeps an inert leadership seam
+     * and can never name the leader — and data-plane nodes are where placed agents live. An
+     * addressed report was dropped on every one of them, which the cluster stand caught: a second
+     * owner ran for a full minute with nothing said.
+     */
+    public function testAClaimGoesToTheWholeMeshBecauseANodeCannotAlwaysNameTheLeader(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->noteOwnAgent('rooms_agent', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
+
+        $daemon->reportClaims(null);
+
+        $this->assertCount(1, $daemon->mesh->announcedClaims);
+        $this->assertSame('rooms_agent', $daemon->mesh->announcedClaims[0][0]->agentId);
+        $this->assertSame([], $daemon->mesh->claimsByNode, 'Nobody was singled out to hear it');
+    }
+
+    /**
+     * The other cue names one peer — a link that has just appeared — and then only that peer is
+     * short of the answer. Re-announcing to the whole mesh on every link would re-tell every
+     * other node what it already holds, on the cue that fires most often of the three.
+     */
+    public function testALinkThatJustAppearedIsToldOnItsOwn(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->noteOwnAgent('rooms_agent', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
+
+        $daemon->reportClaims(DaemonManagerRtSyncPeerTest::REMOTE_NODE);
+
+        $this->assertSame([], $daemon->mesh->announcedClaims);
+        $this->assertCount(1, $daemon->mesh->claimsByNode);
+        $this->assertSame(DaemonManagerRtSyncPeerTest::REMOTE_NODE, $daemon->mesh->claimsByNode[0]['nodeId']);
+        $this->assertSame('rooms_agent', $daemon->mesh->claimsByNode[0]['claims'][0]->agentId);
+    }
 }
 
 /**
@@ -1433,11 +1564,31 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
     }
 
     /**
+     * What this node would report to the leader, as the claim frame carries it.
+     *
+     * @return list<PeerRtClaimEntry> One entry per agent of this node that owns anything
+     */
+    public function ownClaims(): array
+    {
+        return $this->agentManagerDaemon->rtNodeSourceMap()->claims();
+    }
+
+    /**
      * Runs the loop step that offers this node's RT state when its ownership has changed.
      */
     public function offerOnOwnershipChange(): void
     {
         $this->offerRtSnapshotsOnOwnershipChange($this->mesh);
+    }
+
+    /**
+     * Runs the claim report the way one of its cues does: to the whole mesh, or to one node.
+     *
+     * @param ?string $nodeId Node to report to, or null to announce to the whole mesh
+     */
+    public function reportClaims(?string $nodeId): void
+    {
+        $this->sendRtClaims($this->mesh, $nodeId);
     }
 
     /**
@@ -1597,10 +1748,50 @@ final class DaemonManagerRtSyncPeerTestOpaqueSignalData implements SignalDataInt
 /**
  * A mesh that keeps what was announced to it instead of holding links to other nodes.
  */
-final class DaemonManagerRtSyncPeerTestMesh implements RtSyncMesh, SourceInterestMesh
+final class DaemonManagerRtSyncPeerTestMesh implements RtClaimMesh, RtSyncMesh, SourceInterestMesh
 {
     /** @var list<string> Nodes this stand-in reports a live link to */
     public array $linked = [];
+
+    /** @var list<list<PeerRtClaimEntry>> Claim reports announced to the whole mesh, in order */
+    public array $announcedClaims = [];
+
+    /** @var list<array{nodeId: string, claims: list<PeerRtClaimEntry>}> Claim reports sent to one node, in order */
+    public array $claimsByNode = [];
+
+    /**
+     * @param list<PeerRtClaimEntry> $claims What each agent of the announcing node owns
+     */
+    public function announceRtClaims(array $claims): void
+    {
+        $this->announcedClaims[] = $claims;
+    }
+
+    /**
+     * @param string $nodeId Node told on its own
+     * @param list<PeerRtClaimEntry> $claims What each agent of the reporting node owns
+     */
+    public function sendRtClaimsToNode(string $nodeId, array $claims): void
+    {
+        $this->claimsByNode[] = ['nodeId' => $nodeId, 'claims' => $claims];
+    }
+
+    /**
+     * Not exercised here: a fresh leader's re-query is answered through the sink, not sent by it.
+     */
+    public function broadcastRtClaimsQuery(): void
+    {
+    }
+
+    /**
+     * Not exercised here: the verdict travels the leader's own send, which this stand-in never is.
+     *
+     * @param string $nodeId Node whose claim lost
+     * @param PeerRtClaimRefusedDTO $refusal What was claimed and who holds it
+     */
+    public function sendRtClaimRefused(string $nodeId, PeerRtClaimRefusedDTO $refusal): void
+    {
+    }
 
     /** @var list<list<string>> Reader-interest lists announced to the mesh, in order */
     public array $interests = [];

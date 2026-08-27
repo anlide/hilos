@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\TruthSource;
 
+use Hilos\Cluster\Peer\DTO\PeerRtClaimEntry;
 use Hilos\Cluster\RtSyncSink;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\AgentId;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
 
 /**
@@ -139,6 +141,39 @@ final class RtNodeSourceMap
         }
 
         return false;
+    }
+
+    /**
+     * What each agent of this node owns, in the form the leader is told it (HIL-696).
+     *
+     * The map answers about the NODE everywhere else, because that is what a frame is judged
+     * by; the leader needs it per agent, since the verdict it may reach names the one agent
+     * whose claim loses. Both axes travel with each entry, unaggregated: a co-owner short of
+     * an operation and a claim over three named rows are what tell a legitimate arrangement
+     * from a split, and folding them into a node-level answer here would lose exactly that.
+     *
+     * The type and index come from the agent id, which is the only identity a worker report
+     * carries; they travel beside it so the leader can address a placement frame at the agent
+     * without parsing anything back.
+     *
+     * @return list<PeerRtClaimEntry> One entry per agent of this node that owns anything
+     */
+    public function claims(): array
+    {
+        $claims = [];
+        foreach ($this->byAgent as $agentId => $collectionKeys) {
+            $agent = AgentId::fromId((string)$agentId);
+            $claims[] = new PeerRtClaimEntry(
+                agentId: (string)$agentId,
+                agentType: $agent->type,
+                agentIndex: $agent->index,
+                collectionKeys: $collectionKeys,
+                partialCollectionKeys: $this->partialByAgent[$agentId] ?? [],
+                keysByCollection: $this->keysByAgent[$agentId] ?? [],
+            );
+        }
+
+        return $claims;
     }
 
     /**

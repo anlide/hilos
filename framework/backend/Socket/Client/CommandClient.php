@@ -215,6 +215,16 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
+            if ($request->command === CommandConstants::COMMAND_CLUSTER_AGENT_PLACE) {
+                // Test-only: raise the placement request an addressed frame raises for an agent
+                // nobody has placed yet (HIL-696), and let the on-demand path pick the node.
+                // Answered here rather than parked for the plainest of reasons: the agent it asks
+                // for is not running, so there is nobody to park it at.
+                $reply = $this->answerAgentPlace($request);
+                $this->writeBuffer .= $reply->toJson() . "\n";
+                continue;
+            }
+
             if ($request->command === CliCommands::PROTECTED_MODE_TEST_INSPECT) {
                 // Test-only read of the master's own view of protected mode. Answered here and
                 // not parked, because parking routes to an agent and a freeze stops every agent
@@ -391,6 +401,52 @@ class CommandClient extends AbstractClient implements CommandClientInterface
         return CommandReplyDTO::ok($request->correlationId, [
             CommandConstants::FIELD_COLLECTION => $collection,
             CommandConstants::FIELD_ROW_ID => $rowId,
+        ]);
+    }
+
+    /**
+     * Asks for an agent to be placed, the way a frame addressed at an unplaced one does.
+     *
+     * The whole body of it is one call, and that is the point: what the harness needs staged is
+     * an agent on a node of the leader's choosing, and the production answer to that already
+     * exists. A placement of its own here would be a second placer — the very thing the leader
+     * owns the view to prevent — and would also skip the guards the on-demand path carries: an
+     * agent already placed, being placed, or refused is left exactly as it is.
+     *
+     * The index is optional and travels as null for a singleton agent, which is how every other
+     * placement API spells the same thing.
+     *
+     * @param CommandRequestDTO $request Placement request naming an agent type and optional index
+     * @return CommandReplyDTO Reply naming what was asked for, or the error to answer instead
+     */
+    private function answerAgentPlace(CommandRequestDTO $request): CommandReplyDTO
+    {
+        // external-boundary: a test harness's command line, checked on the very next lines
+        $agentType = $request->payload[CommandConstants::FIELD_AGENT_TYPE] ?? null;
+        if (!is_string($agentType) || $agentType === '') {
+            return CommandReplyDTO::error($request->correlationId, 'Missing agentType');
+        }
+
+        // external-boundary: the same command line; absent or null means a singleton agent
+        $agentIndex = $request->payload[CommandConstants::FIELD_AGENT_INDEX] ?? null;
+        if ($agentIndex !== null && (!is_string($agentIndex) || $agentIndex === '')) {
+            return CommandReplyDTO::error($request->correlationId, 'agentIndex must be a non-empty string');
+        }
+
+        try {
+            $placement = Hilos::$cluster?->placement();
+            if ($placement === null) {
+                return CommandReplyDTO::error($request->correlationId, 'No placement coordinator on this node');
+            }
+
+            $placement->requirePlacement($agentType, $agentIndex);
+        } catch (HilosException $e) {
+            return CommandReplyDTO::error($request->correlationId, $e->getMessage());
+        }
+
+        return CommandReplyDTO::ok($request->correlationId, [
+            CommandConstants::FIELD_AGENT_TYPE => $agentType,
+            CommandConstants::FIELD_AGENT_INDEX => $agentIndex,
         ]);
     }
 

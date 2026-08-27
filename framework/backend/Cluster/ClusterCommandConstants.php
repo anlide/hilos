@@ -98,6 +98,12 @@ final class ClusterCommandConstants
     /** @var string Inspect reply key: remote RT frames this node refused as a two-owner split */
     public const string FIELD_RT_REFUSED = 'rtRefused';
 
+    /** @var string Inspect reply key: RT ownership clashes this node has named as leader */
+    public const string FIELD_RT_CLAIM_CONFLICTS = 'rtClaimConflicts';
+
+    /** @var string Inspect reply key: RT claims of this node's agents the leader has refused */
+    public const string FIELD_RT_CLAIM_REFUSALS = 'rtClaimRefusals';
+
     /** @var string RT-collection-row key: whether an agent of this node writes the collection */
     public const string FIELD_RT_OWNED = 'owned';
 

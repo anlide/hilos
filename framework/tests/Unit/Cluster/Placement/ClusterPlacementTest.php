@@ -11,6 +11,7 @@ use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Placement\AgentLocationKind;
 use Hilos\Cluster\Placement\ClusterPlacement;
@@ -506,6 +507,101 @@ final class ClusterPlacementTest extends TestCase
 
         $this->assertSame('node-d', $mesh->sent[0][0], 'Failover re-places onto the strongest surviving capable node');
         $this->assertSame('node-d', $placement->registry()->get('render:9')?->nodeId);
+    }
+
+    /**
+     * A claim refused because another node already owns the collection takes the agent down over
+     * the ordinary stop frame, and leaves a record behind saying it must not come back (HIL-696).
+     */
+    public function testARefusedClaimStopsTheAgentAndKeepsTheRecord(): void
+    {
+        $mesh = new FakePlacementMesh([self::SELF => [], 'gpu-node' => []], ['gpu-node'], [self::SELF, 'gpu-node']);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $placement->onBecameLeader();
+        $placement->placeAgentOnNode('chat', '1', 'gpu-node');
+        $mesh->sent = [];
+
+        $placement->refusePlacement('chat', '1', 'gpu-node');
+
+        $this->assertInstanceOf(PeerStopAgentDTO::class, $mesh->sent[0][1], 'The stop is the frame that already exists');
+        $this->assertSame(
+            PlacementState::Refused,
+            $placement->registry()->get('chat:1')?->state,
+            'A forgotten placement would be put back by the next reconciliation pass',
+        );
+    }
+
+    public function testFailoverDoesNotResurrectARefusedAgent(): void
+    {
+        $mesh = new FakePlacementMesh([self::SELF => [], 'gpu-node' => []], ['gpu-node'], [self::SELF, 'gpu-node']);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $placement->onBecameLeader();
+        $placement->placeAgentOnNode('chat', '1', 'gpu-node');
+        $placement->refusePlacement('chat', '1', 'gpu-node');
+        $mesh->sent = [];
+
+        $placement->noteNodeOffline('gpu-node', 1000.0);
+        $placement->tick(2000.0);
+
+        $this->assertSame([], $mesh->sent, 'Re-placing the loser elsewhere would only move the split');
+        $this->assertSame(PlacementState::Refused, $placement->registry()->get('chat:1')?->state);
+    }
+
+    public function testTheStoppedStatusConfirmingTheRefusalDoesNotUndoIt(): void
+    {
+        $mesh = new FakePlacementMesh([self::SELF => [], 'gpu-node' => []], ['gpu-node'], [self::SELF, 'gpu-node']);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $placement->onBecameLeader();
+        $placement->placeAgentOnNode('chat', '1', 'gpu-node');
+        $placement->refusePlacement('chat', '1', 'gpu-node');
+
+        $placement->onAgentStatus('gpu-node', PeerAgentStatusDTO::stopped('chat', '1'));
+
+        $this->assertSame(
+            PlacementState::Refused,
+            $placement->registry()->get('chat:1')?->state,
+            'The frame carrying the refusal out must not be the frame that undoes it',
+        );
+    }
+
+    public function testANodeStillHostingARefusedAgentIsToldToStopItAgain(): void
+    {
+        $mesh = new FakePlacementMesh([self::SELF => [], 'gpu-node' => []], ['gpu-node'], [self::SELF, 'gpu-node']);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $placement->onBecameLeader();
+        $placement->placeAgentOnNode('chat', '1', 'gpu-node');
+        $placement->refusePlacement('chat', '1', 'gpu-node');
+        $mesh->sent = [];
+
+        $placement->onPlacementReport('gpu-node', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('chat', '1')]));
+
+        $this->assertInstanceOf(PeerStopAgentDTO::class, $mesh->sent[0][1] ?? null);
+        $this->assertSame(
+            PlacementState::Refused,
+            $placement->registry()->get('chat:1')?->state,
+            'Re-adopting the report would bring the split back with the agent',
+        );
+    }
+
+    public function testARefusedAgentIsAddressedNowhereAndPublishedNowhere(): void
+    {
+        $mesh = new FakePlacementMesh([self::SELF => [], 'gpu-node' => []], ['gpu-node'], [self::SELF, 'gpu-node']);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $placement->onBecameLeader();
+        $placement->placeAgentOnNode('chat', '1', 'gpu-node');
+        $placement->refusePlacement('chat', '1', 'gpu-node');
+        $mesh->broadcast = [];
+
+        $placement->tick(1000.0);
+
+        $this->assertSame(
+            AgentLocationKind::Unknown,
+            $placement->locate('chat', '1')->kind,
+            'An agent nothing hosts has no node to forward to',
+        );
+        $view = $mesh->broadcast[0] ?? null;
+        $this->assertInstanceOf(PeerPlacementViewDTO::class, $view);
+        $this->assertSame([], $view->agents, 'A refused agent is left out of the published picture');
     }
 }
 

@@ -22,6 +22,12 @@ agents whose only job is to keep their workers busy.
   The leader spreads the fleet over the slaves via the framework's node-selection
   policy (HIL-182) and re-places a lost node's share on failover (HIL-183).
   `ClusterDaemonManager` supplies only the placement *trigger*.
+- **Second claimer:** one `ClaimerAgent` (`claimer:0`) declared the same way but
+  claiming the *whole* of `workerStatuses`, which the fleet owns row by row — the
+  two-owner split the cluster-wide guard exists to name (HIL-696). Nothing starts
+  it: indexed policy-placed agents are outside the framework's placement sweep and
+  the demo's own supervisor knows only the fleet, so it reaches the mesh only when
+  a scenario asks for it with `test:cluster:agent:place`. It writes nothing.
 - **Assertion surface:** the read-only `test:cluster:inspect` command (HIL-325),
   run per node from the `cluster-cli` container.
 
@@ -32,7 +38,7 @@ composer -d demo/cluster run install-deps      # generate the lock (once)
 composer -d demo/cluster run test:unit         # topology + placement-contract unit tests
 demo/cluster/docker/cluster up                 # build + start mysql, 5 nodes, cli
 demo/cluster/docker/cluster status             # roster + leader + placements per node
-demo/cluster/docker/cluster scenarios          # the 13-scenario matrix
+demo/cluster/docker/cluster scenarios          # the 14-scenario matrix
 demo/cluster/docker/cluster down --volumes     # tear everything down
 ```
 
@@ -59,9 +65,11 @@ scenario matrix. From the repo root: `composer run test:cluster:all`.
    every member sees the whole fleet from its own process (HIL-589)
 13. rt partition converges — a node cut off from the mesh serves its replica
    frozen, and catches up from the hand-over once it is back (HIL-589)
+14. rt claim refused — an agent claiming a collection another node already owns
+   is named, stopped, and never re-placed; the fleet keeps its rows (HIL-696)
 
 They run in the order the driver lists them, which is not the order they are
-numbered: the two RT scenarios go right after placement, while the fleet the
+numbered: the three RT scenarios go right after placement, while the fleet the
 leader just placed is still alive. Every run starts from a fresh stack, because
 the matrix leaves that fleet dead behind it (P-152).
 

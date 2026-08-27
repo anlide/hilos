@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Cluster;
 
+use Demo\Cluster\Agents\ClaimerAgent;
 use Demo\Cluster\Agents\WorkerAgent;
+use Demo\Cluster\Core\Agent\Daemon\ClaimerAgentDaemon;
 use Demo\Cluster\Core\Agent\Daemon\WorkerAgentDaemon;
 use Demo\Cluster\Database\ClusterDbContext;
 use Demo\Cluster\Environment\ClusterEnvCatalog;
@@ -20,8 +22,9 @@ use Hilos\Runtime\View\Context\RtContext;
  * Hilos - Main app facade for the cluster demo.
  *
  * A deliberately minimal, headless project: no pages, no WebSocket, no browser
- * context — just the one placeable no-op agent the multi-node cluster harness
- * (HIL-185) observes. Its only runtime state is the framework-owned protected mode
+ * context — just the placeable no-op fleet the multi-node cluster harness (HIL-185)
+ * observes, and the claimer it stages a two-owner split with. Its only runtime state
+ * is the fleet's status collection alongside the framework-owned protected mode
  * singleton, mounted per node so the daemon truth source has a local writer seam.
  * The whole CLUSTER_* configuration is inherited from the framework env catalog, so
  * the facade only names the env catalog, the agent registry, the database context,
@@ -42,6 +45,16 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => WorkerAgent::class,
             AgentRegistryKey::DAEMON => WorkerAgentDaemon::class,
             // The leader places a fleet of these, so every instance carries its own index.
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        ClaimerAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => ClaimerAgent::class,
+            AgentRegistryKey::DAEMON => ClaimerAgentDaemon::class,
+            // Indexed for the same reason the fleet is, and for one more: the framework's
+            // policy-placement sweep skips indexed agents, and the demo's own supervisor places
+            // only the fleet. So nothing brings a claimer up until a scenario addresses one,
+            // which is what keeps the deliberate split out of every other run.
             AgentRegistryKey::INDEXED => true,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],

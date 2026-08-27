@@ -38,6 +38,9 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefreezeDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeVerifyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtClaimRefusedDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtClaimsDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtClaimsQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
@@ -293,6 +296,9 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerDbSyncDTO => $this->onDbSync($frame),
             $frame instanceof PeerRtSnapshotDTO => $this->onRtSnapshot($frame),
             $frame instanceof PeerSourceInterestDTO => $this->onSourceInterest($frame),
+            $frame instanceof PeerRtClaimsDTO => $this->onRtClaims($frame),
+            $frame instanceof PeerRtClaimsQueryDTO => $this->onRtClaimsQuery($frame),
+            $frame instanceof PeerRtClaimRefusedDTO => $this->onRtClaimRefused($frame),
             $frame instanceof PeerClientSignalDTO => $this->onClientSignal($frame),
             $frame instanceof PeerClientFanoutDTO => $this->onClientFanout($frame),
             $frame instanceof PeerConnectionsSnapshotDTO => $this->onConnectionsSnapshot($frame),
@@ -505,6 +511,42 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('placement report');
         $this->server->onPlacementReportReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received claim report to the server for the leader to judge who owns what.
+     *
+     * @param PeerRtClaimsDTO $frame Incoming RT-claims frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onRtClaims(PeerRtClaimsDTO $frame): void
+    {
+        $this->requireHandshaked('RT claims');
+        $this->server->onRtClaimsReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received claim query to the server so this node reports what its agents own.
+     *
+     * @param PeerRtClaimsQueryDTO $frame Incoming RT-claims-query frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onRtClaimsQuery(PeerRtClaimsQueryDTO $frame): void
+    {
+        $this->requireHandshaked('RT claims query');
+        $this->server->onRtClaimsQueryReceived($this);
+    }
+
+    /**
+     * Hands a received claim refusal to the server for this node to act on the leader's verdict.
+     *
+     * @param PeerRtClaimRefusedDTO $frame Incoming RT-claim-refused frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onRtClaimRefused(PeerRtClaimRefusedDTO $frame): void
+    {
+        $this->requireHandshaked('RT claim refusal');
+        $this->server->onRtClaimRefusedReceived($this, $frame);
     }
 
     /**

@@ -29,6 +29,10 @@ use Hilos\Cluster\Placement\PlacementObserver;
 use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Cluster\DbSyncMesh;
 use Hilos\Cluster\DbSyncSink;
+use Hilos\Cluster\Peer\DTO\PeerRtClaimEntry;
+use Hilos\Cluster\Peer\DTO\PeerRtClaimRefusedDTO;
+use Hilos\Cluster\RtClaimMesh;
+use Hilos\Cluster\RtClaimSink;
 use Hilos\Cluster\RtReplicaInspector;
 use Hilos\Cluster\RtSyncMesh;
 use Hilos\Cluster\RtSyncSink;
@@ -113,6 +117,7 @@ use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\TruthSource\RtClusterClaimRegistry;
 use Hilos\TruthSource\RtNodeSourceMap;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -179,6 +184,7 @@ use Throwable;
 abstract class DaemonManager extends BaseManager implements
     MembershipObserver,
     LeadershipObserver,
+    RtClaimSink,
     PlacementObserver,
     ConnectionDropper,
     LiveConnectionRoster,
@@ -305,6 +311,21 @@ abstract class DaemonManager extends BaseManager implements
     /** @var int Remote RT frames this node refused because it writes what they carried */
     private int $rtFramesRefused = 0;
 
+    /** @var int RT ownership clashes this node has named as leader (HIL-696) */
+    private int $rtClaimConflicts = 0;
+
+    /** @var int Claims of this node's own agents the leader has refused (HIL-696) */
+    private int $rtClaimRefusals = 0;
+
+    /**
+     * @var RtClusterClaimRegistry Who in the mesh claims the right to write which RT state.
+     *
+     * Built with the manager and kept empty off the leader's chair: it is soft state a fresh
+     * leader rebuilds from node reports, so there is nothing to carry across a term and nothing
+     * to construct lazily either - an empty map costs one array.
+     */
+    private RtClusterClaimRegistry $rtClaimRegistry;
+
     /** @var ?float Seconds to wait for required agents before opening the WebSocket degraded; null = wait forever */
     protected ?float $readinessTimeout = null;
 
@@ -330,6 +351,7 @@ abstract class DaemonManager extends BaseManager implements
         Hilos::initSignalRouter($this->createSignalRouter());
         $this->agentManagerDaemon = $this->createAgentManagerDaemon();
         $this->protectedModeWatchdog = new ProtectedModeWatchdog();
+        $this->rtClaimRegistry = new RtClusterClaimRegistry();
         // The freeze watchdog has to hear an agent stop as it happens: the agent-start gate lets an
         // initiator's type start again under the freeze it left behind, so a later look at the
         // roster would find a fresh instance and read a dead operation as a live one (HIL-482).
@@ -492,6 +514,10 @@ abstract class DaemonManager extends BaseManager implements
 
         // Receive placement-degradation events from the placement failover coordinator
         Hilos::$cluster?->registerPlacementObserver($this);
+
+        // Arbitrate RT ownership: this node's claims go out through here, and as leader it is
+        // this node that judges everybody's (HIL-696).
+        Hilos::$cluster?->registerRtClaimSink($this);
 
         // Expose the worker server as the placement executor so the peer transport can
         // launch and stop placed agents on this node (registered before the loop so it is
@@ -2487,6 +2513,17 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         $this->rtOwnershipSignature = $signature;
+
+        // What this node owns has just moved, so the leader's picture of who owns what is out of
+        // date - and it is the only place the two-owner question can be asked at all (HIL-696).
+        // Reported from here rather than from a trigger of its own because this is already the
+        // one pass in a thousand where ownership changed; a claim is declared, not written, so
+        // the extra reports this signature makes when a row first lands cost one small frame and
+        // land on an idempotent fold. Told to the whole mesh, because which peer leads is a
+        // question a data-plane node cannot answer at all - and those are the nodes placed agents
+        // run on ({@see PeerServer::announceRtClaims()}).
+        $this->reportRtClaims(null);
+
         if ($mesh === null) {
             return;
         }
@@ -2494,6 +2531,127 @@ abstract class DaemonManager extends BaseManager implements
         foreach ($mesh->linkedNodeIds() as $nodeId) {
             $this->sendRtSnapshotsToNode($mesh, $nodeId);
         }
+    }
+
+    /**
+     * Says what this node's agents own of the RT state, to one node or to the whole mesh.
+     *
+     * Implements {@see RtClaimSink}. Three callers land here, and the argument is which of them
+     * it was: the pass on which what this node owns CHANGED tells everybody, because the node
+     * that judges cannot be named from here; a link that has just appeared, and a fresh leader's
+     * re-query over one, each tell the one peer that is short of the answer.
+     *
+     * The report is the node's WHOLE ownership every time, never a delta, which is what makes a
+     * lost frame cost nothing: the next report says the same thing again, and there is no state
+     * on either side to drift.
+     *
+     * @param ?string $nodeId Node to report to, or null to announce to the whole mesh
+     */
+    public function reportRtClaims(?string $nodeId): void
+    {
+        $this->sendRtClaims($this->findPeerServer(), $nodeId);
+    }
+
+    /**
+     * Hands this node's claims to the mesh, or drops them when there is no mesh to hand them to.
+     *
+     * Protected for the reason {@see sendRtSnapshotsToNode()} is: it is how a subclass sees what
+     * this node declares. Silent off-cluster, and not merely as an optimisation - a split is
+     * between two nodes by definition, so on a single installation there is no question to ask.
+     *
+     * @param ?RtClaimMesh $mesh Peer server of this node, or null off-cluster
+     * @param ?string $nodeId Node to report to, or null to announce to the whole mesh
+     */
+    protected function sendRtClaims(?RtClaimMesh $mesh, ?string $nodeId): void
+    {
+        $claims = $this->agentManagerDaemon->rtNodeSourceMap()->claims();
+        if ($nodeId === null) {
+            $mesh?->announceRtClaims($claims);
+
+            return;
+        }
+
+        $mesh?->sendRtClaimsToNode($nodeId, $claims);
+    }
+
+    /**
+     * Leader side: folds one node's ownership report into the cluster map and names any clash.
+     *
+     * Implements {@see RtClaimSink}. The one place in the cluster where two claims over the same
+     * RT state ever meet: a node can see that IT owns a collection and cannot see that another
+     * node owns it too, and the replica that would eventually reveal it arrives only once both
+     * owners have written something.
+     *
+     * The holder is whoever reported first, and a claim that loses is not recorded as a holding
+     * at all - both are the registry's doing, and both exist so that an owner working correctly
+     * is never disturbed by the node that challenged it.
+     *
+     * Ignored on a node that does not lead - the map is the leader's, and a second judge would
+     * refuse claims nobody asked it about.
+     *
+     * @param string $nodeId Node whose agents hold the claims
+     * @param list<PeerRtClaimEntry> $claims What each agent of that node owns
+     */
+    public function applyRemoteRtClaims(string $nodeId, array $claims): void
+    {
+        if (!$this->amLeader()) {
+            return;
+        }
+
+        foreach ($this->rtClaimRegistry->fold($nodeId, $claims) as $refusal) {
+            $this->rtClaimConflicts++;
+            Logger::error(
+                "RT collection {$refusal->collectionKey} claimed on two nodes:"
+                . " {$refusal->holderNodeId} agent {$refusal->holderAgentId}"
+                . " and {$nodeId} agent {$refusal->agentId}"
+                . self::claimedRowsSuffix($refusal),
+            );
+            $this->findPeerServer()?->sendRtClaimRefused($nodeId, $refusal);
+            // And the outcome, over the frame the leader already revokes a placement with. Sent
+            // after the verdict on purpose: the node marks the agent unstartable as it reads the
+            // refusal, so the stop cannot be undone by a start racing it.
+            Hilos::$cluster?->placement()?->refusePlacement($refusal->agentType, $refusal->agentIndex, $nodeId);
+        }
+    }
+
+    /**
+     * Node side: bars an agent of this node from the right it claimed, and says why.
+     *
+     * Implements {@see RtClaimSink}. The line is written on the node the verdict is against,
+     * beside the leader's own, because the two logs have different readers: an administrator
+     * looking at this node sees an agent that has stopped and has no way to reach the leader's
+     * journal for the reason.
+     *
+     * The bar is what makes the stop stick where the leader's own view cannot reach: an agent
+     * declared per-node is started by this node's bootstrap, not by placement, so without it the
+     * replica would be back the next time the workers came ready.
+     *
+     * @param PeerRtClaimRefusedDTO $refusal What was claimed, by which agent, and who holds it
+     */
+    public function applyRtClaimRefusal(PeerRtClaimRefusedDTO $refusal): void
+    {
+        $this->rtClaimRefusals++;
+        // Marked before the stop frame that follows it, and marked whether or not the agent is
+        // running here at this instant: a node whose workers are not ready yet has not started
+        // its per-node agents, and the mark is what will meet them when it does.
+        $this->findWorkerServer()?->refuseRtClaim($refusal->agentType, $refusal->agentIndex);
+        Logger::error(
+            "Agent {$refusal->agentId} stopped: RT collection {$refusal->collectionKey}"
+            . " already has a truth source on node {$refusal->holderNodeId}"
+            . " (agent {$refusal->holderAgentId})"
+            . self::claimedRowsSuffix($refusal) . '.',
+        );
+    }
+
+    /**
+     * Names the rows a verdict is over, or nothing at all when it is over the whole collection.
+     *
+     * @param PeerRtClaimRefusedDTO $refusal Verdict to describe
+     * @return string Row clause to append to a log line, empty for a collection-wide clash
+     */
+    private static function claimedRowsSuffix(PeerRtClaimRefusedDTO $refusal): string
+    {
+        return $refusal->stateIds === [] ? '' : ' over rows [' . implode(', ', $refusal->stateIds) . ']';
     }
 
     /**
@@ -2571,7 +2729,14 @@ abstract class DaemonManager extends BaseManager implements
      * the same field over time, which a list of ids cannot answer. The ids stay beside them
      * because most checks are about presence and read plainly that way.
      *
-     * The two counters are about DELTAS. Ordinary traffic is what carries a split into the open -
+     * The last two counters are about the RIGHT rather than the traffic, and they are the ones
+     * that answer before any damage is done (HIL-696). Both move whether or not either owner has
+     * written anything yet, and they are counted at opposite ends of the same verdict: the
+     * clashes this node named while leading, which stay at zero on a node that does not lead,
+     * and the claims of its own agents that a leader refused, which stay at zero on a node whose
+     * declaration is sound.
+     *
+     * The two counters below it are about DELTAS. Ordinary traffic is what carries a split into the open -
      * frame after frame, for as long as both owners keep writing - so a refusal count of zero over
      * a run is the assertion worth making, and it is also how the absence of an echo is seen: a
      * node that passed replicas on would be refusing its own writes back within seconds.
@@ -2598,6 +2763,8 @@ abstract class DaemonManager extends BaseManager implements
             ClusterCommandConstants::FIELD_RT_COLLECTIONS => $collections,
             ClusterCommandConstants::FIELD_RT_APPLIED => $this->rtFramesApplied,
             ClusterCommandConstants::FIELD_RT_REFUSED => $this->rtFramesRefused,
+            ClusterCommandConstants::FIELD_RT_CLAIM_CONFLICTS => $this->rtClaimConflicts,
+            ClusterCommandConstants::FIELD_RT_CLAIM_REFUSALS => $this->rtClaimRefusals,
         ];
     }
 
@@ -2615,6 +2782,12 @@ abstract class DaemonManager extends BaseManager implements
     public function handOverRtSnapshots(string $nodeId): void
     {
         $this->sendRtSnapshotsToNode($this->findPeerServer(), $nodeId);
+
+        // The other order the ownership-change trigger cannot answer (HIL-696): what this node
+        // owns has not moved, but until this link existed there was nobody there to hear it. Told
+        // to that one node, since it is the only one short of the answer, and told whoever it is:
+        // a node cannot tell whether the peer that just linked is the one that judges.
+        $this->reportRtClaims($nodeId);
     }
 
     /**
@@ -4199,6 +4372,10 @@ abstract class DaemonManager extends BaseManager implements
         // rather than by the link dropping, because a dropped link is re-dialed and forgetting
         // its clients meanwhile would blind this node to every browser attached there.
         Hilos::$cluster?->clientConnections()?->forgetNode($node->nodeId);
+        // And so do the RT rights its agents held (HIL-696). Without this the leader would go on
+        // holding a claim for a node that is gone, and failover - which re-places that very agent
+        // on a surviving node - would have its new host refused in favour of the dead one.
+        $this->rtClaimRegistry->forget($node->nodeId);
     }
 
     /**
@@ -4217,6 +4394,13 @@ abstract class DaemonManager extends BaseManager implements
     {
         // Placement tracking is soft-state: a fresh leader rebuilds its view from the mesh.
         Hilos::$cluster?->placement()?->onBecameLeader();
+
+        // So is the map of who owns which RT state, and on the same terms (HIL-696): the term
+        // that ended took its picture with it, and the nodes are asked to draw a new one. The
+        // clash a previous leader named is named again from the fresh reports, which is also how
+        // an admin who has not fixed the configuration is told so a second time.
+        $this->rtClaimRegistry->clear();
+        $this->findPeerServer()?->broadcastRtClaimsQuery();
 
         // The new leader takes up the protected-mode freeze orchestration.
         Hilos::$cluster?->protectedModeLeadership()?->onBecameLeader();
@@ -4250,6 +4434,10 @@ abstract class DaemonManager extends BaseManager implements
         // Drop any protected-mode freeze this node was orchestrating as leader; the follower-side
         // state stays, so a freeze the new leader ordered against this node is still honoured.
         Hilos::$cluster?->protectedModeLeadership()?->onLostLeadership();
+
+        // And the cluster-wide map of RT ownership, which was this node's answer to a question it
+        // no longer owns; the next leader rebuilds it from the mesh (HIL-696).
+        $this->rtClaimRegistry->clear();
     }
 
     /**

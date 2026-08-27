@@ -350,14 +350,54 @@ final class ClusterPlacement implements WorkerPlacement
      */
     public function stopAgentOnNode(string $agentType, ?string $agentIndex, string $nodeId): void
     {
+        $this->revokeOnNode($agentType, $agentIndex, $nodeId);
+        $this->registry->forget($this->agentId($agentType, $agentIndex));
+    }
+
+    /**
+     * Stops an agent whose claim over an RT collection lost, and never puts it back (HIL-696).
+     *
+     * {@see stopAgentOnNode()} with the opposite ending, and the ending is the whole point: a
+     * forgotten placement is put back by the very next reconciliation pass, so an agent stopped
+     * for a two-owner split would come up again seconds later — on the same node or another one,
+     * moving the split rather than ending it. The record stays behind in {@see
+     * PlacementState::Refused} so every path that could re-place it can see why it must not.
+     *
+     * The stop itself is the ordinary revoke, over the frame the leader already uses to take a
+     * placement back. Nothing new brings an agent down.
+     *
+     * Terminal only for as long as this term lasts, deliberately: the mark is soft state like the
+     * rest of the view, and a fresh leader re-derives the whole conflict from the reports. The
+     * price is one start-stop per election, paid instead of a persisted block that a person would
+     * have to lift by hand.
+     *
+     * @param string $agentType Agent type whose claim lost
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param string $nodeId Node the agent runs on
+     */
+    public function refusePlacement(string $agentType, ?string $agentIndex, string $nodeId): void
+    {
+        $this->revokeOnNode($agentType, $agentIndex, $nodeId);
+        $this->registry->put(new PlacementRecord($agentType, $agentIndex, $nodeId, PlacementState::Refused));
+    }
+
+    /**
+     * Takes one agent off the node running it, locally or over the stop frame.
+     *
+     * @param string $agentType Agent type to stop
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param string $nodeId Id of the node the agent is placed on
+     */
+    private function revokeOnNode(string $agentType, ?string $agentIndex, string $nodeId): void
+    {
         if ($nodeId === $this->selfNodeId) {
             $this->executor->revokePlacement($agentType, $agentIndex);
             unset($this->hosted[$this->agentId($agentType, $agentIndex)]);
-        } else {
-            $this->mesh->sendToNode($nodeId, new PeerStopAgentDTO($agentType, $agentIndex));
+
+            return;
         }
 
-        $this->registry->forget($this->agentId($agentType, $agentIndex));
+        $this->mesh->sendToNode($nodeId, new PeerStopAgentDTO($agentType, $agentIndex));
     }
 
     /**
@@ -465,8 +505,16 @@ final class ClusterPlacement implements WorkerPlacement
      */
     public function onAgentStatus(string $fromNodeId, PeerAgentStatusDTO $frame): void
     {
+        $agentId = $this->agentId($frame->agentType, $frame->agentIndex);
+        if ($this->registry->get($agentId)?->state === PlacementState::Refused) {
+            // The node is confirming the stop this leader ordered for a two-owner split, and the
+            // record is the only thing keeping the agent down (HIL-696). Forgetting it here would
+            // undo the refusal with the very frame that carried it out.
+            return;
+        }
+
         if ($frame->state === PlacementState::Stopped) {
-            $this->registry->forget($this->agentId($frame->agentType, $frame->agentIndex));
+            $this->registry->forget($agentId);
             return;
         }
 
@@ -530,7 +578,15 @@ final class ClusterPlacement implements WorkerPlacement
         foreach ($frame->agents as $entry) {
             $agentId = $this->agentId($entry->agentType, $entry->agentIndex);
             $existing = $this->registry->get($agentId);
-            if ($existing !== null && $existing->nodeId !== $fromNodeId && $existing->state !== PlacementState::Unplaced) {
+            if ($existing?->state === PlacementState::Refused) {
+                // Still running where its RT claim was refused (HIL-696), so the stop is repeated
+                // rather than the refusal forgotten: accepting the report would re-adopt the agent
+                // the leader took down, and the split would be back with it.
+                $this->mesh->sendToNode($fromNodeId, new PeerStopAgentDTO($entry->agentType, $entry->agentIndex));
+                Logger::info("Reconcile: telling node '{$fromNodeId}' to stop '{$agentId}', refused an RT claim");
+                continue;
+            }
+            if ($existing !== null && $existing->nodeId !== $fromNodeId && !$existing->state->runsNowhere()) {
                 $this->mesh->sendToNode($fromNodeId, new PeerStopAgentDTO($entry->agentType, $entry->agentIndex));
                 Logger::info("Reconcile: telling node '{$fromNodeId}' to stop '{$agentId}' already placed on '{$existing->nodeId}'");
                 continue;
@@ -768,9 +824,10 @@ final class ClusterPlacement implements WorkerPlacement
     /**
      * Groups the placements worth forwarding to by the node hosting them.
      *
-     * Degraded (unplaced) agents are left out under the same rule {@see hostingNode()} applies
-     * on this node: an agent that runs nowhere has no node to forward to. Because both sides
-     * read this one rule, a copy answers exactly what the original would.
+     * An agent that runs nowhere — degraded for want of a node, or refused an RT claim — is left
+     * out under the same rule {@see hostingNode()} applies on this node: it has no node to
+     * forward to. Because both sides read this one rule, a copy answers exactly what the
+     * original would.
      *
      * @return array<string|int, list<PeerPlacedAgentEntry>> Hosted agent entries, by node id
      */
@@ -778,7 +835,7 @@ final class ClusterPlacement implements WorkerPlacement
     {
         $agents = [];
         foreach ($this->registry->all() as $record) {
-            if ($record->state === PlacementState::Unplaced) {
+            if ($record->state->runsNowhere()) {
                 continue;
             }
 
@@ -822,8 +879,7 @@ final class ClusterPlacement implements WorkerPlacement
      * the signal into its own empty floor.
      *
      * The two cannot disagree in a way that matters, because the copy is built from these very
-     * records under the rule applied here — a degraded agent runs nowhere, so it is left out of
-     * both.
+     * records under the rule applied here — an agent that runs nowhere is left out of both.
      *
      * @param string $agentId Agent id to look up
      * @return ?string Hosting node id, or null when nothing places it
@@ -831,7 +887,7 @@ final class ClusterPlacement implements WorkerPlacement
     private function hostingNode(string $agentId): ?string
     {
         $record = $this->registry->get($agentId);
-        if ($record !== null && $record->state !== PlacementState::Unplaced) {
+        if ($record !== null && !$record->state->runsNowhere()) {
             return $record->nodeId;
         }
 
@@ -871,7 +927,7 @@ final class ClusterPlacement implements WorkerPlacement
     private function failOver(string $agentId): void
     {
         $record = $this->registry->get($agentId);
-        if ($record === null || $record->state === PlacementState::Unplaced) {
+        if ($record === null || $record->state->runsNowhere()) {
             return;
         }
 
@@ -1069,7 +1125,9 @@ final class ClusterPlacement implements WorkerPlacement
         $agentId = $this->agentId($agentType, $agentIndex);
         $record = $this->registry->get($agentId);
         if ($record !== null
-            && ($record->state === PlacementState::Placing || $record->state === PlacementState::Started)) {
+            && ($record->state === PlacementState::Placing
+                || $record->state === PlacementState::Started
+                || $record->state === PlacementState::Refused)) {
             return;
         }
 

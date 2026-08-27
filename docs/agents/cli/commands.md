@@ -122,7 +122,8 @@ answers), `db:test:reset` (opens its own server-level connection, because it dro
 recreates the database `DB_DATABASE` names), `help` (prints the registry it was handed),
 `test:cluster:inspect` (talks only to the local command socket, so the multi-node harness
 can inspect a network-partitioned node that cannot reach MySQL either), the cluster client
-family `test:cluster:client:attach` / `:detach` / `:send` / `:fanout` (same reason: the
+family `test:cluster:client:attach` / `:detach` / `:send` / `:fanout` and the two drills
+beside it, `test:cluster:db:announce` and `test:cluster:agent:place` (same reason: the
 master answers them out of memory, and a partitioned node is exactly where they are worth
 running),
 `test:notification:emit` (every row it causes is written by the agent that answers it, so

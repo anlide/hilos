@@ -17,6 +17,7 @@ use Hilos\Core\CLI\Commands\BackupRestoreCommand;
 use Hilos\Core\CLI\Commands\BackupVerifyCommand;
 use Hilos\Core\CLI\Commands\ClusterNodesCommand;
 use Hilos\Core\CLI\Commands\ClusterReloadCommand;
+use Hilos\Core\CLI\Commands\ClusterTestAgentPlaceCommand;
 use Hilos\Core\CLI\Commands\ClusterTestClientAttachCommand;
 use Hilos\Core\CLI\Commands\ClusterTestClientDetachCommand;
 use Hilos\Core\CLI\Commands\ClusterTestClientFanoutCommand;
@@ -112,6 +113,7 @@ class CliManager
         $this->commands[CliCommands::CLUSTER_TEST_CLIENT_SEND] = new ClusterTestClientSendCommand();
         $this->commands[CliCommands::CLUSTER_TEST_CLIENT_FANOUT] = new ClusterTestClientFanoutCommand();
         $this->commands[CliCommands::CLUSTER_TEST_DB_ANNOUNCE] = new ClusterTestDbAnnounceCommand();
+        $this->commands[CliCommands::CLUSTER_TEST_AGENT_PLACE] = new ClusterTestAgentPlaceCommand();
         $this->commands[CliCommands::MIGRATION_UP] = new MigrationUpCommand();
         $this->commands[CliCommands::MIGRATION_DOWN] = new MigrationDownCommand();
         $this->commands[CliCommands::MIGRATION_STATUS] = new MigrationStatusCommand();

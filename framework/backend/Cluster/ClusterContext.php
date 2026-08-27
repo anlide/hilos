@@ -95,6 +95,9 @@ final class ClusterContext
     /** @var ?RtSyncSink Local apply port for cross-node RT replicas, registered by the daemon at start. */
     private ?RtSyncSink $rtSyncSink = null;
 
+    /** @var ?RtClaimSink Local port for the cluster-wide arbitration of RT ownership, registered by the daemon at start. */
+    private ?RtClaimSink $rtClaimSink = null;
+
     /** Port the inspect command reads this node's RT replication state through */
     private ?RtReplicaInspector $rtReplicaInspector = null;
 
@@ -565,6 +568,31 @@ final class ClusterContext
     }
 
     /**
+     * Registers the local port the RT ownership claims of the whole mesh are arbitrated through.
+     *
+     * The daemon registers itself here at start, beside {@see registerRtSyncSink()} and apart
+     * from it: that seam carries what a node WROTE, this one carries the right it holds to write
+     * it, and the two are judged by different rules — a replica is refused by its receiver, while
+     * a claim is judged by the leader against what every other node claims (HIL-696).
+     *
+     * @param RtClaimSink $sink Local port for RT ownership claims and the leader's verdicts
+     */
+    public function registerRtClaimSink(RtClaimSink $sink): void
+    {
+        $this->rtClaimSink = $sink;
+    }
+
+    /**
+     * Returns the local port for RT ownership claims, or null when none is set.
+     *
+     * @return ?RtClaimSink Claim port, or null
+     */
+    public function rtClaimSink(): ?RtClaimSink
+    {
+        return $this->rtClaimSink;
+    }
+
+    /**
      * Registers the port the inspect command reads this node's RT replication state through.
      *
      * The daemon registers itself here at start, beside {@see registerRtSyncSink()} and apart
@@ -858,6 +886,10 @@ final class ClusterContext
                 ?? [],
             ClusterCommandConstants::FIELD_RT_APPLIED => $replicas[ClusterCommandConstants::FIELD_RT_APPLIED] ?? 0,
             ClusterCommandConstants::FIELD_RT_REFUSED => $replicas[ClusterCommandConstants::FIELD_RT_REFUSED] ?? 0,
+            ClusterCommandConstants::FIELD_RT_CLAIM_CONFLICTS =>
+                $replicas[ClusterCommandConstants::FIELD_RT_CLAIM_CONFLICTS] ?? 0,
+            ClusterCommandConstants::FIELD_RT_CLAIM_REFUSALS =>
+                $replicas[ClusterCommandConstants::FIELD_RT_CLAIM_REFUSALS] ?? 0,
             ClusterCommandConstants::FIELD_DB_REPLICAS => $this->dbReplicas,
             ClusterCommandConstants::FIELD_LAST_DB_REPLICA_COLLECTION => $this->lastDbReplicaCollection,
         ];

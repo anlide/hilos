@@ -51,6 +51,9 @@ final class CliCommands
     /** @var string Command: Announce a database row change to the other nodes (test-only) */
     public const string CLUSTER_TEST_DB_ANNOUNCE = 'test:cluster:db:announce';
 
+    /** @var string Command: Ask the leader to place an agent, as addressing one does (test-only) */
+    public const string CLUSTER_TEST_AGENT_PLACE = 'test:cluster:agent:place';
+
     /** @var string Command: Show help information */
     public const string HELP = 'help';
 

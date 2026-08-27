@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-cluster_e2e.py - the 13-scenario assertion matrix for the daemon-cluster e2e
+cluster_e2e.py - the 14-scenario assertion matrix for the daemon-cluster e2e
 harness (HIL-185).
 
 It assumes the stack is already up (via `cluster up`) and drives it: for each
@@ -41,6 +41,7 @@ Plus scenarios beyond that matrix:
  11 cross-node db fact         a row changed on one node is announced to every other (HIL-670)
  12 rt replication             a fleet row reaches the nodes that read it, and only them
  13 rt partition converges     a cut-off node serves its replica frozen and catches up (HIL-589)
+ 14 rt claim refused           a second owner of one collection is named and kept down (HIL-696)
 
 Exit code 0 when every scenario passes, 1 otherwise.
 """
@@ -66,6 +67,15 @@ WORKER_FLEET_SIZE = 10
 WORKER_STATUSES = "workerStatuses"
 # Seconds a fleet member waits between reports; mirrors WorkerAgent::REPORT_INTERVAL_SEC.
 WORKER_REPORT_INTERVAL_SEC = 5.0
+
+# The demo agent that claims the WHOLE of the collection the fleet owns row by row, so the
+# cluster-wide guard has two whole rights to judge; mirrors Demo\Cluster\Constants\AgentType.
+CLAIMER_AGENT_TYPE = "claimer"
+CLAIMER_INDEX = "0"
+CLAIMER_AGENT_ID = f"{CLAIMER_AGENT_TYPE}:{CLAIMER_INDEX}"
+# Seconds the leader waits between attempts at a policy placement that has not taken; mirrors
+# DaemonManager::POLICY_PLACEMENT_RETRY_SEC. A refusal outliving it is what "terminal" means here.
+POLICY_PLACEMENT_RETRY_SEC = 5.0
 
 
 # ------------------------------------------------------- adaptive timing (HIL-367)
@@ -286,6 +296,26 @@ def fleet_rows_where_read(views, nodes=ALL_NODES):
 
     return (all(len(rt_rows(views, n)) == WORKER_FLEET_SIZE for n in readers)
             and all(len(rt_rows(views, n)) == 0 for n in nodes if n not in readers))
+
+
+def rt_claim_conflicts(views, node):
+    """RT ownership clashes a node has named while leading, or -1 when unreachable."""
+    view = views.get(node)
+    return -1 if view is None else int(view.get("rtClaimConflicts", 0))
+
+
+def rt_claim_refusals(views, node):
+    """Claims of a node's own agents that the leader refused, or -1 when unreachable."""
+    view = views.get(node)
+    return -1 if view is None else int(view.get("rtClaimRefusals", 0))
+
+
+def placement_row(views, agent_id):
+    """The leader's placement row for one agent id, or {} when it tracks none."""
+    for row in leader_placements(views):
+        if row.get("agentId") == agent_id:
+            return row
+    return {}
 
 
 def client_deliveries(views, node):
@@ -824,6 +854,108 @@ def scenario_13_rt_partition_converges():
         wait_converge(ALL_NODES, CONVERGE_TIMEOUT * 2)
 
 
+def scenario_14_rt_claim_refused():
+    """A second owner of one runtime collection is named at the claim, and kept down (HIL-696).
+
+    Everything before this ticket could only see a split once BOTH owners had written: a replica
+    arrives, the receiver finds it writes those rows itself, drops the frame and says so — to
+    nobody but itself, with no outcome and no name for either agent. A right, though, exists from
+    the moment it is declared, and the leader is the only place two declarations ever meet.
+
+    So the drill declares one. The claimer claims the WHOLE of the collection the fleet owns row
+    by row, which is what makes it overlap: two whole rights over rows that intersect are the one
+    shape the guard calls a conflict, while a co-owner short of an operation (HIL-688) and two
+    agents naming different rows (HIL-589) are the arrangement working and must stay legal. It is
+    also why the claimer writes nothing — the assertion at the end is that the fleet's rows came
+    through untouched, and a second writer would have wrecked them on its way to being caught.
+
+    Four things are asserted, and the last is the one with no other cover. That the leader named
+    the clash, and that the node whose agent lost was told which of its agents it was — the two
+    ends of the same verdict, counted separately because an administrator reads one journal or the
+    other, never both. That the loser actually came down, which is read off the node's own claim
+    rather than off the leader's table. And that the refusal is TERMINAL: the record survives the
+    node confirming the stop it was given, and a second ask puts the agent on no node at all.
+    Nothing else in the harness would notice if it came back — a re-placed loser simply moves the
+    split to another node, quietly, and the collection goes on having two owners.
+
+    Placed here, right after the fleet has been shown converging, because that is when the fleet
+    holds its rows and there is a right to clash with. What it leaves behind is inert: a refused
+    record the leader never re-places, and an agent nothing starts.
+    """
+    wait_fleet_rows()
+    # Converged LAST, so the view the leader is read from is one a single leader is in charge of:
+    # the row poll above says nothing about leadership, and the counters below are the leader's.
+    views = wait_converge(ALL_NODES)
+    leader = leaders(views)[0]
+    before_conflicts = rt_claim_conflicts(views, leader)
+    before_refusals = {n: rt_claim_refusals(views, n) for n in ALL_NODES}
+
+    print(f"    asking for {CLAIMER_AGENT_ID}, which claims all of {WORKER_STATUSES} the fleet owns by rows")
+    assert client(leader, "test:cluster:agent:place", CLAIMER_AGENT_TYPE, CLAIMER_INDEX), \
+        f"could not ask {leader} to place {CLAIMER_AGENT_ID}"
+
+    def claim_refused(v):
+        return placement_row(v, CLAIMER_AGENT_ID).get("state") == "refused"
+
+    views = wait_until(claim_refused, CONVERGE_TIMEOUT,
+                       f"the leader refuses the claim {CLAIMER_AGENT_ID} made")
+    host = placement_row(views, CLAIMER_AGENT_ID).get("nodeId")
+    assert host in SLAVES, f"{CLAIMER_AGENT_ID} was placed on {host}, which is not a data-plane node"
+    assert rt_claim_conflicts(views, leader) > before_conflicts, \
+        f"{leader} refused the claim without counting the clash it named"
+
+    # The other end of the same verdict, and it travels its own frame: the node hosting the loser
+    # has to be told, or the only account of why an agent stopped is in a journal on another host.
+    wait_until(lambda v: rt_claim_refusals(v, host) > before_refusals[host], CONVERGE_TIMEOUT,
+               f"{host} is told which of its agents lost the claim", nodes=[host])
+    quiet = [n for n in ALL_NODES if n != host]
+    views = inspect_all()
+    for node in quiet:
+        assert rt_claim_refusals(views, node) == before_refusals[node], \
+            f"{node} was told about a claim of somebody else's agent"
+
+    # And the loser is gone, read off the node rather than off the leader's table. While it ran,
+    # its host claimed the WHOLE collection - the fleet's own members each claim a single row, so
+    # nothing else on this stand makes that flag true - and a claim lives exactly as long as the
+    # agent holding it. So the flag going back down is the stop having happened, not merely
+    # having been ordered.
+    wait_until(lambda v: rt_collection(v, host).get("fullyOwned") is False, CONVERGE_TIMEOUT,
+               f"{host} stops claiming the whole of {WORKER_STATUSES}, so the loser is down",
+               nodes=[host])
+
+    # Terminal, and both halves of that are asserted because they fail apart. The record has to
+    # survive the node confirming the stop it was just given - that report arrives seconds later
+    # and would otherwise clear the placement as an ordinary revoke - and it has to survive being
+    # asked for again, which is how any addressed frame would ask.
+    time.sleep(POLICY_PLACEMENT_RETRY_SEC * 2)
+    assert client(leader, "test:cluster:agent:place", CLAIMER_AGENT_TYPE, CLAIMER_INDEX), \
+        f"could not ask {leader} for {CLAIMER_AGENT_ID} a second time"
+    time.sleep(POLICY_PLACEMENT_RETRY_SEC)
+    views = inspect_all()
+    row = placement_row(views, CLAIMER_AGENT_ID)
+    assert row.get("state") == "refused", \
+        f"{CLAIMER_AGENT_ID} came back as {row.get('state')!r} on {row.get('nodeId')!r}: the refusal did not hold"
+
+    # And the fleet is where it was, with every row it wrote. The split cost the collection
+    # nothing, which is the whole promise: the owner working correctly is never disturbed.
+    assert fleet_started(views), f"the fleet did not survive the refused claim: {summarize(views)}"
+    views = wait_until(fleet_rows_where_read, CONVERGE_TIMEOUT + WORKER_REPORT_INTERVAL_SEC,
+                       "every node reading the collection holds a row for every fleet member again")
+
+    # Frames refused as a two-owner split are expected WHILE the second right stands - the claim
+    # goes out on the same pass that offers a snapshot, and the verdict comes back after it. What
+    # says the split is over rather than merely noticed is that the count stops moving.
+    settled = {n: rt_refused(views, n) for n in ALL_NODES}
+    time.sleep(WORKER_REPORT_INTERVAL_SEC * 2)
+    still = inspect_all()
+    for node in ALL_NODES:
+        assert rt_refused(still, node) == settled[node], \
+            f"{node} is still refusing RT frames after the second owner was stopped"
+
+    return (f"{leader} named the clash {CLAIMER_AGENT_ID} made on {host}, kept it down across a "
+            f"second ask, and the fleet kept all {WORKER_FLEET_SIZE} rows")
+
+
 def scenario_11_cross_node_db_fact():
     """A database row changed on one node must be announced to every other (HIL-670).
 
@@ -883,17 +1015,22 @@ def scenario_11_cross_node_db_fact():
             f"and to {watcher} again after it re-linked")
 
 
-# Numbered by when they were written, ORDERED by what they need. The two RT scenarios run
+# Numbered by when they were written, ORDERED by what they need. The three RT scenarios run
 # right after placement, while the fleet the leader just placed is still alive: they are the
 # only ones that need running agents rather than a converged topology, and scenario 9 leaves
 # the fleet dead behind it (P-152 - a recreated data-plane container comes back without its
 # agents, and the leader goes on calling them started). Everything from 4 on perturbs the
 # topology and cares nothing about who is writing.
+#
+# 14 also has to come after 12 rather than before it: it deliberately makes a second owner of the
+# collection, and while that stands the nodes refuse each other's frames - which is exactly the
+# count 12 asserts is zero.
 SCENARIOS = [
     ("1 master-slave mesh", scenario_1_master_slave_mesh),
     ("2 master-master", scenario_2_master_master),
     ("3 placement", scenario_3_placement),
     ("12 rt replication", scenario_12_rt_replication),
+    ("14 rt claim refused", scenario_14_rt_claim_refused),
     ("13 rt partition converges", scenario_13_rt_partition_converges),
     ("4 slave-kill failover", scenario_4_slave_kill_failover),
     ("5 leader-kill re-election", scenario_5_leader_kill_reelection),

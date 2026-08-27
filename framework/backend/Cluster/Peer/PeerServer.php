@@ -43,16 +43,23 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefreezeDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeVerifyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtClaimEntry;
+use Hilos\Cluster\Peer\DTO\PeerRtClaimRefusedDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtClaimsDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtClaimsQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
 use Hilos\Cluster\Peer\DTO\PeerSourceInterestDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
+use Hilos\Cluster\PendingLeadership;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementMesh;
 use Hilos\Cluster\DbSyncMesh;
 use Hilos\Cluster\DbSyncSink;
+use Hilos\Cluster\RtClaimMesh;
 use Hilos\Cluster\RtSyncMesh;
 use Hilos\Cluster\SourceInterestMesh;
 use Hilos\Constants\EnvConstants;
@@ -118,6 +125,7 @@ final class PeerServer extends AbstractServer implements
     ConsensusMesh,
     PlacementMesh,
     ProtectedModeMesh,
+    RtClaimMesh,
     RtSyncMesh,
     DbSyncMesh,
     SourceInterestMesh,
@@ -1002,6 +1010,47 @@ final class PeerServer extends AbstractServer implements
         $from = $link->remoteIdentity()?->nodeId;
         if ($from !== null) {
             $this->placement?->onPlacementView($from, $frame);
+        }
+    }
+
+    /**
+     * Routes a received claim report to the local claim sink for the leader to judge.
+     *
+     * The node id is taken from the frame rather than from the link, for the reason the RT sync
+     * frames do it: what a node calls itself is what the map is keyed by everywhere else,
+     * including on the leader folding in its own report, where there is no link to read.
+     *
+     * @param PeerLink $link Link the report arrived on
+     * @param PeerRtClaimsDTO $frame Received RT-claims frame
+     */
+    public function onRtClaimsReceived(PeerLink $link, PeerRtClaimsDTO $frame): void
+    {
+        Hilos::$cluster?->rtClaimSink()?->applyRemoteRtClaims($frame->nodeId, $frame->claims);
+    }
+
+    /**
+     * Routes a received claim query to the local claim sink so this node reports what it owns.
+     *
+     * @param PeerLink $link Link the query arrived on
+     */
+    public function onRtClaimsQueryReceived(PeerLink $link): void
+    {
+        $askerNodeId = $link->remoteIdentity()?->nodeId;
+        if ($askerNodeId !== null) {
+            Hilos::$cluster?->rtClaimSink()?->reportRtClaims($askerNodeId);
+        }
+    }
+
+    /**
+     * Routes a received claim refusal to the local claim sink for this node to act on.
+     *
+     * @param PeerLink $link Link the verdict arrived on
+     * @param PeerRtClaimRefusedDTO $frame Received RT-claim-refused frame
+     */
+    public function onRtClaimRefusedReceived(PeerLink $link, PeerRtClaimRefusedDTO $frame): void
+    {
+        if ($link->remoteIdentity()?->nodeId !== null) {
+            Hilos::$cluster?->rtClaimSink()?->applyRtClaimRefusal($frame);
         }
     }
 
@@ -1918,6 +1967,87 @@ final class PeerServer extends AbstractServer implements
             $nodeId,
             new PeerRtSnapshotDTO($this->localIdentity->nodeId, $collectionKey, $rows, $scopeKeys),
         );
+    }
+
+    /**
+     * Announces everything this node's agents own of the RT state to every linked peer.
+     *
+     * Implements {@see RtClaimMesh}. Announced rather than addressed at the leader, and the
+     * reason is a hard property of this cluster rather than a preference: consensus runs on the
+     * master set alone, so a data-plane node keeps {@see PendingLeadership} for the life of its
+     * process and its {@see leaderNodeId()} is null forever. Addressed, the report would be
+     * dropped on exactly the nodes that host placed agents — every claim this guard exists to
+     * judge. Placement answers the same question the same way: a node hands its hosted set to
+     * whoever links, and a peer that does not lead ignores it ({@see ClusterPlacement}).
+     *
+     * The cost of telling four nodes instead of one is four small frames on the rare pass where
+     * ownership moved, against a guard that is silent where it matters most.
+     *
+     * This node is told first, and without a frame: a leader has no link to itself, and its own
+     * agents would otherwise be the one thing its map never held. The fold ignores the call on a
+     * node that does not lead, so it is safe wherever this runs.
+     *
+     * @param list<PeerRtClaimEntry> $claims What each agent of this node owns
+     */
+    public function announceRtClaims(array $claims): void
+    {
+        Hilos::$cluster?->rtClaimSink()?->applyRemoteRtClaims($this->localIdentity->nodeId, $claims);
+        $this->broadcastToNodes(new PeerRtClaimsDTO($this->localIdentity->nodeId, $claims));
+    }
+
+    /**
+     * Tells one node everything this node's agents own, because that link has just appeared.
+     *
+     * Implements {@see RtClaimMesh}. The narrow form of {@see announceRtClaims()}: the cue names
+     * one peer, so only that peer is short of this report.
+     *
+     * @param string $nodeId Node to tell
+     * @param list<PeerRtClaimEntry> $claims What each agent of this node owns
+     */
+    public function sendRtClaimsToNode(string $nodeId, array $claims): void
+    {
+        if ($nodeId === $this->localIdentity->nodeId) {
+            Hilos::$cluster?->rtClaimSink()?->applyRemoteRtClaims($this->localIdentity->nodeId, $claims);
+
+            return;
+        }
+
+        $this->sendToNode($nodeId, new PeerRtClaimsDTO($this->localIdentity->nodeId, $claims));
+    }
+
+    /**
+     * Asks every handshaked peer what its agents own of the RT state.
+     *
+     * Implements {@see RtClaimMesh}. Broadcast where the other two claim frames are addressed,
+     * on the same terms {@see PeerPlacementQueryDTO} is: a fresh leader has no map to address
+     * anything from, and rebuilding it is exactly what this asks for.
+     */
+    public function broadcastRtClaimsQuery(): void
+    {
+        $this->broadcastToNodes(new PeerRtClaimsQueryDTO());
+    }
+
+    /**
+     * Tells one node that a claim its agent made is refused in favour of another node's.
+     *
+     * Implements {@see RtClaimMesh}. Sent to the losing node alone: the holder is working
+     * correctly and has nothing to be told, and a node with no link right now re-reports the
+     * claim on the link that comes back, which is judged again.
+     *
+     * @param string $nodeId Node whose claim lost
+     * @param PeerRtClaimRefusedDTO $refusal What was claimed, by which agent, and who holds it
+     */
+    public function sendRtClaimRefused(string $nodeId, PeerRtClaimRefusedDTO $refusal): void
+    {
+        if ($nodeId === $this->localIdentity->nodeId) {
+            // The leader can lose to a follower like anybody else - it reports last as readily as
+            // first - and there is no link to itself for the verdict to travel over.
+            Hilos::$cluster?->rtClaimSink()?->applyRtClaimRefusal($refusal);
+
+            return;
+        }
+
+        $this->sendToNode($nodeId, $refusal);
     }
 
     /**

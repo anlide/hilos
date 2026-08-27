@@ -112,6 +112,17 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     /** @var ?LiveConnectionRoster Master seam naming the node's live sockets, wired at registration */
     private ?LiveConnectionRoster $liveConnectionRoster = null;
 
+    /**
+     * @var array<string, true> Agents this node may not start, keyed by agent id (HIL-696).
+     *
+     * Node-local and never persisted, like every other refusal in the cluster. It exists because
+     * the leader's own terminal mark cannot reach the one case that needs it most: an agent the
+     * registry declares {@see AgentScope::NODE} is started by this node's own bootstrap, which
+     * the leader neither sees nor is asked about, so a stop frame would be answered by the next
+     * {@see startPerNodeAgents()} bringing the very same replica back up.
+     */
+    private array $rtClaimRefused = [];
+
     /** @var float Interval between worker processes tick checks in seconds */
     private const float WORKER_PROCESSES_TICK_INTERVAL = 1.0;
 
@@ -981,6 +992,19 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
             }
         }
 
+        // RT-claim gate: an agent refused the truth source it claimed does not come up here again
+        // (HIL-696). Below the placement gate and above the worker pick, because it answers the
+        // same shape of question — may THIS node host it — and rolls the temporary record back
+        // the same way, so the refusal narrows to this node and leaves the agent placeable
+        // wherever the right actually belongs.
+        if ($this->rtClaimRefusesStart($agentType, $agentIndex)) {
+            if (!$agentExisted) {
+                $this->agentManager->removeAgent($agentId);
+            }
+            Logger::debug("Agent {$agentId} not started: an RT collection it claims is owned on another node");
+            return;
+        }
+
         // Select appropriate worker
         $workerClient = $this->selectWorkerForAgent($agentDaemon->requiresMonopolisticProcess());
 
@@ -1001,6 +1025,38 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
         // the agent coming up is the only one entitled to strike out the connection rows left
         // behind by tabs that closed while it was down (HIL-664).
         $workerClient->sendAgentStart($agentType, $agentIndex, $this->liveConnectionRoster?->liveAcceptKeys() ?? []);
+    }
+
+    /**
+     * Records that the leader refused this agent the RT right it claimed here (HIL-696).
+     *
+     * Only the mark; the agent itself comes down through the ordinary revoke the leader orders
+     * with a stop frame. Marked separately from that stop, and before it, so the agent cannot be
+     * started again in the window between the two.
+     *
+     * @param string $agentType Agent type whose claim was refused
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     */
+    public function refuseRtClaim(string $agentType, ?string $agentIndex): void
+    {
+        $this->rtClaimRefused[$this->buildAgentId($agentType, $agentIndex)] = true;
+    }
+
+    /**
+     * Whether a refused RT claim keeps this agent from starting on this node (HIL-696).
+     *
+     * A pure read of the set, with no state of its own, and it never opens again on its own: the
+     * declaration that put two owners on one collection is a configuration a person changes, and
+     * an automatic reopening would be a flap between the two nodes rather than a fix. The mark
+     * dies with the process, and if the declaration is still wrong the leader says so again.
+     *
+     * @param string $agentType Agent type asking to start
+     * @param ?string $agentIndex Agent index asking to start, or null for a singleton
+     * @return bool True when this node was refused the right this agent needs
+     */
+    private function rtClaimRefusesStart(string $agentType, ?string $agentIndex): bool
+    {
+        return isset($this->rtClaimRefused[$this->buildAgentId($agentType, $agentIndex)]);
     }
 
     /**

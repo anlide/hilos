@@ -22,7 +22,7 @@
 #   cluster partition <node>   disconnect a node from the cluster network
 #   cluster heal <node>        reconnect a node to the cluster network (static IP)
 #   cluster logs <node>        follow a node's container logs
-#   cluster scenarios          run the full 13-scenario matrix (drives cluster_e2e.py)
+#   cluster scenarios          run the full 14-scenario matrix (drives cluster_e2e.py)
 
 set -euo pipefail
 

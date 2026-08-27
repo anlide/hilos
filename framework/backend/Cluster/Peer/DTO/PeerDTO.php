@@ -32,7 +32,11 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * attached to, and the client-forward frame ({@see PeerClientSignalDTO}) is what that
  * addressing then sends; the fan-out frame ({@see PeerClientFanoutDTO}) is what the same
  * index cannot help with, since which browsers a fan-out reaches is answered by each node's
- * own subscription registry rather than by an address; the
+ * own subscription registry rather than by an address; the claim frames
+ * ({@see PeerRtClaimsDTO}, {@see PeerRtClaimsQueryDTO}, {@see PeerRtClaimRefusedDTO}) carry the
+ * other half of the same subject the RT replication frames carry — not what a node wrote, but
+ * the right it holds to write it, reported to the leader and answered only when two nodes claim
+ * the same rows; the
  * protected-mode frames ({@see PeerProtectedModeEnableDTO}, {@see PeerProtectedModeReadyDTO},
  * {@see PeerProtectedModeDisableDTO}) carry the initiator↔leader freeze hand-off that the
  * agent-signal fabric cannot deliver to a leader daemon, and their cluster-wide mirror
@@ -92,6 +96,9 @@ abstract class PeerDTO extends BaseDTO
             PeerDbSyncDTO::MESSAGE_TYPE => PeerDbSyncDTO::fromArray($data),
             PeerRtSnapshotDTO::MESSAGE_TYPE => PeerRtSnapshotDTO::fromArray($data),
             PeerSourceInterestDTO::MESSAGE_TYPE => PeerSourceInterestDTO::fromArray($data),
+            PeerRtClaimsDTO::MESSAGE_TYPE => PeerRtClaimsDTO::fromArray($data),
+            PeerRtClaimsQueryDTO::MESSAGE_TYPE => PeerRtClaimsQueryDTO::fromArray($data),
+            PeerRtClaimRefusedDTO::MESSAGE_TYPE => PeerRtClaimRefusedDTO::fromArray($data),
             PeerClientSignalDTO::MESSAGE_TYPE => PeerClientSignalDTO::fromArray($data),
             PeerClientFanoutDTO::MESSAGE_TYPE => PeerClientFanoutDTO::fromArray($data),
             PeerConnectionsSnapshotDTO::MESSAGE_TYPE => PeerConnectionsSnapshotDTO::fromArray($data),

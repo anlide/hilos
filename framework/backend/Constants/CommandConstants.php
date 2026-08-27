@@ -75,6 +75,9 @@ final class CommandConstants
     /** @var string Test-only command: the master announces a database row change to the other nodes */
     public const string COMMAND_CLUSTER_DB_ANNOUNCE = 'test:cluster:db:announce';
 
+    /** @var string Test-only command: the master asks the leader to place an agent, as an address does */
+    public const string COMMAND_CLUSTER_AGENT_PLACE = 'test:cluster:agent:place';
+
     /** @var string Request payload key: text a test client signal carries */
     public const string FIELD_TEXT = 'text';
 
@@ -83,6 +86,12 @@ final class CommandConstants
 
     /** @var string Request payload key: row id a test DB announcement names */
     public const string FIELD_ROW_ID = 'rowId';
+
+    /** @var string Request payload key: agent type a test placement request names */
+    public const string FIELD_AGENT_TYPE = 'agentType';
+
+    /** @var string Request payload key: agent index a test placement request names, or null */
+    public const string FIELD_AGENT_INDEX = 'agentIndex';
 
     /**
      * The prefix every test-only command name carries on the wire.
@@ -118,6 +127,7 @@ final class CommandConstants
         self::COMMAND_CLUSTER_CLIENT_SEND,
         self::COMMAND_CLUSTER_CLIENT_FANOUT,
         self::COMMAND_CLUSTER_DB_ANNOUNCE,
+        self::COMMAND_CLUSTER_AGENT_PLACE,
     ];
 
     /**
