@@ -6,7 +6,6 @@ namespace Hilos\Core\Bootstrap;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Database\Migration;
-use Hilos\Environment\Exception\EnvException;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Hilos;
 
@@ -28,7 +27,6 @@ final class EntrypointPrelude
      * @param string $projectRoot Project root that holds .env (and tests/.env under the test stack)
      * @param callable(): void $persistenceInit Persistence bootstrap (e.g. Database::initialize) run after env is ready
      * @throws EnvInvalidValueException When the test env file is requested but missing
-     * @throws EnvException When the APP_ENV value cannot be read
      */
     public static function run(string $hilosClass, string $projectRoot, callable $persistenceInit): void
     {
@@ -51,14 +49,17 @@ final class EntrypointPrelude
      * @param class-string<Hilos> $hilosClass Project Hilos facade whose catalogs drive env/cluster init
      * @param string $projectRoot Project root that holds .env (and tests/.env under the test stack)
      * @throws EnvInvalidValueException When the test env file is requested but missing
-     * @throws EnvException When the APP_ENV value cannot be read
      */
     public static function initEnvironment(string $hilosClass, string $projectRoot): void
     {
         $hilosClass::initEnv($projectRoot);
 
-        // The test Docker stack loads tests/.env over the default project .env.
-        if (Hilos::$env[EnvConstants::APP_ENV] === 'test') {
+        // The test Docker stack loads tests/.env over the default project .env. Asked with
+        // isset() rather than read outright: APP_ENV is itself a required value, and reading
+        // it here would refuse the start over that one name before the daemon's own check
+        // gets to name all of them. No APP_ENV means no tests/.env, and the name travels on
+        // into that list like any other.
+        if (isset(Hilos::$env[EnvConstants::APP_ENV]) && Hilos::$env[EnvConstants::APP_ENV] === 'test') {
             $hilosClass::loadEnv($projectRoot . '/tests/.env');
         }
 

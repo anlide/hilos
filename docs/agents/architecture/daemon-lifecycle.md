@@ -4,10 +4,20 @@
 
 ## Startup sequence
 
-1. `DaemonManager::__construct()` → `Hilos::initSignalRouter()`, creates `AgentManagerDaemon`
-2. `daemon.php` registers servers: `HttpServer`, `WorkerServer`, `WebSocketServer` (optionally `FrontendHtmlServer`)
-3. `daemon->run()` → creates `EventLoop`, sets up error/signal handlers, enters main loop
-4. WebSocket server starts **only after** the required startup agents finish `onStart` (see below); with none declared it opens as soon as `WORKERS_READY`
+1. `DaemonApplication::run()` checks the process environment against the project's env
+   catalog and refuses to start when a required value has no answer, naming **every**
+   missing name in one `MissingRequiredEnvironmentException`. Reading a value only when
+   the code touches it names one variable per launch and stays silent until the code gets
+   there, so an operator setting up a node learns the set one restart at a time. The check
+   runs ahead of `Logger::setLogFile()` — `DAEMON_LOG_FILE` is itself required and may be
+   one of the missing ones, and a `Logger` with no file writes to stdout/stderr, which is
+   where `docker logs` reads. Only the daemon checks: in a container `docker.php` is the
+   watchdog and runs `daemon.php` as its child, so the containerized start passes through
+   here anyway, and the worker comes up under a daemon that already answered.
+2. `DaemonManager::__construct()` → `Hilos::initSignalRouter()`, creates `AgentManagerDaemon`
+3. `daemon.php` registers servers: `HttpServer`, `WorkerServer`, `WebSocketServer` (optionally `FrontendHtmlServer`)
+4. `daemon->run()` → creates `EventLoop`, sets up error/signal handlers, enters main loop
+5. WebSocket server starts **only after** the required startup agents finish `onStart` (see below); with none declared it opens as soon as `WORKERS_READY`
 
 ## Container watchdog and crash recovery (HIL-450)
 

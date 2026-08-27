@@ -8,6 +8,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Bootstrap\EntrypointPrelude;
+use Hilos\Environment\Exception\MissingRequiredEnvironmentException;
 use Hilos\Hilos;
 use Hilos\Utils\Logger;
 use Throwable;
@@ -17,12 +18,13 @@ use Throwable;
  * lifted out of the four near-identical bootstraps into one framework entrypoint.
  *
  * A daemon.php collapses to a single {@see run()} call naming its Hilos facade, its
- * manager class, and its persistence init. The spine runs the env prelude, points the
- * logger at the daemon log, constructs the manager, hands it a {@see DaemonContext} to
- * compose its servers/routes/modules through {@see DaemonManager::boot()}, and enters the
- * main loop — all under one try/catch that logs and exits ERROR, replacing the four
- * duplicated flat trys. Any failure in env, persistence, composition, or a module means
- * the daemon refuses to start, which is the correct outcome.
+ * manager class, and its persistence init. The spine runs the env prelude, checks the
+ * environment against the project catalog and refuses to start naming every required value
+ * that has no answer, points the logger at the daemon log, constructs the manager, hands it
+ * a {@see DaemonContext} to compose its servers/routes/modules through
+ * {@see DaemonManager::boot()}, and enters the main loop — all under one try/catch that logs
+ * and exits ERROR, replacing the four duplicated flat trys. Any failure in env, persistence,
+ * composition, or a module means the daemon refuses to start, which is the correct outcome.
  */
 final class DaemonApplication
 {
@@ -44,6 +46,17 @@ final class DaemonApplication
     ): void {
         try {
             EntrypointPrelude::run($hilosClass, $projectRoot, $persistenceInit);
+
+            // First of the daemon's own reads, the prelude's persistence init having already
+            // connected on the DB_* values. A read-by-touch failure names one variable per
+            // launch and says nothing until the code reaches it, so an operator setting up a
+            // node learns the list one restart at a time. This runs ahead of setLogFile
+            // deliberately - DAEMON_LOG_FILE is itself required and may be one of the missing
+            // ones, and a Logger with no file writes to stdout/stderr, which is `docker logs`.
+            $missing = Hilos::$env->missingRequired();
+            if ($missing !== []) {
+                throw MissingRequiredEnvironmentException::forNames($hilosClass, $missing);
+            }
 
             Logger::setLogFile(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]);
             Logger::setErrorLogFile(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]);

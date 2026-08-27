@@ -24,6 +24,7 @@ final class EnvAccessorTest extends TestCase
     private const string FLOAT_KEY = 'HILOS_TEST_ENV_FLOAT';
     private const string BOOLEAN_KEY = 'HILOS_TEST_ENV_BOOLEAN';
     private const string REQUIRED_KEY = 'HILOS_TEST_ENV_REQUIRED';
+    private const string SECOND_REQUIRED_KEY = 'HILOS_TEST_ENV_REQUIRED_SECOND';
     private const string EMPTY_ALLOWED_KEY = 'HILOS_TEST_ENV_EMPTY_ALLOWED';
 
     /** @var ?string Directory holding the .env and .env.example written by a test */
@@ -37,6 +38,7 @@ final class EnvAccessorTest extends TestCase
             self::FLOAT_KEY,
             self::BOOLEAN_KEY,
             self::REQUIRED_KEY,
+            self::SECOND_REQUIRED_KEY,
             self::EMPTY_ALLOWED_KEY,
         ] as $key) {
             putenv($key);
@@ -234,6 +236,58 @@ final class EnvAccessorTest extends TestCase
         $env[self::STRING_KEY] = 'changed';
     }
 
+    public function testMissingRequiredNamesEveryAbsentNameInCatalogOrder(): void
+    {
+        // The whole point of the check: an operator gets the list in one pass instead of the
+        // first name in the way, and in the order the catalog (and .env.example) declares.
+        $env = $this->env([
+            self::SECOND_REQUIRED_KEY => $this->required(EnvCatalogConstants::TYPE_STRING),
+            self::STRING_KEY => $this->entry(EnvCatalogConstants::TYPE_STRING, 'fallback'),
+            self::REQUIRED_KEY => $this->required(EnvCatalogConstants::TYPE_STRING),
+        ]);
+
+        $this->assertSame([self::SECOND_REQUIRED_KEY, self::REQUIRED_KEY], $env->missingRequired());
+    }
+
+    public function testMissingRequiredAcceptsWhateverTheRuntimeWouldRead(): void
+    {
+        // The check has no rule of its own: a value only .env.example names is a value the
+        // daemon will read, so the name is not missing.
+        $root = $this->envRootWith(['.env.example' => self::REQUIRED_KEY . '=from-example']);
+        $env = $this->env([
+            self::REQUIRED_KEY => $this->required(EnvCatalogConstants::TYPE_STRING),
+            self::SECOND_REQUIRED_KEY => $this->required(EnvCatalogConstants::TYPE_STRING),
+        ]);
+        $env->init($root);
+
+        $this->assertSame([self::SECOND_REQUIRED_KEY], $env->missingRequired());
+    }
+
+    public function testMissingRequiredCountsAnEmptyProcessValueAsAbsent(): void
+    {
+        // A stack that exports the name with nothing in it has answered nothing, and the
+        // daemon would refuse on the first read anyway; emptyIsMissing is what says so.
+        putenv(self::REQUIRED_KEY . '=');
+        $env = $this->env([
+            self::REQUIRED_KEY => $this->required(EnvCatalogConstants::TYPE_STRING),
+        ]);
+
+        $this->assertSame([self::REQUIRED_KEY], $env->missingRequired());
+    }
+
+    public function testMissingRequiredIgnoresOptionalNames(): void
+    {
+        // An optional name with no value falls back to its catalog default, which is an
+        // answer. Listing it would turn the refusal into noise nobody can act on.
+        $env = $this->env([
+            self::STRING_KEY => $this->entry(EnvCatalogConstants::TYPE_STRING, 'fallback', emptyIsMissing: true),
+            self::INTEGER_KEY => $this->entry(EnvCatalogConstants::TYPE_INTEGER, 7),
+            self::EMPTY_ALLOWED_KEY => $this->entry(EnvCatalogConstants::TYPE_STRING, 'fallback'),
+        ]);
+
+        $this->assertSame([], $env->missingRequired());
+    }
+
     /**
      * Writes env files into a throwaway directory removed by {@see tearDown()}.
      *
@@ -259,6 +313,18 @@ final class EnvAccessorTest extends TestCase
         EnvAccessorTestCatalog::$catalog = $catalog;
 
         return new EnvAccessor(EnvAccessorTestCatalog::class);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function required(string $type): array
+    {
+        return [
+            EnvCatalogConstants::CATALOG_ENTRY_TYPE => $type,
+            EnvCatalogConstants::CATALOG_ENTRY_EMPTY_IS_MISSING => true,
+            EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING => true,
+        ];
     }
 
     /**

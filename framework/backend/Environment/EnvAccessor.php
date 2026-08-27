@@ -343,6 +343,43 @@ class EnvAccessor implements ArrayAccess
     }
 
     /**
+     * Names every required catalog key that has no value, in catalog order.
+     *
+     * Asks {@see effectiveValue()} the same question a runtime read asks, key by key, so
+     * the check and the reads it precedes can never disagree about what "missing" means:
+     * process environment, then .env, then .env.example, with the entry's emptyIsMissing
+     * flag deciding whether an empty string counts as an answer.
+     *
+     * Only the first of the three tags below can fire in practice: the keys come from the
+     * catalog and the expected type from the entry itself, so neither a missing key nor a
+     * type mismatch is reachable here. They are declared because they are part of the
+     * contract of the shared read this method borrows, and a caller catching that contract
+     * should not have to know which half of it this entry point can reach.
+     *
+     * @return list<string> Missing required environment variable names, in catalog order
+     * @throws EnvInvalidValueException When a catalog entry carries an invalid type or flag
+     * @throws EnvNotInCatalogException Carried from the shared read; the keys come from the catalog
+     * @throws EnvTypeMismatchException Carried from the shared read; the type comes from the entry
+     */
+    public function missingRequired(): array
+    {
+        $missing = [];
+        foreach ($this->getCatalog() as $key => $entry) {
+            if (!$this->entryBool($key, $entry, EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING, false)) {
+                continue;
+            }
+
+            try {
+                $this->effectiveValue($key, $this->entryType($key, $entry));
+            } catch (MissingEnvironmentVariableException) {
+                $missing[] = $key;
+            }
+        }
+
+        return $missing;
+    }
+
+    /**
      * Parses a dotenv-style key/value file.
      *
      * @param string $filePath Env file path
