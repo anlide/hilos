@@ -27,6 +27,29 @@ use Hilos\Utils\Logger;
 final class RtSnapshot
 {
     /**
+     * Which of the given state ids this process actually holds a row for.
+     *
+     * The presence half of {@see self::rows()}, and separate from it because the caller that
+     * needs presence runs in the master on every pass: reading rows to learn what exists would
+     * serialise the whole collection to answer a question about a handful of keys. Asked here
+     * rather than of the collection for the reason the whole class exists — reaching backing RT
+     * state is allowed under `Runtime/` and nowhere else (RT-STATE-REACH).
+     *
+     * @param string $collectionKey RT collection to ask about
+     * @param list<string> $stateIds State ids to look for
+     * @return list<string> Those of them this process holds, in the order they were given
+     */
+    public static function heldKeys(string $collectionKey, array $stateIds): array
+    {
+        $stateCollection = Hilos::$rt?->getStateCollection($collectionKey);
+        if ($stateCollection === null) {
+            return [];
+        }
+
+        return array_values(array_filter($stateIds, $stateCollection->has(...)));
+    }
+
+    /**
      * Reads a whole RT collection as rows, keyed by state id.
      *
      * @param string $collectionKey RT collection to read

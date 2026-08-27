@@ -2031,11 +2031,19 @@ abstract class DaemonManager extends BaseManager implements
                 continue;
             }
 
+            $rows = array_intersect_key(RtSnapshot::rows($collectionKey), array_flip($scopeKeys));
+            // The scope is what this frame ANSWERS FOR, and the receiver deletes every key in it
+            // that the frame does not carry ({@see RtSnapshot::replaceScope()}). So it is built
+            // from the rows actually being sent, not from what this node claims: a claim is only
+            // the intent to write a row, and between the claim and the first write there is a
+            // window in which the row does not exist here yet. Answering for it in that window
+            // tells the receiver to delete a row that is alive - and it never comes back, because
+            // every write after the first is an UPDATE and a node without the row drops it.
             $mesh->sendRtSnapshotToNode(
                 $nodeId,
                 $collectionKey,
-                array_intersect_key(RtSnapshot::rows($collectionKey), array_flip($scopeKeys)),
-                $scopeKeys,
+                $rows,
+                array_map(strval(...), array_keys($rows)),
             );
         }
     }
@@ -2394,7 +2402,23 @@ abstract class DaemonManager extends BaseManager implements
     protected function offerRtSnapshotsOnOwnershipChange(?RtSyncMesh $mesh): void
     {
         $map = $this->agentManagerDaemon->rtNodeSourceMap();
-        $signature = json_encode([$map->fullyOwnedCollections(), $map->keyScopedCollections()]);
+        $scoped = $map->keyScopedCollections();
+        // Which of the claimed rows this node can actually answer for, and not what is in them.
+        // A claim is made when an agent registers; the row it claims is written a moment later,
+        // and between the two an offer carries nothing for that key. Keyed on claims alone, the
+        // signature does not move when the row finally lands, so no second offer is made and a
+        // peer that missed the CREATE never learns the row: every write after the first is an
+        // UPDATE, and a node without the row drops it. Presence moves this signature on the first
+        // write and on a removal - the two rare events - while an ordinary update leaves it
+        // alone, so this is still not a snapshot per delta. The walk is over the claims, not the
+        // rows, and asks the collection rather than building one: the master pays for a handful
+        // of isset() per pass, not for serialising every row it holds.
+        $held = [];
+        foreach ($scoped as $collectionKey => $scopeKeys) {
+            $held[$collectionKey] = RtSnapshot::heldKeys($collectionKey, $scopeKeys);
+        }
+
+        $signature = json_encode([$map->fullyOwnedCollections(), $scoped, $held]);
         if ($signature === $this->rtOwnershipSignature) {
             return;
         }
