@@ -193,12 +193,8 @@ final class CollectionWalkSafetyTest extends TestCase
         $collection = WalkDbCollection::initEmpty();
         $this->assertSame([], array_keys(iterator_to_array($collection)));
 
-        // Each object needs its own variable: DbItem binds the argument by reference, so a shared
-        // variable would point every item at one object.
-        $first = WalkObject::fromEntity(WalkEntity::withId(1));
-        $collection->add(new WalkDbItem($first));
-        $second = WalkObject::fromEntity(WalkEntity::withId(2));
-        $collection->add(new WalkDbItem($second));
+        $collection->add(new WalkDbItem(WalkObject::fromEntity(WalkEntity::withId(1))));
+        $collection->add(new WalkDbItem(WalkObject::fromEntity(WalkEntity::withId(2))));
 
         // The keys are integers, not the strings add() derives them from: a numeric string is
         // an integer once it is an array key, and the walk hands back what the store holds.
@@ -206,8 +202,7 @@ final class CollectionWalkSafetyTest extends TestCase
         foreach ($collection as $key => $item) {
             $walked[] = $key;
             if ($key === 1) {
-                $third = WalkObject::fromEntity(WalkEntity::withId(3));
-                $collection->add(new WalkDbItem($third));
+                $collection->add(new WalkDbItem(WalkObject::fromEntity(WalkEntity::withId(3))));
             }
         }
 
@@ -640,7 +635,7 @@ final class WalkRtItem extends RtItem
  */
 final class WalkRtCollection extends RtCollection
 {
-    protected function createRtItem(RtState &$state): RtItem
+    protected function createRtItem(RtState $state): RtItem
     {
         return new WalkRtItem($state);
     }
@@ -756,7 +751,7 @@ final class WalkDbItem extends DbItem
  */
 final class WalkDbCollection extends DbCollection
 {
-    protected function createDbItem(Object_ &$object): DbItem
+    protected function createDbItem(Object_ $object): DbItem
     {
         return new WalkDbItem($object);
     }

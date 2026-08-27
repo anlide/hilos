@@ -35,7 +35,7 @@ final class BotAgentStatuses extends RtCollection
      * @param RtState $state StateBotAgentStatus instance
      * @return BotAgentStatus View item for this bot status
      */
-    protected function createRtItem(RtState &$state): BotAgentStatus
+    protected function createRtItem(RtState $state): BotAgentStatus
     {
         /** @var StateBotAgentStatus $state */
         return new BotAgentStatus($state);

@@ -20,6 +20,7 @@ use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateMutationRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\SecretInQueryRule;
+use Hilos\Tests\CodeStyle\Rule\ViewWrapperBindingRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
 use Hilos\Tests\CodeStyle\SourceScanner;
 use PHPUnit\Framework\TestCase;
@@ -297,6 +298,20 @@ final class RuleFixtureTest extends TestCase
                 'DB-OBJECT-MUTATE Database/Object/Collection/ObjectStoreMutate.php:29 — unset() drops a row of '
                     . 'the object store directly; use unset($this[$id]), which announces the loss and lets the '
                     . 'view drop its wrapper (see docs/agents/orm/object.md)',
+                // Storage first and signatures after, because the rule walks the file twice: the two
+                // halves are reported in the order they are checked, not in line order.
+                'VIEW-WRAPPER-BIND Database/View/Item/ByRefWrapperSamples.php:25 — $this->_object is bound to '
+                    . 'a variable by reference; assign the value, so the wrapper keeps the row it was built '
+                    . 'from (see docs/agents/orm/collection-iteration.md)',
+                'VIEW-WRAPPER-BIND Database/View/Item/ByRefWrapperSamples.php:36 — $this->_object is bound to '
+                    . 'a variable by reference; assign the value, so the wrapper keeps the row it was built '
+                    . 'from (see docs/agents/orm/collection-iteration.md)',
+                'VIEW-WRAPPER-BIND Database/View/Item/ByRefWrapperSamples.php:23 — $object is declared by '
+                    . 'reference in the wrapper layer; take the value, so no caller has to hand over a '
+                    . 'variable (see docs/agents/orm/collection-iteration.md)',
+                'VIEW-WRAPPER-BIND Database/View/Item/ByRefWrapperSamples.php:34 — $object is declared by '
+                    . 'reference in the wrapper layer; take the value, so no caller has to hand over a '
+                    . 'variable (see docs/agents/orm/collection-iteration.md)',
                 'RT-STATE-MUTATE Runtime/State/Collection/StateMutateSubclass.php:25 — $this->states is written '
                     . 'directly outside RtStates; go through add(), remove() or clear() '
                     . '(see docs/agents/runtime/rt-state.md)',
@@ -345,6 +360,21 @@ final class RuleFixtureTest extends TestCase
                 'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:63 — unset() drops a key of '
                     . 'the backing RT state collection outside the base actions; call the base RtActions method '
                     . 'instead (see docs/agents/runtime/rt-state.md)',
+                'VIEW-WRAPPER-BIND Runtime/View/Collection/ByRefFactorySamples.php:27 — '
+                    . '$this->_stateCollection is bound to a variable by reference; assign the value, so the '
+                    . 'wrapper keeps the row it was built from (see docs/agents/orm/collection-iteration.md)',
+                'VIEW-WRAPPER-BIND Runtime/View/Collection/ByRefFactorySamples.php:25 — $stateCollection is '
+                    . 'declared by reference in the wrapper layer; take the value, so no caller has to hand '
+                    . 'over a variable (see docs/agents/orm/collection-iteration.md)',
+                'VIEW-WRAPPER-BIND Runtime/View/Collection/ByRefFactorySamples.php:34 — $state is declared by '
+                    . 'reference in the wrapper layer; take the value, so no caller has to hand over a '
+                    . 'variable (see docs/agents/orm/collection-iteration.md)',
+                // The closure's parameter, seeded to prove that a factory handed over as a callback is
+                // read the same way a method is; a `use (&$captured)` clause is not, and Good/ByRefLookAlikes
+                // stays absent from this report for that reason.
+                'VIEW-WRAPPER-BIND Runtime/View/Collection/ByRefFactorySamples.php:47 — $state is declared by '
+                    . 'reference in the wrapper layer; take the value, so no caller has to hand over a '
+                    . 'variable (see docs/agents/orm/collection-iteration.md)',
                 'EMPTY-STRING-SENTINEL WholeRoot/Playground/JudgedAnyway.php:22 — ?? \'\' turns a missing '
                     . 'value into an empty string; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',
@@ -423,6 +453,7 @@ final class RuleFixtureTest extends TestCase
             new RtStateReachRule(),
             new RtStateMutationRule(),
             new ObjectStoreMutationRule(),
+            new ViewWrapperBindingRule(),
             new ErrorSuppressionRule(),
             new FsSeamRule(),
             new RandomSourceRule(),

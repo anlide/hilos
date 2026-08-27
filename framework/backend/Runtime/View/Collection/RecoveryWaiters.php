@@ -90,7 +90,7 @@ final class RecoveryWaiters extends RtCollection
      * @param RtState $state StateRecoveryWaiter instance
      * @return RecoveryWaiter View item for this waiter
      */
-    protected function createRtItem(RtState &$state): RecoveryWaiter
+    protected function createRtItem(RtState $state): RecoveryWaiter
     {
         /** @var StateRecoveryWaiter $state */
         return new RecoveryWaiter($state);

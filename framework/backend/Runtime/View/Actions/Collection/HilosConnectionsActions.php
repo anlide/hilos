@@ -107,13 +107,13 @@ abstract class HilosConnectionsActions extends RtActions
     /**
      * Narrows the parent return type to a framework connection item.
      *
-     * @param RtState $state State instance (reference)
+     * @param RtState $state State instance
      * @return HilosConnection View item for the connection state
      *
      * @throws RtActionsCallbackNotSetException When the runtime item factory callback is not configured
      * @throws RtActionsItemClassException When the item factory returns a non-connection item
      */
-    protected function createRtItemFromState(RtState &$state): HilosConnection
+    protected function createRtItemFromState(RtState $state): HilosConnection
     {
         $item = parent::createRtItemFromState($state);
         if (!$item instanceof HilosConnection) {

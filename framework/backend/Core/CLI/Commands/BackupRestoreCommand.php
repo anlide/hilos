@@ -683,10 +683,6 @@ HELP;
     /**
      * Wraps one scanned sidecar in the index row the estimator reads.
      *
-     * A method of its own rather than two lines in the loop above, because the view binds its
-     * state BY REFERENCE: built in the loop, every row would end up sharing the loop variable and
-     * therefore describing the last sidecar scanned. Each call here has a local of its own.
-     *
      * @param BackupMetadata $metadata Scanned sidecar
      * @return BackupHistory Detached index row over that sidecar
      */

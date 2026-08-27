@@ -26,7 +26,7 @@ final class WorkerStatus extends RtItem
     /**
      * @param StateWorkerStatus $state Backing runtime state
      */
-    public function __construct(StateWorkerStatus &$state)
+    public function __construct(StateWorkerStatus $state)
     {
         parent::__construct($state);
     }

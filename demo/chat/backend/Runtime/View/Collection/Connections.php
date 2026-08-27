@@ -74,10 +74,10 @@ final class Connections extends HilosSessionConnections
     }
 
     /**
-     * @param RtState $state StateConnection instance (passed by reference)
+     * @param RtState $state StateConnection instance
      * @return Connection View item for this connection state
      */
-    protected function createRtItem(RtState &$state): Connection
+    protected function createRtItem(RtState $state): Connection
     {
         /** @var StateConnection $state */
         return new Connection($state);

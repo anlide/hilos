@@ -500,7 +500,7 @@ final class BusRtCollection extends RtCollection
      * @param BusRtState $state State to wrap
      * @return RtItem View item for the state
      */
-    protected function createRtItem(RtState &$state): RtItem
+    protected function createRtItem(RtState $state): RtItem
     {
         return new BusRtItem($state);
     }

@@ -217,7 +217,7 @@ final class AccessGuardTestUserState extends RtState
 
 final class AccessGuardTestUsers extends RtCollection
 {
-    protected function createRtItem(RtState &$state): RtItem
+    protected function createRtItem(RtState $state): RtItem
     {
         return new AccessGuardTestUserItem($state);
     }

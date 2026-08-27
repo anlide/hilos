@@ -85,7 +85,7 @@ final class BotAgentStatusesActions extends RtActions
     /**
      * Narrows parent return type to this collection's RtItem.
      */
-    protected function createRtItemFromState(RtState &$state): ViewBotAgentStatus
+    protected function createRtItemFromState(RtState $state): ViewBotAgentStatus
     {
         $item = parent::createRtItemFromState($state);
         if (!$item instanceof ViewBotAgentStatus) {

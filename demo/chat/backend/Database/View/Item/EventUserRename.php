@@ -16,7 +16,7 @@ use Hilos\HilosException;
  * EventUserRename - Db item for user rename event details.
  *
  * @extends DbItem<ObjectEventUserRename>
- * @method __construct(ObjectEventUserRename &$objectEventUserRename)
+ * @method __construct(ObjectEventUserRename $objectEventUserRename)
  *
  * @property-read int $eventId
  * @property-read int $targetUserId

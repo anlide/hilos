@@ -840,7 +840,7 @@ final class BrowserContextEmitSignalsTestState extends RtState
 
 final class BrowserContextEmitSignalsTestCollection extends RtCollection
 {
-    protected function createRtItem(RtState &$state): RtItem
+    protected function createRtItem(RtState $state): RtItem
     {
         return new BrowserContextEmitSignalsTestItem($state);
     }

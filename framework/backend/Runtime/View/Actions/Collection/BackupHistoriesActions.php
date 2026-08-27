@@ -80,11 +80,6 @@ final class BackupHistoriesActions extends RtActions
     /**
      * Adds or re-projects one scanned backup, reporting whether the index moved.
      *
-     * A method rather than a loop body on purpose: {@see createRtItemFromState()} binds the
-     * view to the *variable* holding the state, so a variable reused across iterations would
-     * be re-bound under an already-created item — and assigning the next row (or null) into
-     * that reference breaks it.
-     *
      * @param string $id Backup id
      * @param BackupMetadata $metadata Scanned sidecar metadata
      * @return bool True when a row was created or changed

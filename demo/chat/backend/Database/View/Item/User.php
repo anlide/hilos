@@ -22,7 +22,7 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
  * Object instances are stored in ObjectCollection in Hilos.
  *
  * @extends DbItem<ObjectUser>
- * @method __construct(ObjectUser &$objectUser)
+ * @method __construct(ObjectUser $objectUser)
  *
  * @property-read ?int $id User ID (primary key)
  * @property-read string $name User name

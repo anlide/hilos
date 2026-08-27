@@ -22,6 +22,7 @@ use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateMutationRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\SecretInQueryRule;
+use Hilos\Tests\CodeStyle\Rule\ViewWrapperBindingRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
 use Hilos\Tests\CodeStyle\ScannedRoots;
 use Hilos\Tests\CodeStyle\SourceScanner;
@@ -207,6 +208,7 @@ final class CodeStyleGuardTest extends TestCase
             new RtStateReachRule(),
             new RtStateMutationRule(),
             new ObjectStoreMutationRule(),
+            new ViewWrapperBindingRule(),
             new ErrorSuppressionRule(),
             new FsSeamRule(),
             new RandomSourceRule(),

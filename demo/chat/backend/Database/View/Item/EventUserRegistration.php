@@ -16,7 +16,7 @@ use Hilos\HilosException;
  * EventUserRegistration - Db item for registration event details.
  *
  * @extends DbItem<ObjectEventUserRegistration>
- * @method __construct(ObjectEventUserRegistration &$objectEventUserRegistration)
+ * @method __construct(ObjectEventUserRegistration $objectEventUserRegistration)
  *
  * @property-read int $eventId
  * @property-read int $targetUserId

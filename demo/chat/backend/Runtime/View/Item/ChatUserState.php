@@ -36,9 +36,9 @@ final class ChatUserState extends RtItem
     public const int MESSAGE_RATE_LIMIT_TOLERANCE_SECONDS = 1;
 
     /**
-     * @param StateChatUserState $state Backing state (by reference, same as parent contract)
+     * @param StateChatUserState $state Backing state, same as parent contract
      */
-    public function __construct(StateChatUserState &$state)
+    public function __construct(StateChatUserState $state)
     {
         parent::__construct($state);
     }

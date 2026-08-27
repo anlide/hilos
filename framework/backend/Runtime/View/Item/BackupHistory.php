@@ -46,7 +46,7 @@ final class BackupHistory extends RtItem
     /**
      * @param StateBackupHistory $state Backing runtime state
      */
-    public function __construct(StateBackupHistory &$state)
+    public function __construct(StateBackupHistory $state)
     {
         parent::__construct($state);
     }

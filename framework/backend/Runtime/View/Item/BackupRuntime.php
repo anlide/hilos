@@ -34,7 +34,7 @@ final class BackupRuntime extends RtItem
     /**
      * @param StateBackupRuntime $state Backing runtime state
      */
-    public function __construct(StateBackupRuntime &$state)
+    public function __construct(StateBackupRuntime $state)
     {
         parent::__construct($state);
     }

@@ -64,7 +64,7 @@ final class HilosSessionRotations extends RtCollection
      * @param RtState $state StateHilosSessionRotation instance
      * @return HilosSessionRotation View item for this rotation
      */
-    protected function createRtItem(RtState &$state): HilosSessionRotation
+    protected function createRtItem(RtState $state): HilosSessionRotation
     {
         /** @var StateHilosSessionRotation $state */
         return new HilosSessionRotation($state);

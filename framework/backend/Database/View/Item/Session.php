@@ -16,7 +16,7 @@ use Hilos\HilosException;
  * Read-only wrapper around ObjectSession.
  *
  * @extends DbItem<ObjectSession>
- * @method __construct(ObjectSession &$objectSession)
+ * @method __construct(ObjectSession $objectSession)
  *
  * @property-read ?int $id Session ID (primary key)
  * @property-read string $token Session cookie token

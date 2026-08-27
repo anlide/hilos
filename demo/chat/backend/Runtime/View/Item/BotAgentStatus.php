@@ -29,7 +29,7 @@ final class BotAgentStatus extends RtItem
     /**
      * @param StateBotAgentStatus $state Backing runtime state
      */
-    public function __construct(StateBotAgentStatus &$state)
+    public function __construct(StateBotAgentStatus $state)
     {
         parent::__construct($state);
     }

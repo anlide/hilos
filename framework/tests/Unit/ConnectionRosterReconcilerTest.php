@@ -184,7 +184,7 @@ final class RosterConnections extends HilosConnections
      * @param RtState $state Backing state row
      * @return RosterItem View item over the row
      */
-    protected function createRtItem(RtState &$state): RosterItem
+    protected function createRtItem(RtState $state): RosterItem
     {
         /** @var RosterConnection $state */
         return new RosterItem($state);

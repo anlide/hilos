@@ -345,7 +345,7 @@ final class SnapshotRepairCollection extends RtCollection
      * @param SnapshotRepairState $state State to wrap
      * @return RtItem View item for the state
      */
-    protected function createRtItem(RtState &$state): RtItem
+    protected function createRtItem(RtState $state): RtItem
     {
         return new SnapshotRepairItem($state);
     }

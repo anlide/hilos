@@ -40,7 +40,7 @@ abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
     /** @var array<string, TItem> state ID => RtItem cache */
     private array $items = [];
 
-    /** @var ?RtStates state collection reference */
+    /** @var ?RtStates backing state collection */
     private ?RtStates $_stateCollection = null;
 
     /** @var ?string collection name for truth source and sync */
@@ -93,13 +93,13 @@ abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
     }
 
     /**
-     * Set state collection reference.
+     * Set backing state collection.
      *
      * @param RtStates $stateCollection State collection instance
      */
-    public function setStateCollection(RtStates &$stateCollection): void
+    public function setStateCollection(RtStates $stateCollection): void
     {
-        $this->_stateCollection = &$stateCollection;
+        $this->_stateCollection = $stateCollection;
     }
 
     /**
@@ -175,7 +175,7 @@ abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
 
             $this->_actions = new $class($this);
 
-            $this->_actions->setCreateRtItemCallback(function (RtState &$state): RtItem {
+            $this->_actions->setCreateRtItemCallback(function (RtState $state): RtItem {
                 $item = $this->createRtItem($state);
                 $this->attachItemToCollection($item);
 
@@ -191,7 +191,7 @@ abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
     }
 
     /**
-     * Get state collection reference.
+     * Get backing state collection.
      *
      * @return RtStates State collection instance
      * @throws RtActionsStateCollectionNullException When state collection not set
@@ -209,10 +209,10 @@ abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
     /**
      * Creates RtItem from RtState (implemented by child classes).
      *
-     * @param RtState $state State instance (reference)
+     * @param RtState $state State instance
      * @return TItem RtItem wrapper for the state
      */
-    abstract protected function createRtItem(RtState &$state): RtItem;
+    abstract protected function createRtItem(RtState $state): RtItem;
 
     /**
      * Get RtItem for state key (cached or created).

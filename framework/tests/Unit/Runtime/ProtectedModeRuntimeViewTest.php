@@ -313,7 +313,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
      * @param StateProtectedModeRuntime $state Backing row the view wraps
      * @return ProtectedModeRuntime View whose actions are usable
      */
-    private function viewWithActions(StateProtectedModeRuntime &$state): ProtectedModeRuntime
+    private function viewWithActions(StateProtectedModeRuntime $state): ProtectedModeRuntime
     {
         $view = new ProtectedModeRuntime($state);
         $view->setItemActionsClass(ProtectedModeRuntimeActions::class);

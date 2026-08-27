@@ -383,10 +383,7 @@ final class BackupShipperIntegrationTest extends TestCase
      */
     private function row(): BackupHistory
     {
-        // A View item takes its state by reference, so the state needs a variable of its own.
-        $state = StateBackupHistory::fromMetadata($this->metadata());
-
-        return new BackupHistory($state);
+        return new BackupHistory(StateBackupHistory::fromMetadata($this->metadata()));
     }
 
     /**

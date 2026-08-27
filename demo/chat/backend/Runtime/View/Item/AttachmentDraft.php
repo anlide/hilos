@@ -37,7 +37,7 @@ final class AttachmentDraft extends RtItem
     /**
      * @param StateAttachmentDraft $state Backing state
      */
-    public function __construct(StateAttachmentDraft &$state)
+    public function __construct(StateAttachmentDraft $state)
     {
         parent::__construct($state);
     }

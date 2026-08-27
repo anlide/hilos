@@ -180,11 +180,11 @@ final class CollectionPointMutationCacheTest extends TestCase
     }
 
     /**
-     * A full read caches a wrapper per row, and the wrapper holds its object by reference. The
-     * loop that builds them reuses one variable, so unless the binding is dropped per row every
-     * wrapper but the last follows the walk to the last object - and the corruption is invisible
-     * in the answer the read itself gives, because each row is serialized before the next one
-     * rebinds it.
+     * A full read caches a wrapper per row, and each wrapper keeps the row it was built from.
+     * The loop that builds them reuses one variable, so a wrapper following that variable would
+     * leave every row but the last showing the object the walk ended on - and the corruption
+     * would be invisible in the answer the read itself gives, because each row is serialized
+     * before the next one is built.
      *
      * @throws HilosException When the fixture objects cannot be built or stored
      */
@@ -420,7 +420,7 @@ final class PointMutationRtItem extends RtItem
  */
 final class PointMutationRtCollection extends RtCollection
 {
-    protected function createRtItem(RtState &$state): RtItem
+    protected function createRtItem(RtState $state): RtItem
     {
         return new PointMutationRtItem($state);
     }
@@ -462,7 +462,7 @@ final class PointMutationRtActions extends RtActions
  */
 final class PointMutationDbCollection extends DbCollection
 {
-    protected function createDbItem(Object_ &$object): DbItem
+    protected function createDbItem(Object_ $object): DbItem
     {
         return new PointMutationDbItem($object);
     }

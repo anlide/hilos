@@ -32,7 +32,7 @@ final class AuthAttempt extends RtItem
     /**
      * @param StateAuthAttempt $state Backing runtime state
      */
-    public function __construct(StateAuthAttempt &$state)
+    public function __construct(StateAuthAttempt $state)
     {
         parent::__construct($state);
     }

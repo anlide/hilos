@@ -170,14 +170,14 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
     }
 
     /**
-     * Set Object collection reference
+     * Set backing Object collection
      * Called when collection is registered
      *
-     * @param Objects $objectCollection Object collection instance (reference)
+     * @param Objects $objectCollection Object collection instance
      */
-    public function setObjectCollection(Objects &$objectCollection): void
+    public function setObjectCollection(Objects $objectCollection): void
     {
-        $this->_objectCollection = &$objectCollection;
+        $this->_objectCollection = $objectCollection;
     }
 
     /**
@@ -217,7 +217,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
                 throw new ActionsClassException("Actions class [{$class}] must extend DbActions");
             }
             $this->_actions = new $class($this);
-            $this->_actions->setCreateDbItemCallback(function (Object_ &$object): DbItem {
+            $this->_actions->setCreateDbItemCallback(function (Object_ $object): DbItem {
                 return $this->createDbItem($object);
             });
             $this->_actions->setClearCacheCallback(function (): void {
@@ -247,12 +247,12 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      * Create DbItem instance from Object.
      * Uses DB_ITEM_CLASS and OBJECT_COLLECTION_CLASS constants defined by child classes.
      *
-     * @param Object_ $object Object instance (reference)
+     * @param Object_ $object Object instance
      * @return T DbItem instance for the given Object
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
      */
-    protected function createDbItem(Object_ &$object): DbItem
+    protected function createDbItem(Object_ $object): DbItem
     {
         $itemClass = static::DB_ITEM_CLASS;
         $objectCollectionClass = static::OBJECT_COLLECTION_CLASS;
@@ -354,7 +354,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
      */
-    protected function getOrCreateItemForLoadedObject(int|string $key, Object_ &$object): DbItem
+    protected function getOrCreateItemForLoadedObject(int|string $key, Object_ $object): DbItem
     {
         if (isset($this->items[$key])) {
             return $this->items[$key];
@@ -409,10 +409,6 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
                     } else {
                         $result[] = $data;
                     }
-                    // The item binds this variable by reference, and the loop reuses it, so the
-                    // binding is dropped before the next row is assigned into it - otherwise the
-                    // wrapper just cached would follow the walk to whatever row comes last.
-                    unset($object);
                 }
             }
         }

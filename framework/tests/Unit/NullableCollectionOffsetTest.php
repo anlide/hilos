@@ -127,7 +127,7 @@ final class NullableOffsetRtState extends RtState
  */
 final class NullableOffsetRtCollection extends RtCollection
 {
-    protected function createRtItem(RtState &$state): RtItem
+    protected function createRtItem(RtState $state): RtItem
     {
         return new NullableOffsetRtItem($state);
     }

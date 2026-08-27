@@ -41,7 +41,7 @@ final class AuthAttempts extends RtCollection
      * @param RtState $state StateAuthAttempt instance
      * @return AuthAttempt View item for this counter
      */
-    protected function createRtItem(RtState &$state): AuthAttempt
+    protected function createRtItem(RtState $state): AuthAttempt
     {
         /** @var StateAuthAttempt $state */
         return new AuthAttempt($state);

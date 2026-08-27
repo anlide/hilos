@@ -59,9 +59,9 @@ use Hilos\Runtime\View\Item\HilosSessionConnection;
 final class Connection extends HilosSessionConnection
 {
     /**
-     * @param StateConnection $state Backing state (by reference, same as parent contract)
+     * @param StateConnection $state Backing state, same as parent contract
      */
-    public function __construct(StateConnection &$state)
+    public function __construct(StateConnection $state)
     {
         parent::__construct($state);
     }

@@ -39,7 +39,7 @@ final class ProtectedModeRuntime extends RtItem
     /**
      * @param StateProtectedModeRuntime $state Backing runtime state
      */
-    public function __construct(StateProtectedModeRuntime &$state)
+    public function __construct(StateProtectedModeRuntime $state)
     {
         parent::__construct($state);
     }

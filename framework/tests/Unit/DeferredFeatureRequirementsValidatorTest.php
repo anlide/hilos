@@ -497,7 +497,7 @@ final class DeferredRequirementsPresenceCollection extends RtCollection implemen
      * @param RtState $state Backing state row
      * @return RtItem View item over the row
      */
-    protected function createRtItem(RtState &$state): RtItem
+    protected function createRtItem(RtState $state): RtItem
     {
         return new DeferredRequirementsItem($state);
     }
@@ -523,7 +523,7 @@ final class DeferredRequirementsPlainCollection extends RtCollection
      * @param RtState $state Backing state row
      * @return RtItem View item over the row
      */
-    protected function createRtItem(RtState &$state): RtItem
+    protected function createRtItem(RtState $state): RtItem
     {
         return new DeferredRequirementsItem($state);
     }

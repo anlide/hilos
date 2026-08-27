@@ -21,7 +21,7 @@ use Hilos\HilosException;
  * table from the runtime presence source, never by this view item.
  *
  * @extends DbItem<ObjectUser>
- * @method __construct(ObjectUser &$objectUser)
+ * @method __construct(ObjectUser $objectUser)
  *
  * @property-read ?int $id User ID (primary key)
  * @property-read string $name User name

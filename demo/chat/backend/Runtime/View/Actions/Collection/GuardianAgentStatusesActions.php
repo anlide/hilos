@@ -80,7 +80,7 @@ final class GuardianAgentStatusesActions extends RtActions
     /**
      * Narrows parent return type to this collection's RtItem.
      */
-    protected function createRtItemFromState(RtState &$state): ViewGuardianAgentStatus
+    protected function createRtItemFromState(RtState $state): ViewGuardianAgentStatus
     {
         $item = parent::createRtItemFromState($state);
         if (!$item instanceof ViewGuardianAgentStatus) {

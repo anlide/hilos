@@ -43,7 +43,7 @@ final class BackupHistories extends RtCollection
      * @param RtState $state StateBackupHistory instance
      * @return BackupHistory View item for this index row
      */
-    protected function createRtItem(RtState &$state): BackupHistory
+    protected function createRtItem(RtState $state): BackupHistory
     {
         /** @var StateBackupHistory $state */
         return new BackupHistory($state);

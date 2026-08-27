@@ -36,7 +36,7 @@ final class WorkerStatuses extends RtCollection
      * @param RtState $state StateWorkerStatus instance
      * @return WorkerStatus View item for this worker status
      */
-    protected function createRtItem(RtState &$state): WorkerStatus
+    protected function createRtItem(RtState $state): WorkerStatus
     {
         /** @var StateWorkerStatus $state */
         return new WorkerStatus($state);

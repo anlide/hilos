@@ -17,7 +17,7 @@ use Hilos\HilosException;
  * EventAttachment - Db item for published chat attachment metadata.
  *
  * @extends DbItem<ObjectEventAttachment>
- * @method __construct(ObjectEventAttachment &$objectEventAttachment)
+ * @method __construct(ObjectEventAttachment $objectEventAttachment)
  *
  * @property-read ?int $id
  * @property-read int $eventId

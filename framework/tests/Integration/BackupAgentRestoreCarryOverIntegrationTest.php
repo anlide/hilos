@@ -576,7 +576,7 @@ final class CarryOverTestViewConnections extends ViewHilosSessionConnections
      * @param RtState $state Backing state row
      * @return CarryOverTestViewConnection View item over the row
      */
-    protected function createRtItem(RtState &$state): CarryOverTestViewConnection
+    protected function createRtItem(RtState $state): CarryOverTestViewConnection
     {
         /** @var CarryOverTestConnection $state */
         return new CarryOverTestViewConnection($state);

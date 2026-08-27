@@ -285,7 +285,7 @@ final class AttachmentDraftsActions extends RtActions
      * @return AttachmentDraft
      * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
      */
-    protected function createRtItemFromState(RtState &$state): AttachmentDraft
+    protected function createRtItemFromState(RtState $state): AttachmentDraft
     {
         $item = parent::createRtItemFromState($state);
         if (!$item instanceof AttachmentDraft) {

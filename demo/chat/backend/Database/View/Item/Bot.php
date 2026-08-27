@@ -17,7 +17,7 @@ use Hilos\HilosException;
  * Bot - Db item with high-level abstraction and lazy loading.
  *
  * @extends DbItem<ObjectBot>
- * @method __construct(ObjectBot &$objectBot)
+ * @method __construct(ObjectBot $objectBot)
  *
  * @property-read ?int $id
  * @property-read string $name

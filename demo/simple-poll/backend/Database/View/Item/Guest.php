@@ -21,7 +21,7 @@ use Hilos\HilosException;
  * (HIL-611), so the item carries no actions.
  *
  * @extends DbItem<ObjectGuest>
- * @method __construct(ObjectGuest &$objectGuest)
+ * @method __construct(ObjectGuest $objectGuest)
  *
  * @property-read ?int $id Guest ID (primary key)
  * @property-read string $sessionToken Session cookie token this name belongs to

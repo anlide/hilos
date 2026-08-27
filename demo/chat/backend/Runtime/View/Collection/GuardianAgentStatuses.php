@@ -35,7 +35,7 @@ final class GuardianAgentStatuses extends RtCollection
      * @param RtState $state StateGuardianAgentStatus instance
      * @return GuardianAgentStatus View item for this guardian status
      */
-    protected function createRtItem(RtState &$state): GuardianAgentStatus
+    protected function createRtItem(RtState $state): GuardianAgentStatus
     {
         /** @var StateGuardianAgentStatus $state */
         return new GuardianAgentStatus($state);

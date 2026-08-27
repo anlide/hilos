@@ -95,12 +95,12 @@ abstract class RtActions
     /**
      * Creates RtItem from RtState via registered callback.
      *
-     * @param RtState $state State instance (reference)
+     * @param RtState $state State instance
      * @return T Concrete RtItem for this collection, bound by subclass `@extends`
      * @throws RtActionsCallbackNotSetException When createRtItemCallback is not set
      * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
      */
-    protected function createRtItemFromState(RtState &$state): RtItem
+    protected function createRtItemFromState(RtState $state): RtItem
     {
         if ($this->createRtItemCallback === null) {
             throw new RtActionsCallbackNotSetException(

@@ -15,7 +15,7 @@ use Hilos\Database\View\Item\DbItem;
  * actions, no runtime overlay.
  *
  * @extends DbItem<ObjectUserRename>
- * @method __construct(ObjectUserRename &$objectUserRename)
+ * @method __construct(ObjectUserRename $objectUserRename)
  *
  * @property-read ?int $id Audit row id (primary key)
  * @property-read int $targetUserId Renamed user id

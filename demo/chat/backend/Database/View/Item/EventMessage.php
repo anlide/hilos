@@ -19,7 +19,7 @@ use Hilos\Database\View\Item\DbItem;
  * EventMessage - Db item for message event details.
  *
  * @extends DbItem<ObjectEventMessage>
- * @method __construct(ObjectEventMessage &$objectEventMessage)
+ * @method __construct(ObjectEventMessage $objectEventMessage)
  *
  * @property-read int $eventId
  * @property-read ?int $authorUserId

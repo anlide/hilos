@@ -35,7 +35,7 @@ final class UserStates extends RtCollection
      * @param RtState $state StateChatUserState instance
      * @return ChatUserState View item for this user state
      */
-    protected function createRtItem(RtState &$state): ChatUserState
+    protected function createRtItem(RtState $state): ChatUserState
     {
         /** @var StateChatUserState $state */
         return new ChatUserState($state);

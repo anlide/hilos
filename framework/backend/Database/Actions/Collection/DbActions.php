@@ -122,7 +122,7 @@ abstract class DbActions
      * @return T DbItem instance, resolved to specific subtype via generic parameter T
      * @throws CallbackNotSetException If callback is not set
      */
-    protected function createDbItemFromObject(Object_ &$object): DbItem
+    protected function createDbItemFromObject(Object_ $object): DbItem
     {
         if ($this->createDbItemCallback === null) {
             throw new CallbackNotSetException('createDbItemCallback is not set.'

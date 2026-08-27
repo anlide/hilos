@@ -32,7 +32,7 @@ final class HilosSessionRotation extends RtItem
     /**
      * @param StateHilosSessionRotation $state Backing runtime state
      */
-    public function __construct(StateHilosSessionRotation &$state)
+    public function __construct(StateHilosSessionRotation $state)
     {
         parent::__construct($state);
     }

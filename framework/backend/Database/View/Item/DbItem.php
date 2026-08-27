@@ -20,7 +20,7 @@ use Hilos\HilosException;
  * Base class for Db items (read-only wrappers around Object instances).
  *
  * High-level access with lazy loading support for relationships.
- * DbItem stores only reference to Object for memory efficiency.
+ * One item wraps one Object instance, held from construction to death.
  *
  * @template TObject of Object_
  * @property-read mixed $id Primary key value
@@ -32,12 +32,12 @@ abstract class DbItem
     public const string object = 'object';
 
     /**
-     * Reference to Object instance
+     * Object instance this item wraps
      * Object is stored in ObjectCollection in storage
      *
      * @var TObject
      */
-    protected Object_ $_object;
+    protected readonly Object_ $_object;
 
     /**
      * Parent DbCollection for this item.
@@ -63,11 +63,11 @@ abstract class DbItem
     /**
      * Creates DbItem from Object instance.
      *
-     * @param Object_ $object Object instance (reference)
+     * @param Object_ $object Object instance
      */
-    public function __construct(Object_ &$object)
+    public function __construct(Object_ $object)
     {
-        $this->_object = &$object;
+        $this->_object = $object;
     }
 
     /**
@@ -85,7 +85,7 @@ abstract class DbItem
     }
 
     /**
-     * Get underlying object reference.
+     * Get the underlying Object instance.
      *
      * @return TObject Underlying Object instance
      */

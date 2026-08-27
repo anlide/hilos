@@ -25,7 +25,7 @@ final class GuardianAgentStatus extends RtItem
     /**
      * @param StateGuardianAgentStatus $state Backing runtime state
      */
-    public function __construct(StateGuardianAgentStatus &$state)
+    public function __construct(StateGuardianAgentStatus $state)
     {
         parent::__construct($state);
     }

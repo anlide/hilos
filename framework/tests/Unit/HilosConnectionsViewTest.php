@@ -217,7 +217,7 @@ final class PresenceViewConnections extends HilosConnections
      * @param RtState $state Backing state row
      * @return PresenceViewItem View item over the row
      */
-    protected function createRtItem(RtState &$state): PresenceViewItem
+    protected function createRtItem(RtState $state): PresenceViewItem
     {
         /** @var PresenceViewConnection $state */
         return new PresenceViewItem($state);
@@ -235,7 +235,7 @@ final class SessionViewConnections extends HilosSessionConnections
      * @param RtState $state Backing state row
      * @return SessionViewItem View item over the row
      */
-    protected function createRtItem(RtState &$state): SessionViewItem
+    protected function createRtItem(RtState $state): SessionViewItem
     {
         /** @var SessionViewConnection $state */
         return new SessionViewItem($state);

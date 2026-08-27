@@ -15,7 +15,7 @@ use Hilos\HilosException;
  * ModeratorPromptPiece - Db item with high-level abstraction and lazy loading.
  *
  * @extends DbItem<ObjectModeratorPromptPiece>
- * @method __construct(ObjectModeratorPromptPiece &$objectModeratorPromptPiece)
+ * @method __construct(ObjectModeratorPromptPiece $objectModeratorPromptPiece)
  *
  * @property-read ?int $id
  * @property-read string $section

@@ -56,7 +56,7 @@ final class UserStatesActions extends RtActions
     /**
      * Narrows parent return type to this collection's RtItem.
      */
-    protected function createRtItemFromState(RtState &$state): ViewChatUserState
+    protected function createRtItemFromState(RtState $state): ViewChatUserState
     {
         $item = parent::createRtItemFromState($state);
         if (!$item instanceof ViewChatUserState) {

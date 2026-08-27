@@ -64,7 +64,7 @@ final class RegistrationWaiters extends RtCollection
      * @param RtState $state StateRegistrationWaiter instance
      * @return RegistrationWaiter View item for this waiter
      */
-    protected function createRtItem(RtState &$state): RegistrationWaiter
+    protected function createRtItem(RtState $state): RegistrationWaiter
     {
         /** @var StateRegistrationWaiter $state */
         return new RegistrationWaiter($state);

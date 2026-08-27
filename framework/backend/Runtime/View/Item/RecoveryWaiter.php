@@ -31,7 +31,7 @@ final class RecoveryWaiter extends RtItem
     /**
      * @param StateRecoveryWaiter $state Backing runtime state
      */
-    public function __construct(StateRecoveryWaiter &$state)
+    public function __construct(StateRecoveryWaiter $state)
     {
         parent::__construct($state);
     }

@@ -387,7 +387,7 @@ final class BrokenDeclarationFanoutCollection extends RtCollection
      * @param RtState $state Backing state
      * @return RtItem View item over the state
      */
-    protected function createRtItem(RtState &$state): RtItem
+    protected function createRtItem(RtState $state): RtItem
     {
         return new BrokenDeclarationFanoutItem($state);
     }

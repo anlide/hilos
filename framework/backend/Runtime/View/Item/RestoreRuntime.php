@@ -40,7 +40,7 @@ final class RestoreRuntime extends RtItem
     /**
      * @param StateRestoreRuntime $state Backing runtime state
      */
-    public function __construct(StateRestoreRuntime &$state)
+    public function __construct(StateRestoreRuntime $state)
     {
         parent::__construct($state);
     }

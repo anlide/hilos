@@ -25,9 +25,9 @@ final class ChatContext extends RtItem
     public const string ID_MAIN = StateChatContext::ID_MAIN;
 
     /**
-     * @param StateChatContext $state Chat context state (reference)
+     * @param StateChatContext $state Chat context state
      */
-    public function __construct(StateChatContext &$state)
+    public function __construct(StateChatContext $state)
     {
         parent::__construct($state);
     }

@@ -96,7 +96,7 @@ final class AttachmentDrafts extends RtCollection
      * @param RtState $state StateAttachmentDraft instance
      * @return AttachmentDraft View item for this draft
      */
-    protected function createRtItem(RtState &$state): AttachmentDraft
+    protected function createRtItem(RtState $state): AttachmentDraft
     {
         /** @var StateAttachmentDraft $state */
         return new AttachmentDraft($state);

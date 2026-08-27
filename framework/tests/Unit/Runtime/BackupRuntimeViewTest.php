@@ -131,7 +131,7 @@ final class BackupRuntimeViewTest extends TestCase
      * @param StateBackupRuntime $state Backing row the view wraps
      * @return BackupRuntime View whose actions are usable
      */
-    private function viewWithActions(StateBackupRuntime &$state): BackupRuntime
+    private function viewWithActions(StateBackupRuntime $state): BackupRuntime
     {
         $view = new BackupRuntime($state);
         $view->setItemActionsClass(BackupRuntimeActions::class);

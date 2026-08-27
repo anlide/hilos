@@ -19,7 +19,7 @@ use Hilos\Database\View\Item\DbItem;
  * Event - Db item with high-level abstraction and lazy loading.
  *
  * @extends DbItem<ObjectEvent>
- * @method __construct(ObjectEvent &$objectEvent)
+ * @method __construct(ObjectEvent $objectEvent)
  *
  * @property-read ?int $id
  * @property-read string $type

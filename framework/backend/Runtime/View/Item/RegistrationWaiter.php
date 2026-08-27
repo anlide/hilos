@@ -28,7 +28,7 @@ final class RegistrationWaiter extends RtItem
     /**
      * @param StateRegistrationWaiter $state Backing runtime state
      */
-    public function __construct(StateRegistrationWaiter &$state)
+    public function __construct(StateRegistrationWaiter $state)
     {
         parent::__construct($state);
     }
