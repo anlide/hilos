@@ -331,6 +331,58 @@ make it useless for the disaster recovery it exists for.
 - A real restore does not forbid production at all; it obeys the restore ENV
   matrix instead.
 
+## Who The Freeze Lets Through (HIL-655)
+
+`ProtectedModeRuntime::locksOut()` is the whole admission rule, and it shuts a
+connection out only when four things hold at once: the phase is not
+`PHASE_INACTIVE`, **and** the connection's accept key is not
+`initiatorAcceptKey`, **and** the connection does not belong to the initiator's
+browser session (`initiatorSessionTokenHash`, matched by
+`belongsToInitiator()`), **and** it presented no pass admitted right now. Any
+one of them failing serves that connection the real application. There is no
+fifth way in.
+
+**The initiator is recognized by two halves because one of them does not survive
+a reload.** The accept key names the socket that asked for the freeze and dies
+with it. An F5 inside one's own restore, or a second tab, arrives with a
+brand-new accept key and the same session cookie — so with the accept key alone
+the operator was locked out of the very operation being watched, which is the
+defect the session half closed.
+
+**Two nulls deliberately do not meet.** A freeze entered with no browser behind
+it — a CLI trigger, a scheduled run — leaves `initiatorSessionTokenHash` null,
+and a connection carrying no session cookie hashes to null as well. Let those
+two match and such a freeze would open the node to every cookieless visitor on
+it, so `belongsToInitiator()` refuses both nulls before comparing anything, and
+compares with `hash_equals()` because the stored side is derived from a secret.
+
+`ProtectedModeRuntime::hashSessionToken()` is the one door to that algorithm.
+The three places that need it — the agent recording the initiator, the master
+gating a handshake, and the row comparing them — go through it rather than
+spelling the hash out separately, so they cannot drift apart.
+
+**The gate stands in two places, and both hand the row the same pair.**
+`WebSocketClient::protectedModeLocksOut()` answers the 101 and shapes the
+welcome frame; `BrowserContext::protectedModeLocksOut()` answers a
+`page_subscribe`, taking the session token from the runtime connection roster
+and hashing to null for a connection the roster does not carry.
+
+**The welcome is personalized; the pushed frame is not.** Every connection is
+answered with a welcome computed for itself, which is why a reload and a new tab
+need no further state to be let back in. The push that announces the mode goes
+through `ProtectedModeClientNotifier::notifyProtectedModeState()`, whose
+`excludeAcceptKey` parameter keeps exactly one accept key — one socket — out of
+the broadcast. A second tab of the initiator's own browser is therefore raised
+to the stub with everyone else, and comes back only on a reload, over a fresh
+welcome.
+
+**On the way out the frame goes to everybody, the initiator included.**
+`DaemonProtectedModeExecutor::enterInactive()` passes no exclusion at all, and
+the frame means reload: after a restore the initiator's data is as stale as
+anyone's. What the browser does with that frame, and why the reload is a full
+one rather than a re-subscribe, is the client half in
+[../frontend/core-and-connection.md](../frontend/core-and-connection.md).
+
 ## Reading The Runtime Row, And What Null Means
 
 These places read the row without asking whether the mode is "active for this

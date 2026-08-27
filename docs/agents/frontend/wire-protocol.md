@@ -335,6 +335,10 @@ build. There is one global
 build-version, not a per-message-type version — this handles a long-lived
 no-refresh SPA outliving a backend redeploy.
 
+A stale build is not the only thing that forces a reload: a node leaving
+protected mode forces one too, for a different reason and on a different frame
+(see [core-and-connection.md](core-and-connection.md)).
+
 With a modal open and an unsaved draft, the refresh is not yanked out from under
 the edit. The user keeps editing; a yellow warning by Save signals that a new
 version is pending. The preferred path is a **"Refresh & keep my draft"** button

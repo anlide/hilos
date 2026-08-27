@@ -19,6 +19,55 @@ There is an explicit, separate behavior when there is **no** connection — neve
 an undefined or frozen state. What that behavior is per view is a project choice
 (see Disconnect behavior).
 
+## The one exception: a node frozen for a destructive operation
+
+The rule above describes normal operation. Exactly one case suspends it: a node
+frozen for a **destructive operation** — a restore is the one this framework
+ships. While that freeze is up the node stops serving its pages, and when the
+freeze lifts the application does a real full-page reload.
+
+**The freeze lets through the browser session that started the operation, and
+nobody else.** A browser that did not start it — another profile, another cookie
+jar, another machine — stays locked out for the whole freeze and gets a
+maintenance stub naming the operation in flight. There is one narrow way in, and
+it does not widen that sentence: while the freeze sits in its verification phase
+it takes a one-time code, and a browser presenting a valid one is admitted to
+check the result. That admission belongs to the window — it exists only while
+the window is open, and either way out of the window ends it.
+
+Two bits ride the connection so a surface can tell those states apart:
+`acceptsPass` says the verification window is open, `passIssued` says at least
+one code is standing, so the field has something it could take.
+
+| Event | What the browser sees |
+|---|---|
+| a manual F5 inside one's own freeze | the ordinary application: the new socket is recognized by the session behind it, not by the socket it replaced |
+| a new tab of the same profile | the ordinary application, recognized the same way |
+| a tab opened *before* the mode was entered | the maintenance stub, until that tab is reloaded — the push that raises the stub skips a single socket, so the initiator's other tabs are raised along with everyone else's |
+| a reconnect | the same answer the first socket got: the welcome frame is computed per connection, on every connection |
+| the mode lifting | a full-page reload |
+
+**The reload on the way out is full, and that is not cosmetic.** A page is sent
+its data snapshot exactly once, in reply to `page_subscribe`; everything after
+that is a delta, and there is no catch-up snapshot to ask for once the database
+underneath has been replaced. A page that merely sat through the freeze would
+keep its pre-restore rows forever, with a live socket to argue it is fine. The
+client hangs the decision on the two bits it already has — it reloads when the
+mode neither locks this connection out nor holds a window open
+(`!status.active && !status.acceptsPass` in `createHilosConnection`, whose
+`onProtectedModeLift` option is the seam for that default). Both halves are
+needed: an admitted verifier is told "not locked out" in the very words a lift
+uses, and `acceptsPass` is what keeps that verifier from being reloaded out of
+the window it was admitted to.
+
+**The initiator is not excepted from that reload.** After a restore the data
+behind the browser that drove the operation is as stale as everyone else's, so
+the frame that lifts the mode goes to every connection, that one included.
+
+The server half — which connection the freeze recognizes, by what, and where the
+gate stands — is in
+[../architecture/protected-mode.md](../architecture/protected-mode.md).
+
 ## Three orthogonal state machines
 
 Connection state is not one flat machine. Three concerns are modeled
