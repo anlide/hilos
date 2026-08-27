@@ -62,7 +62,9 @@ socket authenticates nobody and the routes exist in every project. So `CommandCl
 `NonProductionGate::admitted()` before it branches at all — above both the commands the
 master answers itself and the ones it parks for an agent — and answers a refusal with the
 same sentence the CLI class raises (`TestOnlyCommandOnProductionException::message()`). The
-connection stays open: the gate judges the command, not the caller.
+connection stays open: the gate judges the command, not the caller. Why it authenticates
+nobody, and why nothing will be built to change that, is settled in
+[../architecture/command-server.md](../architecture/command-server.md#who-may-call-a-command--nobody-is-asked).
 
 **Declaring a test-only command means saying so twice, in two different languages.** The
 machine-readable half is `AgentCommandConfigKey::TEST_ONLY` in the same `AGENT_COMMANDS`

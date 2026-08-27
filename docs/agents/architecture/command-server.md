@@ -10,7 +10,9 @@ the HTTP-status and WebSocket servers.
   outgoing WS client, only server-side representations — hence a purpose-built
   socket).
 - `COMMAND_HOST` / `COMMAND_PORT` env (catalog defaults, so projects that do not
-  use commands need no env changes).
+  use commands need no env changes). The default host is `127.0.0.1`: out of the
+  box the channel is bound to the loopback, and a stack that needs it over the
+  network names the address itself, the way every demo does.
 
 **This page is the transport.** Which process a command's work happens in is a separate
 question with its own rule — the daemon does the work, the CLI initiates it — and its own
@@ -18,6 +20,52 @@ page: [../cli/command-execution.md](../cli/command-execution.md). The two are in
 on purpose: `daemon:status` reaches the daemon over the HTTP status endpoint and is no less
 daemon-executed for it, and the presence probe in front of a CLI-side write opens a socket
 here without ever speaking the protocol above.
+
+## Who may call a command — nobody is asked
+
+The framework does not check who calls a command, and it will not. Not because it
+delegates the check to the project — there is nothing to check. A shared secret or an
+address list duplicate a closed port; mutual TLS is not code but network configuration;
+and per-operator rights rest on an identity a CLI caller does not have — no session, no
+user, only an open socket. Two things do the work instead, and both are in place: the
+environment gate refuses destructive `test:` commands on a production-like node, and
+binding the port closes access. The second is not advice but a condition of a correct
+installation: `admin:grant`, `admin:revoke` and `admin:create` ride this channel and the
+environment gate does not stop them, so the command port is never exposed where a
+stranger can reach it.
+
+**A shared secret differs from a closed port in exactly one scenario** — the one where
+the port is reachable by strangers over the network. There it does not cure anything, it
+substitutes for the cure. A single key per installation sits in the env of every
+container and in every compose file, it hands out the feeling of protection, and it takes
+away the operator's reason to close the port — while the closed port protects strictly
+more.
+
+**The environment gate judges the environment, not the caller.**
+`NonProductionGate::admitted()` (`framework/backend/Environment/NonProductionGate.php`) is
+fail-closed, and on this socket `CommandClient`
+(`framework/backend/Socket/Client/CommandClient.php`) asks it above every branch of the
+parse, so a stray caller meets it as surely as the CLI process does. What it reaches,
+though, is only the commands that declared themselves test-only:
+`framework/backend/Core/CLI/Commands/AbstractSetAdminCommand.php` and
+`framework/backend/Core/CLI/Commands/AdminCreateCommand.php` are both declared
+`implements CommandInterface, DatabaseFreeCommand`, neither extends `TestOnlyCommand`, and
+so `admin:grant`, `admin:revoke` and `admin:create` pass the gate on any node at all. The
+bound port is what stands between them and a stranger.
+
+**The project owns the perimeter, not an authorization layer.** Whoever needs to know the
+caller puts that in front of the door: a port that is not published, a network policy, a
+separate entrance of their own for operators. The framework declares no extension point
+inside the channel.
+
+**The second door asks nobody either.** `daemon:status` and `daemon:monitor` do not travel
+this channel at all — they read the HTTP status endpoint, an `AsyncHttpClient` on
+`HILOS_DAEMON_HOST:HTTP_STATUS_PORT` opened by `StatusCommand::fetchDaemonStatus()`
+(`framework/backend/Core/CLI/Commands/StatusCommand.php`) and by `CliMonitorManager`
+(`framework/backend/Core/Daemon/CliMonitorManager.php`), against `ApiEndpoint::STATUS`
+(`/status`, declared in `framework/backend/Constants/ApiEndpoint.php`). That door is
+recognized as redundant and closes in HIL-749, which is why it is named here with an end
+to it.
 
 ## Request / reply DTOs
 
