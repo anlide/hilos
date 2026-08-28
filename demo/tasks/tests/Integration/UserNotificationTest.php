@@ -69,6 +69,7 @@ final class UserNotificationTest extends IntegrationTestCase
             HilosSignalConstants::HILOS_USER_UPDATE,
             new HilosUserUpdateActionDTO($userId, 'Renamed by admin'),
         );
+        $this->deliverHilosLibraryFrames();
 
         $notification = $this->onlyNotificationFor($userId);
 

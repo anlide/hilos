@@ -12,7 +12,6 @@ use Demo\Chat\Hilos;
 use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
 use Hilos\Auth\Library\DTO\RegisterActionDTO;
 use Demo\Chat\Pages\DTO\Profile\SetPasswordActionDTO;
-use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -69,7 +68,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
         try {
             $this->register($agent, 'set-change-ak', $email);
 
-            new ProfilePage($agent)->onAction(
+            $this->usersLibrary()->onAgentAction(
                 'set-change-ak',
                 ChatSignalConstants::SET_PASSWORD,
                 new SetPasswordActionDTO(self::PASSWORD, self::NEW_PASSWORD),
@@ -106,7 +105,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
 
             $rejected = false;
             try {
-                new ProfilePage($agent)->onAction(
+                $this->usersLibrary()->onAgentAction(
                     'set-wrong-ak',
                     ChatSignalConstants::SET_PASSWORD,
                     new SetPasswordActionDTO('not the password', self::NEW_PASSWORD),
@@ -144,7 +143,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
             $this->insertVerifiedMagicLink($userId, $email);
             $this->authenticateSession($agent, $token, $userId, null);
 
-            new ProfilePage($agent)->onAction(
+            $this->usersLibrary()->onAgentAction(
                 'set-add-ak',
                 ChatSignalConstants::SET_PASSWORD,
                 new SetPasswordActionDTO('', self::NEW_PASSWORD),
@@ -183,7 +182,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
 
             $rejected = false;
             try {
-                new ProfilePage($agent)->onAction(
+                $this->usersLibrary()->onAgentAction(
                     'set-none-ak',
                     ChatSignalConstants::SET_PASSWORD,
                     new SetPasswordActionDTO('', self::NEW_PASSWORD),

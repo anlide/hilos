@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Demo\Tasks\Tests\Integration;
 
+use Demo\Tasks\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\Tasks\Agents\Hilos\SessionsLibraryAgent;
+use Demo\Tasks\Agents\Hilos\UsersLibraryAgent;
 use Demo\Tasks\Agents\TasksAgent;
 use Demo\Tasks\Database\Database;
 use Demo\Tasks\Database\TasksDbContext;
 use Demo\Tasks\Hilos;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -35,6 +38,12 @@ abstract class IntegrationTestCase extends TestCase
 
     /** @var ?SessionsLibraryAgent Library the sessions themselves live in, built on first use */
     private ?SessionsLibraryAgent $sessionsLibrary = null;
+
+    /** @var ?UsersLibraryAgent Library the accounts live in, built on first use */
+    private ?UsersLibraryAgent $usersLibrary = null;
+
+    /** @var ?NotificationsLibraryAgent Library the notification tables live in, built on first use */
+    private ?NotificationsLibraryAgent $notificationsLibrary = null;
 
     /**
      * Initializes the database once and registers test truth-source ownership.
@@ -118,6 +127,88 @@ abstract class IntegrationTestCase extends TestCase
             }
 
             $rest[] = $signal;
+        }
+
+        foreach ($rest as $signal) {
+            Hilos::$sr?->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
+        }
+    }
+
+    /**
+     * Builds the users library the accounts live in, once per case.
+     *
+     * An admin rename is two steps since HIL-771: the page checks the level and then asks this
+     * agent, which owns the row, to make the change. So a case driving that page reads nothing
+     * back until the frame has been run through here.
+     *
+     * @return UsersLibraryAgent Library under test, started
+     * @throws HilosException When the library's own startup fails
+     */
+    protected function usersLibrary(): UsersLibraryAgent
+    {
+        if ($this->usersLibrary === null) {
+            $this->usersLibrary = new UsersLibraryAgent();
+            $this->usersLibrary->onStart();
+        }
+
+        return $this->usersLibrary;
+    }
+
+    /**
+     * Builds the notifications library the notification tables live in, once per case.
+     *
+     * An emit stopped being a write in the calling worker in HIL-771: it is a frame addressed to
+     * this agent, which persists the row and fans it.
+     *
+     * @return NotificationsLibraryAgent Library under test, started
+     * @throws HilosException When the library's own startup fails
+     */
+    protected function notificationsLibrary(): NotificationsLibraryAgent
+    {
+        if ($this->notificationsLibrary === null) {
+            $this->notificationsLibrary = new NotificationsLibraryAgent();
+            $this->notificationsLibrary->onStart();
+        }
+
+        return $this->notificationsLibrary;
+    }
+
+    /**
+     * Runs every frame the framework libraries are addressed by through the one it belongs to.
+     *
+     * The sibling of {@see self::deliverLibraryFrames()} for the hops a page makes into a
+     * library that owns a table (HIL-771): an admin rename asks the users library, and writing
+     * the row emits a notification, which asks the notifications library in turn. Both hops are
+     * a worker taking its turn in a node and this one call in a case.
+     *
+     * The loop re-reads the queue rather than a snapshot of it, which is what carries that
+     * chain: the frame the first library queues is picked up by the same pass. Everything else
+     * goes back in the order it was taken off, so a case can still read the answer the page was
+     * sent and the browser pushes the run produced.
+     *
+     * @throws HilosException When a frame's handler fails
+     * @throws AgentUnknownSignalException When a library does not know a frame it is handed
+     * @throws InvalidArgumentException When a signal put back on the queue has no name
+     */
+    protected function deliverHilosLibraryFrames(): void
+    {
+        $rest = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
+            $name = $signal->signalName->getName();
+            $data = $signal->data;
+            if (!$data instanceof AgentSignalData) {
+                $rest[] = $signal;
+
+                continue;
+            }
+
+            if ($name === HilosSignalConstants::HILOS_USER_ADMIN_RENAME) {
+                $this->usersLibrary()->onSignalAgent($data, '', $name);
+            } elseif ($name === HilosSignalConstants::HILOS_NOTIFICATION_EMIT) {
+                $this->notificationsLibrary()->onSignalAgent($data, '', $name);
+            } else {
+                $rest[] = $signal;
+            }
         }
 
         foreach ($rest as $signal) {

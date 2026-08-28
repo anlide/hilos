@@ -115,6 +115,7 @@ use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeClientNotifier;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\ProtectedMode\ProtectedModeFreezeStore;
+use Hilos\ProtectedMode\ProtectedModeLiftAnnouncer;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 use Hilos\ProtectedMode\ProtectedModeWatchdog;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
@@ -354,6 +355,16 @@ abstract class DaemonManager extends BaseManager implements
     private ProtectedModeWatchdog $protectedModeWatchdog;
 
     /**
+     * @var ProtectedModeLiftAnnouncer Holder of the lift frame while a restore's logins are owed (HIL-771).
+     *
+     * Built with the manager for the same reason the watchdog is: the debt it waits on is taken on
+     * inside a freeze, while the frame it holds goes out from the loop below, and the two have to
+     * be the same object across the whole transition. Inert on a node no restore ran on - the lift
+     * asks it and is told to go ahead.
+     */
+    private ProtectedModeLiftAnnouncer $protectedModeLiftAnnouncer;
+
+    /**
      * Initializes daemon manager.
      *
      * Initializes signal router via Hilos::initSignalRouter() and creates
@@ -365,6 +376,7 @@ abstract class DaemonManager extends BaseManager implements
         Hilos::initSignalRouter($this->createSignalRouter());
         $this->agentManagerDaemon = $this->createAgentManagerDaemon();
         $this->protectedModeWatchdog = new ProtectedModeWatchdog();
+        $this->protectedModeLiftAnnouncer = new ProtectedModeLiftAnnouncer();
         $this->rtClaimRegistry = new RtClusterClaimRegistry();
         // The freeze watchdog has to hear an agent stop as it happens: the agent-start gate lets an
         // initiator's type start again under the freeze it left behind, so a later look at the
@@ -603,6 +615,10 @@ abstract class DaemonManager extends BaseManager implements
         // connections through: the WebSocket server it broadcasts over is ours, not the
         // worker server's.
         Hilos::$cluster?->registerProtectedModeClientNotifier($this);
+        // And expose the announcer that may hold the lift frame back, so both executors - the
+        // single-node one built below and the clustered one the peer transport builds - hold the
+        // same one (HIL-771).
+        Hilos::$cluster?->registerProtectedModeLiftAnnouncer($this->protectedModeLiftAnnouncer);
         // Expose this daemon as the port an RT replica from another node is applied through: the
         // copy a receiving node holds lives in the master, and the workers are fed from here.
         Hilos::$cluster?->registerRtSyncSink($this);
@@ -704,6 +720,11 @@ abstract class DaemonManager extends BaseManager implements
                 // produce one alert per node. It never lifts anything (HIL-482).
                 $this->protectedModeWatchdog->tick(time());
             }
+
+            // Let go of a lift frame whose wait for the restored logins has run out. Outside the
+            // leader gate, unlike the watchdog above: every node announces its OWN lift to its own
+            // browsers, so a follower holding one has to be able to release it (HIL-771).
+            $this->protectedModeLiftAnnouncer->tick(time());
 
             // Tell the other nodes which browser connections this node has gained and lost
             // (HIL-668). Ahead of the dispatch on purpose: a signal resolved below is addressed

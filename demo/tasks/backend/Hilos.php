@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Tasks;
 
 use Demo\Tasks\Agents\Hilos\DemoHilosAgent;
+use Demo\Tasks\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\Tasks\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Tasks\Agents\Hilos\UsersLibraryAgent;
 use Demo\Tasks\Agents\OAuthAgent;
@@ -14,6 +15,7 @@ use Demo\Tasks\Browser\Table\UserDetailBrowserTable;
 use Demo\Tasks\Browser\TasksBrowserContext;
 use Demo\Tasks\Browser\TasksBrowserRef;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\Tasks\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\OAuthAgentDaemon;
@@ -117,6 +119,11 @@ final class Hilos extends HilosFacade
         SessionsLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => SessionsLibraryAgent::class,
             AgentRegistryKey::DAEMON => SessionsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        NotificationsLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => NotificationsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => NotificationsLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         UsersLibraryAgent::AGENT_TYPE => [

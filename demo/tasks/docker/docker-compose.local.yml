@@ -145,18 +145,19 @@ services:
       - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-tasks}
       - DB_USERNAME=${MYSQL_USER:-hilos}
       - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
-      # Six monopolistic workers, one per monopolistic singleton: the tasks agent,
+      # Seven monopolistic workers, one per monopolistic singleton: the tasks agent,
       # the Hilos dashboard's hilos_index agent the shell gear subscribes, the
-      # sessions library that resolves every handshake (HIL-710), and the three
-      # sign-in turned on here (HIL-623) - the users library, the OAuth agent and
-      # the code agent. A monopolistic singleton needs a worker of its own, so the
+      # sessions library that resolves every handshake (HIL-710), the notifications
+      # library that owns the notification tables (HIL-771), and the three sign-in
+      # turned on here (HIL-623) - the users library, the OAuth agent and the code
+      # agent. A monopolistic singleton needs a worker of its own, so the
       # pool is the agent count: one short and a handshake or a sign-in is
       # addressed to an agent that never comes up. The pooled delivery channels
       # (mail, SMS) and the node-scoped throttle agent are NOT among them - they
       # run on regular workers. The framework default gives two, but the demos
       # prescribe it here (like chat) so the pool is explicit and not at the mercy
       # of env drift.
-      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-6}
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-7}
       # Mail goes to the stack's own interceptor, whose UI is published above. The
       # transport is pinned rather than auto-selected: a stack that loses the
       # catcher should fail loudly, not fall back to writing .eml files nobody opens.

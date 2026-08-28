@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Hilos;
 use Hilos\Runtime\ConnectionRosterReconciler;
 use Hilos\Runtime\State\Collection\HilosConnections as StateHilosConnections;
@@ -25,7 +26,9 @@ use PHPUnit\Framework\TestCase;
  * node holding the sockets, not of the agent - so the moment the agent comes back it has to say
  * which of them still have a socket. The roster the master hands it is that sentence, and these
  * cases pin what it costs: a row named on it stays, a row missing from it goes, and the two
- * silences (nothing mounted, somebody else's collection) answer zero rather than refusing.
+ * silences (nothing mounted, somebody else's collection) answer zero rather than refusing, and
+ * so does the third one a second owner brings (HIL-771): an agent allowed to edit a row but not
+ * to take it away is not the agent this reconcile is for.
  */
 final class ConnectionRosterReconcilerTest extends TestCase
 {
@@ -85,6 +88,23 @@ final class ConnectionRosterReconcilerTest extends TestCase
     public function testAnAgentThatDoesNotOwnTheCollectionAnswersZero(): void
     {
         $connections = $this->arrangeOwnedCollection();
+        ExecutionContext::setCurrentAgentId(self::OTHER_AGENT_ID);
+
+        $struck = ConnectionRosterReconciler::reconcile([]);
+
+        $this->assertSame(0, $struck);
+        $this->assertCount(2, $connections);
+    }
+
+    public function testACoOwnerThatMayOnlyEditARowAnswersZero(): void
+    {
+        $connections = $this->arrangeOwnedCollection();
+        RtTruthSourceRegistry::register(
+            RosterRtContext::connections,
+            true,
+            self::OTHER_AGENT_ID,
+            [TruthSourceOperation::Update],
+        );
         ExecutionContext::setCurrentAgentId(self::OTHER_AGENT_ID);
 
         $struck = ConnectionRosterReconciler::reconcile([]);

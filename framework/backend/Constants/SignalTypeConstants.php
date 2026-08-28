@@ -187,6 +187,19 @@ final class SignalTypeConstants
     public const string PROTECTED_MODE = 'protected_mode';
 
     /**
+     * @var string Restored logins are owed on this node (restore worker -> own daemon, drained worker-locally)
+     *
+     * The two frames below are what the lift waits on: a restore leaves the logins it photographed
+     * in a file the frozen sessions library will pick up, and the master must not tell the browsers
+     * to reload until they are back in the database. This one says the debt exists and is sent only
+     * where it was taken on, so a node that ran no restore never waits (HIL-771).
+     */
+    public const string SESSION_CARRY_OVER_DEFERRED = 'session_carry_over_deferred';
+
+    /** @var string The owed logins are back in the database (sessions library worker -> own daemon) */
+    public const string SESSION_CARRY_OVER_DONE = 'session_carry_over_done';
+
+    /**
      * @var string Frozen-replica frame type (worker -> the one browser client whose page reads it).
      *
      * Addressed and not broadcast, unlike the freeze above: what it answers is whether anything

@@ -5,15 +5,17 @@ declare(strict_types=1);
 namespace Hilos\Notification;
 
 use Hilos\Constants\CliCommands;
-use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Notification\Delivery\NotificationDispatcher;
+use Hilos\Notification\DTO\NotificationEmitSignalData;
 
 /**
  * NotificationCommandConstants - the wire vocabulary of the notification command channel.
  *
  * The CLI side builds the request payload and the agent side reads it, so both name the
- * keys from here and can never drift apart. Only the test-only emit command uses it today
- * ({@see CliCommands::NOTIFICATION_TEST_EMIT}, handled by {@see AbstractHilosIndexAgent}).
+ * keys from here and can never drift apart. Two entrances speak it: the test-only emit command
+ * ({@see CliCommands::NOTIFICATION_TEST_EMIT}) and, since HIL-771, the emit frame every worker
+ * sends the library ({@see NotificationEmitSignalData}) - one vocabulary, because they carry the
+ * same draft to the same handler and a second spelling would drift from the first.
  *
  * The request fields mirror {@see NotificationDraft}; the reply reports what actually
  * landed in the database, which is the point of the command - the notification id and the
@@ -35,6 +37,9 @@ final class NotificationCommandConstants
 
     /** @var string Request key: severity level (see NotificationSeverity) */
     public const string FIELD_SEVERITY = 'severity';
+
+    /** @var string Request key: structured context a later i18n pass re-renders from, absent when the draft carries none */
+    public const string FIELD_DATA = 'data';
 
     /** @var string Request key: channel narrowing, absent when every enabled channel may deliver */
     public const string FIELD_CHANNELS = 'channels';

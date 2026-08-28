@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\SimplePoll;
 
 use Demo\SimplePoll\Agents\Hilos\DemoHilosAgent;
+use Demo\SimplePoll\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\SimplePoll\Agents\Hilos\SessionsLibraryAgent;
 use Demo\SimplePoll\Agents\Hilos\UsersLibraryAgent;
 use Demo\SimplePoll\Agents\OAuthAgent;
@@ -14,6 +15,7 @@ use Demo\SimplePoll\Browser\PollBrowserContext;
 use Demo\SimplePoll\Browser\PollBrowserRef;
 use Demo\SimplePoll\Browser\Table\UserDetailBrowserTable;
 use Demo\SimplePoll\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\SimplePoll\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\SimplePoll\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\SimplePoll\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\SimplePoll\Core\Agent\Daemon\OAuthAgentDaemon;
@@ -117,6 +119,11 @@ final class Hilos extends HilosFacade
         SessionsLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => SessionsLibraryAgent::class,
             AgentRegistryKey::DAEMON => SessionsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        NotificationsLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => NotificationsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => NotificationsLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         UsersLibraryAgent::AGENT_TYPE => [

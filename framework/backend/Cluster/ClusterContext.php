@@ -26,6 +26,7 @@ use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeClientNotifier;
 use Hilos\ProtectedMode\ProtectedModeLeadership;
+use Hilos\ProtectedMode\ProtectedModeLiftAnnouncer;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 use Hilos\ProtectedMode\ProtectedModeSwitch;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
@@ -102,6 +103,12 @@ final class ClusterContext
      *     the freeze, registered by the daemon at start.
      */
     private ?ProtectedModeClientNotifier $protectedModeClientNotifier = null;
+
+    /**
+     * @var ?ProtectedModeLiftAnnouncer Local holder of the lift frame while restored logins are
+     *                                  owed, registered by the daemon at start.
+     */
+    private ?ProtectedModeLiftAnnouncer $protectedModeLiftAnnouncer = null;
 
     /** @var ?WorkerPlacement Read-only placement lookup the signal router consults, registered by the peer transport at start. */
     private ?WorkerPlacement $workerPlacement = null;
@@ -576,6 +583,35 @@ final class ClusterContext
     public function protectedModeClientNotifier(): ?ProtectedModeClientNotifier
     {
         return $this->protectedModeClientNotifier;
+    }
+
+    /**
+     * Registers the announcer that holds this node's lift frame until the restored logins are back.
+     *
+     * The daemon registers its own, because the wait is let go from the daemon's iteration. It sits
+     * here rather than in the executor's constructor for the reason every seam above does: the
+     * executor is built twice - once for a single node and once by the peer transport - and both
+     * copies must find the same one (HIL-771).
+     *
+     * @param ProtectedModeLiftAnnouncer $announcer Local announcer for the lift frame
+     */
+    public function registerProtectedModeLiftAnnouncer(ProtectedModeLiftAnnouncer $announcer): void
+    {
+        $this->protectedModeLiftAnnouncer = $announcer;
+    }
+
+    /**
+     * Returns the registered lift announcer, or null when none is set.
+     *
+     * Null is the pre-HIL-771 behaviour and stays legal: an executor that finds no announcer sends
+     * the lift frame the moment the freeze lifts, which is what every node did before the wait
+     * existed and what a node with nothing to wait for still does.
+     *
+     * @return ?ProtectedModeLiftAnnouncer Local lift announcer, or null
+     */
+    public function protectedModeLiftAnnouncer(): ?ProtectedModeLiftAnnouncer
+    {
+        return $this->protectedModeLiftAnnouncer;
     }
 
     /**

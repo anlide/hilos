@@ -46,6 +46,12 @@ use JsonException;
  * when the first pass lands, so a verifier already looking at the stub gets the field without
  * touching anything.
  *
+ * The lift frame is the one push that may be held rather than sent: after a restore it means
+ * "sign in again" for everyone whose login the restore photographed and the sessions library has
+ * not re-created yet, so {@see ProtectedModeLiftAnnouncer} keeps it until they are back or until
+ * its wait runs out (HIL-771). Nothing else about the transition waits - the row says inactive and
+ * the agents are already coming back.
+ *
  * Every phase this class writes is also left on disk through {@see ProtectedModeFreezeStore}, and
  * the lift removes it: the row is memory only, so a daemon restarted under a freeze would otherwise
  * come back open over a database its restore never finished (HIL-482).
@@ -80,6 +86,11 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
 
         $view->actions->enterActivating($freeze, $initiatorAcceptKey, $initiatorSessionTokenHash);
         $this->persistFreeze($view);
+
+        // A new freeze owes no restored logins yet. Whatever an earlier one left unanswered is
+        // dropped here rather than at its own lift, because the only thing that ever takes that
+        // debt on runs inside the freeze starting on this line.
+        Hilos::$cluster?->protectedModeLiftAnnouncer()?->forgetSessionsOwed();
 
         // Stop this node's own agents so no application work runs against the destructive
         // operation, leaving the initiator agent running to carry it out (HIL-267 slice 7a).
@@ -270,10 +281,18 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         // Tell everyone the mode lifted, the initiator included: after a restore its data is as
         // stale as anybody else's, and the frame means "reload". It carries no copy, because
         // nothing renders words on the way out.
-        Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState(
-            new ProtectedModeStateSignalData(active: false),
-            null,
-        );
+        //
+        // Unless a restore left logins here that are not back in the database yet: "reload" then
+        // means "sign in again" for everyone holding one, so the announcer keeps the frame until
+        // the sessions library reports them re-created, or until its wait runs out (HIL-771). A
+        // node owed nothing - which is every node outside the moments after a restore - says so at
+        // once, and a node running no announcer at all lifts the way it always did.
+        $lifted = new ProtectedModeStateSignalData(active: false);
+        if (Hilos::$cluster?->protectedModeLiftAnnouncer()?->holdLift($lifted, time()) === true) {
+            return;
+        }
+
+        Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState($lifted, null);
     }
 
     public function notifyInitiatorReady(): void

@@ -7,6 +7,7 @@ namespace Demo\Chat\Pages\Hilos\Users;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
+use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
@@ -15,21 +16,27 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Tables\HilosUser\DTO\HilosUserMergeActionDTO;
 use Demo\Chat\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserGuardKey;
 use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Core\Browser\Config\BrowserSubscriptionError;
-use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Users\DTO\AccountMergeSignalData;
+use Hilos\Users\DTO\AdminRenameDoneSignalData;
+use Hilos\Users\DTO\AdminRenameSignalData;
 use Throwable;
 
 /**
@@ -40,14 +47,28 @@ use Throwable;
  */
 final class UserPage extends AbstractHilosUserPage
 {
-    /** @var list<string> The person this page is about, and the events its actions read */
-    public const array READS_DB = [ChatDbContext::users, ChatDbContext::events];
+    /** @var list<string> The person this page is about */
+    public const array READS_DB = [ChatDbContext::users];
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
 
     public const array ACTIONS = [
         HilosSignalConstants::HILOS_USER_UPDATE => HilosUserUpdateActionDTO::class,
         ChatSignalConstants::ACCOUNT_MERGE => HilosUserMergeActionDTO::class,
+    ];
+
+    /**
+     * The library's answer to the rename this page forwarded (HIL-771).
+     *
+     * The merge next door is answered by the chat agent instead, and the difference is what
+     * each ack has to reach: a merge ends in the loser's sockets being signed out, which is the
+     * project's business, while a rename ends where it started - on this page, in the modal
+     * still waiting.
+     */
+    public const array SIGNALS = [
+        SignalTypeConstants::AGENT_SIGNAL => [
+            HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => AdminRenameDoneSignalData::class,
+        ],
     ];
 
     public const array BROWSER = [
@@ -76,8 +97,7 @@ final class UserPage extends AbstractHilosUserPage
      * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws ItemNotFoundForUpdateException When the target user is missing
-     * @throws HilosException When user update, audit event persistence, or success ack fails
+     * @throws HilosException When a rename or a merge cannot be handed to its library
      * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
@@ -130,35 +150,109 @@ final class UserPage extends AbstractHilosUserPage
     }
 
     /**
-     * Renames the selected user through the Hilos users table action and writes an audit event.
+     * Answers the admin whose rename the library has finished (HIL-771).
      *
-     * Thrown failures become a dedicated fail ack through onActionException().
-     * On success, the initiator receives the HILOS_USER_UPDATE_SUCCESS ack.
+     * @param AgentSignalData $data Wrapped agent-signal payload
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Routed agent-signal name
+     * @throws AgentUnknownSignalException When the name is not one this page declares
+     * @throws LogicException When the payload is not the one its name promises
+     * @throws InvalidArgumentException When the ack cannot be named
+     */
+    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    {
+        if ($name !== HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE) {
+            throw new AgentUnknownSignalException($name);
+        }
+
+        if (!$data->data instanceof AdminRenameDoneSignalData) {
+            throw new LogicException($name . ' payload must be ' . AdminRenameDoneSignalData::class);
+        }
+
+        $this->answerRename($data->data);
+    }
+
+    /**
+     * Hands one rename to the library that owns the account (HIL-771).
+     *
+     * The page keeps the submit, because the admin guard closing this surface is the page's and
+     * an agent action has no level to inherit; the account row and the room's log line for the
+     * rename belong to {@see UsersLibraryAgent}, which is where the writing happens now.
+     *
+     * Nothing is judged on the way out, not even that the person exists: the answer would be
+     * read in this worker and acted on in another. Who is asking IS resolved here, because this
+     * worker is the one holding the admin's socket.
      *
      * @param string $acceptKey WebSocket accept key for the requesting client
      * @param HilosUserUpdateActionDTO $dto Update action payload
-     * @throws ItemNotFoundForUpdateException When the target user is missing
-     * @throws HilosException When rename, audit event persistence, or success ack fails
+     * @throws InvalidArgumentException When the rename frame cannot be named or queued
      */
     private function handleHilosUserUpdate(string $acceptKey, HilosUserUpdateActionDTO $dto): void
     {
-        $dbUser = Hilos::$db->users[$dto->id]
-            ?? throw new ItemNotFoundForUpdateException("User #{$dto->id} not found");
-
-        $oldName = $dbUser->name;
-        Hilos::$table->hilosUsers[$dto->id]->actions->update($dto);
-        $newName = $dbUser->name;
-
-        Hilos::$db->events->actions->addUserRenamedByAdmin(
-            userId: $dto->id,
-            oldName: $oldName,
-            newName: $newName,
-            adminUserId: Hilos::$rt->selfConnection?->userId,
+        $requestId = $this->currentActionRequestId();
+        $this->agent->sendToAgent(
+            HilosSignalConstants::HILOS_USER_ADMIN_RENAME,
+            new AdminRenameSignalData(
+                userId: $dto->id,
+                name: $dto->name,
+                acceptKey: $acceptKey,
+                requestId: $requestId,
+                adminUserId: Hilos::$rt->selfConnection?->userId,
+            ),
         );
+
+        if ($requestId !== null) {
+            $this->deferActionReply();
+        }
+    }
+
+    /**
+     * Turns the library's outcome into the ack this page has always sent.
+     *
+     * The submit is untracked - the admin surface listens for the two named acks rather than
+     * for a correlated reply - so both shapes are kept: the tracked branch answers a request id
+     * if one ever arrives, and the plain one sends the very frames the handler and its
+     * exception hook sent before the move.
+     *
+     * @param AdminRenameDoneSignalData $done Whom to answer, and why the rename was refused
+     * @throws InvalidArgumentException When the ack cannot be named
+     */
+    private function answerRename(AdminRenameDoneSignalData $done): void
+    {
+        if ($done->requestId !== null) {
+            if ($done->error === null) {
+                $this->sendActionSuccess(
+                    $done->acceptKey,
+                    HilosSignalConstants::HILOS_USER_UPDATE,
+                    $done->requestId,
+                );
+
+                return;
+            }
+
+            $this->sendActionFail(
+                $done->acceptKey,
+                HilosSignalConstants::HILOS_USER_UPDATE,
+                $done->requestId,
+                $done->error,
+            );
+
+            return;
+        }
+
+        if ($done->error !== null) {
+            $this->sendToUser(
+                HilosSignalConstants::HILOS_USER_UPDATE_FAIL,
+                $done->acceptKey,
+                new ActionFailSignalData($done->error),
+            );
+
+            return;
+        }
 
         $this->sendToUser(
             HilosSignalConstants::HILOS_USER_UPDATE_SUCCESS,
-            $acceptKey,
+            $done->acceptKey,
             new ActionSuccessSignalData(),
         );
     }

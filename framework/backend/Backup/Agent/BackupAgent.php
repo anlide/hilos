@@ -8,6 +8,9 @@ use DateTimeImmutable;
 use DateTimeInterface;
 use DateTimeZone;
 use Exception;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Session\DTO\SessionCarryOverDeferredSignalData;
+use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
 use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Auth\Session\SessionCarryover;
 use Hilos\Auth\Session\SessionIdentityRef;
@@ -51,6 +54,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\DirectoryWatchTrait;
@@ -70,6 +74,8 @@ use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Process;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalType;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
@@ -2884,32 +2890,72 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
-     * Re-creates the sessions photographed before the database was replaced (HIL-479).
+     * Leaves the sessions photographed before the swap for the library that owns them (HIL-479,
+     * HIL-771).
      *
-     * The step lives in the window between a successful restore and the thaw, and its order is the
-     * point: nothing may be written after the clients are told to reload, because the reloaded
-     * browser looks its session up immediately.
+     * This step used to WRITE those rows, from this agent, in this worker. The sessions table has
+     * an owner now ({@see AbstractSessionsLibraryAgent}), and a restore is the one moment that
+     * owner cannot be asked: the node is still frozen, every agent but this one is stopped, and a
+     * frame sent to a stopped agent under a freeze is dropped where it is sent. So the picture is
+     * left in {@see DeferredSessionCarryoverQueue}, and the library re-creates the rows as it
+     * comes back up - which on this path is the verification window, opened by the request that
+     * immediately follows this call.
      *
      * The re-hydrate announcement used to live here and has moved up to the finalizer (HIL-436):
      * it belongs to the swap, not to the sessions, so it has to happen on the failed branch too -
      * and it has to be waited for, which this step cannot do. By the time this runs, every process
-     * has already confirmed re-reading, so the rows written here land on top of a database
+     * has already confirmed re-reading, so the rows the library writes land on top of a database
      * everybody agrees about.
      *
-     * Contained like the snapshot: a restore that has already succeeded is not undone, and the
-     * freeze is not held, because sessions could not be written back.
+     * Contained like the snapshot, and by the same reasoning as before: a restore that has already
+     * succeeded is not undone, and the freeze is not held, because the logins could not be handed
+     * over.
      */
     private function carryOverSessions(): void
     {
+        $snapshot = $this->pendingCarryover ?? [];
+
         try {
-            $result = SessionCarrier::carryOver($this->pendingCarryover ?? []);
+            $deferred = DeferredSessionCarryoverQueue::defer($snapshot);
         } catch (Throwable $e) {
-            $this->logAgentError('Restore could not carry sessions over: ' . $e->getMessage());
+            $this->logAgentError('Restore could not hand the sessions over: ' . $e->getMessage());
 
             return;
         }
 
-        $this->logAgentInfo("Restore carried over {$result->carried} session(s), dropped {$result->dropped}");
+        $this->logAgentInfo("Restore left {$deferred} session(s) for the sessions library");
+        $this->reportDeferredSessions($deferred);
+    }
+
+    /**
+     * Tells this node's master that the logins just queued are owed, so the lift waits for them.
+     *
+     * The frame exists because the master cannot find this out for itself: the queue is a file
+     * this agent writes and the library empties, and a master that read it would be doing file
+     * I/O on its own loop to answer a question the writer already knows the answer to. Sent from
+     * the node that ran the restore and nowhere else - every other node lifts with no wait at all.
+     *
+     * Contained like everything else on this path: the restore has succeeded, and a report that
+     * could not be queued costs a reload the browsers may have to repeat, not the operation.
+     *
+     * @param int $sessions Logins left in the deferred queue, zero when nothing was queued
+     */
+    private function reportDeferredSessions(int $sessions): void
+    {
+        if ($sessions === 0) {
+            return;
+        }
+
+        try {
+            Hilos::$sr?->queueSignal(
+                signalSource: $this->getAgentSignalSource(),
+                signalType: new SignalType(SignalTypeConstants::SESSION_CARRY_OVER_DEFERRED),
+                signalName: new SignalName(SignalTypeConstants::SESSION_CARRY_OVER_DEFERRED),
+                signalData: new SessionCarryOverDeferredSignalData($sessions),
+            );
+        } catch (InvalidArgumentException $e) {
+            $this->logAgentError('Deferred sessions could not be reported: ' . $e->getMessage());
+        }
     }
 
     /**

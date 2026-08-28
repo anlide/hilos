@@ -23,11 +23,17 @@ use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\HilosMailer;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 use Hilos\Notification\Delivery\NotificationDispatcher;
+use Hilos\Notification\DTO\DeliveryRetryDoneSignalData;
+use Hilos\Notification\DTO\DeliveryRetrySignalData;
+use Hilos\Notification\DTO\NotificationEmitSignalData;
+use Hilos\Notification\HilosNotifier;
 use Hilos\Push\Delivery\PushDeliveryChannel;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Sms\DTO\SmsSendSignalData;
 use Hilos\Sms\HilosSmsSender;
 use Hilos\Users\DTO\AccountMergeResultSignalData;
+use Hilos\Users\DTO\AdminRenameDoneSignalData;
+use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 
 /**
@@ -236,6 +242,26 @@ final class HilosSignalConstants
 
     /** Server → initiator: hilos_user_update failed (carries a reason text). */
     public const string HILOS_USER_UPDATE_FAIL = 'hilos_user_update_fail';
+
+    /**
+     * Admin page → users library: rename this person (HIL-771).
+     *
+     * The write half of {@see self::HILOS_USER_UPDATE}, split off from it because the two
+     * halves belong to different owners: WHO may rename is the page's ADMIN level, which an
+     * agent action carries no equivalent of, and the account row is the library's. So the page
+     * keeps the submit and forwards the work here. Carried by {@see AdminRenameSignalData},
+     * which brings the waiting admin and the person doing the renaming along.
+     */
+    public const string HILOS_USER_ADMIN_RENAME = 'hilos_user_admin_rename';
+
+    /**
+     * Users library → admin page: the rename is done, or it is refused (HIL-771).
+     *
+     * The way back for {@see self::HILOS_USER_ADMIN_RENAME} and only for it: the page turns it
+     * into the {@see self::HILOS_USER_UPDATE_SUCCESS} or {@see self::HILOS_USER_UPDATE_FAIL}
+     * ack its own surface has always listened for. Carried by {@see AdminRenameDoneSignalData}.
+     */
+    public const string HILOS_USER_ADMIN_RENAME_DONE = 'hilos_user_admin_rename_done';
 
     // ── Hilos settings admin: table mutation actions (client → server) ──
     /** Client → server: add a setting override on the HILOS_SETTINGS page. */
@@ -697,6 +723,47 @@ final class HilosSignalConstants
      * project turns that into the ack its own surface waits for.
      */
     public const string HILOS_ACCOUNT_MERGE_RESULT = 'hilos_account_merge_result';
+
+    // ── Hilos notification seam: any worker → the notifications library (agent signal) ──
+    /**
+     * {@see HilosNotifier::emit()} → notifications library: write this notification and deliver it.
+     *
+     * The one frame the emit seam became (HIL-771). Emitting used to be a write from whichever
+     * worker happened to call the facade, which held only as long as the process it ran in also
+     * hosted an owner of the notification tables - true by accident, never by design. The draft
+     * now travels to the library instead, which writes the row, fans the live in-app frame to the
+     * recipient's group and hands the row to {@see NotificationDispatcher}, in that order.
+     *
+     * It answers nobody on purpose: the caller no longer learns the id, because a caller that
+     * waited for one would be waiting on another process for something no product path reads.
+     * The one caller that does need it - the test-only emit command - is answered by the library,
+     * which runs it. Carried by {@see NotificationEmitSignalData}.
+     */
+    public const string HILOS_NOTIFICATION_EMIT = 'hilos_notification_emit';
+
+    /**
+     * Deliveries page → notifications library: re-queue this failed delivery (HIL-771).
+     *
+     * The admin half of the retry, and the reason it is a frame rather than a call: the page
+     * keeps the action and the ADMIN level that closes it, because an agent action carries no
+     * such level, but the journal row it resets belongs to the library. So the gatekeeper
+     * checks who is asking and the owner does the writing.
+     *
+     * The row is judged where it is written, not here: a page that read "failed" and then
+     * asked would be judging a row another process is free to change in between. Carried by
+     * {@see DeliveryRetrySignalData}, which brings the waiting admin along.
+     */
+    public const string HILOS_DELIVERY_RETRY = 'hilos_delivery_retry';
+
+    /**
+     * Notifications library → deliveries page: your retry is done, or it is refused (HIL-771).
+     *
+     * The way back for {@see self::HILOS_DELIVERY_RETRY} and only for it. The page deferred
+     * its own ack when it handed the work over, so this frame is what finally answers the
+     * admin - success, or the sentence saying why the row could not be re-queued. Carried by
+     * {@see DeliveryRetryDoneSignalData}.
+     */
+    public const string HILOS_DELIVERY_RETRY_DONE = 'hilos_delivery_retry_done';
 
     // ── Hilos backup admin: page → monopoly BackupAgent routes (agent signals) ──
     /** Page → BackupAgent: run a backup in the carried scope (guarded create path). */

@@ -50,6 +50,8 @@ use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerSessionCarryOverDeferredDTO;
+use Hilos\Socket\Worker\DTO\WorkerSessionCarryOverDoneDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Utils\Logger;
@@ -225,6 +227,10 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerProtectedModeProgressDTO => $this->handleProtectedModeProgressMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModePassDTO => $this->handleProtectedModePassMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeRefreezeDTO => $this->handleProtectedModeRefreezeMessage($workerDTO),
+            $workerDTO instanceof WorkerSessionCarryOverDeferredDTO
+                => $this->handleSessionCarryOverDeferredMessage($workerDTO),
+            $workerDTO instanceof WorkerSessionCarryOverDoneDTO
+                => $this->handleSessionCarryOverDoneMessage($workerDTO),
             default => Logger::error("Unknown message type received from worker: " . get_class($workerDTO)),
         };
     }
@@ -583,6 +589,39 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     private function handleProtectedModeRefreezeMessage(WorkerProtectedModeRefreezeDTO $dto): void
     {
         Hilos::$cluster?->protectedMode()?->requestRefreeze($dto->data);
+    }
+
+    /**
+     * Handle a restore's report that it left logins for the sessions library.
+     *
+     * The debt the lift of this node's freeze waits on: until the library says those logins are
+     * back in the restored database, telling the browsers to reload signs their owners out. Only
+     * the node that ran the restore ever hears this frame, which is what keeps every other lift
+     * immediate (HIL-771).
+     *
+     * @param WorkerSessionCarryOverDeferredDTO $dto DTO with the number of logins left queued
+     */
+    private function handleSessionCarryOverDeferredMessage(WorkerSessionCarryOverDeferredDTO $dto): void
+    {
+        Hilos::$cluster?->protectedModeLiftAnnouncer()?->noteSessionsDeferred($dto->data->sessions);
+    }
+
+    /**
+     * Handle the sessions library's report that those logins have been dealt with.
+     *
+     * Releases a lift held for them on the spot, so the ordinary case costs the browsers nothing
+     * beyond the library's own start. Dropped quietly when nothing was waiting - the usual case,
+     * where the library came back during the verification window and the operator opened the node
+     * long afterwards.
+     *
+     * @param WorkerSessionCarryOverDoneDTO $dto DTO with the logins carried and the logins lost
+     */
+    private function handleSessionCarryOverDoneMessage(WorkerSessionCarryOverDoneDTO $dto): void
+    {
+        Hilos::$cluster?->protectedModeLiftAnnouncer()?->noteSessionsCarriedOver(
+            $dto->data->carried,
+            $dto->data->dropped,
+        );
     }
 
     /**

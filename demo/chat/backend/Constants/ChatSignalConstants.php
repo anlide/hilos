@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Constants;
 
+use Hilos\Constants\HilosSignalConstants;
+
 /**
  * ChatSignalConstants - Chat signal name constants.
  *
@@ -94,6 +96,20 @@ final class ChatSignalConstants
     // ── Table actions (client → server) ──────────────────────────────────
     /** @var string User update signal name */
     public const string USER_UPDATE = 'user_update';
+
+    /**
+     * @var string Admin users page → users library: rename this person (HIL-771)
+     *
+     * The write half of {@see self::USER_UPDATE}. A second name beside the framework's
+     * {@see HilosSignalConstants::HILOS_USER_ADMIN_RENAME} rather than a shared one, because a
+     * frame answered by a page is routed to the agent serving THAT page - and the two admin
+     * surfaces that rename a person are served by different agents. One name would mean one
+     * destination, and one of the two acks would go missing.
+     */
+    public const string USER_ADMIN_RENAME = 'user_admin_rename';
+
+    /** @var string Users library → admin users page: the rename is done, or refused (HIL-771) */
+    public const string USER_ADMIN_RENAME_DONE = 'user_admin_rename_done';
 
     /** @var string Client → server (Hilos user page-action): admin merges the loser account into this survivor (HIL-378) */
     public const string ACCOUNT_MERGE = 'account_merge';

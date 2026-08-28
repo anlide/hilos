@@ -480,6 +480,21 @@ abstract class AbstractPage implements ActionHostInterface
     }
 
     /**
+     * Hands the answer to this action to whoever the handler passed the ending to.
+     *
+     * The one thing a handler may say about its own reply, and it is a negative: the
+     * dispatcher must NOT ack, because an ack is on its way from another process and a second
+     * one would tell the browser the command finished before it did. The mirror of what an
+     * agent has had since HIL-622, needed on a page since HIL-771 gave the admin submits their
+     * two-step shape - the page checks who is asking and forwards the write to the agent that
+     * owns the table, so the page is no longer the last step of its own action.
+     */
+    protected function deferActionReply(): void
+    {
+        $this->actionReply()->defer();
+    }
+
+    /**
      * Whether the handler that just ran handed the answer to another process.
      *
      * @return bool True when this page owes no ack for the running action

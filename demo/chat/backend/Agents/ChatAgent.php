@@ -361,7 +361,7 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Dispatches chat-owned inter-agent signals and deliberately ignores page-owned moderation results.
+     * Dispatches chat-owned inter-agent signals and deliberately ignores the page-owned ones.
      *
      * @param AgentSignalData $data Agent signal wrapper with the inner payload to dispatch
      * @param string $source Framework signal source identifier (unused)
@@ -385,7 +385,10 @@ final class ChatAgent extends AbstractAgent
                 $this->applySessionState($data->data);
                 return;
             case ChatSignalConstants::MODERATION_RESULT:
-            case ChatSignalConstants::RENAME_MODERATION_RESULT:
+            case ChatSignalConstants::USER_ADMIN_RENAME_DONE:
+                // Both belong to a page this agent merely serves: the frame is routed here
+                // because that is where the page lives, and the page router hands it on. Named
+                // rather than left to the default, which would log a stranger on every one.
                 return;
             case ChatSignalConstants::BOT_MESSAGE:
                 if (!$data->data instanceof BotMessageSignalData) {

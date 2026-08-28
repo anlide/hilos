@@ -16,7 +16,6 @@ use Hilos\Auth\Library\DTO\RegisterActionDTO;
 use Hilos\Auth\Library\DTO\RequestMagicLinkActionDTO;
 use Demo\Chat\Pages\DTO\Profile\ConfirmAddPasswordActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RequestAddPasswordActionDTO;
-use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
@@ -572,13 +571,13 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
             $this->assertNull(Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email));
 
             ExecutionContext::setCurrentAcceptKey('profile-ak');
-            new ProfilePage($agent)->onAction(
+            $this->usersLibrary()->onAgentAction(
                 'profile-ak',
                 ChatSignalConstants::ADD_PASSWORD_REQUEST,
                 new RequestAddPasswordActionDTO($email),
             );
             $this->seedKnownEmailAddCode($email, $userId);
-            new ProfilePage($agent)->onAction(
+            $this->usersLibrary()->onAgentAction(
                 'profile-ak',
                 ChatSignalConstants::ADD_PASSWORD_CONFIRM,
                 new ConfirmAddPasswordActionDTO($email, self::EMAIL_ADD_CODE, self::PROFILE_PASSWORD),

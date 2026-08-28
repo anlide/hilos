@@ -6,6 +6,7 @@ namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
+use Hilos\Constants\HilosAgentType;
 use Demo\Chat\Constants\GroupConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
@@ -237,7 +238,7 @@ final class ChatSignalRouterTest extends TestCase
         ], $destinations);
     }
 
-    public function testRenameModerationResultRoutesToChatAgentThroughPageSignalOwnership(): void
+    public function testRenameModerationResultRoutesToTheUsersLibraryThatAskedForIt(): void
     {
         $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::AGENT),
@@ -253,7 +254,7 @@ final class ChatSignalRouterTest extends TestCase
         ));
 
         $this->assertEquals([
-            new AgentDestination(AgentType::CHAT),
+            new AgentDestination(HilosAgentType::HILOS_USERS_LIBRARY),
         ], $destinations);
     }
 

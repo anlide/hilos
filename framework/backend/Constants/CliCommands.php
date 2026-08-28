@@ -9,6 +9,7 @@ use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\PageAccessGate;
+use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 
 /**
  * CliCommands - CLI command name constants.
@@ -131,9 +132,9 @@ final class CliCommands
      *
      * Proves the transport rather than any feature: the CLI parks on the command socket, the
      * daemon routes the name to {@see AbstractHilosIndexAgent}, and the agent answers with the
-     * payload it was handed. Routed to the index agent for the reason
-     * {@see self::NOTIFICATION_TEST_EMIT} is - it is the framework-owned worker every
-     * installation has - so an operator can ask any project whether its channel is alive.
+     * payload it was handed. Routed to the index agent because it is the framework-owned worker
+     * every installation has, whatever features it declares, so an operator can ask any project
+     * whether its channel is alive.
      *
      * @var string Command: Echo a message back through the daemon command channel (test-only)
      */
@@ -143,8 +144,11 @@ final class CliCommands
      * Emit one durable notification to a user through the live daemon (test-only).
      *
      * Doubles as the command-channel wire name routed to
-     * {@see AbstractHilosIndexAgent}: unlike the backup pair, the CLI name and the
-     * wire name are one string because there is exactly one route for it.
+     * {@see AbstractNotificationsLibraryAgent}: unlike the backup pair, the CLI name and the
+     * wire name are one string because there is exactly one route for it. It stood on
+     * {@see AbstractHilosIndexAgent} until HIL-771, for want of an agent that owned the
+     * notification tables; now that one exists, the command is answered where the row is
+     * written, and the id it reports names a row its own answerer wrote.
      *
      * @var string Command: Emit one notification to a user through the live daemon (test-only)
      */

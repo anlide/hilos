@@ -25,7 +25,7 @@ services:
       - HTTP_STATUS_PORT=8090
       - WORKER_COMM_HOST=0.0.0.0
       - WORKER_COMM_PORT=8091
-      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-13}
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-14}
       - WEBSOCKET_HOST=0.0.0.0
       - WEBSOCKET_PORT=8092
       # The CLI command channel, the socket admin:create / admin:grant /

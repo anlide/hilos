@@ -54,4 +54,7 @@ final class HilosAgentType
 
     /** @var string Hilos sessions library agent (owner of the session set, its handshake and the sockets' identity) */
     public const string HILOS_SESSIONS_LIBRARY = 'hilos_sessions_library';
+
+    /** @var string Hilos notifications library agent (owner of the notification set, its preferences, deliveries and push endpoints) */
+    public const string HILOS_NOTIFICATIONS_LIBRARY = 'hilos_notifications_library';
 }

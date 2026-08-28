@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Closure;
+use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
+use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupRunKind;
 use Hilos\Backup\BackupNotificationType;
@@ -20,11 +22,12 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Database;
 use Hilos\Database\DTO\DbReHydrateOutcome;
-use Hilos\Database\Schema\Schema;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Notification\HilosNotifier;
+use Hilos\Notification\DeferredNotificationQueue;
+use Hilos\Notification\NotificationDraft;
 use Hilos\Runtime\State\Collection\BackupHistories;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
@@ -87,8 +90,11 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
     /** @var ?RtContext Runtime context to restore after the test */
     private ?RtContext $previousRt = null;
 
+    /** @var string Directory the two restore queues of this case live in */
+    private string $backupDir = '';
+
     /**
-     * @throws HilosException When the schema reset or the context build fails
+     * @throws HilosException When the queue directory or the context build fails
      */
     protected function setUp(): void
     {
@@ -117,16 +123,14 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
         RtTruthSourceRegistry::registerDaemon(StateBackupRuntime::RT_ITEM);
 
         Hilos::$sr = new SignalRouter();
+        $this->backupDir = sys_get_temp_dir() . '/hilos-carry-over-it-' . getmypid();
+        FsPath::ensureDirectory($this->backupDir);
         Hilos::$env = $this->env();
 
-        // The announcement of the finished run writes into the same database the sessions land in,
-        // so its table is raised here beside them - and the schema map is re-read, because the
-        // activation gate reads a map that was built before this table existed.
-        self::runNotificationStub(down: true);
-        self::runNotificationStub(down: false);
-        Schema::reset();
-        Schema::initialize();
-        Hilos::$notify = new HilosNotifier();
+        // Both queues are emptied before the case rather than only after it: one left behind by a
+        // run that died mid-case would hand its logins and its letters to this one.
+        DeferredSessionCarryoverQueue::drain();
+        DeferredNotificationQueue::drain();
     }
 
     /**
@@ -134,16 +138,16 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
      */
     protected function tearDown(): void
     {
+        DeferredSessionCarryoverQueue::drain();
+        DeferredNotificationQueue::drain();
+        rmdir($this->backupDir);
         RtTruthSourceRegistry::unregisterDaemon(StateBackupRuntime::RT_ITEM);
         RtTruthSourceRegistry::unregisterDaemon(StateRestoreRuntime::RT_ITEM);
         RtTruthSourceRegistry::unregisterAgent(CarryOverTestOwnerAgent::AGENT_TYPE);
         ExecutionContext::setCurrentAgentId(null);
         Hilos::$env = null;
         Hilos::$sr = null;
-        Hilos::$notify = null;
         Hilos::$rt = $this->previousRt;
-        self::runNotificationStub(down: true);
-        Schema::reset();
 
         parent::tearDown();
     }
@@ -168,7 +172,7 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
     /**
      * @throws HilosException When a step against the database fails
      */
-    public function testTheSessionsComeBackOnlyAfterTheBarrierHasClosed(): void
+    public function testTheSessionsAreHandedOverOnlyAfterTheBarrierHasClosed(): void
     {
         $this->seedLiveSession();
         $agent = $this->admittedRestore();
@@ -176,15 +180,25 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
         $this->swapDatabase();
 
         $this->endRestoreChild($agent, ExitCode::SUCCESS);
-        $this->assertNull(
-            self::sessionRow(self::TOKEN),
-            'Written here, the rows would land in a node still holding caches of the database that is gone',
+        $this->assertSame(
+            [],
+            DeferredSessionCarryoverQueue::drain(),
+            'Handed over here, the logins would be applied in a node still holding caches of the database that is gone',
         );
 
         $agent->onDbReHydrateComplete(new DbReHydrateOutcome(true, []));
+        $this->assertNull(
+            self::sessionRow(self::TOKEN),
+            'The supervisor stopped writing this table: the rows belong to the sessions library now (HIL-771)',
+        );
+
+        // What the library does on its way back up, and the whole of it.
+        $queued = DeferredSessionCarryoverQueue::drain();
+        $this->assertCount(1, $queued, 'The photographed login waits in the queue for its owner');
+        SessionCarrier::carryOver($queued);
 
         $row = self::sessionRow(self::TOKEN);
-        $this->assertNotNull($row, 'The token resolves again once everybody has re-read');
+        $this->assertNotNull($row, 'The token resolves again once the library has applied the queue');
         $this->assertSame((string)self::NEW_USER_ID, (string)$row['user_id']);
     }
 
@@ -201,10 +215,12 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
         $this->endRestoreChild($agent, ExitCode::ERROR);
         $agent->onDbReHydrateComplete(new DbReHydrateOutcome(true, []));
 
-        $this->assertNull(
-            self::sessionRow(self::TOKEN),
-            'Writing sessions into a half-imported database would build on top of the damage',
+        $this->assertSame(
+            [],
+            DeferredSessionCarryoverQueue::drain(),
+            'Handing sessions to the library after a half-imported database would build on top of the damage',
         );
+        $this->assertNull(self::sessionRow(self::TOKEN), 'And nothing writes them behind its back either');
     }
 
     /**
@@ -220,11 +236,12 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
         $this->endRestoreChild($agent, ExitCode::SUCCESS);
         $agent->onDbReHydrateComplete(new DbReHydrateOutcome(true, []));
 
-        $row = self::notificationRow(self::NEW_USER_ID);
-        $this->assertNotNull($row, 'The person who asked is found again by identity, not by the id they had');
-        $this->assertSame(BackupNotificationType::RESTORE_SUCCEEDED, $row['type']);
+        $letters = DeferredNotificationQueue::drain();
+        $draft = self::letterTo($letters, self::NEW_USER_ID);
+        $this->assertNotNull($draft, 'The person who asked is found again by identity, not by the id they had');
+        $this->assertSame(BackupNotificationType::RESTORE_SUCCEEDED, $draft->type);
         $this->assertNull(
-            self::notificationRow(self::OLD_USER_ID),
+            self::letterTo($letters, self::OLD_USER_ID),
             'That id belongs to somebody else in the restored database, and mailing them would be the'
             . ' whole reason the initiator travels as identities',
         );
@@ -243,9 +260,9 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
         $this->endRestoreChild($agent, ExitCode::ERROR);
         $agent->onDbReHydrateComplete(new DbReHydrateOutcome(true, []));
 
-        $row = self::notificationRow(self::NEW_USER_ID);
-        $this->assertNotNull($row, 'A restore that failed is exactly the one nobody may find out about by chance');
-        $this->assertSame(BackupNotificationType::RESTORE_FAILED, $row['type']);
+        $draft = self::letterTo(DeferredNotificationQueue::drain(), self::NEW_USER_ID);
+        $this->assertNotNull($draft, 'A restore that failed is exactly the one nobody may find out about by chance');
+        $this->assertSame(BackupNotificationType::RESTORE_FAILED, $draft->type);
     }
 
     /**
@@ -326,35 +343,25 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
     }
 
     /**
-     * Reads the newest notification of a recipient straight from the database.
+     * Picks one recipient's letter out of what the restore left for the notifications library.
      *
+     * Off the queue rather than out of `hilos_notification`, because a restore announces itself
+     * with the node still frozen and every other agent stopped, so what it can do is leave the
+     * letter behind (HIL-771). Who it is addressed to is still decided here, in the database that
+     * replaced the initiator's, and that is what these cases are about.
+     *
+     * @param list<NotificationDraft> $letters Everything the restore left, drained once by the caller
      * @param int $userId Recipient user id
-     * @return ?array<string, mixed> Raw notification row, or null when the recipient has none
-     * @throws HilosException When the query fails
+     * @return ?NotificationDraft The newest letter for them, or null when they got none
      */
-    private static function notificationRow(int $userId): ?array
+    private static function letterTo(array $letters, int $userId): ?NotificationDraft
     {
-        Database::sql(
-            'SELECT `type`, `severity`, `body` FROM `hilos_notification` '
-            . 'WHERE `user_id` = ? ORDER BY `id` DESC LIMIT 1',
-            [$userId],
-        );
+        $mine = array_values(array_filter(
+            $letters,
+            static fn(NotificationDraft $draft): bool => $draft->userId === $userId,
+        ));
 
-        return Database::row();
-    }
-
-    /**
-     * Runs one direction of the notification table's stub file.
-     *
-     * @param bool $down Run the down (drop) stub when true, the create stub when false
-     * @throws HilosException When the stub statement fails
-     */
-    private static function runNotificationStub(bool $down): void
-    {
-        // external-boundary: the neutral element of the name being built - the up file carries no suffix
-        $suffix = $down ? '_down' : '';
-        $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_hilos_notification{$suffix}.sql";
-        Database::sqlRun((string)file_get_contents($stub));
+        return $mine === [] ? null : $mine[count($mine) - 1];
     }
 
     /**
@@ -480,14 +487,27 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
      * The CLI entry names an empty file on purpose: the spawn is real, so the case exercises the
      * supervisor's own path, but the child it starts has nothing to do and no database to reach.
      *
+     * The backup directory is a real one this case owns, and has to be: both things a restore
+     * leaves behind - the logins and the announcement - are files under it now (HIL-771), and a
+     * directory that is not there turns a queued line into a logged write failure, which reads
+     * from the outside exactly like a restore that carried nothing.
+     *
      * @return EnvAccessor Accessor answering the backup keys with fixtures
      */
     private function env(): EnvAccessor
     {
-        return new class extends EnvAccessor {
+        return new class ($this->backupDir) extends EnvAccessor {
+            /**
+             * @param string $backupDir Directory this case's queues live in
+             */
+            public function __construct(private readonly string $backupDir)
+            {
+                parent::__construct();
+            }
+
             public function string(EnvConstants|string $name): string
             {
-                return $name === EnvConstants::BACKUP_DIR ? '/tmp/hilos-backup-test' : '/dev/null';
+                return $name === EnvConstants::BACKUP_DIR ? $this->backupDir : '/dev/null';
             }
 
             public function int(EnvConstants|string $name): int

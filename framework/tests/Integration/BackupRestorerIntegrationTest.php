@@ -33,7 +33,8 @@ use Hilos\Database\Schema\Schema;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
-use Hilos\Notification\HilosNotifier;
+use Hilos\Notification\DeferredNotificationQueue;
+use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
 use Hilos\Users\AdminAudience;
 
@@ -146,7 +147,6 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         Database::sql('DROP TABLE IF EXISTS `' . self::TOKEN_TABLE . '`');
         if ($this->notificationTablesRaised) {
             Hilos::$db = $this->previousDb;
-            Hilos::$notify = null;
             self::runNotificationStubs(down: true);
             Schema::reset();
             $this->notificationTablesRaised = false;
@@ -516,12 +516,13 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
             initiatorIdentities: [],
         );
 
-        $row = $this->notificationRow(self::ADMIN_USER_ID);
-        $this->assertNotNull($row, 'The administrator of the restored database is told the restore happened');
-        $this->assertSame(BackupNotificationType::RESTORE_SUCCEEDED, $row['type']);
-        $this->assertSame(NotificationSeverity::SUCCESS, $row['severity']);
-        $this->assertStringContainsString(self::BACKUP_ID, (string)$row['body']);
-        $this->assertStringContainsString('"outcome":"succeeded"', (string)$row['data']);
+        $draft = $this->queuedFor(self::ADMIN_USER_ID);
+        $this->assertNotNull($draft, 'The administrator of the restored database is told the restore happened');
+        $this->assertSame(BackupNotificationType::RESTORE_SUCCEEDED, $draft->type);
+        $this->assertSame(NotificationSeverity::SUCCESS, $draft->severity);
+        $this->assertStringContainsString(self::BACKUP_ID, (string)$draft->body);
+        $this->assertNotNull($draft->data);
+        $this->assertSame('succeeded', $draft->data['outcome']);
     }
 
     public function testAFailedRestoreIsAnnouncedWithItsOneLineReason(): void
@@ -542,19 +543,25 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
             initiatorIdentities: [],
         );
 
-        $row = $this->notificationRow(self::ADMIN_USER_ID);
-        $this->assertNotNull($row);
-        $this->assertSame(BackupNotificationType::RESTORE_FAILED, $row['type']);
-        $this->assertSame(NotificationSeverity::ERROR, $row['severity']);
+        $draft = $this->queuedFor(self::ADMIN_USER_ID);
+        $this->assertNotNull($draft);
+        $this->assertSame(BackupNotificationType::RESTORE_FAILED, $draft->type);
+        $this->assertSame(NotificationSeverity::ERROR, $draft->severity);
         $this->assertSame(
             'import failed on db-0 Details are on the backups page.',
-            $row['body'],
+            $draft->body,
             'The second line of the reason stays in the log rather than going out by mail',
         );
     }
 
     /**
      * Raises the notification tables of the restored database and mounts a context over them.
+     *
+     * The tables are raised for the CONTEXT rather than for the announcement: the letter itself
+     * is queued and written later, by the library that owns those tables (HIL-771), but a
+     * framework context will not mount over a database whose framework tables the archive
+     * replaced - and mounting one is what makes the audience be read from the restored database
+     * rather than from the installation's own.
      *
      * @throws DatabaseException When a stub statement fails
      */
@@ -572,26 +579,29 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         $db = new RestoreAnnouncementTestDbContext();
         $db->configure();
         Hilos::$db = $db;
-        Hilos::$notify = new HilosNotifier();
         RestoreAnnouncementTestHilos::initBrowser();
     }
 
     /**
-     * Reads the newest notification of a recipient straight from the database.
+     * Reads back the letter a finished restore left for one recipient.
+     *
+     * Off the queue rather than out of `hilos_notification`, because that is where a restore
+     * puts it (HIL-771): the announcement is written with the node frozen or the daemon down,
+     * so it is deferred and the notifications library sends it when it next starts. What these
+     * cases still pin is the half the restore owns - who is told, and what the letter says -
+     * and that half is decided against the database the archive brought.
      *
      * @param int $userId Recipient user id
-     * @return ?array<string, mixed> Raw notification row, or null when the recipient has none
-     * @throws DatabaseException When the query fails
+     * @return ?NotificationDraft The newest letter left for them, or null when they got none
      */
-    private function notificationRow(int $userId): ?array
+    private function queuedFor(int $userId): ?NotificationDraft
     {
-        Database::sql(
-            'SELECT `type`, `severity`, `title`, `body`, `data` FROM `hilos_notification` '
-            . 'WHERE `user_id` = ? ORDER BY `id` DESC LIMIT 1',
-            [$userId],
-        );
+        $mine = array_values(array_filter(
+            DeferredNotificationQueue::drain(),
+            static fn(NotificationDraft $draft): bool => $draft->userId === $userId,
+        ));
 
-        return Database::row();
+        return $mine === [] ? null : $mine[count($mine) - 1];
     }
 
     /**

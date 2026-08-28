@@ -10,10 +10,18 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
+use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\CLI\ChatCliManager;
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\DTO\Profile\ConfirmAddPasswordActionDTO;
+use Demo\Chat\Pages\DTO\Profile\ConfirmSmsAddCodeActionDTO;
+use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
+use Demo\Chat\Pages\DTO\Profile\RequestAddPasswordActionDTO;
+use Demo\Chat\Pages\DTO\Profile\RequestSmsAddCodeActionDTO;
+use Demo\Chat\Pages\DTO\Profile\SetPasswordActionDTO;
+use Demo\Chat\Pages\DTO\Profile\UnlinkIdentityActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
@@ -58,6 +66,7 @@ use Hilos\Backup\BackupConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosPageConstants;
 use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStartActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
@@ -66,10 +75,16 @@ use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Users\DTO\AccountMergeResultSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
+use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Notification\DTO\NotificationChannelPreferenceActionDTO;
+use Hilos\Notification\DTO\DeliveryRetrySignalData;
+use Hilos\Notification\DTO\NotificationEmitSignalData;
+use Hilos\Notification\DTO\NotificationMarkAllReadPayloadDTO;
+use Hilos\Notification\DTO\NotificationMarkReadPayloadDTO;
 use Hilos\Sms\DTO\SmsSendSignalData;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
@@ -80,6 +95,8 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserListConfigKey;
 use Hilos\Notification\NotificationAction;
 use Hilos\Notification\NotificationPreferenceAction;
+use Hilos\Push\DTO\PushSubscribeActionDTO;
+use Hilos\Push\DTO\PushUnsubscribeActionDTO;
 use Hilos\Push\PushSubscriptionAction;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Config\BrowserPageBindings;
@@ -192,11 +209,13 @@ final class ChatTopologyRegistryTest extends TestCase
             AgentType::HILOS_AUTH_CODE,
         ], $nodeScoped);
 
-        // The sessions library and the delivery shards: one instance cluster-wide (per shard
-        // index, for the shards), on the node policy picks. Sessions are placed rather than
-        // pinned because every handshake touches them, and the leader has enough to do.
+        // The two libraries and the delivery shards: one instance cluster-wide (per shard
+        // index, for the shards), on the node policy picks. Sessions and notifications are
+        // placed rather than pinned because every handshake touches the one and every worker
+        // emits into the other, and the leader has enough to do.
         $this->assertSame([
             HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             AgentType::HILOS_MAIL,
             AgentType::HILOS_SMS,
             AgentType::HILOS_PUSH,
@@ -247,17 +266,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::MESSAGE => PageConstants::MAIN,
             ChatSignalConstants::FILE_UPLOAD_INIT => PageConstants::MAIN,
             ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => PageConstants::MAIN,
-            ChatSignalConstants::RENAME => PageConstants::HILOS_PROFILE,
-            ChatSignalConstants::UNLINK_IDENTITY => PageConstants::HILOS_PROFILE,
-            ChatSignalConstants::SET_PASSWORD => PageConstants::HILOS_PROFILE,
             HilosSignalConstants::HILOS_LINK_OAUTH_START => PageConstants::HILOS_PROFILE,
-            ChatSignalConstants::ADD_SMS_REQUEST => PageConstants::HILOS_PROFILE,
-            ChatSignalConstants::ADD_SMS_CONFIRM => PageConstants::HILOS_PROFILE,
-            ChatSignalConstants::ADD_PASSWORD_REQUEST => PageConstants::HILOS_PROFILE,
-            ChatSignalConstants::ADD_PASSWORD_CONFIRM => PageConstants::HILOS_PROFILE,
-            NotificationPreferenceAction::CHANNEL_SET => PageConstants::HILOS_PROFILE,
-            PushSubscriptionAction::SUBSCRIBE => PageConstants::HILOS_PROFILE,
-            PushSubscriptionAction::UNSUBSCRIBE => PageConstants::HILOS_PROFILE,
             ChatSignalConstants::USER_UPDATE => PageConstants::ADMIN_USERS,
             ChatSignalConstants::MODERATOR_PIECE_CREATE => PageConstants::ADMIN_MODERATOR,
             ChatSignalConstants::MODERATOR_PIECE_UPDATE => PageConstants::ADMIN_MODERATOR,
@@ -276,8 +285,6 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_RESTORE => PageConstants::HILOS_BACKUP,
             HilosSignalConstants::HILOS_USER_UPDATE => PageConstants::HILOS_USER,
             ChatSignalConstants::ACCOUNT_MERGE => PageConstants::HILOS_USER,
-            NotificationAction::MARK_READ => PageConstants::HILOS_NOTIFICATIONS,
-            NotificationAction::MARK_ALL_READ => PageConstants::HILOS_NOTIFICATIONS,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
@@ -291,17 +298,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::MESSAGE => AgentType::CHAT,
             ChatSignalConstants::FILE_UPLOAD_INIT => AgentType::CHAT,
             ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => AgentType::CHAT,
-            ChatSignalConstants::RENAME => AgentType::CHAT,
-            ChatSignalConstants::UNLINK_IDENTITY => AgentType::CHAT,
-            ChatSignalConstants::SET_PASSWORD => AgentType::CHAT,
             HilosSignalConstants::HILOS_LINK_OAUTH_START => AgentType::CHAT,
-            ChatSignalConstants::ADD_SMS_REQUEST => AgentType::CHAT,
-            ChatSignalConstants::ADD_SMS_CONFIRM => AgentType::CHAT,
-            ChatSignalConstants::ADD_PASSWORD_REQUEST => AgentType::CHAT,
-            ChatSignalConstants::ADD_PASSWORD_CONFIRM => AgentType::CHAT,
-            NotificationPreferenceAction::CHANNEL_SET => AgentType::CHAT,
-            PushSubscriptionAction::SUBSCRIBE => AgentType::CHAT,
-            PushSubscriptionAction::UNSUBSCRIBE => AgentType::CHAT,
             ChatSignalConstants::USER_UPDATE => AgentType::CHAT,
             ChatSignalConstants::MODERATOR_PIECE_CREATE => AgentType::LIBRARY,
             ChatSignalConstants::MODERATOR_PIECE_UPDATE => AgentType::LIBRARY,
@@ -320,8 +317,6 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_RESTORE => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_UPDATE => AgentType::HILOS_INDEX,
             ChatSignalConstants::ACCOUNT_MERGE => AgentType::HILOS_INDEX,
-            NotificationAction::MARK_READ => AgentType::HILOS_INDEX,
-            NotificationAction::MARK_ALL_READ => AgentType::HILOS_INDEX,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET => AgentType::HILOS_INDEX,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST => AgentType::HILOS_INDEX,
@@ -335,7 +330,10 @@ final class ChatTopologyRegistryTest extends TestCase
             SignalTypeConstants::FRAME_BINARY => PageConstants::MAIN,
             SignalTypeConstants::AGENT_SIGNAL => [
                 ChatSignalConstants::MODERATION_RESULT => PageConstants::MAIN,
-                ChatSignalConstants::RENAME_MODERATION_RESULT => PageConstants::HILOS_PROFILE,
+                ChatSignalConstants::USER_ADMIN_RENAME_DONE => PageConstants::ADMIN_USERS,
+                HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => PageConstants::HILOS_USER,
+                HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE
+                    => HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
             ],
         ], Hilos::getPageSignalRoutes());
     }
@@ -346,7 +344,9 @@ final class ChatTopologyRegistryTest extends TestCase
             SignalTypeConstants::FRAME_BINARY => AgentType::CHAT,
             SignalTypeConstants::AGENT_SIGNAL => [
                 ChatSignalConstants::MODERATION_RESULT => AgentType::CHAT,
-                ChatSignalConstants::RENAME_MODERATION_RESULT => AgentType::CHAT,
+                ChatSignalConstants::USER_ADMIN_RENAME_DONE => AgentType::CHAT,
+                HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => AgentType::HILOS_INDEX,
+                HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE => AgentType::HILOS_INDEX,
             ],
         ], Hilos::getPageSignalAgentRoutes());
     }
@@ -359,6 +359,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_ACCOUNT_MERGE_RESULT => AgentType::CHAT,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => HilosAgentType::HILOS_USERS_LIBRARY,
+            ChatSignalConstants::RENAME_MODERATION_RESULT => HilosAgentType::HILOS_USERS_LIBRARY,
+            ChatSignalConstants::USER_ADMIN_RENAME => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_USER_ADMIN_RENAME => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -368,6 +371,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_SESSION_REBIND => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_MERGE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_NOTIFICATION_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             ChatSignalConstants::BOT_AGENT_START => AgentType::BOT,
             HilosSignalConstants::BACKUP_AGENT_CREATE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_DELETE => AgentType::HILOS_BACKUP,
@@ -394,8 +399,8 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::IMPERSONATE_START => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             CliCommands::IMPERSONATE_STOP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             CliCommands::ACCOUNT_MERGE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            CliCommands::NOTIFICATION_TEST_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             CliCommands::COMMAND_TEST_ECHO => AgentType::HILOS_INDEX,
-            CliCommands::NOTIFICATION_TEST_EMIT => AgentType::HILOS_INDEX,
             CliCommands::PROTECTED_MODE_TEST_ENTER => AgentType::HILOS_INDEX,
             CliCommands::PROTECTED_MODE_TEST_LEAVE => AgentType::HILOS_INDEX,
             CliCommands::PROTECTED_MODE_TEST_OPEN => AgentType::HILOS_INDEX,
@@ -429,8 +434,8 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testTheTestOnlyRegistryHoldsEveryFlaggedCommandAndTheMastersOwn(): void
     {
         $this->assertSame([
-            CliCommands::COMMAND_TEST_ECHO,
             CliCommands::NOTIFICATION_TEST_EMIT,
+            CliCommands::COMMAND_TEST_ECHO,
             CliCommands::PROTECTED_MODE_TEST_ENTER,
             CliCommands::PROTECTED_MODE_TEST_LEAVE,
             CliCommands::PROTECTED_MODE_TEST_OPEN,
@@ -493,6 +498,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_ACCOUNT_MERGE_RESULT => AccountMergeResultSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
             HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
+            ChatSignalConstants::RENAME_MODERATION_RESULT => RenameModerationResultSignalData::class,
+            ChatSignalConstants::USER_ADMIN_RENAME => AdminRenameSignalData::class,
+            HilosSignalConstants::HILOS_USER_ADMIN_RENAME => AdminRenameSignalData::class,
             HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED => AuthRegistrationLandedSignalData::class,
             HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED => AuthRecoveryGrantedSignalData::class,
@@ -502,6 +510,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => AuthRecoveryWaitMovedSignalData::class,
             HilosSignalConstants::HILOS_SESSION_REBIND => SessionRebindSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_MERGE => AccountMergeSignalData::class,
+            HilosSignalConstants::HILOS_NOTIFICATION_EMIT => NotificationEmitSignalData::class,
+            HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
             ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
@@ -544,10 +554,22 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            ChatSignalConstants::RENAME => HilosAgentType::HILOS_USERS_LIBRARY,
+            ChatSignalConstants::UNLINK_IDENTITY => HilosAgentType::HILOS_USERS_LIBRARY,
+            ChatSignalConstants::SET_PASSWORD => HilosAgentType::HILOS_USERS_LIBRARY,
+            ChatSignalConstants::ADD_SMS_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
+            ChatSignalConstants::ADD_SMS_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            ChatSignalConstants::ADD_PASSWORD_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
+            ChatSignalConstants::ADD_PASSWORD_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LOGOUT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_IMPERSONATE_START => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_IMPERSONATE_STOP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            NotificationAction::MARK_READ => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            NotificationAction::MARK_ALL_READ => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            NotificationPreferenceAction::CHANNEL_SET => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            PushSubscriptionAction::SUBSCRIBE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            PushSubscriptionAction::UNSUBSCRIBE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
         ], Hilos::getAgentActionRoutes());
     }
 
@@ -584,10 +606,22 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM => PasskeyRegisterConfirmActionDTO::class,
             HilosSignalConstants::HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS => PasskeyDiscoverableLoginOptionsActionDTO::class,
             HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM => PasskeyLoginConfirmActionDTO::class,
+            ChatSignalConstants::RENAME => RenameActionDTO::class,
+            ChatSignalConstants::UNLINK_IDENTITY => UnlinkIdentityActionDTO::class,
+            ChatSignalConstants::SET_PASSWORD => SetPasswordActionDTO::class,
+            ChatSignalConstants::ADD_SMS_REQUEST => RequestSmsAddCodeActionDTO::class,
+            ChatSignalConstants::ADD_SMS_CONFIRM => ConfirmSmsAddCodeActionDTO::class,
+            ChatSignalConstants::ADD_PASSWORD_REQUEST => RequestAddPasswordActionDTO::class,
+            ChatSignalConstants::ADD_PASSWORD_CONFIRM => ConfirmAddPasswordActionDTO::class,
             HilosSignalConstants::HILOS_LOGOUT => LogoutActionDTO::class,
             HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
             HilosSignalConstants::HILOS_IMPERSONATE_START => ImpersonateStartActionDTO::class,
             HilosSignalConstants::HILOS_IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
+            NotificationAction::MARK_READ => NotificationMarkReadPayloadDTO::class,
+            NotificationAction::MARK_ALL_READ => NotificationMarkAllReadPayloadDTO::class,
+            NotificationPreferenceAction::CHANNEL_SET => NotificationChannelPreferenceActionDTO::class,
+            PushSubscriptionAction::SUBSCRIBE => PushSubscribeActionDTO::class,
+            PushSubscriptionAction::UNSUBSCRIBE => PushUnsubscribeActionDTO::class,
         ], $declaredRoutes);
         $this->assertSame($declaredRoutes, Hilos::getAgentActionDtoRoutes());
     }

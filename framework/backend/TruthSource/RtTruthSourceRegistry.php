@@ -178,6 +178,29 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
     }
 
     /**
+     * Whether one agent's claim over a runtime collection covers one operation.
+     *
+     * The operation axis of {@see collectionsOf()}, and asked by a caller deciding whether a
+     * whole piece of work is its to do: since one collection may have two owners holding
+     * different rights over it (HIL-771), "is registered here" stopped being the same question
+     * as "may do this here". The per-row guard {@see checkCanWriteState()} answers the same
+     * thing with an exception, which is what a write that should have been allowed deserves and
+     * not what a caller asking whether to start deserves.
+     *
+     * @param string $collection Runtime collection name
+     * @param string $agentId Agent to ask about
+     * @param TruthSourceOperation $operation Operation the agent would perform
+     * @return bool True when the agent holds a claim on that collection allowing that operation
+     */
+    public static function allowsOperation(
+        string $collection,
+        string $agentId,
+        TruthSourceOperation $operation,
+    ): bool {
+        return self::grantOf($collection, $agentId)?->allows($operation) === true;
+    }
+
+    /**
      * Check if collection-wide write operation is allowed for runtime collection.
      *
      * @param string $collection Collection name

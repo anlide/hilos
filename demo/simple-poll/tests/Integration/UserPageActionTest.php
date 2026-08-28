@@ -58,6 +58,7 @@ final class UserPageActionTest extends IntegrationTestCase
             HilosSignalConstants::HILOS_USER_UPDATE,
             new HilosUserUpdateActionDTO($userId, 'Renamed'),
         );
+        $this->deliverHilosLibraryFrames();
 
         $this->assertSame('Renamed', Hilos::$db->users[$userId]?->name);
 

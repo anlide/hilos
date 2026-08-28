@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use Demo\Chat\Agents\Hilos\NotificationsLibraryAgent;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -29,6 +30,10 @@ use Hilos\Notification\NotificationSeverity;
  * buildSnapshot() calls (listForUser + countUnreadForUser) rather than through the
  * page itself, which needs a live connection to resolve its recipient and to reply.
  * The socket-level path is e2e coverage and stays with HIL-490.
+ *
+ * The emit is driven on the library rather than on {@see Hilos::$notify} since HIL-771: the
+ * facade became a door that queues a frame, so calling it here would assert nothing about a
+ * row. What the case wants is the write, and the write is the library's.
  */
 final class NotificationCenterTest extends IntegrationTestCase
 {
@@ -37,6 +42,9 @@ final class NotificationCenterTest extends IntegrationTestCase
 
     /** Second synthetic recipient, so mark-all-read cannot pass by touching foreign rows. */
     private const int OTHER_RECIPIENT_ID = 909002;
+
+    /** @var ?NotificationsLibraryAgent Owner of the notification set, built on first use */
+    private ?NotificationsLibraryAgent $library = null;
 
     protected function setUp(): void
     {
@@ -59,7 +67,7 @@ final class NotificationCenterTest extends IntegrationTestCase
 
     public function testEmitWritesADurableRowTheSnapshotThenReturns(): void
     {
-        $id = Hilos::$notify->emit(new NotificationDraft(
+        $id = $this->library()->emit(new NotificationDraft(
             userId: self::RECIPIENT_ID,
             type: 'demo.chat.test',
             title: 'Durable title',
@@ -86,7 +94,7 @@ final class NotificationCenterTest extends IntegrationTestCase
 
     public function testMarkReadClearsTheRowAndTheUnreadCount(): void
     {
-        $id = Hilos::$notify->emit(new NotificationDraft(
+        $id = $this->library()->emit(new NotificationDraft(
             userId: self::RECIPIENT_ID,
             type: 'demo.chat.test',
             title: 'To be read',
@@ -108,13 +116,13 @@ final class NotificationCenterTest extends IntegrationTestCase
     public function testMarkAllReadClearsOnlyTheRecipientsOwnBatch(): void
     {
         foreach (['first', 'second', 'third'] as $title) {
-            Hilos::$notify->emit(new NotificationDraft(
+            $this->library()->emit(new NotificationDraft(
                 userId: self::RECIPIENT_ID,
                 type: 'demo.chat.test',
                 title: $title,
             ));
         }
-        Hilos::$notify->emit(new NotificationDraft(
+        $this->library()->emit(new NotificationDraft(
             userId: self::OTHER_RECIPIENT_ID,
             type: 'demo.chat.test',
             title: 'someone else',
@@ -126,6 +134,24 @@ final class NotificationCenterTest extends IntegrationTestCase
         self::assertSame(3, $collection->markAllReadForUser(self::RECIPIENT_ID));
         self::assertSame(0, $collection->countUnreadForUser(self::RECIPIENT_ID));
         self::assertSame(1, $collection->countUnreadForUser(self::OTHER_RECIPIENT_ID));
+    }
+
+    /**
+     * Builds the notifications library the emit happens in, once per case.
+     *
+     * Started on first use because {@see NotificationsLibraryAgent::onStart()} claims the four
+     * notification collections, and a case writing any of them needs the claim.
+     *
+     * @return NotificationsLibraryAgent Library under test, started
+     */
+    private function library(): NotificationsLibraryAgent
+    {
+        if ($this->library === null) {
+            $this->library = new NotificationsLibraryAgent();
+            $this->library->onStart();
+        }
+
+        return $this->library;
     }
 
     /**

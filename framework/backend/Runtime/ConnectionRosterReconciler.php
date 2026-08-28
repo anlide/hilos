@@ -6,6 +6,7 @@ namespace Hilos\Runtime;
 
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
@@ -39,9 +40,9 @@ final class ConnectionRosterReconciler
      * Removes every connection row whose accept key is not on the roster.
      *
      * Answers a silent zero for anyone with nothing to reconcile: a project that mounts no
-     * connections or does not represent them, and an agent that does not own the collection -
+     * connections or does not represent them, and an agent that may not strike a row out -
      * which is most of them, since the roster rides every agent start and only one agent per
-     * node writes the connections.
+     * node brings connection rows into being and takes them away.
      *
      * @param list<string> $liveAcceptKeys Accept keys the node still holds sockets for
      * @return int Rows struck out
@@ -56,7 +57,7 @@ final class ConnectionRosterReconciler
     public static function reconcile(array $liveAcceptKeys): int
     {
         $registry = Hilos::$rt?->connectionsRegistry();
-        if ($registry === null || !self::ownsCollection($registry->getCollectionName())) {
+        if ($registry === null || !self::mayStrike($registry->getCollectionName())) {
             return 0;
         }
 
@@ -83,22 +84,27 @@ final class ConnectionRosterReconciler
     }
 
     /**
-     * Whether the agent this call runs for is the truth source of the connections collection.
+     * Whether the agent this call runs for may take a connection row away.
      *
      * Asked before the walk rather than met as a refusal on the first write: the reconcile is
      * offered to every agent start, and for an agent that owns something else the answer is
      * "nothing to do here", not an error.
      *
+     * Removal specifically, and not ownership of the collection at large: a collection can have
+     * a second owner holding a narrower right over it - the chat's users library edits the
+     * moderation phase of a row the chat agent registered (HIL-771) - and such an agent starting
+     * up would otherwise walk in here and be refused on its first strike.
+     *
      * @param ?string $collectionName Name the connections collection is mounted under, or null when unnamed
-     * @return bool True when the current agent may write that collection
+     * @return bool True when the current agent may remove from that collection
      */
-    private static function ownsCollection(?string $collectionName): bool
+    private static function mayStrike(?string $collectionName): bool
     {
         $agentId = ExecutionContext::currentAgentId();
         if ($collectionName === null || $agentId === null) {
             return false;
         }
 
-        return in_array($collectionName, RtTruthSourceRegistry::collectionsOf($agentId), true);
+        return RtTruthSourceRegistry::allowsOperation($collectionName, $agentId, TruthSourceOperation::Remove);
     }
 }

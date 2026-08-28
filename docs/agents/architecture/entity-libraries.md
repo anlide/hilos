@@ -488,3 +488,11 @@ Answer `SUBSCRIPTION_PAGE_ERROR`. An empty list is a claim about the data.
   are hot where users are cold and the two have to be placed apart. What it does
   NOT own is the connection rows, so it speaks to the project holding them in two
   frames: `hilos_session_state` out, `hilos_session_rebind` back.
+- `framework/backend/Notification/Library/AbstractNotificationsLibraryAgent.php` —
+  the third (HIL-771): the notifications library, which owns the notification rows,
+  the channel preferences, the delivery journal and the push endpoints. It is the
+  worked example of a library founded on an entity that had *no owner at all* — the
+  emit seam wrote from whatever worker called it, which held only while that worker
+  happened to host an owner of something else — and of co-ownership by operation: a
+  delivery channel agent updates the journal row of the attempt it is running, while
+  the library adds and prunes rows.

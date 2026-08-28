@@ -13,6 +13,7 @@ use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Notification as EntityNotification;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
+use Hilos\HilosException;
 use Hilos\Notification\NotificationSeverity;
 
 /**
@@ -182,6 +183,7 @@ final class ChatMentionNotificationTest extends IntegrationTestCase
      *
      * @param ?int $userId Recipient user id
      * @return ObjectNotification The recipient's only notification
+     * @throws HilosException When an emitted notification cannot be written
      */
     private function onlyNotificationFor(?int $userId): ObjectNotification
     {
@@ -194,11 +196,18 @@ final class ChatMentionNotificationTest extends IntegrationTestCase
     /**
      * Lists the notifications currently held for the recipient.
      *
+     * Runs the pending emits first, because a mention no longer writes a row where it is
+     * detected: it queues a frame to the notifications library, which owns the table (HIL-771).
+     * Done here rather than in each case so that a case asserting nobody was notified proves it
+     * against a library that was given every chance to write.
+     *
      * @param ?int $userId Recipient user id
      * @return list<ObjectNotification> Recipient notifications, newest first
+     * @throws HilosException When an emitted notification cannot be written
      */
     private function notificationsFor(?int $userId): array
     {
+        $this->deliverNotificationFrames();
         self::assertNotNull($userId);
         $collection = Hilos::$db->getObjectCollection(HilosDbContext::notifications);
         self::assertInstanceOf(ObjectNotifications::class, $collection);

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
-use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
@@ -12,18 +11,13 @@ use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\SignalConstants;
-use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
-use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
-use Hilos\Core\Page\HilosPageFactory;
-use Hilos\Core\Page\PageSignalRouter;
-use Hilos\Core\Page\SignalRouteConfig;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\HilosException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
@@ -46,7 +40,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
 
             Hilos::initSignalRouter(new ChatSignalRouter());
             ExecutionContext::setCurrentAcceptKey('rename-start-ak');
-            new ProfilePage(new ChatAgent())->onAction(
+            $this->usersLibrary()->onAgentAction(
                 'rename-start-ak',
                 ChatSignalConstants::RENAME,
                 new RenameActionDTO('Alice'),
@@ -78,8 +72,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
             Hilos::$rt->connections['rename-approve-ak']?->actions->startRenameModeration('Alice');
 
             Hilos::initSignalRouter(new ChatSignalRouter());
-            $this->dispatchRenameModerationSignalToProfilePage(
-                new ChatAgent(),
+            $this->dispatchRenameModerationVerdict(
                 new RenameModerationResultSignalData(
                     acceptKey: 'rename-approve-ak',
                     userId: $user->id,
@@ -118,8 +111,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
             Hilos::$rt->connections['rename-reject-ak']?->actions->startRenameModeration('BlockedName');
 
             Hilos::initSignalRouter(new ChatSignalRouter());
-            $this->dispatchRenameModerationSignalToProfilePage(
-                new ChatAgent(),
+            $this->dispatchRenameModerationVerdict(
                 new RenameModerationResultSignalData(
                     acceptKey: 'rename-reject-ak',
                     userId: $user->id,
@@ -152,24 +144,22 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         }
     }
 
-    private function dispatchRenameModerationSignalToProfilePage(
-        ChatAgent $agent,
-        RenameModerationResultSignalData $result,
-    ): void {
-        $router = new PageSignalRouter(
-            new HilosPageFactory($agent, Hilos::class),
-            new ActionRouteConfig(),
-            new SignalRouteConfig([
-                SignalTypeConstants::AGENT_SIGNAL => [
-                    ChatSignalConstants::RENAME_MODERATION_RESULT => ProfilePage::PAGE,
-                ],
-            ]),
-        );
-
+    /**
+     * Hands the moderator's verdict to the library that owns the account (HIL-771).
+     *
+     * The whole round trip is one agent's now: the profile submit asks from the users library
+     * and the answer comes back to it, because applying a verdict means writing the row - which
+     * the page it used to arrive on holds no claim over.
+     *
+     * @param RenameModerationResultSignalData $result Verdict as the moderator sends it
+     * @throws HilosException When the verdict cannot be applied
+     */
+    private function dispatchRenameModerationVerdict(RenameModerationResultSignalData $result): void
+    {
         $agentSignalData = new AgentSignalData($result);
         ExecutionContext::setCurrentAcceptKey($agentSignalData->getAcceptKey());
         try {
-            $router->dispatchAgentSignal(
+            $this->usersLibrary()->onSignalAgent(
                 $agentSignalData,
                 '',
                 ChatSignalConstants::RENAME_MODERATION_RESULT,

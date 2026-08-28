@@ -166,6 +166,12 @@ final class WorkerConstants
     /** @var string Protected-mode refreeze request (initiator worker -> its master daemon) */
     public const string MESSAGE_PROTECTED_MODE_REFREEZE = 'worker_protected_mode_refreeze';
 
+    /** @var string A restore reporting the logins it left for the sessions library (worker -> its master daemon) */
+    public const string MESSAGE_SESSION_CARRY_OVER_DEFERRED = 'worker_session_carry_over_deferred';
+
+    /** @var string The sessions library reporting those logins back in place (worker -> its master daemon) */
+    public const string MESSAGE_SESSION_CARRY_OVER_DONE = 'worker_session_carry_over_done';
+
     /** @var string One worker's answer to the re-hydrate announcement (worker -> its master daemon) */
     public const string MESSAGE_DB_REHYDRATED = 'db_rehydrated';
 }

@@ -12,7 +12,6 @@ use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\SignalTypeConstants;
@@ -28,6 +27,7 @@ use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Notification as EntityNotification;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
+use Hilos\HilosException;
 use Hilos\Notification\NotificationSeverity;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
@@ -128,8 +128,7 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         Hilos::$rt->connections['rename-notify-ak']?->actions->startRenameModeration('BlockedName');
 
         Hilos::initSignalRouter(new ChatSignalRouter());
-        $this->dispatchRenameModerationSignalToProfilePage(
-            new ChatAgent(),
+        $this->dispatchRenameModerationVerdict(
             new RenameModerationResultSignalData(
                 acceptKey: 'rename-notify-ak',
                 userId: (int)$user->id,
@@ -158,8 +157,7 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         Hilos::$rt->connections['rename-unavailable-ak']?->actions->startRenameModeration('PendingName');
 
         Hilos::initSignalRouter(new ChatSignalRouter());
-        $this->dispatchRenameModerationSignalToProfilePage(
-            new ChatAgent(),
+        $this->dispatchRenameModerationVerdict(
             new RenameModerationResultSignalData(
                 acceptKey: 'rename-unavailable-ak',
                 userId: (int)$user->id,
@@ -196,22 +194,24 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
     }
 
     /**
-     * Routes a rename verdict to the profile page, as the moderator agent does.
+     * Hands a rename verdict to the users library, as the moderator agent does (HIL-771).
      *
-     * @param ChatAgent $agent Agent the page is built on
+     * The verdict stopped being a page's to take when the rename it answers moved onto the
+     * library that owns the account: applying it writes the row, and refusing it sends the
+     * acting tab the same action error the page used to raise.
+     *
      * @param RenameModerationResultSignalData $result Verdict to deliver
+     * @throws HilosException When the verdict cannot be applied
      */
-    private function dispatchRenameModerationSignalToProfilePage(
-        ChatAgent $agent,
-        RenameModerationResultSignalData $result,
-    ): void
+    private function dispatchRenameModerationVerdict(RenameModerationResultSignalData $result): void
     {
-        $this->dispatch(
-            $agent,
-            new AgentSignalData($result),
-            ChatSignalConstants::RENAME_MODERATION_RESULT,
-            ProfilePage::PAGE,
-        );
+        $signal = new AgentSignalData($result);
+        ExecutionContext::setCurrentAcceptKey($signal->getAcceptKey());
+        try {
+            $this->usersLibrary()->onSignalAgent($signal, '', ChatSignalConstants::RENAME_MODERATION_RESULT);
+        } finally {
+            ExecutionContext::setCurrentAcceptKey(null);
+        }
     }
 
     /**
@@ -254,6 +254,7 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
      *
      * @param ?int $userId Recipient user id
      * @return ObjectNotification The recipient's only notification
+     * @throws HilosException When an emitted notification cannot be written
      */
     private function onlyNotificationFor(?int $userId): ObjectNotification
     {
@@ -266,11 +267,18 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
     /**
      * Lists the notifications currently held for the recipient.
      *
+     * Runs the pending emits first: a refusal no longer writes a row where it is decided, it
+     * queues a frame to the notifications library that owns the table (HIL-771). Done here
+     * rather than in each case so that a case asserting nobody was notified proves it against a
+     * library that was given every chance to write.
+     *
      * @param ?int $userId Recipient user id
      * @return list<ObjectNotification> Recipient notifications, newest first
+     * @throws HilosException When an emitted notification cannot be written
      */
     private function notificationsFor(?int $userId): array
     {
+        $this->deliverNotificationFrames();
         self::assertNotNull($userId);
         $collection = Hilos::$db->getObjectCollection(HilosDbContext::notifications);
         self::assertInstanceOf(ObjectNotifications::class, $collection);

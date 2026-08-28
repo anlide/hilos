@@ -8,23 +8,23 @@ use Hilos\Constants\AppEnv;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Core\Agent\Config\AgentCommandConfigKey;
-use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the agent side of the test:notification:emit command route (HIL-514).
+ * Unit tests for the agent side of the test:notification:emit command route (HIL-514, HIL-771).
  *
- * The route is declared on the abstract index agent, so it exists in every project and is
- * answered by whatever reaches the unauthenticated command socket - the CLI class that
- * normally sends it is not on the path. These tests pin what needs no database: that the route
- * declares itself test-only (the socket refuses it on that declaration alone), and that a
- * command the agent does not own is answered rather than dropped. The emit itself needs real
- * tables and is exercised by the audit run.
+ * The route is declared on the notifications library, which every project declaring the
+ * notifications feature registers, and is answered by whatever reaches the unauthenticated
+ * command socket - the CLI class that normally sends it is not on the path. These tests pin
+ * what needs no database: that the route declares itself test-only (the socket refuses it on
+ * that declaration alone), and that a command the agent does not own is answered rather than
+ * dropped. The emit itself needs real tables and is exercised by the audit run.
  */
 final class NotificationTestEmitCommandRouteTest extends TestCase
 {
@@ -60,7 +60,7 @@ final class NotificationTestEmitCommandRouteTest extends TestCase
     {
         self::assertSame(
             [AgentCommandConfigKey::TEST_ONLY => true],
-            AbstractHilosIndexAgent::AGENT_COMMANDS[CliCommands::NOTIFICATION_TEST_EMIT] ?? null,
+            AbstractNotificationsLibraryAgent::AGENT_COMMANDS[CliCommands::NOTIFICATION_TEST_EMIT] ?? null,
         );
     }
 
@@ -107,12 +107,9 @@ final class NotificationTestEmitCommandRouteTest extends TestCase
 }
 
 /**
- * Concrete index agent under test: the abstract one carries the route and the handler, and
- * a project subclass adds nothing to either.
+ * Concrete notifications library under test: the abstract one carries the route and the
+ * handler, and a project subclass adds nothing to either.
  */
-final class NotificationCommandRouteTestAgent extends AbstractHilosIndexAgent
+final class NotificationCommandRouteTestAgent extends AbstractNotificationsLibraryAgent
 {
-    public function onStop(): void
-    {
-    }
 }

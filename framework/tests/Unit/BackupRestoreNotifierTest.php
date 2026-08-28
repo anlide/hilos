@@ -9,10 +9,12 @@ use Hilos\Backup\BackupNotificationType;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\RestoreNotifier;
 use Hilos\Database\Context\DbContext;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Fs\FsPath;
 use Hilos\Hilos;
+use Hilos\Notification\DeferredNotificationQueue;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
-use Hilos\Notification\HilosNotifier;
 use Hilos\Users\AdminAudience;
 use PHPUnit\Framework\TestCase;
 
@@ -33,8 +35,36 @@ final class BackupRestoreNotifierTest extends TestCase
     /** SQL datetime the runs in these cases started at. */
     private const string STARTED_AT = '2026-08-15 10:30:00';
 
+    /** @var string Directory this case's queue file lives in */
+    private string $queueDirectory = '';
+
+    /** @var string|false BACKUP_DIR the suite runs under, put back so this file does not decide what the next one reads */
+    private string|false $previousBackupDir = false;
+
+    /** @var ?EnvAccessor Env accessor to restore after the case */
+    private ?EnvAccessor $previousEnv = null;
+
+    protected function setUp(): void
+    {
+        $this->previousBackupDir = getenv('BACKUP_DIR');
+        $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
+        $this->queueDirectory = sys_get_temp_dir() . '/hilos-restore-notifier-' . getmypid() . '-' . uniqid();
+        FsPath::ensureDirectory($this->queueDirectory);
+    }
+
     protected function tearDown(): void
     {
+        foreach ([
+            $this->queueDirectory . '/' . DeferredNotificationQueue::FILE_NAME,
+            $this->queueDirectory . '/' . DeferredNotificationQueue::FILE_NAME . '.taken',
+        ] as $leftover) {
+            if (is_file($leftover)) {
+                FsPath::delete($leftover);
+            }
+        }
+        rmdir($this->queueDirectory);
+        $this->previousBackupDir === false ? putenv('BACKUP_DIR') : putenv('BACKUP_DIR=' . $this->previousBackupDir);
+        Hilos::$env = $this->previousEnv;
         Hilos::$notify = null;
         Hilos::$db = null;
         // Restore the captured facade class to the base default for later cases.
@@ -46,29 +76,29 @@ final class BackupRestoreNotifierTest extends TestCase
 
     public function testTheOutcomeReachesEveryAdministratorAndTheInitiator(): void
     {
-        $notifier = $this->arrange(['email:boss@example.test' => 41]);
+        $this->arrange(['email:boss@example.test' => 41]);
 
         $this->notifySuccess([new SessionIdentityRef('email', 'boss@example.test')]);
 
-        self::assertSame([7, 12, 41], $this->recipients($notifier));
+        self::assertSame([7, 12, 41], $this->recipients());
     }
 
     public function testAnAdministratorWhoStartedTheRestoreIsNotNotifiedTwice(): void
     {
-        $notifier = $this->arrange(['email:admin@example.test' => 12]);
+        $this->arrange(['email:admin@example.test' => 12]);
 
         $this->notifySuccess([new SessionIdentityRef('email', 'admin@example.test')]);
 
         self::assertSame(
             [7, 12],
-            $this->recipients($notifier),
+            $this->recipients(),
             'The initiator keeps their place in the audience instead of being appended a second time',
         );
     }
 
     public function testTheFirstIdentityThatResolvesNamesTheInitiator(): void
     {
-        $notifier = $this->arrange(['sms:+15550000002' => 41]);
+        $this->arrange(['sms:+15550000002' => 41]);
 
         $this->notifySuccess([
             // The email is the account of somebody else's installation and is not in this database.
@@ -76,43 +106,43 @@ final class BackupRestoreNotifierTest extends TestCase
             new SessionIdentityRef('sms', '+15550000002'),
         ]);
 
-        self::assertSame([7, 12, 41], $this->recipients($notifier));
+        self::assertSame([7, 12, 41], $this->recipients());
     }
 
     public function testAnInitiatorTheRestoredDatabaseDoesNotKnowIsSimplyDropped(): void
     {
-        $notifier = $this->arrange();
+        $this->arrange();
 
         $this->notifySuccess([new SessionIdentityRef('email', 'stranger@example.test')]);
 
         self::assertSame(
             [7, 12],
-            $this->recipients($notifier),
+            $this->recipients(),
             'The archive holds a different set of people; the administrators of it are still told',
         );
     }
 
     public function testAnInstallationThatNamesNoAdministratorsIsToldNothing(): void
     {
-        $notifier = $this->arrange();
+        $this->arrange();
         RestoreNotifierSilentTestHilos::initBrowser();
 
         $this->notifySuccess([]);
 
         self::assertSame(
             [],
-            $notifier->drafts,
+            $this->queued(),
             'A project that never declared its administrators sends nothing, rather than to a guess',
         );
     }
 
     public function testTheSuccessNotificationNamesTheArchiveAndHowLongItTook(): void
     {
-        $notifier = $this->arrange();
+        $this->arrange();
 
         $this->notifySuccess([]);
 
-        $draft = $notifier->drafts[0];
+        $draft = $this->queued()[0];
         self::assertSame(BackupNotificationType::RESTORE_SUCCEEDED, $draft->type);
         self::assertSame(NotificationSeverity::SUCCESS, $draft->severity);
         self::assertSame('Restore completed', $draft->title);
@@ -121,7 +151,7 @@ final class BackupRestoreNotifierTest extends TestCase
 
     public function testTheSuccessNotificationCarriesTheWholeRunInItsData(): void
     {
-        $notifier = $this->arrange();
+        $this->arrange();
 
         $this->notifySuccess([]);
 
@@ -134,21 +164,21 @@ final class BackupRestoreNotifierTest extends TestCase
             'initiatedBy' => 'cli',
             'rehydrateComplete' => true,
             'failureSummary' => null,
-        ], $notifier->drafts[0]->data);
+        ], $this->queued()[0]->data);
     }
 
     public function testARunSomebodyAskedForSaysSoInItsData(): void
     {
-        $notifier = $this->arrange(['email:boss@example.test' => 41]);
+        $this->arrange(['email:boss@example.test' => 41]);
 
         $this->notifySuccess([new SessionIdentityRef('email', 'boss@example.test')]);
 
-        self::assertSame('ui', $notifier->drafts[0]->data['initiatedBy']);
+        self::assertSame('ui', $this->queued()[0]->data['initiatedBy']);
     }
 
     public function testTheFailureNotificationCarriesOneLineAndSendsTheReaderToThePage(): void
     {
-        $notifier = $this->arrange();
+        $this->arrange();
 
         new RestoreNotifier()->notifyOutcome(
             self::BACKUP_ID,
@@ -161,7 +191,7 @@ final class BackupRestoreNotifierTest extends TestCase
             initiatorIdentities: [],
         );
 
-        $draft = $notifier->drafts[0];
+        $draft = $this->queued()[0];
         self::assertSame(BackupNotificationType::RESTORE_FAILED, $draft->type);
         self::assertSame(NotificationSeverity::ERROR, $draft->severity);
         self::assertSame('Restore failed', $draft->title);
@@ -178,7 +208,7 @@ final class BackupRestoreNotifierTest extends TestCase
 
     public function testAFailureWithNothingToSayStillSendsTheReaderToThePage(): void
     {
-        $notifier = $this->arrange();
+        $this->arrange();
 
         new RestoreNotifier()->notifyOutcome(
             self::BACKUP_ID,
@@ -191,7 +221,7 @@ final class BackupRestoreNotifierTest extends TestCase
             initiatorIdentities: [],
         );
 
-        $draft = $notifier->drafts[0];
+        $draft = $this->queued()[0];
         self::assertSame('Details are on the backups page.', $draft->body);
         self::assertNull($draft->data['failureSummary']);
     }
@@ -218,19 +248,28 @@ final class BackupRestoreNotifierTest extends TestCase
     }
 
     /**
-     * Points the facade at a recording notifier, an audience of two and a fixture database.
+     * Points the queue at a directory of this case's own, and the facade at a fixture database.
+     *
+     * The announcement writes to {@see DeferredNotificationQueue} rather than to the emit seam
+     * (HIL-771), so what a case reads back is the file - which is also the only way to see what
+     * the restore actually left behind for the library to send.
      *
      * @param array<string, int> $identities User id keyed by "type:identifier" in the restored database
-     * @return RestoreNotifierRecordingNotifier The notifier every emitted draft lands in
      */
-    private function arrange(array $identities = []): RestoreNotifierRecordingNotifier
+    private function arrange(array $identities = []): void
     {
-        $notifier = new RestoreNotifierRecordingNotifier();
-        Hilos::$notify = $notifier;
+        putenv('BACKUP_DIR=' . $this->queueDirectory);
+        Hilos::$env = new EnvAccessor();
         Hilos::$db = new RestoreNotifierTestDbContext($identities);
         RestoreNotifierTestHilos::initBrowser();
+    }
 
-        return $notifier;
+    /**
+     * @return list<NotificationDraft> Drafts the announcement left for the library, in order
+     */
+    private function queued(): array
+    {
+        return DeferredNotificationQueue::drain();
     }
 
     /**
@@ -253,32 +292,11 @@ final class BackupRestoreNotifierTest extends TestCase
     }
 
     /**
-     * @param RestoreNotifierRecordingNotifier $notifier Notifier the drafts landed in
-     * @return list<int> Recipient user ids, in the order they were emitted
+     * @return list<int> Recipient user ids, in the order they were queued
      */
-    private function recipients(RestoreNotifierRecordingNotifier $notifier): array
+    private function recipients(): array
     {
-        return array_map(static fn(NotificationDraft $draft): int => $draft->userId, $notifier->drafts);
-    }
-}
-
-/**
- * Notifier that keeps every draft instead of writing it.
- */
-final class RestoreNotifierRecordingNotifier extends HilosNotifier
-{
-    /** @var list<NotificationDraft> Drafts handed to the emit seam, in order */
-    public array $drafts = [];
-
-    /**
-     * @param NotificationDraft $draft Draft to record
-     * @return int Position of the recorded draft, standing in for the persisted id
-     */
-    public function emit(NotificationDraft $draft): int
-    {
-        $this->drafts[] = $draft;
-
-        return count($this->drafts);
+        return array_map(static fn(NotificationDraft $draft): int => $draft->userId, $this->queued());
     }
 }
 

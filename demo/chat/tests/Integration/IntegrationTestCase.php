@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Database\Database;
@@ -46,6 +47,9 @@ abstract class IntegrationTestCase extends TestCase
 
     /** @var ?SessionsLibraryAgent Library the sessions themselves live in, built on first use */
     private ?SessionsLibraryAgent $sessionsLibrary = null;
+
+    /** @var ?NotificationsLibraryAgent Library the notification tables live in, built on first use */
+    private ?NotificationsLibraryAgent $notificationsLibrary = null;
 
     /**
      * Initializes the database once and registers test truth-source ownership.
@@ -292,6 +296,70 @@ abstract class IntegrationTestCase extends TestCase
         }
 
         return $outcome;
+    }
+
+    /**
+     * Builds the notifications library the notification tables live in, once per case.
+     *
+     * An emit stopped being a write in the calling worker in HIL-771: it is a frame addressed
+     * to this agent, which persists the row and fans it. So a case that produces a notification
+     * - a mention, a moderation refusal, a rename - reads nothing back until the frame has been
+     * run through here.
+     *
+     * @return NotificationsLibraryAgent Library under test, started
+     * @throws HilosException When the library's own startup fails
+     */
+    protected function notificationsLibrary(): NotificationsLibraryAgent
+    {
+        if ($this->notificationsLibrary === null) {
+            $this->notificationsLibrary = new NotificationsLibraryAgent();
+            $this->notificationsLibrary->onStart();
+        }
+
+        return $this->notificationsLibrary;
+    }
+
+    /**
+     * Runs every notification the case raised through the library that writes it.
+     *
+     * The sibling of {@see self::deliverLibraryFrames()} for the other hop: in a node the emit
+     * frame is a worker taking its turn, in a case it is this call. Everything that is not an
+     * emit goes back on the queue in the order it was taken off, so a case can still read the
+     * browser pushes the run produced.
+     *
+     * The loop re-reads the queue rather than walking a snapshot of it, because writing one
+     * notification queues the live frame to its recipient - and that frame belongs to the
+     * pushes this hands back.
+     *
+     * @return int Notifications the library persisted
+     * @throws HilosException When the emit fails
+     * @throws AgentUnknownSignalException When the library does not know a frame it is handed
+     * @throws InvalidArgumentException When a signal put back on the queue has no name
+     */
+    protected function deliverNotificationFrames(): int
+    {
+        $rest = [];
+        $written = 0;
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
+            $name = $signal->signalName->getName();
+            if (
+                !$signal->data instanceof AgentSignalData
+                || $name !== HilosSignalConstants::HILOS_NOTIFICATION_EMIT
+            ) {
+                $rest[] = $signal;
+
+                continue;
+            }
+
+            $this->notificationsLibrary()->onSignalAgent($signal->data, '', $name);
+            $written++;
+        }
+
+        foreach ($rest as $signal) {
+            Hilos::$sr?->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
+        }
+
+        return $written;
     }
 
     /**

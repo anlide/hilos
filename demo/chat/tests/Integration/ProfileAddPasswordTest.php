@@ -11,7 +11,6 @@ use Demo\Chat\Core\Router\DTO\PasswordUpdatedSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\DTO\Profile\ConfirmAddPasswordActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RequestAddPasswordActionDTO;
-use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -70,7 +69,7 @@ final class ProfileAddPasswordTest extends IntegrationTestCase
             $userId = Hilos::$db->users->actions->createWithName('Phone User')->id;
             $this->authenticateSession($agent, $token, $userId, null);
 
-            new ProfilePage($agent)->onAction(
+            $this->usersLibrary()->onAgentAction(
                 'add-pw-req-ak',
                 ChatSignalConstants::ADD_PASSWORD_REQUEST,
                 new RequestAddPasswordActionDTO($email),
@@ -108,7 +107,7 @@ final class ProfileAddPasswordTest extends IntegrationTestCase
 
             $rejected = false;
             try {
-                new ProfilePage($agent)->onAction(
+                $this->usersLibrary()->onAgentAction(
                     'add-pw-taken-ak',
                     ChatSignalConstants::ADD_PASSWORD_REQUEST,
                     new RequestAddPasswordActionDTO($email),
@@ -144,7 +143,7 @@ final class ProfileAddPasswordTest extends IntegrationTestCase
             $this->authenticateSession($agent, $token, $userId, null);
             $this->issueChallenge($email, $userId);
 
-            new ProfilePage($agent)->onAction(
+            $this->usersLibrary()->onAgentAction(
                 'add-pw-ok-ak',
                 ChatSignalConstants::ADD_PASSWORD_CONFIRM,
                 new ConfirmAddPasswordActionDTO($email, self::CODE, self::NEW_PASSWORD),
@@ -192,7 +191,7 @@ final class ProfileAddPasswordTest extends IntegrationTestCase
 
             $rejected = false;
             try {
-                new ProfilePage($agent)->onAction(
+                $this->usersLibrary()->onAgentAction(
                     'add-pw-second-ak',
                     ChatSignalConstants::ADD_PASSWORD_CONFIRM,
                     new ConfirmAddPasswordActionDTO($email, self::CODE, self::NEW_PASSWORD),
@@ -233,7 +232,7 @@ final class ProfileAddPasswordTest extends IntegrationTestCase
 
             $rejected = false;
             try {
-                new ProfilePage($agent)->onAction(
+                $this->usersLibrary()->onAgentAction(
                     'add-pw-weak-ak',
                     ChatSignalConstants::ADD_PASSWORD_CONFIRM,
                     new ConfirmAddPasswordActionDTO($email, self::CODE, 'short'),
@@ -273,7 +272,7 @@ final class ProfileAddPasswordTest extends IntegrationTestCase
 
             $rejected = false;
             try {
-                new ProfilePage($agent)->onAction(
+                $this->usersLibrary()->onAgentAction(
                     'add-pw-badcode-ak',
                     ChatSignalConstants::ADD_PASSWORD_CONFIRM,
                     new ConfirmAddPasswordActionDTO($email, '000000', self::NEW_PASSWORD),

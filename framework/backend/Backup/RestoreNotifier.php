@@ -8,6 +8,7 @@ use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Auth\Session\SessionIdentityRef;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Hilos;
+use Hilos\Notification\DeferredNotificationQueue;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
 use Hilos\Users\AdminAudience;
@@ -33,6 +34,12 @@ use Throwable;
  * pairs before the import and hands them here; they are looked up in the restored database
  * afterwards, exactly as sessions are carried over ({@see SessionCarrier}). Not found means the
  * person does not exist in this database, and they simply drop out of the recipients.
+ *
+ * **Nothing is sent from here** (HIL-771). Both entrances write where nobody can be reached - the
+ * hot one under the restore freeze, with every agent but the initiator stopped, the cold one with
+ * the daemon down - so the finished draft is left in {@see DeferredNotificationQueue} and the
+ * notifications library sends it when it next starts. Emitting straight to the seam would drop the
+ * letter on both paths, which is the whole reason the queue exists.
  *
  * Best-effort throughout: a restore that has already happened is not undone by a notification
  * that could not be written, and the half-broken database a failed import leaves behind is
@@ -167,7 +174,11 @@ final class RestoreNotifier
         ];
 
         foreach ($recipients as $userId) {
-            Hilos::$notify?->emit(new NotificationDraft(
+            // Queued rather than emitted, because this line is written where the door has nobody
+            // behind it (HIL-771): under the freeze every agent but the initiator is stopped, and
+            // on the cold CLI path the daemon is down entirely. The notifications library sends
+            // them when it next starts.
+            DeferredNotificationQueue::defer(new NotificationDraft(
                 userId: $userId,
                 type: $success ? BackupNotificationType::RESTORE_SUCCEEDED : BackupNotificationType::RESTORE_FAILED,
                 title: $title,

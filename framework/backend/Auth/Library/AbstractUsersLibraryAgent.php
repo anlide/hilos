@@ -222,12 +222,20 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     private ?RecoveryCommands $recoveryCommands = null;
 
     /**
-     * Claims the right to mint a user and resolves the project's auth seams.
+     * Claims the people this library answers for and resolves the project's auth seams.
      *
-     * A creating truth source rather than a reading one: the library is the process that
-     * brings an account into being, and that is the claim which has to be unique. The
-     * identity, verification, reservation and credential tables need no claim of their own -
-     * they are read by key and written by whoever holds the command, which is this agent.
+     * The claim over the account set is a whole one now, not the create-only right it began
+     * as (HIL-771): a page carries no claim, so the writers that used to rename somebody from
+     * a profile submit come here instead, and renaming is editing the row. The identity,
+     * verification, reservation and credential tables need no claim of their own - they are
+     * read by key and written by whoever holds the command, which is this agent.
+     *
+     * It is registered against the registry rather than through
+     * {@see AbstractAgent::registerDbTruthSource()} for one reason: the seam hands the claim
+     * this agent's default operations, and this one claim is exactly the one that departs from
+     * them. The interest side the seam also raises is already covered - every project names its
+     * account collection in {@see AbstractAgent::READS_DB}, so the worker raised and awaited it
+     * before this hook ran.
      *
      * The two parked-surface collections are claimed because a command parks a browser on the
      * code step it just opened, and a runtime write with no claim behind it is refused. The
@@ -245,19 +253,22 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     public function onStart(): void
     {
         $this->authMethods = $this->buildAuthMethods();
-        TruthSourceRegistry::registerCreate($this->usersCollection(), $this->getId());
+        TruthSourceRegistry::register($this->usersCollection(), true, $this->getId(), TruthSourceOperation::ALL);
         $this->registerRtTruthSource(RegistrationWaiter::RT_COLLECTION);
         $this->registerRtTruthSource(RecoveryWaiter::RT_COLLECTION);
     }
 
     /**
-     * A library brings a row into being and takes it away, and never edits one.
+     * What a library does to a row it shares with another owner: bring it into being, take it away.
      *
-     * The standard behaviour of a library rather than a switch each project throws for
-     * itself: what a library writes is a fact about an account being made or unmade, and a
-     * fact already written is not its to reword. The whole of the rule is this one line, so
-     * revisiting it - the owner is explicitly unsure about the removal half - costs one edit
-     * and not a walk of every claim.
+     * The default covers the claims made through the seam, and those are the co-owned ones -
+     * the two parked-surface collections above, and whatever a project adds beside them. A fact
+     * another holder is keeping is not this library's to reword, which is why updating is
+     * absent and why the pair is not two writers of one row.
+     *
+     * The account set is deliberately not among them: it is claimed whole in {@see onStart()},
+     * because a library that renames somebody edits the row it owns, and there it owns rather
+     * than shares.
      *
      * @return list<TruthSourceOperation> Adding and removing, never updating
      */
