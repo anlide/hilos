@@ -5,7 +5,7 @@ import { gotoPage, PAGE_REFUSED } from '../helpers/page'
 
 // Admin-gating e2e: the ACCESS guard on /hilos/admin_users closes the page to a
 // guest with a 403, and a CLI-style grant over the daemon command channel (the
-// same setAdmin the admin:grant command sends) opens it after a reconnect. The
+// same admin:grant the CLI command sends) opens it after a reconnect. The
 // persistent httpOnly session cookie keeps one browser = one user, so the granted
 // user is the same one on reload. The admin-users page is served by the chat agent
 // that owns the user and connection state, so the guard resolves identity

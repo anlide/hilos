@@ -2,25 +2,29 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Core\Router\DTO;
+namespace Hilos\Users\DTO;
 
-use Demo\Chat\Agents\ChatAgent;
 use Hilos\BaseDTO;
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * AccountMergeSignalData - admin account-merge request payload (Hilos user page → ChatAgent, HIL-378).
+ * Project agent → sessions library: fold this account into that one (HIL-378, HIL-729).
  *
- * The admin merge action runs on the page's HILOS_INDEX agent, but the merge
- * itself must execute on the session-owning ChatAgent (it owns the users,
- * messages, and sessions truth sources plus the force-logout mechanics). The
- * page forwards the request point-to-point; the agent runs
- * {@see ChatAgent::handleAccountMerge()} and acks the
- * initiating connection ({@see $acceptKey}) with success or failure.
+ * What {@see HilosSignalConstants::HILOS_ACCOUNT_MERGE} carries, and the browser's way into
+ * the same core an operator reaches through {@see CliCommands::ACCOUNT_MERGE}. The admin
+ * table submits the merge as a page action; the page cannot run it, because the merge ends
+ * in the loser's live sessions being signed out and those sessions are the library's, so it
+ * names the two accounts here and lets the library do the work.
  *
- * Routing is by signal name (ACCOUNT_MERGE_REQUEST → ChatAgent) via the agent's
- * AGENT_SIGNALS declaration.
+ * The accept key is the person waiting, not a party to the merge: the library hands it back
+ * untouched on {@see HilosSignalConstants::HILOS_ACCOUNT_MERGE_RESULT} so the project can ack
+ * the one connection that asked, under the name its own surface listens for. There is no
+ * password fate among the fields on purpose - naming which of two passwords survives is an
+ * operator's decision on a command line, and the admin surface has no control for it
+ * (HIL-411); a merge that needs the decision is refused rather than guessed at.
  */
 final class AccountMergeSignalData extends BaseDTO implements SignalDataInterface
 {

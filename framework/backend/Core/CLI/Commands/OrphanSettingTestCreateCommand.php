@@ -2,12 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\CLI\Commands;
+namespace Hilos\Core\CLI\Commands;
 
-use Demo\Chat\Constants\ChatCliCommands;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
-use Hilos\Core\CLI\Commands\CommandExecution;
-use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -19,10 +17,11 @@ use Hilos\Hilos;
  * SCAFFOLD/EXAMPLE of the test-only command mechanism (see docs/agents/cli/commands.md).
  *
  * Writes an orphan settings row for a catalog key, so a test can set up a state the normal UI
- * does not leave behind. Pairs with DeleteOrphanSettingCommand, which restores the baseline.
- * The value of this specific command is to demonstrate the mechanism, not a real feature.
+ * does not leave behind. Pairs with {@see OrphanSettingTestDeleteCommand}, which restores the
+ * baseline. The value of this specific command is to demonstrate the mechanism, not a real
+ * feature.
  */
-final class CreateOrphanSettingCommand extends TestOnlyCommand
+final class OrphanSettingTestCreateCommand extends TestOnlyCommand
 {
     /** @var string Catalog key the example orphan row is written for */
     private const string ORPHAN_KEY = SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING;
@@ -32,7 +31,7 @@ final class CreateOrphanSettingCommand extends TestOnlyCommand
 
     public function getName(): string
     {
-        return ChatCliCommands::CREATE_ORPHAN_SETTING;
+        return CliCommands::ORPHAN_SETTING_TEST_CREATE;
     }
 
     /**
@@ -43,7 +42,7 @@ final class CreateOrphanSettingCommand extends TestOnlyCommand
     public function execution(): CommandExecution
     {
         return CommandExecution::cliOfflineWrite(
-            "temporary until HIL-729 moves chat's CLI into the framework: seeds a cataloged settings row before the stand's daemon starts",
+            'seeds a cataloged settings row from composer test:db-prepare, before the stand\'s daemon starts',
         );
     }
 

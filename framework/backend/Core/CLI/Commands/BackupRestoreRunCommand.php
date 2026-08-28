@@ -2,9 +2,8 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\CLI\Commands;
+namespace Hilos\Core\CLI\Commands;
 
-use Demo\Chat\Constants\ChatCliCommands;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupProgressMarker;
 use Hilos\Backup\BackupRestorer;
@@ -15,8 +14,6 @@ use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Backup\RestorePhase;
 use Hilos\Constants\ExitCode;
-use Hilos\Core\CLI\Commands\CommandExecution;
-use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\Process;
 
 /**
@@ -56,7 +53,7 @@ final class BackupRestoreRunCommand implements CommandInterface
      */
     public function getName(): string
     {
-        return ChatCliCommands::BACKUP_RESTORE_RUN;
+        return BackupConstants::RESTORE_RUN_COMMAND;
     }
 
     /**

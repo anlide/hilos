@@ -10,7 +10,6 @@ use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Core\Router\DTO\AccountMergeSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\HilosUser\DTO\HilosUserMergeActionDTO;
 use Demo\Chat\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
@@ -29,6 +28,7 @@ use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUserPage;
+use Hilos\Users\DTO\AccountMergeSignalData;
 use Throwable;
 
 /**
@@ -160,12 +160,17 @@ final class UserPage extends AbstractHilosUserPage
     }
 
     /**
-     * Forwards an admin account-merge request to the session-owning ChatAgent (HIL-378).
+     * Forwards an admin account-merge request to the sessions library (HIL-378, HIL-729).
      *
-     * The tracked client action fires-and-forwards: the merge transaction,
-     * force-logout, and result ack all run on the agent, which owns the users,
-     * messages, and sessions truth sources. The agent later acks the initiator
-     * with ACCOUNT_MERGE_SUCCESS or ACCOUNT_MERGE_FAIL (this page sends neither).
+     * The tracked client action fires-and-forwards: the transaction, the force-logout of the
+     * loser and the outcome all belong to the framework's sessions library, because the merge
+     * ends in that loser's live sessions being signed out. What this project still answers is
+     * a pair of seams - who may be merged, and what a chat keeps for a person.
+     *
+     * The library hands the outcome back to the chat agent, which acks the initiator with
+     * ACCOUNT_MERGE_SUCCESS or ACCOUNT_MERGE_FAIL; this page sends neither. The accept key
+     * travels the whole way and comes back untouched, so the ack reaches the one admin who
+     * asked.
      *
      * @param string $acceptKey WebSocket accept key for the requesting client
      * @param HilosUserMergeActionDTO $dto Merge action payload (survivor row + picked loser)
@@ -173,7 +178,7 @@ final class UserPage extends AbstractHilosUserPage
     private function handleAccountMerge(string $acceptKey, HilosUserMergeActionDTO $dto): void
     {
         $this->agent->sendToAgent(
-            ChatSignalConstants::ACCOUNT_MERGE_REQUEST,
+            HilosSignalConstants::HILOS_ACCOUNT_MERGE,
             new AccountMergeSignalData($dto->survivorUserId, $dto->loserUserId, $acceptKey),
         );
     }

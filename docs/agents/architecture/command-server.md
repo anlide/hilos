@@ -70,7 +70,7 @@ to it.
 ## Request / reply DTOs
 
 ```php
-new CommandRequestDTO(correlationId: 'ab12…', command: 'setAdmin', payload: [...]);
+new CommandRequestDTO(correlationId: 'ab12…', command: 'admin:grant', payload: [...]);
 CommandReplyDTO::ok($correlationId, $payload);
 CommandReplyDTO::error($correlationId, 'No such user: 7');
 ```
@@ -100,59 +100,72 @@ answers; the held connection is forgotten on close.
 
 ## Wiring a command
 
-Route the command to its owning agent in the project facade:
+A command is routed by whoever names it: the route is computed from the `AGENT_COMMANDS` of
+every registered agent, so declaring the name on the agent that answers it is the whole
+wiring. The name itself is one string — the CLI name and the wire name are the same, and
+`ProjectCommandConstants` below stands for wherever the project keeps it:
 
 ```php
-// Project Hilos
-public static function getCommandAgentRoutes(): array
+final class CatalogAgent extends AbstractAgent
 {
-    return [
-        ChatCommandConstants::SET_ADMIN => AgentType::CHAT,
+    public const array AGENT_COMMANDS = [
+        ProjectCommandConstants::CATALOG_REINDEX,
     ];
+
+    // …
 }
 ```
 
-Handle it on that agent and always reply (ok or error):
+Handle it on that agent and always reply (ok or error), on every path:
 
 ```php
 public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
 {
-    if ($data->command !== ChatCommandConstants::SET_ADMIN) {
+    if ($data->command !== ProjectCommandConstants::CATALOG_REINDEX) {
         $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
 
         return;
     }
 
-    $user = Hilos::$db->users[(int) $data->payload[ChatCommandConstants::FIELD_USER_ID]] ?? null;
-    if ($user === null) {
-        $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'No such user'));
+    $catalog = Hilos::$db->catalogs[(int) $data->payload[ProjectCommandConstants::FIELD_CATALOG_ID]] ?? null;
+    if ($catalog === null) {
+        $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'No such catalog'));
 
         return;
     }
 
-    $user->actions->setAdmin((bool) $data->payload[ChatCommandConstants::FIELD_ADMIN]);
+    $catalog->actions->reindex();
     $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, $data->payload));
 }
 ```
 
-Write the CLI caller by mirroring `PingCommand` / `AbstractSetAdminCommand`:
-`AsyncCommandClient` → `CommandRequestDTO` → poll `tick()`/`hasResult()` →
-`consumeResult()` → print the outcome.
+Write the CLI caller by mirroring `AbstractSetAdminCommand`: `use CommandChannelClientTrait`
+→ build the payload → `sendCommand()` → print the success yourself, and hand a failed
+round-trip to `printChannelFailure()`. The round-trip is not written per command; the trait
+is the one copy of it, and the wait budget is not a thing a command has an opinion about
+(HIL-728).
 
 ## Worked example — `admin:grant` / `admin:revoke`
 
-The grant itself is an **ordinary user action**, not a bespoke signal: the agent
-calls `UserActions::setAdmin($bool)`, which persists and `sync()`s, and the
-existing browser source fan-out pushes the changed user to everyone viewing the
-users list. The command channel only carries the request and the outcome
-(success / "no such user" / already-set). The two `AbstractSetAdminCommand`
-subclasses (`admin:grant`, `admin:revoke`) are real operator commands — not
-`TestOnlyCommand`.
+The grant itself is an **ordinary user action**, not a bespoke signal: the project
+seam `applyAdminGrant()` calls its own `setAdmin($bool)`, which persists and
+`sync()`s, and the existing browser source fan-out pushes the changed user to
+everyone viewing the users list. The command channel only carries the request and
+the outcome (success / "no such user" / already-set). The two
+`AbstractSetAdminCommand` subclasses (`admin:grant`, `admin:revoke`) are real
+operator commands — not `TestOnlyCommand`.
+
+It is answered by the **sessions library**, beside `admin:create` and for the same
+reason (HIL-729): the flag changes what a browser may open, so every live session
+of that user has to be told, and the sessions are the library's. The framework
+does the telling — one `hilos_session_state` frame per live session — and the
+project seam writes nothing but the flag. Before that merge each demo carried its
+own copy of the re-greeting, and the two that were not chat had lost fields from it.
 
 This is what makes a `BrowserGuardType::ACCESS` gate usable against guest auth:
 identity is a persistent httpOnly cookie, so **one browser is a stable user**.
-Register as user X (cookie) → `admin:grant X` → reconnect the same browser → X is
-admin → the gated pages open. See
+Register as user X (cookie) → `admin:grant X` → X is admin → the gated pages open,
+in the tab that is already open. See
 [page-access-control.md](page-access-control.md) for the gate the grant unlocks,
 and [../signals/routing.md](../signals/routing.md) for how `COMMAND_REQUEST` /
 `COMMAND_REPLY` are routed.
@@ -168,12 +181,12 @@ minting the user row when the session carries none. Its two halves are
 `AbstractSessionsLibraryAgent::handleAdminCreateCommand()` on the agent, with
 `ensureAdminUser()` as the project seam that writes the row.
 
-It routes to the **sessions library** (`hilos_sessions_library`), not to
-`AbstractHilosIndexAgent` where the grant lands: the operation ends in a session
-bind, and the session row is the library's. That is also why no reconnect is
-needed — the bind ends in a `hilos_session_state` frame, and the project handler
-on the far side of it re-points the session's live sockets and re-sends them the
-handshake response, so the admin entry appears in the open tab.
+It routes to the **sessions library** (`hilos_sessions_library`), where the grant
+now lands too: the operation ends in a session bind, and the session row is the
+library's. That is also why no reconnect is needed — the bind ends in a
+`hilos_session_state` frame, and the project handler on the far side of it
+re-points the session's live sockets and re-sends them the handshake response, so
+the admin entry appears in the open tab.
 
 **Every project that registers the library answers this command,** because the
 mount stands on the abstract class (`AGENT_COMMANDS`) rather than being named per

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Feature\Definition;
 
-use Hilos\Backup\BackupConstants;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
@@ -41,8 +41,12 @@ final class BackupFeature extends FeatureDefinition
     }
 
     /**
+     * The two child commands the supervisor spawns are NOT among these any more (HIL-729):
+     * {@see CliManager} registers backup:run and backup:restore-run itself, so there is nothing
+     * left for a project to forget and nothing for the deferred check to ask it about.
+     *
      * @return FeatureRequirements Backup page and its history table binding, the agent pair,
-     *     the catalog, and the two child commands the supervisor spawns (create and restore)
+     *     and the catalog
      */
     public function requirements(): FeatureRequirements
     {
@@ -52,7 +56,6 @@ final class BackupFeature extends FeatureDefinition
             requiredTables: [HilosBackupHistoryTable::class],
             requiredPageTables: [AbstractHilosBackupPage::class => HilosBackupHistoryTable::class],
             requiredCatalogConstant: 'BACKUP_CATALOG',
-            requiredCliCommands: [BackupConstants::RUN_COMMAND, BackupConstants::RESTORE_RUN_COMMAND],
         );
     }
 

@@ -2,12 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\CLI\Commands;
+namespace Hilos\Core\CLI\Commands;
 
-use Demo\Chat\Constants\ChatCliCommands;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
-use Hilos\Core\CLI\Commands\CommandExecution;
-use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
@@ -20,19 +18,19 @@ use Hilos\Hilos;
 /**
  * Test-only: seed a TRUE orphan settings row for a key that is NOT in the catalog.
  *
- * Unlike the scaffold {@see CreateOrphanSettingCommand} (which writes a catalog-key
+ * Unlike the scaffold {@see OrphanSettingTestCreateCommand} (which writes a catalog-key
  * override), this writes a row whose key is absent from the catalog, so it reads back as
  * valueSource=orphan — the state an e2e fixture needs but the normal UI never leaves
- * behind. Pairs with {@see DeleteOrphanCommand}.
+ * behind. Pairs with {@see OrphanTestDeleteCommand}.
  */
-final class CreateOrphanCommand extends TestOnlyCommand
+final class OrphanTestCreateCommand extends TestOnlyCommand
 {
     /** @var string Truth-source id this CLI writer registers under (no agent runs in the CLI) */
     private const string TRUTH_SOURCE_ID = 'test-cli';
 
     public function getName(): string
     {
-        return ChatCliCommands::CREATE_ORPHAN;
+        return CliCommands::ORPHAN_TEST_CREATE;
     }
 
     /**
@@ -43,8 +41,7 @@ final class CreateOrphanCommand extends TestOnlyCommand
     public function execution(): CommandExecution
     {
         return CommandExecution::cliOfflineWrite(
-            "temporary until HIL-729 moves chat's CLI into the framework: seeds a settings row from"
-            . " composer test:db-prepare, before the stand's daemon starts",
+            'seeds a settings row from composer test:db-prepare, before the stand\'s daemon starts',
         );
     }
 

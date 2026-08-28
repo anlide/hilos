@@ -134,7 +134,7 @@ Minimum ORM rules before editing:
 
 | File | Read when... |
 |---|---|
-| [cli/commands.md](docs/agents/cli/commands.md) | running migrations, schema checks, DB reset, monitoring |
+| [cli/commands.md](docs/agents/cli/commands.md) | running migrations, schema checks, DB reset, monitoring, granting admin or merging two accounts, or deciding whether a new command belongs to the framework or to one project |
 | [cli/command-execution.md](docs/agents/cli/command-execution.md) | adding a CLI command, moving work between a command and an agent, or writing from a CLI process something a running daemon also writes |
 
 ## Testing

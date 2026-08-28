@@ -175,12 +175,13 @@ watch(userName, (name) => {
 // source (the handshake response's impersonatedBy slot); while true the shell
 // shows a full-width banner naming the impersonated user. Stop is page-independent
 // — while impersonating the effective user is the non-admin target, so no admin
-// page is guaranteed — so it sends the agent-owned `impersonate_stop` action
-// (PHP `ChatSignalConstants::IMPERSONATE_STOP`), a calque of logout: the backend
-// reverts the session to the admin and broadcasts the cleared handshake response,
-// which flips `impersonating` back to false for every tab.
+// page is guaranteed — so it sends the agent-owned `hilos_impersonate_stop` action
+// (PHP `HilosSignalConstants::HILOS_IMPERSONATE_STOP`, framework-owned since
+// HIL-729), a calque of logout: the backend reverts the session to the admin and
+// broadcasts the cleared handshake response, which flips `impersonating` back to
+// false for every tab.
 const isImpersonating = useSignal(impersonating)
-const IMPERSONATE_STOP_ACTION = 'impersonate_stop'
+const IMPERSONATE_STOP_ACTION = 'hilos_impersonate_stop'
 const IMPERSONATE_STOP_FALLBACK_MS = 5000
 const stoppingImpersonation = ref(false)
 // The fallback timer's handle, cleared the moment the broadcast ends loading (as

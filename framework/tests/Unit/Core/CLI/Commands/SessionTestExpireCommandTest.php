@@ -2,24 +2,24 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Tests\Unit;
+namespace Hilos\Tests\Unit\Core\CLI\Commands;
 
-use Demo\Chat\CLI\Commands\SessionExpireCommand;
-use Demo\Chat\Hilos;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\CLI\Commands\SessionTestExpireCommand;
 use Hilos\Database\Context\DbContext;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Unit tests for the test:session:expire CLI argument-validation branches.
  *
  * Covers only the branches that return before any database write (missing token,
- * unavailable db); the actual expiry behavior is exercised by SessionsActionsTest and
- * the HIL-167 e2e. Runs under a non-production APP_ENV so the TestOnlyCommand guard
+ * unavailable db); the actual expiry behavior is exercised by the demo's SessionsActionsTest
+ * and the HIL-167 e2e. Runs under a non-production APP_ENV so the TestOnlyCommand guard
  * admits the command body.
  */
-final class SessionExpireCommandTest extends TestCase
+final class SessionTestExpireCommandTest extends TestCase
 {
     private ?EnvAccessor $previousEnv = null;
     private ?DbContext $previousDb = null;
@@ -50,7 +50,7 @@ final class SessionExpireCommandTest extends TestCase
         $this->expectOutputRegex('/Usage/');
         self::assertSame(
             ExitCode::INVALID_ARGUMENT,
-            new SessionExpireCommand()->execute([], []),
+            new SessionTestExpireCommand()->execute([], []),
         );
     }
 
@@ -61,7 +61,7 @@ final class SessionExpireCommandTest extends TestCase
         $this->expectOutputRegex('/not available/');
         self::assertSame(
             ExitCode::CONFIG_ERROR,
-            new SessionExpireCommand()->execute([], ['deadbeefdeadbeefdeadbeefdeadbeef']),
+            new SessionTestExpireCommand()->execute([], ['deadbeefdeadbeefdeadbeefdeadbeef']),
         );
     }
 }

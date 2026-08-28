@@ -228,12 +228,11 @@ also registers those. Generate, in any order:
 5. Register the framework `BackupAgent` + `BackupAgentDaemon` in the project
    `AGENTS` under `BackupAgent::AGENT_TYPE` — it is monopolistic, so it claims a
    monopolistic worker slot ([../../new-project/README.md](../../new-project/README.md),
-   *Worker pool*) — and expose both child commands in the project CLI command
-   registry: `backup:run` (`BackupConstants::RUN_COMMAND`) and
-   `backup:restore-run` (`BackupConstants::RESTORE_RUN_COMMAND`). The feature
-   declaration requires both, so a forgotten registration is refused at startup
-   rather than discovered by the first restore. All are framework-owned; the
-   project only lists them.
+   *Worker pool*). Nothing to do about the two child commands: `backup:run`
+   (`BackupConstants::RUN_COMMAND`) and `backup:restore-run`
+   (`BackupConstants::RESTORE_RUN_COMMAND`) are registered by `CliManager` itself
+   since HIL-729, so there is no registration left to forget and the feature stops
+   asking the project for one. All of it is framework-owned.
 6. Nothing for the runtime index — step 1 already brought it. Files are truth;
    the index is a rebuildable projection the agent rescans from `BACKUP_DIR` on
    start, so the project persists no backup DB table either. It is mounted *with*

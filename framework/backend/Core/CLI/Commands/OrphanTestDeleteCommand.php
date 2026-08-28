@@ -2,12 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\CLI\Commands;
+namespace Hilos\Core\CLI\Commands;
 
-use Demo\Chat\Constants\ChatCliCommands;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
-use Hilos\Core\CLI\Commands\CommandExecution;
-use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
@@ -18,19 +16,19 @@ use Hilos\Hilos;
 /**
  * Test-only: delete a TRUE orphan settings row for a key that is NOT in the catalog.
  *
- * Symmetric tear-down for {@see CreateOrphanCommand}: removes the persisted orphan row
+ * Symmetric tear-down for {@see OrphanTestCreateCommand}: removes the persisted orphan row
  * for a non-catalog key, restoring the baseline. Refuses a catalog key (its row would be
  * an override, not an orphan) and refuses if no row for the key exists, so a fixture's
  * setup/cleanup mismatch surfaces instead of silently passing.
  */
-final class DeleteOrphanCommand extends TestOnlyCommand
+final class OrphanTestDeleteCommand extends TestOnlyCommand
 {
     /** @var string Truth-source id this CLI writer registers under (no agent runs in the CLI) */
     private const string TRUTH_SOURCE_ID = 'test-cli';
 
     public function getName(): string
     {
-        return ChatCliCommands::DELETE_ORPHAN;
+        return CliCommands::ORPHAN_TEST_DELETE;
     }
 
     /**
@@ -41,7 +39,7 @@ final class DeleteOrphanCommand extends TestOnlyCommand
     public function execution(): CommandExecution
     {
         return CommandExecution::cliOfflineWrite(
-            "temporary until HIL-729 moves chat's CLI into the framework: deletes the seeded settings row straight from the table",
+            'deletes the settings row its own create seeded, in the same daemon-less window that wrote it',
         );
     }
 

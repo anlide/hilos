@@ -73,14 +73,15 @@ Both already exist in the tree, and both were written as a property of one
 feature rather than as a general mechanism. The rule names them as instances; it
 does not restate how they work.
 
-**Re-deciding an open page when rights change.** The sweep starts where the
-rights are written: `PageAccessReassessment::forUser()` queues one
+**Re-deciding an open page when rights change.** The sweep starts where the tabs
+are told who their person now is: `PageAccessReassessment::forUser()` queues one
 `page_access_reassess_user` announcement and returns; each worker of the node
 then runs `PageAccessReassessment::sweepThisWorker()` over its own live page
 subscriptions and queues one `page_access_reassess` frame per page that person
-has open there. The framework's own call site is
-`AbstractHilosIndexAgent::handleAdminGrant()`, and a project routing its own
-grant command starts it there — the chat demo's `ChatAgent::handleSetAdmin()`.
+has open there. Its one call site is the project's, and a grant reaches it the way
+every other identity change does: `AbstractSessionsLibraryAgent` writes the flag
+through the project's `applyAdminGrant` seam and then restates each live session of
+that person (HIL-729).
 A session losing its person is the same obligation with the other criterion:
 `forConnections()` / `sweepThisWorkerConnections()` name the accept keys instead,
 because the identity the first pair matches on is precisely what signing out

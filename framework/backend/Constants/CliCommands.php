@@ -84,6 +84,21 @@ final class CliCommands
     /** @var string Command: Expire an active auth verification challenge (test-only) */
     public const string VERIFICATION_TEST_EXPIRE = 'verification:test:expire';
 
+    /** @var string Command: Age a live session's expiry into the past by its cookie token (test-only) */
+    public const string SESSION_TEST_EXPIRE = 'test:session:expire';
+
+    /** @var string Command: Write a settings row for a key the catalog does not carry (test-only) */
+    public const string ORPHAN_TEST_CREATE = 'test:orphan:create';
+
+    /** @var string Command: Delete the settings row of a key the catalog does not carry (test-only) */
+    public const string ORPHAN_TEST_DELETE = 'test:orphan:delete';
+
+    /** @var string Command: Write the example catalog key's override row (test-only) */
+    public const string ORPHAN_SETTING_TEST_CREATE = 'test:orphan-setting:create';
+
+    /** @var string Command: Delete the example catalog key's override row (test-only) */
+    public const string ORPHAN_SETTING_TEST_DELETE = 'test:orphan-setting:delete';
+
     /** @var string Command: Verify stored backup archives against their recorded checksums */
     public const string BACKUP_VERIFY = 'backup:verify';
 
@@ -110,6 +125,19 @@ final class CliCommands
 
     /** @var string Command: Bulk-seed N fixture users with password identities (test-only) */
     public const string USER_TEST_SEED = 'test:user:seed';
+
+    /**
+     * Echo a payload back through the whole command round-trip (test-only).
+     *
+     * Proves the transport rather than any feature: the CLI parks on the command socket, the
+     * daemon routes the name to {@see AbstractHilosIndexAgent}, and the agent answers with the
+     * payload it was handed. Routed to the index agent for the reason
+     * {@see self::NOTIFICATION_TEST_EMIT} is - it is the framework-owned worker every
+     * installation has - so an operator can ask any project whether its channel is alive.
+     *
+     * @var string Command: Echo a message back through the daemon command channel (test-only)
+     */
+    public const string COMMAND_TEST_ECHO = 'test:command:echo';
 
     /**
      * Emit one durable notification to a user through the live daemon (test-only).
@@ -248,4 +276,31 @@ final class CliCommands
      * @var string Command: Make a browser session an administrator
      */
     public const string ADMIN_CREATE = 'admin:create';
+
+    /**
+     * Make one browser session act as another user, keeping the administrator behind it (operator).
+     *
+     * Routed to the sessions library - {@see AbstractSessionsLibraryAgent} - for the reason
+     * {@see self::ADMIN_CREATE} is: the operation ends in a session bind, and the mark that says
+     * who is acting for whom is a column of that session. A project mounts it by naming it in
+     * that agent's AGENT_COMMANDS and answering the one question the framework cannot -
+     * whether the administrator may act as this user.
+     *
+     * @var string Command: Make a browser session act as another user
+     */
+    public const string IMPERSONATE_START = 'impersonate:start';
+
+    /** @var string Command: Return an impersonating session to the administrator behind it */
+    public const string IMPERSONATE_STOP = 'impersonate:stop';
+
+    /**
+     * Fold one populated account into another, moving its ways in (operator).
+     *
+     * Routed to the sessions library beside the impersonation pair, because the merge ends in
+     * the loser's live sessions being signed out, and those sessions are that agent's. The
+     * project's half is the rows only it knows about - in a chat, the messages.
+     *
+     * @var string Command: Merge one account into another
+     */
+    public const string ACCOUNT_MERGE = 'account:merge';
 }

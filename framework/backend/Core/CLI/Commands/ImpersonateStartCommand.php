@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\CLI\Commands;
+namespace Hilos\Core\CLI\Commands;
 
-use Demo\Chat\Constants\ChatCliCommands;
-use Demo\Chat\Constants\ChatCommandConstants;
 use Hilos\Auth\Session\SessionRebindConstants;
+use Hilos\Constants\CliCommands;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Users\AdminCommandConstants;
 
 /**
  * Starts impersonating a user on a session through the daemon command channel.
@@ -19,7 +19,7 @@ final class ImpersonateStartCommand extends AbstractImpersonateCommand
 {
     public function getName(): string
     {
-        return ChatCliCommands::IMPERSONATE_START;
+        return CliCommands::IMPERSONATE_START;
     }
 
     public function getDescription(): string
@@ -33,11 +33,11 @@ final class ImpersonateStartCommand extends AbstractImpersonateCommand
 Command: impersonate:start
 
 Description:
-  Make an admin session act as another user. Sends an impersonateStart command
-  over the daemon command channel; the daemon routes it to the chat agent, which
-  rebinds the session to the target user (every tab of that session updates to
-  the target) and records the admin behind the takeover. The session must be an
-  admin session and must not already be impersonating.
+  Make an admin session act as another user. Sends the command over the daemon
+  command channel; the daemon rebinds the session to the target user (every tab
+  of that session updates to the target) and records the admin behind the
+  takeover. The session must be an admin session and must not already be
+  impersonating.
 
 Usage:
   php cli.php impersonate:start <sessionToken> <targetUserId>
@@ -45,11 +45,6 @@ Usage:
 Examples:
   php cli.php impersonate:start 0123456789abcdef0123456789abcdef 5
 HELP;
-    }
-
-    protected function commandName(): string
-    {
-        return ChatCommandConstants::IMPERSONATE_START;
     }
 
     protected function buildPayload(array $args): ?array
@@ -66,8 +61,8 @@ HELP;
         }
 
         return [
-            ChatCommandConstants::FIELD_SESSION_TOKEN => $sessionToken,
-            ChatCommandConstants::FIELD_TARGET_USER_ID => $targetUserId,
+            AdminCommandConstants::FIELD_SESSION_TOKEN => $sessionToken,
+            AdminCommandConstants::FIELD_TARGET_USER_ID => $targetUserId,
         ];
     }
 

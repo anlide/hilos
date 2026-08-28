@@ -4,59 +4,19 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Constants;
 
+use Hilos\Users\AccountMergeCommandConstants;
+
 /**
- * ChatCommandConstants - chat command-channel command names.
+ * ChatCommandConstants - what chat still names on the command channel.
  *
- * Names of commands the chat daemon accepts over the CLI command socket channel,
- * routed to an agent via Hilos::getCommandAgentRoutes().
+ * Since HIL-729 the command names and their payload keys are the framework's, so what is
+ * left here is the one thing the framework cannot name for us: the family of rows this
+ * project moves when two accounts are merged. It goes back as a key inside
+ * {@see AccountMergeCommandConstants::FIELD_ROWS_MOVED}, where the framework counts its own
+ * identities and the project counts whatever it keeps for a person.
  */
 final class ChatCommandConstants
 {
-    /** @var string Echo command: routed to the chat agent, which echoes the request payload back */
-    public const string ECHO = 'test:command:echo';
-
-    /** @var string Set-admin command: routed to the chat agent, which flips a user's admin flag */
-    public const string SET_ADMIN = 'setAdmin';
-
-    /** @var string Impersonate-start command: an admin session assumes another user's identity */
-    public const string IMPERSONATE_START = 'impersonateStart';
-
-    /** @var string Impersonate-stop command: reverts an impersonating session to its admin */
-    public const string IMPERSONATE_STOP = 'impersonateStop';
-
-    /** @var string Account-merge command: routed to the chat agent, which folds a loser account into a survivor */
-    public const string ACCOUNT_MERGE = 'accountMerge';
-
-    /** @var string Payload key: target user id for the set-admin command */
-    public const string FIELD_USER_ID = 'userId';
-
-    /** @var string Payload key: new admin flag for the set-admin command */
-    public const string FIELD_ADMIN = 'admin';
-
-    /** @var string Payload key: session cookie token the impersonation commands act on */
-    public const string FIELD_SESSION_TOKEN = 'sessionToken';
-
-    /** @var string Payload key: user id to impersonate for the impersonate-start command */
-    public const string FIELD_TARGET_USER_ID = 'targetUserId';
-
-    /** @var string Payload key: survivor user id for the account-merge command */
-    public const string FIELD_SURVIVOR_USER_ID = 'survivorUserId';
-
-    /** @var string Payload key: loser user id for the account-merge command */
-    public const string FIELD_LOSER_USER_ID = 'loserUserId';
-
-    /** @var string Reply key: identities re-pointed to the survivor by an account merge */
-    public const string FIELD_IDENTITIES_MOVED = 'identitiesMoved';
-
-    /** @var string Reply key: messages re-pointed to the survivor by an account merge */
-    public const string FIELD_MESSAGES_MOVED = 'messagesMoved';
-
-    /** @var string Payload key: whose password the operator asked an account merge to keep */
-    public const string FIELD_PASSWORD_FATE = 'passwordFate';
-
-    /** @var string Reply key: whose password an account merge actually kept */
-    public const string FIELD_PASSWORD_KEPT = 'passwordKept';
-
-    /** @var string Option name: whose password to keep, on the account-merge command line */
-    public const string OPTION_PASSWORD = 'password';
+    /** @var string Row family chat reports in an account merge: the messages it re-pointed */
+    public const string ROWS_MOVED_MESSAGES = 'messages';
 }

@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos CLI Commands"
   short_description: "The daemon does the work; the CLI initiates and prints"
-  default_prompt: "Use $hilos-cli-commands before adding or moving a Hilos CLI command, or before writing state from a CLI process that a running daemon also writes."
+  default_prompt: "Use $hilos-cli-commands before adding or moving a Hilos CLI command, before deciding whether it belongs to the framework or to one project, or before writing state from a CLI process that a running daemon also writes."

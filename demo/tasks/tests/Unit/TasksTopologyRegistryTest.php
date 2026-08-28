@@ -142,6 +142,9 @@ final class TasksTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_MOVED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_SESSION_REBIND => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                // The merge is mounted here as everywhere else and refuses, because this demo
+                // wires neither of its seams (HIL-729).
+                HilosSignalConstants::HILOS_ACCOUNT_MERGE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 // Sign-in's own frames (HIL-623). The users library waits for the throttle
                 // verdict and for the provider exchange it handed off; the four delivery
                 // agents and the two node-scoped auth agents answer on their own names.
@@ -204,10 +207,14 @@ final class TasksTopologyRegistryTest extends TestCase
         );
 
         $this->assertSame([
-            // Signing out and dismissing an ack write a session, so the sessions library
-            // owns them (HIL-710) - this demo adds no action of its own for either.
+            // Signing out, dismissing an ack and taking a user over all write a session, so
+            // the sessions library owns them (HIL-710, HIL-729) - this demo adds an action of
+            // its own for none of them. The impersonation pair is mounted here as everywhere
+            // else and refuses, because this demo wires no seam saying who may take over.
             HilosSignalConstants::HILOS_LOGOUT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_IMPERSONATE_START => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_IMPERSONATE_STOP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_DETECT_IDENTIFIER => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LOGIN => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_REGISTER => HilosAgentType::HILOS_USERS_LIBRARY,

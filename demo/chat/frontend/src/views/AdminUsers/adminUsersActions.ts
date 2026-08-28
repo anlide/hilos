@@ -12,8 +12,10 @@ import { actions } from '../../bootstrap/connection'
 // Backend action name (ChatSignalConstants::USER_UPDATE).
 const ADMIN_USER_UPDATE = 'user_update'
 
-// Backend page-action name (ChatSignalConstants::IMPERSONATE_START).
-const IMPERSONATE_START = 'impersonate_start'
+// Backend action name (HilosSignalConstants::HILOS_IMPERSONATE_START). Page-independent
+// and framework-owned since HIL-729: the sessions library answers it, and the takeover
+// moves this tab off the admin page it was asked from, so no page could own it.
+const IMPERSONATE_START = 'hilos_impersonate_start'
 
 /**
  * Rename a user as a tracked action. Own-change is decided server-side: the

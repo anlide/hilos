@@ -2,12 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\CLI\Commands;
+namespace Hilos\Core\CLI\Commands;
 
-use Demo\Chat\Constants\ChatCliCommands;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
-use Hilos\Core\CLI\Commands\CommandExecution;
-use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -17,11 +15,11 @@ use Hilos\Hilos;
 /**
  * SCAFFOLD/EXAMPLE of the test-only command mechanism (see docs/agents/cli/commands.md).
  *
- * Deletes the orphan settings row written by CreateOrphanSettingCommand, returning the catalog
- * key to its baseline (no DB row). The pair shows how a test sets up and tears down a state
- * through test-only CLI commands instead of idempotency hacks in the test itself.
+ * Deletes the orphan settings row written by {@see OrphanSettingTestCreateCommand}, returning
+ * the catalog key to its baseline (no DB row). The pair shows how a test sets up and tears down
+ * a state through test-only CLI commands instead of idempotency hacks in the test itself.
  */
-final class DeleteOrphanSettingCommand extends TestOnlyCommand
+final class OrphanSettingTestDeleteCommand extends TestOnlyCommand
 {
     /** @var string Catalog key whose example orphan row is removed */
     private const string ORPHAN_KEY = SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING;
@@ -31,7 +29,7 @@ final class DeleteOrphanSettingCommand extends TestOnlyCommand
 
     public function getName(): string
     {
-        return ChatCliCommands::DELETE_ORPHAN_SETTING;
+        return CliCommands::ORPHAN_SETTING_TEST_DELETE;
     }
 
     /**
@@ -42,7 +40,7 @@ final class DeleteOrphanSettingCommand extends TestOnlyCommand
     public function execution(): CommandExecution
     {
         return CommandExecution::cliOfflineWrite(
-            "temporary until HIL-729 moves chat's CLI into the framework: deletes the seeded cataloged row straight from the table",
+            'deletes the cataloged row its own create seeded, in the same daemon-less window that wrote it',
         );
     }
 

@@ -20,6 +20,8 @@ use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Registration\RegistrationReservationSweeper;
 use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
+use Hilos\Auth\Session\DTO\ImpersonateStartActionDTO;
+use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Auth\Session\DTO\LogoutActionDTO;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
@@ -38,19 +40,22 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
-use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\NotImplementedException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
+use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\View\Item\Session;
@@ -64,7 +69,11 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
+use Hilos\Users\AccountMergeCommandConstants;
+use Hilos\Users\AccountMergeSummary;
 use Hilos\Users\AdminCommandConstants;
+use Hilos\Users\DTO\AccountMergeResultSignalData;
+use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Utils\Helpers\TimeHelper;
 use Random\RandomException;
 use Throwable;
@@ -112,14 +121,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_SESSIONS_LIBRARY;
 
     /**
-     * The frames this library is addressed by: seven from the users library, one from the
+     * The frames this library is addressed by: seven from the users library, two from the
      * project holding the sockets.
      *
      * Routing takes the destination from whoever declares a name here, so this list IS the
      * move: the frames the users library has always sent to "the holder" now arrive at an
      * agent of the framework's own, and nothing about their senders changed (HIL-710).
      * {@see HilosSignalConstants::HILOS_SESSION_STATE} is deliberately absent - it is the
-     * frame this library SENDS, and the project declares it.
+     * frame this library SENDS, and the project declares it. So is
+     * {@see HilosSignalConstants::HILOS_ACCOUNT_MERGE_RESULT}, the answer to the ninth.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
@@ -130,33 +140,72 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_MOVED => AuthRegistrationWaitMovedSignalData::class,
         HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => AuthRecoveryWaitMovedSignalData::class,
         HilosSignalConstants::HILOS_SESSION_REBIND => SessionRebindSignalData::class,
+        HilosSignalConstants::HILOS_ACCOUNT_MERGE => AccountMergeSignalData::class,
     ];
 
     /**
-     * The two page-independent controls of the sign-in surface, by wire name.
+     * The page-independent controls of the sign-in surface, by wire name.
      *
-     * Both resolve their session from the ACTING connection and take no payload, so a
-     * client can only ever end or dismiss its own. They are the library's rather than a
-     * project's because what they write is a session (HIL-710); the controls that judge a
-     * project field - stopping an impersonation, for one - stay where that field is.
+     * Every one of them resolves its session from the ACTING connection, so a client can
+     * only ever end, dismiss or vacate its own; the one payload among them names whom to
+     * become and still cannot name who is asking. They are the library's rather than a
+     * project's because what they write is a session (HIL-710, HIL-729).
+     *
+     * The impersonation pair judges a project field on the way in - the flag that says
+     * "administrator" - and that used to be the reason it stayed in the project. It is not a
+     * reason to own the action, only to ask: the question goes back over
+     * {@see self::assertImpersonationAllowed()} while the write stays here, which is the
+     * same split the grant pair above already runs on.
      */
     public const array AGENT_ACTIONS = [
         HilosSignalConstants::HILOS_LOGOUT => LogoutActionDTO::class,
         HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
+        HilosSignalConstants::HILOS_IMPERSONATE_START => ImpersonateStartActionDTO::class,
+        HilosSignalConstants::HILOS_IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
     ];
 
     /**
-     * The operator path to the first administrator (HIL-609), mounted here because the
-     * command ends in a session bind and sessions are this library's.
+     * The six operator paths that end in a SESSION being told who it is now, mounted here
+     * because sessions are this library's.
      *
-     * Every project that registers the library answers this command, and one that mints no
-     * users answers a REFUSAL from {@see ensureAdminUser()} rather than nothing at all. That
-     * is the honest outcome for an operator who typed it into the wrong installation: before
-     * the move the name was carried by whichever agent chose to, so a project that did not
-     * left the command socket silent - which reads as a hang, not as a no.
+     * {@see CliCommands::ADMIN_CREATE} (HIL-609) names a browser by its cookie and binds it.
+     * The grant pair (HIL-553, moved here by HIL-729) names a user id and flips a flag - and
+     * it belongs beside its sibling rather than on the index agent, because the flag changes
+     * what the person's open tabs may show, and only this library knows which sockets those
+     * are and how to make it say so ({@see self::publishSessionState()}). While the pair
+     * stood on the index agent every project wrote that announcement itself, and the three
+     * copies said three different things: chat's carried the server clock and the pending
+     * ack, the other two carried neither.
+     *
+     * The impersonation pair (HIL-166, moved here by HIL-729) is the third path and the
+     * only one that does not write a flag: it writes the session itself, naming another
+     * person as who it acts for, and the administrator it may go back to on the row behind
+     * that. It shares its whole body with the browser control of the same name - one core,
+     * two ways in - which is why the wire name is one on both sides.
+     *
+     * The merge ({@see CliCommands::ACCOUNT_MERGE}, HIL-378, moved here by HIL-729) is the
+     * last, and it reaches a session by consequence rather than by aim: what it asks for is
+     * that two accounts become one, and the loser's open sessions have to be signed out
+     * before that is true. It is also the one command with a second way in - an admin table
+     * submits it as a page action and the page forwards it on
+     * {@see HilosSignalConstants::HILOS_ACCOUNT_MERGE} - so the two entrances share one core
+     * and differ only in whom the answer goes to.
+     *
+     * Every project that registers the library answers all six, and one that wires no
+     * seam answers a REFUSAL ({@see ensureAdminUser()}, {@see applyAdminGrant()},
+     * {@see assertImpersonationAllowed()}, {@see assertMergeable()}) rather than nothing at
+     * all. That is the honest outcome for an operator who typed it into the wrong
+     * installation: before the move the name was carried by whichever agent chose to, so a
+     * project that did not left the command socket silent - which reads as a hang, not as a
+     * no.
      */
     public const array AGENT_COMMANDS = [
         CliCommands::ADMIN_CREATE,
+        CliCommands::ADMIN_GRANT,
+        CliCommands::ADMIN_REVOKE,
+        CliCommands::IMPERSONATE_START,
+        CliCommands::IMPERSONATE_STOP,
+        CliCommands::ACCOUNT_MERGE,
     ];
 
     /** @var int Times a rotation re-mints a token another session already holds before giving up */
@@ -697,7 +746,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * project's half of {@see self::handleAdminCreateCommand()}.
      *
      * A seam with a refusing default rather than an abstract method, the shape
-     * {@see AbstractHilosIndexAgent::applyAdminGrant()} uses: {@see self::AGENT_COMMANDS}
+     * {@see self::applyAdminGrant()} uses: {@see self::AGENT_COMMANDS}
      * stands on this class, so every project subclassing it mounts the command whether or
      * not it has anybody to mint - the chat demo, which has a login of its own, is one. An
      * abstract method would make each of them write a body for a command they never expect
@@ -719,6 +768,142 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     protected function ensureAdminUser(?int $userId): int
     {
         throw new NotImplementedException('Admin minting is not wired in this project');
+    }
+
+    /**
+     * Writes one user's admin flag and tells that user's open tabs - the agent half of
+     * {@see CliCommands::ADMIN_GRANT} and {@see CliCommands::ADMIN_REVOKE} (HIL-553).
+     *
+     * Both wire names land here and the flag comes from the payload rather than from the
+     * command name, so the two commands are one handler: grant and revoke differ in nothing
+     * but the boolean, and a second copy of the lookup would be a second place to get it
+     * wrong.
+     *
+     * The write itself belongs to the project ({@see self::applyAdminGrant()}), which is
+     * also where an unknown user is refused: the framework does not know the collection the
+     * project keeps its users in. Any failure from there - an unwired project, an unknown
+     * user, a database error - becomes one error reply, because a CLI parked on the command
+     * socket must learn the outcome rather than time out.
+     *
+     * The ANNOUNCEMENT is not the project's, and that is what the move to this library
+     * bought (HIL-729): a flag written in silence reaches the browser only on the next
+     * reload, and until then a fresh administrator is shown no way in. Saying it out loud
+     * needs the person's sockets and the session behind each of them, which is exactly what
+     * this library holds - so the flag is followed by one state frame per live session, the
+     * same frame every other ending of a session travels on. The project's own handler
+     * re-sends the identity from it and re-asks its open pages the access question
+     * ({@see PageAccessReassessment}), once per frame, as it already does for a sign-in.
+     *
+     * @param CommandRequestDTO $data Command request carrying the target user id and admin flag
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     * @throws HilosException On runtime failure while reading the person's live connections
+     */
+    private function handleAdminGrantCommand(CommandRequestDTO $data): void
+    {
+        // The command socket authenticates nobody, so the payload is whatever was typed at
+        // it; a missing id must not fall through to a user id of 0.
+        // external-boundary: an operator's command line, refused a line below
+        $userId = $data->payload[AdminCommandConstants::FIELD_USER_ID] ?? null;
+        if (!is_int($userId) || $userId <= 0) {
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                'Admin grant needs a positive userId',
+            ));
+
+            return;
+        }
+
+        // external-boundary: an operator's command line; absent reads as a revoke, which is
+        // the safe half of the pair to default to
+        $admin = (bool)($data->payload[AdminCommandConstants::FIELD_ADMIN] ?? false);
+
+        try {
+            $this->applyAdminGrant($userId, $admin);
+        } catch (Throwable $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+
+            return;
+        }
+
+        $this->announceAdminGrant($userId);
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            AdminCommandConstants::FIELD_USER_ID => $userId,
+            AdminCommandConstants::FIELD_ADMIN => $admin,
+        ]));
+    }
+
+    /**
+     * Restates every live session of one user, so their open tabs learn the flag changed.
+     *
+     * A restatement rather than a change: the frame carries the session as it is now, and
+     * the project handler on the other end re-sends the identity and re-decides the pages
+     * from it. Nothing about the session itself moved, which is why no rotation is named and
+     * no action is answered - what the frame does carry is the ack the sockets are already
+     * holding, because a response that left it out would clear an announcement the person has
+     * not read yet (HIL-422).
+     *
+     * The sessions are found through the LIVE CONNECTIONS rather than through the session
+     * table, and the two are not the same question: what has to be told is the tabs that are
+     * open, and a session row this node holds no socket for names nobody while still costing
+     * the project a page sweep. It is also the node limit the sign-out seam has - a tab held
+     * open elsewhere in a cluster learns the flag when its own node reads the row - and it is
+     * what lets the grant answer in a worker that has no session table loaded.
+     *
+     * The registration step is null throughout, and truthfully so: the frame reaches sockets
+     * that carry a signed-in person, and signing in is what releases that step.
+     *
+     * @param int $userId User whose sessions are restated
+     * @throws InvalidArgumentException When the state frame cannot be named
+     * @throws HilosException On runtime failure
+     */
+    private function announceAdminGrant(int $userId): void
+    {
+        $connections = Hilos::$rt?->sessionConnectionsSource();
+        if ($connections === null) {
+            return;
+        }
+
+        $keysByToken = [];
+        foreach ($connections->findByUser($userId) as $acceptKey => $connection) {
+            $sessionToken = $connection->sessionToken;
+            if ($sessionToken !== null) {
+                $keysByToken[$sessionToken][] = $acceptKey;
+            }
+        }
+
+        foreach ($keysByToken as $sessionToken => $acceptKeys) {
+            $this->publishSessionState(new SessionStateSignalData(
+                sessionToken: (string)$sessionToken,
+                userId: $userId,
+                acceptKeys: $acceptKeys,
+                pendingAck: $this->sessionPendingAck((string)$sessionToken),
+            ));
+        }
+    }
+
+    /**
+     * Writes the admin flag of one user - the project's half of the grant pair.
+     *
+     * A seam with a refusing default rather than an abstract method, the shape
+     * {@see self::ensureAdminUser()} uses and for the same reason: the mount stands on this
+     * class, so every project subclassing it answers the command whether or not it keeps a
+     * flag of its own to write. The refusal reaches the operator as the command's error
+     * reply, which is the honest answer to a command aimed at the wrong installation.
+     *
+     * An implementation writes the row and NOTHING else. Telling the person's browsers is
+     * the framework's ({@see self::announceAdminGrant()}); before HIL-729 it was part of
+     * this seam, and each of the three demos wrote its own version of the announcement.
+     * An unknown user is the implementation's to refuse, by throwing.
+     *
+     * @param int $userId Target user id, already validated as positive
+     * @param bool $admin New admin flag
+     * @throws NotImplementedException When the project has not wired the grant
+     * @throws HilosException Whatever the project's grant implementation raises, an unknown user among it
+     */
+    protected function applyAdminGrant(int $userId, bool $admin): void
+    {
+        throw new NotImplementedException('Admin grant is not wired in this project');
     }
 
     /**
@@ -1372,8 +1557,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Routes one frame addressed to this library - seven from the users library, one back
-     * over the project seam (HIL-622, HIL-710).
+     * Routes one frame addressed to this library - seven from the users library, two back
+     * over the project seam (HIL-622, HIL-710, HIL-729).
      *
      * The switch is the framework's rather than a project's because what each frame means
      * is: the users library ends a ceremony by saying what happened, and the order this
@@ -1489,6 +1674,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_ACCOUNT_MERGE:
+                if (!$data->data instanceof AccountMergeSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountMergeSignalData::class, $data->data);
+                }
+
+                $this->handleAccountMergeRequest($data->data);
+
+                return;
+
             default:
                 throw new AgentUnknownSignalException($name);
         }
@@ -1590,16 +1784,22 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Runs one of the two page-independent controls of the sign-in surface.
+     * Runs one of the page-independent controls of the sign-in surface.
      *
-     * Both take their session from the ACTING connection, read off the project's own
-     * connection rows - which this library may read but never write. A stale accept key or
-     * a connection belonging to no session is a no-op, because there is nothing to end or
-     * dismiss and refusing would only tell a closed tab about it.
+     * Every one of them takes its session from the ACTING connection, read off the project's
+     * own connection rows - which this library may read but never write. A stale accept key
+     * or a connection belonging to no session is a no-op, because there is nothing to end,
+     * dismiss or vacate and refusing would only tell a closed tab about it.
      *
-     * Neither answers here. The ending is a session state, which the project puts on the
-     * wire, so the answer is carried in that frame and leaves behind the identity it
-     * announces (HIL-622).
+     * None of them answers here. What each ends in is a session state, which the project
+     * puts on the wire, so the answer is carried in that frame and leaves behind the
+     * identity it announces (HIL-622). The impersonation pair is the same shape - a takeover
+     * a browser asked for is answered by the identity it gets back, not by an ack - so the
+     * correlation id it hands the core is null; only an operator on the command socket has
+     * one (HIL-729).
+     *
+     * A refused takeover is the exception, and it needs no frame of its own: a guard throws,
+     * and the dispatcher turns that into the action-fail ack the caller is already awaiting.
      *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param string $action Owned action name from {@see AGENT_ACTIONS}
@@ -1607,7 +1807,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @return ?ActionReplyDTO Always null: the project answers on the state frame instead
      * @throws AgentUnknownActionException When the action is not one this library owns
      * @throws InvalidActionPayloadException When the payload does not match the action name
+     * @throws ValidationException When an impersonation guard rejects the request
      * @throws InvalidArgumentException When the state frame cannot be named
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
      * @throws HilosException When ending the session exposes database or runtime failure
      */
     public function onAgentAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
@@ -1634,6 +1836,26 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return null;
 
+            case HilosSignalConstants::HILOS_IMPERSONATE_START:
+                if (!$dto instanceof ImpersonateStartActionDTO) {
+                    throw new InvalidActionPayloadException($action, ImpersonateStartActionDTO::class, $dto);
+                }
+                if ($sessionToken !== null && $sessionToken !== '') {
+                    $this->startImpersonation($sessionToken, $dto->targetUserId, $acceptKey, null);
+                }
+
+                return null;
+
+            case HilosSignalConstants::HILOS_IMPERSONATE_STOP:
+                if (!$dto instanceof ImpersonateStopActionDTO) {
+                    throw new InvalidActionPayloadException($action, ImpersonateStopActionDTO::class, $dto);
+                }
+                if ($sessionToken !== null && $sessionToken !== '') {
+                    $this->stopImpersonation($sessionToken, $acceptKey, null);
+                }
+
+                return null;
+
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
         }
@@ -1642,9 +1864,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Routes a CLI command sent to this library.
      *
-     * {@see CliCommands::ADMIN_CREATE} is the only one it mounts; anything else gets an
-     * error reply rather than silence, because the socket parks the caller until it is
-     * answered.
+     * The six names of {@see self::AGENT_COMMANDS}; anything else gets an error reply
+     * rather than silence, because the socket parks the caller until it is answered.
      *
      * @param CommandRequestDTO $data Command request payload
      * @param string $source Signal source (unused)
@@ -1659,7 +1880,475 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
+        if ($data->command === CliCommands::ADMIN_GRANT || $data->command === CliCommands::ADMIN_REVOKE) {
+            $this->handleAdminGrantCommand($data);
+
+            return;
+        }
+
+        if ($data->command === CliCommands::IMPERSONATE_START) {
+            $this->handleImpersonateStartCommand($data);
+
+            return;
+        }
+
+        if ($data->command === CliCommands::IMPERSONATE_STOP) {
+            $this->handleImpersonateStopCommand($data);
+
+            return;
+        }
+
+        if ($data->command === CliCommands::ACCOUNT_MERGE) {
+            $this->handleAccountMergeCommand($data);
+
+            return;
+        }
+
         $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+    }
+
+    /**
+     * Runs {@see CliCommands::IMPERSONATE_START} for an operator: reads the session token and
+     * the target off the command payload and hands the core the correlation id to answer on.
+     *
+     * Only a REFUSAL is answered here. What the session actually became is reported from
+     * where it was written ({@see self::replyToRebind()}), which carries the token the
+     * session answers to afterwards - a rotated one, when the bind rotated it. Answering
+     * "accepted" from here instead would make a mistyped token look like a success.
+     *
+     * Every failure is caught, including the project's own from
+     * {@see self::assertImpersonationAllowed()}: a command failure that reached the worker
+     * loop would leave the operator parked on the socket with nothing coming back.
+     *
+     * @param CommandRequestDTO $data Command request carrying the session token and target user id
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    private function handleImpersonateStartCommand(CommandRequestDTO $data): void
+    {
+        // The command socket authenticates nobody, so the payload is whatever was typed at
+        // it; an absent token names no session and an absent target no user, and the guards
+        // below refuse both rather than reading them as a blank session and a user id of 0.
+        // external-boundary: an operator's command line, refused by the guards below
+        $sessionToken = (string)($data->payload[AdminCommandConstants::FIELD_SESSION_TOKEN] ?? '');
+        $targetUserId = (int)($data->payload[AdminCommandConstants::FIELD_TARGET_USER_ID] ?? 0);
+
+        try {
+            $this->startImpersonation($sessionToken, $targetUserId, null, $data->correlationId);
+        } catch (Throwable $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+        }
+    }
+
+    /**
+     * Runs {@see CliCommands::IMPERSONATE_STOP} for an operator: reads the session token off
+     * the command payload and hands the core the correlation id to answer on.
+     *
+     * Answers a refusal only, for the reason {@see self::handleImpersonateStartCommand()}
+     * gives; the administrator the session goes back to is read off the row and reported
+     * from there.
+     *
+     * @param CommandRequestDTO $data Command request carrying the session token
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    private function handleImpersonateStopCommand(CommandRequestDTO $data): void
+    {
+        // external-boundary: an operator's command line, refused by the guards below
+        $sessionToken = (string)($data->payload[AdminCommandConstants::FIELD_SESSION_TOKEN] ?? '');
+
+        try {
+            $this->stopImpersonation($sessionToken, null, $data->correlationId);
+        } catch (Throwable $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+        }
+    }
+
+    /**
+     * Makes one admin session act as another user - the core behind both ways in (HIL-166).
+     *
+     * Guards, in order: the session must exist; it must carry a user at all; that user must
+     * be allowed to take the target over, which is the project's answer
+     * ({@see self::assertImpersonationAllowed()}); the session must not already be
+     * impersonating (no nesting); and the target must differ from the person asking.
+     *
+     * The order is what keeps the refusals honest rather than an accident of writing. The
+     * project seam stands where the admin check stood before the move, so a session that is
+     * already impersonating still fails as "not an admin session" - its current user is the
+     * non-admin target, not the administrator behind it - and never gets far enough to learn
+     * whether some other user id exists.
+     *
+     * The write is {@see self::rebindSession()}, called rather than signalled: before HIL-729
+     * the guards ran in a project agent and had to ASK for the bind over a frame, and the
+     * whole of what this move buys is that the two halves are now one process. The frame it
+     * builds is unchanged, marker and all, which is why the ordering that frame documents -
+     * the impersonator written before the bind - still holds.
+     *
+     * @param string $sessionToken Session cookie token of the acting admin session
+     * @param int $targetUserId User id to impersonate
+     * @param ?string $initiatorAcceptKey Accept key of the admin's connection, or null for the CLI path
+     * @param ?string $correlationId Command correlation id to answer the operator on, or null for a browser
+     * @throws ValidationException When a guard rejects the request
+     * @throws NotImplementedException When the project has not wired the impersonation seam
+     * @throws InvalidArgumentException When the state frame or the reply cannot be named
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws HilosException On database or runtime failure
+     */
+    private function startImpersonation(
+        string $sessionToken,
+        int $targetUserId,
+        ?string $initiatorAcceptKey,
+        ?string $correlationId,
+    ): void {
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+        if ($session === null) {
+            throw new ValidationException('No such session');
+        }
+
+        $adminId = $session->userId;
+        if ($adminId === null) {
+            throw new ValidationException('Session is not an admin session');
+        }
+
+        $this->assertImpersonationAllowed($adminId, $targetUserId);
+
+        if ($session->impersonatorUserId !== null) {
+            throw new ValidationException('Already impersonating; stop impersonating first');
+        }
+
+        if ($targetUserId === $adminId) {
+            throw new ValidationException('Cannot impersonate yourself');
+        }
+
+        $this->rebindSession(new SessionRebindSignalData(
+            sessionToken: $sessionToken,
+            userId: $targetUserId,
+            impersonatorUserId: $adminId,
+            initiatorAcceptKey: $initiatorAcceptKey,
+            correlationId: $correlationId,
+        ));
+
+        $this->logAgentInfo('impersonate_start ' . json_encode([
+            'event' => 'impersonate_start',
+            'admin' => $adminId,
+            'target' => $targetUserId,
+            'session' => $session->id,
+        ]));
+    }
+
+    /**
+     * Returns one impersonating session to the administrator behind it - the inverse of
+     * {@see self::startImpersonation()} and the core behind both ways in (HIL-166).
+     *
+     * No seam and no project field: the administrator to go back to is on the session's own
+     * marker, so nobody has to be asked whether this is allowed. Ending a takeover is
+     * allowed to whoever is inside it, exactly as signing out is.
+     *
+     * @param string $sessionToken Session cookie token of the impersonating session
+     * @param ?string $initiatorAcceptKey Accept key of the requesting connection, or null for the CLI path
+     * @param ?string $correlationId Command correlation id to answer the operator on, or null for a browser
+     * @throws ValidationException When the session is missing or not impersonating
+     * @throws InvalidArgumentException When the state frame or the reply cannot be named
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws HilosException On database or runtime failure
+     */
+    private function stopImpersonation(
+        string $sessionToken,
+        ?string $initiatorAcceptKey,
+        ?string $correlationId,
+    ): void {
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+        if ($session === null) {
+            throw new ValidationException('No such session');
+        }
+
+        $impersonatorId = $session->impersonatorUserId;
+        if ($impersonatorId === null) {
+            throw new ValidationException('Session is not impersonating');
+        }
+
+        // The identity being vacated, read before the rebind restores the administrator.
+        $vacatedUserId = $session->userId;
+
+        $this->rebindSession(new SessionRebindSignalData(
+            sessionToken: $sessionToken,
+            userId: $impersonatorId,
+            impersonatorUserId: null,
+            initiatorAcceptKey: $initiatorAcceptKey,
+            correlationId: $correlationId,
+        ));
+
+        $this->logAgentInfo('impersonate_stop ' . json_encode([
+            'event' => 'impersonate_stop',
+            'admin' => $impersonatorId,
+            'restoredUser' => $impersonatorId,
+            'vacatedUser' => $vacatedUserId,
+            'session' => $session->id,
+        ]));
+    }
+
+    /**
+     * Decides whether one user may take another over - the project's half of the
+     * impersonation pair.
+     *
+     * A seam with a refusing default rather than an abstract method, the shape
+     * {@see self::applyAdminGrant()} uses and for the same reason: the mount stands on this
+     * class, so every project subclassing it offers the control whether or not it keeps a
+     * privilege of its own to judge. The refusal reaches an operator as the command's error
+     * reply and a browser as the action's fail ack.
+     *
+     * BOTH questions are the project's and both are answered by throwing: whether the asker
+     * is privileged - the flag that says so is a project column no framework library can see
+     * - and whether the target exists at all, since the users are the project's collection.
+     * The framework asks them together because a caller allowed to take over a user it
+     * cannot name has learned nothing, and one that may not is owed the same answer whatever
+     * it named.
+     *
+     * @param int $adminUserId User the acting session currently carries
+     * @param int $targetUserId User that session asks to act as
+     * @throws NotImplementedException When the project has not wired the impersonation seam
+     * @throws HilosException Whatever the project's implementation raises, an unknown user among it
+     */
+    protected function assertImpersonationAllowed(int $adminUserId, int $targetUserId): void
+    {
+        throw new NotImplementedException('Impersonation is not wired in this project');
+    }
+
+    /**
+     * Runs {@see CliCommands::ACCOUNT_MERGE} for an operator: reads the two accounts off the
+     * command payload, merges them, and answers the parked socket with what moved.
+     *
+     * The operator IS answered from here, unlike the impersonation pair: nothing about the
+     * result reaches anybody else, so there is no later place that knows it better. What a
+     * browser gets instead is {@see self::handleAccountMergeRequest()}.
+     *
+     * Every failure is caught, the project's seams among them: a command failure that reached
+     * the worker loop would leave the operator parked on the socket with nothing coming back.
+     *
+     * @param CommandRequestDTO $data Command request carrying the survivor and loser user ids
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    private function handleAccountMergeCommand(CommandRequestDTO $data): void
+    {
+        // external-boundary: an operator's command line, refused by the guards below
+        $survivorId = (int)($data->payload[AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID] ?? 0);
+        $loserId = (int)($data->payload[AccountMergeCommandConstants::FIELD_LOSER_USER_ID] ?? 0);
+        // An absent fate is the operator not naming one, which is a legitimate request and not
+        // a missing field (HIL-692): the merge refuses on its own if the two accounts turn out
+        // to need one. An unreadable value is the command's to reject before it sends, so both
+        // absence and nonsense land on the same null and the guards below decide what it means.
+        $namedFate = $data->payload[AccountMergeCommandConstants::FIELD_PASSWORD_FATE] ?? null;
+        $passwordFate = is_string($namedFate) ? PasswordFate::tryFrom($namedFate) : null;
+
+        try {
+            $summary = $this->mergeAccounts($survivorId, $loserId, $passwordFate);
+        } catch (Throwable $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, $summary->toArray()));
+    }
+
+    /**
+     * Runs the merge a project's admin surface asked for, and hands the outcome back to it.
+     *
+     * The second way into one core (HIL-378, HIL-729). The person who asked is on a page of
+     * the project's, waiting under an ack name only that project knows, so what goes back is
+     * the outcome and their accept key - and the project says it out loud, exactly as it does
+     * for a session state.
+     *
+     * No password fate travels with it and none is asked for: the admin surface has no
+     * control that names one (HIL-411), so two accounts that each hold a password are refused
+     * here and merged from a command line instead.
+     *
+     * @param AccountMergeSignalData $request Both accounts and the connection waiting on the answer
+     * @throws InvalidArgumentException When the answering frame cannot be named
+     */
+    private function handleAccountMergeRequest(AccountMergeSignalData $request): void
+    {
+        try {
+            $summary = $this->mergeAccounts($request->survivorUserId, $request->loserUserId, null);
+        } catch (Throwable $e) {
+            $this->answerAccountMerge(new AccountMergeResultSignalData($request->acceptKey, $e->getMessage()));
+
+            return;
+        }
+
+        $this->answerAccountMerge(new AccountMergeResultSignalData($request->acceptKey, $summary));
+    }
+
+    /**
+     * Sends one merge outcome back over the seam it arrived on.
+     *
+     * @param AccountMergeResultSignalData $result What the merge did, or why it did nothing
+     * @throws InvalidArgumentException When the frame cannot be named
+     */
+    private function answerAccountMerge(AccountMergeResultSignalData $result): void
+    {
+        $this->sendToAgent(HilosSignalConstants::HILOS_ACCOUNT_MERGE_RESULT, $result);
+    }
+
+    /**
+     * Folds one account into another and reports what moved - the core behind both ways in
+     * (HIL-378).
+     *
+     * The survivor absorbs the loser's ways in and the rows the project keeps for it, then the
+     * loser is tombstoned and its live sessions are signed out. It runs here rather than in a
+     * project agent because of that last step: the sessions are this library's, and before
+     * HIL-729 the merge had to ASK for each sign-out over a frame.
+     *
+     * Guards, in order: the two ids must differ, which is the one refusal that needs nobody's
+     * help; then the project answers whether these two accounts may be merged at all
+     * ({@see self::assertMergeable()}), because existence and a tombstone are its columns;
+     * then the passwords are weighed, because the identities are the framework's. One guard
+     * is about the merge rather than the ids (HIL-692): an account holds at most one password,
+     * so two accounts that each have one cannot both be right and this refuses until the
+     * operator says which stays. While at most one of the two has a password, that one
+     * survives and the command keeps the shape it always had.
+     *
+     * The transfer is one explicit transaction so a half-merged account can never survive a
+     * mid-way failure: the identity re-point and everything the project moves either all
+     * commit or all roll back. Ordering inside it is free - the loser is tombstoned, never
+     * deleted, so no foreign-key cascade can fire.
+     *
+     * What comes back is the OUTCOME and not the request: the account is asked afterwards
+     * which password it now carries, so a fate naming an account that had none reports the
+     * truth ({@see PasswordFate::NONE}) rather than the word that was typed.
+     *
+     * @param int $survivorId Survivor user id that absorbs the loser
+     * @param int $loserId Loser user id folded into the survivor
+     * @param ?PasswordFate $passwordFate Whose password to keep, or null when nobody named one
+     * @return AccountMergeSummary Counts of what moved, and whose password the account kept
+     * @throws ValidationException When a guard rejects the merge, the project's among them
+     * @throws NotImplementedException When the project has not wired the merge seams
+     * @throws InvalidArgumentException When a sign-out frame cannot be named
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws HilosException On database or truth-source failure (transaction rolled back)
+     */
+    private function mergeAccounts(int $survivorId, int $loserId, ?PasswordFate $passwordFate): AccountMergeSummary
+    {
+        if ($survivorId === $loserId) {
+            throw new ValidationException('Cannot merge a user into itself');
+        }
+
+        $this->assertMergeable($survivorId, $loserId);
+
+        if ($passwordFate === null && Hilos::$db->identities->passwordFateNeeded($loserId, $survivorId)) {
+            throw new ValidationException('Both accounts have a password: pass --password=survivor|loser|none');
+        }
+
+        $survivorPasswordId = Hilos::$db->identities->findPasswordByUser($survivorId)?->id;
+
+        Database::transactionStart();
+        try {
+            $identitiesMoved = Hilos::$db->identities->rePointToUser($loserId, $survivorId, $passwordFate);
+            $rowsMoved = $this->applyAccountMerge($survivorId, $loserId);
+            Database::transactionCommit();
+        } catch (HilosException $e) {
+            try {
+                Database::transactionRollback();
+            } catch (HilosException) {
+                // A failing rollback would replace the error that made the merge fail
+            }
+
+            throw $e;
+        }
+
+        $keptPasswordId = Hilos::$db->identities->findPasswordByUser($survivorId)?->id;
+        $passwordKept = match (true) {
+            $keptPasswordId === null => PasswordFate::NONE,
+            $keptPasswordId === $survivorPasswordId => PasswordFate::SURVIVOR,
+            default => PasswordFate::LOSER,
+        };
+
+        $this->logAgentInfo('account_merge ' . json_encode([
+            'event' => 'account_merge',
+            'survivor' => $survivorId,
+            'loser' => $loserId,
+            AccountMergeCommandConstants::FIELD_IDENTITIES_MOVED => $identitiesMoved,
+            AccountMergeCommandConstants::FIELD_ROWS_MOVED => $rowsMoved,
+            AccountMergeCommandConstants::FIELD_PASSWORD_KEPT => $passwordKept->value,
+        ]));
+
+        $this->killUserSessions($loserId);
+
+        return new AccountMergeSummary($identitiesMoved, $rowsMoved, $passwordKept);
+    }
+
+    /**
+     * Signs out every live session of a merged loser (HIL-378).
+     *
+     * A tombstoned loser must not keep acting through an open tab. Each of its sessions is
+     * reverted to anonymous through {@see self::rebindSession()}, called rather than
+     * signalled, because since HIL-729 the merge already runs in the process that owns them.
+     * The loser is deactivated by the tombstone, so re-authentication is impossible.
+     *
+     * The impersonation marker is carried through unchanged rather than named null: a session
+     * someone was impersonating through is being signed out, not un-impersonated.
+     *
+     * Runs outside the merge transaction: the transfer is already durable, and nothing here
+     * may participate in the rollback path.
+     *
+     * @param int $loserId Merged loser user id whose sessions are closed
+     * @throws InvalidArgumentException When a state frame cannot be named
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws HilosException When reading or reverting the loser's sessions fails
+     */
+    private function killUserSessions(int $loserId): void
+    {
+        foreach (Hilos::$db->sessions->findByUserId($loserId) as $session) {
+            $this->rebindSession(new SessionRebindSignalData(
+                sessionToken: $session->token,
+                userId: null,
+                impersonatorUserId: $session->impersonatorUserId,
+            ));
+        }
+    }
+
+    /**
+     * Decides whether these two accounts may be merged at all - the project's first half of
+     * the merge pair.
+     *
+     * A seam with a refusing default, the shape {@see self::assertImpersonationAllowed()}
+     * uses and for the same reason: the mount stands on this class, so an operator who typed
+     * the command into a project that wires nothing hears a refusal rather than silence.
+     *
+     * BOTH accounts are the project's to vouch for: whether a user id names anybody is
+     * answered by its own collection, and so is whether that account has already been folded
+     * into a third. The framework asks before it weighs the passwords, so an id that names
+     * nobody is refused as such rather than as a password question.
+     *
+     * @param int $survivorUserId Survivor user id that would absorb the loser
+     * @param int $loserUserId Loser user id that would be folded in
+     * @throws NotImplementedException When the project has not wired the merge seams
+     * @throws HilosException Whatever the project's implementation raises, an unknown user among it
+     */
+    protected function assertMergeable(int $survivorUserId, int $loserUserId): void
+    {
+        throw new NotImplementedException('Account merge is not wired in this project');
+    }
+
+    /**
+     * Moves everything this project keeps for the loser onto the survivor - its second half.
+     *
+     * Called INSIDE the merge transaction, between the identity re-point and the commit, so
+     * whatever it writes rolls back with the rest. The tombstone belongs here too: which row
+     * marks an account as folded away is the project's column, and the framework only needs
+     * the count of what travelled.
+     *
+     * The tally is a map rather than a number because the framework cannot know what a
+     * project keeps for a person - in a chat, the messages. It goes back to the operator
+     * under the project's own family names ({@see AccountMergeCommandConstants::FIELD_ROWS_MOVED}).
+     *
+     * @param int $survivorUserId Survivor user id that absorbs the loser
+     * @param int $loserUserId Loser user id folded into the survivor
+     * @return array<string, int> Rows re-pointed, per family this project names
+     * @throws NotImplementedException When the project has not wired the merge seams
+     * @throws HilosException Whatever the project's implementation raises while moving its rows
+     */
+    protected function applyAccountMerge(int $survivorUserId, int $loserUserId): array
+    {
+        throw new NotImplementedException('Account merge is not wired in this project');
     }
 
     /**

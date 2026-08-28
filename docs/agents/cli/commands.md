@@ -45,6 +45,33 @@ reason in its `execution()` declaration. See
 | `daemon:ping` | `daemon` | Probe the command channel itself |
 | `help` | `cli-read` | List available commands — runs while the server is still down |
 
+## Account and session commands
+
+Every one of them is `daemon`: the CLI sends a request and prints the reply, because what
+they change lives where the accounts and the sessions do. All six are the framework's since
+HIL-729, and all six are answered by the sessions library in every project, because each of
+them ends in a session being told who it is now — the merge by consequence, since a folded-away
+account's open tabs have to be signed out before the merge is true. What a project is asked is
+a seam apiece: whether the takeover is allowed, and — for the merge — whether these two
+accounts may be merged at all plus what this project keeps for a person. A project that wires
+no seam refuses rather than falling silent.
+
+| Command | Site | Description |
+|---|---|---|
+| `admin:grant <userId>` | `daemon` | Grant a user the Hilos admin flag |
+| `admin:revoke <userId>` | `daemon` | Take the Hilos admin flag away from a user |
+| `admin:create <sessionToken>` | `daemon` | Make a browser session an administrator, minting its user when it has none |
+| `impersonate:start <sessionToken> <userId>` | `daemon` | Make an admin session act as another user |
+| `impersonate:stop <sessionToken>` | `daemon` | Return an impersonating session to the administrator behind it |
+| `account:merge <survivorId> <loserId> [--password=…]` | `daemon` | Fold one populated account into another |
+
+`account:merge` reports what moved as a map rather than a count: the framework moves the
+sign-in identities itself and asks the project to move the rows only it knows about, so the
+reply carries the project's own tally under the project's own names — in chat, `messages`.
+It is also the one command of the six with a second way in: an admin table submits the same
+merge as a page action, the page forwards it to the library on `hilos_account_merge`, and the
+outcome comes back on `hilos_account_merge_result` for the project to ack under its own name.
+
 ## Test-only commands
 
 Some operations are irreversible (deleting an orphan settings row) or time-delayed
@@ -77,22 +104,24 @@ is the only thing the gate asks.
 
 A project registers its own commands by subclassing `CliManager` and overriding
 `registerProjectCommands()`, calling `addCommand()` for each; the project's `cli.php` then
-news the project manager:
+names the project manager instead of `CliManager`:
 
 ```php
-final class ChatCliManager extends CliManager
+final class ProjectCliManager extends CliManager
 {
     protected function registerProjectCommands(): void
     {
-        $this->addCommand(new CreateOrphanSettingCommand());
-        $this->addCommand(new DeleteOrphanSettingCommand());
+        $this->addCommand(new ReindexCatalogCommand());
     }
 }
 ```
 
-Worked example (chat): `test:orphan-setting:create` / `test:orphan-setting:delete` write and
-remove an orphan settings row — a demonstration of the mechanism, in
-`demo/chat/backend/CLI/Commands/`.
+**No demo uses this seam today, and that is the point of HIL-729:** the fifteen commands
+chat used to carry are the framework's, `test:orphan-setting:create` / `:delete` among
+them, and they live in `framework/backend/Core/CLI/Commands/` beside every other one. What
+is left in `demo/chat/backend/CLI/ChatCliManager.php` is the empty override, kept as the
+worked example of the shape — the other three demos name `CliManager` in their `cli.php`
+directly, which is what a project with no commands of its own does.
 
 ### Time-based features: no universal clock
 
@@ -127,11 +156,14 @@ beside it, `test:cluster:db:announce` and `test:cluster:agent:place` (same reaso
 master answers them out of memory, and a partitioned node is exactly where they are worth
 running),
 `test:notification:emit` (every row it causes is written by the agent that answers it, so
-the CLI process itself has nothing to read or write) and the protected-mode family
+the CLI process itself has nothing to read or write), the protected-mode family
 `test:protected-mode:inspect` / `:enter` / `:leave` / `:open` / `:pass` (the inspector reads
 in-memory state and has to answer on a frozen node, which is exactly where a connect would
-hang; the drive commands write nothing from this process, and the mint's row is the agent's). Everything else keeps the full connect plus
-`Hilos::init()`.
+hang; the drive commands write nothing from this process, and the mint's row is the agent's)
+and the account and session family `admin:grant` / `:revoke` / `:create`,
+`impersonate:start` / `:stop` and `account:merge` (same reason as `test:notification:emit`:
+every row they cause is written where the account lives). Everything else keeps the full
+connect plus `Hilos::init()`.
 
 Because the whole registry is now constructed *before* the connect, a command constructor
 must not touch the database or Hilos state. Do that work in `execute()`.

@@ -81,18 +81,22 @@ there is no operator in front of it to read a refusal.
 
 ## The guard
 
-`CommandExecutionRoleTest` (framework) and each project's own equivalent read
-`CliManager::executions()` — the registry answers for itself, framework and project
-commands alike, because collecting the declarations any other way would mean walking the
-class tree with Reflection, which this project forbids (HIL-538).
+`CommandExecutionRoleTest` (framework) reads `CliManager::executions()` — the registry
+answers for itself, framework and project commands alike, because collecting the
+declarations any other way would mean walking the class tree with Reflection, which this
+project forbids (HIL-538). Asking the registry is also what lets one guard reach a registry
+the framework does not own, so a project that adds commands of its own is covered by it
+without writing a second guard.
 
-They fail when a command departs from the rule without a stated reason. They cannot fail
-for a *missing* declaration, because `execution()` is a contract method: a command without
-one does not compile.
+It fails when a command departs from the rule without a stated reason. It cannot fail for a
+*missing* declaration, because `execution()` is a contract method: a command without one
+does not compile.
 
-A temporary exception names the ticket that ends it. Chat's local writes say `HIL-729` in
-their reason, and `ChatCommandExecutionRoleTest` requires it — an exception that outlives
-its plan silently is the one failure mode a written-down reason exists to prevent.
+A temporary exception names the ticket that ends it, and the project guard that watched
+chat's five local writes for `HIL-729` was deleted with them: a demo has no CLI of its own
+any more, so there is nothing project-side left to watch. An exception that outlives its
+plan silently is the one failure mode a written-down reason exists to prevent, so the
+naming rule stays for the next temporary one.
 
 ## Today's departures
 
@@ -103,16 +107,13 @@ the answer is wanted), `backup:verify` (hashing gigabytes must not run inside th
 monopolistic backup agent's loop).
 
 **`cli-offline-write`** — `db:migration:up` / `:down` / `:retry`, `db:seed:apply`,
-`db:test:reset`, `test:user:seed`, `verification:test:expire`. All of them prepare the
-schema and the fixtures the daemon later boots on, from the container entrypoint and from
-`composer test:db-prepare`.
+`db:test:reset`, `test:user:seed`, `verification:test:expire`, `test:session:expire`,
+`test:orphan:create` / `:delete` and `test:orphan-setting:create` / `:delete`. All of them
+prepare the schema and the fixtures the daemon later boots on, from the container
+entrypoint and from `composer test:db-prepare`.
 
-**`daemon-spawned`** — none in the framework. Chat has `backup:run` and
-`backup:restore:run`, both spawned by the backup agent.
-
-**Temporary** — chat's five local writes (`test:orphan:create` / `:delete`,
-`test:orphan-setting:create` / `:delete`, `test:session:expire`). HIL-729 moves chat's CLI
-into the framework and ends them.
+**`daemon-spawned`** — `backup:run` and `backup:restore-run`, both spawned by the backup
+agent (HIL-729 brought them in from chat; before that the framework had none).
 
 ## When a command's daemon half is missing
 

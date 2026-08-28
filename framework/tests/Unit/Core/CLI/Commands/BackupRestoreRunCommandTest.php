@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Tests\Unit;
+namespace Hilos\Tests\Unit\Core\CLI\Commands;
 
-use Demo\Chat\CLI\Commands\BackupRestoreRunCommand;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\CLI\Commands\BackupRestoreRunCommand;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -17,9 +17,8 @@ use PHPUnit\Framework\TestCase;
  *
  * Covers only the parsing branches that return before the engine is entered; the
  * restore behavior itself is exercised by the framework's BackupRestorerIntegrationTest.
- * The name assertion is the activation contract: the supervisor spawns exactly
- * {@see BackupConstants::RESTORE_RUN_COMMAND}, and the feature declaration requires a
- * project command registered under it.
+ * The name assertion is the contract between the two halves: the supervisor spawns exactly
+ * {@see BackupConstants::RESTORE_RUN_COMMAND}, and the child answers to that one name.
  */
 final class BackupRestoreRunCommandTest extends TestCase
 {

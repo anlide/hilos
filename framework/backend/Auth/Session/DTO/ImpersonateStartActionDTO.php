@@ -2,23 +2,27 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Pages\DTO\AdminUsers;
+namespace Hilos\Auth\Session\DTO;
 
-use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Pages\AdminUsersPage;
-use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
- * ImpersonateStartActionDTO - payload for the admin users-table impersonate-start
- * action.
+ * ImpersonateStartActionDTO - payload for the impersonation-start action (HIL-729).
  *
- * Carries only the target user id; the acting admin session is taken from the
- * connection. Owned by {@see AdminUsersPage} through its ACTIONS,
- * auto admin-gated by the page's ACCESS guard.
+ * Names the target and nothing else: the acting admin session is read from the connection
+ * on the server, so the payload can name whom to become but never who is asking.
+ *
+ * Owned by {@see AbstractSessionsLibraryAgent} through AGENT_ACTIONS rather than by the
+ * admin table that offers the control, for the reason
+ * {@see HilosSignalConstants::HILOS_IMPERSONATE_START} gives: what the action writes is a
+ * session. Whether the asker may is still the project's answer, and the library asks for it
+ * through a seam before anything is written.
  */
-final class ImpersonateStartActionDTO extends ChatActionPayloadDTO
+final class ImpersonateStartActionDTO extends ActionPayloadDTO
 {
     public const string targetUserId = 'targetUserId';
 
@@ -37,7 +41,7 @@ final class ImpersonateStartActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::IMPERSONATE_START;
+        return HilosSignalConstants::HILOS_IMPERSONATE_START;
     }
 
     /**

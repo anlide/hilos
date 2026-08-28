@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Core\CLI;
 
+use Hilos\Backup\BackupConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\CliManager;
@@ -65,6 +66,32 @@ final class CommandExecutionRoleTest extends TestCase
         $this->assertSame(CommandExecutionSite::CLI_READ, $executions[CliCommands::DB_WAIT]->site);
         $this->assertSame(CommandExecutionSite::CLI_OFFLINE_WRITE, $executions[CliCommands::MIGRATION_UP]->site);
         $this->assertSame(CommandExecutionSite::CLI_OFFLINE_WRITE, $executions[CliCommands::DB_TEST_RESET]->site);
+        // The five fixtures HIL-729 brought over from chat. They write from the CLI for the same
+        // reason their neighbours above do - composer test:db-prepare runs them before the
+        // stand's daemon exists - so they are pinned here rather than trusted to stay put.
+        $this->assertSame(CommandExecutionSite::CLI_OFFLINE_WRITE, $executions[CliCommands::SESSION_TEST_EXPIRE]->site);
+        $this->assertSame(CommandExecutionSite::CLI_OFFLINE_WRITE, $executions[CliCommands::ORPHAN_TEST_CREATE]->site);
+        $this->assertSame(CommandExecutionSite::CLI_OFFLINE_WRITE, $executions[CliCommands::ORPHAN_TEST_DELETE]->site);
+        $this->assertSame(
+            CommandExecutionSite::CLI_OFFLINE_WRITE,
+            $executions[CliCommands::ORPHAN_SETTING_TEST_CREATE]->site,
+        );
+        $this->assertSame(
+            CommandExecutionSite::CLI_OFFLINE_WRITE,
+            $executions[CliCommands::ORPHAN_SETTING_TEST_DELETE]->site,
+        );
+        // The framework's first two daemon-spawned commands, also from HIL-729. The backup agent
+        // starts both itself, and a restore writes to the database with the daemon up, under
+        // protected mode - declaring them anything else would put a gate in front of a process
+        // that has no operator to read it.
+        $this->assertSame(
+            CommandExecutionSite::DAEMON_SPAWNED,
+            $executions[BackupConstants::RUN_COMMAND]->site,
+        );
+        $this->assertSame(
+            CommandExecutionSite::DAEMON_SPAWNED,
+            $executions[BackupConstants::RESTORE_RUN_COMMAND]->site,
+        );
     }
 
     public function testTheGuardReachesARegistryTheFrameworkDoesNotOwn(): void

@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
-use Demo\Chat\CLI\Commands\CreateOrphanCommand;
-use Demo\Chat\CLI\Commands\DeleteOrphanCommand;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Hilos;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\CLI\Commands\OrphanTestCreateCommand;
+use Hilos\Core\CLI\Commands\OrphanTestDeleteCommand;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -22,7 +22,7 @@ use Hilos\Utils\Helpers\RandomHelper;
  * Integration coverage for the orphan settings write pair (HIL-118):
  * SettingsActions::addOrphan/deleteOrphan and the test:orphan CLI commands.
  *
- * Catalog overrides go through add()/CreateOrphanSettingCommand; this pair is the
+ * Catalog overrides go through add()/OrphanSettingTestCreateCommand; this pair is the
  * uncataloged (true orphan) path an e2e fixture needs, with the inverse catalog guard
  * and non-idempotent contract.
  */
@@ -140,7 +140,7 @@ final class OrphanSettingActionsTest extends IntegrationTestCase
     {
         $key = 'orphan_cmd_roundtrip_' . RandomHelper::hex(8);
         $this->withSettingsWriter(function () use ($key): void {
-            $create = new CreateOrphanCommand();
+            $create = new OrphanTestCreateCommand();
             $this->assertSame(
                 ExitCode::SUCCESS,
                 $create->execute([], [$key, SettingsCatalogConstants::TYPE_BOOLEAN, 'true']),
@@ -149,7 +149,7 @@ final class OrphanSettingActionsTest extends IntegrationTestCase
             $this->assertNotNull($row);
             $this->assertSame('1', $row->value);
 
-            $delete = new DeleteOrphanCommand();
+            $delete = new OrphanTestDeleteCommand();
             $this->assertSame(ExitCode::SUCCESS, $delete->execute([], [$key]));
             $this->assertNull(Hilos::$db->settings[$key]);
         }, [$key]);
@@ -159,7 +159,7 @@ final class OrphanSettingActionsTest extends IntegrationTestCase
     {
         $key = 'orphan_cmd_badvalue_' . RandomHelper::hex(8);
         $this->withSettingsWriter(function () use ($key): void {
-            $create = new CreateOrphanCommand();
+            $create = new OrphanTestCreateCommand();
             $this->assertSame(
                 ExitCode::INVALID_ARGUMENT,
                 $create->execute([], [$key, SettingsCatalogConstants::TYPE_INTEGER, 'not-a-number']),
@@ -172,7 +172,7 @@ final class OrphanSettingActionsTest extends IntegrationTestCase
     {
         $key = 'orphan_cmd_badtype_' . RandomHelper::hex(8);
         $this->withSettingsWriter(function () use ($key): void {
-            $create = new CreateOrphanCommand();
+            $create = new OrphanTestCreateCommand();
             $this->assertSame(
                 ExitCode::INVALID_ARGUMENT,
                 $create->execute([], [$key, 'datetime', 'now']),

@@ -6,11 +6,15 @@ namespace Hilos\Tests\Unit\Users;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
-use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
-use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Collection\HilosSessionConnections;
+use Hilos\Runtime\State\Item\HilosSessionConnection;
+use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AdminCommandConstants;
@@ -19,37 +23,51 @@ use PHPUnit\Framework\TestCase;
 /**
  * Unit tests for the agent side of the admin:grant / admin:revoke command route (HIL-553).
  *
- * The route is declared on the abstract index agent, so it exists in every project and is
- * answered by whatever reaches the unauthenticated command socket - the CLI class that
+ * The route is declared on the sessions library since HIL-729, so it exists in every project
+ * and is answered by whatever reaches the unauthenticated command socket - the CLI class that
  * normally sends it is not on the path. What needs pinning here is everything the framework
  * owns: that both wire names land on the handler, that the payload is validated before the
  * project seam is called, and that the seam's outcome - refusal, failure, success - always
  * becomes exactly one reply. The write itself belongs to a project and is exercised by the
  * demo runs.
  *
- * A write that lands announces it (HIL-644), so the successful branches queue the access
- * re-decision announcement first and the reply second. The refusing branches read their reply
+ * A write that lands is ANNOUNCED, and the announcement is what moving the route bought: one
+ * session state frame per live session of the person, ahead of the reply. The project handler
+ * on the other end re-sends the identity from it and re-decides the open pages - the same
+ * frame and the same handler a sign-in travels through. The refusing branches read their reply
  * straight off the queue, which is what pins that nothing was announced for a write that never
  * happened.
  */
 final class AdminGrantCommandRouteTest extends TestCase
 {
+    /** @var string Session token of the one live connection the fixture runtime holds */
+    private const string LIVE_SESSION_TOKEN = 'aaaaaaaabbbbbbbbccccccccdddddddd';
+
+    /** @var string Accept key of that connection */
+    private const string LIVE_ACCEPT_KEY = 'accept-1';
+
+    /** @var int User the fixture connection is signed in as */
+    private const int LIVE_USER_ID = 7;
+
     protected function setUp(): void
     {
         Hilos::$sr = new SignalRouter();
+        Hilos::$rt = new AdminGrantRouteTestRtContext();
+        Hilos::$rt->configure();
     }
 
     protected function tearDown(): void
     {
         Hilos::$sr = null;
+        Hilos::$rt = null;
 
         parent::tearDown();
     }
 
     public function testBothWireNamesDeclareTheRoute(): void
     {
-        self::assertContains(CliCommands::ADMIN_GRANT, AbstractHilosIndexAgent::AGENT_COMMANDS);
-        self::assertContains(CliCommands::ADMIN_REVOKE, AbstractHilosIndexAgent::AGENT_COMMANDS);
+        self::assertContains(CliCommands::ADMIN_GRANT, AbstractSessionsLibraryAgent::AGENT_COMMANDS);
+        self::assertContains(CliCommands::ADMIN_REVOKE, AbstractSessionsLibraryAgent::AGENT_COMMANDS);
     }
 
     public function testGrantReachesTheProjectSeamAndAnswersWithTheFlag(): void
@@ -57,15 +75,15 @@ final class AdminGrantCommandRouteTest extends TestCase
         $agent = new AdminGrantRouteTestAgent();
 
         $this->sendCommand($agent, CliCommands::ADMIN_GRANT, [
-            AdminCommandConstants::FIELD_USER_ID => 7,
+            AdminCommandConstants::FIELD_USER_ID => self::LIVE_USER_ID,
             AdminCommandConstants::FIELD_ADMIN => true,
         ]);
 
-        $this->consumeAnnouncement(7);
+        $this->consumeAnnouncement(self::LIVE_USER_ID);
         $reply = $this->consumeReply();
         self::assertTrue($reply->isOk());
-        self::assertSame([7, true], $agent->applied);
-        self::assertSame(7, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
+        self::assertSame([self::LIVE_USER_ID, true], $agent->applied);
+        self::assertSame(self::LIVE_USER_ID, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_ADMIN]);
     }
 
@@ -76,21 +94,21 @@ final class AdminGrantCommandRouteTest extends TestCase
         $agent = new AdminGrantRouteTestAgent();
 
         $this->sendCommand($agent, CliCommands::ADMIN_REVOKE, [
-            AdminCommandConstants::FIELD_USER_ID => 7,
+            AdminCommandConstants::FIELD_USER_ID => self::LIVE_USER_ID,
             AdminCommandConstants::FIELD_ADMIN => false,
         ]);
 
-        $this->consumeAnnouncement(7);
+        $this->consumeAnnouncement(self::LIVE_USER_ID);
         $reply = $this->consumeReply();
         self::assertTrue($reply->isOk());
-        self::assertSame([7, false], $agent->applied);
+        self::assertSame([self::LIVE_USER_ID, false], $agent->applied);
         self::assertFalse($reply->payload[AdminCommandConstants::FIELD_ADMIN]);
     }
 
     public function testAnUnwiredProjectRefusesAsAnErrorReply(): void
     {
         $this->sendCommand(new AdminGrantRouteTestUnwiredAgent(), CliCommands::ADMIN_GRANT, [
-            AdminCommandConstants::FIELD_USER_ID => 7,
+            AdminCommandConstants::FIELD_USER_ID => self::LIVE_USER_ID,
             AdminCommandConstants::FIELD_ADMIN => true,
         ]);
 
@@ -147,11 +165,11 @@ final class AdminGrantCommandRouteTest extends TestCase
     /**
      * Drives one command through the agent under test.
      *
-     * @param AbstractHilosIndexAgent $agent Agent under test
+     * @param AbstractSessionsLibraryAgent $agent Agent under test
      * @param string $command Command-channel wire name to send
      * @param array<string, mixed> $payload Request payload
      */
-    private function sendCommand(AbstractHilosIndexAgent $agent, string $command, array $payload): void
+    private function sendCommand(AbstractSessionsLibraryAgent $agent, string $command, array $payload): void
     {
         $agent->onSignalCommand(
             new CommandRequestDTO(correlationId: 'corr-1', command: $command, payload: $payload),
@@ -161,16 +179,27 @@ final class AdminGrantCommandRouteTest extends TestCase
     }
 
     /**
-     * Takes the access re-decision announcement the grant queued ahead of its reply.
+     * Takes the session state frame the grant queued ahead of its reply.
      *
-     * @param int $userId User the announcement must name
+     * One frame per live session, and the fixture runtime holds exactly one, so the queue in
+     * front of the reply is one frame deep. It has to NAME the socket: a frame with an empty
+     * accept-key list would reach nobody while still costing the project a page sweep, and
+     * that is the difference between announcing the grant and merely queueing something.
+     *
+     * @param int $userId User the frame must name
      */
     private function consumeAnnouncement(int $userId): void
     {
         $signal = Hilos::$sr->getNextQueuedSignal();
-        self::assertNotNull($signal, 'A write that landed announces it');
-        self::assertInstanceOf(PageAccessReassessUserSignalData::class, $signal->data);
-        self::assertSame($userId, $signal->data->userId);
+        self::assertNotNull($signal, 'A write that landed is announced to the person\'s tabs');
+        // The frame travels to the project agent, so the queue holds it inside the envelope
+        // sendToAgent() wraps every agent-addressed payload in.
+        self::assertInstanceOf(AgentSignalData::class, $signal->data);
+        $frame = $signal->data->data;
+        self::assertInstanceOf(SessionStateSignalData::class, $frame);
+        self::assertSame($userId, $frame->userId);
+        self::assertSame(self::LIVE_SESSION_TOKEN, $frame->sessionToken);
+        self::assertSame([self::LIVE_ACCEPT_KEY], $frame->acceptKeys);
     }
 
     /**
@@ -190,10 +219,12 @@ final class AdminGrantCommandRouteTest extends TestCase
 }
 
 /**
- * Index agent with the grant wired, standing in for a project binding: it records the call
- * instead of writing a row, and can be told to fail the way a project refuses an unknown user.
+ * Sessions library with the grant wired, standing in for a project binding: it records the
+ * call instead of writing a row, and can be told to fail the way a project refuses an unknown
+ * user. The announcement is stubbed too - reading a person's sessions needs a database this
+ * suite deliberately does not have, so the fixture states the one session it pretends to hold.
  */
-final class AdminGrantRouteTestAgent extends AbstractHilosIndexAgent
+final class AdminGrantRouteTestAgent extends AbstractSessionsLibraryAgent
 {
     /** @var ?array{int, bool} Arguments the seam was called with, or null when it was not */
     public ?array $applied = null;
@@ -223,11 +254,74 @@ final class AdminGrantRouteTestAgent extends AbstractHilosIndexAgent
 }
 
 /**
- * Index agent of a project that never wired the grant - the framework default, unchanged.
+ * Sessions library of a project that never wired the grant - the framework default, unchanged.
  */
-final class AdminGrantRouteTestUnwiredAgent extends AbstractHilosIndexAgent
+final class AdminGrantRouteTestUnwiredAgent extends AbstractSessionsLibraryAgent
 {
     public function onStop(): void
+    {
+    }
+}
+
+/**
+ * Runtime holding one live session-stage connection, so the grant has a tab to announce to.
+ *
+ * The announcement reads the CONNECTIONS rather than the session table - what has to be told
+ * is the tabs that are open - so a runtime with one socket is the whole world this route needs.
+ */
+final class AdminGrantRouteTestRtContext extends RtContext
+{
+    public function configure(): void
+    {
+        $connections = AdminGrantRouteTestConnections::init();
+        $connections->add(AdminGrantRouteTestConnection::create(
+            'accept-1',
+            7,
+            'aaaaaaaabbbbbbbbccccccccdddddddd',
+        ));
+        $this->_stateCollections[AdminGrantRouteTestConnections::RT_COLLECTION] = $connections;
+    }
+}
+
+/**
+ * Session-stage connection collection of the fixture project.
+ */
+final class AdminGrantRouteTestConnections extends HilosSessionConnections
+{
+    /** @var string Runtime collection name this fixture mounts under */
+    public const string RT_COLLECTION = 'adminGrantRouteTestConnections';
+
+    public const string STATE_CLASS = AdminGrantRouteTestConnection::class;
+}
+
+/**
+ * Session-stage connection row of the fixture project, adding nothing of its own.
+ */
+final class AdminGrantRouteTestConnection extends HilosSessionConnection
+{
+    protected function initOwn(): void
+    {
+    }
+
+    /**
+     * @param array<string, mixed> $row Serialized runtime row
+     */
+    protected function hydrateOwn(array $row): void
+    {
+    }
+
+    /**
+     * @return array<string, mixed> Own fields, of which this fixture has none
+     */
+    protected function ownToArray(): array
+    {
+        return [];
+    }
+
+    /**
+     * @param array<string, mixed> $diff Incoming field changes
+     */
+    protected function applyOwnDiff(array $diff): void
     {
     }
 }

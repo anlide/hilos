@@ -2,19 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\CLI\Commands;
+namespace Hilos\Core\CLI\Commands;
 
-use Demo\Chat\Constants\ChatCliCommands;
-use Demo\Chat\Database\ChatDbContext;
-use Demo\Chat\Hilos;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
-use Hilos\Core\CLI\Commands\CommandExecution;
-use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Hilos;
 use Hilos\HilosException;
 
 /**
- * SessionExpireCommand - age a live session's expiry into the past (test-only).
+ * SessionTestExpireCommand - age a live session's expiry into the past (test-only).
  *
  * Test-only (extends {@see TestOnlyCommand}, so it refuses on a production-like env):
  * an e2e author (HIL-167) needs an expired session to drive the session-expiry logout
@@ -24,14 +22,14 @@ use Hilos\HilosException;
  * registers itself as the sessions truth source before the write, mirroring the
  * test:orphan:* commands.
  */
-final class SessionExpireCommand extends TestOnlyCommand
+final class SessionTestExpireCommand extends TestOnlyCommand
 {
     /** @var string Truth-source id this CLI writer registers under (no agent runs in the CLI) */
     private const string TRUTH_SOURCE_ID = 'test-cli';
 
     public function getName(): string
     {
-        return ChatCliCommands::SESSION_EXPIRE;
+        return CliCommands::SESSION_TEST_EXPIRE;
     }
 
     /**
@@ -42,7 +40,8 @@ final class SessionExpireCommand extends TestOnlyCommand
     public function execution(): CommandExecution
     {
         return CommandExecution::cliOfflineWrite(
-            "temporary until HIL-729 moves chat's CLI into the framework: ages a session row straight in the table",
+            'ages a session row for a stand scenario, beside the other fixtures that prepare the'
+            . " database before the stand's daemon starts",
         );
     }
 
@@ -93,7 +92,7 @@ HELP;
 
         // The CLI has no agent-writer for sessions, so the command registers itself as the truth
         // source before mutating (only reachable on the test-only path, same as test:orphan:*).
-        TruthSourceRegistry::register(ChatDbContext::sessions, true, self::TRUTH_SOURCE_ID);
+        TruthSourceRegistry::register(HilosDbContext::sessions, true, self::TRUTH_SOURCE_ID);
         $session = Hilos::$db->sessions->actions->expireByToken($token);
         if ($session === null) {
             echo "No session for token {$token}\n";

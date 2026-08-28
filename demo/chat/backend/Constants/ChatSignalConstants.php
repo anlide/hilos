@@ -26,12 +26,6 @@ final class ChatSignalConstants
     /** @var string Client → server: delete one completed attachment draft */
     public const string ATTACHMENT_DRAFT_DELETE = 'attachment_draft_delete';
 
-    /**
-     * @var string Client → agent (page-independent): impersonating session reverts to its admin
-     *     (browser name; the CLI command is ChatCommandConstants::IMPERSONATE_STOP)
-     */
-    public const string IMPERSONATE_STOP = 'impersonate_stop';
-
     /** @var string Rename signal name */
     public const string RENAME = 'rename';
 
@@ -97,9 +91,6 @@ final class ChatSignalConstants
     /** @var string BotAgent → ChatAgent: publish generated bot message */
     public const string BOT_MESSAGE = 'bot_message';
 
-    /** @var string Hilos user page (HILOS_INDEX agent) → ChatAgent: run an admin account merge on the session-owning agent (HIL-378) */
-    public const string ACCOUNT_MERGE_REQUEST = 'account_merge_request';
-
     // ── Table actions (client → server) ──────────────────────────────────
     /** @var string User update signal name */
     public const string USER_UPDATE = 'user_update';
@@ -107,17 +98,18 @@ final class ChatSignalConstants
     /** @var string Client → server (Hilos user page-action): admin merges the loser account into this survivor (HIL-378) */
     public const string ACCOUNT_MERGE = 'account_merge';
 
-    /** @var string ChatAgent → initiator: account merge succeeded (ack for ACCOUNT_MERGE) */
+    /**
+     * @var string ChatAgent → initiator: account merge succeeded (ack for ACCOUNT_MERGE)
+     *
+     * Still chat's name although the merge itself is the framework's since HIL-729: the ack
+     * answers a page action of this project's, and only this project knows what its admin
+     * surface is listening for. The library hands the outcome over on a frame and the agent
+     * says it under this name.
+     */
     public const string ACCOUNT_MERGE_SUCCESS = 'account_merge_success';
 
     /** @var string ChatAgent → initiator: account merge failed (ack for ACCOUNT_MERGE) */
     public const string ACCOUNT_MERGE_FAIL = 'account_merge_fail';
-
-    /**
-     * @var string Client → server (admin users page-action): admin starts impersonating a target user
-     *     (browser name; the CLI command is ChatCommandConstants::IMPERSONATE_START)
-     */
-    public const string IMPERSONATE_START = 'impersonate_start';
 
     /** @var string Bot create signal name */
     public const string BOT_CREATE = 'bot_create';

@@ -241,14 +241,14 @@ privileged content on screen and a grant used to leave a 403 there, both until t
 person reloaded. Re-deciding closes that (HIL-621).
 
 **The announcement is part of the operation.** The sweep is started where the
-rights are WRITTEN, next to the handshake re-send that already tells the user's
-tabs what they may now show:
-
-- the framework starts it itself in `AbstractHilosIndexAgent::handleAdminGrant`,
-  right after the project's `applyAdminGrant` returns, so every project mounting
-  the framework grant gets it by inheritance;
-- a project routing its own grant command starts it there — the chat demo's
-  `ChatAgent::handleSetAdmin` is the worked example.
+user's tabs are TOLD who they now are, next to the handshake re-send that already
+tells them what they may now show — the project's handler of the
+`hilos_session_state` frame, described in full below. A rights change gets there
+the way every other identity change does: `AbstractSessionsLibraryAgent` answers
+the grant command, writes the flag through the project's `applyAdminGrant` seam
+and then restates every live session of that person (`announceAdminGrant`). So a
+project mounting the framework grant gets the re-decision by inheritance and has
+no call site of its own to start (HIL-729).
 
 `PageAccessReassessment::forUser($userId)` queues one `page_access_reassess_user`
 announcement naming that person and returns. Each worker of the node then runs

@@ -7,10 +7,14 @@ import { signUp } from './session'
 // The daemon command channel — the same socket the CLI admin:grant / admin:revoke
 // commands speak. The Playwright runner has no PHP, so the e2e drives the grant
 // over the wire directly; this still exercises the real CommandServer parking,
-// the ChatAgent setAdmin handler, and the users-table fan-out.
+// the sessions library that answers the pair (HIL-729), and the users-table fan-out.
 const COMMAND_HOST = process.env.COMMAND_HOST ?? 'chat-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 const REPLY_TIMEOUT_MS = 5_000
+
+/** The framework command names, as CliCommands spells them on the wire. */
+const COMMAND_GRANT = 'admin:grant'
+const COMMAND_REVOKE = 'admin:revoke'
 
 /**
  * Sets a user's admin flag over the daemon command channel, resolving once the
@@ -48,7 +52,7 @@ export function setAdmin(userId: number, admin: boolean): Promise<void> {
     const request =
       JSON.stringify({
         correlationId: randomBytes(8).toString('hex'),
-        command: 'setAdmin',
+        command: admin ? COMMAND_GRANT : COMMAND_REVOKE,
         payload: { userId, admin },
       }) + '\n'
 
@@ -80,7 +84,10 @@ export function setAdmin(userId: number, admin: boolean): Promise<void> {
         resolve()
       } else {
         reject(
-          new Error(`setAdmin failed: ${reply.payload?.message ?? 'unknown error'}`),
+          new Error(
+            `${admin ? COMMAND_GRANT : COMMAND_REVOKE} failed: ` +
+              `${reply.payload?.message ?? 'unknown error'}`,
+          ),
         )
       }
     })

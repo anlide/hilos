@@ -2,55 +2,45 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\CLI\Commands;
+namespace Hilos\Core\CLI\Commands;
 
-use Demo\Chat\Constants\ChatCliCommands;
-use Demo\Chat\Constants\ChatCommandConstants;
-use Hilos\API\AsyncCommandClient;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
-use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
-use Hilos\Constants\TimeConstants;
-use Hilos\Core\CLI\Commands\CommandExecution;
-use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Database\Identity\PasswordFate;
 use Hilos\Environment\Exception\EnvException;
-use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
-use Hilos\Socket\Command\DTO\CommandRequestDTO;
-use Hilos\Utils\Helpers\RandomHelper;
-use Throwable;
+use Hilos\Users\AccountMergeCommandConstants;
 
 /**
  * Merges one populated account into another through the daemon command channel (HIL-378).
  *
- * Sends an `accountMerge` command over the daemon command channel; the daemon
- * parks the connection, routes it to the chat agent (which re-points the loser's
- * identities and messages to the survivor, tombstones the loser, and forces its
- * live sessions to log out — all in one transaction), and writes the reply back.
- * Prints the transfer counts. Real operator command — not test-only.
+ * Sends the command over the daemon command channel; the daemon parks the connection, routes
+ * it to the agent that answers the name (which re-points the loser's sign-in identities and
+ * the rows the project keeps for it, tombstones the loser, and forces its live sessions to
+ * log out - all in one transaction), and writes the reply back. Prints what moved.
  *
  * `--password` is where the operator says whose password the merged account keeps
  * (HIL-692). It is asked for only when it is a real question - two accounts each holding
  * one - and the absent key says so, so the ordinary merge keeps the shape it had. The
  * reply is read back as an outcome rather than an echo: naming an account that has no
  * password is allowed, and what gets printed is what the person ended up with.
+ *
+ * Real operator command, not test-only, and database-free ({@see DatabaseFreeCommand}) for
+ * the reason its neighbours are: every row it causes is written where the accounts live, so
+ * the CLI process needs no connection of its own.
  */
-final class AccountMergeCommand implements CommandInterface
+final class AccountMergeCommand implements CommandInterface, DatabaseFreeCommand
 {
-    /** @var float Wall-clock wait budget for a reply in milliseconds */
-    private const float MAX_WAIT_MS = 5000.0;
-
-    /** @var int Poll sleep between ticks in microseconds */
-    private const int POLL_INTERVAL_US = 10000;
+    use CommandChannelClientTrait;
 
     public function getName(): string
     {
-        return ChatCliCommands::ACCOUNT_MERGE;
+        return CliCommands::ACCOUNT_MERGE;
     }
 
     /**
-     * Declares the rule: the daemon does the work and this process only initiates it and prints.
+     * Declares the rule: the daemon merges the accounts and this process only asks it to.
      *
      * @return CommandExecution Where this command's work happens
      */
@@ -70,12 +60,13 @@ final class AccountMergeCommand implements CommandInterface
 Command: account:merge
 
 Description:
-  Merge one populated account (the loser) into another (the survivor). Sends an
-  accountMerge command over the daemon command channel; the daemon routes it to
-  the chat agent, which re-points the loser's sign-in identities and chat messages
-  to the survivor, tombstones the loser (merged_into + login closed), and forces
-  the loser's live sessions to log out. The survivor keeps its own profile. The
-  whole transfer runs in one transaction; on any failure nothing is written.
+  Merge one populated account (the loser) into another (the survivor). Sends the
+  command over the daemon command channel; the daemon routes it to the agent that
+  answers it, which re-points the loser's sign-in identities and the rows this
+  project keeps for a person, tombstones the loser (merged_into + login closed),
+  and forces the loser's live sessions to log out. The survivor keeps its own
+  profile. The whole transfer runs in one transaction; on any failure nothing is
+  written.
 
   An account holds at most one password. While at most one of the two accounts
   has one, it survives and nothing needs saying; when BOTH have one the merge
@@ -110,51 +101,85 @@ HELP;
      */
     public function execute(array $options, array $args): int
     {
-        $survivorId = (int) ($args[0] ?? 0);
-        $loserId = (int) ($args[1] ?? 0);
+        // external-boundary: positional arguments the operator types; the check below rejects them
+        $survivorId = (int)($args[0] ?? 0);
+        $loserId = (int)($args[1] ?? 0);
         if ($survivorId <= 0 || $loserId <= 0) {
             echo "Two positive user ids are required (e.g. {$this->getName()} <survivorId> <loserId>)\n";
+
             return ExitCode::INVALID_ARGUMENT;
         }
 
-        $passwordFate = null;
-        if (isset($options[ChatCommandConstants::OPTION_PASSWORD])) {
+        $payload = [
+            AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID => $survivorId,
+            AccountMergeCommandConstants::FIELD_LOSER_USER_ID => $loserId,
+        ];
+        if (isset($options[AccountMergeCommandConstants::OPTION_PASSWORD])) {
             // external-boundary: an option the operator types by hand; the error below rejects a bad one
-            $passwordRaw = (string) $options[ChatCommandConstants::OPTION_PASSWORD];
+            $passwordRaw = (string)$options[AccountMergeCommandConstants::OPTION_PASSWORD];
             $passwordFate = PasswordFate::tryFrom($passwordRaw);
             if ($passwordFate === null) {
                 echo "Unknown --password value: {$passwordRaw} (expected survivor, loser or none)\n";
+
                 return ExitCode::INVALID_ARGUMENT;
             }
+
+            $payload[AccountMergeCommandConstants::FIELD_PASSWORD_FATE] = $passwordFate->value;
         }
 
         echo "Merging user #{$loserId} into #{$survivorId}...\n";
 
         try {
-            $reply = $this->sendMerge($survivorId, $loserId, $passwordFate);
+            $result = $this->sendCommand($this->getName(), $payload);
         } catch (EnvException $e) {
             echo "Error: {$e->getMessage()}\n";
+
             return ExitCode::CONFIG_ERROR;
         }
 
-        if ($reply === null) {
-            echo "No reply from daemon (is it running?)\n";
-            return ExitCode::ERROR;
+        if ($result->reply === null) {
+            return $this->printChannelFailure($result, $this->getName());
         }
+
+        $reply = $result->reply;
 
         if (!$reply->isOk()) {
-            $detail = (string) ($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');
+            $detail = (string)($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');
             echo "Command failed: {$detail}\n";
+
             return ExitCode::ERROR;
         }
 
-        $identities = (int) ($reply->payload[ChatCommandConstants::FIELD_IDENTITIES_MOVED] ?? 0);
-        $messages = (int) ($reply->payload[ChatCommandConstants::FIELD_MESSAGES_MOVED] ?? 0);
-        echo "Reply (ok): merged user #{$loserId} into #{$survivorId} "
-            . "({$identities} identities, {$messages} messages moved)\n";
+        echo "Reply (ok): merged user #{$loserId} into #{$survivorId} ({$this->describeTransfer($reply)})\n";
         echo 'Password: ' . $this->passwordOutcome($reply) . "\n";
 
         return ExitCode::SUCCESS;
+    }
+
+    /**
+     * Words what the merge carried over, naming each family of rows the way the project did.
+     *
+     * The identity count comes first because it is the framework's own and is always there;
+     * what follows is whatever the project reported, and a project that moves nothing of its
+     * own simply adds nothing to the line.
+     *
+     * @param CommandReplyDTO $reply Ok reply of the merge command
+     * @return string Comma-separated tally, e.g. "2 identities, 1 messages moved"
+     */
+    private function describeTransfer(CommandReplyDTO $reply): string
+    {
+        // external-boundary: the daemon's reply payload is untyped on this side
+        $identities = (int)($reply->payload[AccountMergeCommandConstants::FIELD_IDENTITIES_MOVED] ?? 0);
+        $rowsMoved = $reply->payload[AccountMergeCommandConstants::FIELD_ROWS_MOVED] ?? [];
+
+        $parts = ["{$identities} identities"];
+        if (is_array($rowsMoved)) {
+            foreach ($rowsMoved as $family => $moved) {
+                $parts[] = (int)$moved . ' ' . (string)$family;
+            }
+        }
+
+        return implode(', ', $parts) . ' moved';
     }
 
     /**
@@ -170,7 +195,7 @@ HELP;
     private function passwordOutcome(CommandReplyDTO $reply): string
     {
         // external-boundary: a reply key an older daemon may not carry; the default reads as unknown
-        $kept = PasswordFate::tryFrom((string) ($reply->payload[ChatCommandConstants::FIELD_PASSWORD_KEPT] ?? ''));
+        $kept = PasswordFate::tryFrom((string)($reply->payload[AccountMergeCommandConstants::FIELD_PASSWORD_KEPT] ?? ''));
 
         return match ($kept) {
             PasswordFate::SURVIVOR => "the survivor's password stayed",
@@ -178,53 +203,5 @@ HELP;
             PasswordFate::NONE => 'the account has no password; it can be set in the profile',
             default => 'not reported by the daemon',
         };
-    }
-
-    /**
-     * Sends the account-merge command over the channel and waits for the reply.
-     *
-     * @param int $survivorId Survivor user id that absorbs the loser
-     * @param int $loserId Loser user id folded into the survivor
-     * @param ?PasswordFate $passwordFate Whose password to keep, or null when the operator named none
-     * @return ?CommandReplyDTO Reply, or null on timeout / transport failure
-     * @throws EnvException When daemon host/port env values are missing or invalid
-     */
-    private function sendMerge(int $survivorId, int $loserId, ?PasswordFate $passwordFate): ?CommandReplyDTO
-    {
-        $host = Hilos::$env[EnvConstants::HILOS_DAEMON_HOST];
-        $port = Hilos::$env->int(EnvConstants::COMMAND_PORT);
-
-        $payload = [
-            ChatCommandConstants::FIELD_SURVIVOR_USER_ID => $survivorId,
-            ChatCommandConstants::FIELD_LOSER_USER_ID => $loserId,
-        ];
-        if ($passwordFate !== null) {
-            $payload[ChatCommandConstants::FIELD_PASSWORD_FATE] = $passwordFate->value;
-        }
-
-        $client = new AsyncCommandClient($host, $port);
-        $request = new CommandRequestDTO(
-            correlationId: RandomHelper::hex(8),
-            command: ChatCommandConstants::ACCOUNT_MERGE,
-            payload: $payload,
-        );
-
-        try {
-            $client->startRequest($request);
-
-            $startedAtMs = microtime(true) * TimeConstants::MS_PER_SECOND;
-            while (!$client->hasResult()) {
-                if ((microtime(true) * TimeConstants::MS_PER_SECOND - $startedAtMs) > self::MAX_WAIT_MS) {
-                    return null;
-                }
-
-                $client->tick();
-                usleep(self::POLL_INTERVAL_US);
-            }
-
-            return $client->consumeResult();
-        } catch (Throwable) {
-            return null;
-        }
     }
 }

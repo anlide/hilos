@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\CommandReplyDestination;
@@ -29,11 +31,11 @@ final class CommandSignalRoutingTest extends TestCase
         $destinations = new CommandRoutingTestRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::DAEMON),
             new SignalType(SignalTypeConstants::COMMAND_REQUEST),
-            new SignalName('test:command:echo'),
-            new CommandRequestDTO('corr-1', 'test:command:echo', ['message' => 'hi']),
+            new SignalName(CliCommands::COMMAND_TEST_ECHO),
+            new CommandRequestDTO('corr-1', CliCommands::COMMAND_TEST_ECHO, ['message' => 'hi']),
         ));
 
-        $this->assertEquals([new AgentDestination('chat')], $destinations);
+        $this->assertEquals([new AgentDestination(HilosAgentType::HILOS_INDEX)], $destinations);
     }
 
     public function testUnknownCommandRoutesNowhere(): void
@@ -83,7 +85,7 @@ final class CommandRoutingTestHilos extends Hilos
      */
     public static function getCommandAgentRoutes(): array
     {
-        return ['test:command:echo' => 'chat'];
+        return [CliCommands::COMMAND_TEST_ECHO => HilosAgentType::HILOS_INDEX];
     }
 
     protected static function createDb(): DbContext

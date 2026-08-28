@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\CLI\Commands;
+namespace Hilos\Core\CLI\Commands;
 
-use Demo\Chat\Constants\ChatCliCommands;
-use Demo\Chat\Constants\ChatCommandConstants;
 use Hilos\Auth\Session\SessionRebindConstants;
+use Hilos\Constants\CliCommands;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Users\AdminCommandConstants;
 
 /**
  * Stops impersonating on a session through the daemon command channel.
@@ -19,7 +19,7 @@ final class ImpersonateStopCommand extends AbstractImpersonateCommand
 {
     public function getName(): string
     {
-        return ChatCliCommands::IMPERSONATE_STOP;
+        return CliCommands::IMPERSONATE_STOP;
     }
 
     public function getDescription(): string
@@ -33,11 +33,10 @@ final class ImpersonateStopCommand extends AbstractImpersonateCommand
 Command: impersonate:stop
 
 Description:
-  Revert an impersonating session back to its admin. Sends an impersonateStop
-  command over the daemon command channel; the daemon routes it to the chat
-  agent, which restores the recorded admin (every tab of that session updates
-  back to the admin) and clears the impersonator marker. The session must
-  currently be impersonating.
+  Revert an impersonating session back to its admin. Sends the command over the
+  daemon command channel; the daemon restores the recorded admin (every tab of
+  that session updates back to the admin) and clears the impersonator marker.
+  The session must currently be impersonating.
 
 Usage:
   php cli.php impersonate:stop <sessionToken>
@@ -45,11 +44,6 @@ Usage:
 Examples:
   php cli.php impersonate:stop 0123456789abcdef0123456789abcdef
 HELP;
-    }
-
-    protected function commandName(): string
-    {
-        return ChatCommandConstants::IMPERSONATE_STOP;
     }
 
     protected function buildPayload(array $args): ?array
@@ -64,7 +58,7 @@ HELP;
         }
 
         return [
-            ChatCommandConstants::FIELD_SESSION_TOKEN => $sessionToken,
+            AdminCommandConstants::FIELD_SESSION_TOKEN => $sessionToken,
         ];
     }
 

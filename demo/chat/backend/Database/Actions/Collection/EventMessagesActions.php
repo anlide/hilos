@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Actions\Collection;
 
+use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\EventMessage;
 use Demo\Chat\Database\Object\Collection\EventMessages as ObjectEventMessages;
@@ -76,6 +77,16 @@ final class EventMessagesActions extends DbActions
      * number of messages re-pointed (the merge summary's "messages moved"). Runs
      * inside the merge transaction, so a failure rolls the whole merge back.
      *
+     * No collection-wide truth-source claim stands behind it, and that is the same
+     * answer {@see SessionsLibraryAgent::applyAdminGrant()} gives for the user flag:
+     * since HIL-729 the merge runs in the process that owns the SESSIONS, and the
+     * chat agent that owns this collection is elsewhere. A claim asserted here could
+     * therefore only ever refuse - the caller is by construction not the registered
+     * source - which is why the framework half of the same merge
+     * ({@see Identities::rePointToUser()}) asserts none either. What guards the write
+     * is the lazy key strategy this collection is registered with: a per-item write
+     * check, as for every other row a project seam touches from the library.
+     *
      * @param int $fromUserId Loser user id whose messages are absorbed
      * @param int $toUserId Survivor user id that receives the messages
      * @return int Number of messages re-pointed to the survivor
@@ -83,7 +94,6 @@ final class EventMessagesActions extends DbActions
      */
     public function rePointAuthor(int $fromUserId, int $toUserId): int
     {
-        TruthSourceRegistry::checkCanWrite(ChatDbContext::eventMessages);
         $this->ensureCanWrite();
 
         $moved = 0;

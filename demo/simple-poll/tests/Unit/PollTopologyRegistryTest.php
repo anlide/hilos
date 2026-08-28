@@ -138,6 +138,9 @@ final class PollTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_MOVED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_SESSION_REBIND => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                // The merge is mounted here as everywhere else and refuses, because this demo
+                // wires neither of its seams (HIL-729).
+                HilosSignalConstants::HILOS_ACCOUNT_MERGE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             ],
             Hilos::getAgentSignalRoutes(),
         );

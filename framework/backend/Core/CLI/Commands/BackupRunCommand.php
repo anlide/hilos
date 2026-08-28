@@ -2,9 +2,8 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\CLI\Commands;
+namespace Hilos\Core\CLI\Commands;
 
-use Demo\Chat\Constants\ChatCliCommands;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupPhase;
@@ -12,8 +11,6 @@ use Hilos\Backup\BackupProgressMarker;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\Exception\BackupException;
 use Hilos\Constants\ExitCode;
-use Hilos\Core\CLI\Commands\CommandExecution;
-use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\Process;
 
 /**
@@ -32,7 +29,7 @@ final class BackupRunCommand implements CommandInterface
 
     public function getName(): string
     {
-        return ChatCliCommands::BACKUP_RUN;
+        return BackupConstants::RUN_COMMAND;
     }
 
     /**

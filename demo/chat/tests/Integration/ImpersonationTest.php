@@ -5,16 +5,15 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
-use Demo\Chat\Agents\DTO\ImpersonateStopActionDTO;
-use Demo\Chat\Constants\ChatCommandConstants;
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\AdminUsersPage;
-use Demo\Chat\Pages\DTO\AdminUsers\ImpersonateStartActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Auth\Session\DTO\ImpersonateStartActionDTO;
+use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
+use Hilos\Constants\CliCommands;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -22,17 +21,22 @@ use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Users\AdminCommandConstants;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for admin impersonation. The CLI command handlers (HIL-166)
- * and the in-app transports (HIL-371) — the admin users-table page-action start
- * and the shell agent-action stop — rebind a live admin session to a target user
+ * and the in-app transports (HIL-371) rebind a live admin session to a target user
  * and back over one shared core, guarded by the admin flag, the no-nesting rule,
  * and the self-target rule. Asserts the observable DB session state (bound user +
  * impersonator marker), the re-pointed live connection, and (for the in-app
  * transports) the re-emitted handshake response whose impersonatedBy slot proves
  * the marker-before-rebind ordering.
+ *
+ * All four ways in are driven at the SESSIONS LIBRARY since HIL-729: both commands and
+ * both browser actions are its own, and the only thing left in this project is the seam
+ * answering whether the takeover is allowed. What the chat agent still does is say the
+ * result out loud, which is why every case hands it the frames the library queued.
  * Requires test DB to be reset before run (composer run test:db-reset).
  */
 final class ImpersonationTest extends IntegrationTestCase
@@ -192,14 +196,17 @@ final class ImpersonationTest extends IntegrationTestCase
     }
 
     /**
-     * The admin users-table page-action start rebinds the session to the target,
-     * records the admin marker, and re-emits a handshake response whose
-     * impersonatedBy slot names the admin — the browser transport over the same
-     * shared core as the CLI command.
+     * The browser start action rebinds the session to the target, records the admin
+     * marker, and re-emits a handshake response whose impersonatedBy slot names the
+     * admin — the browser transport over the same shared core as the CLI command.
      *
-     * @throws HilosException When setup or the page action fails
+     * Page-independent since HIL-729, though the control that sends it still sits on the
+     * admin users table: the takeover moves the person off that page in the very next
+     * frame, so no page can be the owner.
+     *
+     * @throws HilosException When setup or the action fails
      */
-    public function testPageActionStartRebindsAndEmitsImpersonatedBy(): void
+    public function testStartActionRebindsAndEmitsImpersonatedBy(): void
     {
         $agent = $this->bootAgent();
         $token = RandomHelper::hex(16);
@@ -209,12 +216,7 @@ final class ImpersonationTest extends IntegrationTestCase
         $this->drainSignals();
 
         try {
-            new AdminUsersPage($agent)->onAction(
-                'page-ak',
-                ChatSignalConstants::IMPERSONATE_START,
-                new ImpersonateStartActionDTO($targetId),
-            );
-            $this->deliverLibraryFrames($agent);
+            $this->runAction($agent, 'page-ak', new ImpersonateStartActionDTO($targetId));
 
             $session = $this->sessionOf('page-ak');
             $this->assertSame($targetId, $session?->userId);
@@ -232,26 +234,23 @@ final class ImpersonationTest extends IntegrationTestCase
     }
 
     /**
-     * The shell agent-action stop reverts the impersonating session to its admin,
-     * clears the marker, and re-emits a handshake response with a null
-     * impersonatedBy slot — the browser transport over the same shared core as the
-     * CLI command.
+     * The shell stop action reverts the impersonating session to its admin, clears the
+     * marker, and re-emits a handshake response with a null impersonatedBy slot — the
+     * browser transport over the same shared core as the CLI command.
      *
-     * @throws HilosException When setup or the agent action fails
+     * @throws HilosException When setup or the action fails
      */
-    public function testAgentActionStopRevertsAndClearsImpersonatedBy(): void
+    public function testStopActionRevertsAndClearsImpersonatedBy(): void
     {
         $agent = $this->bootAgent();
         $token = RandomHelper::hex(16);
         $adminId = $this->authenticatedAdminSession($agent, 'agent-ak', $token);
         $targetId = $this->registerUser();
-        $agent->startImpersonation($token, $targetId, null, null);
-        $this->deliverLibraryFrames($agent);
+        $this->runCommand($agent, $this->startCommand($token, $targetId));
         $this->drainSignals();
 
         try {
-            $agent->onAgentAction('agent-ak', ChatSignalConstants::IMPERSONATE_STOP, new ImpersonateStopActionDTO());
-            $this->deliverLibraryFrames($agent);
+            $this->runAction($agent, 'agent-ak', new ImpersonateStopActionDTO());
 
             $session = $this->sessionOf('agent-ak');
             $this->assertSame($adminId, $session?->userId);
@@ -269,20 +268,33 @@ final class ImpersonationTest extends IntegrationTestCase
     }
 
     /**
-     * Runs one operator command the way three workers run it.
+     * Runs one operator command the way two workers run it.
      *
-     * The chat agent's guards answer a refusal and nothing else since HIL-710: what the
-     * session becomes is written by the sessions library, on a frame, and told back on
-     * another. A case asserting the session row without this would read the row as it was
-     * before the command.
+     * The command is the sessions library's since HIL-729 - guards, write and reply all -
+     * and what the session became is told to this project on a frame. A case asserting the
+     * connection row without delivering that frame would read it as it was before.
      *
-     * @param ChatAgent $agent Agent the command is routed to
+     * @param ChatAgent $agent Agent that holds this project's connections
      * @param CommandRequestDTO $command Command request to run
      * @throws HilosException When the command or a frame that follows it fails
      */
     private function runCommand(ChatAgent $agent, CommandRequestDTO $command): void
     {
-        $agent->onSignalCommand($command, '', '');
+        $this->sessionsLibrary()->onSignalCommand($command, '', '');
+        $this->deliverLibraryFrames($agent);
+    }
+
+    /**
+     * Runs one browser impersonation action the way the dispatcher runs it.
+     *
+     * @param ChatAgent $agent Agent that holds this project's connections
+     * @param string $acceptKey Accept key of the connection that submitted
+     * @param ActionPayloadDTO $dto Parsed action payload naming which of the two it is
+     * @throws HilosException When the action or a frame that follows it fails
+     */
+    private function runAction(ChatAgent $agent, string $acceptKey, ActionPayloadDTO $dto): void
+    {
+        $this->sessionsLibrary()->onAgentAction($acceptKey, $dto->getAction(), $dto);
         $this->deliverLibraryFrames($agent);
     }
 
@@ -364,7 +376,7 @@ final class ImpersonationTest extends IntegrationTestCase
     }
 
     /**
-     * Builds an impersonateStart command request.
+     * Builds an impersonate:start command request.
      *
      * @param string $token Session cookie token
      * @param int $targetUserId User id to impersonate
@@ -374,16 +386,16 @@ final class ImpersonationTest extends IntegrationTestCase
     {
         return new CommandRequestDTO(
             correlationId: RandomHelper::hex(8),
-            command: ChatCommandConstants::IMPERSONATE_START,
+            command: CliCommands::IMPERSONATE_START,
             payload: [
-                ChatCommandConstants::FIELD_SESSION_TOKEN => $token,
-                ChatCommandConstants::FIELD_TARGET_USER_ID => $targetUserId,
+                AdminCommandConstants::FIELD_SESSION_TOKEN => $token,
+                AdminCommandConstants::FIELD_TARGET_USER_ID => $targetUserId,
             ],
         );
     }
 
     /**
-     * Builds an impersonateStop command request.
+     * Builds an impersonate:stop command request.
      *
      * @param string $token Session cookie token
      * @return CommandRequestDTO Stop command request
@@ -392,9 +404,9 @@ final class ImpersonationTest extends IntegrationTestCase
     {
         return new CommandRequestDTO(
             correlationId: RandomHelper::hex(8),
-            command: ChatCommandConstants::IMPERSONATE_STOP,
+            command: CliCommands::IMPERSONATE_STOP,
             payload: [
-                ChatCommandConstants::FIELD_SESSION_TOKEN => $token,
+                AdminCommandConstants::FIELD_SESSION_TOKEN => $token,
             ],
         );
     }

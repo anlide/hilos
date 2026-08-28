@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Users;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Session\SessionRebindConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\CLI\Commands\AbstractSetAdminCommand;
@@ -27,6 +28,12 @@ use Hilos\Core\CLI\Commands\AdminCreateCommand;
  * adds {@see self::FIELD_CREATED} to its reply, but the user id and the flag it answers with
  * mean exactly what the grant's do. Its halves are {@see AdminCreateCommand} and
  * {@see AbstractSessionsLibraryAgent}.
+ *
+ * The impersonation pair ({@see CliCommands::IMPERSONATE_START}, {@see CliCommands::IMPERSONATE_STOP})
+ * addresses a session by the same key and adds {@see self::FIELD_TARGET_USER_ID} for the
+ * person it is asked to act as. It does not answer from here: what a rebound session became
+ * is reported in the frame's own vocabulary ({@see SessionRebindConstants}), read back off
+ * the row rather than repeated from the request.
  */
 final class AdminCommandConstants
 {
@@ -36,8 +43,11 @@ final class AdminCommandConstants
     /** @var string Request and reply key: admin flag the command sets */
     public const string FIELD_ADMIN = 'admin';
 
-    /** @var string Request key: cookie token naming the browser session to make an administrator */
+    /** @var string Request key: cookie token naming the browser session the command acts on */
     public const string FIELD_SESSION_TOKEN = 'sessionToken';
+
+    /** @var string Request key: user an impersonation is asked to act as */
+    public const string FIELD_TARGET_USER_ID = 'targetUserId';
 
     /**
      * Reply key telling a mint from a grant: true when the session had no user and one was

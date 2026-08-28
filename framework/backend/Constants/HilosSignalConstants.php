@@ -27,6 +27,8 @@ use Hilos\Push\Delivery\PushDeliveryChannel;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Sms\DTO\SmsSendSignalData;
 use Hilos\Sms\HilosSmsSender;
+use Hilos\Users\DTO\AccountMergeResultSignalData;
+use Hilos\Users\DTO\AccountMergeSignalData;
 
 /**
  * Signal names used by framework-level Hilos admin pages.
@@ -388,6 +390,33 @@ final class HilosSignalConstants
      */
     public const string HILOS_LOGOUT = 'hilos_logout';
 
+    /**
+     * Client → sessions library (page-independent): make this admin session act as another
+     * user (HIL-729).
+     *
+     * Page-independent although its only control today sits on an admin table: what it
+     * writes is a session, and the session is the library's. Naming it on a page would tie
+     * the takeover to the page that happens to offer it, and the very next frame moves the
+     * person off that page - the effective user becomes the non-admin target, so an admin
+     * page is no longer theirs to be on.
+     *
+     * Whether this session MAY is the project's answer, not the name's: the flag that says
+     * "administrator" is a project field, and the library asks for it through a seam.
+     */
+    public const string HILOS_IMPERSONATE_START = 'hilos_impersonate_start';
+
+    /**
+     * Client → sessions library (page-independent): return this impersonating session to the
+     * administrator behind it (HIL-729).
+     *
+     * The inverse of {@see self::HILOS_IMPERSONATE_START} and page-independent for the
+     * stronger reason: while impersonating, the effective user is the non-admin target, so
+     * the control has to live in the app shell and no page can be guaranteed under it. It
+     * carries no payload and needs no seam - the administrator to go back to is read off the
+     * session's own marker.
+     */
+    public const string HILOS_IMPERSONATE_STOP = 'hilos_impersonate_stop';
+
     // ── Hilos sign-in surface: WebAuthn ceremonies (client → server) ──
     /**
      * Client → server: request WebAuthn discoverable (usernameless) login options — no
@@ -644,6 +673,30 @@ final class HilosSignalConstants
      * the operation from it. Carried by {@see SessionRebindSignalData}.
      */
     public const string HILOS_SESSION_REBIND = 'hilos_session_rebind';
+
+    /**
+     * Project agent → sessions library: fold this account into that one (HIL-729).
+     *
+     * The second way into the merge, beside {@see CliCommands::ACCOUNT_MERGE}, and the one a
+     * browser reaches: an admin table submits it as a page action, and the page forwards it
+     * here because the merge ends in the loser's live sessions being signed out - and those
+     * sessions are the library's. Carried by {@see AccountMergeSignalData}.
+     *
+     * The accept key travels with it and comes back untouched on
+     * {@see self::HILOS_ACCOUNT_MERGE_RESULT}: the person who asked is waiting on the page
+     * they asked from, and the library that does the work cannot name a project's ack.
+     */
+    public const string HILOS_ACCOUNT_MERGE = 'hilos_account_merge';
+
+    /**
+     * Sessions library → project agent: this is what the merge did, say it out loud.
+     *
+     * The way back for {@see self::HILOS_ACCOUNT_MERGE} and only for it - an operator on the
+     * command channel is answered where the work happened, on the parked socket. It carries
+     * either what moved or why nothing did ({@see AccountMergeResultSignalData}), and the
+     * project turns that into the ack its own surface waits for.
+     */
+    public const string HILOS_ACCOUNT_MERGE_RESULT = 'hilos_account_merge_result';
 
     // ── Hilos backup admin: page → monopoly BackupAgent routes (agent signals) ──
     /** Page → BackupAgent: run a backup in the carried scope (guarded create path). */
