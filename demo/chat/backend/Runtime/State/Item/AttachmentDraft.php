@@ -131,24 +131,12 @@ final class AttachmentDraft extends RtState
      */
     public function applyDiff(array $diff): void
     {
-        if (array_key_exists(self::quarantineBasename, $diff)) {
-            $this->quarantineBasename = self::requireString($diff, self::quarantineBasename);
-        }
-        if (array_key_exists(self::originalFilename, $diff)) {
-            $this->originalFilename = self::requireString($diff, self::originalFilename);
-        }
-        if (array_key_exists(self::mimeType, $diff)) {
-            $this->mimeType = self::requireString($diff, self::mimeType);
-        }
-        if (array_key_exists(self::size, $diff)) {
-            $this->size = self::requireInt($diff, self::size);
-        }
-        if (array_key_exists(self::normalizedFilename, $diff)) {
-            $this->normalizedFilename = self::requireString($diff, self::normalizedFilename);
-        }
-        if (array_key_exists(self::uploadedAt, $diff)) {
-            $this->uploadedAt = self::requireInt($diff, self::uploadedAt);
-        }
+        $this->quarantineBasename = self::patchString($diff, self::quarantineBasename, $this->quarantineBasename);
+        $this->originalFilename = self::patchString($diff, self::originalFilename, $this->originalFilename);
+        $this->mimeType = self::patchString($diff, self::mimeType, $this->mimeType);
+        $this->size = self::patchInt($diff, self::size, $this->size);
+        $this->normalizedFilename = self::patchString($diff, self::normalizedFilename, $this->normalizedFilename);
+        $this->uploadedAt = self::patchInt($diff, self::uploadedAt, $this->uploadedAt);
     }
 
     /**

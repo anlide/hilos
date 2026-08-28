@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\State\Item;
 
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
@@ -47,15 +48,14 @@ final class ChatContext extends RtState
      *
      * @param array<string, mixed> $row Row data with topic, topicConfidence, summary
      * @return static New instance
+     * @throws InvalidFormatException When the row is missing a field the context is built from
      */
     public static function fromRow(array $row): static
     {
         $instance = new static();
-        $topicVal = $row[self::topic] ?? null;
-        $instance->topic = $topicVal !== null && $topicVal !== '' ? (string)$topicVal : null;
-        $instance->topicConfidence = (float)($row[self::topicConfidence] ?? 0.0);
-        $summaryVal = $row[self::summary] ?? null;
-        $instance->summary = $summaryVal !== null && $summaryVal !== '' ? (string)$summaryVal : null;
+        $instance->topic = self::optionalString($row, self::topic);
+        $instance->topicConfidence = self::requireFloat($row, self::topicConfidence);
+        $instance->summary = self::optionalString($row, self::summary);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -75,20 +75,13 @@ final class ChatContext extends RtState
      * Apply diff to state (partial update).
      *
      * @param array<string, mixed> $diff Fields to update (topic, topicConfidence, summary)
+     * @throws InvalidFormatException When a field the diff does carry holds the wrong type
      */
     public function applyDiff(array $diff): void
     {
-        if (array_key_exists(self::topic, $diff)) {
-            $v = $diff[self::topic];
-            $this->topic = $v !== null && $v !== '' ? (string)$v : null;
-        }
-        if (array_key_exists(self::topicConfidence, $diff)) {
-            $this->topicConfidence = (float)$diff[self::topicConfidence];
-        }
-        if (array_key_exists(self::summary, $diff)) {
-            $v = $diff[self::summary];
-            $this->summary = $v !== null && $v !== '' ? (string)$v : null;
-        }
+        $this->topic = self::patchOptionalString($diff, self::topic, $this->topic);
+        $this->topicConfidence = self::patchFloat($diff, self::topicConfidence, $this->topicConfidence);
+        $this->summary = self::patchOptionalString($diff, self::summary, $this->summary);
     }
 
     /**

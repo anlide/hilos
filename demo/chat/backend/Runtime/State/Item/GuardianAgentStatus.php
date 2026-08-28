@@ -78,12 +78,8 @@ final class GuardianAgentStatus extends RtState
      */
     public function applyDiff(array $diff): void
     {
-        if (array_key_exists(self::status, $diff)) {
-            $this->status = self::normalizeStatus(self::requireString($diff, self::status));
-        }
-        if (array_key_exists(self::updatedAt, $diff)) {
-            $this->updatedAt = self::requireInt($diff, self::updatedAt);
-        }
+        $this->status = self::normalizeStatus(self::patchString($diff, self::status, $this->status));
+        $this->updatedAt = self::patchInt($diff, self::updatedAt, $this->updatedAt);
     }
 
     /**

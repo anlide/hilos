@@ -82,15 +82,9 @@ final class WorkerStatus extends RtState
      */
     public function applyDiff(array $diff): void
     {
-        if (array_key_exists(self::jobsDone, $diff)) {
-            $this->jobsDone = self::requireInt($diff, self::jobsDone);
-        }
-        if (array_key_exists(self::rowsSeen, $diff)) {
-            $this->rowsSeen = self::requireInt($diff, self::rowsSeen);
-        }
-        if (array_key_exists(self::updatedAt, $diff)) {
-            $this->updatedAt = self::requireInt($diff, self::updatedAt);
-        }
+        $this->jobsDone = self::patchInt($diff, self::jobsDone, $this->jobsDone);
+        $this->rowsSeen = self::patchInt($diff, self::rowsSeen, $this->rowsSeen);
+        $this->updatedAt = self::patchInt($diff, self::updatedAt, $this->updatedAt);
     }
 
     /**

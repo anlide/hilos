@@ -16,9 +16,7 @@ use PHPUnit\Framework\TestCase;
  * diff. A message sent with attachments and no text carries an empty text on
  * purpose: read as "no message", it would make the moderator skip the connection
  * and leave its phase checking forever, so every later message would be refused
- * as one already under moderation. The reason beside it is the opposite case —
- * nothing writes an empty reason, so an empty one is a row from a node that
- * spells "none" the old way.
+ * as one already under moderation.
  */
 final class ConnectionModerationRowTest extends TestCase
 {
@@ -51,13 +49,6 @@ final class ConnectionModerationRowTest extends TestCase
         $connection = Connection::fromRow(self::row([Connection::outboundModerationMessage => null]));
 
         $this->assertNull($connection->outboundModerationMessage);
-    }
-
-    public function testAnEmptyModerationReasonStillReadsAsNone(): void
-    {
-        $connection = Connection::fromRow(self::row([Connection::outboundModerationReason => '']));
-
-        $this->assertNull($connection->outboundModerationReason);
     }
 
     /**

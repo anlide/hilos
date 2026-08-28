@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\State\Item;
 
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
@@ -40,12 +41,14 @@ final class ChatUserState extends RtState
 
     /**
      * @param array<string, mixed> $row Serialized runtime row
+     * @return static Hydrated per-user row
+     * @throws InvalidFormatException When the row is missing a field the row is built from
      */
     public static function fromRow(array $row): static
     {
         $instance = new static();
-        $instance->userId = (int)($row[self::userId] ?? 0);
-        $instance->lastOutboundSubmittedAt = (float)($row[self::lastOutboundSubmittedAt] ?? 0.0);
+        $instance->userId = self::requireInt($row, self::userId);
+        $instance->lastOutboundSubmittedAt = self::requireFloat($row, self::lastOutboundSubmittedAt);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -63,12 +66,11 @@ final class ChatUserState extends RtState
 
     /**
      * @param array<string, mixed> $diff Partial update using the same string keys as `fromRow()`
+     * @throws InvalidFormatException When a field the diff does carry holds the wrong type
      */
     public function applyDiff(array $diff): void
     {
-        if (isset($diff[self::lastOutboundSubmittedAt])) {
-            $this->lastOutboundSubmittedAt = (float)$diff[self::lastOutboundSubmittedAt];
-        }
+        $this->lastOutboundSubmittedAt = self::patchFloat($diff, self::lastOutboundSubmittedAt, $this->lastOutboundSubmittedAt);
     }
 
     /**

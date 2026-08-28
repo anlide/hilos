@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\State\Item;
 
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
@@ -46,13 +47,15 @@ final class BotAgentStatus extends RtState
 
     /**
      * @param array<string, mixed> $row Serialized runtime row
+     * @return static Hydrated status row
+     * @throws InvalidFormatException When the row is missing a field the status is built from
      */
     public static function fromRow(array $row): static
     {
         $instance = new static();
-        $instance->botId = (int)($row[self::botId] ?? 0);
-        $instance->status = self::normalizeStatus((string)($row[self::status] ?? self::STATUS_LEFT));
-        $instance->updatedAt = (int)($row[self::updatedAt] ?? 0);
+        $instance->botId = self::requireInt($row, self::botId);
+        $instance->status = self::normalizeStatus(self::requireString($row, self::status));
+        $instance->updatedAt = self::requireInt($row, self::updatedAt);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -69,16 +72,19 @@ final class BotAgentStatus extends RtState
     }
 
     /**
+     * A diff carries only the fields that changed, so an absent key leaves the field
+     * as it was; a key that is present is read at its declared type. Wrapping the
+     * patched marker in {@see self::normalizeStatus()} is safe either way - the
+     * function is idempotent, so a diff about some other field re-normalizes a value
+     * that already passed through it.
+     *
      * @param array<string, mixed> $diff Partial update
+     * @throws InvalidFormatException When a field the diff does carry holds the wrong type
      */
     public function applyDiff(array $diff): void
     {
-        if (isset($diff[self::status])) {
-            $this->status = self::normalizeStatus((string)$diff[self::status]);
-        }
-        if (isset($diff[self::updatedAt])) {
-            $this->updatedAt = (int)$diff[self::updatedAt];
-        }
+        $this->status = self::normalizeStatus(self::patchString($diff, self::status, $this->status));
+        $this->updatedAt = self::patchInt($diff, self::updatedAt, $this->updatedAt);
     }
 
     /**

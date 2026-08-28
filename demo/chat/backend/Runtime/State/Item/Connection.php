@@ -148,6 +148,12 @@ final class Connection extends HilosSessionConnection
      * declares is required here and a phase field arrives as the empty string only
      * when that is the phase — the value its own `*_NONE` constant names.
      *
+     * An empty string is a value in every optional field below, never a spelling of
+     * absence: absence is `null`, and only this class writes these keys. A message
+     * submitted with attachments and no text is the field that makes the difference
+     * visible — read as "no message", it would leave the moderator's phase checking
+     * forever and every later submit refused as one already under moderation.
+     *
      * @param array<string, mixed> $row Serialized runtime row (string keys match this class field constants)
      * @throws InvalidFormatException When the row is missing a field of this socket's chat state
      */
@@ -155,26 +161,26 @@ final class Connection extends HilosSessionConnection
     {
         $this->connectedAt = self::requireInt($row, self::connectedAt);
         $this->outboundModerationPhase = self::requireString($row, self::outboundModerationPhase);
-        $this->outboundModerationMessage = self::stringOrNull($row, self::outboundModerationMessage);
-        $this->outboundModerationReason = self::nonEmptyStringOrNull($row, self::outboundModerationReason);
+        $this->outboundModerationMessage = self::optionalString($row, self::outboundModerationMessage);
+        $this->outboundModerationReason = self::optionalString($row, self::outboundModerationReason);
         $this->outboundModerationUpdatedAt = self::requireInt($row, self::outboundModerationUpdatedAt);
         $this->renameModerationPhase = self::requireString($row, self::renameModerationPhase);
-        $this->renameModerationName = self::nonEmptyStringOrNull($row, self::renameModerationName);
-        $this->renameModerationReason = self::nonEmptyStringOrNull($row, self::renameModerationReason);
+        $this->renameModerationName = self::optionalString($row, self::renameModerationName);
+        $this->renameModerationReason = self::optionalString($row, self::renameModerationReason);
         $this->renameModerationUpdatedAt = self::requireInt($row, self::renameModerationUpdatedAt);
-        $this->fileSessionUploadId = self::nonEmptyStringOrNull($row, self::fileSessionUploadId);
+        $this->fileSessionUploadId = self::optionalString($row, self::fileSessionUploadId);
         $this->fileSessionDeclaredSize = self::requireInt($row, self::fileSessionDeclaredSize);
         $this->fileSessionReceivedBytes = self::requireInt($row, self::fileSessionReceivedBytes);
-        $this->fileSessionQuarantineBasename = self::nonEmptyStringOrNull($row, self::fileSessionQuarantineBasename);
-        $this->fileSessionOriginalFilename = self::nonEmptyStringOrNull($row, self::fileSessionOriginalFilename);
-        $this->fileSessionMimeType = self::nonEmptyStringOrNull($row, self::fileSessionMimeType);
-        $this->fileSessionClientUploadId = self::nonEmptyStringOrNull($row, self::fileSessionClientUploadId);
-        $this->fileSessionNormalizedFilename = self::nonEmptyStringOrNull($row, self::fileSessionNormalizedFilename);
+        $this->fileSessionQuarantineBasename = self::optionalString($row, self::fileSessionQuarantineBasename);
+        $this->fileSessionOriginalFilename = self::optionalString($row, self::fileSessionOriginalFilename);
+        $this->fileSessionMimeType = self::optionalString($row, self::fileSessionMimeType);
+        $this->fileSessionClientUploadId = self::optionalString($row, self::fileSessionClientUploadId);
+        $this->fileSessionNormalizedFilename = self::optionalString($row, self::fileSessionNormalizedFilename);
         $this->fileUploadPhase = self::requireString($row, self::fileUploadPhase);
-        $this->fileUploadClientUploadId = self::nonEmptyStringOrNull($row, self::fileUploadClientUploadId);
-        $this->fileUploadErrorCode = self::nonEmptyStringOrNull($row, self::fileUploadErrorCode);
-        $this->fileUploadErrorMessage = self::nonEmptyStringOrNull($row, self::fileUploadErrorMessage);
-        $this->fileProgressFilename = self::nonEmptyStringOrNull($row, self::fileProgressFilename);
+        $this->fileUploadClientUploadId = self::optionalString($row, self::fileUploadClientUploadId);
+        $this->fileUploadErrorCode = self::optionalString($row, self::fileUploadErrorCode);
+        $this->fileUploadErrorMessage = self::optionalString($row, self::fileUploadErrorMessage);
+        $this->fileProgressFilename = self::optionalString($row, self::fileProgressFilename);
         $this->fileProgressUploadedBytes = self::requireInt($row, self::fileProgressUploadedBytes);
         $this->fileProgressTotalBytes = self::requireInt($row, self::fileProgressTotalBytes);
         $this->uploadProgressLastSentAt = self::requireFloat($row, self::uploadProgressLastSentAt);
@@ -199,87 +205,39 @@ final class Connection extends HilosSessionConnection
      */
     protected function applyOwnDiff(array $diff): void
     {
-        if (array_key_exists(self::connectedAt, $diff)) {
-            $this->connectedAt = self::requireInt($diff, self::connectedAt);
-        }
-        if (array_key_exists(self::outboundModerationPhase, $diff)) {
-            $this->outboundModerationPhase = self::requireString($diff, self::outboundModerationPhase);
-        }
-        if (array_key_exists(self::outboundModerationMessage, $diff)) {
-            $this->outboundModerationMessage = self::stringOrNull($diff, self::outboundModerationMessage);
-        }
-        if (array_key_exists(self::outboundModerationReason, $diff)) {
-            $this->outboundModerationReason = self::nonEmptyStringOrNull($diff, self::outboundModerationReason);
-        }
-        if (array_key_exists(self::outboundModerationUpdatedAt, $diff)) {
-            $this->outboundModerationUpdatedAt = self::requireInt($diff, self::outboundModerationUpdatedAt);
-        }
-        if (array_key_exists(self::renameModerationPhase, $diff)) {
-            $this->renameModerationPhase = self::requireString($diff, self::renameModerationPhase);
-        }
-        if (array_key_exists(self::renameModerationName, $diff)) {
-            $this->renameModerationName = self::nonEmptyStringOrNull($diff, self::renameModerationName);
-        }
-        if (array_key_exists(self::renameModerationReason, $diff)) {
-            $this->renameModerationReason = self::nonEmptyStringOrNull($diff, self::renameModerationReason);
-        }
-        if (array_key_exists(self::renameModerationUpdatedAt, $diff)) {
-            $this->renameModerationUpdatedAt = self::requireInt($diff, self::renameModerationUpdatedAt);
-        }
-        if (array_key_exists(self::fileSessionUploadId, $diff)) {
-            $this->fileSessionUploadId = self::nonEmptyStringOrNull($diff, self::fileSessionUploadId);
-        }
-        if (array_key_exists(self::fileSessionDeclaredSize, $diff)) {
-            $this->fileSessionDeclaredSize = self::requireInt($diff, self::fileSessionDeclaredSize);
-        }
-        if (array_key_exists(self::fileSessionReceivedBytes, $diff)) {
-            $this->fileSessionReceivedBytes = self::requireInt($diff, self::fileSessionReceivedBytes);
-        }
-        if (array_key_exists(self::fileSessionQuarantineBasename, $diff)) {
-            $this->fileSessionQuarantineBasename = self::nonEmptyStringOrNull(
-                $diff,
-                self::fileSessionQuarantineBasename,
-            );
-        }
-        if (array_key_exists(self::fileSessionOriginalFilename, $diff)) {
-            $this->fileSessionOriginalFilename = self::nonEmptyStringOrNull($diff, self::fileSessionOriginalFilename);
-        }
-        if (array_key_exists(self::fileSessionMimeType, $diff)) {
-            $this->fileSessionMimeType = self::nonEmptyStringOrNull($diff, self::fileSessionMimeType);
-        }
-        if (array_key_exists(self::fileSessionClientUploadId, $diff)) {
-            $this->fileSessionClientUploadId = self::nonEmptyStringOrNull($diff, self::fileSessionClientUploadId);
-        }
-        if (array_key_exists(self::fileSessionNormalizedFilename, $diff)) {
-            $this->fileSessionNormalizedFilename = self::nonEmptyStringOrNull(
-                $diff,
-                self::fileSessionNormalizedFilename,
-            );
-        }
-        if (array_key_exists(self::fileUploadPhase, $diff)) {
-            $this->fileUploadPhase = self::requireString($diff, self::fileUploadPhase);
-        }
-        if (array_key_exists(self::fileUploadClientUploadId, $diff)) {
-            $this->fileUploadClientUploadId = self::nonEmptyStringOrNull($diff, self::fileUploadClientUploadId);
-        }
-        if (array_key_exists(self::fileUploadErrorCode, $diff)) {
-            $this->fileUploadErrorCode = self::nonEmptyStringOrNull($diff, self::fileUploadErrorCode);
-        }
-        if (array_key_exists(self::fileUploadErrorMessage, $diff)) {
-            $this->fileUploadErrorMessage = self::nonEmptyStringOrNull($diff, self::fileUploadErrorMessage);
-        }
-        if (array_key_exists(self::fileProgressFilename, $diff)) {
-            $this->fileProgressFilename = self::nonEmptyStringOrNull($diff, self::fileProgressFilename);
-        }
-        if (array_key_exists(self::fileProgressUploadedBytes, $diff)) {
-            $this->fileProgressUploadedBytes = self::requireInt($diff, self::fileProgressUploadedBytes);
-        }
-        if (array_key_exists(self::fileProgressTotalBytes, $diff)) {
-            $this->fileProgressTotalBytes = self::requireInt($diff, self::fileProgressTotalBytes);
-        }
-        if (array_key_exists(self::uploadProgressLastSentAt, $diff)) {
-            $this->uploadProgressLastSentAt = self::requireFloat($diff, self::uploadProgressLastSentAt);
-        }
+        $this->connectedAt = self::patchInt($diff, self::connectedAt, $this->connectedAt);
+        $this->outboundModerationPhase = self::patchString($diff, self::outboundModerationPhase, $this->outboundModerationPhase);
+        $this->outboundModerationMessage = self::patchOptionalString($diff, self::outboundModerationMessage, $this->outboundModerationMessage);
+        $this->outboundModerationReason = self::patchOptionalString($diff, self::outboundModerationReason, $this->outboundModerationReason);
+        $this->outboundModerationUpdatedAt = self::patchInt($diff, self::outboundModerationUpdatedAt, $this->outboundModerationUpdatedAt);
+        $this->renameModerationPhase = self::patchString($diff, self::renameModerationPhase, $this->renameModerationPhase);
+        $this->renameModerationName = self::patchOptionalString($diff, self::renameModerationName, $this->renameModerationName);
+        $this->renameModerationReason = self::patchOptionalString($diff, self::renameModerationReason, $this->renameModerationReason);
+        $this->renameModerationUpdatedAt = self::patchInt($diff, self::renameModerationUpdatedAt, $this->renameModerationUpdatedAt);
+        $this->fileSessionUploadId = self::patchOptionalString($diff, self::fileSessionUploadId, $this->fileSessionUploadId);
+        $this->fileSessionDeclaredSize = self::patchInt($diff, self::fileSessionDeclaredSize, $this->fileSessionDeclaredSize);
+        $this->fileSessionReceivedBytes = self::patchInt($diff, self::fileSessionReceivedBytes, $this->fileSessionReceivedBytes);
+        $this->fileSessionQuarantineBasename = self::patchOptionalString(
+            $diff,
+            self::fileSessionQuarantineBasename,
+            $this->fileSessionQuarantineBasename,
+        );
+        $this->fileSessionOriginalFilename = self::patchOptionalString($diff, self::fileSessionOriginalFilename, $this->fileSessionOriginalFilename);
+        $this->fileSessionMimeType = self::patchOptionalString($diff, self::fileSessionMimeType, $this->fileSessionMimeType);
+        $this->fileSessionClientUploadId = self::patchOptionalString($diff, self::fileSessionClientUploadId, $this->fileSessionClientUploadId);
+        $this->fileSessionNormalizedFilename = self::patchOptionalString(
+            $diff,
+            self::fileSessionNormalizedFilename,
+            $this->fileSessionNormalizedFilename,
+        );
+        $this->fileUploadPhase = self::patchString($diff, self::fileUploadPhase, $this->fileUploadPhase);
+        $this->fileUploadClientUploadId = self::patchOptionalString($diff, self::fileUploadClientUploadId, $this->fileUploadClientUploadId);
+        $this->fileUploadErrorCode = self::patchOptionalString($diff, self::fileUploadErrorCode, $this->fileUploadErrorCode);
+        $this->fileUploadErrorMessage = self::patchOptionalString($diff, self::fileUploadErrorMessage, $this->fileUploadErrorMessage);
+        $this->fileProgressFilename = self::patchOptionalString($diff, self::fileProgressFilename, $this->fileProgressFilename);
+        $this->fileProgressUploadedBytes = self::patchInt($diff, self::fileProgressUploadedBytes, $this->fileProgressUploadedBytes);
+        $this->fileProgressTotalBytes = self::patchInt($diff, self::fileProgressTotalBytes, $this->fileProgressTotalBytes);
+        $this->uploadProgressLastSentAt = self::patchFloat($diff, self::uploadProgressLastSentAt, $this->uploadProgressLastSentAt);
     }
 
     /**
@@ -314,45 +272,5 @@ final class Connection extends HilosSessionConnection
             self::fileProgressTotalBytes => $this->fileProgressTotalBytes,
             self::uploadProgressLastSentAt => $this->uploadProgressLastSentAt,
         ];
-    }
-
-    /**
-     * Reads one optional field of a runtime row or diff. A row written by a node
-     * that has not been restarted yet still spells "no value" as the empty string
-     * where this class now writes null, and the two say the same thing.
-     *
-     * @param array<string, mixed> $source Runtime row or diff
-     * @param string $key Row key holding the field
-     * @return ?string The value, or null when the field holds none
-     * @throws InvalidFormatException When the key holds neither a string nor null
-     */
-    private static function nonEmptyStringOrNull(array $source, string $key): ?string
-    {
-        $value = self::stringOrNull($source, $key);
-
-        return $value === '' ? null : $value;
-    }
-
-    /**
-     * Reads one field whose empty string is the value itself, not a spelling of
-     * absence. The submitted message is the only such field here: a message sent
-     * with attachments and no text carries an empty text on purpose, and the
-     * moderation state it starts must survive the trip to the other workers.
-     * Absence is spelled by the phase field beside it, which such a row leaves
-     * clear, so the two are never confused.
-     *
-     * @param array<string, mixed> $source Runtime row or diff
-     * @param string $key Row key holding the field
-     * @return ?string The value, or null when the field holds none
-     * @throws InvalidFormatException When the key holds neither a string nor null
-     */
-    private static function stringOrNull(array $source, string $key): ?string
-    {
-        $value = $source[$key] ?? null;
-        if ($value !== null && !is_string($value)) {
-            throw new InvalidFormatException('Runtime row carries a non-string under key ' . $key);
-        }
-
-        return $value;
     }
 }
