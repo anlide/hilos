@@ -86,6 +86,26 @@ services:
     networks:
       - hilos-tasks-local-network
 
+  # The stack's gateway for every non-mail channel (HIL-492, HIL-653): the daemon
+  # points its SMS and Telegram transports here, and everything the gateway catches
+  # it forwards to tasks-mailpit-local as a letter. That is the whole point - a code
+  # sent to a phone is read in the browser beside the mailed ones, instead of being
+  # unreachable on a local stack. Not published on the host: it is talked to by the
+  # daemon, and read through Mailpit's UI above.
+  tasks-stand-gateway-local:
+    build:
+      context: ../../../framework/docker/stand-gateway
+    container_name: tasks-stand-gateway-local
+    environment:
+      MAILPIT_SMTP_HOST: tasks-mailpit-local
+      MAILPIT_SMTP_PORT: 1025
+      TZ: UTC
+    depends_on:
+      - tasks-mailpit-local
+    restart: unless-stopped
+    networks:
+      - hilos-tasks-local-network
+
   # The Hilos daemon. The .env file is optional at the compose level: nothing
   # creates it for you, and a fresh checkout starts without one - the values
   # come from this stack and, for anything it does not name, from .env.example.
@@ -125,14 +145,18 @@ services:
       - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-tasks}
       - DB_USERNAME=${MYSQL_USER:-hilos}
       - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
-      # Three monopolistic workers: one for the tasks agent, one for the Hilos
-      # dashboard's hilos_index agent the shell gear subscribes, and one for the
-      # sessions library that resolves every handshake (HIL-710). A monopolistic
-      # singleton needs a worker of its own, so the pool is the agent count: one
-      # short and the handshake is addressed to an agent that never comes up.
-      # The framework default gives two, but the demos prescribe it here (like
-      # chat) so the worker pool is explicit and not at the mercy of env drift.
-      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-3}
+      # Six monopolistic workers, one per monopolistic singleton: the tasks agent,
+      # the Hilos dashboard's hilos_index agent the shell gear subscribes, the
+      # sessions library that resolves every handshake (HIL-710), and the three
+      # sign-in turned on here (HIL-623) - the users library, the OAuth agent and
+      # the code agent. A monopolistic singleton needs a worker of its own, so the
+      # pool is the agent count: one short and a handshake or a sign-in is
+      # addressed to an agent that never comes up. The pooled delivery channels
+      # (mail, SMS) and the node-scoped throttle agent are NOT among them - they
+      # run on regular workers. The framework default gives two, but the demos
+      # prescribe it here (like chat) so the pool is explicit and not at the mercy
+      # of env drift.
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-6}
       # Mail goes to the stack's own interceptor, whose UI is published above. The
       # transport is pinned rather than auto-selected: a stack that loses the
       # catcher should fail loudly, not fall back to writing .eml files nobody opens.
@@ -142,11 +166,26 @@ services:
       - MAIL_SMTP_SECURITY=${MAIL_SMTP_SECURITY:-none}
       - MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS:-notifications@tasks.local}
       - MAIL_FROM_NAME=${MAIL_FROM_NAME:-Hilos Tasks}
+      # SMS and Telegram go to the stack's own gateway, which mails them on to the
+      # same interceptor (HIL-653). A non-empty SMS endpoint is what picks the
+      # generic HTTP provider over the stub, so the message really travels; the
+      # Telegram token is fake but non-empty, because the gateway refuses a call
+      # that carries no bearer and a daemon without credentials should fail here.
+      - SMS_ENDPOINT_URL=${SMS_ENDPOINT_URL:-http://tasks-stand-gateway-local:18000/sms/send}
+      - TELEGRAM_GATEWAY_ENDPOINT_URL=${TELEGRAM_GATEWAY_ENDPOINT_URL:-http://tasks-stand-gateway-local:18000/telegram}
+      - TELEGRAM_GATEWAY_TOKEN=${TELEGRAM_GATEWAY_TOKEN:-stand-gateway-token}
+      - TELEGRAM_GATEWAY_SENDER_USERNAME=${TELEGRAM_GATEWAY_SENDER_USERNAME:-HilosTasks}
+      # Where a mailed sign-in link comes back to (HIL-417). Overridden rather than
+      # inherited: the framework default names port 5173, and this stack publishes
+      # its dev server on 5174 so it can run beside the chat one - so the default
+      # would mail a person a link into another application's front end.
+      - HILOS_MAGIC_LINK_URL=${HILOS_MAGIC_LINK_URL:-http://localhost:5174/auth/magic}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
     depends_on:
       - tasks-mysql-local
       - tasks-mailpit-local
+      - tasks-stand-gateway-local
     ports:
       # Host-side publishes: container ports stay fixed, the host side shifts
       # per the demo port plan so several stacks run side by side.

@@ -8,6 +8,7 @@ use Demo\Tasks\Database\Object\Collection\Users as ObjectUsers;
 use Demo\Tasks\Database\Object\Item\User as ObjectUser;
 use Demo\Tasks\Database\View\Collection\Users as DbCollectionUsers;
 use Demo\Tasks\Database\View\Item\User;
+use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
@@ -64,6 +65,47 @@ final class UsersActions extends DbActions
         // authoritative for this worker, so evict any stale remnant at that id before adding:
         // letting the framework duplicate-id guard fire would crash the worker.
         unset($this->objectCollection[$user->getIdString()]);
+        $this->addObjectToCollection($user);
+
+        return $this->createDbItemFromObject($user);
+    }
+
+    /**
+     * Creates an account carrying a display name.
+     *
+     * The second mint this demo has, and the one every sign-in road ends at: HIL-610
+     * left `registerAdmin()` alone here because a visitor stopped being a user, and a
+     * visitor who signs in needs a row that is neither an administrator nor a guest.
+     * The name comes from the ceremony that created the account - typed at
+     * registration, or read off the OAuth provider - and stays editable afterwards.
+     *
+     * The name is trimmed here and an empty one is refused: a nameless account is a
+     * defect wherever it comes from, and this is the one door every road passes
+     * through. The length is deliberately NOT checked - the callers upstream have
+     * no fallback to fall back to, so a refusal by length would break registrations
+     * that are otherwise sound.
+     *
+     * The caller binds the session to what this returns; nothing here identifies the row.
+     *
+     * @param string $name Display name for the new account
+     * @return User Created user
+     * @throws EmptyValueException When the name is empty or blank
+     * @throws HilosException On database error
+     */
+    public function createWithName(string $name): User
+    {
+        $this->ensureCanWrite();
+
+        $displayName = trim($name);
+        if ($displayName === '') {
+            throw new EmptyValueException('User name cannot be empty');
+        }
+
+        $user = ObjectUser::create();
+        $user->name = $displayName;
+        $user->lastActivity = TimeHelper::getSqlDateTime();
+        $user->sync();
+
         $this->addObjectToCollection($user);
 
         return $this->createDbItemFromObject($user);

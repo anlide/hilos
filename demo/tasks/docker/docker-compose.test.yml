@@ -61,6 +61,33 @@ services:
     networks:
       - hilos-tasks-test-network
 
+  # The stand's gateway for every non-mail channel (HIL-492, HIL-653): the daemon
+  # points the SMS and Telegram transports here, so a login over either is a real
+  # HTTP exchange, and everything the gateway catches it forwards to
+  # tasks-mailpit-test as a letter. That is why there is no reader beside it - what
+  # arrived is read in the same inbox as mail, by the runner and by a person alike.
+  # Built from the framework so all three demos can adopt it unchanged. No host
+  # ports: nothing outside the stack talks to it.
+  tasks-stand-gateway-test:
+    build:
+      context: ../../../framework/docker/stand-gateway
+    container_name: tasks-stand-gateway-test
+    environment:
+      MAILPIT_SMTP_HOST: tasks-mailpit-test
+      MAILPIT_SMTP_PORT: 1025
+      TZ: UTC
+    depends_on:
+      tasks-mailpit-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"http://127.0.0.1:18000/test/health\") === false ? 1 : 0);'"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 3s
+    networks:
+      - hilos-tasks-test-network
+
   tasks-daemon-test:
     build: .
     env_file:
@@ -105,14 +132,18 @@ services:
       # in this container (admin:create / admin:grant / admin:revoke /
       # protected-mode:open) reaches the command channel over loopback.
       - HILOS_DAEMON_HOST=127.0.0.1
-      # Three monopolistic workers: one for the tasks agent, one for the Hilos
-      # dashboard's hilos_index agent the shell gear subscribes, and one for the
-      # sessions library that resolves every handshake (HIL-710). A monopolistic
-      # singleton needs a worker of its own, so the pool is the agent count: one
-      # short and the handshake is addressed to an agent that never comes up.
-      # The framework default gives two, but the demos prescribe it here (like
-      # chat) so the worker pool is explicit and not at the mercy of env drift.
-      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-3}
+      # Six monopolistic workers, one per monopolistic singleton: the tasks agent,
+      # the Hilos dashboard's hilos_index agent the shell gear subscribes, the
+      # sessions library that resolves every handshake (HIL-710), and the three
+      # sign-in turned on here (HIL-623) - the users library, the OAuth agent and
+      # the code agent. A monopolistic singleton needs a worker of its own, so the
+      # pool is the agent count: one short and a handshake or a sign-in is
+      # addressed to an agent that never comes up. The pooled delivery channels
+      # (mail, SMS) and the node-scoped throttle agent are NOT among them - they
+      # run on regular workers. The framework default gives two, but the demos
+      # prescribe it here (like chat) so the pool is explicit and not at the mercy
+      # of env drift.
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-6}
       # Mail: the transport is pinned to the stand's own interceptor rather than
       # auto-selected, so a stand that loses the relay fails loudly instead of
       # quietly writing .eml files into the work tree that nobody reads. A sender
@@ -123,11 +154,36 @@ services:
       - MAIL_SMTP_SECURITY=none
       - MAIL_FROM_ADDRESS=notifications@tasks.test
       - MAIL_FROM_NAME=Hilos Tasks
+      # WebAuthn / passkey (HIL-284): pin the Relying Party to the in-network e2e
+      # host, so a device key enrolled in a spec verifies. The runner reaches the
+      # app as https://tasks-nginx-test, so the browser scopes the credential to
+      # that RP id and sends that origin in clientDataJSON; the daemon matches
+      # rpId hash and origin exactly, and the defaults (localhost /
+      # http://localhost) reject it.
+      - HILOS_WEBAUTHN_RP_ID=tasks-nginx-test
+      - HILOS_WEBAUTHN_ORIGIN=https://tasks-nginx-test
+      - HILOS_WEBAUTHN_CHALLENGE_SECRET=e2e-webauthn-challenge-secret
+      # SMS (HIL-653): a non-empty endpoint is what selects the generic HTTP
+      # provider over the stub, so the daemon really posts the message and the
+      # stand gateway really mails it on. The URL is the send route in full - the
+      # generic provider posts to the endpoint exactly as configured, the way a
+      # real gateway's endpoint is a whole address rather than a base.
+      - SMS_ENDPOINT_URL=http://tasks-stand-gateway-test:18000/sms/send
+      # Telegram Gateway (HIL-492): the stand's own gateway, which is the only
+      # reason the endpoint is configurable at all. The channel prefix is the base
+      # the client appends its method paths to. The token is what makes the channel
+      # configured - the gateway refuses a call that carries no bearer, so a daemon
+      # that forgot its credentials fails here rather than in production.
+      - TELEGRAM_GATEWAY_ENDPOINT_URL=http://tasks-stand-gateway-test:18000/telegram
+      - TELEGRAM_GATEWAY_TOKEN=stand-gateway-token
+      - TELEGRAM_GATEWAY_SENDER_USERNAME=HilosTasks
     command: ["php", "backend/Bootstrap/docker.php"]
     depends_on:
       tasks-mysql-test:
         condition: service_healthy
       tasks-mailpit-test:
+        condition: service_healthy
+      tasks-stand-gateway-test:
         condition: service_healthy
     ports:
       - "${HILOS_BIND_HOST:-127.0.0.1}:${HTTP_TEST_PORT:-8101}:8090"

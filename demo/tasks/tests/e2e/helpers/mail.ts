@@ -1,0 +1,214 @@
+import { expect } from '@playwright/test'
+
+// The stand's mail interceptor (tasks-mailpit-test in docker-compose.test.yml).
+// The daemon sends over SMTP to it, so anything the product mails — a
+// verification code, a recovery code — lands in a mailbox the runner can read
+// over HTTP. This is the only place a spec can prove a message actually left the
+// node: the daemon's own log saying `sent` is the daemon's word for it.
+const MAILPIT_URL = process.env.MAILPIT_URL ?? 'http://tasks-mailpit-test:8025'
+
+// The mailbox is shared by every spec on the stand, so a message is never
+// identified by "the newest one": a read names the recipient, and every spec
+// coins an address no other one uses. Clearing is a run-start act only
+// (clearMail, from the global setup) — mid-run it would take the letter a
+// parallel worker is still waiting for.
+//
+// Mail is never awaited with a fixed pause: a send travels as a signal to a
+// sharded mail agent and settles on its own tick, so every wait polls until the
+// letter is there.
+
+/** The subject RegisterConfirmMailTemplate sends the registration code under. */
+const REGISTER_SUBJECT = 'Confirm your email address'
+
+/** The subject PasswordResetMailTemplate sends the recovery code under. */
+const PASSWORD_RESET_SUBJECT = 'Reset your password'
+
+/** One intercepted message, as a spec reads it back. */
+export interface InterceptedMail {
+  /** Subject line, which is how a wait picked this message out. */
+  subject: string
+  /** Plain-text body — where a verification code sits. */
+  text: string
+}
+
+/** The message-list fields this helper reads (Mailpit returns many more). */
+interface MailboxEntry {
+  ID: string
+  Subject: string
+  To: { Address: string }[]
+}
+
+/**
+ * Wait until the interceptor holds a message with this recipient and subject,
+ * and return it.
+ *
+ * @param address Recipient address, as the product addressed it.
+ * @param subject Exact subject line the awaited message carries.
+ * @returns The matched message's subject and plain-text body.
+ * @throws Error When the message vanishes between the poll and the read.
+ */
+export async function waitForMailTo(
+  address: string,
+  subject: string,
+): Promise<InterceptedMail> {
+  await expect
+    .poll(async () => (await matchingIds(address, subject)).length, {
+      message: `no mail to ${address} subject "${subject}" reached the interceptor`,
+    })
+    .toBeGreaterThan(0)
+
+  const [id] = await matchingIds(address, subject)
+  if (id === undefined) {
+    throw new Error(`mail to ${address} subject "${subject}" disappeared`)
+  }
+
+  return readMessage(id)
+}
+
+/**
+ * Wait for a verification code the product mailed, and return it.
+ *
+ * The `auth.*` templates all frame one numeric code in prose
+ * (AbstractVerificationCodeMailTemplate), so the code is the run of digits the
+ * body ends its instruction with.
+ *
+ * @param address Recipient address the code was issued for.
+ * @param subject Exact subject line of the mail carrying it.
+ * @returns The plaintext verification code.
+ * @throws Error When the awaited mail carries no code.
+ */
+export async function waitForMailCode(
+  address: string,
+  subject: string,
+): Promise<string> {
+  const mail = await waitForMailTo(address, subject)
+  const code = /(\d{4,})/.exec(mail.text)?.[1]
+  if (code === undefined) {
+    throw new Error(`mail "${subject}" to ${address} carried no code`)
+  }
+
+  return code
+}
+
+/**
+ * Wait for the registration letter and return the code it carries.
+ *
+ * Registration is code-gated since HIL-415 — the submit only holds the address,
+ * and the account exists once the mailed code comes back — so a spec reads the
+ * code the way a person reads it out of their inbox, from a place the page
+ * cannot see.
+ *
+ * @param email The address the registration was submitted for.
+ * @returns The plaintext confirmation code.
+ * @throws Error When the delivered letter carries no code.
+ */
+export async function readRegisterCode(email: string): Promise<string> {
+  return waitForMailCode(email, REGISTER_SUBJECT)
+}
+
+/**
+ * Wait for the recovery letter and return the code it carries.
+ *
+ * @param email The address the reset was requested for.
+ * @returns The plaintext recovery code.
+ * @throws Error When the delivered letter carries no code.
+ */
+export async function readPasswordResetCode(email: string): Promise<string> {
+  return waitForMailCode(email, PASSWORD_RESET_SUBJECT)
+}
+
+/**
+ * Drop every message the interceptor holds.
+ *
+ * Called once from the global setup: the interceptor outlives a single run, so
+ * without this a run reads letters the previous one sent. Between tests nothing
+ * is cleared — every spec uses a unique address, so a per-address read is
+ * already isolated from its neighbours.
+ */
+export async function clearMail(): Promise<void> {
+  await call('/api/v1/messages', { method: 'DELETE' })
+}
+
+/**
+ * The messages currently held for one recipient, whatever their subject.
+ *
+ * The whole mailbox is listed and filtered here rather than handed to Mailpit's
+ * search: the search grammar tokenizes its terms, and an address is exactly the
+ * kind of value that does not survive tokenizing intact. Recipients are matched
+ * case-insensitively — an address is stored as the sender wrote it, and the
+ * product lowercases nothing on its way out.
+ *
+ * @param address Recipient address to match.
+ * @returns Matching mailbox entries, newest first (the order Mailpit lists in).
+ */
+async function entriesTo(address: string): Promise<MailboxEntry[]> {
+  const mailbox = await request<{ messages: MailboxEntry[] }>(
+    '/api/v1/messages?limit=200',
+  )
+  const wanted = address.toLowerCase()
+
+  return mailbox.messages.filter((entry) =>
+    entry.To.some((recipient) => recipient.Address.toLowerCase() === wanted),
+  )
+}
+
+/**
+ * Ids of the messages currently held for one recipient and subject.
+ *
+ * @param address Recipient address to match.
+ * @param subject Exact subject line to match.
+ * @returns Matching message ids, newest first (the order Mailpit lists in).
+ */
+async function matchingIds(
+  address: string,
+  subject: string,
+): Promise<string[]> {
+  const entries = await entriesTo(address)
+
+  return entries
+    .filter((entry) => entry.Subject === subject)
+    .map((entry) => entry.ID)
+}
+
+/**
+ * Read one held message in full.
+ *
+ * @param id Message id from the mailbox listing.
+ * @returns The message's subject and plain-text body.
+ */
+async function readMessage(id: string): Promise<InterceptedMail> {
+  const message = await request<{ Subject: string; Text: string }>(
+    `/api/v1/message/${id}`,
+  )
+
+  return { subject: message.Subject, text: message.Text }
+}
+
+/**
+ * Call one Mailpit endpoint and decode its JSON.
+ *
+ * @param path API path including its query.
+ * @returns The decoded body.
+ */
+async function request<T>(path: string): Promise<T> {
+  const response = await call(path)
+
+  return (await response.json()) as T
+}
+
+/**
+ * Call one Mailpit endpoint, refusing anything but a 2xx.
+ *
+ * @param path API path including its query.
+ * @param init Request options, for the calls that are not a plain GET.
+ * @returns The raw response.
+ * @throws Error When the interceptor answers anything but 2xx.
+ */
+async function call(path: string, init?: RequestInit): Promise<Response> {
+  const response = await fetch(`${MAILPIT_URL}${path}`, init)
+  if (!response.ok) {
+    throw new Error(`mail interceptor answered ${response.status} for ${path}`)
+  }
+
+  return response
+}
