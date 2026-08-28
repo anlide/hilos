@@ -1,116 +1,141 @@
 # Toasts
 
 Read this before showing the user any outcome that is not attached to the thing
-they are looking at: a run that finished after its action was acked, a reply that
-came back late, a background job reporting how it went.
+they are looking at — a run that finished after its action was acked, a reply
+that came back late, a background job reporting how it went — and before
+deciding that the corner stack is the right surface at all.
 
-## Core Rule
-
-A **toast** is a transient, self-expiring notice in the shell's corner stack. It
-is presentation only. The backend never asks for one: it reports domain outcomes
+A **toast** is a short notice that something happened. It demands no reply,
+blocks no work, and expires on its own — except an error, which stays until the
+user closes it. It is presentation only: the backend reports domain outcomes
 and failures, and the frontend decides which of them deserve a toast
-([wire-protocol.md](wire-protocol.md)). Nothing shown in a toast may be the only
-copy of that information — a toast that expires is gone.
+([wire-protocol.md](wire-protocol.md)). Nothing shown in a toast may be the
+only copy of that information — a toast that expires is gone.
 
-Pick the surface by where the user is looking and how long the fact matters:
+Rules that the code does not implement yet end with a literal marker
+`(not in the code yet — HIL-<n>)` naming the leaf that will land them; when
+that leaf lands, its markers are removed by one grep for the key.
+
+## Who a toast is addressed to
+
+A toast lives only while someone is looking at it, so it has exactly **two
+addressees, and no third** — both picked so that the onlooker is guaranteed to
+exist:
+
+- **The connection that acted.** The user pressed the button and is standing
+  right there. On the backend this is `AbstractAgent::sendToUser()` — despite
+  the name it reaches **one connection** (signal type
+  `SignalTypeConstants::WS_USER`, addressed by `targetAcceptKey`).
+- **The session the server is answering.** Every tab of one browser:
+  `AbstractAgent::sendToSession()` (signal type
+  `SignalTypeConstants::WS_SESSION`, addressed by `targetSessionTokenHash`).
+
+**There is no "user" level.** A message addressed to the person in general —
+not to their current window — is never shown as a toast: the person may own
+three devices with two of them switched off, and an expiring card will not
+wait for them. Anything addressed to the user belongs on a surface that does
+wait — a banner, or a durable record in the notification center (the
+`hilos_notifications:<userId>` group,
+`core/src/notifications/notificationCenter.ts`).
+
+## Which surface: toast, banner, or record
+
+Pick by who the addressee is and how long the fact matters: an instant outcome
+of the current window is a **toast**; a state that lasts is a **banner**; what
+may be needed tomorrow — or is addressed to the person in general — is a
+**record** (the notification center, a history row, a status field).
 
 | The fact | Surface |
 |---|---|
+| an action succeeded, and the result is not visible on screen | **toast** |
+| a background event: an export finished, a notification arrived | **toast** |
+| an action failed, and someone has to learn it here and now | **toast** |
+| the result is visible by itself: the row disappeared, the switch flipped | nothing — the screen already said it |
 | this field / this form is wrong | inline, next to the field — never a toast |
-| the action I just pressed failed | **toast** — this is the default, in a dialog and on a page alike |
-| something I started earlier finished or failed | **toast** |
-| a late reply reconciling after a timeout | **toast** |
-| an outcome the user may need tomorrow | the feature's own record (a history row, a status field) — a toast may accompany it, never replace it |
-| nobody asked for it (a schedule, a cron, another user's action) | no toast — it belongs in the record |
+| a decision is needed to proceed | a modal |
+| a state that lasts, until it ends | a banner, not an event notice |
+| nobody asked for it, and no trace would remain | a record — not a toast |
 
-That last row is the one most often got wrong: an unattended failure must not
-interrupt whoever happens to be connected. Address the notice to the connection
-that asked for the work, or to nobody.
+A banner is only named here — its shape and mechanics are HIL-736's. The last
+row is the one most often got wrong: an unattended outcome must not interrupt
+whoever happens to be connected; it belongs in the record.
 
-## Workflow
+## My own action, and a background one
 
-1. Push into the shared store; the shell already renders it.
+The two addressees look different on screen:
 
-   ```ts
-   import { hilosToasts } from '@hilos/core'
+- **My own action** (the connection that acted) carries no source signature —
+  the user knows what they just pressed — and the card is not obliged to lead
+  anywhere: they are already at the place the outcome describes.
+- **A background one** (the session) **names its sender** and is **obliged to
+  lead to the record** it announces. A background toast with nowhere to lead
+  is a subsystem that failed to create a record — fix the subsystem, not the
+  toast.
 
-   hilosToasts.push('Password changed.', { severity: 'success' })
-   hilosToasts.push(reason, { severity: 'error' })
-   ```
+Leading is the whole card as one click target (a stretched link, like a list
+row) — never a button inside the card.
 
-2. Choose the severity honestly: `error` (something failed), `success` (something
-   the user asked for completed), `info` (neither). The severity drives the
-   Bootstrap surface and the lifetime — **20 seconds** by default, **40 seconds**
-   for an error. An error gets double because it carries a reason the user has to
-   read and understand, not merely notice.
-3. Pass `ttlMs` only to override the default lifetime, and only with the reason
-   written at the call site — a lifetime with no reason beside it is the next
-   person's mystery. `ttlMs: 0` keeps a notice until the user dismisses it. Use it
-   sparingly — a sticky toast is a modal in disguise, and it is evicted by the
-   visible cap like any other.
-4. Write the message as a whole sentence the user can act on. A failure names
-   what failed and why in one line; the full detail belongs in the log, not in
-   the corner of the screen — and never the engine's own words
-   ([wire-protocol.md](wire-protocol.md), "A failure reason is a domain
-   sentence").
-5. Nothing to mount: `HilosToastHost` is part of `HilosLayout` in all three view
-   layers, so any page inside the shell is covered. Mount the host yourself only
-   in an app that does not use the framework shell.
+## What a toast never has
 
-**Reading time is protected, and the corner is capped.** The countdown of the
-whole stack freezes while it is under the cursor or holds keyboard focus, and on
-leaving it continues from what is left, not from the full lifetime — the two are
-independent holds, so leaving with the cursor while focus is still inside does
-not restart anything. Twenty seconds is enough to read a notice only if the
-notice is still there, which is why the stack shows at most **4 at once**: a
-fifth push evicts the oldest. While the stack is held, eviction waits — a pause
-promises that nothing disappears while the user is reading, so the excess leaves
-in one move on release. None of this is a per-call option: the host reports the
-events, the store owns the policy, and a caller has nothing to wire.
+- **Buttons.** An action inside an expiring card runs away from under the
+  hand: the user must notice, read, decide and land the cursor before the card
+  is gone. The card may *lead* — one click on the whole card — but it can *do*
+  nothing.
+- **History.** A toast that flew away is lost, and that is intended. What may
+  be needed later must have its own record, and the toast only points at it; a
+  toast history would grow into a dump where a proper journal belongs.
+- **Connection messages.** Losing the connection is a state, not an event — it
+  has the indicator in the shell's header. No sound and no vibration either.
+- **A showing before the first frame.** A notice that arrives before the app
+  has rendered its first frame waits for that frame; it does not pop up over
+  the splash screen.
 
-## Failures of a tracked action
+## How to show one
 
-A view does not push its own toast for a submit. The tracked-action driver does
-it — by default, with no flag — and still sets `error` for anything that wants to
-render it:
+Push into the shared store; the shell already renders it — `HilosToastHost` is
+part of `HilosLayout` in all three view layers, so any page inside the shell
+is covered (mount the host yourself only in an app that does not use the
+framework shell):
 
 ```ts
-const { loading, busy, run } = useTrackedAction()   // Vue / React
-protected readonly edit = createHilosTrackedAction() // Angular
+import { hilosToasts } from '@hilos/core'
+
+hilosToasts.push('Password changed.', { severity: 'success' })
+hilosToasts.push(reason, { severity: 'error' })
 ```
 
-**Do not render `error` as an inline alert alongside this.** The toast is the
-surface; a banner as well is the same failure said twice, and it shoves the form
-down as it appears.
+There are **four severities**: `error` (something failed), `success`
+(something the user asked for completed), `warning` (it worked, with a
+caveat), and `info` (neither) (not in the code yet — HIL-765). Write the
+message as one whole sentence the user can act on — and never the engine's own
+words ([wire-protocol.md](wire-protocol.md), "A failure reason is a domain
+sentence").
 
-Opting out is `toast: false`, and it needs a reason at the call site. The two
-that qualify:
+A view does not push its own toast for a submit. The **tracked-action driver**
+does it — by default, with no flag (`useTrackedAction()` in Vue and React,
+`createHilosTrackedAction()` in Angular):
+
+- **Success** text is backend-authored: the `action_success` reply carries an
+  optional `message` (set from `onAction()` via
+  `AbstractPage::setActionSuccessMessage()`), and the domain sentence lives on
+  the backend because Hilos i18n does. The generic client "Done." is a
+  transitional stub on its way out (not in the code yet — HIL-770).
+- **A failure of my own action does not fly to the corner.** The modal in
+  which the action was refused shows the refusal itself, in the place reserved
+  for it (not in the code yet — HIL-769). The corner keeps only the failures
+  nobody was standing in front of.
+
+Opting out is `toast: false`, with the reason written at the call site. The
+three reasons that qualify:
 
 - **field validation** — the message belongs against the field it describes;
 - **sign-in and verification forms** — "wrong password" answers the value the
-  user just typed, on a form they are already looking at.
+  user just typed, on a form they are already looking at;
+- **the result is visible by itself** — the row disappeared, the switch
+  flipped; the screen has already said it.
 
-## Success of a tracked action
-
-A submit that commits toasts success the same way — by default, with no flag.
-The same `toast: false` that opts out of the failure toast opts out of the
-success one too (the two outcomes share one switch), so the field-validation and
-sign-in forms above stay quiet on both.
-
-The text is **backend-authored**: the `action_success` reply carries an optional
-`message` (PHP `PageActionSuccessSignalData`, set from `onAction()` via
-`AbstractPage::setActionSuccessMessage()`), which the driver shows. The domain
-sentence lives on the backend because Hilos i18n does — the backend authors and
-localizes it, the frontend only decides to toast it. Until a handler supplies
-one, the driver falls back to a generic client string; that fallback is
-transitional, not a place to phrase the outcome. This is the success-side
-symmetry of the wire-protocol rule that a failure reason is a backend-authored
-domain sentence, never the engine's own words.
-
-## Preferred Shape
-
-Prefer pushing from the **core headless** rather than from each view — one call
-covers Vue, React and Angular at once:
+Prefer pushing from the **core headless** rather than from each view — one
+call covers Vue, React and Angular at once:
 
 ```ts
 // core/src/admin/backup/hilosBackups.ts
@@ -121,35 +146,106 @@ context.connection.on('actionError', (signal) => {
 })
 ```
 
-## Anti-Patterns
-
-- An `alert alert-success` that a comment calls a "toast". If it belongs in the
-  corner stack, put it there; if it belongs in the page, do not call it a toast.
-- A toast carrying information with no durable home ("backup 3 of 7 failed" and
-  nothing in the list says so).
-- A toast for a validation error the user can fix in the form in front of them.
-- Broadcasting an unattended failure to every connected client.
-- Reaching for Bootstrap's JS `Toast`: the SDK ships Bootstrap's CSS only, and
-  the store owns visibility (the same reason `HilosModal` renders `.modal.show`
-  itself).
-
-## Exceptions
-
 A project may render its own stack by creating an independent store
 (`createHilosToastStore()`) and passing it to the host — the shared
-`hilosToasts` singleton is the default, not a requirement.
+`hilosToasts` singleton is a default, not a requirement.
+
+## Lifetime, pause, and what overflows
+
+- **Twenty seconds; an error — until dismissed.** Twenty seconds is time to
+  read, not time to notice. An error does not expire at all: the user closes
+  it, and that is the only thing a toast ever requires of a person
+  (not in the code yet — HIL-765).
+- **Time belongs to the store.** The caller does not set a lifetime, and the
+  push contract carries no `ttlMs` option — one behavior instead of a flag
+  (not in the code yet — HIL-765).
+- **The countdown measures reading time, not wall time.** It freezes under
+  three independent, counted holds: the cursor over the stack, keyboard focus
+  inside it, and the tab not being visible (not in the code yet — HIL-765).
+  Releasing one hold while another is still held resumes nothing; on release
+  the countdown continues from what is left. Walk away to another tab and
+  everything is still there when you come back.
+- **The cap is a third of the window height, not a card count.** Five short
+  notices and two long ones occupy different space, and a phone and a monitor
+  differ more still — the limit is measured in the unit the problem actually
+  has (not in the code yet — HIL-765).
+- **When space runs out, only an error has the right to wait.** Nothing old is
+  silently evicted — the new card waits for a slot, but that right belongs to
+  errors alone: a queued error takes the next slot freed by a dismissal.
+  Success, info and warning collapse into a missed count instead. The stack
+  carries one service line of the shape "N more waiting · M missed"; the line
+  does not count toward the height cap and resets once the stack empties
+  (not in the code yet — HIL-765). The count is honest and expands into
+  nothing — there is no history.
+- **A repeat does not multiply cards.** A push whose text *and* severity
+  exactly match a visible card bumps a ×N counter on that card and restarts
+  its countdown (not in the code yet — HIL-765). Full-match dedup is
+  deliberate: if the text carries an object's name, the texts differ anyway.
+  Remember the merge treats a symptom — twenty identical failures are almost
+  always one dead server that twenty actions crashed against; ×20 makes it
+  bearable, the fix happens where the errors are born.
+- **Text is clipped at three lines.** The details live in the record, not in
+  the corner (not in the code yet — HIL-766 / HIL-767).
+- **Tabs of one session.** Each tab runs its own countdown — the cursor
+  hovers in one tab and not in another, and that is two tabs, not a desync.
+  Closing is the person's answer, and the person is one per session:
+  dismissed in one tab — gone in all, and a countdown that burns out anywhere
+  ends the toast everywhere. A frozen stack outranks another tab's
+  extinguishing: while the countdown stands here, nothing disappears from
+  under the cursor (not in the code yet — HIL-768).
+
+## Where the stack sits
+
+Bottom right by default; on a narrow screen the corner is always the top
+right — the bottom of a phone is occupied by the form's buttons, and the
+keyboard rises from there. A project may move the corner **once, at build
+time**, never per call: different corners in different sections of one product
+is a reliable way to make the notices stop being noticed
+(not in the code yet — HIL-766 / HIL-767). The stack sits above a modal and is
+not covered by its backdrop.
+
+## Accessibility
+
+The live region is declared **in advance, on the stack itself** —
+`role="status" aria-live="polite"` — not on the card that just appeared: a
+role attached to a freshly inserted element leaves part of the screen readers
+silent (not in the code yet — HIL-766 / HIL-767). An error is the only notice
+allowed to interrupt: `role="alert" aria-live="assertive"`.
+
+The lifetime rules above are how the timing criterion (2.2.1 Timing
+Adjustable) is met: the countdown freezes while the stack is being read, and
+an error waits indefinitely. See [accessibility.md](accessibility.md).
+
+## Anti-Patterns
+
+- An `alert alert-success` that a comment calls a "toast". If it belongs in
+  the corner stack, put it there; if it belongs in the page, do not call it a
+  toast.
+- A toast carrying information with no durable home ("backup 3 of 7 failed"
+  and nothing in the list says so).
+- A toast for a validation error the user can fix in the form in front of
+  them.
+- A toast for a result the screen already shows — the row disappeared, and a
+  card in the corner says it again.
+- Broadcasting to every connection, or addressing "the user": a toast has two
+  addressees — the connection and the session — and no third.
+- A button, an action link row, or any second control inside the card — the
+  close button is the only control a toast has.
+- Reaching for Bootstrap's JS `Toast`: the SDK ships Bootstrap's CSS only, and
+  the store owns visibility (the same reason `HilosModal` renders
+  `.modal.show` itself).
 
 ## Validation
 
-- Unit: the store's queue, lifetimes, dismissal, the paused countdown and the
-  visible cap are covered in `core/src/state/toasts.test.ts`; the host's pause
-  events and live-region wiring, in `react/test/HilosToastHost.test.tsx`. A
+- Unit owns the clock, the pause, the cap and the merge:
+  `core/src/state/toasts.test.ts` covers the store; the host's pause events
+  and live-region wiring live in `react/test/HilosToastHost.test.tsx`. A
   feature that pushes needs no store test of its own.
 - **Not e2e, on purpose.** The lifetime, the pause and the cap are timing, and
   asserting them through a browser would mean a spec that sits still for 20
-  seconds to prove a toast is still there — slow, and flaky the moment the box is
-  loaded. The unit test owns them; e2e asserts that a notice appears at all.
-- E2E: assert inside the stack, not on a per-feature id —
-  `page.getByTestId('hilos-toasts').getByText('Password changed.')`. Remember the
-  notice expires: assert it before the lifetime elapses, and never assert its
-  absence as proof that an action failed.
+  seconds to prove a toast is still there — slow, and flaky the moment the box
+  is loaded.
+- E2E asserts only that a notice appears at all, and inside the stack —
+  `page.getByTestId('hilos-toasts').getByText('Password changed.')`. Remember
+  the notice expires: assert it before the lifetime elapses, and never assert
+  its absence as proof that an action failed.

@@ -102,10 +102,12 @@ The rules to apply when building a view or an SDK component:
   into what the user is listening to.
 - **A timed notice is readable or it does not exist (2.2.1 Timing Adjustable).**
   A toast that expires before it is read is nothing to a screen-reader user, so
-  the toast stack lives 20 seconds — 40 for an error — and freezes its countdown
-  while it is under the cursor or holds keyboard focus, continuing from what is
-  left. That is the success criterion being met, not a nicety; a new timed
-  surface owes the same.
+  the toast stack lives 20 seconds — an error does not expire until dismissed
+  (not in the code yet — HIL-765) — and freezes its countdown while it is under
+  the cursor or holds keyboard focus, continuing from what is left. The live
+  region is declared in advance, on the stack itself, not on the appearing card
+  (not in the code yet — HIL-766). That is the success criterion being met, not
+  a nicety; a new timed surface owes the same ([toasts.md](toasts.md)).
 
 ## What Bootstrap already covers — leave it alone
 

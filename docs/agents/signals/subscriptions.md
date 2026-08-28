@@ -186,12 +186,21 @@ From an agent:
 // To one connection
 $this->sendToUser($signalName, $acceptKey, $data);
 
+// To every tab of one session
+$this->sendToSession($signalName, $sessionTokenHash, $data);
+
 // To all (broadcast)
 $this->sendToAllUsers($signalName, $data, excludeKey: $acceptKey);
 
 // To all in group
 $this->sendToGroup($signalName, $groupName, $data);
 ```
+
+What the frontend shows as a toast is addressed to a connection
+(`sendToUser()` — one socket, despite the name) or to a session
+(`sendToSession()` — every tab of one browser). Anything addressed to the user
+as a person goes out as a durable notification-center record, not a toast —
+the surface rule is [../frontend/toasts.md](../frontend/toasts.md).
 
 ## Per-page agent override
 

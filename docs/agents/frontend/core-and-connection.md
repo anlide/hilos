@@ -150,8 +150,9 @@ The one edge to handle deliberately: an action whose reply never arrives (the
 socket dropped mid-action). The UI must exit its loading state via the action
 timeout, tied to the Connection machine — the form never hangs forever. The full
 action lifecycle (deferred ~0.3s loading, `requestId`-correlated reply, ~30s
-timeout, orphan reconciliation) is in [wire-protocol.md](wire-protocol.md). Every action also
-produces a success/fail toast (catalogued in [rules-and-violations.md](rules-and-violations.md)).
+timeout, orphan reconciliation) is in [wire-protocol.md](wire-protocol.md). An action toasts its
+outcome only when the result is not visible on screen; a refusal of the user's
+own action answers in its modal (the surface rule is [toasts.md](toasts.md)).
 
 This rule has a server half. The backend owes the screen a move when a fact it
 has just written makes the person's next action on an open screen fail — see

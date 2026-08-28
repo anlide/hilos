@@ -35,7 +35,7 @@ document.
 | creating, moving, or naming the files of a page — the per-page folder, the view / `…Page` selectors / `…Actions` files, and whether a type is domain or page-local | [page-module-structure.md](page-module-structure.md) |
 | the app's page registry — the `pages/` folder (keys, routes, entity-slot types) and the `bindPageScope` / `PAGE_SIGNAL_SCHEMAS` / `createAppPageRouter` SDK binding | [page-registry.md](page-registry.md) |
 | the application boot — the thin `src/index.ts` entry, the `bootstrap/` module (connection / session / main), and the `createHilosConnection` / `ensureSessionTokenCookie` / `sessionUserName` / `bootHilos` core boot helpers | [bootstrap-structure.md](bootstrap-structure.md) |
-| transient notices — the toast store, the shell's corner stack, toast vs inline error vs durable record | [toasts.md](toasts.md) |
+| which surface an outcome belongs on — a toast, a banner, or a durable record — and the toast store behind the shell's corner stack | [toasts.md](toasts.md) |
 | styling — the Bootstrap-only rule, the Sass customization layer, theming | [styling-rules.md](styling-rules.md) |
 | accessibility — WCAG 2.1 AA: the four pillars, the app-shell a11y layer, the ARIA / heading / use-of-color patterns, and what Bootstrap covers | [accessibility.md](accessibility.md) |
 | tests — vitest across the monorepo, Playwright multi-context, full DB and daemon reset per test, stable-id selectors | [testing-strategy.md](testing-strategy.md) |

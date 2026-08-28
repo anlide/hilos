@@ -251,9 +251,11 @@ Topic documents are referenced by filename; several are still being authored.
 
 ## H. Feedback and freshness
 
-- **Every user operation emits a toast.** Success/fail feedback follows every
-  action (pairs with authoritative-backend); distinct from the stale-data
-  banner. See [core-and-connection.md](core-and-connection.md).
+- **A toast only for an outcome the screen does not show.** Feedback follows
+  an action whose result is not visible by itself; a refusal of the user's own
+  action answers in the modal it came from, not in the corner (not in the code
+  yet — HIL-769); distinct from the stale-data banner. See
+  [toasts.md](toasts.md).
 - **Stale data is a single global banner, not per-element marks.** When
   on-screen data may be stale, surface it with one global banner; do not mark
   each stale datum. `stale` remains a real per-datum state internally. Projects

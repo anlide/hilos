@@ -177,7 +177,10 @@ all after a timeout. A timeout is an "inadmissible situation" that is still
 handled gracefully: release the UI, but keep the orphaned action recorded so a
 late reply can reconcile — never silently dropped. A late reply that finally
 arrives surfaces as a toast (recommended; ultimately the project's discretion).
-Every action also produces a success/fail toast.
+An action toasts its outcome only when the result is not visible on screen,
+and a refusal of the user's own action answers in the modal it came from, not
+in the corner (not in the code yet — HIL-769) — the surface rule is
+[toasts.md](toasts.md).
 
 A state-changing action is **always tracked**: the initiator dispatches it
 through this lifecycle and shows loading until it settles — it is **not**
