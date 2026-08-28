@@ -6,6 +6,8 @@ namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\NotificationDeliveries as EntityNotificationDeliveries;
@@ -140,6 +142,8 @@ final class NotificationDeliveries extends Objects
      * @param ObjectNotificationDelivery $delivery Loaded delivery row
      * @throws DatabaseException If the update query fails
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function beginAttempt(ObjectNotificationDelivery $delivery): void
     {
@@ -154,6 +158,8 @@ final class NotificationDeliveries extends Objects
      * @param ObjectNotificationDelivery $delivery Loaded delivery row
      * @throws DatabaseException If the update query fails
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function markSent(ObjectNotificationDelivery $delivery): void
     {
@@ -204,6 +210,8 @@ final class NotificationDeliveries extends Objects
      * @param ObjectNotificationDelivery $delivery Loaded failed delivery row
      * @throws DatabaseException If the update query fails
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function resetForRetry(ObjectNotificationDelivery $delivery): void
     {
@@ -227,6 +235,8 @@ final class NotificationDeliveries extends Objects
      * @param int $maxAttempts Attempt ceiling after which the row fails terminally
      * @throws DatabaseException If the update query fails
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function recordFailure(ObjectNotificationDelivery $delivery, string $error, int $maxAttempts): void
     {

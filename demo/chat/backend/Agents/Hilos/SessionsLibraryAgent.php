@@ -13,6 +13,8 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\HilosException;
 
 /**
@@ -61,11 +63,40 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
     ];
 
     /**
+     * Claims the two chat tables this library writes on its way through a person.
+     *
+     * Both are borrowed and both are narrow, and the reason they have to be said out loud at
+     * all is HIL-716: the right used to be asked only of a collection loaded whole, so a
+     * lazily loaded table was written by anybody in silence. It is asked of every table now,
+     * and the registry is per process - so this library holds its own grant rather than
+     * leaning on the one the owner registered in some other worker. The two demos beside this
+     * one already claimed their user table here for the same reason.
+     *
+     * @throws EnvException When the sweep schedule key the library reads is missing or malformed
+     */
+    public function onStart(): void
+    {
+        parent::onStart();
+
+        // TODO(HIL-630): borrowed claim - the users library owns the account set. What this
+        // library does to a chat user is set the admin flag and tombstone the loser of a
+        // merge, both of them edits of a row that already exists.
+        $this->registerDbTruthSource(
+            ChatDbContext::users,
+            operations: [TruthSourceOperation::Update],
+        );
+        // TODO(HIL-626): borrowed claim - the chat agent owns the message rows. A merge
+        // re-points the loser's messages onto the survivor, which edits them and nothing more.
+        $this->registerDbTruthSource(
+            ChatDbContext::eventMessages,
+            operations: [TruthSourceOperation::Update],
+        );
+    }
+
+    /**
      * Writes the admin flag of one chat user - and nothing else.
      *
-     * No truth-source claim stands behind it and none is needed: the chat user store is
-     * registered with a lazy key strategy, and the write check only guards a collection
-     * loaded whole - which is why the Hilos users page already renames from another worker.
+     * The claim behind the write is the one {@see self::onStart()} makes.
      *
      * The announcement that used to follow the write here is the framework's now: the library
      * states the session and {@see ChatAgent} says it out loud, which is the one path every

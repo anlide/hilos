@@ -59,9 +59,11 @@ use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Identity\PasswordFate;
+use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\View\Item\Session;
@@ -254,6 +256,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * this one on both as a declared add/remove co-owner (HIL-685) rather than as a second
      * full owner, and it is only ever registered where the feature is.
      *
+     * The identity table is a borrowed claim, and the comment on it says whose it is. It is
+     * here because the account merge is here: {@see Identities::rePointToUser()} moves the
+     * loser's identities onto the survivor and demotes or drops the password among them, so
+     * the claim covers editing and removal and nothing else. That the right had to be said
+     * out loud is what HIL-716 changed - it used to be asked only of the four eagerly loaded
+     * collections, and this one is lazy.
+     *
      * A subclass that overrides this MUST call up: the claims are what the whole library
      * stands on.
      *
@@ -266,7 +275,22 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         if ($this->hasSignInSurface()) {
             $this->registerRtTruthSource(StateRegistrationWaiter::RT_COLLECTION);
             $this->registerRtTruthSource(StateRecoveryWaiter::RT_COLLECTION);
+            // TODO(HIL-630): borrowed claim - the users library owns the reservation table.
+            // The hold sweep is armed here because the expiry it announces rolls back a WAIT,
+            // which is this library's row; the sweep itself belongs with the table. Claimed
+            // under the same condition that arms the sweep, so a project with no sign-in
+            // surface does not claim a table it never writes.
+            $this->registerDbTruthSource(HilosDbContext::registrationReservations);
         }
+        // TODO(HIL-630): borrowed claim - the users library owns the identity table. The
+        // merge runs here because it is the sessions that have to be signed out with it,
+        // and the claim is named as narrowly as its write: rows that already exist are
+        // edited or taken away, never minted. Unconditional because the writer is a method
+        // of this class, not a project seam - a project that wires the merge inherits it.
+        $this->registerDbTruthSource(
+            HilosDbContext::identities,
+            operations: [TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        );
 
         $this->armPendingRegistrationSweep();
         $this->armReservationSweep();

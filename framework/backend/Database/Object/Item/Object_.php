@@ -8,6 +8,10 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
@@ -117,10 +121,14 @@ abstract class Object_
      *
      * @throws DatabaseException If database operation fails
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function sync(): void
     {
         $isCreate = !$this->entity->isRelated();
+
+        $this->guardWrite($isCreate);
 
         if ($this->entity->isRelated()) {
             $changedColumns = $this->getChangedColumns();
@@ -159,6 +167,7 @@ abstract class Object_
      *
      * @throws DatabaseException If database operation fails
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function delete(): void
     {
@@ -170,6 +179,8 @@ abstract class Object_
         }
 
         $idString = $this->getIdString();
+
+        DbWriteGuard::guardItemWrite($collectionKey, $idString, TruthSourceOperation::Remove);
 
         // Keep a tombstone row for DB_SYNC_DELETED consumers; it is no longer
         // available from the object collection after the physical delete.
@@ -240,6 +251,30 @@ abstract class Object_
     protected static function getCollectionKey(): string
     {
         return '';
+    }
+
+    /**
+     * Asks the write guard before a row is saved, naming creation and editing apart.
+     *
+     * The id is read only for an edit: a row that does not exist yet has none. A collection
+     * with no key has no owner to ask at all - the same skip delete() makes.
+     *
+     * @param bool $isCreate True when the row does not exist in the table yet
+     */
+    private function guardWrite(bool $isCreate): void
+    {
+        $collectionKey = static::getCollectionKey();
+        if ($collectionKey === '') {
+            return;
+        }
+
+        if ($isCreate) {
+            DbWriteGuard::guardCreate($collectionKey);
+
+            return;
+        }
+
+        DbWriteGuard::guardItemWrite($collectionKey, $this->getIdString(), TruthSourceOperation::Update);
     }
 
     /**

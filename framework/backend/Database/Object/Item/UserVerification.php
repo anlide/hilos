@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Item;
 
 use Hilos\Auth\Verification\VerificationService;
+use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -202,12 +205,19 @@ final class UserVerification extends Object_
      * @param int $maxAttempts Attempt ceiling the row is judged against
      * @return bool True when this call recorded an attempt, false when the row was already at the ceiling
      * @throws DatabaseException When the attempt update, the row count or the read-back fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function incrementAttempts(int $maxAttempts): bool
     {
         if ($this->entity->id === null) {
             return false;
         }
+
+        DbWriteGuard::guardItemWrite(
+            static::getCollectionKey(),
+            (string)$this->entity->id,
+            TruthSourceOperation::Update,
+        );
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::int($this->entity->id));
@@ -278,6 +288,7 @@ final class UserVerification extends Object_
      *
      * @return bool True when this call spent the challenge, false when it arrived late
      * @throws DatabaseException When the consume update query fails or the row count is unreadable
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function consume(): bool
     {
@@ -286,6 +297,12 @@ final class UserVerification extends Object_
         }
 
         $now = TimeHelper::getSqlDateTime();
+
+        DbWriteGuard::guardItemWrite(
+            static::getCollectionKey(),
+            (string)$this->entity->id,
+            TruthSourceOperation::Update,
+        );
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::string($now));
@@ -310,10 +327,12 @@ final class UserVerification extends Object_
      * (HIL-317): rewrites `expires_at` to just before now with a targeted UPDATE
      * and mirrors it on the loaded entity, so an e2e can drive the "invalid or
      * expired code" verify path without waiting out the TTL. Symmetric with
-     * {@see consume()} — targeted write plus entity mirror, no sync and no
-     * TruthSourceRegistry. A no-op for an unpersisted challenge.
+     * {@see consume()} — targeted write plus entity mirror, no sync; the right to write
+     * the row is asked of the guard, as every targeted UPDATE now does. A no-op for an
+     * unpersisted challenge.
      *
      * @throws DatabaseException When the expiry update query fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function expire(): void
     {
@@ -322,6 +341,12 @@ final class UserVerification extends Object_
         }
 
         $pastExpiry = date('Y-m-d H:i:s', time() - 1);
+
+        DbWriteGuard::guardItemWrite(
+            static::getCollectionKey(),
+            (string)$this->entity->id,
+            TruthSourceOperation::Update,
+        );
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::string($pastExpiry));

@@ -9,6 +9,8 @@ use Hilos\Auth\Registration\RegistrationReservationSweeper;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -375,6 +377,8 @@ final class RegistrationReservations extends Objects
      */
     private function writeSecretHash(int $id, string $secretHash): void
     {
+        DbWriteGuard::guardItemWrite(static::COLLECTION_KEY, (string)$id, TruthSourceOperation::Update);
+
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::string($secretHash));
         $params->add(SqlParam::int($id));

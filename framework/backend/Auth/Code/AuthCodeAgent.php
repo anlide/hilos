@@ -25,6 +25,7 @@ use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Verification\VerificationType;
@@ -101,6 +102,26 @@ class AuthCodeAgent extends AbstractAgent
 
     /** Next op id for an adopted request. */
     private int $nextId = 0;
+
+    /**
+     * Claims the three tables a send writes, all of them somebody else's.
+     *
+     * The class comment above names why the writes are here and not in the page action: only
+     * this process learns what became of the send. The claims are the same statement said to
+     * the guard, which since HIL-716 asks on every table rather than on the four eager ones.
+     *
+     * TODO(HIL-630): borrowed claim - the users library owns the challenge and the hold; this
+     * agent mints one and takes the other because a code that was never delivered must cost
+     * neither.
+     * TODO(HIL-626): borrowed claim - the sessions library owns the session set, and the
+     * pending-registration wait is one of its columns.
+     */
+    public function onStart(): void
+    {
+        $this->registerDbTruthSource(HilosDbContext::verifications);
+        $this->registerDbTruthSource(HilosDbContext::registrationReservations);
+        $this->registerDbTruthSource(HilosDbContext::sessions);
+    }
 
     /**
      * Adopts one handed-off code request, resolving its channel up front.

@@ -44,7 +44,7 @@ final class UsersActions extends DbActions
      */
     public function createWithName(string $name): User
     {
-        $this->ensureCanWrite();
+        $this->ensureCanCreate();
 
         $displayName = trim($name);
         if ($displayName === '') {

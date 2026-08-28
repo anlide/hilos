@@ -51,7 +51,7 @@ final class UsersActions extends DbActions
      */
     public function registerAdmin(): User
     {
-        $this->ensureCanWrite();
+        $this->ensureCanCreate();
 
         $user = ObjectUser::create();
         $user->name = 'Admin' . RandomHelper::integer(self::NAME_SUFFIX_MIN, self::NAME_SUFFIX_MAX);

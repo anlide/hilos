@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseConnectionPolicy;
@@ -22,6 +24,28 @@ use PHPUnit\Framework\TestCase;
  */
 abstract class FrameworkIntegrationTestCase extends TestCase
 {
+    /** Truth-source id every framework integration case writes under. */
+    private const string TEST_AGENT_ID = 'framework-test-agent';
+
+    /**
+     * @var list<string> Framework tables a case may write through the service that owns the
+     *     step - a code mint, a hold, a session rotation, a durable auth block - rather than
+     *     through the library agent that claims them in a running node. The guard asks on
+     *     every table since HIL-716, and a test process starts no library, so the harness
+     *     claims them for the case exactly as each demo's integration base does.
+     */
+    private const array CLAIMED_TABLES = [
+        HilosDbContext::sessions,
+        HilosDbContext::identities,
+        HilosDbContext::verifications,
+        HilosDbContext::registrationReservations,
+        HilosDbContext::passkeyCredentials,
+        HilosDbContext::authBlocks,
+        HilosDbContext::notifications,
+        HilosDbContext::notificationDeliveries,
+        HilosDbContext::notificationPreferences,
+    ];
+
     /**
      * Configures connection index 0 from environment and opens the mysqli link.
      *
@@ -32,6 +56,10 @@ abstract class FrameworkIntegrationTestCase extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        foreach (self::CLAIMED_TABLES as $table) {
+            TruthSourceRegistry::register($table, true, self::TEST_AGENT_ID);
+        }
 
         if (Hilos::$env === null) {
             Hilos::initEnv(dirname(__DIR__));
@@ -63,6 +91,7 @@ abstract class FrameworkIntegrationTestCase extends TestCase
         if (Database::isConnected()) {
             Database::close(DatabaseConnectionDefaults::PRIMARY_INDEX);
         }
+        TruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
         parent::tearDown();
     }
 }

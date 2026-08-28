@@ -6,6 +6,8 @@ namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -182,12 +184,15 @@ final class Notifications extends Objects
      * @return int Number of rows marked read
      * @throws TableNotActivatedException When the project has not activated the notification table
      * @throws DatabaseException If the update query fails
+     * @throws WriteNotAllowedException When no truth source in this process covers the whole collection
      */
     public function markAllReadForUser(int $userId): int
     {
         $this->requireActivatedTable();
 
         $now = TimeHelper::getSqlDateTime();
+
+        DbWriteGuard::guardCollectionWrite(static::COLLECTION_KEY);
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::string($now));

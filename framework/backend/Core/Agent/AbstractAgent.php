@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -228,12 +229,28 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * twin gives: an agent writing its first row inside onStart() reads the collection before
      * that report is built.
      *
+     * One claim may say more than the agent's kind does. A library adds and removes and never
+     * updates ({@see AbstractUsersLibraryAgent::defaultTruthSourceOperations()}), yet the
+     * tables it holds the commands for are edited in place - a code is spent, a secret is
+     * rewritten, an attempt counter goes up - so the claim over those tables has to name the
+     * update it performs. Omit the argument and the agent's kind answers, which is what every
+     * claim of a collection the agent owns outright wants.
+     *
      * @param string $collection Collection/table name
      * @param list<string>|true $keys Specific writable keys or true for all keys
+     * @param ?list<TruthSourceOperation> $operations Operations this claim allows, or null for the agent's default
      */
-    protected function registerDbTruthSource(string $collection, array|true $keys = true): void
-    {
-        TruthSourceRegistry::register($collection, $keys, $this->getId(), $this->defaultTruthSourceOperations());
+    protected function registerDbTruthSource(
+        string $collection,
+        array|true $keys = true,
+        ?array $operations = null,
+    ): void {
+        TruthSourceRegistry::register(
+            $collection,
+            $keys,
+            $this->getId(),
+            $operations ?? $this->defaultTruthSourceOperations(),
+        );
 
         SourceInterestRegistry::register(SourceChange::KIND_DB, $collection, SourceConsumer::agent($this->getId()));
         SourceInterestRegistry::markReady(SourceChange::KIND_DB, $collection);

@@ -94,12 +94,20 @@ final class AuthThrottleAgent extends AbstractAgent
     private float $lastSweepAt = 0.0;
 
     /**
-     * Claims the counters, reads the policy, and replays the blocks still in force.
+     * Claims the counters and their durable half, reads the policy, and replays the blocks
+     * still in force.
+     *
+     * The block table is claimed here rather than by the users library, although the library
+     * is what the throttled actions belong to: a block is written by nobody else and read on
+     * start by this agent alone, and the two halves of one counter - the runtime row every
+     * worker's fast path reads and the row that survives a restart - are better held by one
+     * process than split between two (HIL-716).
      */
     public function onStart(): void
     {
         $this->policy = ThrottlePolicy::fromEnv();
         $this->registerRtTruthSource(StateAuthAttempt::RT_COLLECTION);
+        $this->registerDbTruthSource(HilosDbContext::authBlocks);
         $this->lastSweepAt = microtime(true);
         $this->replayDurableBlocks();
     }

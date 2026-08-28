@@ -12,7 +12,6 @@ use Hilos\Auth\Library\Command\DetectionCommands;
 use Hilos\Auth\Library\Command\MagicLinkCommands;
 use Hilos\Auth\Library\Command\OAuthCommands;
 use Hilos\Auth\Library\Command\PasskeyCommands;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Auth\Library\Command\PasswordCommands;
 use Hilos\Auth\Library\Command\PhoneCodeCommands;
 use Hilos\Auth\Library\Command\RecoveryCommands;
@@ -64,6 +63,7 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Runtime\State\Item\RecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter;
 use Hilos\Hilos;
@@ -226,16 +226,22 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      *
      * The claim over the account set is a whole one now, not the create-only right it began
      * as (HIL-771): a page carries no claim, so the writers that used to rename somebody from
-     * a profile submit come here instead, and renaming is editing the row. The identity,
-     * verification, reservation and credential tables need no claim of their own - they are
-     * read by key and written by whoever holds the command, which is this agent.
+     * a profile submit come here instead, and renaming is editing the row.
      *
      * It is registered against the registry rather than through
-     * {@see AbstractAgent::registerDbTruthSource()} for one reason: the seam hands the claim
-     * this agent's default operations, and this one claim is exactly the one that departs from
-     * them. The interest side the seam also raises is already covered - every project names its
-     * account collection in {@see AbstractAgent::READS_DB}, so the worker raised and awaited it
-     * before this hook ran.
+     * {@see AbstractAgent::registerDbTruthSource()} because the interest side the seam raises
+     * is already covered - every project names its account collection in
+     * {@see AbstractAgent::READS_DB}, so the worker raised and awaited it before this hook ran.
+     *
+     * The identity, verification, reservation and credential tables are claimed OUTRIGHT and
+     * with every operation. They used to be described here as needing no claim of their own,
+     * and that sentence held on nothing but the guard's silence: the right was asked only of
+     * the four eagerly loaded collections, and these four are lazy (HIL-716). Every write to
+     * them goes through a command of this library - a code is issued and spent, a password
+     * secret is rewritten, a hold is taken and released - so the operation set is spelled out
+     * per claim rather than taken from {@see self::defaultTruthSourceOperations()}: that
+     * default is what a library does to a row it SHARES, and the rows carrying an account's
+     * proofs are edited in place.
      *
      * The two parked-surface collections are claimed because a command parks a browser on the
      * code step it just opened, and a runtime write with no claim behind it is refused. The
@@ -254,6 +260,22 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     {
         $this->authMethods = $this->buildAuthMethods();
         TruthSourceRegistry::register($this->usersCollection(), true, $this->getId(), TruthSourceOperation::ALL);
+        $this->registerDbTruthSource(HilosDbContext::identities, operations: TruthSourceOperation::ALL);
+        $this->registerDbTruthSource(HilosDbContext::verifications, operations: TruthSourceOperation::ALL);
+        $this->registerDbTruthSource(
+            HilosDbContext::registrationReservations,
+            operations: TruthSourceOperation::ALL,
+        );
+        $this->registerDbTruthSource(HilosDbContext::passkeyCredentials, operations: TruthSourceOperation::ALL);
+        // TODO(HIL-626): borrowed claim - the sessions library owns the session set. A
+        // command that parks a browser on a code screen writes the durable half of that
+        // wait on the session row itself ({@see PasswordCommands::parkRegistrationWait()}),
+        // and until that half travels as a frame the claim is named as narrowly as the
+        // write is: an update of a row that already exists, never a create or a remove.
+        $this->registerDbTruthSource(
+            HilosDbContext::sessions,
+            operations: [TruthSourceOperation::Update],
+        );
         $this->registerRtTruthSource(RegistrationWaiter::RT_COLLECTION);
         $this->registerRtTruthSource(RecoveryWaiter::RT_COLLECTION);
     }

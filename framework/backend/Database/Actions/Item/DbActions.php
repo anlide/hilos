@@ -6,9 +6,9 @@ namespace Hilos\Database\Actions\Item;
 
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
@@ -72,6 +72,10 @@ abstract class DbActions
      * The operation is editing: an item action holds a record that already exists, and minting
      * a new one goes through the collection's create guard instead.
      *
+     * The right is asked before the strategy is looked at, because the two answer different
+     * questions: who may write this table, and how much of it has to be in memory first. The
+     * switch below is left with the second one only.
+     *
      * @throws ObjectCollectionNullException If object collection is null (manual)
      * @throws ObjectGetIdStringNotImplementedException When the item primary key is null during the per-item write check
      * @throws UnknownLazyStrategyException If lazy strategy is unknown
@@ -84,29 +88,26 @@ abstract class DbActions
         $objectCollection = $this->getObjectCollection()
             ?? throw new ObjectCollectionNullException("ObjectCollection is null (manual collection)");
 
+        $collectionKey = $objectCollection->getCollectionKey();
+        if ($this->object->isRelated()) {
+            DbWriteGuard::guardItemWrite(
+                $collectionKey,
+                $this->object->getIdString(),
+                TruthSourceOperation::Update,
+            );
+        } else {
+            DbWriteGuard::guardCollectionWrite($collectionKey);
+        }
+
         switch ($objectCollection->getLazyStrategy()) {
             case Objects::LAZY_STRATEGY_NONE:
-                $collectionKey = $objectCollection->getCollectionKey();
-                if ($this->object->isRelated()) {
-                    TruthSourceRegistry::checkCanWriteItem(
-                        $collectionKey,
-                        $this->object->getIdString(),
-                        TruthSourceOperation::Update,
-                    );
-                } else {
-                    TruthSourceRegistry::checkCanWrite($collectionKey);
-                }
                 if (!$objectCollection->isAllLoaded()) {
                     $objectCollection->loadAllFromDB();
                 }
                 break;
 
             case Objects::LAZY_STRATEGY_KEY:
-                break;
-
             case Objects::LAZY_STRATEGY_BATCH:
-                break;
-
             case Objects::LAZY_STRATEGY_FULL_ON_ACCESS:
                 break;
 

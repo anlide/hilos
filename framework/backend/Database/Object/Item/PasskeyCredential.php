@@ -7,6 +7,9 @@ namespace Hilos\Database\Object\Item;
 use Hilos\Auth\WebAuthn\AssertionVerifier;
 use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
 use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
+use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -136,12 +139,19 @@ final class PasskeyCredential extends Object_
      *
      * @param int $newCount New signature counter reported by the authenticator
      * @throws DatabaseException When the sign-count update query fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function updateSignCount(int $newCount): void
     {
         if ($this->entity->id === null) {
             return;
         }
+
+        DbWriteGuard::guardItemWrite(
+            static::getCollectionKey(),
+            (string)$this->entity->id,
+            TruthSourceOperation::Update,
+        );
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::int($newCount));
@@ -164,6 +174,7 @@ final class PasskeyCredential extends Object_
      * credential.
      *
      * @throws DatabaseException When the last-used update query fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function touchLastUsed(): void
     {
@@ -172,6 +183,12 @@ final class PasskeyCredential extends Object_
         }
 
         $now = TimeHelper::getSqlDateTime();
+
+        DbWriteGuard::guardItemWrite(
+            static::getCollectionKey(),
+            (string)$this->entity->id,
+            TruthSourceOperation::Update,
+        );
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::string($now));
@@ -202,6 +219,7 @@ final class PasskeyCredential extends Object_
      * @param string $signature Raw signature bytes returned by the client
      * @throws WebAuthnVerificationException When the assertion fails any client-data, signature or counter check
      * @throws DatabaseException When persisting the advanced counter or last-used stamp fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function verifyAssertion(
         AssertionVerifier $verifier,

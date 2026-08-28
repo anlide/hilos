@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
+use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -145,6 +148,7 @@ final class Identity extends Object_
      *
      * @param string $plainPassword Plaintext secret that just verified against the stored hash
      * @throws DatabaseException When the secret lookup or update query fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function rehashPasswordIfNeeded(string $plainPassword): void
     {
@@ -171,6 +175,12 @@ final class Identity extends Object_
             return;
         }
 
+        DbWriteGuard::guardItemWrite(
+            static::getCollectionKey(),
+            (string)$this->entity->id,
+            TruthSourceOperation::Update,
+        );
+
         $updateParams = SqlParamCollection::empty();
         $updateParams->add(SqlParam::string(password_hash($plainPassword, PASSWORD_DEFAULT)));
         $updateParams->add(SqlParam::int($this->entity->id));
@@ -192,12 +202,19 @@ final class Identity extends Object_
      *
      * @param string $plainPassword New plaintext password to hash and store
      * @throws DatabaseException When the secret update query fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function setPassword(string $plainPassword): void
     {
         if ($this->entity->id === null || $plainPassword === '') {
             return;
         }
+
+        DbWriteGuard::guardItemWrite(
+            static::getCollectionKey(),
+            (string)$this->entity->id,
+            TruthSourceOperation::Update,
+        );
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::string(password_hash($plainPassword, PASSWORD_DEFAULT)));
@@ -220,12 +237,19 @@ final class Identity extends Object_
      * that no sync carries. A no-op for an unpersisted identity.
      *
      * @throws DatabaseException When the secret update query fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function clearPassword(): void
     {
         if ($this->entity->id === null) {
             return;
         }
+
+        DbWriteGuard::guardItemWrite(
+            static::getCollectionKey(),
+            (string)$this->entity->id,
+            TruthSourceOperation::Update,
+        );
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::int($this->entity->id));
@@ -243,12 +267,19 @@ final class Identity extends Object_
      * is mirrored so a re-read sees it. A no-op for an unpersisted identity.
      *
      * @throws DatabaseException When the verified update query fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function markVerified(): void
     {
         if ($this->entity->id === null) {
             return;
         }
+
+        DbWriteGuard::guardItemWrite(
+            static::getCollectionKey(),
+            (string)$this->entity->id,
+            TruthSourceOperation::Update,
+        );
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::int($this->entity->id));

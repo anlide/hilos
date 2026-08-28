@@ -12,6 +12,8 @@ use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -163,6 +165,8 @@ final class Identities extends Objects
         if ($id === null) {
             throw new DatabaseException('Identity insert did not assign an id');
         }
+
+        DbWriteGuard::guardItemWrite(static::COLLECTION_KEY, (string)$id, TruthSourceOperation::Update);
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::string($passwordHash));

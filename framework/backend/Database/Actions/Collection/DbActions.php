@@ -7,9 +7,9 @@ namespace Hilos\Database\Actions\Collection;
 use Exception;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
-use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
 use Hilos\Database\Actions\Exception\DuplicateIdException;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
@@ -182,7 +182,11 @@ abstract class DbActions
 
     /**
      * Ensure write is allowed and data is loaded if needed
-     * Checks TruthSourceRegistry and loads data based on lazy loading strategy
+     * Asks the write guard for the right, then loads data based on lazy loading strategy
+     *
+     * The right is asked before the strategy is looked at, because the two answer different
+     * questions: who may write this table, and how much of it has to be in memory first. The
+     * switch below is left with the second one only.
      *
      * @throws UnknownLazyStrategyException If unknown lazy loading strategy
      * @throws WriteNotAllowedException If write is not allowed
@@ -193,21 +197,17 @@ abstract class DbActions
     {
         $objectCollection = $this->objectCollection;
 
+        DbWriteGuard::guardCollectionWrite($objectCollection->getCollectionKey());
+
         switch ($objectCollection->getLazyStrategy()) {
             case Objects::LAZY_STRATEGY_NONE:
-                $collectionKey = $objectCollection->getCollectionKey();
-                TruthSourceRegistry::checkCanWrite($collectionKey);
                 if (!$objectCollection->isAllLoaded()) {
                     $objectCollection->loadAllFromDB();
                 }
                 break;
 
             case Objects::LAZY_STRATEGY_KEY:
-                break;
-
             case Objects::LAZY_STRATEGY_BATCH:
-                break;
-
             case Objects::LAZY_STRATEGY_FULL_ON_ACCESS:
                 break;
 
@@ -218,7 +218,10 @@ abstract class DbActions
 
     /**
      * Ensure create is allowed and data is loaded if needed
-     * Checks TruthSourceRegistry::checkCanCreate for create permission
+     * Asks the write guard for the create right, then loads data based on lazy loading strategy
+     *
+     * The right is asked before the strategy is looked at, for the same reason the write door
+     * does it: the switch answers how much of the table has to be in memory, not who owns it.
      *
      * @throws UnknownLazyStrategyException If unknown lazy loading strategy
      * @throws CreateNotAllowedException If create is not allowed
@@ -229,21 +232,17 @@ abstract class DbActions
     {
         $objectCollection = $this->objectCollection;
 
+        DbWriteGuard::guardCreate($objectCollection->getCollectionKey());
+
         switch ($objectCollection->getLazyStrategy()) {
             case Objects::LAZY_STRATEGY_NONE:
-                $collectionKey = $objectCollection->getCollectionKey();
-                TruthSourceRegistry::checkCanCreate($collectionKey);
                 if (!$objectCollection->isAllLoaded()) {
                     $objectCollection->loadAllFromDB();
                 }
                 break;
 
             case Objects::LAZY_STRATEGY_KEY:
-                break;
-
             case Objects::LAZY_STRATEGY_BATCH:
-                break;
-
             case Objects::LAZY_STRATEGY_FULL_ON_ACCESS:
                 break;
 

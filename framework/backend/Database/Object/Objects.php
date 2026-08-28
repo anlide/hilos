@@ -12,11 +12,13 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Filter\FilterInterface;
+use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
@@ -585,9 +587,12 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      *
      * @throws DatabaseException If delete fails
      * @throws InvalidArgumentException When the cleared DB-sync signal cannot be named
+     * @throws WriteNotAllowedException When no truth source in this process covers the whole collection
      */
     public function deleteAll(): void
     {
+        DbWriteGuard::guardCollectionWrite(static::COLLECTION_KEY);
+
         Database::sql("DELETE FROM `" . $this->getTableName() . "` WHERE true;");
         $this->clearInMemory();
 

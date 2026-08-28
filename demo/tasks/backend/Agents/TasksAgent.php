@@ -55,12 +55,16 @@ final class TasksAgent extends AbstractAgent
     ];
 
     /**
-     * Registers the user table and the connections runtime collection as this
-     * worker's truth sources so their changes fan out to the browser.
+     * Registers the user and guest tables and the connections runtime collection as
+     * this worker's truth sources so their changes fan out to the browser.
+     *
+     * The guest table is this agent's own: it is the one process that mints a guest row
+     * for a session and drops it when that session signs in (HIL-716).
      */
     public function onStart(): void
     {
         $this->registerDbTruthSource(TasksDbContext::users);
+        $this->registerDbTruthSource(TasksDbContext::guests);
         $this->registerRtTruthSource(TasksRtContext::connections);
     }
 

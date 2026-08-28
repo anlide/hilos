@@ -13,12 +13,16 @@ use Demo\Tasks\Database\TasksDbContext;
 use Demo\Tasks\Hilos;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use PHPUnit\Framework\TestCase;
@@ -57,6 +61,20 @@ abstract class IntegrationTestCase extends TestCase
         }
         TruthSourceRegistry::register(TasksDbContext::users, true, self::TEST_AGENT_ID);
         TruthSourceRegistry::register(TasksDbContext::userRenames, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(TasksDbContext::guests, true, self::TEST_AGENT_ID);
+        // Framework tables these cases write through their real writers - a login, a code, a
+        // notification - and not through the library that owns them. The guard asks on every
+        // table since HIL-716, while a test process runs the writers under this harness id
+        // rather than under a library's, so the harness claims them once for everybody.
+        TruthSourceRegistry::register(HilosDbContext::sessions, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::identities, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::verifications, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::registrationReservations, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::passkeyCredentials, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::authBlocks, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::notifications, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::notificationDeliveries, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::notificationPreferences, true, self::TEST_AGENT_ID);
     }
 
     /**
@@ -96,7 +114,8 @@ abstract class IntegrationTestCase extends TestCase
      */
     protected function deliverHandshake(TasksAgent $holder, WebSocketHandshakeSignalDTO $data): void
     {
-        $this->sessionsLibrary()->onSignalHandshake($data, '', '');
+        $library = $this->sessionsLibrary();
+        $this->underAgent($library, static fn () => $library->onSignalHandshake($data, '', ''));
         $this->deliverLibraryFrames($holder);
     }
 
@@ -213,6 +232,37 @@ abstract class IntegrationTestCase extends TestCase
 
         foreach ($rest as $signal) {
             Hilos::$sr?->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
+        }
+    }
+
+    /**
+     * Runs one dispatch under the execution context of the agent it is addressed to.
+     *
+     * A node takes the context from the id the message carries
+     * ({@see WorkerManager::handleDaemonMessage()}), and the truth-source guard reads that id
+     * to decide who may write. A case calling a handler straight leaves whatever context the
+     * previous step set, so the library's own writes were being judged as the holder's - which
+     * a running node never does, and which the guard of HIL-716 made visible. The previous id
+     * is put back because a case is usually inside one when it calls here.
+     *
+     * Used on the LIBRARY dispatches only. The holder's own handlers keep running under the
+     * harness id, because that is who holds this project's runtime claims in a case; moving
+     * them onto the holder's id is a change to the runtime half and belongs with it.
+     *
+     * @template TReturn
+     * @param AgentInterface $agent Agent the dispatch is addressed to
+     * @param callable(): TReturn $dispatch The handler call
+     * @return TReturn Whatever the handler returned
+     * @throws HilosException When the handler fails
+     */
+    private function underAgent(AgentInterface $agent, callable $dispatch): mixed
+    {
+        $previous = ExecutionContext::currentAgentId();
+        ExecutionContext::setCurrentAgentId($agent->getId());
+        try {
+            return $dispatch();
+        } finally {
+            ExecutionContext::setCurrentAgentId($previous);
         }
     }
 

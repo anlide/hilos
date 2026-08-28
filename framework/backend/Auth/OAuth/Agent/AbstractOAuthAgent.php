@@ -111,6 +111,11 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     {
         $this->providers = $this->buildProviderRegistry();
         $this->pending = OAuthPendingLogins::init();
+        // TODO(HIL-630): borrowed claim - the users library owns the identity table, and a
+        // linked provider account is one of its rows. The write is here only because the
+        // exchange that proves the account ends in this agent's tick, so it is this process
+        // that finds out what to write; the entity-owner leaf moves it behind a command.
+        $this->registerDbTruthSource(HilosDbContext::identities);
 
         $refused = $this->providers->refusedOfflineKeys();
         if ($refused !== []) {

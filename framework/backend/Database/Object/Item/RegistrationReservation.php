@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
+use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -158,12 +161,19 @@ final class RegistrationReservation extends Object_
      *
      * @param string $expiresAtSql New expiry as an SQL datetime string
      * @throws DatabaseException When the expiry update query fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function extendTo(string $expiresAtSql): void
     {
         if ($this->entity->id === null) {
             return;
         }
+
+        DbWriteGuard::guardItemWrite(
+            static::getCollectionKey(),
+            (string)$this->entity->id,
+            TruthSourceOperation::Update,
+        );
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::string($expiresAtSql));
