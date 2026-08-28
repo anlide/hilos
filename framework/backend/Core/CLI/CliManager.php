@@ -27,6 +27,8 @@ use Hilos\Core\CLI\Commands\ClusterTestClientDetachCommand;
 use Hilos\Core\CLI\Commands\ClusterTestClientFanoutCommand;
 use Hilos\Core\CLI\Commands\ClusterTestClientSendCommand;
 use Hilos\Core\CLI\Commands\ClusterTestDbAnnounceCommand;
+use Hilos\Core\CLI\Commands\ClusterTestDbReadCommand;
+use Hilos\Core\CLI\Commands\ClusterTestDbWriteCommand;
 use Hilos\Core\CLI\Commands\ClusterTestInspectCommand;
 use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\CommandTestEchoCommand;
@@ -125,6 +127,8 @@ class CliManager
         $this->commands[CliCommands::CLUSTER_TEST_CLIENT_SEND] = new ClusterTestClientSendCommand();
         $this->commands[CliCommands::CLUSTER_TEST_CLIENT_FANOUT] = new ClusterTestClientFanoutCommand();
         $this->commands[CliCommands::CLUSTER_TEST_DB_ANNOUNCE] = new ClusterTestDbAnnounceCommand();
+        $this->commands[CliCommands::CLUSTER_TEST_DB_WRITE] = new ClusterTestDbWriteCommand();
+        $this->commands[CliCommands::CLUSTER_TEST_DB_READ] = new ClusterTestDbReadCommand();
         $this->commands[CliCommands::CLUSTER_TEST_AGENT_PLACE] = new ClusterTestAgentPlaceCommand();
         $this->commands[CliCommands::MIGRATION_UP] = new MigrationUpCommand();
         $this->commands[CliCommands::MIGRATION_DOWN] = new MigrationDownCommand();

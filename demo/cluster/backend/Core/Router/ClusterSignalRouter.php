@@ -10,10 +10,12 @@ use Hilos\Core\Router\SignalRouter;
 /**
  * ClusterSignalRouter - Signal router for the cluster demo.
  *
- * The demo is headless (no pages, no WebSocket) and its only agent is placed by
- * the leader, not started on the bootstrap signal, so the bootstrap agent list is
- * intentionally empty. Only the project-facade binding is overridden so topology
- * reads resolve against the demo's registries rather than the empty framework one.
+ * The demo is headless (no pages, no WebSocket) and nothing it registers is started
+ * from the bootstrap signal, so that list is intentionally empty: the fleet and the
+ * claimer are placed by the leader, and the per-node probe comes up on its own node as
+ * that node's workers become ready. Only the project-facade binding is overridden so
+ * topology reads resolve against the demo's registries rather than the empty framework
+ * one.
  */
 final class ClusterSignalRouter extends SignalRouter
 {
@@ -28,7 +30,7 @@ final class ClusterSignalRouter extends SignalRouter
     }
 
     /**
-     * Returns no bootstrap agents: the demo's only agent is leader-placed, not booted.
+     * Returns no bootstrap agents: nothing this demo registers is booted from the signal.
      *
      * @return list<string> Empty agent-type list
      */

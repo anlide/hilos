@@ -21,8 +21,8 @@ use Hilos\Environment\EnvCatalogStub;
  * reached them; with the daemon checking the environment before it starts, a catalog that
  * still demands them refuses every node. So the catalog has to say "this demo has no
  * WebSocket" itself, rather than lean on nobody asking. And it overrides the DB_DATABASE
- * default, which is an empty string in the stub — the per-node schema name comes from
- * compose env, and this default is the fallback.
+ * default, which is an empty string in the stub — the one schema this stand shares comes
+ * from compose env, and this default is the fallback.
  */
 final class ClusterEnvCatalog implements CatalogProviderInterface
 {

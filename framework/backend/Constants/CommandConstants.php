@@ -75,6 +75,17 @@ final class CommandConstants
     /** @var string Test-only command: the master announces a database row change to the other nodes */
     public const string COMMAND_CLUSTER_DB_ANNOUNCE = 'test:cluster:db:announce';
 
+    /**
+     * @var string Test-only command: a node's probe writes a settings row of the shared database.
+     *     Answered by an agent and not by the master, which is why it is absent from
+     *     {@see self::MASTER_TEST_ONLY_COMMANDS}: a database write is blocking work, and the
+     *     master does none.
+     */
+    public const string COMMAND_CLUSTER_DB_WRITE = 'test:cluster:db:write';
+
+    /** @var string Test-only command: a node's probe answers with the settings row as it holds it */
+    public const string COMMAND_CLUSTER_DB_READ = 'test:cluster:db:read';
+
     /** @var string Test-only command: the master asks the leader to place an agent, as an address does */
     public const string COMMAND_CLUSTER_AGENT_PLACE = 'test:cluster:agent:place';
 
@@ -86,6 +97,12 @@ final class CommandConstants
 
     /** @var string Request payload key: row id a test DB announcement names */
     public const string FIELD_ROW_ID = 'rowId';
+
+    /** @var string Request payload key: settings key a test DB write or read names */
+    public const string FIELD_SETTING_KEY = 'settingKey';
+
+    /** @var string Request payload key: settings value a test DB write carries, or a read answers with */
+    public const string FIELD_SETTING_VALUE = 'settingValue';
 
     /** @var string Request payload key: agent type a test placement request names */
     public const string FIELD_AGENT_TYPE = 'agentType';

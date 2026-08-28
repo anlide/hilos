@@ -1,11 +1,14 @@
 # Multi-node daemon-cluster e2e stack (HIL-185).
 #
-# One shared MariaDB (per-node schemas), five daemon nodes on a dedicated bridge
-# with static IPs — three masters (the consensus/master-set) and two data-plane
-# slaves (the placement targets) — and a long-lived CLI container the harness
-# `docker exec`s to run `test:cluster:inspect` against each node. Node role,
-# identity, capabilities, master set, and timeouts all come from CLUSTER_* env, so
-# the same image is a master or a data-plane node purely by configuration.
+# One shared MariaDB carrying ONE schema for the whole stand (HIL-712) — the model
+# Hilos is built on, and what makes "node A writes a row, node B reads it" sayable —
+# a one-shot `cluster-migrate` service that brings that schema up to date before any
+# node starts, five daemon nodes on a dedicated bridge with static IPs — three
+# masters (the consensus/master-set) and two data-plane slaves (the placement
+# targets) — and a long-lived CLI container the harness `docker exec`s to run
+# `test:cluster:inspect` against each node. Node role, identity, capabilities,
+# master set, and timeouts all come from CLUSTER_* env, so the same image is a
+# master or a data-plane node purely by configuration.
 
 name: hilos-cluster
 
@@ -16,19 +19,25 @@ x-node-base: &node-base
   depends_on:
     cluster-mysql:
       condition: service_healthy
+    # The schema is brought up by a step of the stand, never by five nodes racing
+    # each other on the same DDL (HIL-712). A node starts only once that step exited 0.
+    cluster-migrate:
+      condition: service_completed_successfully
 
 x-node-env: &node-env
   # APP_ENV is required of every node (HIL-566), and the value is `dev`, not `test`:
   # `dev` is not production-like, so the nodes admit the test-only commands this
-  # harness drives. It used to be forced as well - on `test` the daemon loads
-  # tests/.env, whose DB_DATABASE would have overridden every node's per-schema value
-  # - but that reason is gone since the compose environment outranks any env file, and
-  # moving the nodes to `test` is a separate question for this harness. Only the
-  # cluster-cli container runs as APP_ENV=test, and it has no per-schema database to
-  # lose.
+  # harness drives. Moving the nodes to `test` is a separate question for this
+  # harness; only the cluster-cli container runs as APP_ENV=test today, and since
+  # HIL-712 no env file can point a container of this stand at a database of its
+  # own anyway — every one of them names the same DB_DATABASE.
   APP_ENV: dev
   DB_HOST: cluster-mysql
   DB_PORT: "3306"
+  # One schema for the whole stand, nodes and CLI alike: the cluster model is
+  # "one database per cluster", and a node that cannot see its neighbour's row
+  # cannot be asked about it (HIL-712).
+  DB_DATABASE: hilos-demo-cluster
   DB_USERNAME: hilos
   DB_PASSWORD: hilos_pass
   HTTP_STATUS_HOST: 0.0.0.0
@@ -66,13 +75,12 @@ services:
     container_name: cluster-mysql
     environment:
       MYSQL_ROOT_PASSWORD: hilos_root_pass
-      MYSQL_DATABASE: hilos-demo-cluster-cli
+      MYSQL_DATABASE: hilos-demo-cluster
       MYSQL_USER: hilos
       MYSQL_PASSWORD: hilos_pass
       TZ: UTC
     volumes:
       - mysql-cluster-data:/var/lib/mysql
-      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_0900_ai_ci
@@ -86,12 +94,49 @@ services:
       cluster-net:
         ipv4_address: 10.185.0.10
 
+  # One-shot schema step of the stand (HIL-712). The five nodes share one schema now,
+  # and DockerApplication::run() calls Migration::migrateUp() in every container, so
+  # without this step five containers would apply the same DDL at once and four of
+  # them would fall over. Running it first makes each node's own migrateUp() a no-op:
+  # they all read MAX(index) and find the level already applied. Whether a real
+  # cluster lets a node migrate under a lock instead is a question for HIL-773, on a
+  # stand whose database is not a single synthetic server.
+  cluster-migrate:
+    build: .
+    container_name: cluster-migrate
+    working_dir: /app
+    restart: "no"
+    command: ["php", "backend/Bootstrap/cli.php", "db:migration:up"]
+    environment:
+      APP_ENV: dev
+      DB_HOST: cluster-mysql
+      DB_PORT: "3306"
+      DB_DATABASE: hilos-demo-cluster
+      DB_USERNAME: hilos
+      DB_PASSWORD: hilos_pass
+      # db:migration:up writes state a daemon owns, so CliApplication refuses it unless
+      # it can see for itself that no daemon is answering here, and a missing address
+      # counts as "could not check" rather than as "nobody home". This is a one-shot
+      # container of its own that never runs a daemon, so it asks its own loopback and
+      # is told no.
+      HILOS_DAEMON_HOST: 127.0.0.1
+      COMMAND_PORT: "8094"
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+    depends_on:
+      cluster-mysql:
+        condition: service_healthy
+    networks:
+      - cluster-net
+
   cluster-m1:
     <<: *node-base
     container_name: cluster-m1
     environment:
       <<: *node-env
-      DB_DATABASE: hilos-demo-cluster-m1
       CLUSTER_NODE_ID: m1
       CLUSTER_NODE_ROLE: master
       CLUSTER_NODE_CAPABILITIES: ""
@@ -113,7 +158,6 @@ services:
     container_name: cluster-m2
     environment:
       <<: *node-env
-      DB_DATABASE: hilos-demo-cluster-m2
       CLUSTER_NODE_ID: m2
       CLUSTER_NODE_ROLE: master
       CLUSTER_NODE_CAPABILITIES: ""
@@ -135,7 +179,6 @@ services:
     container_name: cluster-m3
     environment:
       <<: *node-env
-      DB_DATABASE: hilos-demo-cluster-m3
       CLUSTER_NODE_ID: m3
       CLUSTER_NODE_ROLE: master
       CLUSTER_NODE_CAPABILITIES: ""
@@ -157,7 +200,6 @@ services:
     container_name: cluster-s1
     environment:
       <<: *node-env
-      DB_DATABASE: hilos-demo-cluster-s1
       CLUSTER_NODE_ID: s1
       CLUSTER_NODE_ROLE: slave
       CLUSTER_NODE_CAPABILITIES: "worker"
@@ -183,7 +225,6 @@ services:
     container_name: cluster-s2
     environment:
       <<: *node-env
-      DB_DATABASE: hilos-demo-cluster-s2
       CLUSTER_NODE_ID: s2
       CLUSTER_NODE_ROLE: slave
       CLUSTER_NODE_CAPABILITIES: "worker"
@@ -217,7 +258,10 @@ services:
       APP_ENV: test
       DB_HOST: cluster-mysql
       DB_PORT: "3306"
-      DB_DATABASE: hilos-demo-cluster-cli
+      # Not inherited: this service carries no anchor. Same schema as the nodes
+      # (HIL-712) — the cluster unit suite never touches the database, so sharing
+      # it costs nothing.
+      DB_DATABASE: hilos-demo-cluster
       DB_USERNAME: hilos
       DB_PASSWORD: hilos_pass
       COMMAND_PORT: "8094"

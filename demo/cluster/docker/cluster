@@ -9,7 +9,11 @@
 # compares against the expected invariants.
 #
 # Usage:
-#   cluster up                 build + start mysql, the 5 nodes, and the cli container
+#   cluster up                 build + start mysql, migrate the schema, start the 5
+#                              nodes and the cli container. On a data volume created
+#                              before HIL-712 (per-node schemas), run `down --volumes`
+#                              once first: the shared schema is created by the mariadb
+#                              image on the volume's first boot and never after.
 #   cluster down [--volumes]   stop and remove the stack (add --volumes to wipe the DB)
 #   cluster status             docker ps for the stack + a one-line inspect per node
 #   cluster inspect <node>     print a node's test:cluster:inspect JSON (m1..m3,s1,s2)
@@ -55,8 +59,12 @@ cmd_up() {
   ensure_env
   echo "cluster: building images..."
   dc build
-  echo "cluster: starting mysql + 5 nodes..."
-  dc up -d cluster-mysql cluster-m1 cluster-m2 cluster-m3 cluster-s1 cluster-s2
+  echo "cluster: starting mysql..."
+  dc up -d cluster-mysql
+  echo "cluster: migrating the shared schema..."
+  dc up --exit-code-from cluster-migrate cluster-migrate
+  echo "cluster: starting 5 nodes..."
+  dc up -d cluster-m1 cluster-m2 cluster-m3 cluster-s1 cluster-s2
   echo "cluster: starting cli container..."
   dc --profile cli up -d cluster-cli
   echo "cluster: up. Give the mesh a few seconds to elect a leader, then:"
@@ -242,7 +250,14 @@ cmd_scenarios() {
   # never right; nothing survives this matrix anyway, since it kills, partitions and recreates
   # every node it touches. The image build behind `up` is a cache hit, so the price is one
   # container recreate.
-  cmd_down
+  #
+  # `--volumes` on top of that since HIL-712: the schema of this stand is created by
+  # the mariadb image from MYSQL_DATABASE, and an image only does that on the FIRST
+  # boot of its data volume. A volume left over from a run with a different schema
+  # name would therefore never get one, and cluster-migrate would fail against a
+  # database that does not exist. Wiping it also keeps the settings row scenario 11
+  # writes from surviving into the next matrix.
+  cmd_down --volumes
   cmd_up
   python3 "$here/cluster_e2e.py"
 }

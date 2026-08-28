@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Demo\Cluster\Tests\Unit;
 
 use Demo\Cluster\Agents\ClaimerAgent;
+use Demo\Cluster\Agents\DbProbeAgent;
 use Demo\Cluster\Agents\WorkerAgent;
 use Demo\Cluster\Constants\AgentType;
 use Demo\Cluster\Constants\ClusterCapability;
 use Demo\Cluster\Core\Agent\Daemon\ClaimerAgentDaemon;
+use Demo\Cluster\Core\Agent\Daemon\DbProbeAgentDaemon;
 use Demo\Cluster\Core\Agent\Daemon\WorkerAgentDaemon;
 use Demo\Cluster\Core\Router\ClusterSignalRouter;
 use Demo\Cluster\Hilos;
@@ -16,6 +18,7 @@ use Demo\Cluster\Runtime\View\Context\ClusterRtContext;
 use Hilos\Constants\CliCommands;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\CLI\CliManager;
@@ -47,19 +50,23 @@ final class ClusterTopologyRegistryTest extends TestCase
         $this->assertSame([], Hilos::getAgentSignalRoutes());
         $this->assertSame([], Hilos::getGroupRoutes());
 
-        // The one exception, and the reason it is here: this demo is headless and has no Hilos
-        // index, so the worker agent is the only carrier that can drive the clustered entry
-        // path - the leader's quiesce round and a follower's fail-closed refusal.
+        // The exceptions are commands, and both sets are here for the same reason: this demo
+        // is headless, so an agent is the only thing that can carry work a scenario drives. The
+        // worker agent drives the clustered protected-mode entry path - the leader's quiesce
+        // round and a follower's fail-closed refusal - and the probe carries the database pair,
+        // which the master must not answer because a database read blocks.
         $this->assertSame([
             CliCommands::PROTECTED_MODE_TEST_ENTER => AgentType::WORKER,
             CliCommands::PROTECTED_MODE_TEST_LEAVE => AgentType::WORKER,
             CliCommands::PROTECTED_MODE_TEST_OPEN => AgentType::WORKER,
+            CliCommands::CLUSTER_TEST_DB_WRITE => AgentType::DB_PROBE,
+            CliCommands::CLUSTER_TEST_DB_READ => AgentType::DB_PROBE,
         ], Hilos::getCommandAgentRoutes());
     }
 
     public function testAgentRegistryHasThePlaceableWorkerAndTheClaimer(): void
     {
-        $this->assertSame([AgentType::WORKER, AgentType::CLAIMER], array_keys(Hilos::AGENTS));
+        $this->assertSame([AgentType::WORKER, AgentType::CLAIMER, AgentType::DB_PROBE], array_keys(Hilos::AGENTS));
 
         $entry = Hilos::AGENTS[AgentType::WORKER];
         $this->assertSame(WorkerAgent::class, AgentRegistry::workerClass($entry));
@@ -99,10 +106,35 @@ final class ClusterTopologyRegistryTest extends TestCase
         $this->assertFalse($daemon->requiresMonopolisticProcess());
     }
 
+    public function testTheProbeIsANodeReplicaAndNothingElse(): void
+    {
+        $entry = Hilos::AGENTS[AgentType::DB_PROBE];
+        $this->assertSame(DbProbeAgent::class, AgentRegistry::workerClass($entry));
+        $this->assertSame(DbProbeAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        $this->assertTrue(is_subclass_of(DbProbeAgentDaemon::class, AbstractAgentDaemon::class));
+        $this->assertSame(AgentType::DB_PROBE, DbProbeAgent::AGENT_TYPE);
+
+        // The declaration scenario 11 stands on: one replica on every node, so the node that
+        // writes and the node that reads are two particular nodes rather than wherever a
+        // placement landed. Neither of the two axes a placed agent carries may stand beside it,
+        // and this pins that as much as the scope - a node replica has no index to hand out and
+        // no node to pick, and topology validation refuses either next to it.
+        $this->assertSame(AgentScope::NODE, AgentRegistry::scope($entry));
+        $this->assertFalse(AgentRegistry::requiresIndex($entry));
+        $this->assertArrayNotHasKey(AgentRegistryKey::PLACEMENT, $entry);
+
+        // Placed on every node including the coordination ones, so it gates on no capability -
+        // unlike the fleet, which only a WORKER node may host.
+        $daemon = new DbProbeAgentDaemon();
+        $this->assertSame([], $daemon->requiredCapabilities());
+        $this->assertFalse($daemon->requiresMonopolisticProcess());
+    }
+
     public function testNoAgentIsStartedOnTheBootstrapSignal(): void
     {
-        // The only agent is leader-placed over the peer channel, never booted from the
-        // system bootstrap list, so that list stays empty.
+        // Nothing this demo registers is booted from the signal: the fleet and the claimer are
+        // leader-placed over the peer channel, and the probe comes up with its node's own
+        // workers, so the bootstrap list stays empty.
         $method = new ReflectionMethod(ClusterSignalRouter::class, 'getDefaultSystemBootstrapAgentTypes');
         $bootstrapAgents = $method->invoke(new ClusterSignalRouter());
 

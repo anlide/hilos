@@ -52,6 +52,12 @@ final class CliCommands
     /** @var string Command: Announce a database row change to the other nodes (test-only) */
     public const string CLUSTER_TEST_DB_ANNOUNCE = 'test:cluster:db:announce';
 
+    /** @var string Command: Write a settings row of the shared cluster database on one node (test-only) */
+    public const string CLUSTER_TEST_DB_WRITE = 'test:cluster:db:write';
+
+    /** @var string Command: Read a settings row as one node holds it (test-only) */
+    public const string CLUSTER_TEST_DB_READ = 'test:cluster:db:read';
+
     /** @var string Command: Ask the leader to place an agent, as addressing one does (test-only) */
     public const string CLUSTER_TEST_AGENT_PLACE = 'test:cluster:agent:place';
 

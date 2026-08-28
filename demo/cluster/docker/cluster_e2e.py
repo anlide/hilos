@@ -38,7 +38,8 @@ Plus scenarios beyond that matrix:
   9 daemon-crash self-heal     a node whose daemon is SIGKILLed rebinds and rejoins
                                inside the same container (HIL-450)
  10 cross-node browser         a browser attached to one node is answered from another (HIL-668)
- 11 cross-node db fact         a row changed on one node is announced to every other (HIL-670)
+ 11 cross-node db fact         a row written on one node is read back on another (HIL-670,
+                               HIL-712)
  12 rt replication             a fleet row reaches the nodes that read it, and only them
  13 rt partition converges     a cut-off node serves its replica frozen and catches up (HIL-589)
  14 rt claim refused           a second owner of one collection is named and kept down (HIL-696)
@@ -68,6 +69,15 @@ WORKER_FLEET_SIZE = 10
 WORKER_STATUSES = "workerStatuses"
 # Seconds a fleet member waits between reports; mirrors WorkerAgent::REPORT_INTERVAL_SEC.
 WORKER_REPORT_INTERVAL_SEC = 5.0
+
+# The settings row the per-node probe writes and reads. Non-catalog by construction - this demo
+# registers no settings catalog - so it is a true orphan row and nothing else in the stand is
+# about it.
+DB_PROBE_KEY = "cluster_probe_value"
+# What the read command prints in place of a value when the node holds no row for the key;
+# mirrors ClusterTestDbReadCommand::NO_ROW. Said in a word so that "no row" and "an empty row"
+# stay different answers.
+DB_PROBE_NO_ROW = "(none)"
 
 # The demo agent that claims the WHOLE of the collection the fleet owns row by row, so the
 # cluster-wide guard has two whole rights to judge; mirrors Demo\Cluster\Constants\AgentType.
@@ -164,6 +174,31 @@ def client(node, *args):
     """Run a test-only client command on one node. True when the CLI reported success."""
     proc = subprocess.run([CLUSTER, "client", node, *args], capture_output=True, text=True)
     return proc.returncode == 0
+
+
+def client_out(node, *args):
+    """Run a test-only client command on one node for its OUTPUT: stdout stripped, or None
+    when the CLI reported failure."""
+    proc = subprocess.run([CLUSTER, "client", node, *args], capture_output=True, text=True)
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def db_read(node, key):
+    """What one node answers it holds for a settings key: the value, or None for no row.
+
+    The answer comes out of that node's own copy of the collection rather than out of a fresh
+    query, which is the whole reason this is worth asking - see ClusterTestDbReadCommand. The
+    reply line is `<key>=<value>`, with DB_PROBE_NO_ROW standing in for "this node holds none".
+    """
+    out = client_out(node, "test:cluster:db:read", key)
+    if out is None:
+        return None
+    marker = f"{key}="
+    for line in out.splitlines():
+        if line.startswith(marker):
+            value = line[len(marker):]
+            return None if value == DB_PROBE_NO_ROW else value
+    return None
 
 
 def container_id(node):
@@ -393,6 +428,23 @@ def wait_until(predicate, timeout, desc, nodes=ALL_NODES, local=False):
         time.sleep(POLL_INTERVAL)
     raise ScenarioTimeout(f"timed out after {timeout:.0f}s waiting for: {desc}\n"
                           f"last view: {summarize(last)}")
+
+
+def wait_db_value(node, key, expected, timeout, desc):
+    """Poll one node's copy of a settings row until it answers `expected`.
+
+    The value twin of wait_until, and it raises the same ScenarioTimeout so that a pure
+    convergence timeout stays retryable while a wrong value fails hard.
+    """
+    deadline = time.time() + timeout
+    last = None
+    while time.time() < deadline:
+        last = db_read(node, key)
+        if last == expected:
+            return
+        time.sleep(POLL_INTERVAL)
+    raise ScenarioTimeout(f"timed out after {timeout:.0f}s waiting for: {desc}\n"
+                          f"last value {node} answered for {key}: {last!r}")
 
 
 def converged(expected_nodes):
@@ -1013,62 +1065,75 @@ def scenario_14_rt_claim_refused():
 
 
 def scenario_11_cross_node_db_fact():
-    """A database row changed on one node must be announced to every other (HIL-670).
+    """A row one node changed must be seen changed by every other (HIL-670, HIL-712).
 
     The defect this closes is the quietest of the set. The nodes share a database but not the
     rows they have read out of it: each keeps its own copy in memory, so a row one node changed
     stayed as another node first read it, for the life of that process. Nothing fails, nothing is
     logged, and a person sees a rename that "did not happen".
 
-    What the stand can check is that the FACT crosses, and that is deliberate rather than a
-    shortcut: the nodes of this stand carry schemas of their own (HIL-712), so whether the row
-    landed is not a question that can be asked here. Whether it lands - and in which collection,
-    since a created row enters only a copy that claims to hold the whole set - is settled by unit
-    tests, where the collection's fullness is known. So the drill names a row id that exists
-    nowhere: nothing is written, and no node's own copy of that collection is disturbed.
+    Until HIL-712 it could only be drilled at one remove. Every node of this stand carried a
+    schema of its own, so no row was ever a row two nodes were both about, and what was asserted
+    was that the FACT crossed - announced against a row id that exists nowhere, which is what
+    test:cluster:db:announce and scenario 15 still do. The stand shares one schema now, and this
+    scenario asserts the thing itself: one node writes a value and another answers with it.
 
-    The second half is the part with no other cover at all. Delivery is best-effort, so a node
-    that was unreachable simply missed whatever was announced while it was away; what is asserted
-    here is that the mesh comes back and starts carrying facts again, which is the state the
-    re-read on link is there to make safe.
+    The second tact is the proof; the first is only its setup. A first read is allowed to be
+    right for the boring reason - the watcher held no row, so it went to the database for one.
+    What cannot happen by accident is the second: the watcher HAS a copy now, that copy says v1,
+    and it has to answer v2. That is the announcement crossing the mesh and a copy being dropped
+    on purpose.
+
+    The third tact is the old second half of this scenario, and the case the re-read on link
+    exists for. Delivery is best-effort, so whatever was announced while a node was away is
+    simply lost; the watcher is recreated, allowed to take a fresh copy, and then has to follow
+    one more write - which says the channel carries facts again rather than merely that the
+    database can still be read.
+
+    One assertion is not about the watcher at all: the sender must not take in its own writes as
+    replicas. A node that did would apply its own frame back over the row it had just written,
+    which is a loop rather than a sync, and no other scenario asks it - scenario 15 counts every
+    node before its announcements but judges only the receivers.
     """
-    collection, row_id = "settings", "999999"
     sender, watcher = "m1", "m2"
     wait_converge(ALL_NODES)
 
-    views = inspect_all()
-    before = {n: db_replicas(views, n) for n in ALL_NODES}
-    assert client(sender, "test:cluster:db:announce", collection, row_id), \
-        f"could not announce a DB fact on {sender}"
+    sender_replicas_before = db_replicas(inspect_all([sender]), sender)
 
-    def announced_arrived(views):
-        return all(db_replicas(views, n) > before[n]
-                   and (views.get(n) or {}).get("lastDbReplicaCollection") == collection
-                   for n in ALL_NODES if n != sender)
+    # Tact one. The watcher answers because it went and read the row, and by answering it now
+    # holds a copy of it - which is the only thing this tact establishes.
+    assert client(sender, "test:cluster:db:write", DB_PROBE_KEY, "v1"), \
+        f"could not write the probe row on {sender}"
+    wait_db_value(watcher, DB_PROBE_KEY, "v1", CONVERGE_TIMEOUT,
+                  f"{watcher} answers with the value {sender} wrote")
 
-    receivers = [n for n in ALL_NODES if n != sender]
-    wait_until(announced_arrived, CONVERGE_TIMEOUT,
-               f"every node but {sender} takes in the DB fact it announced",
-               nodes=receivers)
+    # Tact two, and the whole scenario: a copy that says v1 has to come back saying v2.
+    assert client(sender, "test:cluster:db:write", DB_PROBE_KEY, "v2"), \
+        f"could not rewrite the probe row on {sender}"
+    wait_db_value(watcher, DB_PROBE_KEY, "v2", CONVERGE_TIMEOUT,
+                  f"the copy {watcher} already held goes stale and comes back as v2")
 
-    assert db_replicas(inspect_all([sender]), sender) == before[sender], \
-        f"{sender} counted its own announcement as a replica; the fact must not come back to it"
+    # Both writes have reached the watcher by now, so whatever the sender was going to count for
+    # them it has counted.
+    assert db_replicas(inspect_all([sender]), sender) == sender_replicas_before, \
+        f"{sender} counted its own writes as replicas; a fact must not come back to its raiser"
 
-    # And again across a link that went away and came back, which is the case the whole re-read
-    # on link exists for: what was announced while the node was gone is simply lost, so the only
-    # thing that can be asserted is that the channel carries facts again afterwards.
+    # Tact three: a link that went away and came back.
     print(f"    recreating {watcher} to break and re-establish its links")
     ctl("recreate", watcher)
     wait_converge(ALL_NODES)
 
-    before = db_replicas(inspect_all([watcher]), watcher)
-    assert client(sender, "test:cluster:db:announce", collection, row_id), \
-        f"could not announce a DB fact on {sender} after the reconnect"
-    wait_until(lambda v: db_replicas(v, watcher) > before, CONVERGE_TIMEOUT,
-               f"{watcher} takes in a DB fact again after re-linking", nodes=[watcher])
+    # The container is new, so its copy is taken here rather than inherited - and only once it
+    # holds one is the write below asking anything of the mesh.
+    wait_db_value(watcher, DB_PROBE_KEY, "v2", CONVERGE_TIMEOUT,
+                  f"the recreated {watcher} takes a copy of the row")
+    assert client(sender, "test:cluster:db:write", DB_PROBE_KEY, "v3"), \
+        f"could not write the probe row on {sender} after the reconnect"
+    wait_db_value(watcher, DB_PROBE_KEY, "v3", CONVERGE_TIMEOUT,
+                  f"{watcher} follows a write made after it re-linked")
 
-    return (f"{sender} announced a DB fact to all {len(receivers)} other nodes, "
-            f"and to {watcher} again after it re-linked")
+    return (f"{sender} wrote the row and {watcher} answered with it, answered the rewrite out of "
+            f"a copy it already held, and followed one more write after re-linking")
 
 
 def scenario_15_db_interest_addressing():
@@ -1091,8 +1156,9 @@ def scenario_15_db_interest_addressing():
     at least that long to land too. Each receiver's counter moving by exactly one is then the
     assertion that it never came - a "nothing happened" with a bound on it rather than a sleep.
 
-    Nothing is written here either, for the reason scenario 11 writes nothing: the row id names
-    a row that exists nowhere, so no node's copy of either collection is disturbed by the drill.
+    Nothing is written here, and unlike scenario 11 that is the point rather than a limitation:
+    the row id names a row that exists nowhere, so no node's copy of either collection is
+    disturbed and the counters below move for the announcement alone.
     """
     read_key, unread_key = "settings", "verifications"
     sender, row_id = "m1", "999999"

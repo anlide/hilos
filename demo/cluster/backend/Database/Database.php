@@ -20,9 +20,11 @@ use Hilos\HilosException;
 /**
  * Database - Database connection configuration for the cluster demo.
  *
- * Reads the primary connection from DB_* env. Each cluster node uses its own
- * schema on the shared MariaDB (via DB_DATABASE), so nodes never race on the
- * settings-table migration at first boot.
+ * Reads the primary connection from DB_* env. Every node of the stand names the
+ * same schema, because the cluster model is one database per cluster and a node
+ * that cannot see its neighbour's row cannot be asked about it (HIL-712). Nobody
+ * races on the settings-table migration at first boot: a one-shot step of the
+ * stand (the `cluster-migrate` service) applies it before any node starts.
  */
 final class Database extends BaseDatabase
 {

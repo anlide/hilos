@@ -132,11 +132,11 @@ stale row reads it with a query rather than by key.
 Who holds the set *in memory* is the question the library answers; how a node
 learns that its copy of a row is stale is the question it leaves open.
 
-Note what is **not** evidence for this: `demo/cluster` gives every node its own
-schema (`hilos-demo-cluster-m1`, `-m2`, … in
-`demo/cluster/docker/docker-compose.cluster.yml`). That demo is a mesh, election
-and placement harness carrying no shared entity, so it neither demonstrates the
-shared database nor contradicts it.
+Note what is **not** evidence for this: since HIL-712 every node of `demo/cluster`
+names the one schema `hilos-demo-cluster`, so that stand does hold a shared
+database — but the only table in it is the framework settings table, and the demo
+is a mesh, election and placement harness carrying no shared entity at all. It
+says nothing either way about who holds the set of an entity in memory.
 
 The rule is already the practice in the places that met the problem, and this
 document defends it rather than introducing it:

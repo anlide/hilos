@@ -20,10 +20,13 @@ use Hilos\Environment\Exception\EnvException;
  * `test:cluster:inspect`.
  *
  * It names a row id that does NOT exist, and that is the point rather than a shortcut: nothing is
- * written to any database, so a node whose copy of the collection is somebody else's settings is
- * not disturbed by the drill. What the stand is checking is that the frame crosses — the stand's
- * nodes carry different schemas, so whether a row lands is not a question it can ask. Whether it
- * lands is settled by unit tests, against a collection whose fullness is known.
+ * written to any database, so no node's copy of the collection is disturbed and a receiver's
+ * counter moves for the announcement alone. That is what makes it the right instrument for the
+ * two questions that are about the FRAME - that it crosses at all, and that since HIL-750 it
+ * crosses only to the nodes reading the collection it names. Whether a written row lands in a
+ * neighbour's copy is a different question, and since HIL-712 the stand can ask it outright:
+ * the nodes share one schema, and {@see ClusterTestDbWriteCommand} writes a row somebody else
+ * reads back.
  *
  * Database-free by contract: it talks to nothing but the local command socket.
  */

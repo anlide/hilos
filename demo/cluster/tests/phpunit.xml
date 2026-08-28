@@ -21,7 +21,7 @@
         <env name="APP_ENV" value="test"/>
         <env name="DB_HOST" value="cluster-mysql"/>
         <env name="DB_PORT" value="3306"/>
-        <env name="DB_DATABASE" value="hilos-demo-cluster-cli"/>
+        <env name="DB_DATABASE" value="hilos-demo-cluster"/>
         <env name="DB_USERNAME" value="hilos"/>
         <env name="DB_PASSWORD" value="hilos_pass"/>
     </php>
