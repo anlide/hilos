@@ -16,16 +16,21 @@ use Hilos\Cluster\ClientSignalSink;
 use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\Connections\ClusterClientLocation;
+use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\LeadershipObserver;
 use Hilos\Cluster\MembershipObserver;
 use Hilos\Cluster\NodeLifecycleState;
+use Hilos\Cluster\Peer\ConnectionPolicy;
 use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
+use Hilos\Cluster\Peer\FullMeshConnectionPolicy;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Placement\AgentLocationKind;
+use Hilos\Cluster\Placement\BestFitPlacementPolicy;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementObserver;
+use Hilos\Cluster\Placement\PlacementPolicy;
 use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Cluster\DbSyncMesh;
 use Hilos\Cluster\DbSyncSink;
@@ -386,6 +391,34 @@ abstract class DaemonManager extends BaseManager implements
     abstract protected function createAgentManagerDaemon(): AgentManagerDaemon;
 
     /**
+     * The node-selection policy this project places its agents by, or null to keep the default.
+     *
+     * A project overrides this to rank capable nodes its own way; null means "I have none",
+     * and the framework keeps its {@see BestFitPlacementPolicy}. Asked once, in {@see boot()},
+     * before any server or module is built.
+     *
+     * @return ?PlacementPolicy Project's node-selection policy, or null to keep the framework default
+     */
+    protected function createPlacementPolicy(): ?PlacementPolicy
+    {
+        return null;
+    }
+
+    /**
+     * The dial policy this project's peer mesh follows, or null to keep the default.
+     *
+     * A project overrides this to hold direct links to only some of the known peers; null means
+     * "I have none", and the framework keeps its {@see FullMeshConnectionPolicy}. Asked in
+     * {@see boot()} together with {@see createPlacementPolicy()}.
+     *
+     * @return ?ConnectionPolicy Project's dial policy, or null to keep the framework default
+     */
+    protected function createConnectionPolicy(): ?ConnectionPolicy
+    {
+        return null;
+    }
+
+    /**
      * Get agent manager daemon instance.
      *
      * @return AgentManagerDaemon Agent manager daemon instance
@@ -410,6 +443,7 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param DaemonContext $context Resolved path context passed to every hook
      * @throws BackupScheduleException When the project backup schedule is malformed
+     * @throws ClusterConfigurationException When a cluster policy is registered after the transport took it
      * @throws EnvException When a backup env value or the daemon log path cannot be read
      * @throws HilosException When a daemon module fails its activation check or its registration
      * @throws ProtectedModeFreezeUnreadableException When a freeze was left on disk and cannot be read
@@ -418,6 +452,18 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function boot(DaemonContext $context): void
     {
+        // The policies come first, before any server or module: the connection one is already
+        // needed where PeerModule builds the peer server, and one moment for both doors beats two.
+        $placementPolicy = $this->createPlacementPolicy();
+        if ($placementPolicy !== null) {
+            Hilos::$cluster?->registerPlacementPolicy($placementPolicy);
+        }
+
+        $connectionPolicy = $this->createConnectionPolicy();
+        if ($connectionPolicy !== null) {
+            Hilos::$cluster?->registerConnectionPolicy($connectionPolicy);
+        }
+
         foreach ($this->createServers($context) as $server) {
             $this->registerServer($server);
         }

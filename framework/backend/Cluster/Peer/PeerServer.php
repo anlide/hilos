@@ -236,6 +236,7 @@ final class PeerServer extends AbstractServer implements
                 Hilos::$cluster->placementObserver(),
                 Hilos::$env->int(EnvConstants::CLUSTER_FAILOVER_GRACE_MS),
                 Hilos::$env->int(EnvConstants::CLUSTER_SLAVE_WORK_GRACE_MS),
+                policy: Hilos::$cluster->placementPolicy(),
             );
             Hilos::$cluster->registerPlacement($this->placement);
             // The placement coordinator doubles as the router's read-only placement lookup, so

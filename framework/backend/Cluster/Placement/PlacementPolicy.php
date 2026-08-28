@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Placement;
 
+use Hilos\Core\Daemon\DaemonManager;
+
 /**
  * The node-selection policy (HIL-182): given an agent's requirement and a set of candidate
  * nodes, chooses which one should host it.
@@ -16,7 +18,9 @@ namespace Hilos\Cluster\Placement;
  * coordinator keeps ownership of the hard capability gate and the placement frames.
  *
  * The default is {@see BestFitPlacementPolicy}. A project may supply its own to change how
- * capable nodes are ranked.
+ * capable nodes are ranked, by overriding {@see DaemonManager::createPlacementPolicy()}: the
+ * daemon hands what it returns to the cluster facade at boot, and the transport builds the
+ * coordinator against it.
  */
 interface PlacementPolicy
 {

@@ -9,6 +9,7 @@ use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Consensus\ConsensusRole;
+use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Cluster\Leadership;
 use Hilos\Cluster\LocalNodeAnnouncer;
@@ -16,6 +17,12 @@ use Hilos\Cluster\MembershipObserver;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeLifecycleState;
 use Hilos\Cluster\NodeRole;
+use Hilos\Cluster\Peer\ConnectionPolicy;
+use Hilos\Cluster\Peer\FullMeshConnectionPolicy;
+use Hilos\Cluster\Placement\BestFitPlacementPolicy;
+use Hilos\Cluster\Placement\NodeCapacities;
+use Hilos\Cluster\Placement\PlacementPolicy;
+use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Cluster\PendingLeadership;
 use Hilos\Cluster\StandaloneLeadership;
 use Hilos\Environment\EnvAccessor;
@@ -356,5 +363,167 @@ final class ClusterContextTest extends TestCase
         $this->assertSame(7, $inspection[ClusterCommandConstants::FIELD_TERM]);
         $this->assertSame('leader', $inspection[ClusterCommandConstants::FIELD_CONSENSUS_ROLE]);
         $this->assertTrue($inspection[ClusterCommandConstants::FIELD_HAS_QUORUM]);
+    }
+
+    public function testPlacementPolicyDefaultsToBestFitWhenNoneIsRegistered(): void
+    {
+        $this->assertInstanceOf(BestFitPlacementPolicy::class, new ClusterContext()->placementPolicy());
+    }
+
+    public function testConnectionPolicyDefaultsToFullMeshWhenNoneIsRegistered(): void
+    {
+        $this->assertInstanceOf(FullMeshConnectionPolicy::class, new ClusterContext()->connectionPolicy());
+    }
+
+    public function testRegisteredPlacementPolicyIsHandedBack(): void
+    {
+        $policy = $this->placementPolicyPicking('node-b');
+
+        $context = new ClusterContext();
+        $context->registerPlacementPolicy($policy);
+
+        $this->assertSame($policy, $context->placementPolicy());
+    }
+
+    public function testRegisteredConnectionPolicyIsHandedBack(): void
+    {
+        $policy = $this->connectionPolicyAnswering(false);
+
+        $context = new ClusterContext();
+        $context->registerConnectionPolicy($policy);
+
+        $this->assertSame($policy, $context->connectionPolicy());
+    }
+
+    public function testSecondPlacementPolicyBeforeTheFirstReadWins(): void
+    {
+        $second = $this->placementPolicyPicking('node-c');
+
+        $context = new ClusterContext();
+        $context->registerPlacementPolicy($this->placementPolicyPicking('node-b'));
+        $context->registerPlacementPolicy($second);
+
+        $this->assertSame($second, $context->placementPolicy());
+    }
+
+    public function testSecondConnectionPolicyBeforeTheFirstReadWins(): void
+    {
+        $second = $this->connectionPolicyAnswering(true);
+
+        $context = new ClusterContext();
+        $context->registerConnectionPolicy($this->connectionPolicyAnswering(false));
+        $context->registerConnectionPolicy($second);
+
+        $this->assertSame($second, $context->connectionPolicy());
+    }
+
+    public function testPlacementPolicyRegisteredAfterTheFirstReadIsRefused(): void
+    {
+        $context = new ClusterContext();
+        $context->placementPolicy();
+
+        $this->expectException(ClusterConfigurationException::class);
+        $this->expectExceptionMessage('Cluster placement policy was registered after the transport already took it');
+
+        $context->registerPlacementPolicy($this->placementPolicyPicking('node-b'));
+    }
+
+    public function testConnectionPolicyRegisteredAfterTheFirstReadIsRefused(): void
+    {
+        $context = new ClusterContext();
+        $context->connectionPolicy();
+
+        $this->expectException(ClusterConfigurationException::class);
+        $this->expectExceptionMessage('Cluster connection policy was registered after the transport already took it');
+
+        $context->registerConnectionPolicy($this->connectionPolicyAnswering(false));
+    }
+
+    public function testReadingOnePolicyDoorLeavesTheOtherOpen(): void
+    {
+        $connectionPolicy = $this->connectionPolicyAnswering(false);
+        $placementPolicy = $this->placementPolicyPicking('node-b');
+
+        $context = new ClusterContext();
+        $context->placementPolicy();
+        $context->registerConnectionPolicy($connectionPolicy);
+
+        $this->assertSame($connectionPolicy, $context->connectionPolicy());
+
+        $reopened = new ClusterContext();
+        $reopened->connectionPolicy();
+        $reopened->registerPlacementPolicy($placementPolicy);
+
+        $this->assertSame($placementPolicy, $reopened->placementPolicy());
+    }
+
+    /**
+     * Builds a placement policy that always names one node, to be recognised by identity.
+     *
+     * @param string $nodeId Node id the policy answers with
+     * @return PlacementPolicy Policy naming that node
+     */
+    private function placementPolicyPicking(string $nodeId): PlacementPolicy
+    {
+        return new class ($nodeId) implements PlacementPolicy {
+            /** @var string Node id this policy always names */
+            private string $nodeId;
+
+            /**
+             * @param string $nodeId Node id this policy always names
+             */
+            public function __construct(string $nodeId)
+            {
+                $this->nodeId = $nodeId;
+            }
+
+            /**
+             * @param list<string> $requiredTags Boolean capability tags the agent must have
+             * @param ResourceProfile $profile Numeric hard minimums and soft preferences of the agent
+             * @param array<string, NodeCapacities> $candidates Candidate nodes' capacities keyed by node id
+             * @param array<string, int> $hosted Agents each candidate already hosts, keyed by node id
+             * @return ?string The one node id this policy names
+             */
+            public function selectNode(
+                array $requiredTags,
+                ResourceProfile $profile,
+                array $candidates,
+                array $hosted = [],
+            ): ?string {
+                return $this->nodeId;
+            }
+        };
+    }
+
+    /**
+     * Builds a connection policy that always gives the same answer, to be recognised by identity.
+     *
+     * @param bool $answer What the policy says about every candidate
+     * @return ConnectionPolicy Policy answering that way
+     */
+    private function connectionPolicyAnswering(bool $answer): ConnectionPolicy
+    {
+        return new class ($answer) implements ConnectionPolicy {
+            /** @var bool What this policy says about every candidate */
+            private bool $answer;
+
+            /**
+             * @param bool $answer What this policy says about every candidate
+             */
+            public function __construct(bool $answer)
+            {
+                $this->answer = $answer;
+            }
+
+            /**
+             * @param NodeIdentity $local Local node identity
+             * @param ClusterNode $candidate Known peer weighed as a dial target
+             * @return bool The fixed answer this policy was built with
+             */
+            public function shouldDial(NodeIdentity $local, ClusterNode $candidate): bool
+            {
+                return $this->answer;
+            }
+        };
     }
 }

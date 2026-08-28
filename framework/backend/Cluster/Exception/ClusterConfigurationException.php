@@ -57,4 +57,19 @@ class ClusterConfigurationException extends ClusterException
     {
         return new self("Invalid cluster consensus timing: {$detail}");
     }
+
+    /**
+     * Builds an exception for a cluster policy registered after the transport read it.
+     *
+     * The transport takes each policy once, while it builds, and holds it in a field
+     * afterwards; a registration that arrives later would be accepted and then never
+     * consulted. Refusing it names the real mistake — the moment, not the policy.
+     *
+     * @param string $policyKind Which policy door was registered too late ('placement' or 'connection')
+     * @return self Configuration exception
+     */
+    public static function policyRegisteredTooLate(string $policyKind): self
+    {
+        return new self("Cluster {$policyKind} policy was registered after the transport already took it");
+    }
 }

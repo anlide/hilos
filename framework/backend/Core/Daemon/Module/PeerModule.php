@@ -48,6 +48,7 @@ final class PeerModule implements DaemonModule
             Hilos::$env->int(EnvConstants::CLUSTER_PEER_PORT),
             Hilos::$cluster->identity(),
             PeerAddress::parseList(Hilos::$env[EnvConstants::CLUSTER_SEEDS]),
+            Hilos::$cluster->connectionPolicy(),
         );
         $daemon->registerServer($peerServer);
     }

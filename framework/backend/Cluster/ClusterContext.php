@@ -9,12 +9,17 @@ use Hilos\Cluster\Consensus\ClusterCoordinator;
 use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
+use Hilos\Cluster\Peer\ConnectionPolicy;
+use Hilos\Cluster\Peer\FullMeshConnectionPolicy;
+use Hilos\Cluster\Placement\BestFitPlacementPolicy;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\NullPlacementObserver;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementObserver;
+use Hilos\Cluster\Placement\PlacementPolicy;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\Module\PeerModule;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ClusterProtectedMode;
@@ -64,6 +69,18 @@ final class ClusterContext
 
     /** @var ?PlacementExecutor Local worker executor for placed agents, registered by the daemon at start. */
     private ?PlacementExecutor $placementExecutor = null;
+
+    /** @var ?PlacementPolicy Project's node-selection policy for agent placement, registered by the daemon at boot. */
+    private ?PlacementPolicy $placementPolicy = null;
+
+    /** @var ?ConnectionPolicy Project's dial policy for the peer mesh, registered by the daemon at boot. */
+    private ?ConnectionPolicy $connectionPolicy = null;
+
+    /** @var bool True once the placement policy has been handed to the transport, which closes registration. */
+    private bool $placementPolicyTaken = false;
+
+    /** @var bool True once the connection policy has been handed to the transport, which closes registration. */
+    private bool $connectionPolicyTaken = false;
 
     /** @var ?ClusterPlacement Agent-placement coordinator, registered by the peer transport at start. */
     private ?ClusterPlacement $placement = null;
@@ -345,6 +362,76 @@ final class ClusterContext
     public function placementExecutor(): ?PlacementExecutor
     {
         return $this->placementExecutor;
+    }
+
+    /**
+     * Registers the project's node-selection policy for agent placement.
+     *
+     * The daemon calls this while it boots, with whatever {@see DaemonManager::createPlacementPolicy()}
+     * returned, so the peer transport builds its {@see ClusterPlacement} against the project's ranking
+     * instead of the default one. Symmetric to {@see registerPlacementObserver()}, with the one
+     * difference the observers do not have: the transport takes this policy once and keeps it, so a
+     * registration that arrives after that read is refused rather than accepted and never consulted.
+     *
+     * @param PlacementPolicy $policy Node-selection policy to install
+     * @throws ClusterConfigurationException When the transport has already taken the placement policy
+     */
+    public function registerPlacementPolicy(PlacementPolicy $policy): void
+    {
+        if ($this->placementPolicyTaken) {
+            throw ClusterConfigurationException::policyRegisteredTooLate('placement');
+        }
+
+        $this->placementPolicy = $policy;
+    }
+
+    /**
+     * Returns the registered node-selection policy, or the framework default when none is set.
+     *
+     * Reading closes this door and only this one: the connection policy is taken at a different
+     * moment of the boot, so handing out one of the two must not refuse the other.
+     *
+     * @return PlacementPolicy Registered policy, or a {@see BestFitPlacementPolicy}
+     */
+    public function placementPolicy(): PlacementPolicy
+    {
+        $this->placementPolicyTaken = true;
+
+        return $this->placementPolicy ??= new BestFitPlacementPolicy();
+    }
+
+    /**
+     * Registers the project's policy choosing which known peers this node dials.
+     *
+     * The daemon calls this while it boots, with whatever {@see DaemonManager::createConnectionPolicy()}
+     * returned, so {@see PeerModule} builds the peer server against the project's topology instead of
+     * the default full mesh. Refuses a late registration for the same reason as
+     * {@see registerPlacementPolicy()}.
+     *
+     * @param ConnectionPolicy $policy Dial policy to install
+     * @throws ClusterConfigurationException When the transport has already taken the connection policy
+     */
+    public function registerConnectionPolicy(ConnectionPolicy $policy): void
+    {
+        if ($this->connectionPolicyTaken) {
+            throw ClusterConfigurationException::policyRegisteredTooLate('connection');
+        }
+
+        $this->connectionPolicy = $policy;
+    }
+
+    /**
+     * Returns the registered dial policy, or the framework default when none is set.
+     *
+     * Reading closes this door and only this one; see {@see placementPolicy()}.
+     *
+     * @return ConnectionPolicy Registered policy, or a {@see FullMeshConnectionPolicy}
+     */
+    public function connectionPolicy(): ConnectionPolicy
+    {
+        $this->connectionPolicyTaken = true;
+
+        return $this->connectionPolicy ??= new FullMeshConnectionPolicy();
     }
 
     /**

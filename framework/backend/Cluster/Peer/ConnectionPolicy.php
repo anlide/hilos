@@ -6,6 +6,7 @@ namespace Hilos\Cluster\Peer;
 
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\NodeIdentity;
+use Hilos\Core\Daemon\DaemonManager;
 
 /**
  * Connection policy: decides which known peers the local node dials a direct link to.
@@ -15,7 +16,10 @@ use Hilos\Cluster\NodeIdentity;
  * we actually hold a direct link to). The transport learns every peer through
  * gossip regardless; the policy alone chooses the dial targets, so a later
  * partial-mesh topology is a policy swap ({@see FullMeshConnectionPolicy} today)
- * plus multi-hop routing (HIL-180), with the registry and gossip untouched.
+ * plus multi-hop routing (HIL-180), with the registry and gossip untouched. A
+ * project swaps it by overriding {@see DaemonManager::createConnectionPolicy()};
+ * the daemon hands what it returns to the cluster facade at boot, and the peer
+ * server is built against it.
  *
  * Addressing stays logical: a policy reasons about node identities, never about
  * "there is always a direct link to node X". The transport owns the mechanics the
