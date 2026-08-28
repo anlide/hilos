@@ -422,7 +422,7 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
         $userId = $this->seedUserWithPassword($email);
 
         $strangerToken = $this->openSession($agent, 'stranger-ak');
-        $agent->authenticateSession($strangerToken, $userId, null);
+        $this->authenticateSession($agent, $strangerToken, $userId, null);
         $this->assertSame($userId, Hilos::$rt->connections['stranger-ak']?->userId);
 
         $this->openSession($agent, 'owner-ak');
@@ -499,8 +499,8 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
             ChatRtContext::connections,
             ChatRtContext::userStates,
             StateRecoveryWaiter::RT_COLLECTION,
-            // Claimed by the holder's own onStart() in a node, through startSessionRotations();
-            // a login rotates the session token and writes here on the way out.
+            // Claimed in a node by the sessions library's own onStart() (HIL-710); a login
+            // rotates the session token and writes here on the way out.
             StateHilosSessionRotation::RT_COLLECTION,
         ] as $collection) {
             RtTruthSourceRegistry::register($collection, true, self::TEST_AGENT_ID);
@@ -590,18 +590,14 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
         // writes - the connection row, a wait restored from the session - is the holder's.
         ExecutionContext::setCurrentAgentId($agent->getId());
         try {
-            $agent->onSignalHandshake(
-                new WebSocketHandshakeSignalDTO(
-                    headers: [],
-                    acceptKey: $acceptKey,
-                    cookies: [],
-                    clientIp: '127.0.0.1',
-                    queryParams: RequestQueryParams::empty(),
-                    sessionToken: $token,
-                ),
-                '',
-                '',
-            );
+            $this->deliverHandshake($agent, new WebSocketHandshakeSignalDTO(
+                headers: [],
+                acceptKey: $acceptKey,
+                cookies: [],
+                clientIp: '127.0.0.1',
+                queryParams: RequestQueryParams::empty(),
+                sessionToken: $token,
+            ));
         } finally {
             ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
         }

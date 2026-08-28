@@ -136,7 +136,7 @@ const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
 // `userName`, which both un-loads and (through its own `v-if`) removes the
 // control, the visible confirmation. A fallback timer releases loading if the
 // signal never arrives, so the control can never wedge.
-const LOGOUT_ACTION = 'logout'
+const LOGOUT_ACTION = 'hilos_logout'
 const LOGOUT_FALLBACK_MS = 5000
 const loggingOut = ref(false)
 // The fallback timer's handle, kept so it is cleared the moment the broadcast

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\SimplePoll\Tests\Integration;
 
-use Demo\SimplePoll\Agents\PollAgent;
 use Demo\SimplePoll\Hilos;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
@@ -22,7 +21,9 @@ use Hilos\Utils\Helpers\RandomHelper;
  * own tables; what belongs here is the project seam - that a session carrying a user has
  * THAT user flagged and no second one appears, and that a session carrying none leaves with
  * an administrator bound to it. Both go through the command the daemon really routes rather
- * than through the seam directly, because the mount is part of what is being proven.
+ * than through the seam directly, because the mount is part of what is being proven - and
+ * since HIL-710 that mount is the sessions library, which is where the command ends up
+ * because it ends in a session bind.
  *
  * Requires the test DB reset (composer run test:db-reset).
  */
@@ -109,7 +110,7 @@ final class AdminCreateCommandTest extends IntegrationTestCase
      */
     public function testAnUnknownCommandIsAnsweredWithAnError(): void
     {
-        new PollAgent()->onSignalCommand(
+        $this->sessionsLibrary()->onSignalCommand(
             new CommandRequestDTO(correlationId: 'corr-unknown', command: 'admin:nonsense', payload: []),
             '',
             '',
@@ -128,7 +129,7 @@ final class AdminCreateCommandTest extends IntegrationTestCase
      */
     private function sendAdminCreate(string $sessionToken): CommandReplyDTO
     {
-        new PollAgent()->onSignalCommand(
+        $this->sessionsLibrary()->onSignalCommand(
             new CommandRequestDTO(
                 correlationId: 'corr-admin-create',
                 command: CliCommands::ADMIN_CREATE,

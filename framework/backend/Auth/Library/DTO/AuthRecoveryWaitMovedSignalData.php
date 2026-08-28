@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\DTO;
 
-use Hilos\Auth\Session\HilosSessionHostInterface;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
@@ -21,7 +21,7 @@ use Hilos\Core\Router\SignalDataInterface;
  * The payload states the wait rather than amending it - the accept key it belongs to, and
  * the address and session it stands on now - because the row it describes may not exist
  * yet, and the holder is the one that writes it either way
- * ({@see HilosSessionHostInterface::SESSION_HOST_SIGNALS}).
+ * ({@see AbstractSessionsLibraryAgent::AGENT_SIGNALS}).
  *
  * There is nothing to answer and nothing to wait for: the library has already told the
  * browser its code went out, because that answer never depended on the wait. What a lost

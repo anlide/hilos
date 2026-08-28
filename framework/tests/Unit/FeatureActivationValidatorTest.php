@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
-use Hilos\Auth\Session\HilosSessionHostInterface;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Catalog\CatalogProviderInterface;
@@ -119,19 +119,20 @@ final class FeatureActivationValidatorTest extends TestCase
         FeatureActivationUndeclaredHilos::validateFeatureActivation();
     }
 
-    public function testDeclaredFeatureWithoutASessionHostIsReported(): void
+    public function testDeclaredFeatureWithoutItsSessionsLibraryIsReported(): void
     {
         $this->expectException(IncompleteFeatureActivationException::class);
         $this->expectExceptionMessage(
-            'HilosFeature::AUTH is declared but no agent in AGENTS implements ' . HilosSessionHostInterface::class,
+            'HilosFeature::AUTH is declared but agent ' . HilosAgentType::HILOS_SESSIONS_LIBRARY
+            . ' is not registered in AGENTS',
         );
 
         FeatureActivationHostlessHilos::validateFeatureActivation();
     }
 
-    public function testDeclaredFeatureWithASessionHostPasses(): void
+    public function testDeclaredFeatureWithItsSessionsLibraryPasses(): void
     {
-        FeatureActivationSessionHostHilos::validateFeatureActivation();
+        FeatureActivationSessionsLibraryHilos::validateFeatureActivation();
 
         $this->addToAssertionCount(1);
     }
@@ -160,7 +161,7 @@ final class FeatureActivationTestRegistry extends FeatureRegistry
         return [
             new FeatureActivationRequiringFeature(),
             new FeatureActivationDependentFeature(),
-            new FeatureActivationSessionHostFeature(),
+            new FeatureActivationSessionsLibraryFeature(),
         ];
     }
 }
@@ -216,12 +217,12 @@ final class FeatureActivationDependentFeature extends FeatureDefinition
 }
 
 /**
- * Synthetic feature whose only obligation is that somebody in AGENTS holds sessions.
+ * Synthetic feature whose only obligation is the sessions library its commands end in.
  */
-final class FeatureActivationSessionHostFeature extends FeatureDefinition
+final class FeatureActivationSessionsLibraryFeature extends FeatureDefinition
 {
     /**
-     * @return HilosFeature Case standing in for a feature that sends frames to a session holder
+     * @return HilosFeature Case standing in for a feature that sends frames to the sessions library
      */
     public function feature(): HilosFeature
     {
@@ -229,11 +230,11 @@ final class FeatureActivationSessionHostFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements A session holder and nothing else
+     * @return FeatureRequirements The sessions library pair and nothing else
      */
     public function requirements(): FeatureRequirements
     {
-        return new FeatureRequirements(requiresSessionHost: true);
+        return new FeatureRequirements(requiredAgents: [HilosAgentType::HILOS_SESSIONS_LIBRARY]);
     }
 }
 
@@ -485,14 +486,15 @@ final class FeatureActivationUnmetDependencyHilos extends FeatureActivationValid
 }
 
 /**
- * Agent that holds sessions, standing in for a project agent mixing the session-host trait in.
+ * Agent standing in for a project's concrete sessions library.
  *
- * Implements the contract with no bodies: what the validator asks is who implements it, and a
- * fixture that actually bound a session would need a database, connections and a socket.
+ * Registered under the framework agent type the feature asks for; what the validator reads
+ * is the registry entry, and a fixture that actually resolved a session would need a
+ * database, connections and a socket.
  */
-final class FeatureActivationSessionHostAgent extends AbstractAgent implements HilosSessionHostInterface
+final class FeatureActivationSessionsLibraryAgent extends AbstractAgent
 {
-    public const string AGENT_TYPE = 'feature_activation_session_host';
+    public const string AGENT_TYPE = HilosAgentType::HILOS_SESSIONS_LIBRARY;
 
     /**
      * No-op stop hook for activation test agents.
@@ -500,87 +502,20 @@ final class FeatureActivationSessionHostAgent extends AbstractAgent implements H
     public function onStop(): void
     {
     }
-
-    /**
-     * @param string $sessionToken Session token (unused)
-     * @param int $userId User id (unused)
-     * @param ?string $initiatorAcceptKey Accept key (unused)
-     */
-    public function authenticateSession(string $sessionToken, int $userId, ?string $initiatorAcceptKey): void
-    {
-    }
-
-    /**
-     * @param int $userId User id (unused)
-     * @param string $keepSessionToken Session token (unused)
-     */
-    public function deauthenticateOtherSessions(int $userId, string $keepSessionToken): void
-    {
-    }
-
-    /**
-     * @param string $sessionToken Session token (unused)
-     * @param string $ack Ack kind (unused)
-     */
-    public function markSessionAck(string $sessionToken, string $ack): void
-    {
-    }
-
-    /**
-     * @param string $identifier Identifier (unused)
-     * @param string $sessionToken Session token (unused)
-     * @param string $initiatorAcceptKey Accept key (unused)
-     */
-    public function grantRecoveryToSession(string $identifier, string $sessionToken, string $initiatorAcceptKey): void
-    {
-    }
-
-    /**
-     * @param string $identifier Identifier (unused)
-     * @param int $userId User id (unused)
-     * @param string $initiatorAcceptKey Accept key (unused)
-     * @param string $winnerSessionToken Session token (unused)
-     * @param list<string> $losingSessionTokens Session tokens (unused)
-     */
-    public function convergeRegistration(
-        string $identifier,
-        int $userId,
-        string $initiatorAcceptKey,
-        string $winnerSessionToken,
-        array $losingSessionTokens,
-    ): void {
-    }
-
-    /**
-     * @param string $identifier Identifier (unused)
-     * @param string $sessionToken Session token (unused)
-     * @param string $initiatorAcceptKey Accept key (unused)
-     */
-    public function convergeRecovery(string $identifier, string $sessionToken, string $initiatorAcceptKey): void
-    {
-    }
-
-    /**
-     * @param string $sessionToken Session token (unused)
-     * @param string $initiatorAcceptKey Accept key (unused)
-     */
-    public function abandonRegistration(string $sessionToken, string $initiatorAcceptKey): void
-    {
-    }
 }
 
 /**
- * Daemon of the session-holding agent pair.
+ * Daemon of the sessions library agent pair.
  */
-final class FeatureActivationSessionHostAgentDaemon extends TopologyTestAgentDaemon
+final class FeatureActivationSessionsLibraryAgentDaemon extends TopologyTestAgentDaemon
 {
-    public const string AGENT_TYPE = 'feature_activation_session_host';
+    public const string AGENT_TYPE = HilosAgentType::HILOS_SESSIONS_LIBRARY;
 }
 
 /**
- * Facade that declares the session-host feature and registers an agent that holds sessions.
+ * Facade that declares the sign-in feature and registers the sessions library it asks for.
  */
-final class FeatureActivationSessionHostHilos extends FeatureActivationValidHilos
+final class FeatureActivationSessionsLibraryHilos extends FeatureActivationValidHilos
 {
     protected const array FEATURES = [HilosFeature::SETTINGS, HilosFeature::AUTH];
 
@@ -589,15 +524,15 @@ final class FeatureActivationSessionHostHilos extends FeatureActivationValidHilo
             AgentRegistryKey::WORKER => FeatureActivationTestAgent::class,
             AgentRegistryKey::DAEMON => FeatureActivationTestAgentDaemon::class,
         ],
-        FeatureActivationSessionHostAgent::AGENT_TYPE => [
-            AgentRegistryKey::WORKER => FeatureActivationSessionHostAgent::class,
-            AgentRegistryKey::DAEMON => FeatureActivationSessionHostAgentDaemon::class,
+        FeatureActivationSessionsLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => FeatureActivationSessionsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => FeatureActivationSessionsLibraryAgentDaemon::class,
         ],
     ];
 }
 
 /**
- * Facade that declares the session-host feature while no registered agent holds sessions.
+ * Facade that declares the sign-in feature while registering no sessions library.
  */
 final class FeatureActivationHostlessHilos extends FeatureActivationValidHilos
 {

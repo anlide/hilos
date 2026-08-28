@@ -20,6 +20,8 @@ use Demo\Tasks\Pages\MainPage;
 use Demo\Tasks\Runtime\View\Context\TasksRtContext;
 use Demo\Tasks\Tables\HilosUser\HilosUsersTable;
 use Demo\Tasks\Tables\TasksTableContext;
+use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
@@ -105,11 +107,34 @@ final class TasksTopologyRegistryTest extends TestCase
         // and worker push no server-driven data. The activated Hilos admin
         // features (settings, users) own their actions/signals/browser tables —
         // asserted separately below.
+        //
+        // The one frame the worker is addressed by is not its surface but the seam the
+        // sessions moved behind (HIL-710): the library says what a session became, and this
+        // agent is what turns that into a connection row and an identity on the wire.
         $this->assertSame([], Hilos::GROUPS);
         $this->assertSame([], MainPage::ACTIONS);
         $this->assertSame([], MainPage::SIGNALS);
-        $this->assertSame([], TasksAgent::AGENT_SIGNALS);
-        $this->assertSame([], Hilos::getAgentSignalRoutes());
+        $this->assertSame(
+            [HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class],
+            TasksAgent::AGENT_SIGNALS,
+        );
+        $this->assertSame(
+            [
+                HilosSignalConstants::HILOS_SESSION_STATE => AgentType::TASKS,
+                // The other half of the seam, and the seven endings the users library hands
+                // over: this demo has no sign-in, so nothing sends them - but the library it
+                // registers is what would be addressed if anything did.
+                HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_AUTH_REGISTRATION_ABANDONED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_MOVED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_SESSION_REBIND => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            ],
+            Hilos::getAgentSignalRoutes(),
+        );
     }
 
     public function testSettingsAndUsersAdminFeaturesAreActivated(): void

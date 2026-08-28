@@ -303,18 +303,14 @@ final class MainPageLoginTest extends IntegrationTestCase
     private function openSession(ChatAgent $agent, string $acceptKey): string
     {
         $token = RandomHelper::hex(16);
-        $agent->onSignalHandshake(
-            new WebSocketHandshakeSignalDTO(
-                headers: [],
-                acceptKey: $acceptKey,
-                cookies: [],
-                clientIp: '127.0.0.1',
-                queryParams: RequestQueryParams::empty(),
-                sessionToken: $token,
-            ),
-            '',
-            '',
-        );
+        $this->deliverHandshake($agent, new WebSocketHandshakeSignalDTO(
+            headers: [],
+            acceptKey: $acceptKey,
+            cookies: [],
+            clientIp: '127.0.0.1',
+            queryParams: RequestQueryParams::empty(),
+            sessionToken: $token,
+        ));
         ExecutionContext::setCurrentAcceptKey($acceptKey);
 
         return $token;

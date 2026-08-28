@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Auth\Session;
+namespace Hilos\Auth\Library;
 
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Flow\AuthFlowIntent;
-use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
+use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
@@ -18,14 +18,24 @@ use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Registration\RegistrationReservationService;
-use Hilos\Auth\Session\DTO\SessionRotateSignalData;
+use Hilos\Auth\Registration\RegistrationReservationSweeper;
+use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
+use Hilos\Auth\Session\DTO\LogoutActionDTO;
+use Hilos\Auth\Session\DTO\SessionRebindSignalData;
+use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\Exception\SessionTokenExhaustedException;
+use Hilos\Auth\Session\SessionAck;
+use Hilos\Auth\Session\SessionRebindConstants;
+use Hilos\Auth\Session\SessionRotationTicket;
+use Hilos\Auth\Session\SessionToken;
 use Hilos\Auth\Throttle\ThrottleGate;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
@@ -34,14 +44,22 @@ use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\NotImplementedException;
-use Hilos\Core\Page\PageAccessReassessment;
+use Hilos\Core\Feature\Definition\AuthFeature;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\View\Item\Session;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
+use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
+use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
@@ -52,65 +70,219 @@ use Random\RandomException;
 use Throwable;
 
 /**
- * Session-host seam graduated from the chat reference (HIL-361).
+ * The sessions library: the one owner of the session set and of the handshake that opens it.
  *
- * Mixed into a project's monopolistic agent (an {@see AbstractAgent}
- * subclass, whose `sendToUser()`/`logAgentInfo()`/`sendActionSuccess()` this trait calls) to own the
- * three session-lifecycle cores that used to live inline in the chat agent:
- * resolving a handshake token to a session, upgrading a live session to a user
- * (login/register), and reverting it to anonymous (logout). Each core drives the
- * framework-owned session ORM and re-points the session's live connections, then
- * delegates the project-specific parts — building the identity handshake payload,
- * writing one connection's bound user, and the emitted signal name — through the
- * abstract hooks below. Finding the connections of a token is no longer among them
- * (HIL-509): the rows stand on a framework base whose session stage carries the
- * token, so the seam locates them by type.
+ * An entity library in the sense of docs/agents/architecture/entity-libraries.md, and the
+ * second one in code (HIL-710). What it owns is a SET - the session rows, the token
+ * rotations, and the sign-in surfaces parked on a confirmation code - together with the
+ * ceremonies that write them: resolving a handshake cookie to a session, raising a session
+ * to a user, reverting it to anonymous, and settling every tab that was waiting.
  *
- * A session is anonymous (user id null) until {@see authenticateSession()} binds a
- * user; {@see deauthenticateSession()} is the symmetric downgrade that keeps the
- * session row and token alive. The session-expiry drop (HIL-398) is enforced in
- * {@see resolveHandshakeSession()}: a cookie that resolves to an authenticated but
- * expired session is downgraded to anonymous before it is handed back, so a stale
- * cookie can never resume an authenticated identity.
+ * It used to be a TRAIT mixed into whichever project agent happened to accept handshakes,
+ * and that was the defect the split closes. Sessions belonged to a project agent only
+ * historically: until HIL-622 the sign-in page lived in its worker. Once the sign-in
+ * commands left for {@see AbstractUsersLibraryAgent}, the sessions stayed behind, and the
+ * seam between the two became the place defects were born. A separate library rather than a
+ * corner of the users one, because one entity is one library: sessions are hot - every
+ * handshake touches them - and users are cold, so the two have to be placed independently.
+ *
+ * WHAT IT DOES NOT OWN: the connection rows. Who is on the wire is the truth of the project
+ * that accepted the socket, its row carries project fields, and the close that ends it stays
+ * there too. So everything this library concludes about a session is SAID to that project in
+ * one frame ({@see HilosSignalConstants::HILOS_SESSION_STATE}), and everything a project
+ * wants written on a session is asked for in the one going back
+ * ({@see HilosSignalConstants::HILOS_SESSION_REBIND}). The tab is answered by the project,
+ * which is what makes the order in that answer hold: it writes the connection row and sends
+ * the identity from one queue.
+ *
+ * It is ABSTRACT for one reason: {@see CliCommands::ADMIN_CREATE} ends in a user row, and
+ * the framework does not know the shape of a project's users table. The project supplies
+ * that step through {@see ensureAdminUser()} and nothing else - a project with a login of
+ * its own mounts the command nowhere and inherits the refusing default.
+ *
+ * A session is anonymous (user id null) until {@see authenticateSession()} binds a user;
+ * {@see deauthenticateSession()} is the symmetric downgrade that keeps the session row and
+ * token alive. The session-expiry drop (HIL-398) is enforced in
+ * {@see resolveHandshakeSession()}: a cookie that resolves to an authenticated but expired
+ * session is downgraded to anonymous before it is handed back, so a stale cookie can never
+ * resume an authenticated identity.
  */
-trait HilosSessionHost
+abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 {
+    public const string AGENT_TYPE = HilosAgentType::HILOS_SESSIONS_LIBRARY;
+
+    /**
+     * The frames this library is addressed by: seven from the users library, one from the
+     * project holding the sockets.
+     *
+     * Routing takes the destination from whoever declares a name here, so this list IS the
+     * move: the frames the users library has always sent to "the holder" now arrive at an
+     * agent of the framework's own, and nothing about their senders changed (HIL-710).
+     * {@see HilosSignalConstants::HILOS_SESSION_STATE} is deliberately absent - it is the
+     * frame this library SENDS, and the project declares it.
+     */
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED => AuthRegistrationLandedSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED => AuthRecoveryGrantedSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED => AuthPasswordChangedSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_REGISTRATION_ABANDONED => AuthRegistrationAbandonedSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_MOVED => AuthRegistrationWaitMovedSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => AuthRecoveryWaitMovedSignalData::class,
+        HilosSignalConstants::HILOS_SESSION_REBIND => SessionRebindSignalData::class,
+    ];
+
+    /**
+     * The two page-independent controls of the sign-in surface, by wire name.
+     *
+     * Both resolve their session from the ACTING connection and take no payload, so a
+     * client can only ever end or dismiss its own. They are the library's rather than a
+     * project's because what they write is a session (HIL-710); the controls that judge a
+     * project field - stopping an impersonation, for one - stay where that field is.
+     */
+    public const array AGENT_ACTIONS = [
+        HilosSignalConstants::HILOS_LOGOUT => LogoutActionDTO::class,
+        HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
+    ];
+
+    /**
+     * The operator path to the first administrator (HIL-609), mounted here because the
+     * command ends in a session bind and sessions are this library's.
+     *
+     * Every project that registers the library answers this command, and one that mints no
+     * users answers a REFUSAL from {@see ensureAdminUser()} rather than nothing at all. That
+     * is the honest outcome for an operator who typed it into the wrong installation: before
+     * the move the name was carried by whichever agent chose to, so a project that did not
+     * left the command socket silent - which reads as a hang, not as a no.
+     */
+    public const array AGENT_COMMANDS = [
+        CliCommands::ADMIN_CREATE,
+    ];
+
     /** @var int Times a rotation re-mints a token another session already holds before giving up */
     private const int TOKEN_MINT_ATTEMPTS = 3;
 
     /** Name of the cron rule that clears abandoned registrations off session rows. */
     private const string PENDING_REGISTRATION_SWEEP_RULE = 'hilos_sweep_pending_registrations';
 
+    /** Name of the cron rule that frees the registration holds whose deadline passed. */
+    private const string RESERVATION_SWEEP_RULE = 'hilos_sweep_registration_reservations';
+
+    /**
+     * How often the expired registration holds are swept.
+     *
+     * Not an env value and not a project's to schedule, unlike the sweep below it: an
+     * expired hold leaves a person looking at a code screen for a code that can no longer
+     * confirm anything, so the sweep answers somebody and cannot be switched off. Every
+     * minute is what the chat demo scheduled by hand before this became the library's.
+     */
+    private const string RESERVATION_SWEEP_CRON = '* * * * *';
+
     /** @var ?CronRule Schedule of the abandoned-registration sweep, or null when it is switched off */
     private ?CronRule $pendingRegistrationSweepRule = null;
 
+    /** @var ?CronRule Schedule of the expired-hold sweep, or null when this project has no registration */
+    private ?CronRule $reservationSweepRule = null;
+
     /**
-     * Claims the rotation store for this agent and clears anything the last process left.
+     * Claims the session set and arms the two sweeps that keep it honest.
      *
-     * Called from the owning agent's `onStart()`. The store is a framework-owned collection
-     * mounted for every project, but nothing may write it until somebody says who owns it -
-     * so a project whose agent never calls this simply cannot rotate, rather than rotating
-     * into state no other worker sees.
+     * The session set and the rotations are claimed OUTRIGHT: a session belongs to this
+     * library whole. Nothing may write a framework collection until somebody says who owns
+     * it, so a project that never registers this agent simply has no sessions rather than
+     * sessions changing in a process no one else hears.
+     *
+     * The two WAIT collections are claimed only where they exist. They are mounted by
+     * {@see AuthFeature::mount()} and by nothing else, so in a project with no sign-in
+     * surface there is no collection to own - and a library that claimed one anyway would
+     * go on to read it every tick and raise on every pass. The users library stands beside
+     * this one on both as a declared add/remove co-owner (HIL-685) rather than as a second
+     * full owner, and it is only ever registered where the feature is.
+     *
+     * A subclass that overrides this MUST call up: the claims are what the whole library
+     * stands on.
+     *
+     * @throws EnvException When the sweep schedule key is missing, outside the catalog, or of the wrong type
      */
-    final protected function startSessionRotations(): void
+    public function onStart(): void
     {
+        $this->registerDbTruthSource(HilosDbContext::sessions);
         $this->registerRtTruthSource(StateHilosSessionRotation::RT_COLLECTION);
+        if ($this->hasSignInSurface()) {
+            $this->registerRtTruthSource(StateRegistrationWaiter::RT_COLLECTION);
+            $this->registerRtTruthSource(StateRecoveryWaiter::RT_COLLECTION);
+        }
+
+        $this->armPendingRegistrationSweep();
+        $this->armReservationSweep();
+    }
+
+    /**
+     * Whether this project draws a sign-in surface, and therefore has the rows to sweep.
+     *
+     * The one question three of the sweeps below have to ask, named once so they ask it the
+     * same way. Sessions are NOT a feature - the tasks and simple-poll demos carry them with
+     * no login at all - but the browsers parked on a confirmation code are: the collections
+     * holding them are mounted by {@see AuthFeature::mount()}, and the reservation table the
+     * hold sweep reads is declared by the same feature. Asked of the registry rather than of
+     * an artifact, because the registry is what a project actually declares.
+     *
+     * @return bool True when {@see HilosFeature::AUTH} is declared by this project
+     */
+    private function hasSignInSurface(): bool
+    {
+        return Hilos::hasFeature(HilosFeature::AUTH);
+    }
+
+    /**
+     * The library holds nothing across a stop: its state is the database and the collections
+     * above, which outlive the process that owns them.
+     */
+    public function onStop(): void
+    {
+    }
+
+    /**
+     * Reclaims what nobody came back for, and rolls back the browsers waiting on it.
+     *
+     * Two of the four walks are over in-memory collections that hold one row per login in
+     * the last thirty seconds and one per sign-in surface parked on a confirmation code, so
+     * they are measured in microseconds and skipped outright while nobody is registering or
+     * recovering - which is almost always. The two that read the database are behind cron
+     * rules of their own instead of running every pass.
+     *
+     * Everything but the rotations is behind the sign-in surface, because everything but the
+     * rotations is a row the surface makes. A project without one reaches this method just
+     * as often - it has sessions like any other - and the walk it would take there is over a
+     * collection that was never mounted, which raises rather than answering empty. That is
+     * the runtime collections doing their job: an unmounted collection is not an empty one.
+     *
+     * @throws HilosException On database or runtime failure
+     * @throws EnvException When the verification TTL key is missing, outside the catalog, or of the wrong type
+     * @throws InvalidArgumentException When a converge signal of the rollback cannot be named
+     */
+    public function onTick(): void
+    {
+        $this->sweepSessionRotations();
+        if (!$this->hasSignInSurface()) {
+            return;
+        }
+
+        $this->sweepPendingRegistrations();
+        $this->sweepRegistrationReservations();
+        $this->sweepRegistrationWaiters();
+        $this->sweepRecoveryWaiters();
     }
 
     /**
      * Arms the schedule of the abandoned-registration sweep (HIL-612).
      *
-     * Called from the owning agent's `onStart()`. The rule is held and ticked by the
-     * AGENT rather than routed through the daemon's cron: a project like tasks
-     * names no cron-owning agent at all, and a rule that signalled would be shouting
-     * into a socket nobody is holding.
-     *
-     * An empty expression arms nothing, which is the whole switch a project needs -
-     * one that never registers anybody sweeps nothing and pays no tick for it.
+     * An empty expression arms nothing, which is the whole switch a project needs - one that
+     * never sets the key sweeps nothing and pays no tick for it.
      *
      * @throws EnvException When the schedule key is missing, outside the catalog, or of the wrong type
      */
-    final protected function startPendingRegistrationSweep(): void
+    private function armPendingRegistrationSweep(): void
     {
         $expression = Hilos::$env?->string(EnvConstants::HILOS_PENDING_REGISTRATION_SWEEP_CRON);
         if ($expression === null || trim($expression) === '') {
@@ -118,6 +290,57 @@ trait HilosSessionHost
         }
 
         $this->pendingRegistrationSweepRule = new CronRule(self::PENDING_REGISTRATION_SWEEP_RULE, $expression);
+    }
+
+    /**
+     * Arms the schedule of the expired-hold sweep (HIL-415), where there are holds to sweep.
+     *
+     * Asked of the feature registry rather than of an artifact, which is the one way the
+     * question may be asked: a project without {@see HilosFeature::AUTH} has no reservation
+     * table, and a sweep armed there would fail every minute over rows that were never meant
+     * to exist. It is the first framework gate to read the registry, and the reason the
+     * registry was built.
+     */
+    private function armReservationSweep(): void
+    {
+        if (!$this->hasSignInSurface()) {
+            return;
+        }
+
+        $rule = new CronRule(self::RESERVATION_SWEEP_RULE, self::RESERVATION_SWEEP_CRON);
+        // Never run rather than just run, which is what a fresh rule claims by default. That
+        // default guards a BOOTING DAEMON from firing every rule it holds at once; this is
+        // one rule in one agent, and the holds that ran out while nobody held the collection
+        // are exactly the ones nobody answered - the browsers waiting on them have been
+        // waiting longest, and asking them to wait out the rest of the minute is backwards.
+        $rule->lastRun = 0.0;
+        $this->reservationSweepRule = $rule;
+    }
+
+    /**
+     * Frees the registration holds whose deadline passed, and rolls back who was waiting.
+     *
+     * The one sweep that answers somebody: an expired hold means the browser that made it is
+     * waiting for a code that can no longer confirm anything, so each freed hold rolls back
+     * its own session the moment its row goes. Its own, and not the address: since HIL-608
+     * another browser may be registering the same address with a hold of its own, and that
+     * one is still good.
+     *
+     * @throws HilosException On database or runtime failure
+     * @throws InvalidArgumentException When a converge signal of the rollback cannot be named
+     */
+    private function sweepRegistrationReservations(): void
+    {
+        if ($this->reservationSweepRule?->shouldRun() !== true) {
+            return;
+        }
+
+        foreach (new RegistrationReservationSweeper()->sweep() as $freed) {
+            $this->rollBackRegistrationWaiters(
+                $freed[ObjectRegistrationReservation::sessionToken],
+                $freed[ObjectRegistrationReservation::identifier],
+            );
+        }
     }
 
     /**
@@ -137,7 +360,7 @@ trait HilosSessionHost
      * @throws HilosException On database or runtime failure
      * @throws EnvException When the verification TTL key is missing, outside the catalog, or of the wrong type
      */
-    final protected function sweepPendingRegistrations(): void
+    private function sweepPendingRegistrations(): void
     {
         if ($this->pendingRegistrationSweepRule?->shouldRun() !== true) {
             return;
@@ -161,42 +384,102 @@ trait HilosSessionHost
      *
      * @throws HilosException On runtime failure
      */
-    final protected function sweepSessionRotations(): void
+    private function sweepSessionRotations(): void
     {
         Hilos::$rt?->hilosSessionRotations->actions->forgetExpired();
     }
 
     /**
-     * Builds the identity handshake response describing a session's current user.
+     * Opens a socket's session and tells the project what that socket now is.
      *
-     * Project-owned because the display names come from the project's own user
-     * store (and, while impersonating, the admin behind the takeover). An anonymous
-     * or missing session yields the anonymous response that clears the frontend
-     * current user.
+     * The handshake is addressed HERE and nowhere else since HIL-710: it is the one moment
+     * a session is resolved or created, and routing it to the library is what saves a hop
+     * on every page load. What the library cannot do is register the connection row - who
+     * is on the wire is the project's truth - so the whole of its answer is the state frame
+     * below, and the project registers the row, sends its own identity response and
+     * releases the page subscribe the browser is holding.
      *
-     * @param ?Session $session Session to describe, or null for an anonymous response
-     * @return HandshakeResponseSignalData Handshake response for the session
+     * The parked wait is written here rather than in the project because it is the
+     * library's own row (HIL-486): a socket that opens into a session with an unfinished
+     * registration joins the converge broadcast without having submitted anything itself.
+     *
+     * The inherited ack rides the frame instead of being written on a row that does not
+     * exist yet (HIL-423). Only a handshake that spent a rotation ticket carries one: the
+     * socket that replaces the one a login rotated away is the same browser mid-flow, not a
+     * reload, and it inherits what its predecessor had not shown yet.
+     *
+     * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Framework signal name (unused)
+     * @throws InvalidFormatException When the session token is not a 32-character lowercase hex string
+     * @throws DuplicateValueException When a concurrent create already claimed a new token
+     * @throws InvalidArgumentException When the state frame cannot be named
+     * @throws HilosException On database or runtime failure
      */
-    abstract protected function handshakeResponseFor(?Session $session): HandshakeResponseSignalData;
+    public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
+    {
+        // The daemon resolved the session token on the 101 (the client's cookie or a freshly
+        // issued one) and carried it on the handshake DTO. Validate inside the
+        // ValidationException family so the worker dispatcher contains a bad token instead
+        // of crashing.
+        $sessionToken = $data->sessionToken;
+        SessionToken::ensureValid($sessionToken);
+
+        $session = $this->resolveHandshakeSession($sessionToken);
+        $this->parkPendingRegistration($data->acceptKey, $session);
+
+        $this->publishSessionState(new SessionStateSignalData(
+            sessionToken: $session->token,
+            userId: $session->userId,
+            acceptKeys: [$data->acceptKey],
+            pendingAck: $data->inheritedAck,
+            pendingRegistration: $this->pendingRegistrationFor($session),
+        ));
+    }
 
     /**
-     * Builds the handshake response a socket is actually sent (HIL-486).
+     * Sends one frame of session state to the project holding the sockets.
      *
-     * The framework half of the project's {@see handshakeResponseFor()} hook: the
-     * project answers who the session is, this stamps on what the project has no way
-     * to know — the server clock the browser measures its own offset against. Every
-     * send path goes through here rather than through the hook, so no project can
-     * ship a response without it: the field is framework-owned and identical
-     * everywhere, while the sites that send one are five and two of them sit in the
-     * project's own agent.
+     * The library's only way to reach a browser, and the reason it needs no hooks: what it
+     * knows is the session, what the project knows is the person and the socket, and this
+     * is the sentence between them (HIL-710). A frame that answers a tracked action carries
+     * the answer with it and the dispatcher is told to keep quiet - the ack has to leave
+     * behind the identity it announces, and from now on it leaves from the other process.
      *
-     * @param ?Session $session Session to describe, or null for an anonymous response
-     * @return HandshakeResponseSignalData Handshake response carrying the session context
+     * @param SessionStateSignalData $state What the session is now, and whom to answer
+     * @throws InvalidArgumentException When the frame cannot be named or queued
      */
-    final protected function handshakeResponse(?Session $session): HandshakeResponseSignalData
+    private function publishSessionState(SessionStateSignalData $state): void
     {
-        return $this->handshakeResponseFor($session)
-            ->withSessionContext(TimeHelper::nowMs(), $this->pendingRegistrationFor($session));
+        $this->sendToAgent(HilosSignalConstants::HILOS_SESSION_STATE, $state);
+        if ($state->requestId !== null) {
+            $this->deferActionReply();
+        }
+    }
+
+    /**
+     * Reads the ack the live sockets of one session are carrying.
+     *
+     * Asked of the sockets because that is where the mark lives, and answered with the
+     * first one found because the mark is written per SESSION: everything that raises or
+     * clears one walks every socket of the session in one pass. The one way they diverge is
+     * a socket that inherited an ack through a rotation while another tab reconnected
+     * without one, and the frame that restates the session's identity carries the
+     * announcement rather than dropping it.
+     *
+     * @param string $sessionToken Session cookie token whose sockets are read
+     * @return ?string Ack the session owes (a {@see SessionAck} value), or null for none
+     */
+    private function sessionPendingAck(string $sessionToken): ?string
+    {
+        foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
+            $ack = $this->connectionPendingAck($acceptKey);
+            if ($ack !== null) {
+                return $ack;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -285,7 +568,7 @@ trait HilosSessionHost
      * @param ?Session $session Session the connection resolved to, or null when it has none
      * @throws HilosException When the runtime write fails
      */
-    final protected function parkPendingRegistration(string $acceptKey, ?Session $session): void
+    private function parkPendingRegistration(string $acceptKey, ?Session $session): void
     {
         if ($session === null) {
             return;
@@ -311,7 +594,7 @@ trait HilosSessionHost
      * @param string $sessionToken Session cookie token
      * @return list<string> Accept keys of the token's live connections (empty for an unknown token)
      */
-    final protected function sessionConnectionKeys(string $sessionToken): array
+    private function sessionConnectionKeys(string $sessionToken): array
     {
         $connections = Hilos::$rt?->sessionConnectionsSource();
         if ($connections === null) {
@@ -334,94 +617,9 @@ trait HilosSessionHost
      * @param string $acceptKey Connection accept key
      * @return ?string Ack the connection owes (a {@see SessionAck} value), or null for none
      */
-    final protected function connectionPendingAck(string $acceptKey): ?string
+    private function connectionPendingAck(string $acceptKey): ?string
     {
         return Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey)?->pendingAck;
-    }
-
-    /**
-     * Hands a freshly registered connection the ack its rotation carried over (HIL-423).
-     *
-     * Called from the project's handshake handler, right after the connection row exists
-     * and before the response goes out; the value it returns is what that response has to
-     * state. Only a handshake that spent a rotation ticket carries one, which is the whole
-     * of the narrowing this leaf makes to HIL-422's rule: an ack still lives on the
-     * connection and a bare reopened socket still owes nothing, but the socket that
-     * replaces the one a login rotated away is the same browser mid-flow, not a reload,
-     * and it inherits what its predecessor had not shown yet.
-     *
-     * @param WebSocketHandshakeSignalDTO $data Handshake signal the daemon queued for this connection
-     * @return ?string Ack now standing on the connection, or null when there was none to inherit
-     */
-    final protected function inheritHandshakeAck(WebSocketHandshakeSignalDTO $data): ?string
-    {
-        $ack = $data->inheritedAck;
-        if ($ack === null) {
-            return null;
-        }
-
-        $this->markConnectionAck($data->acceptKey, $ack);
-
-        return $ack;
-    }
-
-    /**
-     * Re-points one live connection's bound user through the project runtime registry.
-     *
-     * Project-owned because the write goes through the project's per-connection
-     * runtime actions. Called for every connection of a session whose bound user
-     * changed, so a re-emitted handshake and the connection's own user stay in sync.
-     *
-     * @param string $acceptKey Connection accept key to re-point
-     * @param ?int $userId User id to bind the connection to, or null for anonymous
-     */
-    abstract protected function bindConnectionUser(string $acceptKey, ?int $userId): void;
-
-    /**
-     * Writes one live connection's pending success ack through the project runtime registry.
-     *
-     * Project-owned for the same reason {@see bindConnectionUser()} is: the write goes
-     * through the project's own per-connection runtime actions, which the framework
-     * cannot name. The read side needs no hook — the row stands on a framework base,
-     * so {@see connectionPendingAck()} finds the value by type.
-     *
-     * @param string $acceptKey Connection accept key to mark
-     * @param ?string $ack Ack the connection owes (a {@see SessionAck} value), or null to clear it
-     */
-    abstract protected function markConnectionAck(string $acceptKey, ?string $ack): void;
-
-    /**
-     * Returns the signal name the project emits the handshake response under.
-     *
-     * The response DTO is framework-owned, but its signal name stays project-owned
-     * (the frontend routes on the project constant).
-     *
-     * @return string Project handshake-response signal name
-     */
-    abstract protected function handshakeResponseSignalName(): string;
-
-    /**
-     * Project hook run after a session is bound to a user.
-     *
-     * Default no-op. A project overrides it to ensure per-user runtime state (e.g.
-     * presence) for the newly authenticated user.
-     *
-     * @param int $userId Durable user id the session was bound to
-     */
-    protected function afterAuthenticate(int $userId): void
-    {
-    }
-
-    /**
-     * Project hook run after a session is reverted to anonymous.
-     *
-     * Default no-op. Presence normally follows the connection re-point, so most
-     * projects need nothing here; a project overrides it for any de-identify work.
-     *
-     * @param int $userId Durable user id the session was unbound from
-     */
-    protected function afterDeauthenticate(int $userId): void
-    {
     }
 
     /**
@@ -462,7 +660,7 @@ trait HilosSessionHost
      * @param CommandRequestDTO $data Command request carrying the session cookie token
      * @throws InvalidArgumentException When the reply carries an empty correlation id
      */
-    final protected function handleAdminCreateCommand(CommandRequestDTO $data): void
+    private function handleAdminCreateCommand(CommandRequestDTO $data): void
     {
         // The command socket authenticates nobody, so the payload is whatever was typed at
         // it; an absent token is refused by the shape check on the very next line.
@@ -499,10 +697,12 @@ trait HilosSessionHost
      * project's half of {@see self::handleAdminCreateCommand()}.
      *
      * A seam with a refusing default rather than an abstract method, the shape
-     * {@see AbstractHilosIndexAgent::applyAdminGrant()} uses: this trait is mixed into every
-     * session host, and an abstract method would break the projects that host sessions
-     * without ever mounting the command - the chat demo, which has a login of its own, is
-     * one. The refusal reaches the operator as the command's error reply.
+     * {@see AbstractHilosIndexAgent::applyAdminGrant()} uses: {@see self::AGENT_COMMANDS}
+     * stands on this class, so every project subclassing it mounts the command whether or
+     * not it has anybody to mint - the chat demo, which has a login of its own, is one. An
+     * abstract method would make each of them write a body for a command they never expect
+     * to be typed; the refusal reaches the operator as the command's error reply instead,
+     * which is the honest answer to a command aimed at the wrong installation.
      *
      * One seam rather than two, because the caller's question is one question: make this
      * session's person an administrator. A project that answered "flag" and "mint" apart
@@ -537,7 +737,7 @@ trait HilosSessionHost
      * @throws DuplicateValueException When a concurrent create already claimed the token
      * @throws HilosException On database or runtime failure
      */
-    public function resolveHandshakeSession(string $sessionToken): Session
+    private function resolveHandshakeSession(string $sessionToken): Session
     {
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session === null) {
@@ -586,9 +786,11 @@ trait HilosSessionHost
      * opening a socket with the planted token beforehand and waiting was enough, since
      * the victim's login would have promoted his socket too.
      *
-     * The rotation is announced but not delivered here. The new token reaches the
-     * browser through the master's Set-Cookie on the next handshake, traded for the
-     * one-time ticket this method sends; see {@see SessionRotationTicket}.
+     * The rotation is announced but not delivered here, and since HIL-710 not even sent
+     * here: the row is registered by this library and the ticket rides the state frame to
+     * the project, which hands it to the browser behind the identity. The new token then
+     * reaches the browser through the master's Set-Cookie on the next handshake, traded for
+     * that one-time ticket; see {@see SessionRotationTicket}.
      *
      * A caller with no initiating connection passes null and gets no rotation - there is
      * no channel to deliver the ticket on, and nothing to rotate away from, since a token
@@ -599,19 +801,39 @@ trait HilosSessionHost
      * saying "no initiator" is deliberate: a silent default would put the hole back for
      * every future caller that forgot.
      *
+     * The ack a flow just earned is STATED here rather than written a frame earlier, and
+     * that is the split doing its work (HIL-710). Before it, a caller marked the sockets and
+     * then signed the session in, and the second step read the mark back off the rows it had
+     * just written. Those rows belong to another process now: it has not applied the first
+     * frame by the time this one is built, so reading them would answer with the ack of a
+     * moment ago and this frame would state it away. One frame carries both, which is also
+     * what the surface needs - the identity and the sentence about it arrive together.
+     *
      * @param string $sessionToken Session cookie token to authenticate
      * @param int $userId Durable user id to bind the session to
      * @param ?string $initiatorAcceptKey Accept key of the connection that logged in, or null when there is none
-     * @throws InvalidArgumentException When the re-decision announcement cannot be named
+     * @param ?string $ack Ack this ending earns (a {@see SessionAck} value), or null to restate what the sockets carry
+     * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
+     * @param ?string $action Action name the state frame answers, or null when it answers none
+     * @param ?array<string, mixed> $outcome Reply the answer carries, or null for no domain reply
+     * @return ?string Token the session answers to now, or null when the token named no session
+     * @throws InvalidArgumentException When the state frame cannot be named
      * @throws HilosException On database or runtime failure
      * @throws RandomException When the platform's secure random source refuses a mint
      * @throws SessionTokenExhaustedException When three minted tokens in a row were already taken
      */
-    public function authenticateSession(string $sessionToken, int $userId, ?string $initiatorAcceptKey): void
-    {
+    private function authenticateSession(
+        string $sessionToken,
+        int $userId,
+        ?string $initiatorAcceptKey,
+        ?string $ack = null,
+        ?string $requestId = null,
+        ?string $action = null,
+        ?array $outcome = null,
+    ): ?string {
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session === null) {
-            return;
+            return null;
         }
 
         // Told before the rotation, and with the token the attempts were counted under: the
@@ -630,12 +852,11 @@ trait HilosSessionHost
         // for a sign-in. Before HIL-612 this fell out by accident: the wait was keyed by
         // the token, and the rotation above orphaned it on a name nothing presented
         // again. The memory moved onto the row and now travels with it, so the release
-        // has to be said out loud - and said HERE, above the handshake response built
-        // below, which would otherwise hand the freshly authenticated browser back the
-        // code screen it just left.
+        // has to be said out loud - and said HERE, above the state frame built below,
+        // which would otherwise hand the freshly authenticated browser back the code
+        // screen it just left.
         $session->actions->releasePendingRegistration();
 
-        $this->afterAuthenticate($userId);
         if ($rotated !== null) {
             // Analytics names a browser session by the token, not by the session row, so
             // the rotation has to be told - exactly as the runtime connection rows are.
@@ -645,50 +866,51 @@ trait HilosSessionHost
         }
         Hilos::$ac?->identifyBrowserSessionUser($liveToken, $userId);
 
-        $response = $this->handshakeResponse($session);
-        $signalName = $this->handshakeResponseSignalName();
-
         if ($rotated === null) {
             // Nothing was rotated, so the session still answers to the token every one of
             // its connections named, and every one of them still belongs to it. Re-point
             // them all, exactly as this seam always did: the caller with no initiator is
             // acting on somebody else's session (the impersonation CLI), and the tabs of
             // that session have to learn who they are now.
-            foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
-                $this->bindConnectionUser($acceptKey, $userId);
-                $this->sendToUser($signalName, $acceptKey, $response->withPendingAck(
-                    $this->connectionPendingAck($acceptKey),
-                ));
-            }
-        } else {
-            // The session's other connections are left anonymous on purpose: they are dropped
-            // once the browser holds the new cookie, and they come back into the rotated
-            // session by themselves. Authenticating them here is the second half of the attack
-            // this leaf closes - a socket opened with a planted token would ride the victim's
-            // login into her account.
-            $keysToDrop = array_values(array_filter(
-                $this->sessionConnectionKeys($sessionToken),
-                static fn(string $acceptKey): bool => $acceptKey !== $initiatorAcceptKey,
+            $this->publishSessionState(new SessionStateSignalData(
+                sessionToken: $sessionToken,
+                userId: $userId,
+                acceptKeys: $this->sessionConnectionKeys($sessionToken),
+                pendingAck: $ack ?? $this->sessionPendingAck($sessionToken),
+                pendingRegistration: $this->pendingRegistrationFor($session),
+                requestId: $requestId,
+                action: $action,
+                outcome: $outcome,
             ));
 
-            $this->repointInitiatorSessionToken($initiatorAcceptKey, $rotated);
-            $this->bindConnectionUser($initiatorAcceptKey, $userId);
-            $this->sendToUser($signalName, $initiatorAcceptKey, $response->withPendingAck(
-                $this->connectionPendingAck($initiatorAcceptKey),
-            ));
-
-            $this->announceRotation($rotated, $keysToDrop, $initiatorAcceptKey);
+            return $liveToken;
         }
 
-        // Whatever page this browser had open, it opened as a guest, and it is still being
-        // served the verdict a guest was given - and, where the page is served by the agent
-        // of one instance, by the agent a guest was sent to (HIL-627). The re-decision is
-        // announced last, AFTER the connection has been bound above: the announcement and
-        // the runtime row travel the same queue, so the worker that re-judges applies "this
-        // connection belongs to N" before it judges. Sign-in can use the existing
-        // "pages of this user" criterion precisely because the identity has just appeared;
-        // sign-out, which erases it, had to build its own (HIL-652).
-        PageAccessReassessment::forUser($userId);
+        // The session's other connections are left anonymous on purpose: they are dropped
+        // once the browser holds the new cookie, and they come back into the rotated
+        // session by themselves. Authenticating them here is the second half of the attack
+        // HIL-582 closes - a socket opened with a planted token would ride the victim's
+        // login into her account. So the frame names the initiator alone, which is also
+        // what makes it the rightful holder of the one-time ticket it carries.
+        $keysToDrop = array_values(array_filter(
+            $this->sessionConnectionKeys($sessionToken),
+            static fn(string $acceptKey): bool => $acceptKey !== $initiatorAcceptKey,
+        ));
+
+        $pendingAck = $ack ?? $this->connectionPendingAck($initiatorAcceptKey);
+        $this->publishSessionState(new SessionStateSignalData(
+            sessionToken: $rotated,
+            userId: $userId,
+            acceptKeys: [$initiatorAcceptKey],
+            pendingAck: $pendingAck,
+            pendingRegistration: $this->pendingRegistrationFor($session),
+            rotationTicket: $this->announceRotation($rotated, $keysToDrop, $pendingAck),
+            requestId: $requestId,
+            action: $action,
+            outcome: $outcome,
+        ));
+
+        return $liveToken;
     }
 
     /**
@@ -726,23 +948,13 @@ trait HilosSessionHost
     }
 
     /**
-     * Re-points the initiating connection's runtime row onto the rotated token.
-     *
-     * @param string $acceptKey Accept key of the connection that logged in
-     * @param string $newToken Token the session was rotated onto
-     * @throws HilosException On runtime failure
-     */
-    private function repointInitiatorSessionToken(string $acceptKey, string $newToken): void
-    {
-        Hilos::$rt?->sessionConnectionsRegistry()?->actions->repointSessionToken($acceptKey, $newToken);
-    }
-
-    /**
-     * Announces the pending rotation and hands its ticket to the initiating connection.
+     * Registers the pending rotation and returns the ticket the browser will trade for it.
      *
      * Order matters and is the mechanism, not a detail: the row has to exist before the
      * ticket is on the wire, or a browser fast enough to reconnect first would present a
-     * ticket the master cannot find and lose the session.
+     * ticket the master cannot find and lose the session. Returning the ticket instead of
+     * sending it is how that order survives the split (HIL-710): the row is written here,
+     * where the collection lives, and the frame carrying the ticket leaves after it.
      *
      * The initiator's pending ack rides on the row (HIL-423). The rotation ends the very
      * connection the ack was written on, so without this the sentence a flow just earned
@@ -750,13 +962,18 @@ trait HilosSessionHost
      * read it. The ticket is the one thing that says "the same browser, still in the flow
      * it started" — which is why the ack travels with it and not with the token.
      *
+     * The ack is passed in rather than read off the initiator's row, and for the same reason
+     * the frame states it (HIL-710): the row lives in another process and does not yet carry
+     * what this very ending has just decided.
+     *
      * @param string $newToken Token the session was rotated onto
      * @param list<string> $keysToDrop Accept keys of the session's other connections
-     * @param string $initiatorAcceptKey Accept key of the connection that logged in
+     * @param ?string $pendingAck Ack the browser carries across the rotation, or null when it owes none
+     * @return string One-time ticket the initiating browser trades for the rotated cookie
      * @throws HilosException On runtime failure
      * @throws RandomException When the platform's secure random source refuses a mint
      */
-    private function announceRotation(string $newToken, array $keysToDrop, string $initiatorAcceptKey): void
+    private function announceRotation(string $newToken, array $keysToDrop, ?string $pendingAck): string
     {
         $ticket = SessionRotationTicket::mint();
         Hilos::$rt?->hilosSessionRotations->actions->register(
@@ -764,65 +981,53 @@ trait HilosSessionHost
             $newToken,
             $keysToDrop,
             SessionRotationTicket::expiryFromNow(),
-            $this->connectionPendingAck($initiatorAcceptKey),
+            $pendingAck,
         );
 
-        $this->sendToUser(
-            HilosSignalConstants::HILOS_SESSION_ROTATE,
-            $initiatorAcceptKey,
-            new SessionRotateSignalData($ticket),
-        );
+        return $ticket;
     }
 
     /**
-     * Reverts a live session to anonymous: nulls the session user, re-points the
-     * session's active connections to no user, and re-emits the anonymous handshake
-     * response so their frontends clear the current user. The inverse of
+     * Reverts a live session to anonymous and tells its sockets so. The inverse of
      * {@see authenticateSession()}.
      *
      * The session row and token are kept — the session simply becomes anonymous
      * again. A no-op when the token has no session row or is already anonymous.
-     * Presence follows the connection re-point: a user with no other authenticated
-     * connection drops offline through the standard connection sync.
+     * Presence follows the connection re-point the project makes on the frame: a user with
+     * no other authenticated connection drops offline through the standard connection sync.
      *
      * This is also the one seam every way a live session loses its person passes
-     * through — the shell logout, the expiry drop above, the account-merge force-logout
-     * and the recovery drop of the other sessions — which is why the page re-decision
-     * of HIL-652 is announced here and nowhere else, and why no project code has to
-     * announce anything.
+     * through — the shell sign-out, the expiry drop above, the account-merge force-logout
+     * and the recovery drop of the other sessions — which is why every one of them ends in
+     * exactly one frame, and why the page re-decision of HIL-652 has exactly one place to
+     * stand on the far side of it.
      *
      * @param string $sessionToken Session cookie token to revert to anonymous
+     * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
+     * @param ?string $action Action name the state frame answers, or null when it answers none
+     * @throws InvalidArgumentException When the state frame cannot be named
      * @throws HilosException On database or runtime failure
      */
-    public function deauthenticateSession(string $sessionToken): void
-    {
+    private function deauthenticateSession(
+        string $sessionToken,
+        ?string $requestId = null,
+        ?string $action = null,
+    ): void {
         $session = Hilos::$db->sessions->findByToken($sessionToken);
-        $userId = $session?->userId;
-        if ($session === null || $userId === null) {
+        if ($session === null || $session->userId === null) {
             return;
         }
 
         $session->actions->unbindUser();
-        $this->afterDeauthenticate($userId);
 
-        $response = $this->handshakeResponse(null);
-        $signalName = $this->handshakeResponseSignalName();
-        $acceptKeys = $this->sessionConnectionKeys($sessionToken);
-        foreach ($acceptKeys as $acceptKey) {
-            $this->bindConnectionUser($acceptKey, null);
-            $this->sendToUser($signalName, $acceptKey, $response->withPendingAck(
-                $this->connectionPendingAck($acceptKey),
-            ));
-        }
-
-        // Every page these browsers still have open was answered for the person who has just
-        // gone, so each of them is re-asked the question a guest arriving at that URL would be
-        // asked (HIL-652). Once after the loop, not once per connection: the announcement
-        // already reaches every worker of the node. And after it, not before: the announcement
-        // and the runtime writes above travel one queue, so the worker that re-judges applies
-        // "this connection belongs to nobody" first. Announced ahead of them it would judge
-        // with the identity being destroyed and answer allow.
-        PageAccessReassessment::forConnections($acceptKeys);
+        $this->publishSessionState(new SessionStateSignalData(
+            sessionToken: $sessionToken,
+            userId: null,
+            acceptKeys: $this->sessionConnectionKeys($sessionToken),
+            pendingAck: $this->sessionPendingAck($sessionToken),
+            requestId: $requestId,
+            action: $action,
+        ));
     }
 
     /**
@@ -850,7 +1055,7 @@ trait HilosSessionHost
      * @param string $keepSessionToken Session token that stays signed in
      * @throws HilosException On database or runtime failure
      */
-    public function deauthenticateOtherSessions(int $userId, string $keepSessionToken): void
+    private function deauthenticateOtherSessions(int $userId, string $keepSessionToken): void
     {
         foreach (Hilos::$db->sessions->findByUserId($userId) as $session) {
             if ($session->token === $keepSessionToken) {
@@ -862,34 +1067,6 @@ trait HilosSessionHost
     }
 
     /**
-     * Marks every live socket of a session with the ack its flow just earned (HIL-422).
-     *
-     * Called by the handler that FINISHES a flow, and before it authenticates the
-     * session: the mark has to be on the rows by the time the identity goes out, or the
-     * frontend learns it is signed in one frame earlier than it learns there is
-     * something to read, and closes the surface in between.
-     *
-     * Every live socket of the session is marked, not only the one that acted, because the
-     * announcement belongs to the session and not to the socket that happened to carry the
-     * submit. What that buys is limited, and the limit is worth naming: the login rotation
-     * (HIL-582) drops every socket except the initiator's, and they come back on the new
-     * token owing nothing — so a second tab reliably keeps the mark only where no rotation
-     * follows. The spread still earns its place on the way out, where {@see clearSessionAck()}
-     * has to reach every tab the panel is standing in.
-     *
-     * A session with no live socket marks nothing — the announcement is a thing said to a
-     * connection, and there is no one to say it to.
-     *
-     * @param string $sessionToken Session cookie token whose sockets are marked
-     * @param string $ack Ack kind to show (a {@see SessionAck} value)
-     * @throws HilosException On database or runtime failure
-     */
-    public function markSessionAck(string $sessionToken, string $ack): void
-    {
-        $this->republishSessionAck($sessionToken, $ack);
-    }
-
-    /**
      * Clears the pending ack from every live socket of a session (HIL-422).
      *
      * What the Continue button ends up calling. The truth is the row, so the surface
@@ -898,19 +1075,24 @@ trait HilosSessionHost
      * a double click harmless: the second one marks rows that already carry null.
      *
      * @param string $sessionToken Session cookie token whose sockets are cleared
+     * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
+     * @param ?string $action Action name the state frame answers, or null when it answers none
+     * @throws InvalidArgumentException When the state frame cannot be named
      * @throws HilosException On database or runtime failure
      */
-    public function clearSessionAck(string $sessionToken): void
+    private function clearSessionAck(string $sessionToken, ?string $requestId = null, ?string $action = null): void
     {
-        $this->republishSessionAck($sessionToken, null);
+        $this->republishSessionAck($sessionToken, null, $requestId, $action);
     }
 
     /**
-     * Writes one ack onto every live socket of a session and re-publishes the session scope.
+     * States one ack on every live socket of a session, in the frame that re-publishes it.
      *
      * The write and the re-publish are one step on purpose: the frontend draws from the
      * projection alone, so a mark nobody published is a mark nobody sees, and the two
-     * drifting apart is the only way this mechanism can fail silently.
+     * drifting apart is the only way this mechanism can fail silently. Since HIL-710 that
+     * is guaranteed by there being one frame rather than by two calls kept side by side -
+     * the project writes the row and sends the response out of the same handler.
      *
      * A token no session answers to is a no-op, the same guard {@see deauthenticateSession()}
      * takes and for a sharper reason: sockets CAN outlive their token. The login rotation
@@ -923,21 +1105,31 @@ trait HilosSessionHost
      *
      * @param string $sessionToken Session cookie token whose sockets are written
      * @param ?string $ack Ack kind to show (a {@see SessionAck} value), or null to clear it
+     * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
+     * @param ?string $action Action name the state frame answers, or null when it answers none
+     * @throws InvalidArgumentException When the state frame cannot be named
      * @throws HilosException On database or runtime failure
      */
-    private function republishSessionAck(string $sessionToken, ?string $ack): void
-    {
+    private function republishSessionAck(
+        string $sessionToken,
+        ?string $ack,
+        ?string $requestId = null,
+        ?string $action = null,
+    ): void {
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session === null) {
             return;
         }
 
-        $response = $this->handshakeResponse($session)->withPendingAck($ack);
-        $signalName = $this->handshakeResponseSignalName();
-        foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
-            $this->markConnectionAck($acceptKey, $ack);
-            $this->sendToUser($signalName, $acceptKey, $response);
-        }
+        $this->publishSessionState(new SessionStateSignalData(
+            sessionToken: $sessionToken,
+            userId: $session->userId,
+            acceptKeys: $this->sessionConnectionKeys($sessionToken),
+            pendingAck: $ack,
+            pendingRegistration: $this->pendingRegistrationFor($session),
+            requestId: $requestId,
+            action: $action,
+        ));
     }
 
     /**
@@ -976,7 +1168,7 @@ trait HilosSessionHost
      * @throws HilosException On runtime, database, or session failure
      * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
      */
-    public function convergeRegistration(
+    private function convergeRegistration(
         string $identifier,
         int $userId,
         string $initiatorAcceptKey,
@@ -1019,8 +1211,7 @@ trait HilosSessionHost
                 // there is an account arrive in one frame (HIL-422). This tab did not
                 // type the code — another tab of the same browser did — which is exactly
                 // why it is owed the sentence rather than a screen that changed under it.
-                $this->markSessionAck($sessionToken, SessionAck::REGISTERED);
-                $this->authenticateSession($sessionToken, $userId, $acceptKey);
+                $this->authenticateSession($sessionToken, $userId, $acceptKey, ack: SessionAck::REGISTERED);
             }
 
             $this->sendToUser(
@@ -1050,7 +1241,7 @@ trait HilosSessionHost
      * @param string $initiatorAcceptKey Accept key that asked, answered by its own action reply
      * @throws HilosException On runtime or database failure
      */
-    public function abandonRegistration(string $sessionToken, string $initiatorAcceptKey): void
+    private function abandonRegistration(string $sessionToken, string $initiatorAcceptKey): void
     {
         // Two passes for the ordering below, not for the walk: the durable release has to
         // land between reading the waiters and telling them, so the reading finishes first.
@@ -1102,7 +1293,7 @@ trait HilosSessionHost
      * @param string $initiatorAcceptKey Accept key of the connection that submitted the code
      * @throws HilosException On runtime failure
      */
-    public function grantRecoveryToSession(
+    private function grantRecoveryToSession(
         string $identifier,
         string $sessionToken,
         string $initiatorAcceptKey,
@@ -1153,7 +1344,7 @@ trait HilosSessionHost
      * @param string $initiatorAcceptKey Accept key of the connection that submitted the password
      * @throws HilosException On runtime failure
      */
-    public function convergeRecovery(
+    private function convergeRecovery(
         string $identifier,
         string $sessionToken,
         string $initiatorAcceptKey,
@@ -1181,25 +1372,25 @@ trait HilosSessionHost
     }
 
     /**
-     * Routes one frame the users library addressed to this holder (HIL-622).
+     * Routes one frame addressed to this library - seven from the users library, one back
+     * over the project seam (HIL-622, HIL-710).
      *
-     * Called from the owning agent's `onSignalAgent()`, under the seven cases that
-     * {@see HilosSessionHostInterface::SESSION_HOST_SIGNALS} names. The switch lives here
-     * rather than in the project because what each frame means is the framework's: the
-     * library ends a ceremony by saying what happened, and the order the holder then acts
-     * in - mark the sockets, raise the session, settle the tabs, answer - is the mechanism
-     * itself (HIL-422). A project that re-implemented it could only ever re-implement it
-     * differently.
+     * The switch is the framework's rather than a project's because what each frame means
+     * is: the users library ends a ceremony by saying what happened, and the order this
+     * library then acts in - mark the sockets, raise the session, settle the tabs, answer -
+     * is the mechanism itself (HIL-422). A project that re-implemented it could only ever
+     * re-implement it differently.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
+     * @param string $source Framework signal source identifier (unused)
      * @param string $name Routed agent-signal name
-     * @throws AgentUnknownSignalException When the name is not one of the holder's frames
+     * @throws AgentUnknownSignalException When the name is not one of this library's frames
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws HilosException On database, runtime, or session failure
      * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
-     * @throws InvalidArgumentException When the reply frame cannot be named
+     * @throws InvalidArgumentException When a frame or a reply cannot be named
      */
-    final protected function handleSessionHostFrame(AgentSignalData $data, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_AUTH_SESSION_GRANT:
@@ -1289,9 +1480,186 @@ trait HilosSessionHost
 
                 return;
 
+            case HilosSignalConstants::HILOS_SESSION_REBIND:
+                if (!$data->data instanceof SessionRebindSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, SessionRebindSignalData::class, $data->data);
+                }
+
+                $this->rebindSession($data->data);
+
+                return;
+
             default:
                 throw new AgentUnknownSignalException($name);
         }
+    }
+
+    /**
+     * Makes one session say what a project asked it to say (HIL-710).
+     *
+     * The whole of the way back over the seam. The frame names the TARGET state, so the
+     * operation falls out of it rather than being carried beside it: a null user is a
+     * sign-out, any other is a bind. The impersonation marker is written FIRST, exactly
+     * where the single-process version wrote it, because the identity that goes out on the
+     * frame below reads it - a marker set afterwards would announce the takeover one frame
+     * late, and a marker cleared afterwards would announce it one frame too long.
+     *
+     * The marker is written only when it actually changes: a sign-out that names the same
+     * administrator is not asking for a write, and a session row re-synced for nothing
+     * would fan out to every reader of it.
+     *
+     * The operator is answered from HERE and not by the project that asked, which is the
+     * point of carrying a correlation id at all: after the split nobody else can see what
+     * happened, so the project would have had to answer "accepted" and leave a mistyped
+     * token looking like a success.
+     *
+     * @param SessionRebindSignalData $frame Session, the state it must reach, and whom to answer
+     * @throws HilosException On database or runtime failure
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws InvalidArgumentException When the state frame or the reply cannot be named
+     */
+    private function rebindSession(SessionRebindSignalData $frame): void
+    {
+        $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+        if ($session === null) {
+            $this->replyToRebind($frame, 'No session for that token');
+
+            return;
+        }
+
+        if ($session->impersonatorUserId !== $frame->impersonatorUserId) {
+            $session->actions->setImpersonator($frame->impersonatorUserId);
+        }
+
+        $liveToken = $frame->userId === null
+            ? $this->deauthenticateSessionAndKeepToken($frame->sessionToken)
+            : $this->authenticateSession($frame->sessionToken, $frame->userId, $frame->initiatorAcceptKey);
+
+        $this->replyToRebind($frame, null, $liveToken ?? $frame->sessionToken);
+    }
+
+    /**
+     * Reverts a session to anonymous and names the token it still answers to.
+     *
+     * The sign-out half of {@see rebindSession()}, which needs a token to report back;
+     * signing out rotates nothing, so the token is the one that came in.
+     *
+     * @param string $sessionToken Session cookie token to revert to anonymous
+     * @return string The token the session answers to, unchanged by a sign-out
+     * @throws InvalidArgumentException When the state frame cannot be named
+     * @throws HilosException On database or runtime failure
+     */
+    private function deauthenticateSessionAndKeepToken(string $sessionToken): string
+    {
+        $this->deauthenticateSession($sessionToken);
+
+        return $sessionToken;
+    }
+
+    /**
+     * Tells the operator behind a rebind what became of the session, when one is waiting.
+     *
+     * Nothing is sent for a frame carrying no correlation id: the same rebind is asked for
+     * by a browser action, whose answer is the identity frame itself.
+     *
+     * @param SessionRebindSignalData $frame Rebind that was carried out or refused
+     * @param ?string $error Why it was refused, or null when it was carried out
+     * @param ?string $liveToken Token the session answers to now, or null when it was refused
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     * @throws HilosException When the session read-back fails
+     */
+    private function replyToRebind(SessionRebindSignalData $frame, ?string $error, ?string $liveToken = null): void
+    {
+        $correlationId = $frame->correlationId;
+        if ($correlationId === null) {
+            return;
+        }
+
+        if ($error !== null) {
+            $this->replyToCommand(CommandReplyDTO::error($correlationId, $error));
+
+            return;
+        }
+
+        $session = $liveToken === null ? null : Hilos::$db->sessions->findByToken($liveToken);
+        $this->replyToCommand(CommandReplyDTO::ok($correlationId, [
+            SessionRebindConstants::FIELD_SESSION_TOKEN => $liveToken,
+            SessionRebindConstants::FIELD_USER_ID => $session?->userId,
+            SessionRebindConstants::FIELD_IMPERSONATOR_USER_ID => $session?->impersonatorUserId,
+        ]));
+    }
+
+    /**
+     * Runs one of the two page-independent controls of the sign-in surface.
+     *
+     * Both take their session from the ACTING connection, read off the project's own
+     * connection rows - which this library may read but never write. A stale accept key or
+     * a connection belonging to no session is a no-op, because there is nothing to end or
+     * dismiss and refusing would only tell a closed tab about it.
+     *
+     * Neither answers here. The ending is a session state, which the project puts on the
+     * wire, so the answer is carried in that frame and leaves behind the identity it
+     * announces (HIL-622).
+     *
+     * @param string $acceptKey Accept key of the connection that submitted
+     * @param string $action Owned action name from {@see AGENT_ACTIONS}
+     * @param ActionPayloadDTO $dto Parsed action payload
+     * @return ?ActionReplyDTO Always null: the project answers on the state frame instead
+     * @throws AgentUnknownActionException When the action is not one this library owns
+     * @throws InvalidActionPayloadException When the payload does not match the action name
+     * @throws InvalidArgumentException When the state frame cannot be named
+     * @throws HilosException When ending the session exposes database or runtime failure
+     */
+    public function onAgentAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
+    {
+        $sessionToken = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey)?->sessionToken;
+        switch ($action) {
+            case HilosSignalConstants::HILOS_LOGOUT:
+                if (!$dto instanceof LogoutActionDTO) {
+                    throw new InvalidActionPayloadException($action, LogoutActionDTO::class, $dto);
+                }
+                if ($sessionToken !== null && $sessionToken !== '') {
+                    $this->deauthenticateSession($sessionToken, $this->currentActionRequestId(), $action);
+                }
+
+                return null;
+
+            case HilosSignalConstants::HILOS_DISMISS_SESSION_ACK:
+                if (!$dto instanceof DismissSessionAckActionDTO) {
+                    throw new InvalidActionPayloadException($action, DismissSessionAckActionDTO::class, $dto);
+                }
+                if ($sessionToken !== null && $sessionToken !== '') {
+                    $this->clearSessionAck($sessionToken, $this->currentActionRequestId(), $action);
+                }
+
+                return null;
+
+            default:
+                throw new AgentUnknownActionException("Unknown action: {$action}");
+        }
+    }
+
+    /**
+     * Routes a CLI command sent to this library.
+     *
+     * {@see CliCommands::ADMIN_CREATE} is the only one it mounts; anything else gets an
+     * error reply rather than silence, because the socket parks the caller until it is
+     * answered.
+     *
+     * @param CommandRequestDTO $data Command request payload
+     * @param string $source Signal source (unused)
+     * @param string $name Signal name (unused)
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
+    {
+        if ($data->command === CliCommands::ADMIN_CREATE) {
+            $this->handleAdminCreateCommand($data);
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
     }
 
     /**
@@ -1311,7 +1679,7 @@ trait HilosSessionHost
      * @param string $identifier Normalized identifier that hold was on
      * @throws HilosException On runtime failure
      */
-    final protected function rollBackRegistrationWaiters(string $sessionToken, string $identifier): void
+    private function rollBackRegistrationWaiters(string $sessionToken, string $identifier): void
     {
         // Read before the durable row goes, since the live sockets are found through it.
         $acceptKeys = $this->sessionConnectionKeys($sessionToken);
@@ -1357,7 +1725,7 @@ trait HilosSessionHost
      *
      * @throws HilosException On runtime failure
      */
-    final protected function sweepRegistrationWaiters(): void
+    private function sweepRegistrationWaiters(): void
     {
         if (count(Hilos::$rt->hilosRegistrationWaiters) === 0) {
             return;
@@ -1391,7 +1759,7 @@ trait HilosSessionHost
      *
      * @throws HilosException On runtime failure
      */
-    final protected function sweepRecoveryWaiters(): void
+    private function sweepRecoveryWaiters(): void
     {
         if (count(Hilos::$rt->hilosRecoveryWaiters) === 0) {
             return;
@@ -1428,12 +1796,15 @@ trait HilosSessionHost
      */
     private function grantSessionToUser(AuthSessionGrantSignalData $frame): void
     {
-        if ($frame->ack !== null) {
-            $this->markSessionAck($frame->sessionToken, $frame->ack);
-        }
-
-        $this->authenticateSession($frame->sessionToken, $frame->userId, $frame->acceptKey);
-        $this->answerLibraryAction($frame->acceptKey, $frame->action, $frame->requestId, $frame->outcome);
+        $this->authenticateSession(
+            $frame->sessionToken,
+            $frame->userId,
+            $frame->acceptKey,
+            ack: $frame->ack,
+            requestId: $frame->requestId,
+            action: $frame->action,
+            outcome: $frame->outcome,
+        );
     }
 
     /**
@@ -1451,10 +1822,17 @@ trait HilosSessionHost
      */
     private function settleLandedRegistration(AuthRegistrationLandedSignalData $frame): void
     {
-        // Before the sign-in: the surface closes on the session coming up, so the mark has
-        // to be on the sockets by the time that frame goes out (HIL-422).
-        $this->markSessionAck($frame->winnerSessionToken, SessionAck::REGISTERED);
-        $this->authenticateSession($frame->winnerSessionToken, $frame->userId, $frame->initiatorAcceptKey);
+        // The mark rides the sign-in rather than going ahead of it: the surface closes on
+        // the session coming up, so the two have to reach the browser together (HIL-422).
+        $this->authenticateSession(
+            $frame->winnerSessionToken,
+            $frame->userId,
+            $frame->initiatorAcceptKey,
+            ack: SessionAck::REGISTERED,
+            requestId: $frame->requestId,
+            action: $frame->action,
+            outcome: $frame->outcome,
+        );
 
         Hilos::$rt->hilosRegistrationWaiters->actions->release($frame->initiatorAcceptKey);
         $this->convergeRegistration(
@@ -1464,7 +1842,6 @@ trait HilosSessionHost
             $frame->winnerSessionToken,
             $frame->losingSessionTokens,
         );
-        $this->answerLibraryAction($frame->initiatorAcceptKey, $frame->action, $frame->requestId, $frame->outcome);
     }
 
     /**
@@ -1501,7 +1878,13 @@ trait HilosSessionHost
         );
         Hilos::$rt->hilosRecoveryWaiters->actions->acceptCodeForSession($frame->sessionToken, $frame->identifier);
         $this->grantRecoveryToSession($frame->identifier, $frame->sessionToken, $frame->initiatorAcceptKey);
-        $this->answerLibraryAction($frame->initiatorAcceptKey, $frame->action, $frame->requestId, $frame->outcome);
+        $this->answerLibraryAction(
+            $frame->initiatorAcceptKey,
+            $frame->sessionToken,
+            $frame->action,
+            $frame->requestId,
+            $frame->outcome,
+        );
     }
 
     /**
@@ -1511,7 +1894,10 @@ trait HilosSessionHost
      * one more: the saving browser is signed in, the surfaces waiting on the address are
      * settled, and every OTHER session of the account is dropped to anonymous. The session
      * that stays is named by the token it holds NOW - the sign-in above rotated it, and the
-     * frame carries the one the browser presented before that (HIL-582).
+     * frame carries the one the browser presented before that (HIL-582). The rotated name
+     * comes back from the sign-in itself rather than being read off the connection row: the
+     * row is re-pointed by the project on the frame that has only just left here, so asking
+     * it would answer with the token the session no longer has (HIL-710).
      *
      * @param AuthPasswordChangedSignalData $frame Account, session, address, and the answer to give
      * @throws HilosException On database, runtime, or session failure
@@ -1520,16 +1906,19 @@ trait HilosSessionHost
      */
     private function settleChangedPassword(AuthPasswordChangedSignalData $frame): void
     {
-        // Before the sign-in, not after: the surface closes on the session coming up, so
-        // the mark has to be on the sockets by the time that frame goes out (HIL-422).
-        $this->markSessionAck($frame->sessionToken, SessionAck::PASSWORD_CHANGED);
-        $this->authenticateSession($frame->sessionToken, $frame->userId, $frame->acceptKey);
-        $this->convergeRecovery($frame->identifier, $frame->sessionToken, $frame->acceptKey);
-        $this->deauthenticateOtherSessions(
+        // The mark rides the sign-in rather than going ahead of it: the surface closes on
+        // the session coming up, so the two have to reach the browser together (HIL-422).
+        $liveToken = $this->authenticateSession(
+            $frame->sessionToken,
             $frame->userId,
-            Hilos::$rt?->sessionConnectionsSource()?->get($frame->acceptKey)?->sessionToken ?? $frame->sessionToken,
+            $frame->acceptKey,
+            ack: SessionAck::PASSWORD_CHANGED,
+            requestId: $frame->requestId,
+            action: $frame->action,
+            outcome: $frame->outcome,
         );
-        $this->answerLibraryAction($frame->acceptKey, $frame->action, $frame->requestId, $frame->outcome);
+        $this->convergeRecovery($frame->identifier, $frame->sessionToken, $frame->acceptKey);
+        $this->deauthenticateOtherSessions($frame->userId, $liveToken ?? $frame->sessionToken);
     }
 
     /**
@@ -1542,7 +1931,13 @@ trait HilosSessionHost
     private function dropAbandonedRegistration(AuthRegistrationAbandonedSignalData $frame): void
     {
         $this->abandonRegistration($frame->sessionToken, $frame->initiatorAcceptKey);
-        $this->answerLibraryAction($frame->initiatorAcceptKey, $frame->action, $frame->requestId, $frame->outcome);
+        $this->answerLibraryAction(
+            $frame->initiatorAcceptKey,
+            $frame->sessionToken,
+            $frame->action,
+            $frame->requestId,
+            $frame->outcome,
+        );
     }
 
     /**
@@ -1592,19 +1987,28 @@ trait HilosSessionHost
     /**
      * Answers the sign-in action a frame finished, when there is a caller waiting on it.
      *
-     * The library deferred its own reply so that the answer would leave from HERE, behind
-     * the identity it announces (HIL-622). Nothing is sent when the frame carries no
+     * The users library deferred its own reply so that the answer would leave from behind
+     * the identity it announces (HIL-622), and since HIL-710 that identity is sent by the
+     * project - so the answer travels there too, on a frame that states what the session is
+     * and names the one socket that asked. Nothing is sent when the frame carries no
      * request id: the session grant is also the ending of an OAuth login, whose action was
      * acked as "accepted, working on it" the moment the browser was sent to the provider.
      *
+     * The frame restates an identity that has not changed, which is the price of having one
+     * frame rather than two: the alternative is a second kind of frame whose only content
+     * is an answer, and a project reading it would have to know which of the two it holds.
+     *
      * @param string $acceptKey Accept key of the connection that submitted the action
+     * @param string $sessionToken Session cookie token the answering socket belongs to
      * @param ?string $action Action name the frame finished, or null when it finished none
      * @param ?string $requestId Request id of the waiting caller, or null when nobody waits
      * @param ?array<string, mixed> $outcome Where the surface goes next, or null for no domain reply
-     * @throws InvalidArgumentException When the reply frame cannot be named
+     * @throws InvalidArgumentException When the state frame cannot be named
+     * @throws HilosException When the session or its unfinished registration cannot be read
      */
     private function answerLibraryAction(
         string $acceptKey,
+        string $sessionToken,
         ?string $action,
         ?string $requestId,
         ?array $outcome,
@@ -1613,12 +2017,17 @@ trait HilosSessionHost
             return;
         }
 
-        $this->sendActionSuccess(
-            $acceptKey,
-            $action,
-            $requestId,
-            $outcome === null ? null : AuthFlowOutcome::fromArray($outcome),
-        );
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+        $this->publishSessionState(new SessionStateSignalData(
+            sessionToken: $sessionToken,
+            userId: $session?->userId,
+            acceptKeys: [$acceptKey],
+            pendingAck: $this->connectionPendingAck($acceptKey),
+            pendingRegistration: $this->pendingRegistrationFor($session),
+            requestId: $requestId,
+            action: $action,
+            outcome: $outcome,
+        ));
     }
 
     /**

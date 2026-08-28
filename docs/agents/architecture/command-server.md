@@ -164,15 +164,22 @@ admin pages are shut, so there is nothing to register through and no id to name.
 `admin:create <sessionToken>` addresses a **session** instead — the value of the
 `hilos_session_token` cookie, read in DevTools — and makes it an administrator,
 minting the user row when the session carries none. Its two halves are
-`AdminCreateCommand` on the CLI and `HilosSessionHost::handleAdminCreateCommand()`
-on the agent, with `ensureAdminUser()` as the project seam that writes the row.
+`AdminCreateCommand` on the CLI and
+`AbstractSessionsLibraryAgent::handleAdminCreateCommand()` on the agent, with
+`ensureAdminUser()` as the project seam that writes the row.
 
-It routes to the project's **session host** (the agent mixing in
-`HilosSessionHost`), not to `AbstractHilosIndexAgent` where the grant lands: the
-operation ends in `authenticateSession()`, and the session's runtime connections
-and handshake payload belong there. That is also why no reconnect is needed —
-the bind re-points the session's live sockets and re-sends them the handshake
-response, so the admin entry appears in the open tab. A project mounts the
-command by naming it in that agent's `AGENT_COMMANDS`; one that does not — the
-chat demo, which has a login of its own — never answers it, and the seam's
-refusing default is what lets it stay untouched.
+It routes to the **sessions library** (`hilos_sessions_library`), not to
+`AbstractHilosIndexAgent` where the grant lands: the operation ends in a session
+bind, and the session row is the library's. That is also why no reconnect is
+needed — the bind ends in a `hilos_session_state` frame, and the project handler
+on the far side of it re-points the session's live sockets and re-sends them the
+handshake response, so the admin entry appears in the open tab.
+
+**Every project that registers the library answers this command,** because the
+mount stands on the abstract class (`AGENT_COMMANDS`) rather than being named per
+project. One with nobody to mint — the chat demo, which has a login of its own —
+answers the refusing default of `ensureAdminUser()`, and that refusal is the point:
+an operator who typed the command at the wrong installation gets a no rather than a
+command socket that never answers, which reads as a hang. Before HIL-710 the name
+was carried by whichever agent chose to, so a project that did not carry it left
+the socket silent.

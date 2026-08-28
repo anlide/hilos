@@ -48,7 +48,7 @@ final class SessionAuthenticationTest extends IntegrationTestCase
         $agent = $this->bootAgent();
         $token = RandomHelper::hex(16);
 
-        $agent->onSignalHandshake($this->handshake('anon-ak', $token), '', '');
+        $this->deliverHandshake($agent, $this->handshake('anon-ak', $token));
 
         try {
             $this->assertNotNull(Hilos::$db->sessions->findByToken($token));
@@ -70,11 +70,11 @@ final class SessionAuthenticationTest extends IntegrationTestCase
         $token = RandomHelper::hex(16);
         $userId = (int) Hilos::$db->users->actions->createWithName('User')->id;
 
-        $agent->onSignalHandshake($this->handshake('upgrade-ak', $token), '', '');
+        $this->deliverHandshake($agent, $this->handshake('upgrade-ak', $token));
         $this->assertNull(Hilos::$rt->connections['upgrade-ak']->userId);
 
         try {
-            $agent->authenticateSession($token, $userId, 'upgrade-ak');
+            $this->authenticateSession($agent, $token, $userId, 'upgrade-ak');
 
             $this->assertSame($userId, $this->rotatedSession($token)?->userId);
             $this->assertSame($userId, Hilos::$rt->connections['upgrade-ak']->userId);
@@ -95,10 +95,10 @@ final class SessionAuthenticationTest extends IntegrationTestCase
         $token = RandomHelper::hex(16);
         $userId = (int) Hilos::$db->users->actions->createWithName('User')->id;
 
-        $agent->onSignalHandshake($this->handshake('rotate-ak', $token), '', '');
+        $this->deliverHandshake($agent, $this->handshake('rotate-ak', $token));
 
         try {
-            $agent->authenticateSession($token, $userId, 'rotate-ak');
+            $this->authenticateSession($agent, $token, $userId, 'rotate-ak');
 
             $rotated = $this->rotatedToken();
             $this->assertNotSame($token, $rotated);
@@ -121,13 +121,13 @@ final class SessionAuthenticationTest extends IntegrationTestCase
         $token = RandomHelper::hex(16);
         $userId = (int) Hilos::$db->users->actions->createWithName('User')->id;
 
-        $agent->onSignalHandshake($this->handshake('same-row-ak', $token), '', '');
+        $this->deliverHandshake($agent, $this->handshake('same-row-ak', $token));
         $before = Hilos::$db->sessions->findByToken($token);
         $sessionId = $before?->id;
         $createdAt = $before?->createdAt;
 
         try {
-            $agent->authenticateSession($token, $userId, 'same-row-ak');
+            $this->authenticateSession($agent, $token, $userId, 'same-row-ak');
 
             $after = Hilos::$db->sessions->findByToken($this->rotatedToken());
             $this->assertNotNull($sessionId);
@@ -150,11 +150,11 @@ final class SessionAuthenticationTest extends IntegrationTestCase
         $token = RandomHelper::hex(16);
         $userId = (int) Hilos::$db->users->actions->createWithName('User')->id;
 
-        $agent->onSignalHandshake($this->handshake('tab-a-ak', $token), '', '');
-        $agent->onSignalHandshake($this->handshake('tab-b-ak', $token), '', '');
+        $this->deliverHandshake($agent, $this->handshake('tab-a-ak', $token));
+        $this->deliverHandshake($agent, $this->handshake('tab-b-ak', $token));
 
         try {
-            $agent->authenticateSession($token, $userId, 'tab-a-ak');
+            $this->authenticateSession($agent, $token, $userId, 'tab-a-ak');
             $rotated = $this->rotatedToken();
 
             $this->assertSame($userId, Hilos::$rt->connections['tab-a-ak']->userId);
@@ -181,11 +181,11 @@ final class SessionAuthenticationTest extends IntegrationTestCase
         $token = RandomHelper::hex(16);
         $userId = (int) Hilos::$db->users->actions->createWithName('User')->id;
 
-        $agent->onSignalHandshake($this->handshake('drop-a-ak', $token), '', '');
-        $agent->onSignalHandshake($this->handshake('drop-b-ak', $token), '', '');
+        $this->deliverHandshake($agent, $this->handshake('drop-a-ak', $token));
+        $this->deliverHandshake($agent, $this->handshake('drop-b-ak', $token));
 
         try {
-            $agent->authenticateSession($token, $userId, 'drop-a-ak');
+            $this->authenticateSession($agent, $token, $userId, 'drop-a-ak');
 
             $rotation = $this->rotation();
             $this->assertSame(['drop-b-ak'], $rotation?->acceptKeysToDrop);
@@ -206,10 +206,10 @@ final class SessionAuthenticationTest extends IntegrationTestCase
         $token = RandomHelper::hex(16);
         $userId = (int) Hilos::$db->users->actions->createWithName('User')->id;
 
-        $agent->onSignalHandshake($this->handshake('cli-ak', $token), '', '');
+        $this->deliverHandshake($agent, $this->handshake('cli-ak', $token));
 
         try {
-            $agent->authenticateSession($token, $userId, null);
+            $this->authenticateSession($agent, $token, $userId, null);
 
             $this->assertSame($userId, Hilos::$db->sessions->findByToken($token)?->userId);
             $this->assertNull($this->rotation());
@@ -230,13 +230,13 @@ final class SessionAuthenticationTest extends IntegrationTestCase
         $token = RandomHelper::hex(16);
         $userId = (int) Hilos::$db->users->actions->createWithName('User')->id;
 
-        $agent->onSignalHandshake($this->handshake('logout-ak', $token), '', '');
-        $agent->authenticateSession($token, $userId, 'logout-ak');
+        $this->deliverHandshake($agent, $this->handshake('logout-ak', $token));
+        $this->authenticateSession($agent, $token, $userId, 'logout-ak');
         $rotated = $this->rotatedToken();
         $this->assertSame($userId, Hilos::$rt->connections['logout-ak']->userId);
 
         try {
-            $agent->deauthenticateSession($rotated);
+            $this->deauthenticateSession($agent, $rotated);
 
             $this->assertNotNull(Hilos::$db->sessions->findByToken($rotated));
             $this->assertNull(Hilos::$db->sessions->findByToken($rotated)?->userId);
@@ -257,11 +257,11 @@ final class SessionAuthenticationTest extends IntegrationTestCase
         $agent = $this->bootAgent();
         $token = RandomHelper::hex(16);
 
-        $agent->onSignalHandshake($this->handshake('guest-ak', $token), '', '');
+        $this->deliverHandshake($agent, $this->handshake('guest-ak', $token));
         $this->assertNull(Hilos::$rt->connections['guest-ak']->userId);
 
         try {
-            $agent->deauthenticateSession($token);
+            $this->deauthenticateSession($agent, $token);
 
             $this->assertNotNull(Hilos::$db->sessions->findByToken($token));
             $this->assertNull(Hilos::$db->sessions->findByToken($token)?->userId);
@@ -284,17 +284,17 @@ final class SessionAuthenticationTest extends IntegrationTestCase
         $token = RandomHelper::hex(16);
         $userId = (int) Hilos::$db->users->actions->createWithName('User')->id;
 
-        $agent->onSignalHandshake($this->handshake('out-a-ak', $token), '', '');
-        $agent->authenticateSession($token, $userId, 'out-a-ak');
+        $this->deliverHandshake($agent, $this->handshake('out-a-ak', $token));
+        $this->authenticateSession($agent, $token, $userId, 'out-a-ak');
         $rotated = $this->rotatedToken();
 
         // The second tab arrives after the rotation, so it names the session's live token.
-        $agent->onSignalHandshake($this->handshake('out-b-ak', $rotated), '', '');
-        $agent->authenticateSession($rotated, $userId, null);
+        $this->deliverHandshake($agent, $this->handshake('out-b-ak', $rotated));
+        $this->authenticateSession($agent, $rotated, $userId, null);
         $this->assertSame($userId, Hilos::$rt->connections['out-a-ak']->userId);
 
         try {
-            $agent->deauthenticateSession($rotated);
+            $this->deauthenticateSession($agent, $rotated);
 
             $this->assertNull(Hilos::$db->sessions->findByToken($rotated)?->userId);
             $this->assertNull(Hilos::$rt->connections['out-a-ak']->userId);

@@ -11,6 +11,7 @@ use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosGuardianAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosLogsAgent;
+use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Agents\ModeratorAgent;
@@ -22,6 +23,7 @@ use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosGuardianAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\LibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ModeratorAgentDaemon;
@@ -313,6 +315,11 @@ final class Hilos extends HilosFacade
         UsersLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => UsersLibraryAgent::class,
             AgentRegistryKey::DAEMON => UsersLibraryAgentDaemon::class,
+        ],
+        SessionsLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => SessionsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => SessionsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         LibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => LibraryAgent::class,

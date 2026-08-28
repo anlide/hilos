@@ -6,6 +6,7 @@ namespace Demo\Chat\CLI\Commands;
 
 use Demo\Chat\Constants\ChatCliCommands;
 use Demo\Chat\Constants\ChatCommandConstants;
+use Hilos\Auth\Session\SessionRebindConstants;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 
 /**
@@ -67,9 +68,18 @@ HELP;
         ];
     }
 
+    /**
+     * The reply is written by the sessions library that carried the rebind out, and its keys
+     * are the frame's own field names (HIL-710): it reports the state read back off the row
+     * rather than the state that was asked for.
+     *
+     * @param CommandReplyDTO $reply Successful reply from the daemon command channel
+     * @return string Line shown to the operator
+     */
     protected function describeSuccess(CommandReplyDTO $reply): string
     {
-        $effective = (int) ($reply->payload[ChatCommandConstants::FIELD_EFFECTIVE_USER_ID] ?? 0);
+        // external-boundary: the daemon's reply payload is untyped on this side
+        $effective = (int) ($reply->payload[SessionRebindConstants::FIELD_USER_ID] ?? 0);
 
         return "Reply (ok): impersonation stopped; session now acts as admin #{$effective}";
     }

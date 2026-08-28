@@ -26,9 +26,6 @@ final class ChatSignalConstants
     /** @var string Client → server: delete one completed attachment draft */
     public const string ATTACHMENT_DRAFT_DELETE = 'attachment_draft_delete';
 
-    /** @var string Client → agent: revert the authenticated session to anonymous (shell logout, page-independent) */
-    public const string LOGOUT = 'logout';
-
     /**
      * @var string Client → agent (page-independent): impersonating session reverts to its admin
      *     (browser name; the CLI command is ChatCommandConstants::IMPERSONATE_STOP)

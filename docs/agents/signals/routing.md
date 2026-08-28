@@ -222,8 +222,9 @@ Consequences worth knowing before declaring one:
 - **Move on sign-in.** A guest who signs in stays on the same page, and the page is
   re-judged rather than re-subscribed: `page_access_reassess` carries a copy of the
   subscribe, its address is recomputed, and the client gets a full page answer without
-  the frontend knowing anything happened. `HilosSessionHost::authenticateSession()`
-  announces it after binding the connection.
+  the frontend knowing anything happened. The project handler of the
+  `hilos_session_state` frame announces it, after binding the connection the same frame
+  carried — one queue, so the worker that re-judges applies the identity first.
 - **Waiting for an identity.** A `SESSION_USER` page whose connection identity has not
   crossed the RT sync yet is held for up to 500ms and then routed on what is known. Only
   such a page ever waits; every other subscription is routed the moment it arrives.

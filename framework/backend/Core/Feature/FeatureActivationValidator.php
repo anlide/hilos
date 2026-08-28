@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Feature;
 
-use Hilos\Auth\Session\HilosSessionHostInterface;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Page\AbstractPage;
@@ -148,7 +147,9 @@ final class FeatureActivationValidator
             }
         }
 
-        foreach ($requirements->requiredAgents as $agentType) {
+        // Both lists in one walk: what a feature needs of an agent is the same whether or not
+        // it is the only one that needs it - the two differ in the check above, not here.
+        foreach ([...$requirements->requiredAgents, ...$requirements->requiredSharedAgents] as $agentType) {
             $registryEntry = $agents[$agentType] ?? null;
             if ($registryEntry === null) {
                 $errors[] = "{$name} is declared but agent {$agentType} is not registered in AGENTS";
@@ -181,33 +182,6 @@ final class FeatureActivationValidator
                 $errors[] = "{$name} is declared but the {$this->name($required)} it is built on is not";
             }
         }
-
-        if ($requirements->requiresSessionHost && !$this->hasSessionHost($agents)) {
-            $errors[] = "{$name} is declared but no agent in AGENTS implements " . HilosSessionHostInterface::class;
-        }
-    }
-
-    /**
-     * Whether any registered agent holds this project's sessions.
-     *
-     * Asked of the classes rather than of a declaration: an agent that mixes the session-host
-     * trait in IS the holder, and a project naming one beside that fact could name a different
-     * agent. Refused at startup rather than at the first sign-in, where the failure would be a
-     * frame addressed to nobody - a login that hangs instead of a project that will not boot.
-     *
-     * @param array $agents Agent registry
-     * @return bool Whether some worker class in the registry implements the holder contract
-     */
-    private function hasSessionHost(array $agents): bool
-    {
-        foreach ($agents as $registryEntry) {
-            $agentClass = AgentRegistry::workerClass($registryEntry);
-            if ($agentClass !== null && is_subclass_of($agentClass, HilosSessionHostInterface::class)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**
@@ -243,6 +217,8 @@ final class FeatureActivationValidator
             }
         }
 
+        // Only the agents this feature OWNS are read backwards: a shared one says nothing
+        // about the feature, and a project entitled to run it would be refused for doing so.
         foreach ($requirements->requiredAgents as $agentType) {
             if (array_key_exists($agentType, $agents)) {
                 $errors[] = "AGENTS registers {$agentType} but {$name} is not declared in FEATURES";

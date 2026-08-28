@@ -67,18 +67,14 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         try {
             $eventCountBeforeHandshake = count(Hilos::$db->events);
 
-            $agent->onSignalHandshake(
-                new WebSocketHandshakeSignalDTO(
-                    headers: [],
-                    acceptKey: 'presence-ak-1',
-                    cookies: [],
-                    clientIp: '127.0.0.1',
-                    queryParams: RequestQueryParams::empty(),
-                    sessionToken: $sessionToken,
-                ),
-                '',
-                '',
-            );
+            $this->deliverHandshake($agent, new WebSocketHandshakeSignalDTO(
+                headers: [],
+                acceptKey: 'presence-ak-1',
+                cookies: [],
+                clientIp: '127.0.0.1',
+                queryParams: RequestQueryParams::empty(),
+                sessionToken: $sessionToken,
+            ));
 
             $this->assertSame($eventCountBeforeHandshake, count(Hilos::$db->events));
             $this->assertSame(1, count(Hilos::$rt->connections->forUser($user->id)));

@@ -120,9 +120,11 @@ services:
       - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
       - HTTP_STATUS_HOST=0.0.0.0
       - HTTP_STATUS_PORT=8090
-      # A bigger monopolistic pool than the other demos ask for (they take 2): the number
-      # belongs to this demo's own agent set, not to a framework norm.
-      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-12}
+      # A bigger monopolistic pool than the other demos ask for (they take 3): the number
+      # belongs to this demo's own agent set, not to a framework norm. It is the agent
+      # COUNT, because a monopolistic singleton needs a worker of its own - the thirteenth
+      # is the sessions library every handshake is resolved in (HIL-710).
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-13}
       - WORKER_COMM_HOST=0.0.0.0
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0

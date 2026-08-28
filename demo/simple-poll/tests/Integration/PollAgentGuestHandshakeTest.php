@@ -129,18 +129,14 @@ final class PollAgentGuestHandshakeTest extends IntegrationTestCase
      */
     private function handshake(string $sessionToken, string $acceptKey): void
     {
-        new PollAgent()->onSignalHandshake(
-            new WebSocketHandshakeSignalDTO(
-                headers: [],
-                acceptKey: $acceptKey,
-                cookies: [],
-                clientIp: '127.0.0.1',
-                queryParams: RequestQueryParams::empty(),
-                sessionToken: $sessionToken,
-            ),
-            '',
-            '',
-        );
+        $this->deliverHandshake(new PollAgent(), new WebSocketHandshakeSignalDTO(
+            headers: [],
+            acceptKey: $acceptKey,
+            cookies: [],
+            clientIp: '127.0.0.1',
+            queryParams: RequestQueryParams::empty(),
+            sessionToken: $sessionToken,
+        ));
     }
 
     /**

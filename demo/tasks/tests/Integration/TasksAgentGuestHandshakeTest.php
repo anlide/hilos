@@ -129,18 +129,14 @@ final class TasksAgentGuestHandshakeTest extends IntegrationTestCase
      */
     private function handshake(string $sessionToken, string $acceptKey): void
     {
-        new TasksAgent()->onSignalHandshake(
-            new WebSocketHandshakeSignalDTO(
-                headers: [],
-                acceptKey: $acceptKey,
-                cookies: [],
-                clientIp: '127.0.0.1',
-                queryParams: RequestQueryParams::empty(),
-                sessionToken: $sessionToken,
-            ),
-            '',
-            '',
-        );
+        $this->deliverHandshake(new TasksAgent(), new WebSocketHandshakeSignalDTO(
+            headers: [],
+            acceptKey: $acceptKey,
+            cookies: [],
+            clientIp: '127.0.0.1',
+            queryParams: RequestQueryParams::empty(),
+            sessionToken: $sessionToken,
+        ));
     }
 
     /**

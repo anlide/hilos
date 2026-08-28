@@ -4,51 +4,51 @@ declare(strict_types=1);
 
 namespace Demo\SimplePoll\Agents;
 
+use Demo\SimplePoll\Agents\Hilos\SessionsLibraryAgent;
 use Demo\SimplePoll\Constants\AgentType;
 use Demo\SimplePoll\Constants\PollSignalConstants;
 use Demo\SimplePoll\Core\Router\DTO\GuestIdentitySignalData;
 use Demo\SimplePoll\Database\PollDbContext;
 use Demo\SimplePoll\Hilos;
 use Demo\SimplePoll\Runtime\View\Context\PollRtContext;
-use Hilos\Auth\Session\HilosSessionHost;
-use Hilos\Auth\Session\SessionToken;
+use Hilos\Auth\Flow\AuthFlowOutcome;
+use Hilos\Auth\Session\DTO\SessionRotateSignalData;
+use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
-use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
-use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Page\PageAccessReassessment;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
-use Hilos\Socket\Command\DTO\CommandReplyDTO;
-use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
-use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 
 /**
  * Monopolistic poll worker that owns the main page subscription and the
  * WebSocket lifecycle signals.
  *
- * Session identity is the framework's since HIL-408: the cookie resolves to a
- * `hilos_session` row through {@see HilosSessionHost}, and the socket is tracked
- * as a runtime connection of that session for presence. This demo DOES carry
- * anonymous sessions (HIL-611): a `user` row means an account, minted only by
- * {@see CliCommands::ADMIN_CREATE}, and a visitor without one is remembered by
- * name alone in this demo's own `guest` table.
+ * Session identity is the framework's, and since HIL-710 it is a library's too: the cookie
+ * is resolved by {@see SessionsLibraryAgent}, which says what the session is in one frame,
+ * and this agent tracks the socket as a runtime connection of that session for presence.
+ * This demo DOES carry anonymous sessions (HIL-611): a `user` row means an account, minted
+ * only by {@see CliCommands::ADMIN_CREATE} - which moved to the library with the session
+ * bind it ends in - and a visitor without one is remembered by name alone in this demo's own
+ * `guest` table.
  */
 final class PollAgent extends AbstractAgent
 {
-    use HilosSessionHost;
-
     public const string AGENT_TYPE = AgentType::POLL;
 
-    // The operator path to the first administrator (HIL-609): this demo has no login, so
-    // nothing in the product can hand out the flag the admin pages ask for. It is declared
-    // here rather than on the index agent because the command ends in a session bind, and
-    // sessions are this agent's - it is the class mixing in HilosSessionHost.
-    public const array AGENT_COMMANDS = [
-        CliCommands::ADMIN_CREATE,
+    // The session frame is declared HERE and not in the library, which is what routes it to
+    // this agent: a destination is taken from whoever names a signal, and the library naming
+    // its own outgoing frame would send it back to itself.
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class,
     ];
 
     /**
@@ -62,66 +62,207 @@ final class PollAgent extends AbstractAgent
     }
 
     /**
-     * Resolves the session token cookie to its session row, tracks the socket as a
-     * runtime connection of that session, names the visitor behind it, and replies
-     * with the current-user entity fragment in the session-scope payload form.
+     * Says out loud what the sessions library concluded about one session (HIL-710).
      *
-     * The connection is registered with whatever user the session carries, `null`
-     * included (HIL-611). An anonymous session is the normal state of this demo,
-     * not a moment to be closed: nothing here mints a user, because the only thing
-     * a `user` row means now is an account, and the only way to one is
-     * {@see CliCommands::ADMIN_CREATE}.
+     * The project half of the seam, and the ONE handler behind every ending a session can
+     * reach here: a handshake, and the operator's admin:create binding an account to a live
+     * browser. It replaces what used to be four hooks of the session-host trait
+     * (`onSignalHandshake`, `bindConnectionUser`, `markConnectionAck` and the response signal
+     * name), and it can be one handler precisely because the library states the session's
+     * whole state rather than the change it made.
      *
-     * What an anonymous session gets instead is a name of its own, found or minted
-     * in the `guest` table and sent BEFORE the handshake response, so the identity
-     * line on the page is never drawn empty. A session that does carry an account
-     * has its guest row dropped on the way past: that is how the row minted before
-     * an operator claimed this browser goes, and doing it here rather than inside
-     * the command keeps the cleanup on the path that is certain to run.
+     * THE ORDER IS THE MECHANISM: the connection rows are written first, so that everything
+     * read against them - the page re-decision above all - sees who the socket belongs to
+     * now; the guest name goes out BEFORE the identity, so the line on the page is never
+     * drawn empty (HIL-611); the identity follows, stamped by the framework with the server
+     * clock; and the action that was waiting is answered last, behind the identity it
+     * announces (HIL-622).
      *
-     * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
-     * @param string $source Framework signal source identifier (unused)
-     * @param string $name Framework signal name (unused)
-     * @throws InvalidFormatException When the session token is not a 32-character lowercase hex string
-     * @throws DuplicateValueException When a concurrent create already claimed a new token
-     * @throws HilosException On database or runtime failure while resolving the session, naming the guest or registering the connection
+     * @param SessionStateSignalData $frame What the session is now, and whom to answer
+     * @throws InvalidArgumentException When a signal of the answer cannot be named
+     * @throws InvalidFormatException When the frame's outcome cannot be read back
+     * @throws HilosException On database or runtime failure
      */
-    public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
+    private function applySessionState(SessionStateSignalData $frame): void
     {
-        // The daemon resolved the session token on the 101 (the client's cookie
-        // or a freshly issued one) and carried it on the handshake DTO. Validate
-        // inside the ValidationException family so the worker dispatcher contains
-        // a bad token instead of crashing.
-        $sessionToken = $data->sessionToken;
-        SessionToken::ensureValid($sessionToken);
+        $userId = $frame->userId;
+        // One identity for the whole frame: every socket it names belongs to the one session
+        // it is about. A session with nobody in it needs no lookup to be described.
+        $identity = $this->handshakeResponseFor(
+            $userId === null ? null : Hilos::$db->sessions->findByToken($frame->sessionToken),
+        );
 
-        $session = $this->resolveHandshakeSession($sessionToken);
-        $userId = $session->userId;
-
-        Hilos::$rt->connections->actions->register($data->acceptKey, $userId, $sessionToken);
-
-        if ($userId === null) {
-            $guest = Hilos::$db->guests->actions->ensureForSession($sessionToken);
-            $this->sendToUser(
-                PollSignalConstants::GUEST_IDENTITY,
-                $data->acceptKey,
-                new GuestIdentitySignalData($guest->name),
-            );
-        } else {
-            Hilos::$db->guests->actions->deleteForSession($sessionToken);
+        foreach ($frame->acceptKeys as $acceptKey) {
+            $this->settleConnection($acceptKey, $frame);
+            $this->nameTheVisitor($acceptKey, $frame);
+            $this->sendHandshakeResponse(PollSignalConstants::HANDSHAKE_RESPONSE, $acceptKey, $identity, $frame);
         }
 
+        $this->handOverRotationTicket($frame);
+
+        // Whatever page these browsers had open was answered for whoever they were a moment
+        // ago (HIL-652). A bind can ask by user, because the identity has just appeared; a
+        // sign-out has to ask by connection, because the identity it would ask under is the
+        // one being erased.
+        if ($userId !== null) {
+            PageAccessReassessment::forUser($userId);
+        } else {
+            PageAccessReassessment::forConnections($frame->acceptKeys);
+        }
+
+        $this->answerLibraryAction($frame);
+    }
+
+    /**
+     * Brings one live connection row to the state the frame states.
+     *
+     * A socket the collection does not hold yet is a HANDSHAKE and nothing else: every other
+     * frame names sockets the library read out of this very collection. Each write happens
+     * only where it changes something - a row written is a row synced to every reader of it,
+     * and a frame that merely restates an unchanged session has no business telling the rest
+     * of the node that the connections moved.
+     *
+     * @param string $acceptKey Accept key of the connection being brought up to date
+     * @param SessionStateSignalData $frame What the session is now
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When the queued runtime-sync signal cannot be named
+     */
+    private function settleConnection(string $acceptKey, SessionStateSignalData $frame): void
+    {
+        $connection = Hilos::$rt->connections[$acceptKey] ?? null;
+        if ($connection === null) {
+            Hilos::$rt->connections->actions->register($acceptKey, $frame->userId, $frame->sessionToken);
+        } else {
+            if ($connection->sessionToken !== $frame->sessionToken) {
+                Hilos::$rt->connections->actions->repointSessionToken($acceptKey, $frame->sessionToken);
+            }
+            if ($connection->userId !== $frame->userId) {
+                $connection->actions->bindUser($frame->userId);
+            }
+        }
+
+        if ($connection?->pendingAck !== $frame->pendingAck) {
+            Hilos::$rt->connections->actions->markAck($acceptKey, $frame->pendingAck);
+        }
+    }
+
+    /**
+     * Gives an anonymous browser a name of its own, or takes back the one it outgrew (HIL-611).
+     *
+     * Sent BEFORE the identity response, so the line on the page is never drawn empty: a
+     * visitor is the normal state of this demo, not a moment to be closed. A session that
+     * does carry an account has its guest row dropped on the way past - that is how the row
+     * minted before an operator claimed this browser goes, and doing it on the path that is
+     * certain to run keeps the cleanup out of the command.
+     *
+     * @param string $acceptKey Accept key of the connection being told
+     * @param SessionStateSignalData $frame What the session is now
+     * @throws HilosException On database failure while naming or dropping the guest
+     * @throws InvalidArgumentException When the guest-identity signal cannot be named
+     */
+    private function nameTheVisitor(string $acceptKey, SessionStateSignalData $frame): void
+    {
+        if ($frame->userId !== null) {
+            Hilos::$db->guests->actions->deleteForSession($frame->sessionToken);
+
+            return;
+        }
+
+        $guest = Hilos::$db->guests->actions->ensureForSession($frame->sessionToken);
         $this->sendToUser(
-            PollSignalConstants::HANDSHAKE_RESPONSE,
-            $data->acceptKey,
-            $this->handshakeResponse($session),
+            PollSignalConstants::GUEST_IDENTITY,
+            $acceptKey,
+            new GuestIdentitySignalData($guest->name),
         );
     }
 
     /**
-     * Builds the handshake response describing a session's current identity — the
-     * {@see HilosSessionHost} hook, reading the display name from this demo's own
-     * user table.
+     * Hands the browser that just signed in the ticket it trades for its rotated cookie
+     * (HIL-582).
+     *
+     * Nothing in this demo rotates a session today - the one bind it has comes from an
+     * operator's command, which names no initiating connection - but the frame is the
+     * framework's and may carry one, and a ticket dropped on the floor would cost the person
+     * their session. Sent from here so that it leaves behind the identity above.
+     *
+     * @param SessionStateSignalData $frame Session state that may carry a rotation
+     * @throws InvalidArgumentException When the rotation signal cannot be named
+     */
+    private function handOverRotationTicket(SessionStateSignalData $frame): void
+    {
+        $ticket = $frame->rotationTicket;
+        $acceptKey = $frame->initiatorAcceptKey();
+        if ($ticket === null || $acceptKey === null) {
+            return;
+        }
+
+        $this->sendToUser(
+            HilosSignalConstants::HILOS_SESSION_ROTATE,
+            $acceptKey,
+            new SessionRotateSignalData($ticket),
+        );
+    }
+
+    /**
+     * Answers the action the frame finished, when somebody is waiting on it.
+     *
+     * The library deferred its own ack so that the answer would leave from behind the
+     * identity it announces (HIL-622), and since the split that identity is sent from here -
+     * so the answer is sent from here too.
+     *
+     * @param SessionStateSignalData $frame Session state that may end a tracked action
+     * @throws InvalidArgumentException When the reply signal cannot be named
+     * @throws InvalidFormatException When the outcome the frame carries cannot be read back
+     */
+    private function answerLibraryAction(SessionStateSignalData $frame): void
+    {
+        $action = $frame->action;
+        $requestId = $frame->requestId;
+        $acceptKey = $frame->initiatorAcceptKey();
+        if ($action === null || $requestId === null || $acceptKey === null) {
+            return;
+        }
+
+        $outcome = $frame->outcome;
+        $this->sendActionSuccess(
+            $acceptKey,
+            $action,
+            $requestId,
+            $outcome === null ? null : AuthFlowOutcome::fromArray($outcome),
+        );
+    }
+
+    /**
+     * Routes the one frame this agent is addressed by.
+     *
+     * @param AgentSignalData $data Agent signal wrapper with the inner payload to dispatch
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Agent signal name
+     * @throws AgentUnknownSignalException When signal name is not supported by this agent
+     * @throws InvalidArgumentException When a signal of the answer cannot be named
+     * @throws InvalidFormatException When a session-state outcome cannot be read back
+     * @throws LogicException On payload type mismatch
+     * @throws HilosException On database or runtime failure
+     */
+    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    {
+        if ($name !== HilosSignalConstants::HILOS_SESSION_STATE) {
+            throw new AgentUnknownSignalException($name);
+        }
+
+        if (!$data->data instanceof SessionStateSignalData) {
+            throw new LogicException(
+                HilosSignalConstants::HILOS_SESSION_STATE . ' payload must be ' . SessionStateSignalData::class,
+            );
+        }
+
+        $this->applySessionState($data->data);
+    }
+
+    /**
+     * Builds the identity half of a handshake response, reading the display name from this
+     * demo's own user table - the whole of what stayed behind when the sessions left
+     * (HIL-710). The clock is NOT filled here: the framework stamps it on the way out.
      *
      * The impersonator slots stay null: this demo has no impersonation, so the
      * only identity a session can carry is its own. A session with no user - the
@@ -133,7 +274,7 @@ final class PollAgent extends AbstractAgent
      * @return HandshakeResponseSignalData Handshake response for the session
      * @throws HilosException When the user lookup fails
      */
-    protected function handshakeResponseFor(?Session $session): HandshakeResponseSignalData
+    private function handshakeResponseFor(?Session $session): HandshakeResponseSignalData
     {
         $userId = $session?->userId;
         if ($userId === null) {
@@ -153,48 +294,6 @@ final class PollAgent extends AbstractAgent
     }
 
     /**
-     * Re-points one live connection's bound user through its runtime actions —
-     * the {@see HilosSessionHost} hook. A missing connection is a no-op.
-     *
-     * @param string $acceptKey Connection accept key to re-point
-     * @param ?int $userId User id to bind the connection to, or null for anonymous
-     * @throws HilosException On runtime failure
-     */
-    protected function bindConnectionUser(string $acceptKey, ?int $userId): void
-    {
-        Hilos::$rt->connections[$acceptKey]?->actions->bindUser($userId);
-    }
-
-    /**
-     * Writes one live connection's pending success ack — the {@see HilosSessionHost}
-     * hook. A missing connection is a no-op, handled inside the collection action.
-     *
-     * Nothing in this demo finishes an auth flow, so nothing marks an ack today.
-     * The hook is implemented rather than left to throw because the seam owns when
-     * it is called, and a demo that answered an error there would break the
-     * framework's own paths the day one is added.
-     *
-     * @param string $acceptKey Connection accept key to mark
-     * @param ?string $ack Ack the connection owes, or null to clear it
-     * @throws HilosException On runtime failure
-     */
-    protected function markConnectionAck(string $acceptKey, ?string $ack): void
-    {
-        Hilos::$rt->connections->actions->markAck($acceptKey, $ack);
-    }
-
-    /**
-     * Returns the poll handshake-response signal name the {@see HilosSessionHost}
-     * seam emits under; the frontend routes on this project constant.
-     *
-     * @return string Poll handshake-response signal name
-     */
-    protected function handshakeResponseSignalName(): string
-    {
-        return PollSignalConstants::HANDSHAKE_RESPONSE;
-    }
-
-    /**
      * Unregisters the closed WebSocket connection from runtime presence.
      *
      * @param WebSocketCloseSignalDTO $data Closed WebSocket connection
@@ -205,57 +304,6 @@ final class PollAgent extends AbstractAgent
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
         Hilos::$rt->connections[$data->acceptKey]?->actions->unregister();
-    }
-
-    /**
-     * Routes a CLI command sent to this agent.
-     *
-     * {@see CliCommands::ADMIN_CREATE} is the only one mounted here; anything else gets an
-     * error reply rather than silence, because the socket parks the caller until it is
-     * answered.
-     *
-     * @param CommandRequestDTO $data Command request payload
-     * @param string $source Signal source (unused)
-     * @param string $name Signal name (unused)
-     * @throws InvalidArgumentException When the reply carries an empty correlation id
-     */
-    public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
-    {
-        if ($data->command === CliCommands::ADMIN_CREATE) {
-            $this->handleAdminCreateCommand($data);
-
-            return;
-        }
-
-        $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
-    }
-
-    /**
-     * Makes one user an administrator, minting the row when the session carries none - this
-     * demo's half of {@see HilosSessionHost::handleAdminCreateCommand()}.
-     *
-     * The session bind around this call is the framework's; all that happens here is the
-     * user table, which is this worker's truth source.
-     *
-     * @param ?int $userId User the session carries, or null when it carries none
-     * @return int Id of the user that is now an administrator
-     * @throws ItemNotFoundForUpdateException When the id names no user row
-     * @throws HilosException On database failure while minting or flagging
-     */
-    protected function ensureAdminUser(?int $userId): int
-    {
-        if ($userId === null) {
-            return (int)Hilos::$db->users->actions->registerAdmin()->id;
-        }
-
-        $user = Hilos::$db->users[$userId] ?? null;
-        if ($user === null) {
-            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
-        }
-
-        $user->actions->setAdmin(true);
-
-        return $userId;
     }
 
     /**

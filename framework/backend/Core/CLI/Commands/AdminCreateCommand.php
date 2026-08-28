@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
-use Hilos\Auth\Session\HilosSessionHost;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\EnvConstants;
@@ -26,7 +26,7 @@ use Hilos\Users\AdminCommandConstants;
  * all the same, so an operator reads both commands' failures alike.
  *
  * Database-free ({@see DatabaseFreeCommand}) for the same reason its neighbours are: every
- * row it causes is written by the agent that answers it ({@see HilosSessionHost}), which is
+ * row it causes is written by the agent that answers it ({@see AbstractSessionsLibraryAgent}), which is
  * also the only process holding the session's live sockets.
  */
 class AdminCreateCommand implements CommandInterface, DatabaseFreeCommand

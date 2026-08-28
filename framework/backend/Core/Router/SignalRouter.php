@@ -8,6 +8,7 @@ use Hilos\API\Router\Exception\GroupSubscriptionNotFoundException;
 use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
 use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\Cluster\Placement\AgentLocationKind;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\BrokenSignalPayloadDtoException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
@@ -247,7 +248,10 @@ class SignalRouter
     /**
      * Returns the fallback owner for WebSocket lifecycle service signals.
      *
-     * Covers HANDSHAKE, CONNECTION_CLOSE, and WEBSOCKET/CRON.
+     * Covers CONNECTION_CLOSE and WEBSOCKET/CRON, and HANDSHAKE only in a project that
+     * registers no sessions library: the handshake is the one of the three that resolves a
+     * session, so where a library owns sessions it is addressed there instead (HIL-710).
+     * The close stays here because the connection row it ends is the project's.
      *
      * @return ?string Fallback agent type
      */
@@ -277,8 +281,11 @@ class SignalRouter
             return $this->nonEmptyAgentTypes([$this->getDefaultDaemonCronAgentType()]);
         }
 
+        if ($source === SignalSource::WEBSOCKET && $signalTypeValue === SignalTypeConstants::HANDSHAKE) {
+            return $this->nonEmptyAgentTypes([$this->handshakeAgentType()]);
+        }
+
         if ($source === SignalSource::WEBSOCKET && in_array($signalTypeValue, [
-            SignalTypeConstants::HANDSHAKE,
             SignalTypeConstants::CONNECTION_CLOSE,
             SignalTypeConstants::CRON,
         ], true)) {
@@ -286,6 +293,29 @@ class SignalRouter
         }
 
         return [];
+    }
+
+    /**
+     * Names the agent a handshake is delivered to.
+     *
+     * Asked of the registry rather than of a project hook, because registering the sessions
+     * library IS the declaration (HIL-710): a project that has one wants its handshakes
+     * resolved there, and one that has none - the cluster demo - keeps the lifecycle owner
+     * it always had. A second place to say so could only ever disagree with the first.
+     *
+     * Addressing the handshake to the library is also what keeps the move free: the session
+     * is resolved where it lives, so a page load costs no hop it did not cost before.
+     *
+     * @return ?string Agent type the handshake is routed to, or null when neither is declared
+     */
+    private function handshakeAgentType(): ?string
+    {
+        $agents = $this->hilosClass()::AGENTS;
+        if (array_key_exists(HilosAgentType::HILOS_SESSIONS_LIBRARY, $agents)) {
+            return HilosAgentType::HILOS_SESSIONS_LIBRARY;
+        }
+
+        return $this->getDefaultWebSocketLifecycleAgentType();
     }
 
     /**

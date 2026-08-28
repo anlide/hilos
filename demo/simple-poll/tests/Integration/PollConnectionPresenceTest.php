@@ -141,18 +141,14 @@ final class PollConnectionPresenceTest extends IntegrationTestCase
         try {
             $token = RandomHelper::hex(16);
 
-            new PollAgent()->onSignalHandshake(
-                new WebSocketHandshakeSignalDTO(
-                    headers: [],
-                    acceptKey: 'poll-ak-handshake',
-                    cookies: [],
-                    clientIp: '127.0.0.1',
-                    queryParams: RequestQueryParams::empty(),
-                    sessionToken: $token,
-                ),
-                '',
-                '',
-            );
+            $this->deliverHandshake(new PollAgent(), new WebSocketHandshakeSignalDTO(
+                headers: [],
+                acceptKey: 'poll-ak-handshake',
+                cookies: [],
+                clientIp: '127.0.0.1',
+                queryParams: RequestQueryParams::empty(),
+                sessionToken: $token,
+            ));
 
             $connection = Hilos::$rt->connections['poll-ak-handshake'];
             $this->assertNotNull($connection);

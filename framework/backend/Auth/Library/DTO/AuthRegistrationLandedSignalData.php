@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Auth\Library\DTO;
 
 use Hilos\Auth\Flow\AuthFlowOutcome;
-use Hilos\Auth\Session\HilosSessionHostInterface;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
@@ -17,7 +17,7 @@ use Hilos\Core\Router\SignalDataInterface;
  * sessions entirely, can be parked on the same identifier. Only the holder sees them - the
  * waits are its runtime rows, the sockets are its connections - so the library reports the
  * outcome and names the losers, and the holder converges them
- * ({@see HilosSessionHostInterface::convergeRegistration()}).
+ * ({@see AbstractSessionsLibraryAgent}).
  */
 final class AuthRegistrationLandedSignalData extends BaseDTO implements SignalDataInterface
 {

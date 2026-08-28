@@ -480,4 +480,11 @@ Answer `SUBSCRIPTION_PAGE_ERROR`. An empty list is a claim about the data.
   subscription answers with everything the page renders.
 - `framework/backend/Auth/Library/AbstractUsersLibraryAgent.php` — the first
   entity library in code (HIL-622): the users library, its command groups, and
-  the frames it hands a finished sign-in to the session holder with.
+  the frames it hands a finished sign-in to the sessions library with.
+- `framework/backend/Auth/Library/AbstractSessionsLibraryAgent.php` — the second
+  (HIL-710): the sessions library, which owns the session set and the handshake
+  that opens it. It is the worked example of *one entity, one library* against a
+  neighbour — sessions left the users library rather than joining it, because they
+  are hot where users are cold and the two have to be placed apart. What it does
+  NOT own is the connection rows, so it speaks to the project holding them in two
+  frames: `hilos_session_state` out, `hilos_session_rebind` back.

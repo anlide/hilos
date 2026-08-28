@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Auth\Library\DTO;
 
 use Hilos\Auth\Flow\AuthFlowOutcome;
-use Hilos\Auth\Session\HilosSessionHostInterface;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -17,7 +17,7 @@ use Hilos\Core\Router\SignalDataInterface;
  * The end of every command that leaves a person signed in - password login, magic link,
  * phone code, passkey, a proven address. The library has done the proving and knows who the
  * person is; the holder owns the session row and the sockets standing on it, so the last two
- * steps belong to it ({@see HilosSessionHostInterface::authenticateSession()}).
+ * steps belong to it ({@see AbstractSessionsLibraryAgent}).
  *
  * The ack and the answer travel together for the sake of ORDER: the holder marks the
  * session, authenticates it and only then sends the reply, because a client told "done"

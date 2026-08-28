@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Demo\SimplePoll;
 
 use Demo\SimplePoll\Agents\Hilos\DemoHilosAgent;
+use Demo\SimplePoll\Agents\Hilos\SessionsLibraryAgent;
 use Demo\SimplePoll\Agents\PollAgent;
 use Demo\SimplePoll\Browser\PollBrowserContext;
 use Demo\SimplePoll\Browser\PollBrowserRef;
 use Demo\SimplePoll\Browser\Table\UserDetailBrowserTable;
 use Demo\SimplePoll\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\SimplePoll\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\SimplePoll\Core\Agent\Daemon\PollAgentDaemon;
 use Demo\SimplePoll\Database\PollDbContext;
 use Demo\SimplePoll\Database\Settings\PollSettingsCatalog;
@@ -28,6 +30,7 @@ use Demo\SimplePoll\Runtime\View\Context\PollRtContext;
 use Demo\SimplePoll\Tables\HilosUser\HilosUsersTable;
 use Demo\SimplePoll\Tables\PollTableContext;
 use Hilos\Constants\HilosPageRouteParams;
+use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Context\BrowserContext;
@@ -86,6 +89,11 @@ final class Hilos extends HilosFacade
         PollAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => PollAgent::class,
             AgentRegistryKey::DAEMON => PollAgentDaemon::class,
+        ],
+        SessionsLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => SessionsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => SessionsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         DemoHilosAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosAgent::class,

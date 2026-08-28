@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Constants;
 
-use Hilos\Auth\Session\HilosSessionHost;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
@@ -240,7 +240,7 @@ final class CliCommands
      * SESSION by its cookie token instead, so the operator can point at the browser in front
      * of him rather than at an id he has no admin surface to look up.
      *
-     * Routed to the project's session host - the agent mixing in {@see HilosSessionHost} -
+     * Routed to the sessions library - {@see AbstractSessionsLibraryAgent} -
      * because the operation ends in a session bind, and the session's runtime connections and
      * handshake payload belong there. A project mounts it by naming it in that agent's
      * AGENT_COMMANDS; one that does not simply never answers it.

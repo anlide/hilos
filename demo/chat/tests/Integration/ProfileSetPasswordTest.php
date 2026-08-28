@@ -142,7 +142,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
         try {
             $userId = Hilos::$db->users->actions->createWithName('Magic User')->id;
             $this->insertVerifiedMagicLink($userId, $email);
-            $agent->authenticateSession($token, $userId, null);
+            $this->authenticateSession($agent, $token, $userId, null);
 
             new ProfilePage($agent)->onAction(
                 'set-add-ak',
@@ -179,7 +179,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
 
         try {
             $userId = Hilos::$db->users->actions->createWithName('Phone User')->id;
-            $agent->authenticateSession($token, $userId, null);
+            $this->authenticateSession($agent, $token, $userId, null);
 
             $rejected = false;
             try {
@@ -235,18 +235,14 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
     private function openSession(ChatAgent $agent, string $acceptKey): string
     {
         $token = RandomHelper::hex(16);
-        $agent->onSignalHandshake(
-            new WebSocketHandshakeSignalDTO(
-                headers: [],
-                acceptKey: $acceptKey,
-                cookies: [],
-                clientIp: '127.0.0.1',
-                queryParams: RequestQueryParams::empty(),
-                sessionToken: $token,
-            ),
-            '',
-            '',
-        );
+        $this->deliverHandshake($agent, new WebSocketHandshakeSignalDTO(
+            headers: [],
+            acceptKey: $acceptKey,
+            cookies: [],
+            clientIp: '127.0.0.1',
+            queryParams: RequestQueryParams::empty(),
+            sessionToken: $token,
+        ));
         ExecutionContext::setCurrentAcceptKey($acceptKey);
 
         return $token;

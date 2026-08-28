@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Feature;
 
-use Hilos\Auth\Session\HilosSessionHostInterface;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Table\Definition\TableDefinition;
 
@@ -16,6 +15,15 @@ use Hilos\Core\Table\Definition\TableDefinition;
  * skipping one of those leaves the half-activated state this whole registry exists to make
  * impossible, so every such obligation is written here, next to the feature that owns it,
  * and checked instead of remembered.
+ *
+ * One obligation is written twice over, and the difference is direction. An agent in
+ * `$requiredAgents` exists for its feature and nothing else, so BOTH questions are worth
+ * asking: declaring the feature without it, and registering it without the feature. An agent
+ * in `$requiredSharedAgents` is required just as strictly, but a project may have its own
+ * reason to run it - the sessions library is the case the distinction was written for
+ * (HIL-710): sign-in cannot work without it, and the two demos with no login at all still
+ * carry sessions. Asking the second question about it would refuse those projects for
+ * having what they have always had.
  *
  * The fields split by WHEN they can be checked, not by importance:
  * - the first group is visible in the facade constants alone, so the startup activation
@@ -29,7 +37,10 @@ final readonly class FeatureRequirements
 {
     /**
      * @param list<class-string<AbstractPage>> $requiredPages Framework page base classes a project page must extend
-     * @param list<string> $requiredAgents Agent types that must carry both a worker and a daemon class
+     * @param list<string> $requiredAgents Agent types that must carry both a worker and a daemon class,
+     *     and which exist for this feature alone - registering one without declaring the feature is a gap
+     * @param list<string> $requiredSharedAgents Agent types the feature equally cannot work without, but
+     *     which a project may legitimately register on its own; only the missing direction is checked
      * @param list<class-string<TableDefinition>> $requiredTables Framework table classes expected among TABLES
      * @param array<class-string<AbstractPage>, ?class-string<TableDefinition>> $requiredPageTables Page
      *     base class to the table it must be bound to, or null when any binding satisfies it
@@ -40,11 +51,11 @@ final readonly class FeatureRequirements
      *     demo test)
      * @param list<string> $requiredCliCommands CLI command names the feature is driven by (checked by the demo test)
      * @param bool $requiresPresenceSource Whether a runtime collection must report user presence (checked by the demo test)
-     * @param bool $requiresSessionHost Whether some agent in AGENTS must implement {@see HilosSessionHostInterface}
      */
     public function __construct(
         public array $requiredPages = [],
         public array $requiredAgents = [],
+        public array $requiredSharedAgents = [],
         public array $requiredTables = [],
         public array $requiredPageTables = [],
         public ?string $requiredCatalogConstant = null,
@@ -52,7 +63,6 @@ final readonly class FeatureRequirements
         public array $requiredDbTables = [],
         public array $requiredCliCommands = [],
         public bool $requiresPresenceSource = false,
-        public bool $requiresSessionHost = false,
     ) {
     }
 }

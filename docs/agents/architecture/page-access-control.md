@@ -296,15 +296,23 @@ one rather than a payload carrying either, because they are two different
 questions and a merged shape would make every receiving worker first establish
 which of the two it is holding.
 
-**The seam is `HilosSessionHost::deauthenticateSession`,** in the loop that already
-re-points every connection of the session to nobody and re-sends it the anonymous
-handshake. That one seam is every way a live session loses its person — the shell
-logout, the session-expiry drop, the account-merge force-logout, the recovery drop
-of the other sessions — so all four behave identically and no project code
-announces anything. The announcement is queued ONCE after that loop, not per
-connection (the frame already reaches every worker), and AFTER the runtime writes
-rather than before: both travel one FIFO, so every worker applies "this connection
-belongs to nobody" before it re-judges.
+**The seam is one frame, `hilos_session_state`,** and the project handler that
+applies it — `ChatAgent::applySessionState()` and its twin in every other project.
+Since HIL-710 the session itself belongs to `AbstractSessionsLibraryAgent`, which
+runs in a process of its own and cannot write the connection rows: it concludes
+what the session has become and says so in that one frame, whatever brought it
+about — the shell sign-out, the session-expiry drop, the account-merge force-logout,
+the recovery drop of the other sessions. So all four still behave identically, but
+through one frame rather than through one method, and the announcement is made by
+the project because the rows it is judged against are the project's.
+
+**A project writes that handler once and never announces anything again.** Inside
+it the announcement is queued ONCE after the loop over the frame's accept keys, not
+per connection (the frame already reaches every worker), and AFTER the runtime
+writes rather than before: both travel one FIFO, so every worker applies "this
+connection belongs to nobody" before it re-judges. The same handler picks the other
+criterion when the frame names a user — a sign-in ADDS the identity, so
+`forUser($userId)` is the one that matches there.
 
 **The reach is node-local, and that is the whole operation's reach.** The other half of a
 rights change — the handshake re-send — is delivered by this node's WebSocket server, so a

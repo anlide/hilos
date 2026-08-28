@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
-use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Entity\Item\User as EntityUser;
@@ -46,7 +45,6 @@ use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
-use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -457,7 +455,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
         $own = Hilos::$db->users->actions->createWithName('own');
         $ownUserId = (int)$own->id;
         Hilos::$db->identities->createPasswordIdentity($ownUserId, $ownEmail, self::PASSWORD);
-        $agent->authenticateSession(
+        $this->authenticateSession($agent, 
             Hilos::$rt->connections['signed-in-ak']->sessionToken,
             $ownUserId,
             'signed-in-ak',
@@ -500,11 +498,11 @@ final class MainPageRegisterTest extends IntegrationTestCase
         try {
             $this->ageReservationOut($email);
 
-            $agent->onSignalCron(
-                new CronSignalDTO(ChatCronConstants::SWEEP_REGISTRATION_RESERVATIONS),
-                '',
-                ChatCronConstants::SWEEP_REGISTRATION_RESERVATIONS,
-            );
+            // The sweep is the sessions library's own tick rule since HIL-710, not a cron
+            // name this demo schedules; the rollback it produces reaches the tabs on the
+            // frames that follow it.
+            $this->sessionsLibrary()->onTick();
+            $this->deliverLibraryFrames($agent);
 
             $this->assertSame(0, $this->reservationRowCount($email), 'The expired hold is deleted');
             $this->assertNull(
@@ -945,7 +943,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
             $ownUserId = (int)$own->id;
             Hilos::$db->identities->createPasswordIdentity($ownUserId, $this->uniqueEmail(), self::PASSWORD);
 
-            $agent->authenticateSession($token, $ownUserId, 'sign-in-wait-ak');
+            $this->authenticateSession($agent, $token, $ownUserId, 'sign-in-wait-ak');
 
             // The sign-in rotated the token (HIL-582): the row is the same one, and it
             // answers to the name the connection was re-pointed onto.
@@ -1146,18 +1144,14 @@ final class MainPageRegisterTest extends IntegrationTestCase
     private function openSession(ChatAgent $agent, string $acceptKey, ?string $sessionToken = null): string
     {
         $token = $sessionToken ?? RandomHelper::hex(16);
-        $agent->onSignalHandshake(
-            new WebSocketHandshakeSignalDTO(
-                headers: [],
-                acceptKey: $acceptKey,
-                cookies: [],
-                clientIp: '127.0.0.1',
-                queryParams: RequestQueryParams::empty(),
-                sessionToken: $token,
-            ),
-            '',
-            '',
-        );
+        $this->deliverHandshake($agent, new WebSocketHandshakeSignalDTO(
+            headers: [],
+            acceptKey: $acceptKey,
+            cookies: [],
+            clientIp: '127.0.0.1',
+            queryParams: RequestQueryParams::empty(),
+            sessionToken: $token,
+        ));
         ExecutionContext::setCurrentAcceptKey($acceptKey);
 
         return $token;

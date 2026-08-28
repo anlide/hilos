@@ -4,22 +4,19 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
-use Hilos\Auth\Session\HilosSessionHost;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Core\Agent\AbstractAgent;
-use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
-use Hilos\Database\View\Item\Session;
 use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
-use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Users\AdminCommandConstants;
 
 /**
@@ -295,78 +292,19 @@ final class AdminCreateRouteTestDbContext extends HilosDbContext
 }
 
 /**
- * The framework half of a session host, standing in for a project agent: it mounts the
- * trait, routes the one command, and holds no connections of its own.
+ * The framework half of the sessions library, standing in for a project's concrete subclass:
+ * it inherits the command route whole and holds no connections of its own.
  *
- * A base rather than two copies because the case needs the SAME host twice - once with the
- * minting seam wired and once without - and the difference is exactly the seam.
+ * A base rather than two copies because the case needs the SAME library twice - once with
+ * the minting seam wired and once without - and the difference is exactly the seam.
  */
-abstract class AdminCreateRouteTestHost extends AbstractAgent
+abstract class AdminCreateRouteTestHost extends AbstractSessionsLibraryAgent
 {
-    use HilosSessionHost;
-
-    public const string AGENT_TYPE = 'adminCreateRouteTest';
-
-    public function onStop(): void
-    {
-    }
-
-    /**
-     * Routes the one command this stand-in hosts, exactly as a project agent does.
-     *
-     * @param CommandRequestDTO $data Command request payload
-     * @param string $source Signal source (unused)
-     * @param string $name Signal name (unused)
-     * @throws InvalidArgumentException When the reply carries an empty correlation id
-     */
-    public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
-    {
-        $this->handleAdminCreateCommand($data);
-    }
-
-    /**
-     * Answers the identity of a session without a user store to read it from.
-     *
-     * @param ?Session $session Session to describe, or null for an anonymous response
-     * @return HandshakeResponseSignalData Handshake response for the session
-     */
-    protected function handshakeResponseFor(?Session $session): HandshakeResponseSignalData
-    {
-        return new HandshakeResponseSignalData(selfId: $session?->userId, selfAdmin: true);
-    }
-
-    /**
-     * Re-points one live connection; this stand-in holds none, so nothing is written.
-     *
-     * @param string $acceptKey Connection accept key to re-point
-     * @param ?int $userId User id to bind the connection to, or null for anonymous
-     */
-    protected function bindConnectionUser(string $acceptKey, ?int $userId): void
-    {
-    }
-
-    /**
-     * Marks one live connection's ack; this stand-in holds none, so nothing is written.
-     *
-     * @param string $acceptKey Connection accept key to mark
-     * @param ?string $ack Ack the connection owes, or null to clear it
-     */
-    protected function markConnectionAck(string $acceptKey, ?string $ack): void
-    {
-    }
-
-    /**
-     * @return string Signal name the handshake response would go out under
-     */
-    protected function handshakeResponseSignalName(): string
-    {
-        return 'adminCreateRouteTestHandshakeResponse';
-    }
 }
 
 /**
- * Session host with the minting seam wired, standing in for a project binding: it records
- * what the seam was asked and names a user instead of writing a row.
+ * Sessions library with the minting seam wired, standing in for a project binding: it
+ * records what the seam was asked and names a user instead of writing a row.
  */
 final class AdminCreateRouteTestAgent extends AdminCreateRouteTestHost
 {
@@ -403,7 +341,7 @@ final class AdminCreateRouteTestAgent extends AdminCreateRouteTestHost
 }
 
 /**
- * Session host of a project that never wired the minting seam - the framework default,
+ * Sessions library of a project that never wired the minting seam - the framework default,
  * unchanged.
  */
 final class AdminCreateRouteTestUnwiredAgent extends AdminCreateRouteTestHost

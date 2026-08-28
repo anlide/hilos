@@ -4,7 +4,7 @@
 # Regenerate with CODESTYLE_BASELINE_UPDATE=1 on the framework unit run.
 THROWS-PROPAGATION demo/chat/backend/AI/Agent/ChatAiAgentFactory.php 1 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Agents/BotAgent.php 2 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Agents/ChatAgent.php 9 # HIL-449
+THROWS-PROPAGATION demo/chat/backend/Agents/ChatAgent.php 6 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Agents/Hilos/DemoHilosGuardianAgent.php 1 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Agents/ModeratorAgent.php 1 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/CLI/Commands/EchoCommand.php 5 # HIL-449

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
-use Demo\Chat\Agents\DTO\DismissSessionAckActionDTO;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
@@ -15,6 +14,7 @@ use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
 use Hilos\Auth\Library\DTO\RegisterActionDTO;
 use Hilos\Auth\Library\DTO\RequestPasswordResetActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -72,11 +72,20 @@ final class SessionAckTest extends IntegrationTestCase
     private const int TTL_SECONDS = 900;
 
     /**
-     * A confirmed registration marks every live socket of its session, and no other.
+     * A confirmed registration marks the socket that earned it, hands the mark to the
+     * rotation that is about to end that socket, and tells nobody else.
+     *
+     * The mark used to be written to every live socket of the session before the sign-in
+     * went out, and to the initiator a second time with it. Since HIL-710 the two are one
+     * frame, which names the socket that logged in and no other - and nothing is lost by it,
+     * because the session's other tabs are exactly the ones the rotation is dropping
+     * (HIL-582). What carries the sentence across that gap is the rotation row, not their
+     * rows: they come back on the new token owing nothing, and the browser is told by the
+     * socket that replaces the initiator's.
      *
      * @throws HilosException When setup or registration handling fails
      */
-    public function testConfirmingARegistrationMarksEveryLiveSocketOfItsSession(): void
+    public function testConfirmingARegistrationMarksTheSocketThatEarnedItAndNoOther(): void
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
@@ -90,15 +99,19 @@ final class SessionAckTest extends IntegrationTestCase
             $this->confirm($agent, 'ack-tab-a', $email, self::CODE);
 
             $this->assertSame(SessionAck::REGISTERED, $this->ackOf('ack-tab-a'));
-            // The WRITE reaches the other tab of the same browser; whether that tab
-            // lives to show it is the login rotation's business, not this seam's —
-            // HIL-582 drops every socket but the initiator's, and they come back on
-            // the new token owing nothing. What is asserted here is the reach.
+
+            $rotation = $this->announcedRotation();
             $this->assertSame(
                 SessionAck::REGISTERED,
-                $this->ackOf('ack-tab-b'),
-                'The mark is written to every live socket of the session',
+                $rotation->pendingAck,
+                'The sentence travels on the rotation, which is what survives the dropped sockets',
             );
+            $this->assertContains(
+                'ack-tab-b',
+                $rotation->acceptKeysToDrop,
+                'The other tab of the same browser is dropped by the rotation, not marked',
+            );
+
             $this->assertNull($this->ackOf('ack-stranger'), 'Nobody else hears about it');
         } finally {
             $this->cleanUp();
@@ -260,7 +273,12 @@ final class SessionAckTest extends IntegrationTestCase
         $this->openSession($agent, 'ack-dismiss-stranger');
 
         try {
-            $agent->markSessionAck($token, SessionAck::SIGNED_IN);
+            // Put on the sockets the way a finished flow leaves it. The mark itself is
+            // written by the sessions library and is not what this case is about - what is,
+            // is that ONE press clears it everywhere.
+            foreach (['ack-dismiss-a', 'ack-dismiss-b'] as $marked) {
+                Hilos::$rt->connections->actions->markAck($marked, SessionAck::SIGNED_IN);
+            }
             $this->assertSame(SessionAck::SIGNED_IN, $this->ackOf('ack-dismiss-a'));
             $this->assertSame(SessionAck::SIGNED_IN, $this->ackOf('ack-dismiss-b'));
 
@@ -346,15 +364,26 @@ final class SessionAckTest extends IntegrationTestCase
     /**
      * Returns the one rotation the login just announced.
      *
+     * Insists on there being exactly one, rather than taking whichever comes first. The
+     * store is per process and shared by every case in the run, so "the first row" is
+     * whatever the last case to leave one behind put there - which is how this read once
+     * answered with another flow's ack and failed a case that was testing something else.
+     * {@see self::bootAgent()} empties the store so the premise holds; this says so out
+     * loud, and a future leak fails here with its own name instead of quietly returning
+     * a stranger's row.
+     *
      * @return HilosSessionRotation The pending rotation standing in the runtime store
      */
     private function announcedRotation(): HilosSessionRotation
     {
+        $announced = [];
         foreach (Hilos::$rt->hilosSessionRotations as $rotation) {
-            return $rotation;
+            $announced[] = $rotation;
         }
 
-        $this->fail('The login announced no rotation');
+        $this->assertCount(1, $announced, 'The login announces exactly one rotation');
+
+        return $announced[0];
     }
 
     /**
@@ -370,6 +399,13 @@ final class SessionAckTest extends IntegrationTestCase
         RtTruthSourceRegistry::register(StateRegistrationWaiter::RT_COLLECTION, true, self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(StateRecoveryWaiter::RT_COLLECTION, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
+        // Rotations too, and for a sharper reason than the connections: the store outlives
+        // the case that filled it, nothing here trades a ticket, and the sign-in cases of
+        // the other classes leave theirs behind. Cleaning up after ourselves is not enough
+        // when we are not the ones who made the mess.
+        foreach (Hilos::$rt->hilosSessionRotations as $rotation) {
+            Hilos::$rt->hilosSessionRotations->actions->forget($rotation->ticket);
+        }
 
         ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
 
@@ -404,19 +440,15 @@ final class SessionAckTest extends IntegrationTestCase
         ?string $inheritedAck = null,
     ): string {
         $token = $sessionToken ?? RandomHelper::hex(16);
-        $agent->onSignalHandshake(
-            new WebSocketHandshakeSignalDTO(
-                headers: [],
-                acceptKey: $acceptKey,
-                cookies: [],
-                clientIp: '127.0.0.1',
-                queryParams: RequestQueryParams::empty(),
-                sessionToken: $token,
-                inheritedAck: $inheritedAck,
-            ),
-            '',
-            '',
-        );
+        $this->deliverHandshake($agent, new WebSocketHandshakeSignalDTO(
+            headers: [],
+            acceptKey: $acceptKey,
+            cookies: [],
+            clientIp: '127.0.0.1',
+            queryParams: RequestQueryParams::empty(),
+            sessionToken: $token,
+            inheritedAck: $inheritedAck,
+        ));
         ExecutionContext::setCurrentAcceptKey($acceptKey);
 
         return $token;
@@ -534,18 +566,21 @@ final class SessionAckTest extends IntegrationTestCase
     /**
      * Dispatches the Continue button's dismiss action for one connection.
      *
-     * @param ChatAgent $agent Agent owning the action
+     * @param ChatAgent $agent Agent told what the session became
      * @param string $acceptKey Acting connection accept key
-     * @throws HilosException When the dismiss handler fails
+     * @throws HilosException When the dismiss handler or the frame that follows it fails
      */
     private function dismiss(ChatAgent $agent, string $acceptKey): void
     {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
-        $agent->onAgentAction(
+        // The Continue button is the sessions library's action since HIL-710 - what it
+        // clears is a session - and the chat agent learns of it on the frame that follows.
+        $this->sessionsLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_DISMISS_SESSION_ACK,
             new DismissSessionAckActionDTO(),
         );
+        $this->deliverLibraryFrames($agent);
     }
 
     /**

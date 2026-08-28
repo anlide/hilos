@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Users;
 
-use Hilos\Auth\Session\HilosSessionHost;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\CliCommands;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\CLI\Commands\AbstractSetAdminCommand;
@@ -26,7 +26,7 @@ use Hilos\Core\CLI\Commands\AdminCreateCommand;
  * one: it addresses a session ({@see self::FIELD_SESSION_TOKEN}) instead of a user id and
  * adds {@see self::FIELD_CREATED} to its reply, but the user id and the flag it answers with
  * mean exactly what the grant's do. Its halves are {@see AdminCreateCommand} and
- * {@see HilosSessionHost}.
+ * {@see AbstractSessionsLibraryAgent}.
  */
 final class AdminCommandConstants
 {

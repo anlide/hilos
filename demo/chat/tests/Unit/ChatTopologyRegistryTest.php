@@ -13,9 +13,7 @@ use Demo\Chat\Core\Router\DTO\AccountMergeSignalData;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Agents\BotAgent;
-use Demo\Chat\Agents\DTO\DismissSessionAckActionDTO;
 use Demo\Chat\Agents\DTO\ImpersonateStopActionDTO;
-use Demo\Chat\Agents\DTO\LogoutActionDTO;
 use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\CLI\ChatCliManager;
 use Demo\Chat\Hilos;
@@ -63,6 +61,10 @@ use Hilos\Backup\BackupConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
+use Hilos\Auth\Session\DTO\LogoutActionDTO;
+use Hilos\Auth\Session\DTO\SessionRebindSignalData;
+use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Mail\DTO\MailSendSignalData;
@@ -189,8 +191,11 @@ final class ChatTopologyRegistryTest extends TestCase
             AgentType::HILOS_AUTH_CODE,
         ], $nodeScoped);
 
-        // Delivery shards: one instance per shard index cluster-wide, on the node policy picks.
+        // The sessions library and the delivery shards: one instance cluster-wide (per shard
+        // index, for the shards), on the node policy picks. Sessions are placed rather than
+        // pinned because every handshake touches them, and the leader has enough to do.
         $this->assertSame([
+            HilosAgentType::HILOS_SESSIONS_LIBRARY,
             AgentType::HILOS_MAIL,
             AgentType::HILOS_SMS,
             AgentType::HILOS_PUSH,
@@ -354,15 +359,17 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame([
             ChatSignalConstants::BOT_MESSAGE => AgentType::CHAT,
             ChatSignalConstants::ACCOUNT_MERGE_REQUEST => AgentType::CHAT,
-            HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AgentType::CHAT,
-            HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED => AgentType::CHAT,
-            HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED => AgentType::CHAT,
-            HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED => AgentType::CHAT,
-            HilosSignalConstants::HILOS_AUTH_REGISTRATION_ABANDONED => AgentType::CHAT,
-            HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_MOVED => AgentType::CHAT,
-            HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => AgentType::CHAT,
+            HilosSignalConstants::HILOS_SESSION_STATE => AgentType::CHAT,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_ABANDONED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_MOVED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_SESSION_REBIND => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             ChatSignalConstants::BOT_AGENT_START => AgentType::BOT,
             HilosSignalConstants::BACKUP_AGENT_CREATE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_DELETE => AgentType::HILOS_BACKUP,
@@ -388,6 +395,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatCommandConstants::IMPERSONATE_START => AgentType::CHAT,
             ChatCommandConstants::IMPERSONATE_STOP => AgentType::CHAT,
             ChatCommandConstants::ACCOUNT_MERGE => AgentType::CHAT,
+            CliCommands::ADMIN_CREATE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             CliCommands::NOTIFICATION_TEST_EMIT => AgentType::HILOS_INDEX,
             CliCommands::PROTECTED_MODE_TEST_ENTER => AgentType::HILOS_INDEX,
             CliCommands::PROTECTED_MODE_TEST_LEAVE => AgentType::HILOS_INDEX,
@@ -486,6 +494,9 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame([
             ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
             ChatSignalConstants::ACCOUNT_MERGE_REQUEST => AccountMergeSignalData::class,
+            HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
+            HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
             HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED => AuthRegistrationLandedSignalData::class,
             HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED => AuthRecoveryGrantedSignalData::class,
@@ -493,8 +504,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_ABANDONED => AuthRegistrationAbandonedSignalData::class,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_MOVED => AuthRegistrationWaitMovedSignalData::class,
             HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => AuthRecoveryWaitMovedSignalData::class,
-            HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
-            HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
+            HilosSignalConstants::HILOS_SESSION_REBIND => SessionRebindSignalData::class,
             ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
@@ -516,8 +526,6 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testComputedAgentActionRoutesMatchChatAgentOwnership(): void
     {
         $this->assertSame([
-            ChatSignalConstants::LOGOUT => AgentType::CHAT,
-            HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => AgentType::CHAT,
             ChatSignalConstants::IMPERSONATE_STOP => AgentType::CHAT,
             HilosSignalConstants::HILOS_DETECT_IDENTIFIER => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LOGIN => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -540,6 +548,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_LOGOUT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => HilosAgentType::HILOS_SESSIONS_LIBRARY,
         ], Hilos::getAgentActionRoutes());
     }
 
@@ -555,8 +565,6 @@ final class ChatTopologyRegistryTest extends TestCase
         }
 
         $this->assertSame([
-            ChatSignalConstants::LOGOUT => LogoutActionDTO::class,
-            HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
             ChatSignalConstants::IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
             HilosSignalConstants::HILOS_DETECT_IDENTIFIER => DetectIdentifierActionDTO::class,
             HilosSignalConstants::HILOS_LOGIN => LoginActionDTO::class,
@@ -579,6 +587,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM => PasskeyRegisterConfirmActionDTO::class,
             HilosSignalConstants::HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS => PasskeyDiscoverableLoginOptionsActionDTO::class,
             HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM => PasskeyLoginConfirmActionDTO::class,
+            HilosSignalConstants::HILOS_LOGOUT => LogoutActionDTO::class,
+            HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
         ], $declaredRoutes);
         $this->assertSame($declaredRoutes, Hilos::getAgentActionDtoRoutes());
     }

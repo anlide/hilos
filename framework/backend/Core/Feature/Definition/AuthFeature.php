@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Feature\Definition;
 
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
-use Hilos\Auth\Session\HilosSessionHostInterface;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRequirements;
@@ -28,11 +28,13 @@ use Hilos\Runtime\View\Context\RtContext;
 /**
  * The sign-in surface: its commands, the library that owns them, and the tables they write.
  *
- * The project owes this feature two things. One is the library agent pair
- * ({@see AbstractUsersLibraryAgent}), which owns the user set and executes every command of
- * the surface. The other is an agent that holds sessions - and that one is not named in a
- * constant but FOUND: an agent implementing {@see HilosSessionHostInterface} already is the
- * holder, and a second declaration beside that fact could only ever disagree with it.
+ * The project owes this feature two library agent pairs, and nothing else. One is
+ * {@see AbstractUsersLibraryAgent}, which owns the user set and executes every command of
+ * the surface; the other is {@see AbstractSessionsLibraryAgent}, which owns the sessions
+ * those commands end in. Both are named by agent type like every other obligation in the
+ * registry - until HIL-710 the session holder was FOUND instead, by looking for a class
+ * that mixed a trait in, and that was the last requirement in the framework answered by
+ * inspecting classes rather than by reading a declaration.
  *
  * Nothing here is a page. The sign-in surface is drawn by the frontend over a protocol of
  * action names, and those names are the library's AGENT_ACTIONS: a project activates the
@@ -58,19 +60,21 @@ final class AuthFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements The library agent pair, a session holder, and the four tables the set lives in
+     * @return FeatureRequirements The two library agent pairs and the four tables the set lives in
      */
     public function requirements(): FeatureRequirements
     {
         return new FeatureRequirements(
             requiredAgents: [HilosAgentType::HILOS_USERS_LIBRARY],
+            // Required as strictly, owned less so: a session is not a sign-in, and the two
+            // demos with no login carry sessions without ever declaring this feature.
+            requiredSharedAgents: [HilosAgentType::HILOS_SESSIONS_LIBRARY],
             requiredDbTables: [
                 Identity::_table,
                 UserVerification::_table,
                 PasskeyCredential::_table,
                 RegistrationReservation::_table,
             ],
-            requiresSessionHost: true,
         );
     }
 

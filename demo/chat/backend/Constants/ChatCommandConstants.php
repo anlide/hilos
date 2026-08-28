@@ -39,12 +39,6 @@ final class ChatCommandConstants
     /** @var string Payload key: user id to impersonate for the impersonate-start command */
     public const string FIELD_TARGET_USER_ID = 'targetUserId';
 
-    /** @var string Reply key: the user id the session now acts as after an impersonation command */
-    public const string FIELD_EFFECTIVE_USER_ID = 'effectiveUserId';
-
-    /** @var string Reply key: the admin behind an impersonation started by impersonate-start */
-    public const string FIELD_IMPERSONATOR = 'impersonator';
-
     /** @var string Payload key: survivor user id for the account-merge command */
     public const string FIELD_SURVIVOR_USER_ID = 'survivorUserId';
 

@@ -53,7 +53,7 @@ final class ImpersonationTest extends IntegrationTestCase
         $targetId = $this->registerUser();
 
         try {
-            $agent->onSignalCommand($this->startCommand($token, $targetId), '', '');
+            $this->runCommand($agent, $this->startCommand($token, $targetId));
 
             $session = Hilos::$db->sessions->findByToken($token);
             $this->assertSame($targetId, $session?->userId);
@@ -76,10 +76,10 @@ final class ImpersonationTest extends IntegrationTestCase
         $adminId = $this->authenticatedAdminSession($agent, 'stop-ak', $token);
         $targetId = $this->registerUser();
 
-        $agent->onSignalCommand($this->startCommand($token, $targetId), '', '');
+        $this->runCommand($agent, $this->startCommand($token, $targetId));
 
         try {
-            $agent->onSignalCommand($this->stopCommand($token), '', '');
+            $this->runCommand($agent, $this->stopCommand($token));
 
             $session = Hilos::$db->sessions->findByToken($token);
             $this->assertSame($adminId, $session?->userId);
@@ -101,12 +101,12 @@ final class ImpersonationTest extends IntegrationTestCase
         $agent = $this->bootAgent();
         $token = RandomHelper::hex(16);
         $userId = $this->registerUser();
-        $agent->onSignalHandshake($this->handshake('nonadmin-ak', $token), '', '');
-        $agent->authenticateSession($token, $userId, null);
+        $this->deliverHandshake($agent, $this->handshake('nonadmin-ak', $token));
+        $this->authenticateSession($agent, $token, $userId, null);
         $targetId = $this->registerUser();
 
         try {
-            $agent->onSignalCommand($this->startCommand($token, $targetId), '', '');
+            $this->runCommand($agent, $this->startCommand($token, $targetId));
 
             $session = Hilos::$db->sessions->findByToken($token);
             $this->assertSame($userId, $session?->userId);
@@ -131,10 +131,10 @@ final class ImpersonationTest extends IntegrationTestCase
         $otherAdminId = $this->registerAdmin();
         $thirdId = $this->registerUser();
 
-        $agent->onSignalCommand($this->startCommand($token, $otherAdminId), '', '');
+        $this->runCommand($agent, $this->startCommand($token, $otherAdminId));
 
         try {
-            $agent->onSignalCommand($this->startCommand($token, $thirdId), '', '');
+            $this->runCommand($agent, $this->startCommand($token, $thirdId));
 
             $session = Hilos::$db->sessions->findByToken($token);
             $this->assertSame($otherAdminId, $session?->userId);
@@ -157,7 +157,7 @@ final class ImpersonationTest extends IntegrationTestCase
         $adminId = $this->authenticatedAdminSession($agent, 'self-ak', $token);
 
         try {
-            $agent->onSignalCommand($this->startCommand($token, $adminId), '', '');
+            $this->runCommand($agent, $this->startCommand($token, $adminId));
 
             $session = Hilos::$db->sessions->findByToken($token);
             $this->assertSame($adminId, $session?->userId);
@@ -180,7 +180,7 @@ final class ImpersonationTest extends IntegrationTestCase
         $adminId = $this->authenticatedAdminSession($agent, 'notimp-ak', $token);
 
         try {
-            $agent->onSignalCommand($this->stopCommand($token), '', '');
+            $this->runCommand($agent, $this->stopCommand($token));
 
             $session = Hilos::$db->sessions->findByToken($token);
             $this->assertSame($adminId, $session?->userId);
@@ -214,6 +214,7 @@ final class ImpersonationTest extends IntegrationTestCase
                 ChatSignalConstants::IMPERSONATE_START,
                 new ImpersonateStartActionDTO($targetId),
             );
+            $this->deliverLibraryFrames($agent);
 
             $session = $this->sessionOf('page-ak');
             $this->assertSame($targetId, $session?->userId);
@@ -244,11 +245,13 @@ final class ImpersonationTest extends IntegrationTestCase
         $token = RandomHelper::hex(16);
         $adminId = $this->authenticatedAdminSession($agent, 'agent-ak', $token);
         $targetId = $this->registerUser();
-        $agent->startImpersonation($token, $targetId, null);
+        $agent->startImpersonation($token, $targetId, null, null);
+        $this->deliverLibraryFrames($agent);
         $this->drainSignals();
 
         try {
             $agent->onAgentAction('agent-ak', ChatSignalConstants::IMPERSONATE_STOP, new ImpersonateStopActionDTO());
+            $this->deliverLibraryFrames($agent);
 
             $session = $this->sessionOf('agent-ak');
             $this->assertSame($adminId, $session?->userId);
@@ -263,6 +266,24 @@ final class ImpersonationTest extends IntegrationTestCase
         } finally {
             Hilos::$rt->connections->actions->clear();
         }
+    }
+
+    /**
+     * Runs one operator command the way three workers run it.
+     *
+     * The chat agent's guards answer a refusal and nothing else since HIL-710: what the
+     * session becomes is written by the sessions library, on a frame, and told back on
+     * another. A case asserting the session row without this would read the row as it was
+     * before the command.
+     *
+     * @param ChatAgent $agent Agent the command is routed to
+     * @param CommandRequestDTO $command Command request to run
+     * @throws HilosException When the command or a frame that follows it fails
+     */
+    private function runCommand(ChatAgent $agent, CommandRequestDTO $command): void
+    {
+        $agent->onSignalCommand($command, '', '');
+        $this->deliverLibraryFrames($agent);
     }
 
     /**
@@ -336,8 +357,8 @@ final class ImpersonationTest extends IntegrationTestCase
     private function authenticatedAdminSession(ChatAgent $agent, string $acceptKey, string $token): int
     {
         $adminId = $this->registerAdmin();
-        $agent->onSignalHandshake($this->handshake($acceptKey, $token), '', '');
-        $agent->authenticateSession($token, $adminId, null);
+        $this->deliverHandshake($agent, $this->handshake($acceptKey, $token));
+        $this->authenticateSession($agent, $token, $adminId, null);
 
         return $adminId;
     }

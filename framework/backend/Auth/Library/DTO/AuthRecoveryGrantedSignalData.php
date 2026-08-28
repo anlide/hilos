@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Auth\Library\DTO;
 
 use Hilos\Auth\Flow\AuthFlowOutcome;
-use Hilos\Auth\Session\HilosSessionHostInterface;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
@@ -15,7 +15,7 @@ use Hilos\Core\Router\SignalDataInterface;
  *
  * The recovery counterpart of {@see AuthRegistrationLandedSignalData}. Nobody is signed in
  * by it - what changes is which screen the waiting tabs of that browser are on, and those
- * tabs are the holder's ({@see HilosSessionHostInterface::grantRecoveryToSession()}).
+ * tabs are the holder's ({@see AbstractSessionsLibraryAgent}).
  */
 final class AuthRecoveryGrantedSignalData extends BaseDTO implements SignalDataInterface
 {

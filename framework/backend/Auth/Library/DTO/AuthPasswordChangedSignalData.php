@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Auth\Library\DTO;
 
 use Hilos\Auth\Flow\AuthFlowOutcome;
-use Hilos\Auth\Session\HilosSessionHostInterface;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
@@ -14,13 +14,13 @@ use Hilos\Core\Router\SignalDataInterface;
  * Users library → session holder: the password changed, end every other session of this user.
  *
  * A changed password is a statement about all the sessions of the account, and sessions are
- * the holder's ({@see HilosSessionHostInterface::deauthenticateOtherSessions()}). The one
+ * the holder's ({@see AbstractSessionsLibraryAgent}). The one
  * that changed it stays, marked with the ack that tells the person what just happened, and
  * signed in - a recovery is finished by becoming the account again, not by being sent to a
  * login form with the password just typed.
  *
  * The address rides along because the tabs waiting on it are settled here too
- * ({@see HilosSessionHostInterface::convergeRecovery()}): they were parked under the
+ * ({@see AbstractSessionsLibraryAgent}): they were parked under the
  * identifier, which is the one thing about this recovery a session token cannot name.
  */
 final class AuthPasswordChangedSignalData extends BaseDTO implements SignalDataInterface

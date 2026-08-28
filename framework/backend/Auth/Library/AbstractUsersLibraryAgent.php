@@ -46,7 +46,6 @@ use Hilos\Auth\Library\DTO\RequestPhoneCodeActionDTO;
 use Hilos\Auth\Library\DTO\RequestRegisterConfirmActionDTO;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Auth\OAuth\OAuthService;
-use Hilos\Auth\Session\HilosSessionHostInterface;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\HilosAgentType;
@@ -80,11 +79,12 @@ use Random\RandomException;
  * resolution. Before this agent existed those commands sat on one project's page, which
  * made the door into a framework only that project had.
  *
- * WHAT IT DOES NOT OWN, and cannot: sessions, the sockets standing on them and the parked
- * sign-in surfaces. A handshake is routed to exactly one agent, so the browser's connection
- * belongs to whoever accepted it; a truth source is not handed to a second process either.
- * A command that ends in a signed-in person therefore ends in a frame to that holder
- * ({@see HilosSessionHostInterface}), never in a session write of its own.
+ * WHAT IT DOES NOT OWN, and cannot: sessions and the parked sign-in surfaces. They belong
+ * to a library of their own ({@see AbstractSessionsLibraryAgent}), because one entity is one
+ * library and the two are placed differently - sessions are touched by every handshake,
+ * users only by a sign-in. A truth source is not handed to a second process either, so a
+ * command that ends in a signed-in person ends in a frame to that library, never in a
+ * session write of its own.
  *
  * It is ABSTRACT for one reason, the same one that makes the OAuth agent abstract: creating
  * a user touches the project's own users table, which the framework does not know the shape

@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Demo\Tasks;
 
 use Demo\Tasks\Agents\Hilos\DemoHilosAgent;
+use Demo\Tasks\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Tasks\Agents\TasksAgent;
 use Demo\Tasks\Browser\Table\UserDetailBrowserTable;
 use Demo\Tasks\Browser\TasksBrowserContext;
 use Demo\Tasks\Browser\TasksBrowserRef;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\Tasks\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\TasksAgentDaemon;
 use Demo\Tasks\Database\Settings\TasksSettingsCatalog;
 use Demo\Tasks\Database\TasksDbContext;
@@ -28,6 +30,7 @@ use Demo\Tasks\Runtime\View\Context\TasksRtContext;
 use Demo\Tasks\Tables\HilosUser\HilosUsersTable;
 use Demo\Tasks\Tables\TasksTableContext;
 use Hilos\Constants\HilosPageRouteParams;
+use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Context\BrowserContext;
@@ -86,6 +89,11 @@ final class Hilos extends HilosFacade
         TasksAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => TasksAgent::class,
             AgentRegistryKey::DAEMON => TasksAgentDaemon::class,
+        ],
+        SessionsLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => SessionsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => SessionsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         DemoHilosAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosAgent::class,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\ActionHostInterface;
@@ -60,11 +61,13 @@ use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use Throwable;
 
@@ -296,6 +299,42 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
             signalType: new SignalType(SignalTypeConstants::WS_USER),
             signalName: new SignalName($signalName),
             signalData: new WebSocketSignalData(data: $data, targetAcceptKey: $targetAcceptKey),
+        );
+    }
+
+    /**
+     * Sends one socket the handshake response describing its session, stamped by the framework.
+     *
+     * The project answers who the session is - the display names come from its own user
+     * store, and while impersonating, the administrator behind the takeover - and this
+     * stamps on what no project can know: the server clock the browser measures its own
+     * offset against, the registration step the session left unfinished, and the success
+     * ack the socket still owes (HIL-486, HIL-422).
+     *
+     * It lives here, and every send path goes through it, so that no project can ship a
+     * response without the stamp. That guarantee used to come from a final method on the
+     * session-host trait; when sessions became a library of their own the identity stayed
+     * with the project (HIL-710), and the guarantee had to move to where the project sends
+     * from rather than be lost with the trait.
+     *
+     * @param string $signalName Project handshake-response signal name the frontend routes on
+     * @param string $acceptKey Accept key of the connection being told
+     * @param HandshakeResponseSignalData $identity Who the session is, as the project builds it
+     * @param SessionStateSignalData $state Session state frame the response answers
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function sendHandshakeResponse(
+        string $signalName,
+        string $acceptKey,
+        HandshakeResponseSignalData $identity,
+        SessionStateSignalData $state,
+    ): void {
+        $this->sendToUser(
+            $signalName,
+            $acceptKey,
+            $identity
+                ->withSessionContext(TimeHelper::nowMs(), $state->pendingRegistration)
+                ->withPendingAck($state->pendingAck),
         );
     }
 
@@ -1162,6 +1201,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * @throws AgentUnknownSignalException When the handler is reached by a signal it does not know
      * @throws HilosException Whatever the concrete agent's agent-signal handler raises
      * @throws InvalidArgumentException When the handler cannot name the signal it answers with
+     * @throws RandomException When a concrete agent's handler cannot draw from the CSPRNG
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {

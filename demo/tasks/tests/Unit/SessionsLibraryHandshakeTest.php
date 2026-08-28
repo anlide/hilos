@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Demo\SimplePoll\Tests\Unit;
+namespace Demo\Tasks\Tests\Unit;
 
-use Demo\SimplePoll\Agents\PollAgent;
+use Demo\Tasks\Agents\Hilos\SessionsLibraryAgent;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Http\RequestQueryParams;
@@ -14,14 +14,18 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for PollAgent handshake session token validation.
+ * Unit tests for the handshake's session token validation.
  *
- * The daemon resolves the token on the 101 and carries it on the DTO; the
- * worker rejects an empty or malformed token before any database access. What a
- * valid token goes on to do - name the guest behind an anonymous session, or clear
- * the name of one that gained an account - is covered by the integration suite and e2e.
+ * The daemon resolves the token on the 101 and carries it on the DTO; the worker rejects an
+ * empty or malformed token before any database access. What a valid token goes on to do -
+ * name the guest behind an anonymous session, or clear the name of one that gained an
+ * account - is covered by the integration suite and e2e.
+ *
+ * Asked of the sessions library rather than of this demo's own agent since HIL-710: the
+ * handshake is addressed to whoever owns the session set, and the refusal has to stand
+ * where the cookie first arrives.
  */
-final class PollAgentHandshakeTest extends TestCase
+final class SessionsLibraryHandshakeTest extends TestCase
 {
     private ?SignalRouter $previousRouter = null;
     private ?AnalyticsCollector $previousCollector = null;
@@ -47,10 +51,10 @@ final class PollAgentHandshakeTest extends TestCase
         $this->expectException(InvalidFormatException::class);
         $this->expectExceptionMessage('Invalid session token format. Expected 32 lowercase hex characters.');
 
-        new PollAgent()->onSignalHandshake(
+        new SessionsLibraryAgent()->onSignalHandshake(
             new WebSocketHandshakeSignalDTO(
                 headers: [],
-                acceptKey: 'poll-ak',
+                acceptKey: 'tasks-ak',
                 cookies: [],
                 clientIp: '127.0.0.1',
                 queryParams: RequestQueryParams::empty(),
@@ -65,10 +69,10 @@ final class PollAgentHandshakeTest extends TestCase
         $this->expectException(InvalidFormatException::class);
         $this->expectExceptionMessage('Invalid session token format. Expected 32 lowercase hex characters.');
 
-        new PollAgent()->onSignalHandshake(
+        new SessionsLibraryAgent()->onSignalHandshake(
             new WebSocketHandshakeSignalDTO(
                 headers: [],
-                acceptKey: 'poll-ak',
+                acceptKey: 'tasks-ak',
                 cookies: [],
                 clientIp: '127.0.0.1',
                 queryParams: RequestQueryParams::empty(),

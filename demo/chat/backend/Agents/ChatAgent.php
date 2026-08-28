@@ -8,9 +8,8 @@ use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Agents\DTO\AccountMergeSummary;
-use Demo\Chat\Agents\DTO\DismissSessionAckActionDTO;
 use Demo\Chat\Agents\DTO\ImpersonateStopActionDTO;
-use Demo\Chat\Agents\DTO\LogoutActionDTO;
+use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\AccountMergeSignalData;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
@@ -20,17 +19,15 @@ use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
-use Hilos\Auth\Registration\RegistrationReservationSweeper;
-use Hilos\Auth\Session\HilosSessionHost;
-use Hilos\Auth\Session\HilosSessionHostInterface;
-use Hilos\Auth\Session\SessionAck;
-use Hilos\Auth\Session\SessionToken;
+use Hilos\Auth\Flow\AuthFlowOutcome;
+use Hilos\Auth\Session\DTO\SessionRebindSignalData;
+use Hilos\Auth\Session\DTO\SessionRotateSignalData;
+use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
-use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
@@ -43,43 +40,38 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Database\Database;
 use Hilos\Database\Identity\PasswordFate;
-use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
-use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
-use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
-use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
-use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
-use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
-use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 
 /**
  * Monopolistic chat worker for chat events, users, runtime connections, WebSocket lifecycle, and bot messages.
  *
  * On start, registers chat database tables and runtime collections as truth sources.
  *
- * The holder of this project's sessions ({@see HilosSessionHostInterface}), which is a
- * declaration and nothing more: the seven methods of the contract come from the trait
- * below, and saying so out loud is what lets the framework find the holder by type.
+ * It no longer holds this project's sessions: they went into {@see SessionsLibraryAgent}
+ * whole (HIL-710). What stayed is the half a project cannot give away - who is on the wire,
+ * what that person is called, and the tab that has to be told - so the two speak in frames.
+ * {@see HilosSignalConstants::HILOS_SESSION_STATE} arrives saying what a session has become
+ * and is answered by {@see self::applySessionState()};
+ * {@see HilosSignalConstants::HILOS_SESSION_REBIND} goes back whenever this project wants a
+ * session to say something else, which here is only ever an impersonation or a merged
+ * account's forced sign-out.
  */
-final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
+final class ChatAgent extends AbstractAgent
 {
-    use HilosSessionHost;
-
     public const string AGENT_TYPE = AgentType::CHAT;
 
-    // The five frames of the session-holder contract are spread in whole: they are the
-    // library's half of every sign-in that ends in a signed-in person, and the holder is
-    // this agent (HIL-622). Listing them by hand would be this project restating a
-    // contract the framework already states.
+    // The session frame is declared HERE and not in the library, which is what routes it to
+    // this agent: a destination is taken from whoever names a signal, and the library naming
+    // its own outgoing frame would send it back to itself.
     public const array AGENT_SIGNALS = [
         ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
         ChatSignalConstants::ACCOUNT_MERGE_REQUEST => AccountMergeSignalData::class,
-        ...HilosSessionHostInterface::SESSION_HOST_SIGNALS,
+        HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class,
     ];
 
     // The echo exists only to prove the command channel end to end, so it carries the
@@ -92,15 +84,20 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
         ChatCommandConstants::ACCOUNT_MERGE,
     ];
 
+    // Signing out and dismissing an ack write a SESSION, so they left with it; what is left
+    // here is the one control that judges a project field - the administrator behind a
+    // takeover - and therefore cannot be anywhere else (HIL-710).
     public const array AGENT_ACTIONS = [
-        ChatSignalConstants::LOGOUT => LogoutActionDTO::class,
-        HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
         ChatSignalConstants::IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
     ];
 
     /**
-     * Registers chat truth sources, arms the abandoned-registration sweep, and records
-     * chat startup.
+     * Registers chat truth sources and records chat startup.
+     *
+     * The session set is not among them any more, nor are the two runtime lists of the
+     * browsers parked on a confirmation code: they belong to {@see SessionsLibraryAgent},
+     * which claims them in its own process (HIL-710). The connections stay, because who is
+     * on the wire is this node's truth and the row carries chat's own fields.
      *
      * @throws HilosException On database or runtime startup failure
      */
@@ -112,41 +109,11 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
         $this->registerDbTruthSource(ChatDbContext::eventUserRenames);
         $this->registerDbTruthSource(ChatDbContext::eventAttachments);
         $this->registerDbTruthSource(ChatDbContext::users);
-        $this->registerDbTruthSource(ChatDbContext::sessions);
         $this->registerRtTruthSource(ChatRtContext::connections);
         $this->registerRtTruthSource(ChatRtContext::userStates);
         $this->registerRtTruthSource(ChatRtContext::attachmentDrafts);
-        $this->registerRtTruthSource(StateRegistrationWaiter::RT_COLLECTION);
-        $this->registerRtTruthSource(StateRecoveryWaiter::RT_COLLECTION);
-        $this->startSessionRotations();
-        $this->startPendingRegistrationSweep();
 
         Hilos::$db->events->actions->addChatStarted();
-    }
-
-    /**
-     * Drops login rotations whose ticket is past its moment (HIL-582) and the sign-in
-     * surfaces whose connection is gone - parked on a registration code (HIL-415) or on
-     * a password-recovery one (HIL-416).
-     *
-     * Also clears, on its own schedule, the registrations nobody came back to finish
-     * (HIL-612) - the one part of this tick that reads the database, which is why it is
-     * behind a cron rule instead of running every pass.
-     *
-     * The rest of the tick walks over in-memory collections that hold one row per login in
-     * the last thirty seconds and one per sign-in surface parked on a confirmation code, so
-     * it is measured in microseconds and never touches the database or the network - which
-     * is what the tick rule requires of it. Each waiter walk is skipped outright while
-     * nobody is registering or recovering, which is almost always.
-     *
-     * @throws HilosException On runtime failure
-     */
-    public function onTick(): void
-    {
-        $this->sweepSessionRotations();
-        $this->sweepPendingRegistrations();
-        $this->sweepRegistrationWaiters();
-        $this->sweepRecoveryWaiters();
     }
 
     /**
@@ -239,12 +206,17 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
     }
 
     /**
-     * CLI command wrapper over {@see self::startImpersonation()}: parses the token
-     * and target from the command payload, runs the shared core, and replies ok
-     * with the effective user and the recorded admin, or an error message on a
-     * guard rejection or a database / runtime failure. The reply lookup runs inside
-     * the caught path too: a command failure must not reach the worker loop, which
-     * catches neither HilosException nor its database children.
+     * CLI command wrapper over {@see self::startImpersonation()}: parses the token and target
+     * from the command payload and runs the shared core, carrying the operator's correlation
+     * id into the rebind frame.
+     *
+     * Only a REFUSAL is answered here, and that is the split doing its work (HIL-710): the
+     * guards read chat's own admin flag, so this process is the one that knows they failed,
+     * while what the session actually became is known only to the library that wrote it -
+     * which answers the same operator itself. Answering "accepted" here instead would make a
+     * mistyped token look like a success. The reply runs inside the caught path so a command
+     * failure never reaches the worker loop, which catches neither HilosException nor its
+     * database children.
      *
      * @param CommandRequestDTO $data Command request carrying the session token and target user id
      */
@@ -254,29 +226,20 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
         $targetUserId = (int)($data->payload[ChatCommandConstants::FIELD_TARGET_USER_ID] ?? 0);
 
         try {
-            $this->startImpersonation($sessionToken, $targetUserId, null);
-            $impersonatorId = Hilos::$db->sessions->findByToken($sessionToken)?->impersonatorUserId;
+            $this->startImpersonation($sessionToken, $targetUserId, null, $data->correlationId);
         } catch (HilosException $e) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
-
-            return;
         }
-
-        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
-            ChatCommandConstants::FIELD_SESSION_TOKEN => $sessionToken,
-            ChatCommandConstants::FIELD_EFFECTIVE_USER_ID => $targetUserId,
-            ChatCommandConstants::FIELD_IMPERSONATOR => $impersonatorId,
-        ]));
     }
 
     /**
-     * CLI command wrapper over {@see self::stopImpersonation()}: parses the token
-     * from the command payload, captures the admin to restore before the marker is
-     * cleared, runs the shared core, and replies ok with the restored effective
-     * user, or an error message on a guard rejection or a database / runtime
-     * failure. The marker lookup runs inside the caught path too: a command failure
-     * must not reach the worker loop, which catches neither HilosException nor its
-     * database children.
+     * CLI command wrapper over {@see self::stopImpersonation()}: parses the token from the
+     * command payload and runs the shared core, carrying the operator's correlation id into
+     * the rebind frame.
+     *
+     * Answers a refusal only, for the reason {@see self::handleImpersonateStart()} gives; the
+     * admin the session goes back to is read off the row by the library and reported from
+     * there, so nothing has to be captured before the marker is cleared any more.
      *
      * @param CommandRequestDTO $data Command request carrying the session token
      */
@@ -285,19 +248,10 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
         $sessionToken = (string)$data->payload[ChatCommandConstants::FIELD_SESSION_TOKEN];
 
         try {
-            // Captured before the core clears the marker; the restored effective user.
-            $impersonatorId = Hilos::$db->sessions->findByToken($sessionToken)?->impersonatorUserId;
-            $this->stopImpersonation($sessionToken, null);
+            $this->stopImpersonation($sessionToken, null, $data->correlationId);
         } catch (HilosException $e) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
-
-            return;
         }
-
-        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
-            ChatCommandConstants::FIELD_SESSION_TOKEN => $sessionToken,
-            ChatCommandConstants::FIELD_EFFECTIVE_USER_ID => $impersonatorId,
-        ]));
     }
 
     /**
@@ -308,21 +262,32 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
      * session must exist; its current user must be an admin (an anonymous or
      * non-admin session is rejected — which also blocks a second start once
      * impersonating a non-admin target); it must not already be impersonating (no
-     * nesting); the target must exist and differ from the admin. The admin id is
-     * recorded on the impersonator marker BEFORE the rebind, so the handshake
-     * response {@see self::authenticateSession()} re-emits already reflects the
-     * impersonation (its `impersonatedBy` slot names the admin). The rebind reuses
-     * authenticateSession (identical to a login, so every guard/ownership path sees
-     * the target). An audit line records the transition.
+     * nesting); the target must exist and differ from the admin.
+     *
+     * The guards stay in this project and the write no longer happens here (HIL-710): they
+     * read chat's own admin flag, which no framework library can see, while the session is
+     * the library's to write. So this ASKS, in one frame carrying the state the session must
+     * reach whole - the target as its user, this administrator as the marker behind it. The
+     * marker travels with the bind rather than being written first, because the library
+     * writes it first on the far side, which is what the identity going out has to read.
+     *
+     * An audit line records the transition here, where the decision was made; what the
+     * session actually became is recorded by the library that wrote it.
      *
      * @param string $sessionToken Session cookie token of the acting admin session
      * @param int $targetUserId User id to impersonate
      * @param ?string $initiatorAcceptKey Accept key of the admin's connection, or null for the CLI path
+     * @param ?string $correlationId Command correlation id to answer the operator on, or null for the page path
      * @throws ValidationException When a guard rejects the request
+     * @throws InvalidArgumentException When the rebind frame cannot be named
      * @throws HilosException On database or runtime failure
      */
-    public function startImpersonation(string $sessionToken, int $targetUserId, ?string $initiatorAcceptKey): void
-    {
+    public function startImpersonation(
+        string $sessionToken,
+        int $targetUserId,
+        ?string $initiatorAcceptKey,
+        ?string $correlationId,
+    ): void {
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session === null) {
             throw new ValidationException('No such session');
@@ -346,10 +311,13 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
             throw new ValidationException('Cannot impersonate yourself');
         }
 
-        // Marker BEFORE rebind: authenticateSession re-emits the handshake response,
-        // which reads the marker to fill impersonatedBy — so it must already be set.
-        $session->actions->setImpersonator($adminId);
-        $this->authenticateSession($sessionToken, $targetUserId, $initiatorAcceptKey);
+        $this->sendToAgent(HilosSignalConstants::HILOS_SESSION_REBIND, new SessionRebindSignalData(
+            sessionToken: $sessionToken,
+            userId: $targetUserId,
+            impersonatorUserId: $adminId,
+            initiatorAcceptKey: $initiatorAcceptKey,
+            correlationId: $correlationId,
+        ));
 
         $this->logAgentInfo('impersonate_start ' . json_encode([
             'event' => 'impersonate_start',
@@ -362,21 +330,24 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
     /**
      * Stops impersonation: reverts an impersonating session back to its admin.
      *
-     * Shared core behind both the CLI command (HIL-166) and the shell agent-action.
-     * The session must exist and must currently be impersonating. The marker is
-     * cleared BEFORE the rebind, so the handshake response
-     * {@see self::authenticateSession()} re-emits reflects the session as no longer
-     * impersonated (its `impersonatedBy` slot clears). The admin to restore comes
-     * from the marker. An audit line records the transition, capturing the vacated
-     * target before the rebind restores the admin.
+     * Shared core behind both the CLI command (HIL-166) and the shell agent-action. The
+     * session must exist and must currently be impersonating; the admin to go back to is
+     * read off the marker. The inverse of {@see self::startImpersonation()} and asked for the
+     * same way - one frame naming the whole target state, here the administrator as the user
+     * and no marker behind them.
      *
      * @param string $sessionToken Session cookie token of the impersonating session
      * @param ?string $initiatorAcceptKey Accept key of the requesting connection, or null for the CLI path
+     * @param ?string $correlationId Command correlation id to answer the operator on, or null for the shell path
      * @throws ValidationException When the session is missing or not impersonating
+     * @throws InvalidArgumentException When the rebind frame cannot be named
      * @throws HilosException On database or runtime failure
      */
-    public function stopImpersonation(string $sessionToken, ?string $initiatorAcceptKey): void
-    {
+    public function stopImpersonation(
+        string $sessionToken,
+        ?string $initiatorAcceptKey,
+        ?string $correlationId,
+    ): void {
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session === null) {
             throw new ValidationException('No such session');
@@ -387,20 +358,20 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
             throw new ValidationException('Session is not impersonating');
         }
 
-        // The target the session was acting as, captured before the rebind restores
-        // the admin — recorded on the audit line as the identity vacated.
-        $vacatedUserId = $session->userId;
-
-        // Marker cleared BEFORE rebind: the re-emitted handshake response then reads
-        // no marker and clears impersonatedBy — the inverse of startImpersonation.
-        $session->actions->setImpersonator(null);
-        $this->authenticateSession($sessionToken, $impersonatorId, $initiatorAcceptKey);
+        $this->sendToAgent(HilosSignalConstants::HILOS_SESSION_REBIND, new SessionRebindSignalData(
+            sessionToken: $sessionToken,
+            userId: $impersonatorId,
+            impersonatorUserId: null,
+            initiatorAcceptKey: $initiatorAcceptKey,
+            correlationId: $correlationId,
+        ));
 
         $this->logAgentInfo('impersonate_stop ' . json_encode([
             'event' => 'impersonate_stop',
             'admin' => $impersonatorId,
             'restoredUser' => $impersonatorId,
-            'vacatedUser' => $vacatedUserId,
+            // The identity being vacated, read before the frame lands and restores the admin.
+            'vacatedUser' => $session->userId,
             'session' => $session->id,
         ]));
     }
@@ -583,90 +554,213 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
     /**
      * Forces every live session of a merged loser to log out (HIL-378).
      *
-     * The post-commit force-logout of account merge: a tombstoned loser must not
-     * keep acting through an open session. Each of the loser's sessions is reverted
-     * to anonymous through {@see HilosSessionHost::deauthenticateSession()} — the
-     * same seam the logout control uses — which unbinds the session user, re-points
-     * its live connections to no user, and re-emits the anonymous handshake so their
-     * frontends clear the current user. The loser is deactivated (`block = 1` from
-     * the tombstone), so re-authentication is impossible. Runs outside the merge
-     * transaction: the transfer is already durable, and reverting sessions touches
-     * runtime connections that must not participate in the DB rollback path.
+     * The post-commit force-logout of account merge: a tombstoned loser must not keep acting
+     * through an open session. Each of the loser's sessions is ASKED to become anonymous, in
+     * the same frame an impersonation is asked for (HIL-710) - the library unbinds the row
+     * and says so back, and this agent re-points the live connections and clears their
+     * frontends when that answer arrives. The loser is deactivated (`block = 1` from the
+     * tombstone), so re-authentication is impossible.
+     *
+     * The impersonation marker is carried through unchanged rather than named null: the
+     * frame states the target state whole, and a session someone was impersonating through
+     * is being signed out, not un-impersonated. Runs outside the merge transaction: the
+     * transfer is already durable, and nothing here may participate in the DB rollback path.
      *
      * @param int $loserId Merged loser user id whose sessions are closed
-     * @throws HilosException When session teardown exposes database or runtime failure
+     * @throws InvalidArgumentException When a rebind frame cannot be named
+     * @throws HilosException When reading the loser's sessions fails
      */
     private function killUserSessions(int $loserId): void
     {
         foreach (Hilos::$db->sessions->findByUserId($loserId) as $session) {
-            $this->deauthenticateSession($session->token);
+            $this->sendToAgent(HilosSignalConstants::HILOS_SESSION_REBIND, new SessionRebindSignalData(
+                sessionToken: $session->token,
+                userId: null,
+                impersonatorUserId: $session->impersonatorUserId,
+            ));
         }
     }
 
     /**
-     * Resolves the daemon-carried session token to a session row (creating an
-     * anonymous one when the cookie is new), registers the connection under that
-     * session, and sends the handshake response — the current user for an
-     * authenticated session, or an anonymous response that leaves the frontend
-     * current user null.
+     * Says out loud what the sessions library concluded about one session (HIL-710).
      *
-     * A session is anonymous (no user) until login/register upgrades it through
-     * {@see HilosSessionHost::authenticateSession()}; no visitor is auto-registered
-     * as a user. Runtime presence and per-user state are ensured only for an
-     * authenticated session. Token-to-session resolution (including the HIL-398
-     * expiry drop) is delegated to {@see HilosSessionHost::resolveHandshakeSession()}.
+     * The project half of the seam, and the ONE handler behind every ending a session can
+     * reach: a handshake, a sign-in, a sign-out, an impersonation, an ack raised or
+     * dismissed. It replaces what used to be four hooks of the session-host trait
+     * (`onSignalHandshake`, `bindConnectionUser`, `markConnectionAck` and the response signal
+     * name), and it can be one handler precisely because the library states the session's
+     * whole state rather than the change it made.
      *
-     * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
-     * @param string $source Framework signal source identifier (unused)
-     * @param string $name Framework signal name (unused)
-     * @throws InvalidFormatException When the session token is not a 32-character lowercase hex string
-     * @throws DuplicateValueException When a concurrent create already claimed a new token
+     * THE ORDER IS THE MECHANISM, not a sequence of chores:
+     * 1. the connection rows are written first, because everything below is read against
+     *    them - the page re-decision judges "this connection belongs to N", and a browser
+     *    told who it is before the row said so would be judged as the person it no longer is;
+     * 2. each named socket is then handed the identity, stamped by the framework with the
+     *    clock and the registration step the frame carried;
+     * 3. a rotation ticket goes to the one socket that earned it, AFTER that identity, so the
+     *    browser reconnects knowing who it already is;
+     * 4. the pages are re-asked their access question once, not once per socket;
+     * 5. the action that was waiting is answered LAST - behind the identity it announces,
+     *    which is the rule the sign-in commands were split along (HIL-622).
+     *
+     * @param SessionStateSignalData $frame What the session is now, and whom to answer
+     * @throws InvalidArgumentException When a signal of the answer cannot be named
+     * @throws InvalidFormatException When the frame's outcome cannot be read back
      * @throws HilosException On database or runtime failure
      */
-    public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
+    private function applySessionState(SessionStateSignalData $frame): void
     {
-        // The daemon resolved the session token on the 101 (the client's cookie
-        // or a freshly issued one) and carried it on the handshake DTO. Validate
-        // inside the ValidationException family so the worker dispatcher contains
-        // a bad token instead of crashing.
-        $sessionToken = $data->sessionToken;
-        SessionToken::ensureValid($sessionToken);
-
-        $session = $this->resolveHandshakeSession($sessionToken);
-        $userId = $session->userId;
-
-        Hilos::$rt->connections->actions->register($data->acceptKey, $userId, $sessionToken);
-
+        $userId = $frame->userId;
         if ($userId !== null) {
-            Hilos::$ac?->identifyBrowserSessionUser($sessionToken, $userId);
             Hilos::$rt->userStates->actions->ensure($userId);
         }
 
-        $this->parkPendingRegistration($data->acceptKey, $session);
+        // One identity for the whole frame: every socket it names belongs to the one session
+        // it is about, so the user, the name and the administrator behind them are the same
+        // for all of them. A session with nobody in it needs no lookup to be described.
+        $identity = $this->handshakeResponseFor(
+            $userId === null ? null : Hilos::$db->sessions->findByToken($frame->sessionToken),
+        );
+
+        foreach ($frame->acceptKeys as $acceptKey) {
+            $this->settleConnection($acceptKey, $frame);
+            $this->sendHandshakeResponse(ChatSignalConstants::HANDSHAKE_RESPONSE, $acceptKey, $identity, $frame);
+        }
+
+        $this->handOverRotationTicket($frame);
+
+        // Whatever page these browsers had open was answered for whoever they were a moment
+        // ago (HIL-652, HIL-627). A sign-in can ask by user, because the identity has just
+        // appeared; a sign-out has to ask by connection, because the identity it would ask
+        // under is the one being erased.
+        if ($userId !== null) {
+            PageAccessReassessment::forUser($userId);
+        } else {
+            PageAccessReassessment::forConnections($frame->acceptKeys);
+        }
+
+        $this->answerLibraryAction($frame);
+    }
+
+    /**
+     * Brings one live connection row to the state the frame states.
+     *
+     * A socket the collection does not hold yet is a HANDSHAKE and nothing else: every other
+     * frame names sockets the library read out of this very collection. So the row is opened
+     * here, and the analytics identity is attached here, exactly where the handshake handler
+     * used to do both.
+     *
+     * Each of the three writes happens only where it changes something. That is not thrift
+     * but fidelity: a row written is a row synced to every reader of it, and a frame that
+     * merely restates an unchanged session - an ack dismissed, an action answered - has no
+     * business telling the rest of the node that the connections moved.
+     *
+     * @param string $acceptKey Accept key of the connection being brought up to date
+     * @param SessionStateSignalData $frame What the session is now
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When the queued runtime-sync signal cannot be named
+     */
+    private function settleConnection(string $acceptKey, SessionStateSignalData $frame): void
+    {
+        $connection = Hilos::$rt->connections[$acceptKey] ?? null;
+        if ($connection === null) {
+            Hilos::$rt->connections->actions->register($acceptKey, $frame->userId, $frame->sessionToken);
+            if ($frame->userId !== null) {
+                Hilos::$ac?->identifyBrowserSessionUser($frame->sessionToken, $frame->userId);
+            }
+        } else {
+            if ($connection->sessionToken !== $frame->sessionToken) {
+                // The session did not change, its secret name did: a login rotated the token
+                // out from under a value somebody may have planted (HIL-582).
+                Hilos::$rt->connections->actions->repointSessionToken($acceptKey, $frame->sessionToken);
+            }
+            if ($connection->userId !== $frame->userId) {
+                $connection->actions->bindUser($frame->userId);
+            }
+        }
+
+        // The frame STATES the ack rather than amending it, so a socket that owes nothing is
+        // told so too; a socket born of a rotation inherits what the one it replaced had not
+        // shown yet (HIL-423), and that arrives here as the ack of a row that does not exist.
+        if ($connection?->pendingAck !== $frame->pendingAck) {
+            Hilos::$rt->connections->actions->markAck($acceptKey, $frame->pendingAck);
+        }
+    }
+
+    /**
+     * Hands the browser that logged in the ticket it trades for its rotated cookie (HIL-582).
+     *
+     * Sent from this project rather than from the library that minted it, so that it leaves
+     * behind the identity above: the browser reconnects the moment it holds the ticket, and a
+     * ticket overtaking the response would drop the socket before it learned who it had
+     * become. A frame carrying a ticket names exactly one socket - the one that logged in -
+     * which is also the only rightful holder of a one-time value.
+     *
+     * @param SessionStateSignalData $frame Session state that may carry a rotation
+     * @throws InvalidArgumentException When the rotation signal cannot be named
+     */
+    private function handOverRotationTicket(SessionStateSignalData $frame): void
+    {
+        $ticket = $frame->rotationTicket;
+        $acceptKey = $frame->initiatorAcceptKey();
+        if ($ticket === null || $acceptKey === null) {
+            return;
+        }
+
         $this->sendToUser(
-            ChatSignalConstants::HANDSHAKE_RESPONSE,
-            $data->acceptKey,
-            // A socket born of a login's token rotation owes what the socket it replaced
-            // still owed (HIL-423); every other handshake inherits null and says so.
-            $this->handshakeResponse($session)->withPendingAck($this->inheritHandshakeAck($data)),
+            HilosSignalConstants::HILOS_SESSION_ROTATE,
+            $acceptKey,
+            new SessionRotateSignalData($ticket),
         );
     }
 
     /**
-     * Builds the handshake response describing a session's current identity,
-     * filling the impersonatedBy slot from the session's impersonator marker.
+     * Answers the sign-in action the frame finished, when somebody is waiting on it.
      *
-     * The chat implementation of the {@see HilosSessionHost} hook: it reads the
-     * display names from the chat user store and, while impersonating, the admin
-     * behind the takeover. An anonymous or missing session yields the anonymous
-     * response that clears the frontend current user; an impersonated session
-     * additionally carries the impersonating admin, so the shell shows its banner,
-     * while a plain authenticated session leaves the impersonator fields null.
+     * The library deferred its own ack so that the answer would leave from behind the
+     * identity it announces (HIL-622), and since the split that identity is sent from here -
+     * so the answer is sent from here too. Nothing is sent for a frame carrying no request
+     * id: an OAuth login was acked as "accepted, working on it" the moment the browser was
+     * sent off to the provider.
+     *
+     * @param SessionStateSignalData $frame Session state that may end a tracked action
+     * @throws InvalidArgumentException When the reply signal cannot be named
+     * @throws InvalidFormatException When the outcome the frame carries cannot be read back
+     */
+    private function answerLibraryAction(SessionStateSignalData $frame): void
+    {
+        $action = $frame->action;
+        $requestId = $frame->requestId;
+        $acceptKey = $frame->initiatorAcceptKey();
+        if ($action === null || $requestId === null || $acceptKey === null) {
+            return;
+        }
+
+        $outcome = $frame->outcome;
+        $this->sendActionSuccess(
+            $acceptKey,
+            $action,
+            $requestId,
+            $outcome === null ? null : AuthFlowOutcome::fromArray($outcome),
+        );
+    }
+
+    /**
+     * Builds the identity half of a handshake response: who the session is, as this project
+     * knows it, with the impersonatedBy slot filled from the session's impersonator marker.
+     *
+     * The whole of what stayed behind when the sessions left (HIL-710) - it reads the display
+     * names from the chat user store and, while impersonating, the admin behind the takeover.
+     * An anonymous or missing session yields the anonymous response that clears the frontend
+     * current user; an impersonated session additionally carries the impersonating admin, so
+     * the shell shows its banner, while a plain authenticated session leaves the impersonator
+     * fields null. The clock and the unfinished registration step are NOT filled here: the
+     * framework stamps them on the way out, from the frame the library sent.
      *
      * @param ?Session $session Session to describe, or null for an anonymous response
-     * @return HandshakeResponseSignalData Handshake response for the session
+     * @return HandshakeResponseSignalData Identity of the session, unstamped
      */
-    protected function handshakeResponseFor(?Session $session): HandshakeResponseSignalData
+    private function handshakeResponseFor(?Session $session): HandshakeResponseSignalData
     {
         $userId = $session?->userId;
         if ($session === null || $userId === null) {
@@ -700,16 +794,21 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
      * no session row to describe, and asking for one by a null token is a type
      * error rather than a miss.
      *
-     * The pending ack rides along for the reason every other re-send carries it
-     * (HIL-422): the response states the ack rather than amending it, so a rename or
-     * an admin flip that went out without one would wipe an announcement the person
-     * has not read yet.
+     * The state it sends under is assembled here rather than received, because this is the
+     * one send path that answers no frame: nobody's session changed, only the flag on their
+     * account did. Two of its fields therefore have to be said deliberately. The pending ack
+     * is carried over from the row for the reason every other re-send carries it (HIL-422) -
+     * the response states the ack rather than amending it, so an admin flip that went out
+     * without one would wipe an announcement the person has not read yet. The unfinished
+     * registration is null, and truthfully so: this reaches a signed-in person, and signing
+     * in is what releases the step.
      *
      * @param int $userId User whose connections are told
+     * @throws InvalidArgumentException When the response signal cannot be named
+     * @throws HilosException When a session or user lookup fails
      */
     private function broadcastHandshakeResponseToUser(int $userId): void
     {
-        $signalName = $this->handshakeResponseSignalName();
         foreach (Hilos::$rt->connections->forUser($userId) as $connection) {
             $sessionToken = $connection->sessionToken;
             if ($sessionToken === null) {
@@ -717,101 +816,42 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
             }
 
             $session = Hilos::$db->sessions->findByToken($sessionToken);
-            $this->sendToUser(
-                $signalName,
+            $this->sendHandshakeResponse(
+                ChatSignalConstants::HANDSHAKE_RESPONSE,
                 $connection->acceptKey,
-                $this->handshakeResponse($session)->withPendingAck($connection->pendingAck),
+                $this->handshakeResponseFor($session),
+                new SessionStateSignalData(
+                    sessionToken: $sessionToken,
+                    userId: $userId,
+                    acceptKeys: [$connection->acceptKey],
+                    pendingAck: $connection->pendingAck,
+                ),
             );
         }
     }
 
     /**
-     * Re-points one live chat connection's bound user through its runtime actions —
-     * the {@see HilosSessionHost} hook. A missing connection is a no-op.
+     * Routes the one agent-owned client action left here (HIL-710).
      *
-     * @param string $acceptKey Connection accept key to re-point
-     * @param ?int $userId User id to bind the connection to, or null for anonymous
-     * @throws RtActionsCollectionNameNullException When the runtime connection collection name is unavailable
-     * @throws RtTruthSourceWriteNotAllowedException When this agent is not the connection truth source
-     */
-    protected function bindConnectionUser(string $acceptKey, ?int $userId): void
-    {
-        Hilos::$rt->connections[$acceptKey]?->actions->bindUser($userId);
-    }
-
-    /**
-     * Writes one live chat connection's pending success ack — the {@see HilosSessionHost}
-     * hook. A missing connection is a no-op, handled inside the collection action.
-     *
-     * @param string $acceptKey Connection accept key to mark
-     * @param ?string $ack Ack the connection owes (a {@see SessionAck} value), or null to clear it
-     * @throws RtActionsCollectionNameNullException When the runtime connection collection name is unavailable
-     * @throws RtActionsStateCollectionNullException When the runtime connection state collection is unavailable
-     * @throws RtTruthSourceWriteNotAllowedException When this agent is not the connection truth source
-     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
-     */
-    protected function markConnectionAck(string $acceptKey, ?string $ack): void
-    {
-        Hilos::$rt->connections->actions->markAck($acceptKey, $ack);
-    }
-
-    /**
-     * Returns the chat handshake-response signal name the {@see HilosSessionHost}
-     * seam emits under; the frontend routes on this project constant.
-     *
-     * @return string Chat handshake-response signal name
-     */
-    protected function handshakeResponseSignalName(): string
-    {
-        return ChatSignalConstants::HANDSHAKE_RESPONSE;
-    }
-
-    /**
-     * Ensures the newly authenticated user's runtime presence state — the chat
-     * override of the {@see HilosSessionHost} post-authenticate hook.
-     *
-     * @param int $userId Durable user id the session was bound to
-     * @throws HilosException On runtime failure
-     */
-    protected function afterAuthenticate(int $userId): void
-    {
-        Hilos::$rt->userStates->actions->ensure($userId);
-    }
-
-    /**
-     * Routes agent-owned client actions. Logout and impersonation-stop are
-     * page-independent (their controls live in the app shell — and while
+     * Impersonation-stop is page-independent - its control lives in the app shell, and while
      * impersonating the effective user is the non-admin target, so no admin page is
-     * guaranteed), so they arrive here rather than through a page.
+     * guaranteed - which is why it arrives here rather than through a page. Signing out and
+     * dismissing an ack arrived here for the same reason and have moved to the sessions
+     * library, because what they write is a session.
      *
      * @param string $acceptKey Acting connection accept key
      * @param string $action Owned action name from AGENT_ACTIONS
      * @param ActionPayloadDTO $dto Parsed action payload
-     * @return ?ActionReplyDTO Always null: none of the three answers with domain data
+     * @return ?ActionReplyDTO Always null: it answers with no domain data
      * @throws AgentUnknownActionException When action is not supported by this agent
      * @throws InvalidActionPayloadException When action payload does not match the action name
      * @throws ValidationException When impersonation-stop is invoked on a non-impersonating session
-     * @throws HilosException When logout or impersonation-stop exposes database or runtime failure
+     * @throws InvalidArgumentException When the rebind frame cannot be named
+     * @throws HilosException When impersonation-stop exposes database or runtime failure
      */
     public function onAgentAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
         switch ($action) {
-            case ChatSignalConstants::LOGOUT:
-                if (!$dto instanceof LogoutActionDTO) {
-                    throw new InvalidActionPayloadException($action, LogoutActionDTO::class, $dto);
-                }
-                $this->handleLogout($acceptKey);
-
-                return null;
-
-            case HilosSignalConstants::HILOS_DISMISS_SESSION_ACK:
-                if (!$dto instanceof DismissSessionAckActionDTO) {
-                    throw new InvalidActionPayloadException($action, DismissSessionAckActionDTO::class, $dto);
-                }
-                $this->handleDismissSessionAck($acceptKey);
-
-                return null;
-
             case ChatSignalConstants::IMPERSONATE_STOP:
                 if (!$dto instanceof ImpersonateStopActionDTO) {
                     throw new InvalidActionPayloadException($action, ImpersonateStopActionDTO::class, $dto);
@@ -826,50 +866,6 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
     }
 
     /**
-     * Reverts the acting connection's session to anonymous.
-     *
-     * Resolves the session from the acting connection; a stale accept key or a
-     * connection with no token is a no-op.
-     *
-     * @param string $acceptKey Acting connection accept key
-     * @throws HilosException When session teardown exposes database or runtime failure
-     */
-    private function handleLogout(string $acceptKey): void
-    {
-        $sessionToken = Hilos::$rt->connections[$acceptKey]?->sessionToken;
-        if ($sessionToken === null || $sessionToken === '') {
-            return;
-        }
-
-        $this->deauthenticateSession($sessionToken);
-    }
-
-    /**
-     * Clears the success ack from the acting connection's session (HIL-422).
-     *
-     * The Continue button, arriving from whichever tab the person pressed it in. It
-     * clears the whole session rather than the one socket, because the announcement was
-     * put on the whole session: having read it once, nobody wants to dismiss it again in
-     * the other tab.
-     *
-     * Resolves the session from the acting connection, exactly as {@see handleLogout()}
-     * does; a stale accept key or a connection with no token is a no-op, and so is a
-     * session that carries no ack — a second press, or two tabs pressing at once.
-     *
-     * @param string $acceptKey Acting connection accept key
-     * @throws HilosException When clearing the ack exposes database or runtime failure
-     */
-    private function handleDismissSessionAck(string $acceptKey): void
-    {
-        $sessionToken = Hilos::$rt->connections[$acceptKey]?->sessionToken;
-        if ($sessionToken === null || $sessionToken === '') {
-            return;
-        }
-
-        $this->clearSessionAck($sessionToken);
-    }
-
-    /**
      * Reverts the acting connection's impersonating session back to its admin.
      *
      * Resolves the session from the acting connection; a stale accept key or a
@@ -880,6 +876,7 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
      *
      * @param string $acceptKey Acting connection accept key
      * @throws ValidationException When the resolved session is not impersonating
+     * @throws InvalidArgumentException When the rebind frame cannot be named
      * @throws HilosException When impersonation teardown exposes database or runtime failure
      */
     private function handleImpersonateStopAction(string $acceptKey): void
@@ -889,7 +886,9 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
             return;
         }
 
-        $this->stopImpersonation($sessionToken, $acceptKey);
+        // No correlation id: this came from a browser, and what it gets back is the identity
+        // frame the rebind ends in, not a command reply.
+        $this->stopImpersonation($sessionToken, $acceptKey, null);
     }
 
     /**
@@ -928,14 +927,12 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
     }
 
     /**
-     * Handles chat-owned cron cleanup for persisted history, transient attachment state,
-     * and expired registration holds.
+     * Handles chat-owned cron cleanup for persisted history and transient attachment state.
      *
-     * The reservation sweep is the one that answers somebody: an expired hold means the
-     * browser that made it is waiting for a code that can no longer confirm anything, so
-     * each freed hold rolls back its own session the moment its row goes. Its own, and not
-     * the address: since HIL-608 another browser may be registering the same address with
-     * a hold of its own, and that one is still good.
+     * The expired-registration-hold sweep used to be here too. It went with the sessions
+     * (HIL-710): what it frees is a hold on a session row, and it is scheduled by
+     * {@see SessionsLibraryAgent} on a rule of its own rather than by this demo's daemon,
+     * which has one cron addressee for every name it schedules.
      *
      * @param SignalDataInterface $data Cron payload (unused)
      * @param string $source Framework signal source identifier (unused)
@@ -958,16 +955,6 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
 
                 return;
 
-            case ChatCronConstants::SWEEP_REGISTRATION_RESERVATIONS:
-                foreach (new RegistrationReservationSweeper()->sweep() as $freed) {
-                    $this->rollBackRegistrationWaiters(
-                        $freed[ObjectRegistrationReservation::sessionToken],
-                        $freed[ObjectRegistrationReservation::identifier],
-                    );
-                }
-
-                return;
-
             default:
                 throw new AgentUnknownSignalException($name);
         }
@@ -980,22 +967,23 @@ final class ChatAgent extends AbstractAgent implements HilosSessionHostInterface
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Agent signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this agent
-     * @throws HilosException On bot message publish failure
+     * @throws InvalidArgumentException When a signal of the session-state answer cannot be named
+     * @throws InvalidFormatException When a session-state outcome cannot be read back
+     * @throws HilosException On bot message publish failure, or on database or runtime failure
      * @throws LogicException On payload type mismatch, or if event id is null after sync
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
-        // Asked of the map rather than of five case labels (HIL-685): the frames are spread
-        // into AGENT_SIGNALS from that same map, and a second list of them here would be
-        // this project restating a contract the framework already states - one that grew by
-        // two the moment a wait learned to move.
-        if (array_key_exists($name, HilosSessionHostInterface::SESSION_HOST_SIGNALS)) {
-            $this->handleSessionHostFrame($data, $name);
-
-            return;
-        }
-
         switch ($name) {
+            case HilosSignalConstants::HILOS_SESSION_STATE:
+                if (!$data->data instanceof SessionStateSignalData) {
+                    throw new LogicException(
+                        HilosSignalConstants::HILOS_SESSION_STATE . ' payload must be '
+                        . SessionStateSignalData::class,
+                    );
+                }
+                $this->applySessionState($data->data);
+                return;
             case ChatSignalConstants::MODERATION_RESULT:
             case ChatSignalConstants::RENAME_MODERATION_RESULT:
                 return;

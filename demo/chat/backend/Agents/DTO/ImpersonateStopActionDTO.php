@@ -15,8 +15,10 @@ use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
  * effective user is now the impersonated target, so no page is guaranteed) and
  * carries no payload: the acting session is taken from the connection, and the
  * admin to restore comes from the session's impersonator marker. Owned by
- * {@see ChatAgent} through AGENT_ACTIONS, calque of
- * {@see LogoutActionDTO}.
+ * {@see ChatAgent} through AGENT_ACTIONS - the last of its kind there, now that signing out
+ * and dismissing an ack have gone to the sessions library with the sessions they write
+ * (HIL-710). This one stays because what it judges is a project field: the administrator
+ * behind the takeover.
  */
 final class ImpersonateStopActionDTO extends ChatActionPayloadDTO
 {

@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Database\Database;
 use Demo\Chat\Hilos;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Flow\AuthFlowOutcome;
-use Hilos\Auth\Session\HilosSessionHostInterface;
+use Hilos\Auth\Session\DTO\SessionRebindSignalData;
+use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -21,6 +24,7 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
+use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 use Random\RandomException;
@@ -39,6 +43,9 @@ abstract class IntegrationTestCase extends TestCase
 
     /** @var ?UsersLibraryAgent Library the sign-in commands are dispatched on, built on first use */
     private ?UsersLibraryAgent $usersLibrary = null;
+
+    /** @var ?SessionsLibraryAgent Library the sessions themselves live in, built on first use */
+    private ?SessionsLibraryAgent $sessionsLibrary = null;
 
     /**
      * Initializes the database once and registers test truth-source ownership.
@@ -107,28 +114,139 @@ abstract class IntegrationTestCase extends TestCase
     }
 
     /**
-     * Runs every sign-in frame the library queued through the session holder.
+     * Builds the sessions library the session set lives in, once per case.
      *
-     * A command that ends in a signed-in person does not write the session itself - it hands
-     * the ending to the holder ({@see HilosSessionHostInterface}) and, when the action was
-     * tracked, lets the holder answer it. In one running node that hop is the two agents'
-     * own workers taking their turn; in a case it is this call, and a case that omits it
-     * will find neither the session raised nor the action answered.
+     * The third agent of the sign-in surface since HIL-710, and the one that owns what used
+     * to be a trait in the chat agent: a case drives a handshake, a bind or a sign-out here
+     * and reads its consequences off the chat agent, which is told in a frame. Started on
+     * first use because {@see SessionsLibraryAgent::onStart()} claims the session set and
+     * arms the sweeps, and a case driving either needs both.
      *
-     * Everything that is not a holder frame goes back on the queue in the order it was
+     * @return SessionsLibraryAgent Library under test, started
+     * @throws HilosException When the library's own startup fails
+     */
+    protected function sessionsLibrary(): SessionsLibraryAgent
+    {
+        if ($this->sessionsLibrary === null) {
+            $this->sessionsLibrary = new SessionsLibraryAgent();
+            $this->sessionsLibrary->onStart();
+        }
+
+        return $this->sessionsLibrary;
+    }
+
+    /**
+     * Opens one socket's session the way a node does: in the library, then told to the project.
+     *
+     * The handshake stopped being the chat agent's in HIL-710 - it is addressed to the
+     * sessions library, which resolves the cookie and answers with the state frame this
+     * hands on. A case calling the chat agent directly would find no connection row at all.
+     *
+     * @param ChatAgent $holder Agent that holds this project's connections
+     * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
+     * @throws HilosException When the handshake or the frame that follows it fails
+     * @throws AgentUnknownSignalException When an agent does not know a frame it is handed
+     * @throws RandomException When rotating a session token cannot draw from the CSPRNG
+     * @throws InvalidArgumentException When a signal put back on the queue has no name
+     * @throws InvalidFormatException When a frame's outcome cannot be read back
+     */
+    protected function deliverHandshake(ChatAgent $holder, WebSocketHandshakeSignalDTO $data): void
+    {
+        $this->sessionsLibrary()->onSignalHandshake($data, '', '');
+        $this->deliverLibraryFrames($holder);
+    }
+
+    /**
+     * Raises one live session to a user, the way a project asks for it.
+     *
+     * The rebind frame is the only way in since HIL-710: binding a session is the library's
+     * write, and what a project may do is name the state the session must reach. Naming a
+     * user is a sign-in; {@see self::deauthenticateSession()} names nobody.
+     *
+     * @param ChatAgent $holder Agent that holds this project's connections
+     * @param string $sessionToken Session cookie token to authenticate
+     * @param int $userId Durable user id to bind the session to
+     * @param ?string $initiatorAcceptKey Accept key of the connection that logged in, or null when there is none
+     * @throws HilosException When the bind or the frame that follows it fails
+     * @throws AgentUnknownSignalException When an agent does not know a frame it is handed
+     * @throws RandomException When rotating a session token cannot draw from the CSPRNG
+     * @throws InvalidArgumentException When a signal put back on the queue has no name
+     * @throws InvalidFormatException When a frame's outcome cannot be read back
+     */
+    protected function authenticateSession(
+        ChatAgent $holder,
+        string $sessionToken,
+        int $userId,
+        ?string $initiatorAcceptKey,
+    ): void {
+        $this->rebindSession($holder, new SessionRebindSignalData(
+            sessionToken: $sessionToken,
+            userId: $userId,
+            initiatorAcceptKey: $initiatorAcceptKey,
+        ));
+    }
+
+    /**
+     * Reverts one live session to anonymous - the inverse of {@see self::authenticateSession()}.
+     *
+     * @param ChatAgent $holder Agent that holds this project's connections
+     * @param string $sessionToken Session cookie token to revert to anonymous
+     * @throws HilosException When the unbind or the frame that follows it fails
+     * @throws AgentUnknownSignalException When an agent does not know a frame it is handed
+     * @throws RandomException When rotating a session token cannot draw from the CSPRNG
+     * @throws InvalidArgumentException When a signal put back on the queue has no name
+     * @throws InvalidFormatException When a frame's outcome cannot be read back
+     */
+    protected function deauthenticateSession(ChatAgent $holder, string $sessionToken): void
+    {
+        $this->rebindSession($holder, new SessionRebindSignalData(sessionToken: $sessionToken, userId: null));
+    }
+
+    /**
+     * Hands one rebind frame to the library and delivers what it answers with.
+     *
+     * @param ChatAgent $holder Agent that holds this project's connections
+     * @param SessionRebindSignalData $frame Session and the state it must reach
+     * @throws HilosException When the rebind or the frame that follows it fails
+     * @throws AgentUnknownSignalException When an agent does not know a frame it is handed
+     * @throws RandomException When rotating a session token cannot draw from the CSPRNG
+     * @throws InvalidArgumentException When a signal put back on the queue has no name
+     * @throws InvalidFormatException When a frame's outcome cannot be read back
+     */
+    protected function rebindSession(ChatAgent $holder, SessionRebindSignalData $frame): void
+    {
+        $this->sessionsLibrary()->onSignalAgent(
+            new AgentSignalData($frame),
+            '',
+            HilosSignalConstants::HILOS_SESSION_REBIND,
+        );
+        $this->deliverLibraryFrames($holder);
+    }
+
+    /**
+     * Runs every frame the sign-in surface queued through the agent it is addressed to.
+     *
+     * Three agents share one sign-in in a running node and two hops between them: a command
+     * that ends in a signed-in person hands the ending to the sessions library (HIL-622),
+     * and the library hands what the session became to the agent holding the sockets
+     * (HIL-710). In a node those hops are three workers taking their turn; in a case they
+     * are this call, and a case that omits it will find neither the session raised, nor the
+     * connection re-pointed, nor the action answered.
+     *
+     * Everything that is not one of those frames goes back on the queue in the order it was
      * taken off, so a case can still read the converge signals and browser pushes the run
-     * produced exactly as it did when the page owned these commands. Frames the holder
-     * queues while handling one are picked up by the same loop.
+     * produced. Frames an agent queues while handling one are picked up by the same loop,
+     * which is what carries a login across both hops in a single call.
      *
-     * What comes back is where the surface is sent next - the outcome the frame carried and
-     * the holder answered the action with. A command that answered for itself returns it
-     * from the dispatch instead and this is null; a case that can be reached either way
-     * takes whichever of the two it got.
+     * What comes back is where the surface is sent next - the outcome the state frame
+     * carried and the project answered the action with. A command that answered for itself
+     * returns it from the dispatch instead and this is null; a case that can be reached
+     * either way takes whichever of the two it got.
      *
-     * @param ChatAgent $holder Agent that holds this project's sessions
+     * @param ChatAgent $holder Agent that holds this project's connections
      * @return ?AuthFlowOutcome Outcome the last frame handed over, or null when none carried one
      * @throws HilosException When a frame's handler fails
-     * @throws AgentUnknownSignalException When the holder does not know a frame it is handed
+     * @throws AgentUnknownSignalException When an agent does not know a frame it is handed
      * @throws RandomException When rotating a session token cannot draw from the CSPRNG
      * @throws InvalidArgumentException When a signal put back on the queue has no name
      * @throws InvalidFormatException When a frame's outcome cannot be read back
@@ -139,22 +257,34 @@ abstract class IntegrationTestCase extends TestCase
         $outcome = null;
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
             $name = $signal->signalName->getName();
-            if (
-                $signal->data instanceof AgentSignalData
-                && array_key_exists($name, HilosSessionHostInterface::SESSION_HOST_SIGNALS)
-            ) {
-                // Read off the wire form rather than the frame class: a frame that ends a
-                // tracked action carries the answer under the same key whichever frame it
-                // is, and this is the shape the other process sees. The ones that end
-                // nothing - a moved wait, say - carry no such key and hand nothing over.
-                $handedOver = $signal->data->data->toArray()['outcome'] ?? null;
-                $outcome = is_array($handedOver) ? AuthFlowOutcome::fromArray($handedOver) : $outcome;
-                $holder->onSignalAgent($signal->data, '', $name);
+            $data = $signal->data;
+            if (!$data instanceof AgentSignalData) {
+                $rest[] = $signal;
 
                 continue;
             }
 
-            $rest[] = $signal;
+            $isStateFrame = $data->data instanceof SessionStateSignalData;
+            if (!$isStateFrame && !array_key_exists($name, SessionsLibraryAgent::AGENT_SIGNALS)) {
+                $rest[] = $signal;
+
+                continue;
+            }
+
+            // Read off the wire form rather than the frame class: a frame that ends a
+            // tracked action carries the answer under the same key whichever of the two
+            // hops it belongs to, and this is the shape the other process sees. The ones
+            // that end nothing - a moved wait, say - carry no such key and hand nothing
+            // over. Taking the last non-null is what makes a dispatch driven straight at a
+            // library, without a request id behind it, still say where the surface goes.
+            $handedOver = $data->data->toArray()['outcome'] ?? null;
+            $outcome = is_array($handedOver) ? AuthFlowOutcome::fromArray($handedOver) : $outcome;
+
+            if ($isStateFrame) {
+                $holder->onSignalAgent($data, '', $name);
+            } else {
+                $this->sessionsLibrary()->onSignalAgent($data, '', $name);
+            }
         }
 
         foreach ($rest as $signal) {

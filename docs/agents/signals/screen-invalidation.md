@@ -84,14 +84,15 @@ grant command starts it there — the chat demo's `ChatAgent::handleSetAdmin()`.
 A session losing its person is the same obligation with the other criterion:
 `forConnections()` / `sweepThisWorkerConnections()` name the accept keys instead,
 because the identity the first pair matches on is precisely what signing out
-removes, and `HilosSessionHost::deauthenticateSession()` is the one seam every
-way of losing it passes through. Described in
+removes. The one seam every way of losing it passes through is the
+`hilos_session_state` frame the sessions library ends it in, and the project
+handler of that frame is where both criteria are chosen between. Described in
 [page-access-control.md](../architecture/page-access-control.md).
 
 **Converge of a registration.** A session parked on the code step of an
 identifier somebody else is confirming is not the session that submitted, so
 nothing in its own request will ever tell it the outcome.
-`HilosSessionHost::convergeRegistration()` says it to the waiters,
+`AbstractSessionsLibraryAgent::convergeRegistration()` says it to the waiters,
 `rollBackRegistrationWaiters()` returns them to the identifier field when the
 reservation expired instead of failing the code they were about to type, and
 `convergeRecovery()` does the same for recovery. The carrier is

@@ -14,7 +14,9 @@ use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
+use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
+use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Mail\DTO\MailSendSignalData;
@@ -379,6 +381,16 @@ final class HilosSignalConstants
      */
     public const string HILOS_DISMISS_SESSION_ACK = 'hilos_dismiss_session_ack';
 
+    /**
+     * Client → sessions library (page-independent): revert this session to anonymous.
+     *
+     * Framework-owned since HIL-710, where the sign-out control stopped addressing a project
+     * agent: the session is the library's, and the control sits in the app shell of every
+     * project rather than on a page of one. The name is the framework's for the same reason
+     * the action is - a project that kept its own would be naming a door it no longer holds.
+     */
+    public const string HILOS_LOGOUT = 'hilos_logout';
+
     // ── Hilos sign-in surface: WebAuthn ceremonies (client → server) ──
     /**
      * Client → server: request WebAuthn discoverable (usernameless) login options — no
@@ -605,6 +617,36 @@ final class HilosSignalConstants
      * a second recipient would be a second holder of a single-use secret.
      */
     public const string HILOS_SESSION_ROTATE = 'hilos_session_rotate';
+
+    // ── Hilos session seam: sessions library ↔ the project agent holding the sockets ──
+    /**
+     * Sessions library → project agent: this is what the session is now, tell its sockets.
+     *
+     * The one frame the library answers with, whatever moved the session - a handshake, a
+     * sign-in, a sign-out, an impersonation, a success ack that was raised or dismissed
+     * (HIL-710). It names a LIST of sockets because the mechanics behind it are
+     * per-session: deauthenticate, mark and clear all bring every live socket of one
+     * session to a single state, and a handshake is simply the case where that list holds
+     * one. Carried by {@see SessionStateSignalData}.
+     *
+     * What the project does with it is its half of the seam and is ordered: write the rows
+     * first, then send its own handshake response, then the rotation ticket the frame may
+     * carry, then the page re-decision, and the answer to the action last of all - behind
+     * the identity it announces.
+     */
+    public const string HILOS_SESSION_STATE = 'hilos_session_state';
+
+    /**
+     * Project agent → sessions library: make this session say this instead.
+     *
+     * The way back over the same seam, and the only write a project may ask for on a
+     * session it does not own (HIL-710): sign this session in as that person, sign it out,
+     * put it behind an impersonating administrator or take it back out. It carries the
+     * TARGET state whole rather than a change to apply - naming what the session should be
+     * leaves no room for a third meaning of null beside "nobody" - and the library derives
+     * the operation from it. Carried by {@see SessionRebindSignalData}.
+     */
+    public const string HILOS_SESSION_REBIND = 'hilos_session_rebind';
 
     // ── Hilos backup admin: page → monopoly BackupAgent routes (agent signals) ──
     /** Page → BackupAgent: run a backup in the carried scope (guarded create path). */

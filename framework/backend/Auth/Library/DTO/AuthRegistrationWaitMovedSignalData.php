@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\DTO;
 
-use Hilos\Auth\Session\HilosSessionHostInterface;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
@@ -17,7 +17,7 @@ use Hilos\Core\Router\SignalDataInterface;
  * to be EDITED, and editing this collection belongs to its one full truth source. So the
  * payload states the wait rather than amending it - the accept key it belongs to, and the
  * address and session it stands on now - and the holder makes the row say that
- * ({@see HilosSessionHostInterface::SESSION_HOST_SIGNALS}).
+ * ({@see AbstractSessionsLibraryAgent::AGENT_SIGNALS}).
  *
  * There is nothing to answer and nothing to wait for: the library has already told the
  * browser its code went out, because that answer never depended on the wait. What a lost

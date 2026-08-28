@@ -141,18 +141,14 @@ final class TasksConnectionPresenceTest extends IntegrationTestCase
         try {
             $token = RandomHelper::hex(16);
 
-            new TasksAgent()->onSignalHandshake(
-                new WebSocketHandshakeSignalDTO(
-                    headers: [],
-                    acceptKey: 'tasks-ak-handshake',
-                    cookies: [],
-                    clientIp: '127.0.0.1',
-                    queryParams: RequestQueryParams::empty(),
-                    sessionToken: $token,
-                ),
-                '',
-                '',
-            );
+            $this->deliverHandshake(new TasksAgent(), new WebSocketHandshakeSignalDTO(
+                headers: [],
+                acceptKey: 'tasks-ak-handshake',
+                cookies: [],
+                clientIp: '127.0.0.1',
+                queryParams: RequestQueryParams::empty(),
+                sessionToken: $token,
+            ));
 
             $connection = Hilos::$rt->connections['tasks-ak-handshake'];
             $this->assertNotNull($connection);

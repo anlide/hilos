@@ -59,7 +59,7 @@ removing it. It is said by standing on a lower stage:
 | Stage | Row carries | Seams it unlocks |
 |---|---|---|
 | `HilosConnection` | `acceptKey`, `?int userId` | `findAuthenticated()`, `findByUser()`, presence in the users table |
-| `HilosSessionConnection` | the above plus `?string sessionToken` | `findAllBySessionToken()`, the session-host re-point, the session carry-over |
+| `HilosSessionConnection` | the above plus `?string sessionToken` | `findAllBySessionToken()`, the sessions library's read of a session's sockets, the session carry-over |
 
 A new framework seam names the **minimum** stage it needs, never the fullest. A
 project that has not reached that stage then lacks the *method*, so the gap is a

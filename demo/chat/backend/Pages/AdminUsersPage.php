@@ -165,6 +165,9 @@ final class AdminUsersPage extends AbstractPage
             throw new TableActionException('Impersonation requires the chat agent');
         }
 
-        $agent->startImpersonation($sessionToken, $dto->targetUserId, $acceptKey);
+        // No correlation id: an operator's command is answered on the command socket by the
+        // library that writes the session, while this caller is a browser and gets its answer
+        // in the identity frame that follows.
+        $agent->startImpersonation($sessionToken, $dto->targetUserId, $acceptKey, null);
     }
 }
