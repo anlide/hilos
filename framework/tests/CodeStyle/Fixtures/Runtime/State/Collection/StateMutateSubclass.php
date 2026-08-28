@@ -17,7 +17,7 @@ use Hilos\Runtime\State\Item\RtState;
 final class StateMutateSubclass extends RtStates
 {
     /**
-     * @param string $id Key written, dropped and then wiped along with the rest
+     * @param string $id Key written, dropped, wiped along with the rest and coalesce-assigned
      * @param RtState $state Row put under that key
      */
     public function rewrite(string $id, RtState $state): void
@@ -25,6 +25,8 @@ final class StateMutateSubclass extends RtStates
         $this->states[$id] = $state;
         unset($this->states[$id]);
         $this->states = [];
+        $this->states[$id] ??= $state;
+        $this->states ??= [];
     }
 
     /**

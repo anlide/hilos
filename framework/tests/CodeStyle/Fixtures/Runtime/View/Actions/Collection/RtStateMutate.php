@@ -61,5 +61,20 @@ final class RtStateMutate
         $collection->clear();
         $collection[$id] = $state;
         unset($collection[$id]);
+        $collection[$id] ??= $state;
+    }
+
+    /**
+     * The same alias, taken by a coalescing assignment: a variable that holds the
+     * backing collection holds it however it got there, so the call below is the
+     * ordinary hand-rolled mutation. The assignment itself is not one - the rule judges
+     * a change of membership, not the acquiring of a reference.
+     *
+     * @param RtState $state Row put into the collection through a coalesced alias
+     */
+    public function throughCoalescedAlias(RtState $state): void
+    {
+        $lazy ??= $this->getStateCollection();
+        $lazy->add($state);
     }
 }

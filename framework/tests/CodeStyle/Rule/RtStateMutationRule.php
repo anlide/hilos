@@ -261,9 +261,11 @@ final class RtStateMutationRule implements CodeStyleRule
      * rather than per scope: `RtSnapshot` mutates its alias from inside a closure
      * declared below the assignment, and a token walk has no scopes to hand out.
      *
-     * Only a direct assignment counts. Nothing derived from an alias is one - a
-     * detached copy built by `$alias::init()` is a read surface with rows of its own,
-     * and banning writes into it would ban the very construction of a filtered view.
+     * Only a direct assignment counts, and a coalescing one is direct: a variable that
+     * took the collection on the run it was empty holds it just as much. Nothing derived
+     * from an alias is one - a detached copy built by `$alias::init()` is a read surface
+     * with rows of its own, and banning writes into it would ban the very construction
+     * of a filtered view.
      *
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
      * @return array<int, string> Variable names, spelled with their dollar sign
@@ -277,7 +279,11 @@ final class RtStateMutationRule implements CodeStyleRule
             }
 
             $assignment = $this->significantIndex($tokens, $index, 1);
-            if ($assignment !== null && $tokens[$assignment] === '=' && $this->assignsReceiver($tokens, $assignment)) {
+            if (
+                $assignment !== null
+                && $this->isAssignment($tokens[$assignment])
+                && $this->assignsReceiver($tokens, $assignment)
+            ) {
                 $aliases[] = $token[1];
             }
         }
@@ -341,7 +347,8 @@ final class RtStateMutationRule implements CodeStyleRule
      * True when the named token is assigned to, whole or by one key. A key read is told
      * from a key write by what follows the closing bracket, which is also what keeps a
      * write into a row's field - `$collection[$id]->field = ...` - out of the rule: the
-     * bracket is followed by an object operator there, not by an assignment.
+     * bracket is followed by an object operator there, not by an assignment. A
+     * coalescing assignment is one of those assignments; `??` is not, and stays a read.
      *
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
      * @param int $index Index of the token naming the receiver
@@ -354,7 +361,7 @@ final class RtStateMutationRule implements CodeStyleRule
             return false;
         }
 
-        if ($tokens[$nextIndex] === '=') {
+        if ($this->isAssignment($tokens[$nextIndex])) {
             return true;
         }
 
@@ -364,7 +371,21 @@ final class RtStateMutationRule implements CodeStyleRule
 
         $closing = $this->closingBracket($tokens, $nextIndex, '[', ']');
 
-        return $closing !== null && $this->significantToken($tokens, $closing, 1) === '=';
+        return $closing !== null && $this->isAssignment($this->significantToken($tokens, $closing, 1));
+    }
+
+    /**
+     * The assignment operators that put a row into the collection, or hand the
+     * collection itself to a variable: the plain one and the coalescing one, which
+     * writes on the run the left side is missing. `??` alone carries a different token
+     * and is therefore not one of them.
+     *
+     * @param string|array{0: int, 1: string, 2: int}|null $token Token standing where an assignment would
+     * @return bool True when the token assigns
+     */
+    private function isAssignment(string|array|null $token): bool
+    {
+        return $token === '=' || (is_array($token) && $token[0] === T_COALESCE_EQUAL);
     }
 
     /**

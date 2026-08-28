@@ -298,6 +298,12 @@ final class RuleFixtureTest extends TestCase
                 'DB-OBJECT-MUTATE Database/Object/Collection/ObjectStoreMutate.php:29 — unset() drops a row of '
                     . 'the object store directly; use unset($this[$id]), which announces the loss and lets the '
                     . 'view drop its wrapper (see docs/agents/orm/object.md)',
+                'DB-OBJECT-MUTATE Database/Object/Collection/ObjectStoreMutate.php:30 — $this->objects is '
+                    . 'written directly outside Objects; go through $this[$id] = $object for a new row, or '
+                    . 'hydrate() for a row read out of storage (see docs/agents/orm/object.md)',
+                'DB-OBJECT-MUTATE Database/Object/Collection/ObjectStoreMutate.php:31 — $this->objects is '
+                    . 'written directly outside Objects; go through $this[$id] = $object for a new row, or '
+                    . 'hydrate() for a row read out of storage (see docs/agents/orm/object.md)',
                 // Storage first and signatures after, because the rule walks the file twice: the two
                 // halves are reported in the order they are checked, not in line order.
                 'VIEW-WRAPPER-BIND Database/View/Item/ByRefWrapperSamples.php:25 — $this->_object is bound to '
@@ -319,6 +325,12 @@ final class RuleFixtureTest extends TestCase
                     . 'directly outside RtStates; go through add(), remove() or clear() '
                     . '(see docs/agents/runtime/rt-state.md)',
                 'RT-STATE-MUTATE Runtime/State/Collection/StateMutateSubclass.php:27 — $this->states is written '
+                    . 'directly outside RtStates; go through add(), remove() or clear() '
+                    . '(see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/State/Collection/StateMutateSubclass.php:28 — $this->states is written '
+                    . 'directly outside RtStates; go through add(), remove() or clear() '
+                    . '(see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/State/Collection/StateMutateSubclass.php:29 — $this->states is written '
                     . 'directly outside RtStates; go through add(), remove() or clear() '
                     . '(see docs/agents/runtime/rt-state.md)',
                 'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:23 — add() mutates the backing '
@@ -360,6 +372,12 @@ final class RuleFixtureTest extends TestCase
                 'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:63 — unset() drops a key of '
                     . 'the backing RT state collection outside the base actions; call the base RtActions method '
                     . 'instead (see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:64 — a key of the backing RT '
+                    . 'state collection is written outside the base actions; call the base RtActions method '
+                    . 'instead (see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-MUTATE Runtime/View/Actions/Collection/RtStateMutate.php:78 — add() mutates the backing '
+                    . 'RT state collection outside the base actions; call the base RtActions method instead '
+                    . '(see docs/agents/runtime/rt-state.md)',
                 'VIEW-WRAPPER-BIND Runtime/View/Collection/ByRefFactorySamples.php:27 — '
                     . '$this->_stateCollection is bound to a variable by reference; assign the value, so the '
                     . 'wrapper keeps the row it was built from (see docs/agents/orm/collection-iteration.md)',

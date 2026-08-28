@@ -24,7 +24,8 @@ use Hilos\Tests\CodeStyle\Violation;
  * $this->objects[$key]` — because a read desynchronizes nobody, and a narrowed lookup
  * inside a concrete collection is written exactly that way. Writing a field of a row
  * that is already there is not a membership change either, and is told from a key write
- * by what follows the closing bracket.
+ * by what follows the closing bracket. A coalescing assignment reads as a write, whole
+ * or by one key, because it puts a row in on the run it fires; `??` stays a read.
  *
  * The receiver is recognized lexically, as `$this->objects` and nothing else, so a class
  * that is no object store but keeps an `$objects` property of its own is reported with
@@ -130,7 +131,8 @@ final class ObjectStoreMutationRule implements CodeStyleRule
      * True when the named token is assigned to, whole or by one key. A key read is told
      * from a key write by what follows the closing bracket, which is also what keeps a
      * write into a row's field - `$this->objects[$id]->userId = ...` - out of the rule:
-     * the bracket is followed by an object operator there, not by an assignment.
+     * the bracket is followed by an object operator there, not by an assignment. A
+     * coalescing assignment is one of those assignments; `??` is not, and stays a read.
      *
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
      * @param int $index Index of the token naming the store
@@ -143,7 +145,7 @@ final class ObjectStoreMutationRule implements CodeStyleRule
             return false;
         }
 
-        if ($tokens[$nextIndex] === '=') {
+        if ($this->isAssignment($tokens[$nextIndex])) {
             return true;
         }
 
@@ -153,7 +155,20 @@ final class ObjectStoreMutationRule implements CodeStyleRule
 
         $closing = $this->closingBracket($tokens, $nextIndex, '[', ']');
 
-        return $closing !== null && $this->significantToken($tokens, $closing, 1) === '=';
+        return $closing !== null && $this->isAssignment($this->significantToken($tokens, $closing, 1));
+    }
+
+    /**
+     * The assignment operators that put a row into the store: the plain one and the
+     * coalescing one, which writes on the run the key is missing. `??` alone carries a
+     * different token and is therefore not one of them.
+     *
+     * @param string|array{0: int, 1: string, 2: int}|null $token Token standing where an assignment would
+     * @return bool True when the token assigns
+     */
+    private function isAssignment(string|array|null $token): bool
+    {
+        return $token === '=' || (is_array($token) && $token[0] === T_COALESCE_EQUAL);
     }
 
     /**

@@ -43,7 +43,7 @@ final class RtStateMutateLookAlikes
             $rows[] = $row;
         }
 
-        return [$collection->get($id), $collection->has($id), $collection[$id], $rows];
+        return [$collection->get($id), $collection->has($id), $collection[$id], $collection[$id] ?? null, $rows];
     }
 
     /**
