@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\SimplePoll\Tests\Integration;
 
 use Demo\SimplePoll\Hilos;
+use Hilos\Core\Exception\EmptyValueException;
 use Hilos\HilosException;
 
 /**
@@ -48,5 +49,38 @@ final class UsersActionsTest extends IntegrationTestCase
         $this->assertNotNull($user->id);
         $this->assertStringStartsWith('Admin', $user->name);
         $this->assertTrue($user->admin);
+    }
+
+    /**
+     * The sign-in mint keeps the name it was given and leaves the admin flag alone.
+     *
+     * The one door every sign-in road ends at (HIL-634), and the difference from
+     * `registerAdmin()` is the whole reason it exists: a person who registers is a member,
+     * not an operator, and the name comes from the ceremony rather than from a generator.
+     *
+     * @throws HilosException On database error
+     */
+    public function testCreateWithNameKeepsTheNameAndGrantsNothing(): void
+    {
+        $user = Hilos::$db->users->actions->createWithName('  Ada Lovelace  ');
+
+        $this->assertNotNull($user->id);
+        $this->assertSame('Ada Lovelace', $user->name);
+        $this->assertFalse($user->admin);
+    }
+
+    /**
+     * A blank name is refused rather than stored.
+     *
+     * A nameless account is a defect wherever it comes from, and this is the one door every
+     * road passes through - so the refusal belongs here and not in each caller.
+     *
+     * @throws HilosException On database error
+     */
+    public function testCreateWithNameRefusesABlankName(): void
+    {
+        $this->expectException(EmptyValueException::class);
+
+        Hilos::$db->users->actions->createWithName('   ');
     }
 }

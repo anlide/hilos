@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace Demo\SimplePoll\Tests\Unit;
 
 use Demo\SimplePoll\Agents\Hilos\DemoHilosAgent;
+use Demo\SimplePoll\Agents\Hilos\UsersLibraryAgent;
+use Demo\SimplePoll\Agents\OAuthAgent;
 use Demo\SimplePoll\Agents\PollAgent;
 use Demo\SimplePoll\Browser\Table\UserDetailBrowserTable;
 use Demo\SimplePoll\Constants\AgentType;
 use Demo\SimplePoll\Constants\PageConstants;
 use Demo\SimplePoll\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\SimplePoll\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
+use Demo\SimplePoll\Core\Agent\Daemon\OAuthAgentDaemon;
 use Demo\SimplePoll\Core\Agent\Daemon\PollAgentDaemon;
 use Demo\SimplePoll\Hilos;
 use Demo\SimplePoll\Groups\Hilos\NotificationsGroup;
@@ -27,6 +31,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\CLI\CliManager;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use PHPUnit\Framework\TestCase;
 
@@ -128,8 +133,7 @@ final class PollTopologyRegistryTest extends TestCase
             [
                 HilosSignalConstants::HILOS_SESSION_STATE => AgentType::POLL,
                 // The other half of the seam, and the seven endings the users library hands
-                // over: this demo has no sign-in, so nothing sends them - but the library it
-                // registers is what would be addressed if anything did.
+                // over: what a sign-in became reaches the library that owns the session.
                 HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -141,9 +145,98 @@ final class PollTopologyRegistryTest extends TestCase
                 // The merge is mounted here as everywhere else and refuses, because this demo
                 // wires neither of its seams (HIL-729).
                 HilosSignalConstants::HILOS_ACCOUNT_MERGE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                // Sign-in's own frames (HIL-634). The users library waits for the throttle
+                // verdict and for the provider exchange it handed off; the four delivery
+                // agents and the two node-scoped auth agents answer on their own names.
+                HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
+                HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => HilosAgentType::HILOS_USERS_LIBRARY,
+                HilosSignalConstants::HILOS_OAUTH_PENDING => HilosAgentType::HILOS_OAUTH,
+                HilosSignalConstants::HILOS_MAIL_DELIVER => HilosAgentType::HILOS_MAIL,
+                HilosSignalConstants::HILOS_MAIL_SEND => HilosAgentType::HILOS_MAIL,
+                HilosSignalConstants::HILOS_SMS_DELIVER => HilosAgentType::HILOS_SMS,
+                HilosSignalConstants::HILOS_SMS_SEND => HilosAgentType::HILOS_SMS,
+                HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => HilosAgentType::HILOS_AUTH_THROTTLE,
+                HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => HilosAgentType::HILOS_AUTH_THROTTLE,
+                HilosSignalConstants::HILOS_AUTH_CODE_SEND => HilosAgentType::HILOS_AUTH_CODE,
             ],
             Hilos::getAgentSignalRoutes(),
         );
+    }
+
+    public function testSignInIsActivatedOnTheFrameworkLibrary(): void
+    {
+        // Sign-in is an activation, not a build (HIL-634): the demo declares the features
+        // and registers six agent pairs, and every command name behind the surface is the
+        // framework's. The snapshot is the whole action map on purpose - a command that
+        // silently stopped being routed here would otherwise look like a working surface
+        // until somebody submitted the form it belongs to.
+        $this->assertSame([
+            HilosFeature::SETTINGS,
+            HilosFeature::HILOS_USERS,
+            HilosFeature::NOTIFICATIONS,
+            HilosFeature::AUTH,
+            HilosFeature::AUTH_THROTTLE,
+            HilosFeature::CODE_CHANNELS,
+        ], Hilos::features());
+
+        $this->assertSame(UsersLibraryAgent::class, AgentRegistry::workerClass(
+            Hilos::AGENTS[HilosAgentType::HILOS_USERS_LIBRARY],
+        ));
+        $this->assertSame(UsersLibraryAgentDaemon::class, AgentRegistry::daemonClass(
+            Hilos::AGENTS[HilosAgentType::HILOS_USERS_LIBRARY],
+        ));
+        $this->assertSame(OAuthAgent::class, AgentRegistry::workerClass(
+            Hilos::AGENTS[HilosAgentType::HILOS_OAUTH],
+        ));
+        $this->assertSame(OAuthAgentDaemon::class, AgentRegistry::daemonClass(
+            Hilos::AGENTS[HilosAgentType::HILOS_OAUTH],
+        ));
+        $this->assertSame(
+            [
+                HilosAgentType::HILOS_MAIL,
+                HilosAgentType::HILOS_SMS,
+                HilosAgentType::HILOS_AUTH_THROTTLE,
+                HilosAgentType::HILOS_AUTH_CODE,
+            ],
+            array_values(array_intersect(array_keys(Hilos::AGENTS), [
+                HilosAgentType::HILOS_MAIL,
+                HilosAgentType::HILOS_SMS,
+                HilosAgentType::HILOS_AUTH_THROTTLE,
+                HilosAgentType::HILOS_AUTH_CODE,
+            ])),
+        );
+
+        $this->assertSame([
+            // Signing out, dismissing an ack and taking a user over all write a session, so
+            // the sessions library owns them (HIL-710, HIL-729) - this demo adds an action of
+            // its own for none of them. The impersonation pair is mounted here as everywhere
+            // else and refuses, because this demo wires no seam saying who may take over.
+            HilosSignalConstants::HILOS_LOGOUT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_IMPERSONATE_START => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_IMPERSONATE_STOP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_DETECT_IDENTIFIER => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_LOGIN => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_REGISTER => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_CONFIRM_PASSWORD_RESET => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_CONFIRM_REGISTER => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_ABANDON_REGISTRATION => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_REQUEST_PHONE_CODE => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK_CODE => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_OAUTH_START => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_OAUTH_CALLBACK => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_PASSKEY_REGISTER_OPTIONS => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+        ], Hilos::getAgentActionRoutes());
     }
 
     public function testSettingsAndUsersAdminFeaturesAreActivated(): void

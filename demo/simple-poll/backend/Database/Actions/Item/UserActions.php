@@ -22,8 +22,17 @@ use Hilos\Utils\Helpers\TimeHelper;
  */
 final class UserActions extends DbActions
 {
-    private const int NAME_MIN_LENGTH = 2;
-    private const int NAME_MAX_LENGTH = 64;
+    /**
+     * Shortest display name a user may carry.
+     *
+     * Public because the frame is one, not two: a name arriving from an OAuth
+     * provider is measured against the very frame the rename applies, instead of a
+     * second copy of the numbers (HIL-573).
+     */
+    public const int NAME_MIN_LENGTH = 2;
+
+    /** Longest display name a user may carry - the same frame, read from the other end. */
+    public const int NAME_MAX_LENGTH = 64;
 
     /**
      * Renames current user item (only editable field). Validates and persists.
