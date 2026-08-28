@@ -1668,11 +1668,10 @@ final class PeerServer extends AbstractServer implements
      */
     public function broadcastToMasters(PeerDTO $frame): void
     {
-        foreach ($this->clients as $client) {
-            if ($client->remoteIdentity()?->role === NodeRole::Master) {
-                $client->sendFrame($frame);
-            }
-        }
+        $this->fanOutFrame(
+            $frame,
+            static fn(PeerLink $link): bool => $link->remoteIdentity()?->role === NodeRole::Master,
+        );
     }
 
     /**
@@ -1685,11 +1684,7 @@ final class PeerServer extends AbstractServer implements
      */
     private function broadcastToAllPeers(PeerDTO $frame): void
     {
-        foreach ($this->clients as $client) {
-            if ($client->remoteIdentity() !== null) {
-                $client->sendFrame($frame);
-            }
-        }
+        $this->fanOutFrame($frame, static fn(PeerLink $link): bool => $link->remoteIdentity() !== null);
     }
 
     /**
@@ -2290,11 +2285,7 @@ final class PeerServer extends AbstractServer implements
      */
     public function broadcastToNodes(PeerDTO $frame): void
     {
-        foreach ($this->clients as $client) {
-            if ($client->remoteIdentity() !== null) {
-                $client->sendFrame($frame);
-            }
-        }
+        $this->fanOutFrame($frame, static fn(PeerLink $link): bool => $link->remoteIdentity() !== null);
     }
 
     /**
@@ -2316,11 +2307,46 @@ final class PeerServer extends AbstractServer implements
      */
     public function broadcastToNodesHolding(PeerDTO $frame, string $kind, string $collectionKey): void
     {
+        $this->fanOutFrame($frame, function (PeerLink $link) use ($kind, $collectionKey): bool {
+            $nodeId = $link->remoteIdentity()?->nodeId;
+
+            return $nodeId !== null && $this->nodeReaderMap->holds($nodeId, $kind, $collectionKey);
+        });
+    }
+
+    /**
+     * Writes one frame to every link a broadcast's own question lets through, packing it once.
+     *
+     * The single loop behind all five broadcasts of this class, which differ in nothing but
+     * whom they reach. The frame is the same object for all of them, so a second `json_encode`
+     * of it is work the master loop pays for nothing - and this loop is on the master, where
+     * every RT and DB sync fact passes. The same shape a floor below:
+     * {@see DaemonManager::writeFrameToWorkers()} for the worker links, and
+     * {@see DaemonManager::encodeSignalFrame()} with {@see DaemonManager::sendToAllClients()}
+     * for the WebSocket ones.
+     *
+     * One pass rather than the fix repeated five times, because five copies of a naive loop
+     * are how this cost spread here in the first place: a sixth broadcast written against this
+     * method cannot pack per link even by accident.
+     *
+     * Packing is lazy instead of unconditional before the loop because a filter is allowed to
+     * let nobody through - a node with no handshaked link yet, a mesh with no other master, a
+     * collection no peer reads - and then the frame is never packed at all.
+     *
+     * @param PeerDTO $frame Frame to fan out
+     * @param callable(PeerLink): bool $reaches Whether this broadcast reaches the given link
+     */
+    private function fanOutFrame(PeerDTO $frame, callable $reaches): void
+    {
+        $encoded = null;
+
         foreach ($this->clients as $client) {
-            $nodeId = $client->remoteIdentity()?->nodeId;
-            if ($nodeId !== null && $this->nodeReaderMap->holds($nodeId, $kind, $collectionKey)) {
-                $client->sendFrame($frame);
+            if (!$reaches($client)) {
+                continue;
             }
+
+            $encoded ??= $frame->toJson();
+            $client->sendEncodedFrame($encoded);
         }
     }
 
@@ -2407,14 +2433,10 @@ final class PeerServer extends AbstractServer implements
      */
     private function broadcastAnnounce(PeerNodeEntry $entry, ?PeerLink $source = null): void
     {
-        $announce = new PeerAnnounceDTO($entry);
-        foreach ($this->clients as $client) {
-            if ($client === $source || $client->remoteIdentity() === null) {
-                continue;
-            }
-
-            $client->sendFrame($announce);
-        }
+        $this->fanOutFrame(
+            new PeerAnnounceDTO($entry),
+            static fn(PeerLink $link): bool => $link !== $source && $link->remoteIdentity() !== null,
+        );
     }
 
     /**

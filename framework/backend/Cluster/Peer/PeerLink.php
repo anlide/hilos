@@ -143,7 +143,23 @@ final class PeerLink extends AbstractClient
      */
     public function sendFrame(PeerDTO $frame): void
     {
-        $this->writeBuffer .= $frame->toJson() . "\n";
+        $this->sendEncodedFrame($frame->toJson());
+    }
+
+    /**
+     * Queues one already-packed peer frame for delivery to this link.
+     *
+     * The door a fan-out uses: one frame goes to every link that passes the filter, so the
+     * {@see PeerServer} packs it once and hands each link the ready string. Framing stays
+     * here and only the JSON arrives packed — a caller knows what it is sending, not how
+     * this channel delimits it, and moving the newline out would put the protocol's
+     * boundary in every fan-out that ever gets written.
+     *
+     * @param string $frameJson JSON of one peer frame, without the newline delimiter
+     */
+    public function sendEncodedFrame(string $frameJson): void
+    {
+        $this->writeBuffer .= $frameJson . "\n";
     }
 
     /**

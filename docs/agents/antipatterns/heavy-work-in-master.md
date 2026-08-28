@@ -64,7 +64,9 @@ that needs no I/O — a random token — and let the worker persist and verify i
 - **A frame going to several addressees is packed once per broadcast**, not once per
   link: the string is the same for all of them, and the second `json_encode` is work the
   master pays for nothing. `DaemonManager::writeFrameToWorkers()` is where this is done for
-  the worker links, and `encodeSignalFrame()` / `sendToAllClients()` for the WebSocket ones.
+  the worker links, `encodeSignalFrame()` / `sendToAllClients()` for the WebSocket ones, and
+  `PeerServer::fanOutFrame()` for the links to other nodes — the single loop every peer
+  broadcast goes through, each of them supplying only its own question of whom to reach.
 - **The master now also asks** (HIL-619): `onContainedFailure()` tells the project
   about a failure a master guard swallowed, and it is master-loop code like the hooks
   above — a line or a counter, and `MasterSignalSender` for anything more. It is called
