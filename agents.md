@@ -9,6 +9,10 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 - **Never commit to `master`.**
 - **`git commit` is off by default.** Leave the change in the tree and hand the
   commit text over — the owner decides what becomes history.
+- **Every commit message you compose ends with an authorship block** naming the
+  model that wrote the text and the effort it ran at — see
+  `skills/hilos-commit-text/SKILL.md`. The commit author stays `Claude agent`:
+  that is a fixed git setting, while the model and the effort change per session.
 
 Exactly two things lift the commit ban, and nothing else does:
 
