@@ -97,12 +97,18 @@ class DockerManager extends BaseManager
         // Resolve the alert mail once, at startup: an unconfigured mailbox is worth saying while
         // the node is healthy, and a watchdog on its way out must not be reading the environment.
         // After the rotation, not before it, or the line saying so is archived the moment it is written.
+        // A failure before this line — the path check, the missing functions, the log rotation —
+        // therefore leaves no mail at all: there is no mailer yet, and no catch either. That is the
+        // price of the order above and not an oversight; building the mailer earlier to cover it, or
+        // wrapping the file work in a `try`, is the watchdog growing handlers it has nobody to
+        // supervise (HIL-617). Who restarts a watchdog is a question outside Hilos.
         $this->alertMailer = WatchdogAlertMailer::fromEnv();
 
         Logger::info("Docker watchdog started");
 
         // Main loop. The catch mails and rethrows rather than recovering: the watchdog is not
         // made resilient by the watchdog, and DockerApplication still decides the exit code.
+        // The catch covers the loop only; the note above says what that leaves out.
         try {
             while ($this->shouldExit === false || $this->process !== null) {
                 $loopStartTime = microtime(true);

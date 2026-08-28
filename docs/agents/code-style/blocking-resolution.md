@@ -49,7 +49,11 @@ is stated here rather than left to be rediscovered.
 Neither is anything that resolves a name as a side effect of connecting —
 `fsockopen()`, `stream_socket_client()`, cURL. Those belong to the event-loop
 rules ([event-loop.md](../architecture/event-loop.md)), which govern them by
-whether the socket is non-blocking, not by the name behind it.
+whether the socket is non-blocking, not by the name behind it. Non-blocking there
+means the *connect*: the name in front of it is still resolved synchronously, on
+the resolver's own clock, and no timeout in Hilos covers that. Where it matters
+the address is a setting to begin with — `WATCHDOG_ALERT_SMTP_HOST` is the
+written-up case, see [daemon-lifecycle.md](../architecture/daemon-lifecycle.md).
 
 ## Adding an exception
 

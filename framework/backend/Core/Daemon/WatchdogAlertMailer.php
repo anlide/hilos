@@ -43,6 +43,15 @@ use Throwable;
  * daemon at all, so it pumps the transport itself and waits up to `WATCHDOG_ALERT_TIMEOUT_MS`
  * (default 5000, half the product's, because a dying process must not sit on a socket).
  *
+ * **What the timeout does not cover.** `WATCHDOG_ALERT_TIMEOUT_MS` bounds the pumping of the
+ * send, not the lookup that turns a host name into an address: `stream_socket_client()`
+ * resolves the name synchronously before the non-blocking connect begins, takes no timeout of
+ * its own, and spends that time outside the budget — on the very box whose DNS is gone, which
+ * is one of the failures this mail exists to report. Put an IP address in
+ * `WATCHDOG_ALERT_SMTP_HOST` and there is no lookup at all. Nothing deeper will be built here:
+ * a resolver of our own, or a second timeout around one, is the watchdog growing handlers, and
+ * the watchdog has no watchdog to catch it when they misfire (HIL-617).
+ *
  * **Nothing here changes what the watchdog does.** Every failure — unset configuration, a
  * refused relay, an exception out of the mail code — is one line in the log and no more: no
  * retry, no delay beyond the timeout, no bearing on the exit code.
@@ -218,7 +227,9 @@ final class WatchdogAlertMailer
      *
      * Blocking here is deliberate and is the whole reason this mailer exists apart from the
      * mail agent: there is no loop left to pump the send from. The cost is bounded by
-     * `WATCHDOG_ALERT_TIMEOUT_MS` and paid at a moment when the node is down anyway.
+     * `WATCHDOG_ALERT_TIMEOUT_MS` from the first pump onwards — the name lookup inside the
+     * connect precedes it and is not in that budget, see this class's docblock — and paid at a
+     * moment when the node is down anyway.
      *
      * @param float $startedMs When the send was started, in milliseconds
      * @return ?MailSendOutcome The settled outcome, or null when the send was abandoned unsettled

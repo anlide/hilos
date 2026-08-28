@@ -78,11 +78,22 @@ letter and no timed reminder.
 - **The send goes straight out, synchronously, around `HilosMailer::send()`**, which only
   queues a signal for an agent living inside a worker. The watchdog writes precisely when
   there may be no daemon at all, so it pumps the transport itself, bounded by
-  `WATCHDOG_ALERT_TIMEOUT_MS`. Every failure of the send is a log line and nothing more.
+  `WATCHDOG_ALERT_TIMEOUT_MS` from the first pump on. Every failure of the send is a log
+  line and nothing more.
 - **Where the honesty ends, in plain words.** A letter arrives for a failure carrying an
   exception or a PHP fatal. On `kill -9`, on the OOM killer, or when the container itself
   goes down, there is no letter, and this is not a gap to be closed from the inside —
   those are watched for from outside (zabbix, the restart policy).
+  There is also no letter for a failure *before* the loop: the path check, the missing
+  functions and the log rotation all run before `WatchdogAlertMailer::fromEnv()` is built,
+  so a full log volume kills the watchdog silently. And `WATCHDOG_ALERT_TIMEOUT_MS` does
+  not cover the name lookup inside the connect, so a box whose DNS is gone can hold the
+  dying watchdog for as long as its resolver takes. Both are the price of a watchdog with
+  no watchdog, not gaps to be closed from the inside — the deep handlers that would close
+  them (a resolver of our own, the mailer built before the file work, a `try` around the
+  whole run) are exactly what this must not grow, and there is nobody to catch them when
+  they misfire. What an operator can do is give `WATCHDOG_ALERT_SMTP_HOST` an IP address:
+  then there is no lookup at all.
 
 **The daemon owns its log files.** `startDaemon()` hands its stdout and stderr to
 `DAEMON_LOG_FILE` and `DAEMON_ERROR_LOG_FILE` as file descriptors, so the daemon's output is

@@ -672,7 +672,9 @@ enum EnvConstants
 
     /**
      * @var string Per-send timeout in milliseconds for the watchdog alert. Default 5000 —
-     * shorter than MAIL_TIMEOUT_MS, because a dying process must not sit on a socket.
+     * shorter than MAIL_TIMEOUT_MS, because a dying process must not sit on a socket. Bounds
+     * the send itself, not the name lookup that precedes the connect; the WatchdogAlertMailer
+     * class docblock says what that leaves open and why it stays that way.
      */
     case WATCHDOG_ALERT_TIMEOUT_MS;
 
