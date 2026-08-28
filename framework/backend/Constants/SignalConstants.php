@@ -40,6 +40,9 @@ final class SignalConstants
     /** @var string Page subscription error signal - sent when onSubscribe throws PageSubscriptionException */
     public const string SUBSCRIPTION_PAGE_ERROR = 'subscription_page_error';
 
+    /** @var string Group subscription error signal - sent when a group join is refused instead of answered */
+    public const string SUBSCRIPTION_GROUP_ERROR = 'subscription_group_error';
+
     /** @var string Page action error signal - the framework reply when a tracked action throws (also the legacy untracked error) */
     public const string ACTION_ERROR = 'action_error';
 

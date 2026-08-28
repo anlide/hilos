@@ -48,6 +48,7 @@ use Demo\Chat\Environment\ChatEnvCatalog;
 use Demo\Chat\Environment\ChatLlmProfileCatalog;
 use Demo\Chat\Environment\ChatLlmProfileOverrideSource;
 use Demo\Chat\Fs\ChatFsContext;
+use Demo\Chat\Groups\Hilos\NotificationsGroup;
 use Demo\Chat\Groups\SessionGroup;
 use Demo\Chat\Auth\ChatCodeChannelRegistry;
 use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
@@ -305,6 +306,7 @@ final class Hilos extends HilosFacade
 
     public const array GROUPS = [
         SessionGroup::GROUP => SessionGroup::class,
+        NotificationsGroup::GROUP => NotificationsGroup::class,
     ];
 
     public const array AGENTS = [

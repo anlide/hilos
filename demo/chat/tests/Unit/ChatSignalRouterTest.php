@@ -19,6 +19,7 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\Destination\AgentDestination;
+use Hilos\Notification\NotificationGroup;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -137,8 +138,12 @@ final class ChatSignalRouterTest extends TestCase
         ], $destinations);
     }
 
-    public function testUnregisteredGroupUsesChatFallback(): void
+    public function testUnregisteredGroupRoutesToNobody(): void
     {
+        // The chat fallback that used to answer here is gone (HIL-721): it sent every
+        // unrecognized group to the chat agent, notifications included, whose page belongs to
+        // the Hilos index agent instead. A join nobody owns is now refused by the master with
+        // a subscription_group_error rather than delivered to whoever happened to be default.
         $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::GROUP_SUBSCRIBE),
@@ -146,8 +151,23 @@ final class ChatSignalRouterTest extends TestCase
             new WebSocketGroupSubscribeSignalDTO('accept-key', 'unknown_group'),
         ));
 
+        $this->assertSame([], $destinations);
+    }
+
+    public function testParameterizedGroupNameRoutesToTheOwnerOfItsHead(): void
+    {
+        // The name on the wire carries the recipient, the registry is keyed by the name
+        // without one, and the owner has to be found anyway: a name that resolves to nobody
+        // would be dropped, and the address check that refuses it is in the worker.
+        $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::GROUP_SUBSCRIBE),
+            new SignalName(NotificationGroup::forUser(42)),
+            new WebSocketGroupSubscribeSignalDTO('accept-key', NotificationGroup::forUser(42)),
+        ));
+
         $this->assertEquals([
-            new AgentDestination(AgentType::CHAT),
+            new AgentDestination(AgentType::HILOS_INDEX),
         ], $destinations);
     }
 

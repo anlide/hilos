@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Feature;
 
+use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Table\Definition\TableDefinition;
 
@@ -37,6 +38,7 @@ final readonly class FeatureRequirements
 {
     /**
      * @param list<class-string<AbstractPage>> $requiredPages Framework page base classes a project page must extend
+     * @param list<class-string<AbstractGroup>> $requiredGroups Framework group base classes a project group must extend
      * @param list<string> $requiredAgents Agent types that must carry both a worker and a daemon class,
      *     and which exist for this feature alone - registering one without declaring the feature is a gap
      * @param list<string> $requiredSharedAgents Agent types the feature equally cannot work without, but
@@ -54,6 +56,7 @@ final readonly class FeatureRequirements
      */
     public function __construct(
         public array $requiredPages = [],
+        public array $requiredGroups = [],
         public array $requiredAgents = [],
         public array $requiredSharedAgents = [],
         public array $requiredTables = [],

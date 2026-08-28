@@ -16,6 +16,7 @@ use Demo\Tasks\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\OAuthAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\TasksAgentDaemon;
 use Demo\Tasks\Hilos;
+use Demo\Tasks\Groups\Hilos\NotificationsGroup;
 use Demo\Tasks\Pages\Hilos\DashboardPage;
 use Demo\Tasks\Pages\Hilos\SettingsPage;
 use Demo\Tasks\Pages\Hilos\Users\UserPage;
@@ -116,7 +117,12 @@ final class TasksTopologyRegistryTest extends TestCase
         // The one frame the worker is addressed by is not its surface but the seam the
         // sessions moved behind (HIL-710): the library says what a session became, and this
         // agent is what turns that into a connection row and an identity on the wire.
-        $this->assertSame([], Hilos::GROUPS);
+        // The one group is not the application's own surface either: it is the framework's
+        // notification channel, activated by the same feature that mounts the bell (HIL-721).
+        $this->assertSame(
+            [NotificationsGroup::GROUP => NotificationsGroup::class],
+            Hilos::GROUPS,
+        );
         $this->assertSame([], MainPage::ACTIONS);
         $this->assertSame([], MainPage::SIGNALS);
         $this->assertSame(

@@ -16,12 +16,48 @@ Agent:        onSignalPageSubscribe() called
 Page params carry route variables (e.g. `['id' => '42']` for `/users/42`).
 
 ### Group subscription
-One connection can subscribe to multiple groups simultaneously.
+One connection can subscribe to multiple groups simultaneously. A join is judged by
+the group's own class, and it is answered — with content, with nothing, or with a
+refusal — never with silence.
 ```
-Client sends: GROUP_SUBSCRIBE { group, acceptKey }
-Daemon:       Hilos::$sr->subscribeToGroup($group, $data)
-Agent:        onSignalGroupSubscribe() called
+Client sends: GROUP_SUBSCRIBE { group, acceptKey, params }
+Worker:       GroupSubscriptionDispatcher resolves the class, checks the address
+              AbstractGroup::assertSubscribable()   -> refuse, or let through
+              membership recorded here and on the master (WorkerGroupJoinDTO)
+              AbstractGroup::buildGroupPayload()    -> content, or null
+Server sends: GROUP_RESPONSE { group, payload? }
+        or:   SUBSCRIPTION_GROUP_ERROR { group, httpCode, errorCode, message }
+Agent:        onSignalGroupSubscribe() called after, as a side channel
 ```
+
+The answer carries the FULL group name — the address the connection was actually let
+into, which for a group the server addresses itself is not the name the client sent.
+The refusal carries the name the client sent, because that is what it is waiting on.
+Its `errorCode` is one of four: `group_not_served` (no registered class answers this
+name), `group_forbidden` (the group's admission said no), `group_address_mismatch`
+(the name was addressed the wrong way), `group_unauthenticated` (the group belongs to
+whoever is behind the connection, and nobody is).
+
+**Admission defaults to DENY.** `AbstractGroup::assertSubscribable()` throws unless a
+group overrides it. A group is a fan-out channel, and one that admits by default leaks
+the moment somebody registers it and forgets the method.
+
+**A group is addressed by an entity, not by an arbitrary string**, and the kind of
+entity settles who may name it (`GroupAddressSource`):
+
+| `ADDRESS` | Who names the entity | Full name |
+|---|---|---|
+| `SINGLETON` | nobody, the group belongs to no entity | the declared name |
+| `SESSION_USER` | the SERVER, out of the identity behind the connection | `<name>:<userId>` |
+| `SESSION` | the SERVER, out of the session behind the connection | HIL-111 |
+| `PARAM` | the CLIENT, and the group class judges admission | `<name>:<id>` |
+
+A class declares its name WITHOUT a param; the param travels after a colon on the
+wire, and resolution is exact name first, then the head up to the first colon. So a
+name with a param sent to a group the server addresses itself is refused with
+`group_address_mismatch` rather than checked against the identity: someone else's
+"my" group cannot be NAMED, which is a stronger thing than "can be named, but we
+check".
 
 ### Update subscription
 Used when page params change without leaving the page (e.g. SPA navigation within same route).
@@ -118,14 +154,19 @@ application shell, not on any page. Moving data only one page renders into a
 group does not make it legal. The session handshake is outside the rule for the
 same kind of reason: it happens before any subscription exists.
 
-**Open question, not a rule.** Whether the same completeness requirement holds
-*inside* a group — one `GROUP_SUBSCRIBE` answering with everything its
-components need, and what "first render" even means for a channel with no
-surface of its own — is undecided, and the live group already answers in two
-steps: the join is followed by a separate `notification_sync` action asking for
-the snapshot. Whether that is a group's legitimate shape or the same defect one
-scope over is for the leaf that next builds on a group to settle. This
-paragraph holds the place until then, and its silence is not permission.
+**The same rule holds inside a group** (HIL-721). One `GROUP_SUBSCRIBE` answers with
+everything its components need, in one `group_response`: the join IS the group's first
+render, so a follow-up action asking for content is the first forbidden shape one scope
+over. The notification center is the worked example — it used to join and then send a
+`notification_sync` action for its snapshot, and now the join carries it.
+
+What a group's content is, is built in `AbstractGroup::buildGroupPayload()`, the twin
+of `AbstractPage::buildPagePayload()`. A group that legitimately carries none returns
+null and the frame goes out empty; that is an answer, not a violation.
+
+Being addressed by an entity is what makes the rule affordable here. For a group of
+"my" entity the server builds the name out of the identity behind the connection, so
+the content can be read at the join without the client having said whose it is.
 
 ## Routing by subscription
 
@@ -133,7 +174,10 @@ From daemon's `dispatchSignals()`, `getDestinations()` resolves:
 - PAGE signal → find agent declared by page `SUBSCRIPTION_AGENT_TYPE` through
   the project topology registry
 - GROUP_SUBSCRIBE / GROUP_UNSUBSCRIBE / GROUP_UPDATE_SUBSCRIPTION → find agent
-  declared by group `SUBSCRIPTION_AGENT_TYPE` through `Hilos::getGroupRoutes()`
+  declared by group `SUBSCRIPTION_AGENT_TYPE` through `Hilos::getGroupRoutes()`,
+  matching the name on the wire exactly and then by its head, so a name that carries
+  a param still reaches the owner that has to refuse it. A join that resolves to no
+  owner is refused by the master itself with `group_not_served` rather than dropped.
 
 ## Sending to subscribers
 

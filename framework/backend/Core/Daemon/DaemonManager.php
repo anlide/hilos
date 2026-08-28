@@ -57,6 +57,8 @@ use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Daemon\Master\MasterFailureUnit;
 use Hilos\Core\Daemon\Module\DaemonModule;
 use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\Group\DTO\GroupSubscriptionErrorSignalData;
+use Hilos\Core\Group\GroupErrorCode;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
@@ -206,6 +208,9 @@ abstract class DaemonManager extends BaseManager implements
 
     /** @var string Message a browser is answered with when the node serving its page cannot be reached */
     private const string SUBSCRIPTION_NODE_UNREACHABLE_MESSAGE = 'This page is temporarily unavailable. Please try again.';
+
+    /** @var string Message a browser is answered with when no registered class serves the group it named */
+    private const string SUBSCRIPTION_GROUP_UNSERVED_MESSAGE = 'This channel is not available.';
 
     /** @var string How the master facade's log line names "every worker of this node" as an addressee */
     private const string MASTER_SIGNAL_WORKERS_LABEL = 'workers';
@@ -1684,6 +1689,10 @@ abstract class DaemonManager extends BaseManager implements
                 // required startup agents have finished onStart (or the readiness timeout fires).
             }
 
+            if (empty($destinations) && $signalType === SignalTypeConstants::GROUP_SUBSCRIBE) {
+                $this->refuseUnservedGroupSubscription($signal, $signalName);
+            }
+
             if (empty($destinations) && Hilos::$sr->expectsDestination($signal)) {
                 // A signal whose route is declared, not subscribed to, was supposed to reach
                 // somebody: an empty list means it is being dropped, and the only way anyone
@@ -3046,6 +3055,51 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Answers a join to a group no registered class serves.
+     *
+     * The one refusal the master owns, and it owns it because it is the only process that can
+     * see it: the name resolved to no owner, so no worker was sent the frame and no group class
+     * will ever hear of it. Everything else about a join - admission, the address check, the
+     * answer - is decided in the worker that owns the group, and every one of those paths ends
+     * in a frame of its own. This is what keeps the last of them from being silence.
+     *
+     * A join carrying no accept key is left alone rather than answered: there is no socket to
+     * answer, and queueing a frame addressed at nobody is a delivery that fails later and
+     * further away than the drop it replaced.
+     *
+     * @param SignalDTO $signal Group subscribe signal that resolved to no owner
+     * @param string $signalName Signal name, which carries the group when the payload does not
+     * @throws InvalidArgumentException When the refusal signal cannot be named
+     */
+    private function refuseUnservedGroupSubscription(SignalDTO $signal, string $signalName): void
+    {
+        $data = $signal->data;
+        if (!$data instanceof WebSocketGroupSubscribeSignalDTO || $data->acceptKey === '') {
+            return;
+        }
+
+        $group = $data->group ?? $signalName;
+        Logger::warning(
+            "Group subscription to '{$group}' refused for '{$data->acceptKey}': no group class serves it",
+        );
+
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DAEMON),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName(SignalConstants::SUBSCRIPTION_GROUP_ERROR),
+            signalData: new WebSocketSignalData(
+                data: new GroupSubscriptionErrorSignalData(
+                    group: $group,
+                    httpCode: HttpConstants::HTTP_NOT_FOUND,
+                    errorCode: GroupErrorCode::NOT_SERVED,
+                    message: self::SUBSCRIPTION_GROUP_UNSERVED_MESSAGE,
+                ),
+                targetAcceptKey: $data->acceptKey,
+            ),
+        );
+    }
+
+    /**
      * Fans one signal forwarded from another node out to the browsers this node holds.
      *
      * Implements {@see ClientSignalSink}. Nothing arrived resolved, because nothing could be:
@@ -3690,18 +3744,24 @@ abstract class DaemonManager extends BaseManager implements
                 Hilos::$ac?->closePageSession($signal->data->acceptKey);
                 break;
 
-            case SignalTypeConstants::GROUP_SUBSCRIBE:
-                if (!($signal->data instanceof WebSocketGroupSubscribeSignalDTO)) {
-                    return;
-                }
-                Hilos::$sr->subscribeToGroup($signal->data->group ?? $signalName, $signal->data);
-                break;
-
+            // GROUP_SUBSCRIBE is deliberately absent: the master no longer writes a membership off
+            // the client frame. It knows neither who is behind the socket nor the full name that
+            // identity builds, and it may not read a session to find out - so the worker that owns
+            // the group judges the join and tells the master what to record
+            // ({@see WorkerClient::handleGroupJoinMessage()}). Leaving the write here would also
+            // make the default of DENY meaningless: the connection would already be on the
+            // fan-out list while its verdict was still being taken (HIL-721).
             case SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION:
                 if (!($signal->data instanceof WebSocketGroupUpdateSubscriptionSignalDTO)) {
                     return;
                 }
-                $updatedGroup = $signal->data->group ?? $signalName;
+                // The name the client wrote, resolved to the membership it actually holds: for a
+                // group the server addresses itself the two differ, and the head is all the
+                // client can name.
+                $updatedGroup = Hilos::$sr->groupSubscriptionName(
+                    $signal->data->acceptKey,
+                    $signal->data->group ?? $signalName,
+                ) ?? $signal->data->group ?? $signalName;
                 try {
                     Hilos::$sr->updateGroupSubscription($updatedGroup, $signal->data);
                 } catch (GroupSubscriptionNotFoundException $e) {
@@ -3714,7 +3774,11 @@ abstract class DaemonManager extends BaseManager implements
                 if (!($signal->data instanceof WebSocketGroupUnsubscribeSignalDTO)) {
                     return;
                 }
-                Hilos::$sr->unsubscribeFromGroup($signal->data->group ?? $signalName, $signal->data);
+                $leftGroup = Hilos::$sr->groupSubscriptionName(
+                    $signal->data->acceptKey,
+                    $signal->data->group ?? $signalName,
+                ) ?? $signal->data->group ?? $signalName;
+                Hilos::$sr->unsubscribeFromGroup($leftGroup, $signal->data);
                 break;
         }
     }

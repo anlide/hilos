@@ -137,6 +137,9 @@ final class WorkerConstants
     /** @var string Agent stopped notification */
     public const string MESSAGE_AGENT_STOPPED = 'agent_stopped';
 
+    /** @var string Group join a worker admitted (worker -> daemon); canonical value in SignalTypeConstants */
+    public const string MESSAGE_GROUP_JOIN = SignalTypeConstants::GROUP_JOIN;
+
     /** @var string Protected-mode enable request (initiator worker -> its master daemon) */
     public const string MESSAGE_PROTECTED_MODE_ENABLE = 'worker_protected_mode_enable';
 

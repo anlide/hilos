@@ -14,6 +14,7 @@ use Hilos\Core\Agent\Exception\BrokenSignalPayloadDtoException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Group\GroupNameMatch;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Page\Config\PageAgentIndexRoute;
 use Hilos\Core\Router\Destination\AgentDestination;
@@ -593,6 +594,23 @@ class SignalRouter
     public function updateGroupSubscription(string $group, WebSocketGroupUpdateSubscriptionSignalDTO $data): void
     {
         $this->subscriptions->updateGroupSubscription($data->acceptKey, $group, $data->params);
+    }
+
+    /**
+     * Resolves which group a connection holds under a name the client wrote.
+     *
+     * The client names a group of "my" entity without the entity, so an update or a leave
+     * arrives naming the head of the membership the server recorded. Both sides of the
+     * subscription - the master's registry and each worker's mirror - answer this the same
+     * way, which is what keeps the two from drifting apart on the same frame.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $group Group name as the client wrote it
+     * @return ?string Full group name this connection holds, or null when it holds none
+     */
+    public function groupSubscriptionName(string $acceptKey, string $group): ?string
+    {
+        return $this->subscriptions->groupSubscriptionName($acceptKey, $group);
     }
 
     /**
@@ -1278,13 +1296,20 @@ class SignalRouter
     /**
      * Resolves group subscription owner from project topology.
      *
+     * The name arrives as the client wrote it, so it is matched the way the worker matches it
+     * ({@see GroupNameMatch::resolve()}): exactly, then by its head. A name with a param has to
+     * reach its owner even when the param is wrong for that group - the refusal is a frame the
+     * group layer sends, and a frame nobody routes is the silence this leaf exists to remove.
+     *
      * @param string $group Group name from the subscription signal
      * @return ?string Agent type or null when no route exists
      */
     private function getGroupSubscriptionAgentType(string $group): ?string
     {
-        $hilosClass = $this->hilosClass();
-        $agentType = $hilosClass::getGroupRoutes()[$group] ?? null;
+        $match = $this->resolveGroupName($group);
+        $agentType = $match === null
+            ? null
+            : $this->hilosClass()::getGroupRoutes()[$match->groupClass::GROUP] ?? null;
         if (is_string($agentType) && $agentType !== '') {
             return $agentType;
         }
@@ -1294,6 +1319,24 @@ class SignalRouter
         return is_string($fallbackAgentType) && $fallbackAgentType !== ''
             ? $fallbackAgentType
             : null;
+    }
+
+    /**
+     * Resolves a group name off the wire to the registered class that answers it.
+     *
+     * Public, and the ONLY way to ask this question, for the reason
+     * {@see self::getPageSubscriptionAgentType()} is public: the project facade is named in one
+     * place - {@see self::hilosClass()}, which every project router overrides - and a second
+     * reader of the registry is a second thing to keep in step. Reading it through the base
+     * facade instead looks identical and answers nothing, because late static binding resolves
+     * `static::GROUPS` to {@see Hilos} itself, whose registry is empty by construction.
+     *
+     * @param string $group Group name as the client wrote it
+     * @return ?GroupNameMatch Registered class and the param the name carried, or null when none answers it
+     */
+    public function resolveGroupName(string $group): ?GroupNameMatch
+    {
+        return GroupNameMatch::resolve($group, $this->hilosClass()::getGroupClasses());
     }
 
     /**

@@ -52,6 +52,12 @@ export const SIGNAL_TYPE_GROUP_SUBSCRIBE = 'group_subscribe'
 /** Client frame `type` leaving a WebSocket group (PHP `SignalTypeConstants::GROUP_UNSUBSCRIBE`). */
 export const SIGNAL_TYPE_GROUP_UNSUBSCRIBE = 'group_unsubscribe'
 
+/** Server frame `type` answering a group join (PHP `SignalTypeConstants::GROUP_RESPONSE`). */
+export const SIGNAL_TYPE_GROUP_RESPONSE = 'group_response'
+
+/** Server frame `type` refusing a group join (PHP `SignalConstants::SUBSCRIPTION_GROUP_ERROR`). */
+export const SIGNAL_TYPE_GROUP_SUBSCRIPTION_ERROR = 'subscription_group_error'
+
 /** Client frame `type` invoking a page action (PHP `SignalTypeConstants::ACTION`). */
 export const SIGNAL_TYPE_ACTION = 'action'
 

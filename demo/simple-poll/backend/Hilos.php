@@ -22,6 +22,7 @@ use Demo\SimplePoll\Pages\Hilos\LicensePage;
 use Demo\SimplePoll\Pages\Hilos\PrivacyPage;
 use Demo\SimplePoll\Pages\Hilos\SettingsPage;
 use Demo\SimplePoll\Pages\Hilos\TermsPage;
+use Demo\SimplePoll\Groups\Hilos\NotificationsGroup;
 use Demo\SimplePoll\Pages\Hilos\NotificationsPage;
 use Demo\SimplePoll\Pages\Hilos\Users\UserPage;
 use Demo\SimplePoll\Pages\Hilos\Users\UsersPage;
@@ -83,6 +84,10 @@ final class Hilos extends HilosFacade
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
         LicensePage::PAGE => LicensePage::class,
+    ];
+
+    public const array GROUPS = [
+        NotificationsGroup::GROUP => NotificationsGroup::class,
     ];
 
     public const array AGENTS = [

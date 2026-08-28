@@ -23,6 +23,7 @@ use Hilos\Core\Feature\FeatureRegistry;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Group\AbstractGroup;
+use Hilos\Core\Group\GroupNameMatch;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\Config\PageAgentIndexRoute;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -561,6 +562,33 @@ abstract class Hilos
         }
 
         return $groupRoutes;
+    }
+
+    /**
+     * Returns the registered group classes, keyed by the name each of them declares.
+     *
+     * The registry as the group layer reads it: {@see getGroupRoutes()} answers "who owns
+     * this group", this one answers "which class IS this group", and a join needs the class -
+     * it is what judges admission and builds the answer. Invalid registry entries are skipped
+     * here and reported by topology validation.
+     *
+     * The name a class declares carries no param; a name off the wire is matched against this
+     * map by {@see GroupNameMatch::resolve()}, exactly first and by its head after that.
+     *
+     * @return array<string, class-string<AbstractGroup>> Group class keyed by declared group name
+     */
+    public static function getGroupClasses(): array
+    {
+        $groupClasses = [];
+        foreach (static::GROUPS as $group => $groupClass) {
+            if (!is_string($group) || !is_string($groupClass) || !is_subclass_of($groupClass, AbstractGroup::class)) {
+                continue;
+            }
+
+            $groupClasses[$group] = $groupClass;
+        }
+
+        return $groupClasses;
     }
 
     /**

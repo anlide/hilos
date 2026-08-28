@@ -2,14 +2,23 @@
 // durable notification model (HIL-102 backend, HIL-195 UI). The center has no
 // page subscription — the SubscriptionRegistry holds one page per connection, so
 // an always-on page would clobber the route page. Instead a connection joins the
-// per-user WebSocket group `hilos_notifications:<userId>` for live created/read
-// signals and asks for its initial snapshot with the fire-and-forget
-// `notification_sync` action; both ride the framework group_subscribe / action
-// frames the backend already speaks (AbstractHilosNotificationsPage). The store
-// here is the reactive half a bell view renders; the binder wires it to a
-// connection and keeps the group joined across reconnects.
+// notification group for live created/read signals, and the join itself answers
+// with the initial snapshot: one frame, no follow-up request (HIL-721). The
+// client names the group WITHOUT the recipient — the server builds
+// `hilos_notifications:<userId>` out of the identity behind the socket, and a
+// name that tried to carry someone else's id is refused. The store here is the
+// reactive half a bell view renders; the binder wires it to a connection and
+// keeps the group joined across reconnects.
 import { z } from 'zod'
 import { type HilosConnection } from '../connection/HilosConnection.js'
+import {
+  SIGNAL_TYPE_GROUP_RESPONSE,
+  SIGNAL_TYPE_GROUP_SUBSCRIPTION_ERROR,
+} from '../protocol/constants.js'
+import {
+  type GroupResponse,
+  type GroupSubscriptionError,
+} from '../protocol/groupError.js'
 import { SIGNAL_HANDSHAKE_RESPONSE } from '../session/sessionScope.js'
 import {
   createSignal,
@@ -24,36 +33,23 @@ export const NOTIFICATION_SIGNAL_CREATED = 'notification_created'
 /** Server→client signal `type` carrying a mark-read, one row or all (PHP `NotificationSignalName::READ`). */
 export const NOTIFICATION_SIGNAL_READ = 'notification_read'
 
-/** Server→client signal `type` carrying the snapshot reply (PHP `HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_NOTIFICATIONS`). */
-export const NOTIFICATION_SIGNAL_SNAPSHOT =
-  'subscription_page_hilos_notifications'
-
-/** Client→server action requesting the recipient's snapshot (PHP `NotificationAction::SYNC`). */
-export const NOTIFICATION_ACTION_SYNC = 'notification_sync'
-
 /** Client→server action marking one notification read (PHP `NotificationAction::MARK_READ`). */
 export const NOTIFICATION_ACTION_MARK_READ = 'notification_mark_read'
 
 /** Client→server action marking every notification read (PHP `NotificationAction::MARK_ALL_READ`). */
 export const NOTIFICATION_ACTION_MARK_ALL_READ = 'notification_mark_all_read'
 
-/** Group-name prefix; the recipient user id is appended (PHP `NotificationGroup::PREFIX`). */
-const NOTIFICATION_GROUP_PREFIX = 'hilos_notifications:'
+/** The group the bell joins, named without a recipient (PHP `NotificationGroup::NAME`). */
+export const NOTIFICATION_GROUP = 'hilos_notifications'
+
+/** Prefix of the FULL name the server answers with; the recipient is appended (PHP `NotificationGroup::PREFIX`). */
+const NOTIFICATION_GROUP_PREFIX = `${NOTIFICATION_GROUP}:`
 
 /** The mark-all sentinel of the read signal's `id` (PHP `NotificationReadSignalData::ALL`). */
 const NOTIFICATION_READ_ALL = 'all'
 
-/** Recent rows the store keeps, mirroring `AbstractHilosNotificationsPage::RECENT_LIMIT`. */
+/** Recent rows the store keeps, mirroring `AbstractHilosNotificationsGroup::RECENT_LIMIT`. */
 const RECENT_LIMIT = 20
-
-/**
- * Builds the per-user notification group name a connection joins for live signals.
- *
- * @param userId Recipient user id.
- */
-export function notificationGroupName(userId: number): string {
-  return `${NOTIFICATION_GROUP_PREFIX}${userId}`
-}
 
 /**
  * One notification on the wire: the CREATED shape (PHP `NotificationCreatedSignalData`),
@@ -78,7 +74,7 @@ const notificationReadSchema = z.looseObject({
   id: z.union([z.number().int(), z.literal(NOTIFICATION_READ_ALL)]),
 })
 
-/** Payload of the snapshot reply: the recent rows newest-first plus the unread badge count. */
+/** Content of the join answer: the recent rows newest-first plus the unread badge count. */
 const notificationSnapshotSchema = z.looseObject({
   recent: z.array(notificationRowSchema),
   unreadCount: z.number().int(),
@@ -96,7 +92,6 @@ export type HilosNotificationSnapshot = z.infer<
 export const NOTIFICATION_SIGNAL_SCHEMAS = {
   [NOTIFICATION_SIGNAL_CREATED]: notificationRowSchema,
   [NOTIFICATION_SIGNAL_READ]: notificationReadSchema,
-  [NOTIFICATION_SIGNAL_SNAPSHOT]: notificationSnapshotSchema,
 }
 
 /** The reactive notification state a bell view renders. */
@@ -106,7 +101,7 @@ export interface HilosNotificationStore {
   /** The unread badge count; server-authoritative from the snapshot, delta'd live. */
   readonly unreadCount: ReadonlySignal<number>
   /**
-   * Replace the state from a fresh snapshot (the sync reply, once per join).
+   * Replace the state from a fresh snapshot (the join answer, once per join).
    *
    * @param snapshot Recent rows plus the unread count.
    */
@@ -210,23 +205,22 @@ export const hilosNotifications: HilosNotificationStore =
 
 /**
  * Wire a notification store to a connection: route the live signals into the
- * store, and keep the per-user group joined with a fresh snapshot request on
- * every connect (and reconnect). Register before the socket opens so the first
- * snapshot lands.
+ * store, and keep the group joined on every connect (and reconnect). The join
+ * answers with the snapshot, so there is nothing else to ask for. Register
+ * before the socket opens so that answer lands.
  *
- * The group name needs the recipient's own id, so the join waits until the
- * session's user id is known (the handshake response). A connection with no user
- * (anonymous, or a demo without auth) never joins and never asks for a snapshot,
- * so activating this on such a demo is a no-op rather than an error.
+ * A connection with no user (anonymous, or a demo without auth) never joins, so
+ * activating this on such a demo is a no-op rather than an error.
  *
- * That wait is per SOCKET, not per app, for the same reason the page subscribe
- * holds one (PageSubscription.sessionAnswered): the connection's identity is
- * established by its own handshake and reaches the other workers on its own, so a
- * `notification_sync` that overtook it is judged against a connection nobody has
- * heard of and refused as anonymous — losing the snapshot, and opening the
- * sign-in modal over a session that is signed in (the auth gate's 401 safety
- * net). A reconnect while signed in is exactly that case, since the id it would
- * join for is still the one from before the drop.
+ * The join still waits for the handshake, per SOCKET rather than per app, but the
+ * reason has changed and a maintainer should know which one it is now. It is no
+ * longer that the name needs the recipient's id — the client does not name the
+ * recipient at all any more, the server builds the name out of the identity
+ * behind the socket. It is that the SERVER needs that identity to build it with,
+ * and a group_subscribe has no server-side park to wait in: parkUntilIdentified()
+ * holds page_subscribe and page_access_reassess only, so a join that overtook the
+ * handshake is judged against a connection nobody has heard of and refused as
+ * anonymous. A reconnect while signed in is exactly that case.
  *
  * @param connection The application's Hilos connection.
  * @param store The notification store to feed (usually {@link hilosNotifications}).
@@ -245,10 +239,15 @@ export function bindNotificationsScope(
         sessionAnswered = true
         maybeJoin()
         break
-      case NOTIFICATION_SIGNAL_SNAPSHOT:
-        // Validated against notificationSnapshotSchema at the parse boundary; this
-        // cast is the declared typed selector for that schema's output.
-        store.ingestSnapshot(signal.data as HilosNotificationSnapshot)
+      case SIGNAL_TYPE_GROUP_RESPONSE:
+        ingestJoinAnswer(signal.data as GroupResponse)
+        break
+      case SIGNAL_TYPE_GROUP_SUBSCRIPTION_ERROR:
+        // Nothing is drawn: the bell lives in the application shell, not on a page,
+        // and has no error surface of its own. A refusal here means a server defect
+        // or a forged frame rather than anything the person did, so the store is
+        // left as it is and the next connect tries again.
+        reportRefusal(signal.data as GroupSubscriptionError)
         break
       case NOTIFICATION_SIGNAL_CREATED:
         store.onCreated(signal.data as HilosNotification)
@@ -284,8 +283,57 @@ export function bindNotificationsScope(
       return
     }
     joinedFor = uid
-    connection.subscribeToGroup(notificationGroupName(uid))
-    connection.sendAction(NOTIFICATION_ACTION_SYNC, {})
+    connection.subscribeToGroup(NOTIFICATION_GROUP)
+  }
+
+  /**
+   * Take the snapshot out of a join answer, if this answer is the bell's.
+   *
+   * The frame type is common to every group, so the name is what tells them apart,
+   * and the payload is validated here rather than at the parse boundary for the
+   * same reason: only this binder knows what shape its own group answers with.
+   *
+   * @param answer The group-join answer as it arrived.
+   */
+  function ingestJoinAnswer(answer: GroupResponse): void {
+    if (!answer.group.startsWith(NOTIFICATION_GROUP_PREFIX)) {
+      return
+    }
+    const snapshot = notificationSnapshotSchema.safeParse(answer.payload ?? {})
+    if (!snapshot.success) {
+      console.warn(
+        '[hilos] notification group answered with an unreadable snapshot',
+        snapshot.error,
+      )
+      return
+    }
+    store.ingestSnapshot(snapshot.data)
+  }
+
+  /**
+   * Write down a refused join, if the refusal is the bell's, and let it be retried.
+   *
+   * Clearing the join mark is what makes the refusal recoverable without a reconnect.
+   * It matters for one refusal in particular: the server builds the group name out of
+   * the identity behind the socket, and the worker serving the group learns that
+   * identity over the runtime sync rather than from the frame — so a join that
+   * overtakes it is refused as anonymous (the residue of HIL-599, whose server-side
+   * park covers page frames only). Left marked as joined, this connection would then
+   * carry no notifications at all until its socket dropped; unmarked, the next cue
+   * that reaches maybeJoin() — a state change, a login, the next handshake — joins
+   * again. Nothing is scheduled here: a refusal must not become a retry loop against
+   * a server that means it.
+   *
+   * @param refusal The group-join refusal as it arrived.
+   */
+  function reportRefusal(refusal: GroupSubscriptionError): void {
+    if (refusal.group !== NOTIFICATION_GROUP) {
+      return
+    }
+    joinedFor = null
+    console.warn(
+      `[hilos] notification group join refused: ${refusal.errorCode} - ${refusal.message}`,
+    )
   }
 
   connection.on('state', (state) => {

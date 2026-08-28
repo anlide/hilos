@@ -102,6 +102,12 @@ final class SignalTypeConstants
     /** @var string Group update subscription signal type */
     public const string GROUP_UPDATE_SUBSCRIPTION = 'group_update_subscription';
 
+    /** @var string Group response signal type (server-to-client answer to a group join) */
+    public const string GROUP_RESPONSE = 'group_response';
+
+    /** @var string Group join signal type (worker -> own daemon: record this membership) */
+    public const string GROUP_JOIN = 'group_join';
+
     /** @var string User action signal type */
     public const string ACTION = 'action';
 

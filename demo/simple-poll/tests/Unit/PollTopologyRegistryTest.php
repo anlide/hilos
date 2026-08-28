@@ -12,6 +12,7 @@ use Demo\SimplePoll\Constants\PageConstants;
 use Demo\SimplePoll\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\SimplePoll\Core\Agent\Daemon\PollAgentDaemon;
 use Demo\SimplePoll\Hilos;
+use Demo\SimplePoll\Groups\Hilos\NotificationsGroup;
 use Demo\SimplePoll\Pages\Hilos\DashboardPage;
 use Demo\SimplePoll\Pages\Hilos\SettingsPage;
 use Demo\SimplePoll\Pages\Hilos\Users\UserPage;
@@ -111,7 +112,12 @@ final class PollTopologyRegistryTest extends TestCase
         // The one frame the worker is addressed by is not its surface but the seam the
         // sessions moved behind (HIL-710): the library says what a session became, and this
         // agent is what turns that into a connection row and an identity on the wire.
-        $this->assertSame([], Hilos::GROUPS);
+        // The one group is not the application's own surface either: it is the framework's
+        // notification channel, activated by the same feature that mounts the bell (HIL-721).
+        $this->assertSame(
+            [NotificationsGroup::GROUP => NotificationsGroup::class],
+            Hilos::GROUPS,
+        );
         $this->assertSame([], MainPage::ACTIONS);
         $this->assertSame([], MainPage::SIGNALS);
         $this->assertSame(

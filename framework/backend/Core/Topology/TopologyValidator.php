@@ -34,6 +34,7 @@ use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Group\AbstractGroup;
+use Hilos\Core\Group\Config\GroupAddressSource;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\Config\PageAgentIndexKey;
 use Hilos\Core\Page\Config\PageAgentIndexSource;
@@ -374,6 +375,16 @@ final class TopologyValidator
             $classGroup = $groupClass::GROUP;
             if ($classGroup !== $group) {
                 $errors[] = "GROUPS[{$group}] key must match {$groupClass}::GROUP ({$classGroup})";
+            }
+
+            // A declared name carries no param: the param travels after a colon on the wire, and
+            // a registered name holding one would be resolvable two ways at once.
+            if (str_contains($group, ':')) {
+                $errors[] = "GROUPS[{$group}] name must carry no ':' - the param is appended on the wire";
+            }
+
+            if ($groupClass::ADDRESS === GroupAddressSource::SESSION) {
+                $errors[] = "GROUPS[{$group}] is addressed by session, which no node serves yet (HIL-111)";
             }
         }
     }

@@ -56,10 +56,10 @@ export interface BootHilosConfig {
   session?: SessionScopeOptions
   /**
    * Activate the notification center: bind the shared {@link hilosNotifications}
-   * store to the connection (join the per-user group, request the snapshot, react
-   * to live signals). Set only where the backend registers the framework
-   * notification page; a demo without it leaves this off so no `notification_sync`
-   * action routes to an unregistered page. Default off.
+   * store to the connection (join the notification group, whose answer carries the
+   * snapshot, and react to live signals). Set only where the backend registers the
+   * framework notification group; a demo without it leaves this off so no join
+   * reaches a group nobody serves. Default off.
    */
   notifications?: boolean
   /**

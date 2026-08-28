@@ -8,6 +8,7 @@ use Hilos\API\Router\Exception\GroupSubscriptionNotFoundException;
 use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
 use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Group\Config\GroupAddressSource;
 
 /**
  * SubscriptionRegistry - Worker-local store of client page and group subscriptions.
@@ -168,6 +169,37 @@ final class SubscriptionRegistry
         }
 
         $this->groups[$acceptKey][$group] = array_merge($this->groups[$acceptKey][$group], $params);
+    }
+
+    /**
+     * Resolves which group this connection holds under a name the client wrote.
+     *
+     * The client names a group of "my" entity WITHOUT the entity - the server built the full
+     * name at the join out of the identity behind the socket ({@see GroupAddressSource}) - so a
+     * later frame about that membership arrives naming its head. Matching it back is a read of
+     * what this connection actually holds rather than a second build of the name: rebuilding
+     * would ask the identity seam again, and an identity that changed in between would name a
+     * membership this connection never had.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $group Group name as the client wrote it
+     * @return ?string Full group name this connection holds, or null when it holds none
+     */
+    public function groupSubscriptionName(string $acceptKey, string $group): ?string
+    {
+        $held = $this->groups[$acceptKey] ?? [];
+        if (array_key_exists($group, $held)) {
+            return $group;
+        }
+
+        $prefix = $group . ':';
+        foreach (array_keys($held) as $name) {
+            if (str_starts_with($name, $prefix)) {
+                return $name;
+            }
+        }
+
+        return null;
     }
 
     /**

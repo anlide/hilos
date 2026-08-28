@@ -4,15 +4,23 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Group\AbstractGroup;
+use Hilos\Core\Group\DTO\GroupSubscriptionErrorSignalData;
+use Hilos\Core\Group\GroupErrorCode;
+use Hilos\Core\Group\GroupSubscriptionDispatcher;
+use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Database\Context\DbContext;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Hilos;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
@@ -24,6 +32,14 @@ use PHPUnit\Framework\TestCase;
  */
 final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
 {
+    protected function tearDown(): void
+    {
+        // One test installs a router on the facade; the global has to leave with it.
+        Hilos::$sr = null;
+
+        parent::tearDown();
+    }
+
     public function testGroupSubscribeRoutesThroughProjectTopology(): void
     {
         $this->assertEquals(
@@ -101,6 +117,65 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
         );
     }
 
+    public function testResolveGroupNameReadsTheProjectRegistry(): void
+    {
+        $match = new SignalRouterGroupTopologyTestRouter()->resolveGroupName(
+            SignalRouterTopologyTestGroup::GROUP,
+        );
+
+        self::assertNotNull($match);
+        self::assertSame(SignalRouterTopologyTestGroup::class, $match->groupClass);
+        self::assertNull($match->param);
+    }
+
+    public function testResolveGroupNameMatchesByTheHeadOfAParameterizedName(): void
+    {
+        $match = new SignalRouterGroupTopologyTestRouter()->resolveGroupName(
+            SignalRouterTopologyTestGroup::GROUP . ':42',
+        );
+
+        self::assertNotNull($match);
+        self::assertSame(SignalRouterTopologyTestGroup::class, $match->groupClass);
+        self::assertSame('42', $match->param);
+    }
+
+    public function testBaseRouterResolvesNoGroupClassBecauseItsRegistryIsEmpty(): void
+    {
+        // The reason resolution is the router's job and not a static read of the facade by
+        // name: the registry lives on the PROJECT facade, and the framework's own is empty by
+        // construction. Code that read `Hilos::getGroupClasses()` directly would land here -
+        // on nothing - while looking exactly like code that works, and every group join in
+        // every demo would be refused as unserved (HIL-721).
+        self::assertNull(
+            new SignalRouter()->resolveGroupName(SignalRouterTopologyTestGroup::GROUP),
+        );
+    }
+
+    public function testDispatcherFindsTheGroupClassThroughTheRouter(): void
+    {
+        // The regression guard for the defect that cost a full run (HIL-721): the dispatcher
+        // used to read the registry off the facade by name, which resolves to the framework's
+        // own empty one, so every join in every demo was refused as unserved. The fixture group
+        // declares no admission, so a dispatcher that FOUND it refuses with group_forbidden -
+        // and one that did not, with group_not_served. The two codes tell the paths apart.
+        Hilos::$sr = new SignalRouterGroupTopologyTestRouter();
+
+        new GroupSubscriptionDispatcher(new SignalRouterGroupTestAgent())->dispatchSubscribe(
+            new WebSocketGroupSubscribeSignalDTO('accept-key', SignalRouterTopologyTestGroup::GROUP),
+            SignalRouterTopologyTestGroup::GROUP,
+        );
+
+        $queued = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($queued);
+        self::assertSame(SignalConstants::SUBSCRIPTION_GROUP_ERROR, $queued->signalName->getName());
+
+        $error = $queued->data;
+        self::assertInstanceOf(WebSocketSignalData::class, $error);
+        $payload = $error->data;
+        self::assertInstanceOf(GroupSubscriptionErrorSignalData::class, $payload);
+        self::assertSame(GroupErrorCode::FORBIDDEN, $payload->errorCode);
+    }
+
     /**
      * Creates a group subscribe signal for routing tests.
      *
@@ -115,6 +190,25 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
             new SignalName($group),
             new WebSocketGroupSubscribeSignalDTO('accept-key', $group),
         );
+    }
+}
+
+final class SignalRouterGroupTestAgent implements PageAgentInterface
+{
+    /**
+     * @return string Fixture agent id
+     */
+    public function getId(): string
+    {
+        return 'group-test-agent';
+    }
+
+    /**
+     * @return SignalSourceInterface Fixture signal source the dispatcher signs its frames with
+     */
+    public function getAgentSignalSource(): SignalSourceInterface
+    {
+        return new SignalSource(SignalSource::AGENT);
     }
 }
 

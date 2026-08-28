@@ -7,6 +7,7 @@ import { NOTIFICATION_SIGNAL_SCHEMAS } from '../notifications/notificationCenter
 import { NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS } from '../notifications/notificationPreferences.js'
 import { type ProjectSignalSchemas } from '../protocol/parseSignal.js'
 import { SESSION_SIGNAL_SCHEMAS } from '../session/sessionScope.js'
+import { GROUP_SIGNAL_SCHEMAS } from '../protocol/groupError.js'
 import { PAGE_SIGNAL_SCHEMAS } from '../subscription/bindPageScope.js'
 import { ActionErrorStore } from './ActionErrorStore.js'
 import { ActionLifecycle } from './actionLifecycle.js'
@@ -106,6 +107,7 @@ export function createHilosConnection(
     projectSchemas: {
       ...SESSION_SIGNAL_SCHEMAS,
       ...PAGE_SIGNAL_SCHEMAS,
+      ...GROUP_SIGNAL_SCHEMAS,
       ...BACKUP_SIGNAL_SCHEMAS,
       ...NOTIFICATION_SIGNAL_SCHEMAS,
       ...NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS,

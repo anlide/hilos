@@ -6,11 +6,11 @@ import {
 import {
   bindNotificationsScope,
   createHilosNotificationStore,
-  notificationGroupName,
-  NOTIFICATION_ACTION_SYNC,
+  NOTIFICATION_GROUP,
   NOTIFICATION_SIGNAL_SCHEMAS,
   type HilosNotification,
 } from '../../src/notifications/notificationCenter.js'
+import { GROUP_SIGNAL_SCHEMAS } from '../../src/protocol/groupError.js'
 import { SESSION_SIGNAL_SCHEMAS } from '../../src/session/sessionScope.js'
 import { createSignal } from '../../src/state/signal.js'
 
@@ -166,6 +166,7 @@ describe('notification binder', () => {
       webSocketFactory: (url) => new MockWebSocket(url),
       random: () => 1,
       projectSchemas: {
+        ...GROUP_SIGNAL_SCHEMAS,
         ...NOTIFICATION_SIGNAL_SCHEMAS,
         ...SESSION_SIGNAL_SCHEMAS,
       },
@@ -194,7 +195,7 @@ describe('notification binder', () => {
       )
   }
 
-  it('joins the per-user group and requests a snapshot once the user id lands', () => {
+  it('joins the notification group once the user id lands, naming no recipient', () => {
     const { connection, userId } = boot()
     connection.connect()
     MockWebSocket.last.open()
@@ -205,16 +206,99 @@ describe('notification binder', () => {
 
     userId.set(42)
 
-    const frames = sentFrames()
-    expect(frames).toContainEqual({
-      type: 'group_subscribe',
-      group: notificationGroupName(42),
-    })
+    // One frame and no follow-up: the join answers with the snapshot, and the name
+    // carries no recipient - the server builds the full one from this connection.
+    expect(sentFrames()).toEqual([
+      { type: 'group_subscribe', group: NOTIFICATION_GROUP },
+    ])
+  })
+
+  it('takes the snapshot out of the join answer', () => {
+    const { connection, store, userId } = boot()
+    connection.connect()
+    MockWebSocket.last.open()
+    answerSession()
+    userId.set(42)
+
+    MockWebSocket.last.message(
+      frame('group_response', {
+        group: `${NOTIFICATION_GROUP}:42`,
+        payload: { recent: [row({ id: 1 })], unreadCount: 3 },
+      }),
+    )
+
+    expect(store.notifications.get().map((n) => n.id)).toEqual([1])
+    expect(store.unreadCount.get()).toBe(3)
+  })
+
+  it('ignores a join answer belonging to another group', () => {
+    const { connection, store, userId } = boot()
+    connection.connect()
+    MockWebSocket.last.open()
+    answerSession()
+    userId.set(42)
+
+    MockWebSocket.last.message(
+      frame('group_response', {
+        group: 'something_else',
+        payload: { recent: [row({ id: 9 })], unreadCount: 7 },
+      }),
+    )
+
+    expect(store.notifications.get()).toEqual([])
+    expect(store.unreadCount.get()).toBe(0)
+  })
+
+  it('leaves the store alone when the join is refused', () => {
+    const { connection, store, userId } = boot()
+    connection.connect()
+    MockWebSocket.last.open()
+    answerSession()
+    userId.set(42)
+
+    MockWebSocket.last.message(
+      frame('group_response', {
+        group: `${NOTIFICATION_GROUP}:42`,
+        payload: { recent: [row({ id: 1 })], unreadCount: 1 },
+      }),
+    )
+    MockWebSocket.last.message(
+      frame('subscription_group_error', {
+        group: NOTIFICATION_GROUP,
+        httpCode: 401,
+        errorCode: 'group_unauthenticated',
+        message: 'nobody is behind this connection',
+      }),
+    )
+
+    // The bell lives in the shell and has no error surface: a refusal is written
+    // to the log and changes nothing on screen.
+    expect(store.notifications.get().map((n) => n.id)).toEqual([1])
+    expect(store.unreadCount.get()).toBe(1)
+  })
+
+  it('joins again on the next cue after a refusal', () => {
+    const { connection, userId } = boot()
+    connection.connect()
+    MockWebSocket.last.open()
+    answerSession()
+    userId.set(42)
+
+    MockWebSocket.last.message(
+      frame('subscription_group_error', {
+        group: NOTIFICATION_GROUP,
+        httpCode: 401,
+        errorCode: 'group_unauthenticated',
+        message: 'the worker has not learned this connection yet',
+      }),
+    )
+    // The same cue that was ignored while the join stood: without clearing the mark
+    // this connection would carry no notifications until its socket dropped.
+    answerSession()
+
     expect(
-      frames.some(
-        (f) => f.type === 'action' && f.action === NOTIFICATION_ACTION_SYNC,
-      ),
-    ).toBe(true)
+      sentFrames().filter((f) => f.type === 'group_subscribe'),
+    ).toHaveLength(2)
   })
 
   it('routes live signals into the store', () => {
@@ -225,9 +309,9 @@ describe('notification binder', () => {
     userId.set(42)
 
     MockWebSocket.last.message(
-      frame('subscription_page_hilos_notifications', {
-        recent: [row({ id: 1 })],
-        unreadCount: 1,
+      frame('group_response', {
+        group: `${NOTIFICATION_GROUP}:42`,
+        payload: { recent: [row({ id: 1 })], unreadCount: 1 },
       }),
     )
     expect(store.unreadCount.get()).toBe(1)
@@ -259,7 +343,7 @@ describe('notification binder', () => {
 
     expect(sentFrames()).toContainEqual({
       type: 'group_subscribe',
-      group: notificationGroupName(42),
+      group: NOTIFICATION_GROUP,
     })
   })
 })

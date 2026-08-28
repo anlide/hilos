@@ -39,16 +39,6 @@ final class ChatSignalRouter extends SignalRouter
     }
 
     /**
-     * Returns the chat owner for subscriptions to unregistered groups.
-     *
-     * @return ?string Fallback agent type
-     */
-    protected function getDefaultGroupSubscriptionAgentType(): ?string
-    {
-        return AgentType::CHAT;
-    }
-
-    /**
      * Returns chat agents started on DAEMON/SYSTEM bootstrap signals.
      *
      * @return list<string> Agent type identifiers

@@ -18,8 +18,11 @@ namespace Hilos\Notification;
  */
 final class NotificationGroup
 {
+    /** Name the group class declares, and the head of every full name it answers to. */
+    public const string NAME = 'hilos_notifications';
+
     /** Group-name prefix; the recipient user id is appended. */
-    public const string PREFIX = 'hilos_notifications:';
+    public const string PREFIX = self::NAME . ':';
 
     /**
      * Builds the notification group name for a recipient.
@@ -30,5 +33,26 @@ final class NotificationGroup
     public static function forUser(int $userId): string
     {
         return self::PREFIX . $userId;
+    }
+
+    /**
+     * Reads the recipient back out of a full group name.
+     *
+     * The inverse of {@see self::forUser()}, and the one way the group class learns whose
+     * notifications it is answering for: the name is what the server's own address resolution
+     * settled on, so reading the recipient off it cannot disagree with the join.
+     *
+     * @param string $group Full group name
+     * @return ?int Recipient user id, or null when the name carries none
+     */
+    public static function userOf(string $group): ?int
+    {
+        if (!str_starts_with($group, self::PREFIX)) {
+            return null;
+        }
+
+        $userId = substr($group, strlen(self::PREFIX));
+
+        return ctype_digit($userId) ? (int)$userId : null;
     }
 }

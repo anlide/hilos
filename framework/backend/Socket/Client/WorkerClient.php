@@ -17,6 +17,7 @@ use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\ProtectedModeReadyDTO;
@@ -30,6 +31,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerGroupJoinDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
@@ -214,6 +216,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerRtSourceRegisteredDTO => $this->handleWorkerRtSourceRegisteredMessage($workerDTO),
             $workerDTO instanceof WorkerRtSourceReleasedDTO => $this->handleWorkerRtSourceReleasedMessage($workerDTO),
             $workerDTO instanceof WorkerSourceInterestDTO => $this->handleWorkerSourceInterestMessage($workerDTO),
+            $workerDTO instanceof WorkerGroupJoinDTO => $this->handleGroupJoinMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeEnableDTO => $this->handleProtectedModeEnableMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeDisableDTO => $this->handleProtectedModeDisableMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeVerifyDTO => $this->handleProtectedModeVerifyMessage($workerDTO),
@@ -464,6 +467,26 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
                 staleRows: RtStaleness::staleRows($collectionKey),
             ))->toJson());
         }
+    }
+
+    /**
+     * Records a group membership the worker admitted.
+     *
+     * The master keeps the registry every fan-out is resolved against, but it stopped writing
+     * to it off the client frame: a join is judged in the worker that owns the group, and only
+     * that side knows who is behind the socket and what full name their identity builds. So
+     * this is the master doing as it is told, and the frame arrives only for a join that has
+     * already passed the group's own admission.
+     *
+     * @param WorkerGroupJoinDTO $dto DTO with the full group name, the connection and the join params
+     */
+    private function handleGroupJoinMessage(WorkerGroupJoinDTO $dto): void
+    {
+        Hilos::$sr?->subscribeToGroup($dto->data->group, new WebSocketGroupSubscribeSignalDTO(
+            acceptKey: $dto->data->acceptKey,
+            group: $dto->data->group,
+            params: $dto->data->params,
+        ));
     }
 
     /**

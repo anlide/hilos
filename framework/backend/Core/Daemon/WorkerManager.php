@@ -43,10 +43,13 @@ use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Group\DTO\GroupJoinSignalData;
+use Hilos\Core\Group\GroupSubscriptionDispatcher;
 use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
 use Hilos\Core\Page\PageAccessReassessment;
+use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
@@ -108,6 +111,7 @@ use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
+use Hilos\Socket\Worker\DTO\WorkerGroupJoinDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModePassDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeProgressDTO;
@@ -1458,9 +1462,19 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::GROUP_SUBSCRIBE:
                 if ($signalData instanceof WebSocketGroupSubscribeSignalDTO) {
+                    // The dispatcher owns the join now: it judges it, records the membership on
+                    // both registries when it passes, and answers with a frame either way. The
+                    // agent hook stays and runs after, because it is a side channel nobody
+                    // implements rather than the place a join is decided.
+                    if ($agent instanceof PageAgentInterface) {
+                        (new GroupSubscriptionDispatcher($agent))
+                            ->dispatchSubscribe($signalData, $signalData->group ?? $name);
+                    } else {
+                        // Every agent built on AbstractAgent implements it; one that does not
+                        // cannot address a browser at all, so the join has nobody to answer it.
+                        Logger::error("onSignalGroupSubscribe - agent {$agentId} cannot answer a group join");
+                    }
                     $agent->onSignalGroupSubscribe($signalData, $source, $name);
-                    $group = $signalData->group ?? $name;
-                    Hilos::$sr?->subscribeToGroup($group, $signalData);
                 } else {
                     Logger::error("onSignalGroupSubscribe - invalid signal data type: " . get_class($signalData));
                 }
@@ -1469,7 +1483,10 @@ abstract class WorkerManager extends BaseManager
             case SignalTypeConstants::GROUP_UNSUBSCRIBE:
                 if ($signalData instanceof WebSocketGroupUnsubscribeSignalDTO) {
                     $agent->onSignalGroupUnsubscribe($signalData, $source, $name);
-                    $group = $signalData->group ?? $name;
+                    // The name the client wrote, resolved to the membership this connection
+                    // actually holds: for a group the server addresses itself the two differ.
+                    $requested = $signalData->group ?? $name;
+                    $group = Hilos::$sr?->groupSubscriptionName($signalData->acceptKey, $requested) ?? $requested;
                     Hilos::$sr?->unsubscribeFromGroup($group, $signalData);
                 } else {
                     Logger::error("onSignalGroupUnsubscribe - invalid signal data type: " . get_class($signalData));
@@ -1479,7 +1496,16 @@ abstract class WorkerManager extends BaseManager
             case SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION:
                 if ($signalData instanceof WebSocketGroupUpdateSubscriptionSignalDTO) {
                     $agent->onSignalGroupUpdateSubscription($signalData, $source, $name);
-                    $group = $signalData->group ?? $name;
+                    // Judged before it is mirrored, and by the group's own admission: a
+                    // connection that would be refused at the door must not be able to re-aim
+                    // a membership it holds (HIL-721). A refused update mirrors nothing.
+                    $group = $agent instanceof PageAgentInterface
+                        ? (new GroupSubscriptionDispatcher($agent))
+                            ->dispatchUpdateSubscription($signalData, $signalData->group ?? $name)
+                        : null;
+                    if ($group === null) {
+                        break;
+                    }
                     try {
                         Hilos::$sr?->updateGroupSubscription($group, $signalData);
                     } catch (Throwable $e) {
@@ -2578,6 +2604,19 @@ abstract class WorkerManager extends BaseManager
                     );
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - by-connection re-decision carries invalid data: ' . get_class($signal->data));
+                }
+                continue;
+            }
+
+            // A group join the worker admitted is a worker->own-daemon control frame for the same
+            // reason: the master holds the registry every fan-out is resolved against, but it may
+            // not decide a join itself - it knows neither the identity behind the socket nor the
+            // full name that identity builds (HIL-721).
+            if ($signalType === SignalTypeConstants::GROUP_JOIN) {
+                if ($signal->data instanceof GroupJoinSignalData) {
+                    $this->daemonClient->send(new WorkerGroupJoinDTO($signal->data));
+                } else {
+                    Logger::error('dispatchQueuedSignalsToDaemon - group join carries invalid data: ' . get_class($signal->data));
                 }
                 continue;
             }

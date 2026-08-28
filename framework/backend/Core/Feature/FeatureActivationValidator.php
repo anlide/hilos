@@ -50,6 +50,7 @@ final class FeatureActivationValidator
         $errors = [];
         $declared = $this->declaredFeatures($hilosClass, $errors);
         $pages = $this->constantArray($hilosClass, 'PAGES');
+        $groups = $this->constantArray($hilosClass, 'GROUPS');
         $agents = $this->constantArray($hilosClass, 'AGENTS');
         $tables = $this->constantArray($hilosClass, 'TABLES');
         $pageTables = $this->constantArray($hilosClass, 'PAGE_TABLES');
@@ -66,6 +67,7 @@ final class FeatureActivationValidator
                     $definition->requirements(),
                     $declared,
                     $pages,
+                    $groups,
                     $agents,
                     $tables,
                     $pageTables,
@@ -74,7 +76,16 @@ final class FeatureActivationValidator
                 continue;
             }
 
-            $this->validateUndeclared($hilosClass, $feature, $definition->requirements(), $pages, $agents, $tables, $errors);
+            $this->validateUndeclared(
+                $hilosClass,
+                $feature,
+                $definition->requirements(),
+                $pages,
+                $groups,
+                $agents,
+                $tables,
+                $errors,
+            );
         }
 
         foreach ($declared as $feature) {
@@ -123,6 +134,7 @@ final class FeatureActivationValidator
      * @param FeatureRequirements $requirements What the feature obliges the project to register
      * @param list<HilosFeature> $declared Every declared feature
      * @param array $pages Page registry
+     * @param array $groups Group registry
      * @param array $agents Agent registry
      * @param array $tables Registered table registry
      * @param array $pageTables Page table binding registry
@@ -134,6 +146,7 @@ final class FeatureActivationValidator
         FeatureRequirements $requirements,
         array $declared,
         array $pages,
+        array $groups,
         array $agents,
         array $tables,
         array $pageTables,
@@ -144,6 +157,12 @@ final class FeatureActivationValidator
         foreach ($requirements->requiredPages as $pageClass) {
             if ($this->registeredExtending($pages, $pageClass) === null) {
                 $errors[] = "{$name} is declared but no page in PAGES extends {$pageClass}";
+            }
+        }
+
+        foreach ($requirements->requiredGroups as $groupClass) {
+            if ($this->registeredExtending($groups, $groupClass) === null) {
+                $errors[] = "{$name} is declared but no group in GROUPS extends {$groupClass}";
             }
         }
 
@@ -195,6 +214,7 @@ final class FeatureActivationValidator
      * @param HilosFeature $feature Undeclared feature
      * @param FeatureRequirements $requirements What the feature would oblige the project to register
      * @param array $pages Page registry
+     * @param array $groups Group registry
      * @param array $agents Agent registry
      * @param array $tables Registered table registry
      * @param list<string> $errors Activation error accumulator
@@ -204,6 +224,7 @@ final class FeatureActivationValidator
         HilosFeature $feature,
         FeatureRequirements $requirements,
         array $pages,
+        array $groups,
         array $agents,
         array $tables,
         array &$errors,
@@ -214,6 +235,13 @@ final class FeatureActivationValidator
             $registered = $this->registeredExtending($pages, $pageClass);
             if ($registered !== null) {
                 $errors[] = "PAGES registers {$registered} but {$name} is not declared in FEATURES";
+            }
+        }
+
+        foreach ($requirements->requiredGroups as $groupClass) {
+            $registered = $this->registeredExtending($groups, $groupClass);
+            if ($registered !== null) {
+                $errors[] = "GROUPS registers {$registered} but {$name} is not declared in FEATURES";
             }
         }
 

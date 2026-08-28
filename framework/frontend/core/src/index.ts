@@ -118,14 +118,12 @@ export {
   bindNotificationsScope,
   createHilosNotificationStore,
   hilosNotifications,
-  notificationGroupName,
   NOTIFICATION_ACTION_MARK_ALL_READ,
   NOTIFICATION_ACTION_MARK_READ,
-  NOTIFICATION_ACTION_SYNC,
+  NOTIFICATION_GROUP,
   NOTIFICATION_SIGNAL_CREATED,
   NOTIFICATION_SIGNAL_READ,
   NOTIFICATION_SIGNAL_SCHEMAS,
-  NOTIFICATION_SIGNAL_SNAPSHOT,
   type HilosNotification,
   type HilosNotificationSnapshot,
   type HilosNotificationStore,
@@ -326,6 +324,8 @@ export {
   SIGNAL_TYPE_PAGE_UNSUBSCRIBE,
   SIGNAL_TYPE_PAGE_RESPONSE,
   SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
+  SIGNAL_TYPE_GROUP_RESPONSE,
+  SIGNAL_TYPE_GROUP_SUBSCRIPTION_ERROR,
   SIGNAL_TYPE_ACTION,
   SIGNAL_TYPE_ACTION_ERROR,
   FIELD_TYPE,
@@ -339,6 +339,13 @@ export {
   pageSubscriptionErrorSchema,
   type PageSubscriptionError,
 } from './protocol/pageError.js'
+export {
+  groupResponseSchema,
+  groupSubscriptionErrorSchema,
+  GROUP_SIGNAL_SCHEMAS,
+  type GroupResponse,
+  type GroupSubscriptionError,
+} from './protocol/groupError.js'
 export {
   createPageRouter,
   type HilosRouteDeclaration,
