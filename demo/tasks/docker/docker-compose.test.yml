@@ -114,15 +114,12 @@ services:
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
       - WEBSOCKET_PORT=8092
-      # Trust the stand's own nginx to name the visitor behind it, so every e2e run
-      # takes the real proxied path (HIL-680). The two ranges are the pools compose
-      # hands its bridge networks their subnets from; naming the pools rather than the
-      # container address is what survives the network being recreated.
-      # DO NOT COPY THIS VALUE INTO A DEPLOYMENT. It trusts every RFC1918 peer, which
-      # here is acceptable only because the port below is published on loopback and a
-      # stand holds nothing worth spoofing an address for. A real deployment names the
-      # network of its own proxy and nothing else.
-      - HILOS_TRUSTED_PROXIES=172.16.0.0/12,192.168.0.0/16
+      # Trust this stand's own nginx, by address, to name the visitor behind it
+      # (HIL-680). One address and not a pool: the websocket port below is published
+      # as well, and a connection that reaches it without passing through nginx
+      # arrives from the docker network's gateway - a peer that must never be
+      # trusted to name anyone.
+      - HILOS_TRUSTED_PROXIES=${DOCKER_TEST_NGINX_IP:-10.187.0.12}/32
       # The CLI command channel, the socket admin:grant / admin:revoke speak.
       # In-network only: the e2e runner shares the compose network, so no host
       # port is published.
@@ -232,7 +229,8 @@ services:
     profiles:
       - e2e
     networks:
-      - hilos-tasks-test-network
+      hilos-tasks-test-network:
+        ipv4_address: ${DOCKER_TEST_NGINX_IP:-10.187.0.12}
 
   tasks-cli-test:
     build: .
@@ -301,3 +299,13 @@ volumes:
 networks:
   hilos-tasks-test-network:
     driver: bridge
+    ipam:
+      config:
+        # Deliberately outside 172.16.0.0/12 and 192.168.0.0/16 - Docker's default
+        # address pools. nginx needs a fixed address (the daemon trusts it by that
+        # address and nothing else), so this subnet is claimed, not assigned. Inside
+        # a default pool that claim loses a race: any other stack whose network came
+        # up first may already hold the range, and then the stand fails to start with
+        # "Pool overlaps with other one on this address space". 10.0.0.0/8 is never
+        # auto-assigned (demo/cluster/docker/docker-compose.cluster.yml).
+        - subnet: ${DOCKER_TEST_NETWORK_SUBNET:-10.187.0.0/16}

@@ -130,6 +130,12 @@ services:
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
       - WEBSOCKET_PORT=8092
+      # Trust this stand's own nginx, by address, to name the visitor behind it
+      # (HIL-680). One address and not a pool: the websocket port below is published
+      # as well, and a connection that reaches it without passing through nginx
+      # arrives from the docker network's gateway - a peer that must never be
+      # trusted to name anyone.
+      - HILOS_TRUSTED_PROXIES=${DOCKER_NGINX_IP:-172.26.0.12}/32
       - COMMAND_HOST=0.0.0.0
       - COMMAND_PORT=8094
       # The daemon addresses itself, so an operator command run with `docker exec`
@@ -267,7 +273,8 @@ services:
     profiles:
       - full
     networks:
-      - hilos-demo-chat-local-network
+      hilos-demo-chat-local-network:
+        ipv4_address: ${DOCKER_NGINX_IP:-172.26.0.12}
 
   # Vite dev server with HMR for the chat frontend. No profile: it is part of the
   # default local stack, so `daemon-start` brings it up with the backend. Mounts the

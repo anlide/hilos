@@ -132,6 +132,12 @@ services:
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
       - WEBSOCKET_PORT=8092
+      # Trust this stand's own nginx, by address, to name the visitor behind it
+      # (HIL-680). One address and not a pool: the websocket port below is published
+      # as well, and a connection that reaches it without passing through nginx
+      # arrives from the docker network's gateway - a peer that must never be
+      # trusted to name anyone.
+      - HILOS_TRUSTED_PROXIES=${DOCKER_NGINX_IP:-172.27.0.12}/32
       # The CLI command channel, the socket admin:create / admin:grant /
       # admin:revoke / protected-mode:open speak.
       - COMMAND_HOST=0.0.0.0
@@ -253,7 +259,8 @@ services:
     profiles:
       - full
     networks:
-      - hilos-tasks-local-network
+      hilos-tasks-local-network:
+        ipv4_address: ${DOCKER_NGINX_IP:-172.27.0.12}
 
   # Vite dev server with HMR for the tasks frontend. Mounts the whole repo
   # at /hilos so the @hilos/react `file:` symlink into framework/frontend
