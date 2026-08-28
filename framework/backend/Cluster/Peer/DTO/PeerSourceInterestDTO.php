@@ -22,8 +22,9 @@ use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
  * peer keeps the same map, so a node that becomes the owner of a collection later already knows
  * who was waiting for it.
  *
- * Only RT is named, for the reason the worker frame names only RT: a DB row is read out of the
- * shared database, so no node owes another a copy of it.
+ * Both kinds are named (HIL-750). A DB row is read out of the shared database, so no node owes
+ * another a copy of it - but a node that holds none of a collection has nothing to apply a frame
+ * about it into, and telling the sender so is what stops the hop.
  */
 final class PeerSourceInterestDTO extends PeerDTO
 {
@@ -36,13 +37,18 @@ final class PeerSourceInterestDTO extends PeerDTO
     /** @var string Payload key: RT collections that node reads */
     public const string FIELD_RT_COLLECTIONS = 'rtCollections';
 
+    /** @var string Payload key: DB collections that node reads */
+    public const string FIELD_DB_COLLECTIONS = 'dbCollections';
+
     /**
      * @param string $nodeId Id of the node that reads these collections
      * @param list<string> $rtCollections RT collections its processes read, each named once
+     * @param list<string> $dbCollections DB collections its processes read, each named once
      */
     public function __construct(
         public readonly string $nodeId,
         public readonly array $rtCollections,
+        public readonly array $dbCollections,
     ) {
     }
 
@@ -67,6 +73,7 @@ final class PeerSourceInterestDTO extends PeerDTO
             self::TYPE => self::MESSAGE_TYPE,
             self::FIELD_NODE_ID => $this->nodeId,
             self::FIELD_RT_COLLECTIONS => $this->rtCollections,
+            self::FIELD_DB_COLLECTIONS => $this->dbCollections,
         ];
     }
 
@@ -90,16 +97,36 @@ final class PeerSourceInterestDTO extends PeerDTO
             throw new PeerTransportException('Peer source interest is missing the node id');
         }
 
-        $rtCollections = [];
-        $raw = $data[self::FIELD_RT_COLLECTIONS] ?? [];
+        return new static(
+            nodeId: $nodeId,
+            rtCollections: self::collectionList($data, self::FIELD_RT_COLLECTIONS),
+            dbCollections: self::collectionList($data, self::FIELD_DB_COLLECTIONS),
+        );
+    }
+
+    /**
+     * Reads one of the two collection lists out of the frame.
+     *
+     * Shared by both halves so neither can grow its own idea of what a malformed entry is: a
+     * difference between them here would show up as one kind of frame quietly crossing the mesh
+     * more widely than the other.
+     *
+     * @param array<string, mixed> $data Frame payload
+     * @param string $field Payload key of the list to read
+     * @return list<string> Collection keys named in that list, empty when it is absent
+     */
+    private static function collectionList(array $data, string $field): array
+    {
+        $collections = [];
+        $raw = $data[$field] ?? [];
         if (is_array($raw)) {
             foreach ($raw as $collectionKey) {
                 if (is_string($collectionKey) && $collectionKey !== '') {
-                    $rtCollections[] = $collectionKey;
+                    $collections[] = $collectionKey;
                 }
             }
         }
 
-        return new static(nodeId: $nodeId, rtCollections: $rtCollections);
+        return $collections;
     }
 }

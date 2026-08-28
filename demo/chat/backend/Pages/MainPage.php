@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatFileUploadConstants;
@@ -48,6 +49,9 @@ use Random\RandomException;
  */
 final class MainPage extends AbstractPage
 {
+    /** @var list<string> The event it opens, and the attachments its actions resolve */
+    public const array READS_DB = [ChatDbContext::events, ChatDbContext::eventAttachments];
+
     public const string PAGE = PageConstants::MAIN;
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;

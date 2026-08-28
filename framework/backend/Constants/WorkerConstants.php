@@ -127,6 +127,14 @@ final class WorkerConstants
      */
     public const string MESSAGE_RT_STALENESS = 'rt_staleness';
 
+    /**
+     * @var string Master confirming it has written a worker down as a reader of one DB collection
+     *     (HIL-750). The database twin of the snapshot above, and empty of rows on purpose: the
+     *     rows are in the shared database the worker reads itself, so all the master owes it is
+     *     the word that frames about that collection are addressed here from now on.
+     */
+    public const string MESSAGE_DB_INTEREST_READY = 'db_interest_ready';
+
     // Message types from worker to daemon
     /** @var string Worker registration request */
     public const string MESSAGE_WORKER_REGISTER = 'worker_register';

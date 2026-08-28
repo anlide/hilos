@@ -24,6 +24,7 @@ use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReReadMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbInterestReadyMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
@@ -127,6 +128,7 @@ abstract class WorkerDTO extends BaseDTO
             WorkerSourceInterestDTO::MESSAGE_TYPE => WorkerSourceInterestDTO::fromArray($data),
             WorkerGroupJoinDTO::MESSAGE_TYPE => WorkerGroupJoinDTO::fromArray($data),
             WorkerRtSnapshotMessageDTO::MESSAGE_TYPE => WorkerRtSnapshotMessageDTO::fromArray($data),
+            WorkerDbInterestReadyMessageDTO::MESSAGE_TYPE => WorkerDbInterestReadyMessageDTO::fromArray($data),
             WorkerRtStalenessMessageDTO::MESSAGE_TYPE => WorkerRtStalenessMessageDTO::fromArray($data),
             WorkerProtectedModeEnableDTO::MESSAGE_TYPE => WorkerProtectedModeEnableDTO::fromArray($data),
             WorkerProtectedModeDisableDTO::MESSAGE_TYPE => WorkerProtectedModeDisableDTO::fromArray($data),

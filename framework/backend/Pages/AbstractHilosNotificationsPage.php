@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Pages;
 
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
@@ -48,6 +50,13 @@ use Hilos\Notification\NotificationSignalName;
  * The initial snapshot is NOT here: it is what the group answers a join with
  * ({@see AbstractHilosNotificationsGroup}), so the bell has it a frame earlier and stops
  * depending on the order two frames arrive in (HIL-721).
+ *
+ * Having no subscription is also why the rows it reads are not declared by
+ * {@see AbstractPage::READS_DB} but by {@see HilosDbContext::processWideReadCollections()}:
+ * that list is taken up when a page is subscribed to, and this page never is. Its actions
+ * arrive while the person is looking at some other page, in whatever worker serves that
+ * connection, so the interest has to be held by the process rather than by a subscription
+ * (HIL-750).
  */
 abstract class AbstractHilosNotificationsPage extends AbstractHilosPage
 {

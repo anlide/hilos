@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\Hilos\Users;
 
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Constants\AgentType;
@@ -39,6 +40,9 @@ use Throwable;
  */
 final class UserPage extends AbstractHilosUserPage
 {
+    /** @var list<string> The person this page is about, and the events its actions read */
+    public const array READS_DB = [ChatDbContext::users, ChatDbContext::events];
+
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
 
     public const array ACTIONS = [

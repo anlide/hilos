@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Context;
 
+use Hilos\Auth\Session\SessionCarrier;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Collection\AuthBlocks as ObjectAuthBlocks;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
@@ -36,6 +38,7 @@ use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\Actions\Item\NotificationActions;
 use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Actions\Item\SettingActions;
+use Hilos\Pages\AbstractHilosNotificationsPage;
 
 /**
  * HilosDbContext - Framework database context with Hilos-level collections.
@@ -133,5 +136,38 @@ abstract class HilosDbContext extends DbContext
 
         $this->_objectCollections[self::authBlocks] = ObjectAuthBlocks::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::authBlocks, DbCollectionAuthBlocks::class);
+    }
+
+    /**
+     * Names the framework collections read from any process at all.
+     *
+     * Four, and each for its own seam. Sessions and identities answer "whose session is this",
+     * which {@see SessionCarrier} asks in every process a frame arrives in - outside any agent
+     * and before any page subscription, so nothing else declares them. Settings is read by seams
+     * everywhere and is the one eager collection of the three, so a worker holding it unaddressed
+     * would go on serving the values it started with forever.
+     *
+     * Notifications is here for a different reason, and it is the only collection whose reader is
+     * a page ({@see AbstractHilosNotificationsPage}): that page hosts the mark-read actions of the
+     * bell and has no subscription of its own, deliberately, because the connection holds one page
+     * at a time and an always-on subscription would clobber the route page on every navigation.
+     * Its live channel is a group instead. So the actions arrive on whatever page the person is
+     * looking at, in whatever worker serves that connection, and {@see AbstractPage::READS_DB} -
+     * which is taken up when a page is subscribed to - never covers them.
+     *
+     * Named rather than counted: what is here is what the framework is known to read that way,
+     * and a seam this list forgets shows up as a refused read rather than as a stale row.
+     *
+     * @return list<string> Collection keys the framework reads process-wide
+     */
+    protected function processWideReadCollections(): array
+    {
+        return [
+            ...parent::processWideReadCollections(),
+            self::settings,
+            self::identities,
+            self::sessions,
+            self::notifications,
+        ];
     }
 }

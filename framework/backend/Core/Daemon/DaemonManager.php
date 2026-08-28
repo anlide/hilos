@@ -1966,19 +1966,22 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        // Only the RT half is addressed. A DB fact names a collection too, but a worker reads
-        // those rows out of the shared database rather than out of a copy, so there is no
-        // interest to match it against until HIL-750 gives DB one of its own - and a frame
-        // matched against an interest nobody declares would reach nobody at all.
-        $rtCollectionKey = $signal->data instanceof RtSyncSignalDataInterface
-            ? $signal->data->collectionKey
-            : null;
+        // Both halves are addressed by the collection the fact names (HIL-750). Naming one is
+        // what a sync payload is, so the kinds are told apart by the RT half alone and the rest
+        // of the family is the DB half. The one frame that belongs to no collection - the re-read
+        // after a database swap - is outside the family and stays broadcast: there is no interest
+        // it could be matched against, and every worker has to hear it.
+        $sourceKind = match (true) {
+            $signal->data instanceof RtSyncSignalDataInterface => SourceChange::KIND_RT,
+            $signal->data instanceof SyncSignalDataInterface => SourceChange::KIND_DB,
+            default => null,
+        };
 
         $this->writeFrameToWorkers(
             $workerServer,
             $dto,
-            $rtCollectionKey === null ? null : SourceChange::KIND_RT,
-            $rtCollectionKey,
+            $sourceKind,
+            $signal->data instanceof SyncSignalDataInterface ? $signal->data->collectionKey : null,
         );
     }
 
@@ -2117,7 +2120,11 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        $mesh->broadcastDbSync($signalType, $signal);
+        $mesh->broadcastDbSync(
+            $signalType,
+            $signal,
+            $signal->data instanceof SyncSignalDataInterface ? $signal->data->collectionKey : null,
+        );
     }
 
     /**
@@ -2764,7 +2771,7 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        $mesh->announceSourceInterest($reads);
+        $mesh->announceSourceInterest($reads[SourceChange::KIND_RT], $reads[SourceChange::KIND_DB]);
     }
 
     /**
@@ -2848,6 +2855,12 @@ abstract class DaemonManager extends BaseManager implements
 
         return [
             ClusterCommandConstants::FIELD_RT_COLLECTIONS => $collections,
+            // The one thing the database half of the reader map makes observable (HIL-750). There
+            // is nothing per collection to show beside it: the rows are in the shared database
+            // rather than in a replica of this node's, so what a scenario can ask about is who
+            // is on the address list.
+            ClusterCommandConstants::FIELD_DB_COLLECTIONS_READ
+                => $this->agentManagerDaemon->workerReaderMap()->collections(SourceChange::KIND_DB),
             ClusterCommandConstants::FIELD_RT_APPLIED => $this->rtFramesApplied,
             ClusterCommandConstants::FIELD_RT_REFUSED => $this->rtFramesRefused,
             ClusterCommandConstants::FIELD_RT_CLAIM_CONFLICTS => $this->rtClaimConflicts,

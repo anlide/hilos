@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
@@ -29,6 +30,9 @@ use Hilos\HilosException;
  */
 final class AdminModeratorPage extends AbstractPage
 {
+    /** @var list<string> The prompt pieces its actions edit and reorder */
+    public const array READS_DB = [ChatDbContext::moderatorPromptPieces];
+
     public const string PAGE = PageConstants::ADMIN_MODERATOR;
 
     /**

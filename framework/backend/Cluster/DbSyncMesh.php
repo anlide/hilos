@@ -15,9 +15,10 @@ use Hilos\Core\Router\DTO\SignalDTO;
  * every mesh port in this framework exists — the announcing side stays logic a test can drive
  * with a fake instead of a listener and a live link.
  *
- * There is no addressed form and there will not be one: a row lives in the database every node
- * shares, so a change to it concerns whoever happens to be holding that row, and only they
- * know whether they are.
+ * A fact is addressed by the collection it names (HIL-750). The row lives in the database every
+ * node shares, so nobody is owed a copy of it - but a node holding none of that collection has
+ * nothing to apply the fact into, and the interest it announced is how it says so. A fact naming
+ * no collection has nothing to be matched against and goes to everybody.
  *
  * There is also no snapshot form, unlike {@see RtSyncMesh}: a node that has just come up holds
  * no rows to be behind on, and the one place its rows come from is the database itself.
@@ -29,6 +30,7 @@ interface DbSyncMesh
      *
      * @param string $signalType DB sync signal type being announced
      * @param SignalDTO $signal DB sync signal the other nodes apply
+     * @param ?string $collectionKey Collection the fact belongs to, or null when it names none
      */
-    public function broadcastDbSync(string $signalType, SignalDTO $signal): void;
+    public function broadcastDbSync(string $signalType, SignalDTO $signal, ?string $collectionKey = null): void;
 }

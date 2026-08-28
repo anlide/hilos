@@ -11,6 +11,7 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Database\ReHydrateRound;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Runtime\RtSnapshot;
@@ -27,6 +28,7 @@ use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
 use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbInterestReadyMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
@@ -452,20 +454,31 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * The two steps are one and nothing may be written to this worker between them: the map
      * entry is what starts addressing deltas here, and a delta reaching the worker before the
-     * snapshot would land on a collection it holds nothing of. Sending the snapshot second is
-     * what makes that impossible - by the time the frame after it can be produced, the state it
+     * answer would land on a collection it holds nothing of. Sending the answer second is what
+     * makes that impossible - by the time the frame after it can be produced, the state it
      * applies to is already queued ahead of it on this same socket.
      *
-     * @param WorkerSourceInterestDTO $dto DTO with every RT collection that worker reads
+     * What the answer carries is where the two kinds part (HIL-750). An RT collection is sent
+     * its rows, because the master's replica is the only copy the worker can be given. A DB
+     * collection is sent a bare confirmation: its rows are in the database the worker reads for
+     * itself, so the only thing it is missing is the word that it is in the map.
+     *
+     * @param WorkerSourceInterestDTO $dto DTO with every RT and DB collection that worker reads
      */
     private function handleWorkerSourceInterestMessage(WorkerSourceInterestDTO $dto): void
     {
-        foreach ($this->agentManager->handleSourceInterest($dto, $this->workerIndex) as $collectionKey) {
+        $added = $this->agentManager->handleSourceInterest($dto, $this->workerIndex);
+
+        foreach ($added[SourceChange::KIND_RT] as $collectionKey) {
             $this->send((new WorkerRtSnapshotMessageDTO(
                 collectionKey: $collectionKey,
                 rows: RtSnapshot::rows($collectionKey),
                 staleRows: RtStaleness::staleRows($collectionKey),
             ))->toJson());
+        }
+
+        foreach ($added[SourceChange::KIND_DB] as $collectionKey) {
+            $this->send((new WorkerDbInterestReadyMessageDTO(collectionKey: $collectionKey))->toJson());
         }
     }
 

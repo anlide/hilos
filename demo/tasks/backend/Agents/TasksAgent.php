@@ -42,6 +42,9 @@ use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
  */
 final class TasksAgent extends AbstractAgent
 {
+    /** @var list<string> The guest rows behind the people it serves, owned by the users library */
+    public const array READS_DB = [TasksDbContext::guests];
+
     public const string AGENT_TYPE = AgentType::TASKS;
 
     // The session frame is declared HERE and not in the library, which is what routes it to

@@ -23,12 +23,14 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Database\Context\DbContext;
 use Hilos\Hilos;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -167,6 +169,23 @@ final class DaemonManagerDbSyncPeerTest extends TestCase
     }
 
     /**
+     * The mesh is told which collection the fact belongs to, so it can leave out the nodes
+     * holding none of it (HIL-750). Nobody is owed a copy of a database row - it is in the
+     * database they all share - but a node holding none of that collection has nothing to apply
+     * the fact into, and the hop is wasted.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testTheAnnouncementNamesTheCollectionItIsAddressedBy(): void
+    {
+        $daemon = new DbSyncPeerTestManager();
+
+        $daemon->announce($daemon->dbSyncUpdated('Ada'));
+
+        $this->assertSame(self::COLLECTION, $daemon->mesh->singleAnnouncement()->collectionKey);
+    }
+
+    /**
      * A replica is handed to this node's own workers, because their copies of the row are as
      * stale as the master's and nothing else will tell them.
      */
@@ -178,6 +197,80 @@ final class DaemonManagerDbSyncPeerTest extends TestCase
 
         $this->assertSame(
             [WorkerConstants::MESSAGE_DB_SYNC_UPDATED],
+            $daemon->workerServer->frameTypes(),
+        );
+    }
+
+    /**
+     * The other half of the same rule, and the one this ticket is named after (HIL-750): a worker
+     * reading some other collection is not written to at all. It could not apply the row - it
+     * holds no copy of that collection to apply it into - so the frame would be a socket write, a
+     * decode and a lookup, all of it to reach nobody.
+     */
+    public function testAReplicaSkipsAWorkerThatDoesNotReadItsCollection(): void
+    {
+        $daemon = new DbSyncPeerTestManager();
+        $daemon->workerReads('someOtherCollection');
+
+        $daemon->receive($daemon->dbSyncUpdated('Ada'));
+
+        $this->assertSame([], $daemon->workerServer->frameTypes());
+    }
+
+    /**
+     * A worker that reads nothing out of the database is the same case as one reading elsewhere,
+     * and it is worth its own run because it is the state every worker starts in: nothing is
+     * declared until a page subscribes or an agent starts, and a frame delivered in that window
+     * would be delivered by a map that is not being consulted at all.
+     */
+    public function testAReplicaSkipsAWorkerThatReadsNothing(): void
+    {
+        $daemon = new DbSyncPeerTestManager();
+        $daemon->workerReads();
+
+        $daemon->receive($daemon->dbSyncUpdated('Ada'));
+
+        $this->assertSame([], $daemon->workerServer->frameTypes());
+    }
+
+    /**
+     * A row written on THIS node is addressed by the same map on its way out to the workers, and
+     * not only a replica arriving from a peer: both leave through the one fan-out, and a filter
+     * that sat on the arriving path alone would leave every local write broadcast.
+     *
+     * @throws AgentException When routing the queued signal fails
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testALocalWriteIsAddressedByTheSameMap(): void
+    {
+        $daemon = new DbSyncPeerTestManager();
+        $daemon->workerReads('someOtherCollection');
+
+        $daemon->queueDbSyncUpdated('Ada');
+        $daemon->dispatch();
+
+        $this->assertSame([], $daemon->workerServer->frameTypes());
+    }
+
+    /**
+     * The re-read after a database swap names no collection, so there is no interest to match it
+     * against and every worker has to hear it - including one that reads nothing at all. Matched
+     * against an empty map it would reach nobody, and the node would go on serving rows out of a
+     * database that was replaced underneath it.
+     *
+     * @throws AgentException When routing the queued signal fails
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testTheWholeDatabaseReReadReachesAWorkerThatReadsNothing(): void
+    {
+        $daemon = new DbSyncPeerTestManager();
+        $daemon->workerReads();
+
+        $daemon->queueDbReHydrate();
+        $daemon->dispatch();
+
+        $this->assertSame(
+            [WorkerConstants::MESSAGE_DB_REHYDRATE],
             $daemon->workerServer->frameTypes(),
         );
     }
@@ -269,6 +362,10 @@ final class DbSyncPeerTestManager extends DaemonManager
         $this->workerServer = new DbSyncPeerTestWorkerServer();
         $this->workerServer->addWorker();
         $this->registerServer($this->workerServer);
+        // A row frame goes to the workers that read its collection (HIL-750), so a pool whose
+        // worker never said what it reads would receive nothing at all - and every case below
+        // would pass for the wrong reason. This is that worker's report, as its link delivers it.
+        $this->workerReads(DaemonManagerDbSyncPeerTest::COLLECTION);
 
         $this->peerServer = new PeerServer(
             '127.0.0.1',
@@ -281,6 +378,37 @@ final class DbSyncPeerTestManager extends DaemonManager
         // The apply step reaches for this node's collections; an empty context is enough, because
         // what the row does once it lands is the applicator's own subject, not the transport's.
         Hilos::$db = new DbSyncPeerTestDbContext();
+    }
+
+    /**
+     * Records what the one worker of this pool reads out of the database, as its report would.
+     *
+     * Replacement and not a delta, because that is what the report is: the list a worker sends is
+     * everything it reads, so calling this again says what the worker reads NOW.
+     *
+     * @param string ...$collectionKeys DB collections that worker reads
+     */
+    public function workerReads(string ...$collectionKeys): void
+    {
+        $this->getAgentManagerDaemon()->handleSourceInterest(
+            new WorkerSourceInterestDTO([], array_values($collectionKeys)),
+            DbSyncPeerTestWorkerClient::WORKER_INDEX,
+        );
+    }
+
+    /**
+     * Queues the whole-database re-read, which belongs to no collection at all.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function queueDbReHydrate(): void
+    {
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DB),
+            signalType: new SignalType(SignalTypeConstants::DB_REHYDRATE),
+            signalName: new SignalName(SignalConstants::DB_REHYDRATE),
+            signalData: new DbReHydrateSignalData('db_sync_peer_test_agent'),
+        );
     }
 
     /**
@@ -497,10 +625,11 @@ final class DbSyncPeerTestMesh implements DbSyncMesh
     /**
      * @param string $signalType DB sync signal type being announced
      * @param SignalDTO $signal DB sync signal the other nodes apply
+     * @param ?string $collectionKey Collection the fact belongs to, or null when it names none
      */
-    public function broadcastDbSync(string $signalType, SignalDTO $signal): void
+    public function broadcastDbSync(string $signalType, SignalDTO $signal, ?string $collectionKey = null): void
     {
-        $this->announcements[] = new DbSyncPeerTestAnnouncement($signalType, $signal);
+        $this->announcements[] = new DbSyncPeerTestAnnouncement($signalType, $signal, $collectionKey);
     }
 
     /**
@@ -525,10 +654,12 @@ final readonly class DbSyncPeerTestAnnouncement
     /**
      * @param string $signalType DB sync signal type announced
      * @param SignalDTO $signal Signal handed to the mesh
+     * @param ?string $collectionKey Collection the mesh was told to address the fact by
      */
     public function __construct(
         public string $signalType,
         public SignalDTO $signal,
+        public ?string $collectionKey = null,
     ) {
     }
 }
@@ -575,12 +706,15 @@ final class DbSyncPeerTestWorkerServer extends WorkerServer
  */
 final class DbSyncPeerTestWorkerClient extends WorkerClient
 {
+    /** @var int Index the daemon addresses this link by, and the key its reader interest is held under */
+    public const int WORKER_INDEX = 1;
+
     /** @var list<string> Raw frames the daemon wrote to this link, in order */
     private array $written = [];
 
     public function __construct()
     {
-        $this->setWorkerIndex(1);
+        $this->setWorkerIndex(self::WORKER_INDEX);
     }
 
     public function isRegistered(): bool

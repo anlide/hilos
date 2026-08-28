@@ -104,6 +104,14 @@ final class ClusterCommandConstants
     /** @var string Inspect reply key: RT claims of this node's agents the leader has refused */
     public const string FIELD_RT_CLAIM_REFUSALS = 'rtClaimRefusals';
 
+    /**
+     * @var string Inspect reply key: database collections a worker of this node reads (HIL-750).
+     *     Beside the runtime rows above rather than among them: those are named per collection
+     *     out of the mounted runtime, and there is no such walk for the database - what is
+     *     observable is the list itself, which is exactly what decides where a frame goes.
+     */
+    public const string FIELD_DB_COLLECTIONS_READ = 'dbCollectionsRead';
+
     /** @var string RT-collection-row key: whether an agent of this node writes the collection */
     public const string FIELD_RT_OWNED = 'owned';
 

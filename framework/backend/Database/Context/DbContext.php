@@ -4,12 +4,18 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Context;
 
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Exception\View\CloneNotAllowedException;
 use Hilos\Database\Exception\View\CollectionNotFoundException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
@@ -17,6 +23,8 @@ use Hilos\Database\Exception\View\UnknownLazyStrategyException;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\HilosException;
+use Hilos\Pages\AbstractHilosNotificationsPage;
+use Hilos\Runtime\View\Context\RtContext;
 
 /**
  * DbContext - Database context (instance layer only).
@@ -240,6 +248,7 @@ abstract class DbContext
      * @param string $name Collection name (e.g. users, events)
      * @return DbCollection DB collection instance
      * @throws CollectionNotFoundException When collection does not exist
+     * @throws DbCollectionNotReadableException When nothing here reads the collection, or its readiness is on its way
      * @throws UnknownLazyStrategyException When lazy strategy is unknown
      * @throws LogicException When the object collection entity class is not configured
      * @throws DatabaseException On connection or schema error
@@ -249,6 +258,8 @@ abstract class DbContext
         if (!isset($this->_dbItemCollections[$name])) {
             throw new CollectionNotFoundException("Db collection [{$name}] does not exist");
         }
+
+        $this->assertReadable($name);
 
         switch ($this->_objectCollections[$name]->getLazyStrategy()) {
             case Objects::LAZY_STRATEGY_NONE:
@@ -271,6 +282,88 @@ abstract class DbContext
         }
 
         return $this->_dbItemCollections[$name];
+    }
+
+    /**
+     * Declares what this process reads because the framework reads it, not because somebody asked.
+     *
+     * Called once per process right after {@see self::configure()}, and the database twin of
+     * {@see RtContext::declareProcessWideReads()}. What it covers is the seams: code that answers
+     * a question in whatever process happens to be running - whose session is this, what is this
+     * setting - and is therefore named by no page's topology and no agent's
+     * {@see AbstractAgent::READS_DB}. Without the declaration those reads would be refused in
+     * every worker that runs no page and no agent of its own, which is most of them.
+     *
+     * A page nobody subscribes to reads the same way and belongs here for the same reason. It has
+     * a class and a name, so {@see AbstractPage::READS_DB} looks like the place - but that list is
+     * taken up when a connection subscribes and this page is never subscribed to, so its actions
+     * run wherever the person happens to be. {@see AbstractHilosNotificationsPage} is the
+     * framework's one of those (HIL-750).
+     *
+     * The interest is never given back. A seam has no end the way a page subscription or an agent
+     * does: it stops being read when the process stops.
+     *
+     * The list is named rather than derived, because there is nothing in a mounted collection
+     * that says who reads it - {@see self::processWideReadCollections()} is where a layer says so.
+     */
+    final public function declareProcessWideReads(): void
+    {
+        foreach ($this->processWideReadCollections() as $collectionKey) {
+            SourceInterestRegistry::register(
+                SourceChange::KIND_DB,
+                $collectionKey,
+                SourceConsumer::feature($collectionKey),
+            );
+        }
+    }
+
+    /**
+     * Names the collections this layer reads from any process at all.
+     *
+     * Empty here: a bare context mounts nothing of its own, so it reads nothing of its own. The
+     * framework's own seams are named by {@see HilosDbContext}, and a project adds to that list
+     * by overriding this and calling the parent.
+     *
+     * @return list<string> Collection keys read process-wide
+     */
+    protected function processWideReadCollections(): array
+    {
+        return [];
+    }
+
+    /**
+     * Refuses a collection this process does not read, rather than answering out of a copy
+     * nobody keeps current.
+     *
+     * The database twin of {@see RtContext::assertReadable()}, and refused for a reason of its
+     * own: the rows here WOULD come back, out of the shared database, and they would be right
+     * exactly once. A process the master does not address is a process no later write reaches,
+     * so its copy stops being true at the next write and says nothing about when that was.
+     *
+     * Judged in a worker and nowhere else, which is what {@see SourceInterestRegistry::isReady()}
+     * answers: every other process holds what it mounted itself and is its own source of it, so
+     * a refusal there would be about a delivery that is not happening.
+     *
+     * Only mounted collections reach here, so the refusal is always about wiring: either no
+     * consumer declared this collection ({@see AbstractAgent::READS_DB}, a page's browser
+     * sources and {@see AbstractPage::READS_DB}, a framework seam's process-wide read) or one did
+     * and the master's confirmation has not landed yet. The two are separate defects and the
+     * messages say which.
+     *
+     * @param string $name Mounted collection name being read
+     * @throws DbCollectionNotReadableException When nothing here reads it, or its readiness is on its way
+     */
+    private function assertReadable(string $name): void
+    {
+        if (SourceInterestRegistry::isReady(SourceChange::KIND_DB, $name)) {
+            return;
+        }
+
+        throw new DbCollectionNotReadableException(
+            SourceInterestRegistry::isDeclared(SourceChange::KIND_DB, $name)
+                ? "database collection '{$name}' was declared but its readiness has not arrived yet"
+                : "no reader interest is registered for database collection '{$name}'",
+        );
     }
 
     /**

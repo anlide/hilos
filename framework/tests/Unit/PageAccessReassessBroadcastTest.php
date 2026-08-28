@@ -25,6 +25,7 @@ use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
@@ -42,6 +43,9 @@ use PHPUnit\Framework\TestCase;
 final class PageAccessReassessBroadcastTest extends TestCase
 {
     private const int USER_ID = 41;
+
+    /** @var string DB collection the flag whose change is announced lives in */
+    public const string USERS_COLLECTION = 'users';
 
     /** @var list<string> Accept keys of the session whose sign-out is announced */
     private const array ACCEPT_KEYS = ['ak-first', 'ak-second'];
@@ -103,6 +107,7 @@ final class PageAccessReassessBroadcastTest extends TestCase
         $manager = new PageAccessReassessBroadcastTestManager();
         $workerServer = $manager->addWorkerServer();
         $workerServer->addWorker();
+        $manager->everyWorkerReads(self::USERS_COLLECTION);
 
         $manager->receiveFlagSync(self::USER_ID);
         $manager->receiveAnnouncement(self::USER_ID);
@@ -160,6 +165,7 @@ final class PageAccessReassessBroadcastTest extends TestCase
         $manager = new PageAccessReassessBroadcastTestManager();
         $workerServer = $manager->addWorkerServer();
         $workerServer->addWorker();
+        $manager->everyWorkerReads(self::USERS_COLLECTION);
 
         $manager->receiveFlagSync(self::USER_ID);
         $manager->receiveConnectionsAnnouncement(self::ACCEPT_KEYS);
@@ -244,6 +250,25 @@ final class PageAccessReassessBroadcastTestManager extends DaemonManager
     }
 
     /**
+     * Reports every worker link of this pool as a reader of one database collection.
+     *
+     * Needed by the cases that expect a row frame to arrive (HIL-750): a row goes to the workers
+     * that read its collection, so a link that never said what it reads is written nothing, and
+     * a case about the ORDER of two frames would be asserting over one.
+     *
+     * @param string $collectionKey DB collection every link of the pool reads
+     */
+    public function everyWorkerReads(string $collectionKey): void
+    {
+        foreach ($this->workerServer?->workerIndexes() ?? [] as $workerIndex) {
+            $this->agentManagerDaemon->handleSourceInterest(
+                new WorkerSourceInterestDTO([], [$collectionKey]),
+                $workerIndex,
+            );
+        }
+    }
+
+    /**
      * Hands the master the announcement frame the way a worker link does, through the handler
      * that receives it - so what this file asserts includes the decision to queue rather than
      * act.
@@ -282,7 +307,11 @@ final class PageAccessReassessBroadcastTestManager extends DaemonManager
     public function receiveFlagSync(int $userId): void
     {
         $this->agentManagerDaemon->handleWorkerDbSyncUpdated(new WorkerDbSyncUpdatedMessageDTO(
-            new DbSyncUpdatedSignalData('users', (string)$userId, ['admin' => 1]),
+            new DbSyncUpdatedSignalData(
+                PageAccessReassessBroadcastTest::USERS_COLLECTION,
+                (string)$userId,
+                ['admin' => 1],
+            ),
         ));
     }
 
@@ -343,10 +372,31 @@ final class PageAccessReassessBroadcastTestWorkerServer extends WorkerServer
 
     /**
      * Adds one more worker link for the fan-out to write to.
+     *
+     * Each link is given its own index, because that is the key the master's reader map holds
+     * its interest under: links sharing one index would share one entry, and a case about two
+     * workers would be arranging one.
      */
     public function addWorker(): void
     {
-        $this->clients[] = new PageAccessReassessBroadcastTestWorkerClient();
+        $client = new PageAccessReassessBroadcastTestWorkerClient();
+        $client->setWorkerIndex(count($this->clients));
+        $this->clients[] = $client;
+    }
+
+    /**
+     * @return list<int> Index of each worker link of this pool, in order
+     */
+    public function workerIndexes(): array
+    {
+        $indexes = [];
+        foreach ($this->clients as $client) {
+            if ($client instanceof PageAccessReassessBroadcastTestWorkerClient) {
+                $indexes[] = $client->getWorkerIndex();
+            }
+        }
+
+        return $indexes;
     }
 
     /**

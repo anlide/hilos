@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\SimplePoll\Pages\Hilos\Users;
 
+use Demo\SimplePoll\Database\PollDbContext;
 use Demo\SimplePoll\Browser\PollBrowserRef;
 use Demo\SimplePoll\Browser\PollBrowserSource;
 use Demo\SimplePoll\Constants\AgentType;
@@ -40,6 +41,9 @@ use Throwable;
  */
 final class UserPage extends AbstractHilosUserPage
 {
+    /** @var list<string> The person this page is about, and the renames its actions write */
+    public const array READS_DB = [PollDbContext::users, PollDbContext::userRenames];
+
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
 
     public const array ACTIONS = [

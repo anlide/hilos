@@ -43,6 +43,16 @@ use Hilos\Utils\Helpers\RandomHelper;
  */
 final class BotAgent extends AbstractLlmChatAgent
 {
+    /**
+     * @var list<string> The bot row this agent answers for, and the event it lives in. Both are
+     *     written by somebody else - the library owns the bots, the chat agent owns the events -
+     *     so this agent is a reader of them and declares itself one.
+     */
+    public const array READS_DB = [
+        ChatDbContext::bots,
+        ChatDbContext::events,
+    ];
+
     public const string AGENT_TYPE = AgentType::BOT;
 
     public const array AGENT_SIGNALS = [

@@ -930,6 +930,11 @@ final class ClusterContext
      * browsers. Those two are what a scenario asserts on, because the delivery itself ends at a
      * socket — and `demo/cluster` runs headless, with no socket to watch.
      *
+     * The database collections this node reads travel out the same way (HIL-750), and for the
+     * same want of anything else to watch: what a DB frame is matched against before it takes a
+     * hop is this very list, so a scenario asking whether an unread collection stayed home has
+     * to be able to see who claimed to read what.
+     *
      * @return array<string, mixed> Inspection snapshot payload
      * @throws ClusterConfigurationException When enabled but node config is missing or invalid
      * @throws EnvException When a cluster env value cannot be read
@@ -977,6 +982,8 @@ final class ClusterContext
                 $replicas[ClusterCommandConstants::FIELD_RT_CLAIM_CONFLICTS] ?? 0,
             ClusterCommandConstants::FIELD_RT_CLAIM_REFUSALS =>
                 $replicas[ClusterCommandConstants::FIELD_RT_CLAIM_REFUSALS] ?? 0,
+            ClusterCommandConstants::FIELD_DB_COLLECTIONS_READ =>
+                $replicas[ClusterCommandConstants::FIELD_DB_COLLECTIONS_READ] ?? [],
             ClusterCommandConstants::FIELD_DB_REPLICAS => $this->dbReplicas,
             ClusterCommandConstants::FIELD_LAST_DB_REPLICA_COLLECTION => $this->lastDbReplicaCollection,
         ];

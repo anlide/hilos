@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
@@ -40,6 +41,9 @@ use Hilos\Core\Page\PageRouteParams;
  */
 final class BotPage extends AbstractPage
 {
+    /** @var list<string> The bot row this page is about */
+    public const array READS_DB = [ChatDbContext::bots];
+
     public const string PAGE = PageConstants::BOT;
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::BOT;

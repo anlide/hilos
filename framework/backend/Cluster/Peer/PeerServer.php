@@ -185,6 +185,14 @@ final class PeerServer extends AbstractServer implements
     private array $announcedRtInterest = [];
 
     /**
+     * @var list<string> DB collections this node last told the mesh it reads.
+     *
+     * Kept beside the runtime list above and for the same reason: a peer that handshakes later
+     * would otherwise filter every database frame away from this node.
+     */
+    private array $announcedDbInterest = [];
+
+    /**
      * @param string $host Host to bind the peer listener
      * @param int $port Port to bind the peer listener
      * @param NodeIdentity $localIdentity Local node identity to announce to peers
@@ -702,10 +710,12 @@ final class PeerServer extends AbstractServer implements
         // The announcement is a broadcast and reached only the nodes linked at the time it was
         // made; this link is younger than all of them, so without this the peer would filter
         // every RT frame away from this node until its interest happened to change again.
-        if ($this->announcedRtInterest !== []) {
-            $link->sendFrame(
-                new PeerSourceInterestDTO($this->localIdentity->nodeId, $this->announcedRtInterest),
-            );
+        if ($this->announcedRtInterest !== [] || $this->announcedDbInterest !== []) {
+            $link->sendFrame(new PeerSourceInterestDTO(
+                $this->localIdentity->nodeId,
+                $this->announcedRtInterest,
+                $this->announcedDbInterest,
+            ));
         }
 
         // Hand the peer the RT collections this node owns (HIL-586). Off the handshake and not
@@ -1827,11 +1837,15 @@ final class PeerServer extends AbstractServer implements
      * right now and a peer joining later would otherwise never hear it ({@see onHandshakeComplete()}).
      *
      * @param list<string> $rtCollections RT collections the processes of this node read
+     * @param list<string> $dbCollections DB collections the processes of this node read
      */
-    public function announceSourceInterest(array $rtCollections): void
+    public function announceSourceInterest(array $rtCollections, array $dbCollections): void
     {
         $this->announcedRtInterest = $rtCollections;
-        $this->broadcastToNodes(new PeerSourceInterestDTO($this->localIdentity->nodeId, $rtCollections));
+        $this->announcedDbInterest = $dbCollections;
+        $this->broadcastToNodes(
+            new PeerSourceInterestDTO($this->localIdentity->nodeId, $rtCollections, $dbCollections),
+        );
     }
 
     /**
@@ -1855,6 +1869,12 @@ final class PeerServer extends AbstractServer implements
      */
     public function onSourceInterestReceived(PeerLink $link, PeerSourceInterestDTO $frame): void
     {
+        // Both halves of the frame are written down, and only one of them is owed anything back
+        // (HIL-750). A node taking up a DB collection is owed no hand-over at all: the rows are
+        // in the database it is already connected to, so the entry in this map is the whole of
+        // what changes - from now on its frames stop being filtered away.
+        $this->nodeReaderMap->note($frame->nodeId, SourceChange::KIND_DB, $frame->dbCollections);
+
         $added = $this->nodeReaderMap->note($frame->nodeId, SourceChange::KIND_RT, $frame->rtCollections);
         if ($added === []) {
             return;
@@ -1899,19 +1919,31 @@ final class PeerServer extends AbstractServer implements
     /**
      * Announces one DB sync fact written on this node to every other node of the mesh.
      *
-     * Implements {@see DbSyncMesh}. The twin of {@see broadcastRtSync()} and unaddressed for a
-     * different reason: the row lives in the database all the nodes share, so the fact concerns
-     * whichever of them is holding that row in memory, and only each of them knows whether it
-     * is. Delivery is best-effort — a node that is not linked right now does not get this fact,
-     * and what covers the gap is that it stops trusting its rows when the link comes back
+     * Implements {@see DbSyncMesh}. The twin of {@see broadcastRtSync()}, and addressed by the
+     * same map for a reason of its own: the row lives in the database all the nodes share, so
+     * nobody is owed a copy of it - but a node holding none of that collection has nothing to
+     * apply the fact into, and its own announced interest is how it says so (HIL-750). Delivery
+     * is best-effort — a node that is not linked right now does not get this fact, and what
+     * covers the gap is that it stops trusting its rows when the link comes back
      * ({@see DbSyncSink::reReadAfterLink()}) rather than any redelivery here.
      *
      * @param string $signalType DB sync signal type being announced
      * @param SignalDTO $signal DB sync signal the other nodes apply
+     * @param ?string $collectionKey Collection the fact belongs to, or null when it names none
      */
-    public function broadcastDbSync(string $signalType, SignalDTO $signal): void
+    public function broadcastDbSync(string $signalType, SignalDTO $signal, ?string $collectionKey = null): void
     {
-        $this->broadcastToNodes(new PeerDbSyncDTO($this->localIdentity->nodeId, $signalType, $signal));
+        $frame = new PeerDbSyncDTO($this->localIdentity->nodeId, $signalType, $signal);
+        if ($collectionKey === null) {
+            // Nothing to match an interest against, so the old address stands: everybody. The
+            // same fallback the runtime twin keeps, and for the same reason - replicating too
+            // widely is the side of the mistake a receiver can still recover from.
+            $this->broadcastToNodes($frame);
+
+            return;
+        }
+
+        $this->broadcastToNodesHolding($frame, SourceChange::KIND_DB, $collectionKey);
     }
 
     /**

@@ -35,6 +35,12 @@ use Hilos\HilosException;
 final class UsersLibraryAgent extends AbstractUsersLibraryAgent
 {
     /**
+     * @var list<string> The people it answers about, owned by the poll agent that writes them,
+     *     on top of everything the framework library reads.
+     */
+    public const array READS_DB = [...parent::READS_DB, PollDbContext::users];
+
+    /**
      * Names this demo's own accounts collection.
      *
      * @return string Collection name of the simple-poll users

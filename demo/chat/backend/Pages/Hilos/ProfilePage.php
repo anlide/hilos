@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\Hilos;
 
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Auth\ChatOAuthConfig;
 use Demo\Chat\Constants\AgentType;
@@ -77,6 +78,18 @@ use Random\RandomException;
  */
 final class ProfilePage extends AbstractHilosProfilePage
 {
+    /**
+     * @var list<string> Everything the profile's actions reach for: the person, the identities
+     *     they sign in by, the events they took part in, and the two notification stores.
+     */
+    public const array READS_DB = [
+        ChatDbContext::users,
+        ChatDbContext::identities,
+        ChatDbContext::events,
+        ChatDbContext::notificationPreferences,
+        ChatDbContext::pushSubscriptions,
+    ];
+
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 
     public const array ACTIONS = [

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Constants\AgentType;
@@ -33,6 +34,9 @@ use Throwable;
  */
 final class AdminUsersPage extends AbstractPage
 {
+    /** @var list<string> The people its actions act on, and the events they are counted over */
+    public const array READS_DB = [ChatDbContext::users, ChatDbContext::events];
+
     public const string PAGE = PageConstants::ADMIN_USERS;
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;

@@ -26,13 +26,18 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 interface SourceInterestMesh
 {
     /**
-     * Tells every peer which RT collections this node reads, replacing what it said before.
+     * Tells every peer which collections this node reads, replacing what it said before.
      *
      * Replacement and not a delta, for the reason a worker reports to its master the same way: a
      * key the list stops naming is a key this node stopped reading, and a mesh merging the two
      * reports would go on sending frames for it until the node died.
      *
+     * Both kinds travel in the one announcement, because both are read off the one map at the
+     * one moment: two frames would have to be kept in agreement with each other, and they move
+     * on the same events anyway.
+     *
      * @param list<string> $rtCollections RT collections the processes of this node read
+     * @param list<string> $dbCollections DB collections the processes of this node read
      */
-    public function announceSourceInterest(array $rtCollections): void;
+    public function announceSourceInterest(array $rtCollections, array $dbCollections): void;
 }

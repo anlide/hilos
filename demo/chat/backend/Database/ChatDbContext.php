@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database;
 
+use Demo\Chat\Browser\ChatBrowserContext;
 use Demo\Chat\Database\Actions\Collection\BotsActions;
 use Demo\Chat\Database\Actions\Collection\EventAttachmentsActions;
 use Demo\Chat\Database\Actions\Collection\EventMessagesActions;
@@ -99,5 +100,25 @@ final class ChatDbContext extends HilosDbContext
             ModeratorPromptPiecesActions::class,
             ModeratorPromptPieceActions::class,
         );
+    }
+
+    /**
+     * Names what this demo reads from any process at all: the user rows the admin gate is
+     * decided against (HIL-750).
+     *
+     * {@see ChatBrowserContext::isAdmin()} answers the ADMIN level for every gated page, and it
+     * runs in whatever worker serves that page - including a page that declares nothing of its
+     * own, like the framework dashboard. So the read is behind no subscription and no agent, and
+     * neither the topology nor a READS_DB can reach it.
+     *
+     * Its refusal would not even look like one: the gate reads defensively and turns any failure
+     * into a denial, so an undeclared collection here shows up as a person who is an
+     * administrator being told the admin surface is forbidden.
+     *
+     * @return list<string> Collection keys read process-wide
+     */
+    protected function processWideReadCollections(): array
+    {
+        return [...parent::processWideReadCollections(), self::users];
     }
 }

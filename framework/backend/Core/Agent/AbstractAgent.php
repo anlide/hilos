@@ -102,6 +102,23 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      */
     public const array READS_RT = [];
 
+    /**
+     * @var list<string> DB collection keys this agent reads. Declared on the class for the reason
+     *     {@see self::READS_RT} is, and waited for the same way: the worker raises the interest
+     *     and waits for the master's word before the instance exists, so an agent never runs
+     *     against a copy nobody is addressing.
+     *
+     *     A collection this agent claims does not belong here either - a claim is its own reader
+     *     interest ({@see self::registerDbTruthSource()}). What belongs here is what the agent
+     *     reads out of somebody else's collection.
+     *
+     *     A subclass declaring this REPLACES what its parent declared, so one that has a parent
+     *     with a list of its own carries it: `[...parent::READS_DB, …]`. The trap is silent -
+     *     nothing complains, and the reads the parent needed are refused at the moment they
+     *     happen, in whatever action reached for them.
+     */
+    public const array READS_DB = [];
+
     /** @var list<string> CLI command names owned directly by this agent. */
     public const array AGENT_COMMANDS = [];
 
@@ -201,12 +218,25 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     /**
      * Register this agent as truth source for a database collection.
      *
+     * The claim is its own reader interest, and a ready one (HIL-750). The argument is not the
+     * one the runtime half makes - the rows are in a database anybody can read - but it comes to
+     * the same place: the copy this process caches lives only under an interest, so a cache with
+     * anything in it means a holder is already registered and the frames are already coming,
+     * while an empty one means the next read goes to the database.
+     *
+     * Raised at the claim rather than at the report that follows it, for the reason the runtime
+     * twin gives: an agent writing its first row inside onStart() reads the collection before
+     * that report is built.
+     *
      * @param string $collection Collection/table name
      * @param list<string>|true $keys Specific writable keys or true for all keys
      */
     protected function registerDbTruthSource(string $collection, array|true $keys = true): void
     {
         TruthSourceRegistry::register($collection, $keys, $this->getId(), $this->defaultTruthSourceOperations());
+
+        SourceInterestRegistry::register(SourceChange::KIND_DB, $collection, SourceConsumer::agent($this->getId()));
+        SourceInterestRegistry::markReady(SourceChange::KIND_DB, $collection);
     }
 
     /**

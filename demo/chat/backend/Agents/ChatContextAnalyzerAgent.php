@@ -31,6 +31,12 @@ use Hilos\Utils\Helpers\JsonHelper;
  */
 final class ChatContextAnalyzerAgent extends AbstractLlmChatAgent
 {
+    /**
+     * @var list<string> The event whose context it summarizes and the messages it summarizes from,
+     *     both owned by the chat agent.
+     */
+    public const array READS_DB = [ChatDbContext::events, ChatDbContext::eventMessages];
+
     public const string AGENT_TYPE = AgentType::CHAT_CONTEXT_ANALYZER;
 
     private bool $pendingSummarize = false;

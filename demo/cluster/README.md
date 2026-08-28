@@ -38,7 +38,7 @@ composer -d demo/cluster run install-deps      # generate the lock (once)
 composer -d demo/cluster run test:unit         # topology + placement-contract unit tests
 demo/cluster/docker/cluster up                 # build + start mysql, 5 nodes, cli
 demo/cluster/docker/cluster status             # roster + leader + placements per node
-demo/cluster/docker/cluster scenarios          # the 14-scenario matrix
+demo/cluster/docker/cluster scenarios          # the 15-scenario matrix
 demo/cluster/docker/cluster down --volumes     # tear everything down
 ```
 
@@ -67,6 +67,8 @@ scenario matrix. From the repo root: `composer run test:cluster:all`.
    frozen, and catches up from the hand-over once it is back (HIL-589)
 14. rt claim refused — an agent claiming a collection another node already owns
    is named, stopped, and never re-placed; the fleet keeps its rows (HIL-696)
+15. db interest addressing — a database fact hops only to the nodes that read the
+   collection it names, and each node reports which those are (HIL-750)
 
 They run in the order the driver lists them, which is not the order they are
 numbered: the three RT scenarios go right after placement, while the fleet the

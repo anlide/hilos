@@ -12,6 +12,7 @@ use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
@@ -25,6 +26,7 @@ final class AgentTruthSourceOperationsTest extends TestCase
     {
         ExecutionContext::setCurrentAgentId(null);
         RtTruthSourceRegistry::unregisterAgent(AgentTruthSourceOperationsTestAgent::AGENT_TYPE);
+        TruthSourceRegistry::unregisterAgent(AgentTruthSourceOperationsTestAgent::AGENT_TYPE);
         RtTruthSourceRegistry::unregisterAgent(AgentTruthSourceOperationsTestLibrary::AGENT_TYPE);
         // A claim is a reader interest too, so it is given back here beside the claim itself.
         SourceInterestRegistry::readsWhatItMounts();
@@ -56,6 +58,25 @@ final class AgentTruthSourceOperationsTest extends TestCase
         $this->assertTrue(SourceInterestRegistry::isReady(
             SourceChange::KIND_RT,
             AgentTruthSourceOperationsTestAgent::RT_COLLECTION,
+        ));
+    }
+
+    /**
+     * The same for a claim over a database collection (HIL-750), and by a different argument: the
+     * rows are not travelling to this process, they are in the shared database - but the copy it
+     * caches lives only under an interest, so the claim is what makes the cache real and there is
+     * nothing after it to wait for.
+     */
+    public function testAClaimedDatabaseCollectionIsReadableAtOnce(): void
+    {
+        SourceInterestRegistry::readsWhatIsDelivered();
+        $agent = new AgentTruthSourceOperationsTestAgent();
+
+        $agent->onStart();
+
+        $this->assertTrue(SourceInterestRegistry::isReady(
+            SourceChange::KIND_DB,
+            AgentTruthSourceOperationsTestAgent::DB_COLLECTION,
         ));
     }
 
@@ -120,13 +141,15 @@ final class AgentTruthSourceOperationsTestAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = 'unit_truth_source_operations';
     public const string RT_COLLECTION = 'unit_truth_source_operations_rt';
+    public const string DB_COLLECTION = 'unit_truth_source_operations_db';
 
     /**
-     * Claims the one runtime collection this test asks about.
+     * Claims the one runtime and the one database collection this test asks about.
      */
     public function onStart(): void
     {
         $this->registerRtTruthSource(self::RT_COLLECTION);
+        $this->registerDbTruthSource(self::DB_COLLECTION);
     }
 
     /**

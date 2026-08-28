@@ -12,6 +12,7 @@ use Hilos\Auth\Library\Command\DetectionCommands;
 use Hilos\Auth\Library\Command\MagicLinkCommands;
 use Hilos\Auth\Library\Command\OAuthCommands;
 use Hilos\Auth\Library\Command\PasskeyCommands;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Auth\Library\Command\PasswordCommands;
 use Hilos\Auth\Library\Command\PhoneCodeCommands;
 use Hilos\Auth\Library\Command\RecoveryCommands;
@@ -96,6 +97,12 @@ use Random\RandomException;
  */
 abstract class AbstractUsersLibraryAgent extends AbstractAgent
 {
+    /**
+     * @var list<string> The credentials its passkey commands enrol and check against
+     *     ({@see PasskeyCommands}), which no page topology names and which nothing else declares.
+     */
+    public const array READS_DB = [HilosDbContext::passkeyCredentials];
+
     public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
 
     /**

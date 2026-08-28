@@ -23,6 +23,8 @@ use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceKind;
 use Hilos\Core\Browser\Config\BrowserSourceType;
+use Hilos\Core\Page\AbstractPage;
+use Hilos\Database\Context\DbContext;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
@@ -791,13 +793,45 @@ abstract class BrowserContext
      * already - every source a page's rows draw from is declared - so this walks the same
      * declarations {@see TopologyValidator} judges rather than any live state.
      *
-     * Only RT is named. A DB source is read out of the shared database, so a worker owes it no
-     * copy and nothing has to arrive before the page may be answered.
-     *
      * @param string $page Page name from the subscription mirror
      * @return list<string> RT collection keys the page reads, each named once
      */
     final public function rtSourceKeysOfPage(string $page): array
+    {
+        return $this->sourceKeysOfPage($page, BrowserSourceType::RT);
+    }
+
+    /**
+     * Names the DB collections one page reads, from topology alone.
+     *
+     * The database twin of the method above, and asked in the same breath and the same order
+     * (HIL-750). What a worker owes a DB collection is not a copy - the rows are in the shared
+     * database - but the master's word that frames about it are addressed here, and until that
+     * word arrives a read is refused exactly as a runtime one is.
+     *
+     * What the page's TABLES read, which is not everything it reads: an action reaching past its
+     * own tables is named by {@see AbstractPage::READS_DB}, and the two lists add up.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @return list<string> DB collection keys the page reads, each named once
+     */
+    final public function dbSourceKeysOfPage(string $page): array
+    {
+        return $this->sourceKeysOfPage($page, BrowserSourceType::DB);
+    }
+
+    /**
+     * Walks the topology of one page and names the collections of one source kind it draws from.
+     *
+     * One walk for both kinds rather than a walk each, because the two answers are read off the
+     * same declarations at the same moment: a copy of it per kind would be two places to keep
+     * in step with a topology shape that neither of them owns.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @param string $sourceType Source kind to name the collections of, a constant of {@see BrowserSourceType}
+     * @return list<string> Collection keys of that kind the page reads, each named once
+     */
+    private function sourceKeysOfPage(string $page, string $sourceType): array
     {
         $collectionKeys = [];
         foreach ($this->resolveBrowserPageBindings($page) as $binding) {
@@ -808,7 +842,7 @@ abstract class BrowserContext
 
             foreach ($sourceConfig->rowConfigs() as $rowConfig) {
                 $source = $rowConfig[BrowserFieldKey::SOURCE] ?? null;
-                if (!is_array($source) || $this->sourceType($source) !== BrowserSourceType::RT) {
+                if (!is_array($source) || $this->sourceType($source) !== $sourceType) {
                     continue;
                 }
 
@@ -2393,6 +2427,15 @@ abstract class BrowserContext
      * project overrides this from its own runtime or database source. When a
      * central authorization hook lands (HIL-309), only this method's body
      * changes — no page declaration moves.
+     *
+     * An override reading the DATABASE must name what it reads in
+     * {@see DbContext::processWideReadCollections()}, and nowhere else (HIL-750).
+     * The gate answers for every gated page, in whatever worker serves it,
+     * including pages that declare nothing of their own — so no page's topology
+     * and no {@see AbstractPage::READS_DB} ever covers this read. Left
+     * undeclared it does not fail loudly either: an override reads defensively
+     * and turns the refusal into a denial, which reaches a person as their own
+     * admin surface being forbidden to them.
      *
      * @param int $userId Authenticated durable user id
      * @return bool Whether this user may access ADMIN-level pages and actions

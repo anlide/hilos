@@ -45,6 +45,7 @@ use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Group\DTO\GroupJoinSignalData;
 use Hilos\Core\Group\GroupSubscriptionDispatcher;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
@@ -100,6 +101,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReReadMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSnapshotMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbInterestReadyMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
@@ -186,6 +188,15 @@ abstract class WorkerManager extends BaseManager
 
     /** @var array<string, PageSignalRouter> Page routers by agent id */
     private array $pageSignalRouters = [];
+
+    /**
+     * @var list<WorkerDTO> Daemon messages read during a source-interest wait and not yet handled.
+     *
+     * The wait reads this worker's daemon link to receive one particular answer, and everything
+     * else it finds there arrived for a worker that is mid-way through starting something. Held
+     * here and handled by the ordinary loop instead, in the order they came ({@see run()}).
+     */
+    private array $deferredDaemonMessages = [];
 
     /**
      * Creates the worker manager and initializes worker-local framework services.
@@ -309,6 +320,10 @@ abstract class WorkerManager extends BaseManager
                     // any other unit, with the frames behind it still queued.
                     $this->containFailure(WorkerTickUnit::DAEMON_MESSAGE, 'unparsed frame', $failure);
                 }
+
+                // What a source-interest wait put by, before anything read just now: the wait is
+                // a pause in this queue, not a queue of its own (HIL-750).
+                $this->drainDeferredDaemonMessages();
 
                 // Process messages from daemon queue
                 while (($message = $this->daemonClient->getNextMessage()) !== null) {
@@ -442,7 +457,8 @@ abstract class WorkerManager extends BaseManager
      * @throws TableRowKeyMissingException When a windowed table row is a placeholder and carries no key
      * @throws InvalidArgumentException When a command handler cannot name its reply, a re-decision
      *     its page, or a frozen-replica verdict its signal
-     * @throws HilosException When a collection refuses to be re-read from the replaced database
+     * @throws HilosException When a collection refuses to be re-read - after the database was
+     *     replaced, or when this worker is first told it may read that collection
      */
     public function handleDaemonMessage(WorkerDTO $data): void
     {
@@ -585,6 +601,14 @@ abstract class WorkerManager extends BaseManager
                 $this->handleRtSnapshotMessage($data);
                 break;
 
+            case WorkerConstants::MESSAGE_DB_INTEREST_READY:
+                if (!$data instanceof WorkerDbInterestReadyMessageDTO) {
+                    Logger::error("handleDbInterestReadyMessage - unexpected type: " . get_class($data));
+                    break;
+                }
+                $this->handleDbInterestReadyMessage($data);
+                break;
+
             case WorkerConstants::MESSAGE_RT_STALENESS:
                 if (!$data instanceof WorkerRtStalenessMessageDTO) {
                     Logger::error("handleRtStalenessMessage - unexpected type: " . get_class($data));
@@ -643,11 +667,14 @@ abstract class WorkerManager extends BaseManager
         // the first read because these rows are the framework's own - the handshake, the
         // throttle, the waiters - and a worker that starts serving without them refuses work it
         // is perfectly able to do.
-        $mounted = SourceInterestRegistry::collections(SourceChange::KIND_RT);
+        $mounted = [
+            SourceChange::KIND_RT => SourceInterestRegistry::collections(SourceChange::KIND_RT),
+            SourceChange::KIND_DB => SourceInterestRegistry::collections(SourceChange::KIND_DB),
+        ];
         $this->notifySourceInterest();
         $this->awaitSourceInterest($mounted);
         if (!$this->sourcesReady($mounted)) {
-            Logger::error('Worker started without the runtime state it reads: ' . implode(', ', $mounted));
+            Logger::error('Worker started without the sources it reads: ' . self::describeSources($mounted));
         }
     }
 
@@ -679,10 +706,13 @@ abstract class WorkerManager extends BaseManager
         // Before the instance exists, because an agent is handed its data rather than asked to
         // run without it: what the class says it reads is taken up here, and waited for, so
         // onStart() opens on a collection and not on the emptiness before one.
-        $readsRt = $this->agentReadsRt($agentType);
-        $this->raiseSourceInterest(SourceConsumer::agent($agentId), $readsRt);
-        $this->awaitSourceInterest($readsRt);
-        if (!$this->sourcesReady($readsRt)) {
+        $reads = [
+            SourceChange::KIND_RT => $this->agentReadsRt($agentType),
+            SourceChange::KIND_DB => $this->agentReadsDb($agentType),
+        ];
+        $this->raiseSourceInterest(SourceConsumer::agent($agentId), $reads);
+        $this->awaitSourceInterest($reads);
+        if (!$this->sourcesReady($reads)) {
             // Nothing has been created yet, so nothing has to be unwound but the interest: an
             // agent that never started must not leave this worker asking for frames on its behalf.
             $this->releaseSourceInterest(SourceConsumer::agent($agentId));
@@ -794,6 +824,30 @@ abstract class WorkerManager extends BaseManager
             RtStaleness::mark($data->collectionKey, [$stateId], $since);
         }
         SourceInterestRegistry::markReady(SourceChange::KIND_RT, $data->collectionKey);
+    }
+
+    /**
+     * Takes the master's word that one database collection is addressed here, and opens it for
+     * reading (HIL-750).
+     *
+     * The database twin of the snapshot handler above, and it carries no rows for the reason it
+     * needs none: the rows are in the database this worker reads for itself. What it does need
+     * is a copy that is not older than the map entry, and that is what the drop is for -
+     * everything read into the cache before this frame was read while nothing was being
+     * addressed here, so none of it can be trusted to still be true.
+     *
+     * The drop comes before the mark, and the order is the whole of the guarantee: between the
+     * two this worker must not answer a read, and a mark set first would let it answer one out
+     * of exactly the cache that is about to be thrown away.
+     *
+     * @param WorkerDbInterestReadyMessageDTO $data Confirmation naming the collection
+     * @throws LogicException When the collection entity class is not configured (eager reload)
+     * @throws DatabaseException If re-reading an eager collection from the database fails
+     */
+    private function handleDbInterestReadyMessage(WorkerDbInterestReadyMessageDTO $data): void
+    {
+        Hilos::$db?->reHydrateCollection($data->collectionKey);
+        SourceInterestRegistry::markReady(SourceChange::KIND_DB, $data->collectionKey);
     }
 
     /**
@@ -1860,12 +1914,14 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Reports to the daemon which RT collections an agent of this worker owns.
+     * Reports to the daemon what an agent of this worker claimed: the RT collections it owns,
+     * and - through the interest report - everything the claims made this worker a reader of.
      *
      * The truth-source registry is worker-local, and the master is where cross-node replication
      * is decided, so what the agent registered in its own process has to be told rather than
-     * read. An agent that registered nothing is not reported at all: the map answers "does this
-     * node own the collection", and an empty answer is the same as no entry.
+     * read. An agent that registered no RT collection is left out of the OWNERSHIP map: it
+     * answers "does this node own the collection", and an empty answer is the same as no entry.
+     * The interest report is sent either way, for the reason spelled out below.
      *
      * @param string $agentId Agent whose registrations are being reported
      */
@@ -1875,17 +1931,29 @@ abstract class WorkerManager extends BaseManager
             return;
         }
 
+        // A writer is a reader of what it writes, and needs no declaration of its own: the claim
+        // already registered the interest, of whichever kind it was over, so what is left here is
+        // telling the master about it. The claim does it rather than this line because an agent
+        // that publishes its first row inside onStart() reads the collection before this line is
+        // reached at all ({@see AbstractAgent::registerRtTruthSource()}).
         $collectionKeys = RtTruthSourceRegistry::collectionsOf($agentId);
+        foreach ($collectionKeys as $collectionKey) {
+            SourceInterestRegistry::register(
+                SourceChange::KIND_RT,
+                $collectionKey,
+                SourceConsumer::agent($agentId),
+            );
+        }
+
+        // Reported whatever was claimed, and that includes nothing (HIL-750). An agent claiming
+        // only database collections adds no entry to the ownership map below, so this is the one
+        // moment its interest in them can leave this worker - and without it the master would go
+        // on addressing those frames past a worker that holds the rows.
+        $this->notifySourceInterest();
+
         if ($collectionKeys === []) {
             return;
         }
-
-        // A writer is a reader of what it writes, and needs no declaration of its own: the claim
-        // already registered the interest, so what is left here is telling the master about it.
-        // The claim does it rather than this line because an agent that publishes its first row
-        // inside onStart() reads the collection before this line is reached at all
-        // ({@see AbstractAgent::registerRtTruthSource()}).
-        $this->raiseSourceInterest(SourceConsumer::agent($agentId), $collectionKeys);
 
         $this->daemonClient->send(new WorkerRtSourceRegisteredDTO(
             $agentId,
@@ -1913,9 +1981,12 @@ abstract class WorkerManager extends BaseManager
      */
     private function takeUpPageSources(string $page, string $acceptKey): void
     {
-        $collectionKeys = Hilos::$browser?->rtSourceKeysOfPage($page) ?? [];
-        $this->raiseSourceInterest(SourceConsumer::page($acceptKey), $collectionKeys);
-        $this->awaitSourceInterest($collectionKeys);
+        $reads = [
+            SourceChange::KIND_RT => Hilos::$browser?->rtSourceKeysOfPage($page) ?? [],
+            SourceChange::KIND_DB => $this->pageReadsDb($page),
+        ];
+        $this->raiseSourceInterest(SourceConsumer::page($acceptKey), $reads);
+        $this->awaitSourceInterest($reads);
         // And where this page stands on frozen replicas, which nothing else would ever tell it:
         // the frame that froze them went out before this subscription existed, and the next one
         // only comes when a link moves (HIL-711). A connection has one page, so the answer is
@@ -1994,20 +2065,27 @@ abstract class WorkerManager extends BaseManager
      * to know, and sending the list unconditionally is what keeps the two sides from having to
      * agree on which changes were worth a frame.
      *
+     * Both kinds are taken up in one call and reported in one frame, because a consumer takes
+     * them up in one breath: an agent starting reads runtime state and database rows together,
+     * and two reports would put the master's map of this worker half a step behind itself.
+     *
      * @param string $consumerId Consumer taking up the interest, named by {@see SourceConsumer}
-     * @param list<string> $collectionKeys RT collections it reads
+     * @param array<string, list<string>> $collectionKeysByKind Collections it reads, keyed by
+     *     the kind constants of {@see SourceChange}
      */
-    private function raiseSourceInterest(string $consumerId, array $collectionKeys): void
+    private function raiseSourceInterest(string $consumerId, array $collectionKeysByKind): void
     {
-        if ($collectionKeys === []) {
-            return;
+        $raised = false;
+        foreach ($collectionKeysByKind as $kind => $collectionKeys) {
+            foreach ($collectionKeys as $collectionKey) {
+                SourceInterestRegistry::register($kind, $collectionKey, $consumerId);
+                $raised = true;
+            }
         }
 
-        foreach ($collectionKeys as $collectionKey) {
-            SourceInterestRegistry::register(SourceChange::KIND_RT, $collectionKey, $consumerId);
+        if ($raised) {
+            $this->notifySourceInterest();
         }
-
-        $this->notifySourceInterest();
     }
 
     /**
@@ -2032,11 +2110,16 @@ abstract class WorkerManager extends BaseManager
      * The two answers differ in the case that matters - state landing between the last poll and
      * the question - and the reader deserves the later one.
      *
-     * @param list<string> $collectionKeys RT collections the caller cannot be answered without
+     * One wait covers both kinds and one deadline bounds it, because the caller cannot be
+     * answered without either: two waits in a row would give the same start two different
+     * budgets and answer "how long may this take" twice.
+     *
+     * @param array<string, list<string>> $collectionKeysByKind Collections the caller cannot be
+     *     answered without, keyed by the kind constants of {@see SourceChange}
      */
-    private function awaitSourceInterest(array $collectionKeys): void
+    private function awaitSourceInterest(array $collectionKeysByKind): void
     {
-        if ($collectionKeys === [] || $this->daemonClient === null) {
+        if ($this->daemonClient === null || $this->sourcesReady($collectionKeysByKind)) {
             return;
         }
 
@@ -2045,7 +2128,7 @@ abstract class WorkerManager extends BaseManager
         $deadline = microtime(true) + self::SOURCE_INTEREST_DEADLINE_SECONDS;
 
         try {
-            while (!$this->sourcesReady($collectionKeys)) {
+            while (!$this->sourcesReady($collectionKeysByKind)) {
                 if (microtime(true) >= $deadline || !$this->daemonClient->isConnected()) {
                     return;
                 }
@@ -2060,14 +2143,17 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * @param list<string> $collectionKeys RT collections to ask about
-     * @return bool True when the state of every one of them has arrived in this process
+     * @param array<string, list<string>> $collectionKeysByKind Collections to ask about, keyed by
+     *     the kind constants of {@see SourceChange}
+     * @return bool True when every one of them may be read in this process
      */
-    private function sourcesReady(array $collectionKeys): bool
+    private function sourcesReady(array $collectionKeysByKind): bool
     {
-        foreach ($collectionKeys as $collectionKey) {
-            if (!SourceInterestRegistry::isReady(SourceChange::KIND_RT, $collectionKey)) {
-                return false;
+        foreach ($collectionKeysByKind as $kind => $collectionKeys) {
+            foreach ($collectionKeys as $collectionKey) {
+                if (!SourceInterestRegistry::isReady($kind, $collectionKey)) {
+                    return false;
+                }
             }
         }
 
@@ -2097,10 +2183,48 @@ abstract class WorkerManager extends BaseManager
         }
 
         while (($message = $this->daemonClient->getNextMessage()) !== null) {
+            // Only the two answers this wait exists for are handled here. Everything else is put
+            // by until the ordinary loop, and that is the whole point rather than tidiness: the
+            // frame that made the master place an agent here travels this same link, and handling
+            // it now would run it against an agent this very call is still waiting to create -
+            // which reads as `agent not found` and is dropped, leaving the browser waiting on a
+            // reply that was thrown away (HIL-750).
+            if (
+                $message->getType() === WorkerConstants::MESSAGE_RT_SNAPSHOT
+                || $message->getType() === WorkerConstants::MESSAGE_DB_INTEREST_READY
+            ) {
+                try {
+                    $this->handleDaemonMessage($message);
+                } catch (Throwable $failure) {
+                    $this->containFailure(WorkerTickUnit::DAEMON_MESSAGE, $message->getType(), $failure);
+                }
+
+                continue;
+            }
+
+            $this->deferredDaemonMessages[] = $message;
+        }
+    }
+
+    /**
+     * Handles what a source-interest wait read off the daemon link and put by.
+     *
+     * Drained before the socket is read again, so a frame that arrived during the wait is handled
+     * before anything that arrived after it: this is a pause in one queue, not a second one.
+     *
+     * Shifted one at a time rather than iterated, because handling a message here can start
+     * another agent and so wait again - and what that wait puts by has to land at the back of
+     * this same queue rather than in a copy nobody drains.
+     */
+    private function drainDeferredDaemonMessages(): void
+    {
+        while (($message = array_shift($this->deferredDaemonMessages)) !== null) {
             try {
                 $this->handleDaemonMessage($message);
             } catch (Throwable $failure) {
                 $this->containFailure(WorkerTickUnit::DAEMON_MESSAGE, $message->getType(), $failure);
+            } finally {
+                ExecutionContext::clear();
             }
         }
     }
@@ -2123,6 +2247,67 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
+     * Reads what one agent type declares it reads out of the database, off the class (HIL-750).
+     *
+     * @param string $agentType Agent type about to start here
+     * @return list<string> DB collections its class declares, or none when the type is unknown
+     */
+    private function agentReadsDb(string $agentType): array
+    {
+        $workerClass = AgentRegistry::workerClass(Hilos::appClass()::AGENTS[$agentType] ?? null);
+
+        return $workerClass === null ? [] : $workerClass::READS_DB;
+    }
+
+    /**
+     * Names everything one page reads out of the database: its tables, and its actions.
+     *
+     * Two lists added up, because they answer two different questions and neither one covers the
+     * other. Topology says what the page SHOWS, and is written already. The class constant says
+     * what its actions reach for - a lookup behind a submit, a row a verdict is decided against -
+     * which no table names and which would otherwise be refused at the moment the user acted.
+     *
+     * An unregistered page reads nothing rather than raising, for the reason
+     * {@see self::agentReadsRt()} gives: a page the topology does not know is refused where
+     * subscriptions are judged, and answering that here would put the refusal in the wrong place.
+     *
+     * @param string $page Page being subscribed to
+     * @return list<string> DB collections it reads, each named once
+     */
+    private function pageReadsDb(string $page): array
+    {
+        $pageClass = Hilos::appClass()::PAGES[$page] ?? null;
+        $collectionKeys = Hilos::$browser?->dbSourceKeysOfPage($page) ?? [];
+        foreach (is_string($pageClass) && is_subclass_of($pageClass, AbstractPage::class)
+            ? $pageClass::READS_DB
+            : [] as $collectionKey) {
+            if (!in_array($collectionKey, $collectionKeys, true)) {
+                $collectionKeys[] = $collectionKey;
+            }
+        }
+
+        return $collectionKeys;
+    }
+
+    /**
+     * Renders both halves of a wait for the one line that reports it went unanswered.
+     *
+     * @param array<string, list<string>> $collectionKeysByKind Collections waited for, by kind
+     * @return string Collections named by kind, for a log line
+     */
+    private static function describeSources(array $collectionKeysByKind): string
+    {
+        $described = [];
+        foreach ($collectionKeysByKind as $kind => $collectionKeys) {
+            if ($collectionKeys !== []) {
+                $described[] = $kind . ' [' . implode(', ', $collectionKeys) . ']';
+            }
+        }
+
+        return $described === [] ? 'none' : implode(', ', $described);
+    }
+
+    /**
      * Lets go of everything one consumer read, and drops the copies nobody is left reading.
      *
      * A copy does not outlive the interest that brought it here. It would go stale the moment
@@ -2135,15 +2320,29 @@ abstract class WorkerManager extends BaseManager
      */
     private function releaseSourceInterest(string $consumerId): void
     {
-        $held = SourceInterestRegistry::collections(SourceChange::KIND_RT);
+        $heldRt = SourceInterestRegistry::collections(SourceChange::KIND_RT);
+        $heldDb = SourceInterestRegistry::collections(SourceChange::KIND_DB);
         SourceInterestRegistry::releaseConsumer($consumerId);
 
         $dropped = false;
-        foreach ($held as $collectionKey) {
+        foreach ($heldRt as $collectionKey) {
             if (SourceInterestRegistry::hasConsumers(SourceChange::KIND_RT, $collectionKey)) {
                 continue;
             }
             RtSnapshot::replace($collectionKey, []);
+            $dropped = true;
+        }
+
+        // What "drop the copy" means differs by kind and by strategy, and all three answers are
+        // already written: an eager database collection re-reads itself, a lazy one loses the
+        // rows it accumulated, and either way the cached view goes with them
+        // ({@see DbContext::reHydrateCollection()}). The rows themselves are not lost - they are
+        // in the database - so this is a cache being let go rather than state being thrown away.
+        foreach ($heldDb as $collectionKey) {
+            if (SourceInterestRegistry::hasConsumers(SourceChange::KIND_DB, $collectionKey)) {
+                continue;
+            }
+            Hilos::$db?->reHydrateCollection($collectionKey);
             $dropped = true;
         }
 
@@ -2153,11 +2352,15 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Reports to the daemon every RT collection this worker reads.
+     * Reports to the daemon every collection this worker reads, of both kinds.
      *
      * Whole and not as a delta, for the reason {@see WorkerSourceInterestDTO} spells out. An
      * empty list is sent like any other: it is how the last reader of this worker announces
      * that frames may stop coming.
+     *
+     * Both kinds go in the one report because both are read off the same registry at the same
+     * moment, and a report carrying one of them would leave the master's map of this worker
+     * half as old as the other half.
      */
     private function notifySourceInterest(): void
     {
@@ -2167,6 +2370,7 @@ abstract class WorkerManager extends BaseManager
 
         $this->daemonClient->send(new WorkerSourceInterestDTO(
             SourceInterestRegistry::collections(SourceChange::KIND_RT),
+            SourceInterestRegistry::collections(SourceChange::KIND_DB),
         ));
     }
 

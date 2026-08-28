@@ -336,7 +336,7 @@ final class PeerServerRtHandOverTest extends TestCase
         $this->attach($server, $link);
         $this->handshake($link, $far);
         $this->declareInterest($server, $link);
-        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', []));
+        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', [], []));
         $link->write();
         $this->drain($far);
 
@@ -360,7 +360,7 @@ final class PeerServerRtHandOverTest extends TestCase
         $server = new PeerServer('127.0.0.1', 0, $local, []);
         $link = new PeerLink($this->makeSocket(), $server, $local, dialer: false);
 
-        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows']));
+        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows'], []));
 
         $this->assertSame(['node-b'], $sink->handedOverTo);
     }
@@ -379,9 +379,9 @@ final class PeerServerRtHandOverTest extends TestCase
         $server = new PeerServer('127.0.0.1', 0, $local, []);
         $link = new PeerLink($this->makeSocket(), $server, $local, dialer: false);
 
-        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows']));
+        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows'], []));
         $sink->handedOverTo = [];
-        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows']));
+        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows'], []));
 
         $this->assertSame([], $sink->handedOverTo);
     }
@@ -401,7 +401,7 @@ final class PeerServerRtHandOverTest extends TestCase
         $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
         $server = new PeerServer('127.0.0.1', 0, $local, []);
-        $server->announceSourceInterest(['unitRows']);
+        $server->announceSourceInterest(['unitRows'], []);
 
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
@@ -424,7 +424,7 @@ final class PeerServerRtHandOverTest extends TestCase
      */
     private function declareInterest(PeerServer $server, PeerLink $link): void
     {
-        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows']));
+        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows'], []));
     }
 
     /**

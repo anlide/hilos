@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Agents;
 
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\DTO\ModerationDecision;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatLLMConstants;
@@ -39,6 +40,9 @@ use Hilos\LLM\Routing\LlmProfile;
  */
 final class ModeratorAgent extends AbstractAgent
 {
+    /** @var list<string> The prompt it moderates by, which the library agent owns */
+    public const array READS_DB = [ChatDbContext::moderatorPromptPieces];
+
     public const string AGENT_TYPE = AgentType::MODERATOR;
 
     /**

@@ -1593,7 +1593,7 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
     public function workerReads(string ...$collectionKeys): void
     {
         $this->getAgentManagerDaemon()->handleSourceInterest(
-            new WorkerSourceInterestDTO(array_values($collectionKeys)),
+            new WorkerSourceInterestDTO(array_values($collectionKeys), []),
             DaemonManagerRtSyncPeerTestWorkerClient::WORKER_INDEX,
         );
     }
@@ -1609,7 +1609,7 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
     public function anotherWorkerReads(string ...$collectionKeys): void
     {
         $this->getAgentManagerDaemon()->handleSourceInterest(
-            new WorkerSourceInterestDTO(array_values($collectionKeys)),
+            new WorkerSourceInterestDTO(array_values($collectionKeys), []),
             DaemonManagerRtSyncPeerTestWorkerClient::WORKER_INDEX + 1,
         );
     }
@@ -2092,12 +2092,17 @@ final class DaemonManagerRtSyncPeerTestMesh implements RtClaimMesh, RtSyncMesh, 
     /** @var list<list<string>> Reader-interest lists announced to the mesh, in order */
     public array $interests = [];
 
+    /** @var list<list<string>> Database reader-interest lists announced to the mesh, in order */
+    public array $dbInterests = [];
+
     /**
      * @param list<string> $rtCollections RT collections the announcing node reads
+     * @param list<string> $dbCollections DB collections the announcing node reads
      */
-    public function announceSourceInterest(array $rtCollections): void
+    public function announceSourceInterest(array $rtCollections, array $dbCollections): void
     {
         $this->interests[] = $rtCollections;
+        $this->dbInterests[] = $dbCollections;
     }
 
     /** @var list<DaemonManagerRtSyncPeerTestAnnouncement> Facts offered to the mesh, in order */

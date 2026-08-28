@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-cluster_e2e.py - the 14-scenario assertion matrix for the daemon-cluster e2e
+cluster_e2e.py - the 15-scenario assertion matrix for the daemon-cluster e2e
 harness (HIL-185).
 
 It assumes the stack is already up (via `cluster up`) and drives it: for each
@@ -42,6 +42,7 @@ Plus scenarios beyond that matrix:
  12 rt replication             a fleet row reaches the nodes that read it, and only them
  13 rt partition converges     a cut-off node serves its replica frozen and catches up (HIL-589)
  14 rt claim refused           a second owner of one collection is named and kept down (HIL-696)
+ 15 db interest addressing     a db fact hops only to the nodes that read its collection (HIL-750)
 
 Exit code 0 when every scenario passes, 1 otherwise.
 """
@@ -341,6 +342,18 @@ def db_replicas(views, node):
     """Cross-node DB replicas a node reports having accepted, or -1 when unreachable."""
     view = views.get(node)
     return -1 if view is None else int(view.get("dbReplicas", 0))
+
+
+def db_collections_read(views, node):
+    """The database collections one node reports its workers read, empty when unreachable.
+
+    A flat list rather than a per-collection row, unlike the runtime side: the rows of a database
+    collection are in the shared database rather than in a replica of this node's, so there is
+    nothing per collection to report beside the fact that somebody here reads it - which is
+    exactly what decides whether a fact about it is worth a hop.
+    """
+    view = views.get(node)
+    return list((view or {}).get("dbCollectionsRead") or [])
 
 
 def indexed_for(views, watcher, holder):
@@ -1058,6 +1071,66 @@ def scenario_11_cross_node_db_fact():
             f"and to {watcher} again after it re-linked")
 
 
+def scenario_15_db_interest_addressing():
+    """A database fact takes a hop only to the nodes that read the collection it names (HIL-750).
+
+    Every DB fact used to go to everybody, and the reasoning behind that was sound as far as it
+    went: the rows live in the one database all the nodes share, so no node is owed a copy of a
+    row and there is nobody in particular to address. What it missed is the other side of the
+    same fact - a node holding none of a collection has nothing to apply the announcement into,
+    so the hop was work no receiver could use. The reader map that already addressed the runtime
+    frames now addresses these too, off the interest each node announces for itself.
+
+    This is the only place that map's database half can be watched from outside, which is why the
+    node's own list of read collections is asserted first: without it a green run below would be
+    just as consistent with a mesh that has stopped carrying database facts altogether.
+
+    Both halves ride on one pair of announcements, and their ORDER is what makes the negative
+    honest. The unread collection is announced first and the read one second, from the same node,
+    over the same links; so by the time the second fact has landed everywhere, the first has had
+    at least that long to land too. Each receiver's counter moving by exactly one is then the
+    assertion that it never came - a "nothing happened" with a bound on it rather than a sleep.
+
+    Nothing is written here either, for the reason scenario 11 writes nothing: the row id names
+    a row that exists nowhere, so no node's copy of either collection is disturbed by the drill.
+    """
+    read_key, unread_key = "settings", "verifications"
+    sender, row_id = "m1", "999999"
+    receivers = [n for n in ALL_NODES if n != sender]
+    wait_converge(ALL_NODES)
+
+    views = inspect_all()
+    for node in ALL_NODES:
+        reads = db_collections_read(views, node)
+        assert read_key in reads, \
+            f"{node} does not report reading '{read_key}', which the framework reads in every process: {reads}"
+        assert unread_key not in reads, \
+            f"{node} reports reading '{unread_key}', so it is no longer the unread half of this drill: {reads}"
+
+    before = {n: db_replicas(views, n) for n in ALL_NODES}
+    assert client(sender, "test:cluster:db:announce", unread_key, row_id), \
+        f"could not announce the unread collection on {sender}"
+    assert client(sender, "test:cluster:db:announce", read_key, row_id), \
+        f"could not announce the read collection on {sender}"
+
+    views = wait_until(lambda v: all(db_replicas(v, n) > before[n] for n in receivers),
+                       CONVERGE_TIMEOUT,
+                       f"every node but {sender} takes in the fact about '{read_key}'",
+                       nodes=receivers)
+
+    for node in receivers:
+        moved = db_replicas(views, node) - before[node]
+        assert moved == 1, \
+            (f"{node} took in {moved} facts where one was addressed to it: the announcement about "
+             f"'{unread_key}', which no node reads, was carried across the mesh anyway")
+        last = (views.get(node) or {}).get("lastDbReplicaCollection")
+        assert last == read_key, \
+            f"the last fact {node} took in was about '{last}' rather than '{read_key}'"
+
+    return (f"'{read_key}' reached all {len(receivers)} other nodes and '{unread_key}', "
+            f"which none of them reads, reached none of them")
+
+
 # Numbered by when they were written, ORDERED by what they need. The three RT scenarios run
 # right after placement, while the fleet the leader just placed is still alive: they are the
 # only ones that need running agents rather than a converged topology, and scenario 9 leaves
@@ -1083,6 +1156,7 @@ SCENARIOS = [
     ("9 daemon-crash self-heal", scenario_9_daemon_crash_selfheal),
     ("10 cross-node browser", scenario_10_cross_node_browser),
     ("11 cross-node db fact", scenario_11_cross_node_db_fact),
+    ("15 db interest addressing", scenario_15_db_interest_addressing),
 ]
 
 # Park a scenario here (name -> reason) to skip it as known timing-flaky -- the

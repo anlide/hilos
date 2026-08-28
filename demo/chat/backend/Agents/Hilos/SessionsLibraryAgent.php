@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Agents\Hilos;
 
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Hilos;
@@ -50,6 +51,15 @@ use Hilos\HilosException;
  */
 final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
 {
+    /**
+     * @var list<string> What this demo's sign-in reaches for beyond the sessions it owns: the
+     *     person behind the session, and the message row a parked sign-in surface belongs to.
+     */
+    public const array READS_DB = [
+        ChatDbContext::users,
+        ChatDbContext::eventMessages,
+    ];
+
     /**
      * Writes the admin flag of one chat user - and nothing else.
      *

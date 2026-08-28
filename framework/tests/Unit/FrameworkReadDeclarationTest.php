@@ -8,6 +8,8 @@ use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Closure;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Pages\AbstractHilosNotificationsPage;
 use Hilos\Runtime\State\Collection\HilosConnections as StateHilosConnections;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\HilosConnection as StateHilosConnection;
@@ -48,6 +50,10 @@ final class FrameworkReadDeclarationTest extends TestCase
         SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(FrameworkReadRtContext::row));
         SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(FrameworkReadRtContext::alias));
         SourceInterestRegistry::releaseConsumer(SourceConsumer::agent(self::AGENT_CONSUMER));
+        SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(HilosDbContext::settings));
+        SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(HilosDbContext::identities));
+        SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(HilosDbContext::sessions));
+        SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(HilosDbContext::notifications));
 
         parent::tearDown();
     }
@@ -124,6 +130,88 @@ final class FrameworkReadDeclarationTest extends TestCase
         );
     }
 
+    /**
+     * The database half of the same mechanism (HIL-750). The seams that answer "whose session is
+     * this" run in every process a frame arrives in - outside any agent, before any subscription
+     * - so nothing else declares the rows they read, and a worker running no page and no agent of
+     * its own would be refused them.
+     */
+    public function testTheFrameworksOwnSeamsAreDeclaredReadersOfWhatTheyRead(): void
+    {
+        $db = new FrameworkReadDbContext();
+        $db->configure();
+
+        $db->declareProcessWideReads();
+
+        $this->assertTrue(SourceInterestRegistry::isDeclared(
+            SourceChange::KIND_DB,
+            HilosDbContext::sessions,
+        ));
+        $this->assertTrue(SourceInterestRegistry::isDeclared(
+            SourceChange::KIND_DB,
+            HilosDbContext::identities,
+        ));
+        $this->assertTrue(SourceInterestRegistry::isDeclared(
+            SourceChange::KIND_DB,
+            HilosDbContext::settings,
+        ));
+    }
+
+    /**
+     * The one whose reader is a page, and the case the e2e of all three demos found:
+     * {@see AbstractHilosNotificationsPage} hosts the mark-read actions of the bell and has no
+     * subscription of its own, so a list on the page is never taken up and every mark-read was
+     * refused in whatever worker served the connection.
+     */
+    public function testTheBellsRowsAreDeclaredHereBecauseNoSubscriptionEverTakesThemUp(): void
+    {
+        $db = new FrameworkReadDbContext();
+        $db->configure();
+
+        $db->declareProcessWideReads();
+
+        $this->assertTrue(SourceInterestRegistry::isDeclared(
+            SourceChange::KIND_DB,
+            HilosDbContext::notifications,
+        ));
+    }
+
+    /**
+     * And nothing beyond them. A framework collection nobody reads process-wide is declared by
+     * the page or the agent that reads it - auth blocks by the throttle agent that judges them -
+     * and declaring it here would put every worker of the node on the address list of a
+     * collection almost none of them hold.
+     */
+    public function testAFrameworkCollectionReadByItsOwnReadersIsLeftToThem(): void
+    {
+        $db = new FrameworkReadDbContext();
+        $db->configure();
+
+        $db->declareProcessWideReads();
+
+        $this->assertFalse(SourceInterestRegistry::isDeclared(
+            SourceChange::KIND_DB,
+            HilosDbContext::authBlocks,
+        ));
+    }
+
+    /**
+     * The two kinds are declared apart, so a collection read out of the database does not make
+     * a runtime collection of that name readable and the other way round.
+     */
+    public function testTheDatabaseDeclarationSaysNothingAboutTheRuntimeOfThatName(): void
+    {
+        $db = new FrameworkReadDbContext();
+        $db->configure();
+
+        $db->declareProcessWideReads();
+
+        $this->assertFalse(SourceInterestRegistry::isDeclared(
+            SourceChange::KIND_RT,
+            HilosDbContext::sessions,
+        ));
+    }
+
     public function testAResolverAliasIsNotAMountOfARow(): void
     {
         $rt = new FrameworkReadRtContext();
@@ -136,6 +224,13 @@ final class FrameworkReadDeclarationTest extends TestCase
             'What a resolver returns belongs to a collection, which answers for itself',
         );
     }
+}
+
+/**
+ * Database context of a project that adds nothing to the framework's own collections.
+ */
+final class FrameworkReadDbContext extends HilosDbContext
+{
 }
 
 /**

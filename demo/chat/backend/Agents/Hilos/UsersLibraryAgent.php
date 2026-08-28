@@ -33,6 +33,12 @@ use Hilos\HilosException;
 final class UsersLibraryAgent extends AbstractUsersLibraryAgent
 {
     /**
+     * @var list<string> The people it answers about, owned by the chat agent that writes them,
+     *     on top of everything the framework library reads.
+     */
+    public const array READS_DB = [...parent::READS_DB, ChatDbContext::users];
+
+    /**
      * Claims the chat tables this library writes from its OWN process.
      *
      * The registry is per process, and the account event below is written HERE rather than

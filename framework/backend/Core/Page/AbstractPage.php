@@ -24,10 +24,12 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Database\Context\DbContext;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Pages\AbstractHilosNotificationsPage;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Logger;
 use LogicException;
@@ -111,6 +113,31 @@ abstract class AbstractPage implements ActionHostInterface
 
     /** Browser data config declared by data-bearing pages. */
     public const array BROWSER = [];
+
+    /**
+     * @var list<string> DB collection keys this page reads BEYOND the ones its tables are built
+     *     from. The browser config above already names what the page shows, and it is read off
+     *     the topology; this list is for what its ACTIONS read - a lookup behind a submit, a
+     *     neighbouring row a verdict is decided against - which no table names and which would
+     *     otherwise be refused at the moment the user pressed the button (HIL-750).
+     *
+     *     The two lists add up. A collection already named by a table does not need repeating
+     *     here, and repeating it is harmless: interest is held per collection, not per mention.
+     *
+     *     A subclass declaring this REPLACES what its parent declared, so one extending a page
+     *     that has a list of its own carries it: `[...parent::READS_DB, …]`. Nothing complains
+     *     if it does not; the parent's reads are refused where they happen.
+     *
+     *     What this list CANNOT cover is a page nobody subscribes to. It is taken up when a
+     *     connection subscribes to the page and let go when it unsubscribes, so a page that hosts
+     *     actions without a subscription of its own - a bell, a banner, anything addressed while
+     *     the person is looking at something else - is never the subject of a take-up, and a list
+     *     here would sit unread. Those reads belong to
+     *     {@see DbContext::processWideReadCollections()}, which a project overrides for its own
+     *     such pages exactly as the framework does for
+     *     {@see AbstractHilosNotificationsPage} (HIL-750).
+     */
+    public const array READS_DB = [];
 
     /** Agent instance that owns this page handler. */
     protected PageAgentInterface $agent;

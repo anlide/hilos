@@ -8,6 +8,7 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Source\Interest\SourceReaderMap;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Socket\Worker\DTO\WorkerDbInterestReadyMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSnapshotMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\WorkerDTO;
@@ -192,12 +193,49 @@ final class SourceReaderMapTest extends TestCase
      */
     public function testTheInterestReportRoundTripsToTheMaster(): void
     {
-        $dto = new WorkerSourceInterestDTO([self::COLLECTION, self::OTHER_COLLECTION]);
+        $dto = new WorkerSourceInterestDTO([self::COLLECTION, self::OTHER_COLLECTION], []);
 
         $parsed = WorkerDTO::factoryWorkerDTO($dto->toJson());
 
         $this->assertInstanceOf(WorkerSourceInterestDTO::class, $parsed);
         $this->assertSame([self::COLLECTION, self::OTHER_COLLECTION], $parsed->rtCollections);
+    }
+
+    /**
+     * Both halves travel in the one frame, and each keeps its own names (HIL-750): a worker
+     * reading a runtime collection and a database collection of the same name would otherwise
+     * report one interest twice and leave the other kind unaddressed.
+     *
+     * @throws InvalidFormatException When the frame is not the object its DTO needs
+     */
+    public function testTheInterestReportCarriesBothKindsWithoutMixingThem(): void
+    {
+        $dto = new WorkerSourceInterestDTO([self::COLLECTION], [self::OTHER_COLLECTION]);
+
+        $parsed = WorkerDTO::factoryWorkerDTO($dto->toJson());
+
+        $this->assertInstanceOf(WorkerSourceInterestDTO::class, $parsed);
+        $this->assertSame([self::COLLECTION], $parsed->rtCollections);
+        $this->assertSame([self::OTHER_COLLECTION], $parsed->dbCollections);
+    }
+
+    /**
+     * A worker of an older build names no database list at all, and that has to read as "asked
+     * for nothing" rather than as a malformed frame - the same tolerance the RT list has always
+     * had, for the same reason.
+     *
+     * @throws InvalidFormatException When the frame is not the object its DTO needs
+     */
+    public function testAnInterestReportWithoutTheDatabaseListReadsAsAskingForNothing(): void
+    {
+        $parsed = WorkerDTO::factoryWorkerDTO((string)json_encode([
+            WorkerDTO::TYPE => WorkerSourceInterestDTO::MESSAGE_TYPE,
+            WorkerSourceInterestDTO::FIELD_RT_COLLECTIONS => [self::COLLECTION],
+        ]));
+
+        $this->assertInstanceOf(WorkerSourceInterestDTO::class, $parsed);
+        $this->assertSame([self::COLLECTION], $parsed->rtCollections);
+        $this->assertSame([], $parsed->dbCollections);
     }
 
     /**
@@ -209,12 +247,62 @@ final class SourceReaderMapTest extends TestCase
      */
     public function testAnEmptyInterestReportSurvivesTheWire(): void
     {
-        $dto = new WorkerSourceInterestDTO([]);
+        $dto = new WorkerSourceInterestDTO([], []);
 
         $parsed = WorkerDTO::factoryWorkerDTO($dto->toJson());
 
         $this->assertInstanceOf(WorkerSourceInterestDTO::class, $parsed);
         $this->assertSame([], $parsed->rtCollections);
+        $this->assertSame([], $parsed->dbCollections);
+    }
+
+    /**
+     * The confirmation the database half is answered with carries no rows on purpose, so what
+     * has to survive the wire is the collection it is about - a worker that could not tell which
+     * of its declared collections became readable would have to guess.
+     *
+     * @throws InvalidFormatException When the frame is not the object its DTO needs
+     */
+    public function testTheDatabaseConfirmationRoundTripsToTheWorker(): void
+    {
+        $dto = new WorkerDbInterestReadyMessageDTO(self::COLLECTION);
+
+        $parsed = WorkerDTO::factoryWorkerDTO($dto->toJson());
+
+        $this->assertInstanceOf(WorkerDbInterestReadyMessageDTO::class, $parsed);
+        $this->assertSame(self::COLLECTION, $parsed->collectionKey);
+    }
+
+    /**
+     * The two kinds are noted from the one report and stay apart in the map: a worker naming a
+     * collection as a database reader must not come out of it holding the runtime collection of
+     * that name, which is exactly what a map keyed by name alone would answer.
+     */
+    public function testAReportNotesBothKindsAndOwesEachOfThemSeparately(): void
+    {
+        $map = new SourceReaderMap();
+
+        $this->assertSame(
+            [self::COLLECTION],
+            $map->note(self::HOLDER, SourceChange::KIND_DB, [self::COLLECTION]),
+        );
+        $this->assertTrue($map->holds(self::HOLDER, SourceChange::KIND_DB, self::COLLECTION));
+        $this->assertFalse($map->holds(self::HOLDER, SourceChange::KIND_RT, self::COLLECTION));
+    }
+
+    /**
+     * A database collection dropped from a later report stops being held, the same way a runtime
+     * one does: the report replaces what the worker read before rather than adding to it.
+     */
+    public function testADatabaseCollectionLeftOutOfTheNextReportIsNoLongerHeld(): void
+    {
+        $map = new SourceReaderMap();
+        $map->note(self::HOLDER, SourceChange::KIND_DB, [self::COLLECTION, self::OTHER_COLLECTION]);
+
+        $map->note(self::HOLDER, SourceChange::KIND_DB, [self::OTHER_COLLECTION]);
+
+        $this->assertFalse($map->holds(self::HOLDER, SourceChange::KIND_DB, self::COLLECTION));
+        $this->assertTrue($map->holds(self::HOLDER, SourceChange::KIND_DB, self::OTHER_COLLECTION));
     }
 
     /**

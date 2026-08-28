@@ -111,7 +111,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     private ?SourceReaderMap $workerReaderMap = null;
 
     /**
-     * @var ?list<string> RT collections this node reads that the mesh has not been told about yet.
+     * @var ?array{rt: list<string>, db: list<string>} What this node reads that the mesh has not been told yet.
      *
      * What the map above adds up to, kept beside it so the loop can ask in one property read
      * whether there is anything to announce. The union moves far more rarely than the map does -
@@ -713,24 +713,38 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     }
 
     /**
-     * Records everything one worker reads, replacing what it read before.
+     * Records everything one worker reads, of both kinds, replacing what it read before.
      *
      * The returned collections are the ones this worker has just started reading, and its link
-     * owes each of them an initial state: it holds no copy of a collection it never asked for,
-     * and a delta would land on nothing.
+     * owes each of them an answer: an RT one owes a snapshot, because the worker holds no copy of
+     * a collection it never asked for and a delta would land on nothing; a DB one owes only the
+     * word that it is in the map, because the rows are in the database it reads itself.
      *
-     * @param WorkerSourceInterestDTO $dto DTO with every RT collection that worker reads
+     * Both kinds are noted on the one report rather than on a report each, because the frame
+     * carries both and a second pass over it would be a second place for the map to disagree
+     * with what the worker said.
+     *
+     * @param WorkerSourceInterestDTO $dto DTO with every RT and DB collection that worker reads
      * @param int $workerIndex Index of the worker that reported
-     * @return list<string> RT collections that worker did not read before
+     * @return array{rt: list<string>, db: list<string>} Collections that worker did not read before, keyed
+     *     by the kind constants of {@see SourceChange}
      */
     public function handleSourceInterest(WorkerSourceInterestDTO $dto, int $workerIndex): array
     {
-        $announced = $this->workerReaderMap()->collections(SourceChange::KIND_RT);
-        $added = $this->workerReaderMap()->note(
-            self::workerHolderId($workerIndex),
-            SourceChange::KIND_RT,
-            $dto->rtCollections,
-        );
+        $announced = $this->readerInterestUnion();
+        $holderId = self::workerHolderId($workerIndex);
+        $added = [
+            SourceChange::KIND_RT => $this->workerReaderMap()->note(
+                $holderId,
+                SourceChange::KIND_RT,
+                $dto->rtCollections,
+            ),
+            SourceChange::KIND_DB => $this->workerReaderMap()->note(
+                $holderId,
+                SourceChange::KIND_DB,
+                $dto->dbCollections,
+            ),
+        ];
         $this->noteReaderInterestChange($announced);
 
         return $added;
@@ -747,7 +761,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      */
     public function releaseReaderInterestOfWorker(int $workerIndex): void
     {
-        $announced = $this->workerReaderMap()->collections(SourceChange::KIND_RT);
+        $announced = $this->readerInterestUnion();
         $this->workerReaderMap()->release(self::workerHolderId($workerIndex));
         $this->noteReaderInterestChange($announced);
     }
@@ -759,25 +773,42 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * order says the same thing, and announcing it again costs one frame on an event that is
      * already rare, while a set that really changed cannot come back looking identical.
      *
-     * @param list<string> $announced RT collections this node read before the report
+     * The comparison is over the pair and not over one kind at a time, because the mesh is told
+     * the pair: a node that took up a DB collection and dropped an RT one on the same report has
+     * moved, and either half looked at alone would say it had not.
+     *
+     * @param array{rt: list<string>, db: list<string>} $announced What this node read before the report
      */
     private function noteReaderInterestChange(array $announced): void
     {
-        $reads = $this->workerReaderMap()->collections(SourceChange::KIND_RT);
+        $reads = $this->readerInterestUnion();
         if ($reads !== $announced) {
             $this->changedReaderInterest = $reads;
         }
     }
 
     /**
-     * Hands over the RT collections this node reads, once, when they have changed.
+     * What the workers of this node read between them, of both kinds.
+     *
+     * @return array{rt: list<string>, db: list<string>} Collections read on this node, by kind
+     */
+    private function readerInterestUnion(): array
+    {
+        return [
+            SourceChange::KIND_RT => $this->workerReaderMap()->collections(SourceChange::KIND_RT),
+            SourceChange::KIND_DB => $this->workerReaderMap()->collections(SourceChange::KIND_DB),
+        ];
+    }
+
+    /**
+     * Hands over what this node reads, of both kinds, once, when it has changed.
      *
      * Consuming rather than asking twice, because the caller is the daemon loop and the answer is
      * a duty: what it takes here it has to announce, and an answer left in place would be
      * announced again on every pass. Null is not an empty list - a node whose last reader went
      * away reads nothing and must say so, or the mesh goes on sending it frames forever.
      *
-     * @return ?list<string> RT collections this node reads, or null when the mesh already knows
+     * @return ?array{rt: list<string>, db: list<string>} What this node reads, or null when the mesh already knows
      */
     public function consumeChangedReaderInterest(): ?array
     {

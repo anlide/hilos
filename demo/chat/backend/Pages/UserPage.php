@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
@@ -38,6 +39,9 @@ use Hilos\Core\Page\PageRouteParams;
  */
 final class UserPage extends AbstractPage
 {
+    /** @var list<string> The person this page is about */
+    public const array READS_DB = [ChatDbContext::users];
+
     public const string PAGE = PageConstants::USER;
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
