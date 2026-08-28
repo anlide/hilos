@@ -891,6 +891,12 @@ final class ClusterContext
      * converge on it. The node id is treated as stable: changing it requires a
      * restart rather than a reload.
      *
+     * The re-read record is announced to the membership observer as well, not only to the
+     * mesh (HIL-337). A reload is the one way the registry moves without anybody being told,
+     * and an observer keeping its own view of membership - the runtime roster the master
+     * publishes for its workers - would part company with the registry exactly here: quietly,
+     * and for as long as the node runs.
+     *
      * @return bool True when the local node record changed meaningfully
      * @throws ClusterDisabledException When cluster mode is disabled
      * @throws ClusterConfigurationException When the reloaded node config is missing or invalid
@@ -908,6 +914,7 @@ final class ClusterContext
         $changed = $this->registry()->merge($this->identity, true, microtime(true));
         if ($changed) {
             $this->localAnnouncer?->announceLocalNode();
+            $this->notifyNodeJoined(ClusterNode::fromIdentity($this->identity, true, microtime(true)));
         }
 
         return $changed;

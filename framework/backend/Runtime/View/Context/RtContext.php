@@ -20,15 +20,18 @@ use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateItemNotFoundException;
+use Hilos\Runtime\State\Collection\HilosClusterNodes as StateHilosClusterNodes;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Collection\HilosSessionRotations as StateHilosSessionRotations;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
+use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
 use Hilos\Runtime\State\Item\RtState;
+use Hilos\Runtime\View\Actions\Collection\HilosClusterNodesActions;
 use Hilos\Runtime\View\Actions\Collection\HilosSessionRotationsActions;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
 use Hilos\Runtime\View\Actions\Item\BackupRuntimeActions;
@@ -36,6 +39,7 @@ use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\RestoreRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
 use Hilos\Runtime\View\Collection\BackupHistories;
+use Hilos\Runtime\View\Collection\HilosClusterNodes;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\Collection\HilosConnections as ViewHilosConnections;
 use Hilos\Runtime\View\Collection\HilosSessionConnections as ViewHilosSessionConnections;
@@ -53,6 +57,7 @@ use Hilos\Runtime\View\Item\RtItem;
  * Runtime data is transient - it lives only in memory for the process lifetime.
  *
  * @property-read BackupHistories $hilosBackupHistories Stored-backup index, mounted for a project that declares HilosFeature::BACKUP
+ * @property-read HilosClusterNodes $hilosClusterNodes Cluster as this node's master sees it, mounted for every project
  * @property-read HilosSessionRotations $hilosSessionRotations Pending login token rotations, mounted for every project
  * @property-read ?BackupRuntime $hilosBackupRuntime Backup subsystem runtime singleton, or null when unmounted
  * @property-read ?RestoreRuntime $hilosRestoreRuntime Restore run runtime singleton, or null when unmounted
@@ -174,7 +179,7 @@ abstract class RtContext
      * declaration the only switch: a project cannot forget a row of a feature it declared, and
      * cannot quietly replace one either - the check names the key and the line to delete.
      *
-     * Two of these are mounted unconditionally and before any feature, because neither is an
+     * Three of these are mounted unconditionally and before any feature, because none is an
      * opt-in surface. The protected mode singleton is there because a node freezing itself for
      * a destructive operation is a data-integrity guarantee: every project that can run such an
      * operation must be able to freeze. The session rotations are there because the login token
@@ -183,7 +188,10 @@ abstract class RtContext
      * session stage, which is only known after {@see self::configure()} has run, too late to
      * mount from. In a project without sessions the collection is inert: nothing registers a
      * truth source for it, so nothing can write it, and the handshake finds no row and serves
-     * the ordinary cookie rule.
+     * the ordinary cookie rule. The cluster nodes (HIL-337) are there because clustering is a
+     * mode a node is started in and not a feature a project declares: anyone addressing work at
+     * the node that owns something needs the roster, and on a standalone install the master
+     * publishes itself into it, so the reader never grows a branch for the single-node case.
      *
      * A project whose createRuntime() returns null has no context to mount into; declaring a
      * feature that brings runtime state there is refused by the facade instead, since there is
@@ -200,6 +208,12 @@ abstract class RtContext
             StateHilosSessionRotation::RT_COLLECTION,
             HilosSessionRotations::class,
             HilosSessionRotationsActions::class,
+        );
+        $this->mountFeatureCollection(StateHilosClusterNode::RT_COLLECTION, StateHilosClusterNodes::init());
+        $this->setRepresent(
+            StateHilosClusterNode::RT_COLLECTION,
+            HilosClusterNodes::class,
+            HilosClusterNodesActions::class,
         );
 
         foreach ($definitions as $definition) {

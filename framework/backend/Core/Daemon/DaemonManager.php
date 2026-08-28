@@ -15,6 +15,8 @@ use Hilos\Cluster\ClientMesh;
 use Hilos\Cluster\ClientSignalSink;
 use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Cluster\ClusterNode;
+use Hilos\Cluster\ClusterRegistry;
+use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Connections\ClusterClientLocation;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\LeadershipObserver;
@@ -125,8 +127,10 @@ use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\RtSyncApplicator;
+use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\Runtime\State\Item\RtState;
 use Hilos\TruthSource\RtClusterClaimRegistry;
 use Hilos\TruthSource\RtNodeSourceMap;
 use Hilos\TruthSource\RtReplicaOriginMap;
@@ -326,6 +330,13 @@ abstract class DaemonManager extends BaseManager implements
     /** @var int Remote RT frames this node refused because it writes what they carried */
     private int $rtFramesRefused = 0;
 
+    /**
+     * @var ?int Membership version this master has already mirrored into runtime state; null before
+     *      the first publication, and left null for the life of a node started without clustering,
+     *      which has no registry to count versions of (HIL-337)
+     */
+    private ?int $publishedClusterVersion = null;
+
     /** @var int RT ownership clashes this node has named as leader (HIL-696) */
     private int $rtClaimConflicts = 0;
 
@@ -497,6 +508,7 @@ abstract class DaemonManager extends BaseManager implements
         $this->registerBackupCronRules();
         $this->registerProtectedModeTruthSource();
         $this->registerSessionRotationTruthSource();
+        $this->registerClusterNodesTruthSource();
         $this->restoreProtectedModeFreeze();
     }
 
@@ -4705,6 +4717,9 @@ abstract class DaemonManager extends BaseManager implements
     public function onNodeJoined(ClusterNode $node): void
     {
         Hilos::$cluster?->placement()?->noteNodeOnline($node->nodeId, microtime(true));
+        // Last, so the roster workers read is published after this node has decided what the join
+        // means and not between the decision and its execution (HIL-337).
+        $this->publishClusterNodes();
     }
 
     /**
@@ -4734,6 +4749,9 @@ abstract class DaemonManager extends BaseManager implements
         // holding a claim for a node that is gone, and failover - which re-places that very agent
         // on a surviving node - would have its new host refused in favour of the dead one.
         $this->rtClaimRegistry->forget($node->nodeId);
+        // Last, for the reason given in {@see onNodeJoined()}. The departed node keeps its row and
+        // turns offline in it; the registry does not forget it either (HIL-337).
+        $this->publishClusterNodes();
     }
 
     /**
@@ -5048,6 +5066,112 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         RtTruthSourceRegistry::registerDaemon(StateHilosSessionRotation::RT_COLLECTION);
+    }
+
+    /**
+     * Registers this node's master as the truth source for the cluster roster, and publishes it
+     * for the first time (HIL-337).
+     *
+     * The third agent-less writer, and it is neither of the other two. Like the protected-mode
+     * row it is node-local - every master writes its own copy and the mesh is never told, which
+     * is what keeps the roster readable through a lost quorum or a split, since it is this node's
+     * own observation rather than a frozen replica of an owner it can no longer reach. Unlike it,
+     * what it writes is not about this node but about all of them: the master is the only process
+     * holding {@see ClusterRegistry}, so without this a worker had no way to learn that any other
+     * node exists.
+     *
+     * The first publication belongs here rather than to a later event because on a node started
+     * without clustering there is no later event: membership never changes, and a reader that
+     * found the collection empty until something happened would wait forever.
+     *
+     * The early return means this process carries no runtime state at all - the framework mounts
+     * the collection for every project that has an RT context.
+     */
+    private function registerClusterNodesTruthSource(): void
+    {
+        if (Hilos::$rt === null) {
+            return;
+        }
+
+        RtTruthSourceRegistry::registerDaemon(StateHilosClusterNode::RT_COLLECTION);
+        $this->publishClusterNodes();
+    }
+
+    /**
+     * Brings the runtime roster level with what the registry says right now (HIL-337).
+     *
+     * Rebuilt from {@see ClusterRegistry::snapshot()} rather than from whatever the event that
+     * called it carried: the registry also changes where no observer is invoked - a reload merges
+     * this node's own re-read record - and a mirror assembled from caught events would drift from
+     * its source exactly there, which is to say silently and permanently. The membership version
+     * is the guard, and it only saves the walk: an unmoved row queues no frame anyway, because
+     * {@see RtState::sync()} diffs it against the baseline it kept.
+     *
+     * Rows are only ever written, never dropped. That is the registry's own contract - it marks a
+     * departed node offline instead of forgetting it - and a roster that dropped rows would answer
+     * "no such node" for a node that is merely down.
+     *
+     * Nothing is written to the log on the way through. Membership events are rare, but it is the
+     * master that handles them, and the one process that must not be delayed is the last place to
+     * spend a line on something going right.
+     *
+     * Nothing is thrown out of here either. A write this master is not (or no longer) the source
+     * for raises, and an exception escaping the master loop ends {@see run()} and takes the node
+     * down - so the failure is written and the node goes on serving, the same contract
+     * {@see sendToAgent()} keeps for the same reason.
+     */
+    private function publishClusterNodes(): void
+    {
+        if (Hilos::$rt === null) {
+            return;
+        }
+
+        try {
+            if (Hilos::$cluster?->isEnabled() !== true) {
+                // Published once and never again: with no cluster there is no membership to
+                // change, and the row's own presence is what records that it has been said.
+                if (isset(Hilos::$rt->hilosClusterNodes[StateHilosClusterNode::STANDALONE_NODE_ID])) {
+                    return;
+                }
+
+                Hilos::$rt->hilosClusterNodes->actions->publish(
+                    StateHilosClusterNode::STANDALONE_NODE_ID,
+                    NodeRole::Master->value,
+                    [],
+                    null,
+                    true,
+                    microtime(true),
+                );
+
+                return;
+            }
+
+            $registry = Hilos::$cluster->registry();
+            $version = $registry->version();
+            if ($this->publishedClusterVersion === $version) {
+                return;
+            }
+
+            foreach ($registry->snapshot() as $node) {
+                Hilos::$rt->hilosClusterNodes->actions->publish(
+                    $node->nodeId,
+                    $node->role->value,
+                    $node->capabilities,
+                    $node->address?->toString(),
+                    $node->online,
+                    $node->lastSeen,
+                );
+            }
+
+            // Stamped only once the whole snapshot is through, so a publication that broke halfway
+            // is retried by the next membership event rather than remembered as done.
+            $this->publishedClusterVersion = $version;
+        } catch (Throwable $e) {
+            Logger::error(
+                'Cluster nodes: publishing ' . StateHilosClusterNode::RT_COLLECTION . ' failed: '
+                . get_class($e) . ': ' . $e->getMessage(),
+            );
+        }
     }
 
     /**
