@@ -26,7 +26,7 @@ use Hilos\Core\Daemon\DaemonManager;
  * Like every {@see Destination} it is computed and consumed inside the daemon and never crosses
  * a process boundary.
  */
-final class UnknownAgentDestination implements Destination
+final class UnknownAgentDestination implements AgentAddressedDestination
 {
     /**
      * @param string $agentType Target agent type whose host is unknown

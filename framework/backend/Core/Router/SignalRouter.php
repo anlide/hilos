@@ -17,6 +17,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Group\GroupNameMatch;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Page\Config\PageAgentIndexRoute;
+use Hilos\Core\Router\Destination\AgentAddressedDestination;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
 use Hilos\Core\Router\Destination\CommandReplyDestination;
@@ -839,6 +840,35 @@ class SignalRouter
     public function localClientDestinations(SignalDTO $signal): array
     {
         return $this->getWebSocketDestinations($signal);
+    }
+
+    /**
+     * Answers where one named agent runs, as the destination that reaches it there.
+     *
+     * The placement post-pass made available to a caller that has an agent and no list. The
+     * ordinary route resolves destinations and places them in one pass, but two deliveries in
+     * the master do not come from a route at all — the connection-close fan-out and the
+     * unsubscribe of a replaced subscription build their destination from a subscription record
+     * (HIL-745). Before this, both delivered it locally, which on a follower reaches workers
+     * running no such agent and on a leader starts a second instance of the entity's owner.
+     *
+     * Same three answers as the walk, decided by the same lookup: the agent stays an
+     * {@see AgentDestination} when it runs here, becomes a {@see RemoteAgentDestination} when
+     * another node hosts it, and a {@see UnknownAgentDestination} when no node is known to. Off
+     * a cluster the lookup does not exist and the destination is returned as it came, so a
+     * single node behaves exactly as it did.
+     *
+     * @param AgentDestination $destination Agent to locate
+     * @return AgentAddressedDestination Destination reaching that agent where it actually runs
+     * @throws EnvException When the placement lookup reads cluster configuration and it is invalid
+     */
+    public function placeAgentDestination(AgentDestination $destination): AgentAddressedDestination
+    {
+        // The post-pass rewrites in place, so a list of one comes back as a list of one, and
+        // every rewrite it can make to an agent destination is itself an addressed agent - as is
+        // the untouched input when there is no cluster. Nothing here narrows that back down: the
+        // declared return type is the guard, and it is one this branch cannot trip.
+        return $this->applyPlacement([$destination])[0];
     }
 
     /**

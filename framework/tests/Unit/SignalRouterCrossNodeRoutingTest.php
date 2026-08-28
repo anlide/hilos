@@ -10,6 +10,7 @@ use Hilos\Cluster\WorkerPlacement;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\Destination;
 use Hilos\Core\Router\Destination\RemoteAgentDestination;
+use Hilos\Core\Router\Destination\UnknownAgentDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
@@ -28,6 +29,12 @@ use PHPUnit\Framework\TestCase;
  * lookup places here and non-agent destinations are left untouched; off-cluster the
  * post-pass is inert. The lookup's third answer - nobody knows where the agent runs - is
  * {@see SignalRouterUnknownAgentTest}.
+ *
+ * The same post-pass is also reachable for ONE agent at a time, through
+ * {@see SignalRouter::placeAgentDestination()} (HIL-745): the master has two deliveries built
+ * from a subscription record rather than from a route, and they had no way to ask this question
+ * at all. Those cases are here because the answers are the post-pass's own - what the two
+ * callers then do with them is {@see DaemonManagerPlacedFanOutTest}.
  */
 final class SignalRouterCrossNodeRoutingTest extends TestCase
 {
@@ -90,6 +97,47 @@ final class SignalRouterCrossNodeRoutingTest extends TestCase
             new AgentDestination('local_agent'),
             new WebSocketDestination('ws-key'),
         ], $destinations);
+    }
+
+    public function testPlacingOneAgentKeepsItLocalWhenTheLookupPlacesItHere(): void
+    {
+        $this->installPlacement([]);
+
+        $placed = new CrossNodeTestRouter()->placeAgentDestination(new AgentDestination('local_agent'));
+
+        $this->assertEquals(new AgentDestination('local_agent'), $placed);
+    }
+
+    public function testPlacingOneAgentNamesTheNodeHostingIt(): void
+    {
+        $this->installPlacement(['remote_agent:7' => AgentLocation::onNode('node-B')]);
+
+        $placed = new CrossNodeTestRouter()->placeAgentDestination(new AgentDestination('remote_agent', '7'));
+
+        $this->assertEquals(new RemoteAgentDestination('node-B', 'remote_agent', '7'), $placed);
+    }
+
+    /**
+     * The answer the caller must not confuse with "here": before the seam, a delivery built from
+     * a subscription record went into this node's own workers whatever the lookup thought, and
+     * an unplaced agent is exactly the case where those workers run no such agent.
+     */
+    public function testPlacingOneAgentMarksItUnknownWhenNoNodeIsKnownToHostIt(): void
+    {
+        $this->installPlacement(['remote_agent:7' => AgentLocation::unknown()]);
+
+        $placed = new CrossNodeTestRouter()->placeAgentDestination(new AgentDestination('remote_agent', '7'));
+
+        $this->assertEquals(new UnknownAgentDestination('remote_agent', '7'), $placed);
+    }
+
+    public function testPlacingOneAgentIsInertOffCluster(): void
+    {
+        Hilos::$cluster = null;
+
+        $placed = new CrossNodeTestRouter()->placeAgentDestination(new AgentDestination('remote_agent', '7'));
+
+        $this->assertEquals(new AgentDestination('remote_agent', '7'), $placed);
     }
 
     /**

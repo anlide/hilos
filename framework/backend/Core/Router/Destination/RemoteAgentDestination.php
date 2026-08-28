@@ -21,7 +21,7 @@ use Hilos\Core\Daemon\DaemonManager;
  * inside the daemon and never itself crosses a process boundary — the peer frame
  * ({@see PeerSignalDTO}) is what travels the wire.
  */
-final class RemoteAgentDestination implements Destination
+final class RemoteAgentDestination implements AgentAddressedDestination
 {
     /**
      * @param string $nodeId Id of the node hosting the target agent

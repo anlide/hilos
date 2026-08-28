@@ -7,7 +7,7 @@ namespace Hilos\Core\Router\Destination;
 /**
  * AgentDestination - Routes a signal to an agent type, optionally a specific indexed instance.
  */
-final class AgentDestination implements Destination
+final class AgentDestination implements AgentAddressedDestination
 {
     /**
      * @param string $agentType Target agent type

@@ -75,6 +75,7 @@ use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\Destination\AgentAddressedDestination;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
 use Hilos\Core\Router\Destination\SessionClientsDestination;
@@ -1752,50 +1753,42 @@ abstract class DaemonManager extends BaseManager implements
 
             // Deliver signal to each destination
             $skipSignal = false;
+            /** @var list<AgentAddressedDestination> Agents this walk addressed, in the order it addressed them */
             $agentsDelivered = [];
             while (($destination = array_shift($destinations)) !== null) {
                 if ($skipSignal) {
                     break;
                 }
 
-                if ($destination instanceof AgentDestination) {
+                if ($destination instanceof AgentAddressedDestination) {
+                    // Counted as reached before anything is attempted, and in all three cases:
+                    // what the connection-close fan-out must not do twice is ADDRESS the same
+                    // agent, and a delivery that failed here has already been reported to the
+                    // browser by the branches below (HIL-745).
                     $agentsDelivered[] = $destination;
-                    $skipSignal = $this->sendSignalToAgentDestination($workerServer, $destination, $signal);
-                } elseif ($destination instanceof UnknownAgentDestination) {
-                    // Nobody on this node knows where that agent runs, so there is no delivery to
-                    // attempt - not even the local one, which is what used to happen here and is
-                    // the defect (HIL-670): it succeeds against workers running no such agent.
-                    // A subscription waiting on the answer is told, exactly as an unreachable
-                    // node's would be; anything else stays dropped with this line.
-                    Logger::warning("Signal dropped: {$signalType}/{$signalName}"
-                        . " -> agent {$destination->agentType} has no known node");
-                    $this->answerUnreachableSubscription($signal);
-                    // The drop above stands. What is added here is the reason it need not repeat:
-                    // an agent that starts by being addressed is asked for, so the address the
-                    // next frame asks about can exist (HIL-628). Holding THIS frame is HIL-629.
-                    $this->requireOnDemandPlacement($destination->agentType, $destination->agentIndex);
-                } elseif ($destination instanceof RemoteAgentDestination) {
-                    // Forward the signal to the agent on its host node over the peer channel.
-                    // Best-effort: no live link (offline node / no peer server) drops and logs,
-                    // matching the local path that skips when no worker hosts the agent. Durable
-                    // delivery to an offline node is out of scope.
-                    if ($peerServer === null) {
-                        Logger::error("Peer signal dropped: {$signalType}/{$signalName}"
-                            . " -> node {$destination->nodeId} agent {$destination->agentType} - no peer server");
-                        $this->answerUnreachableSubscription($signal);
-                        continue;
-                    }
 
-                    $delivered = $peerServer->sendSignalToNode(
-                        $destination->nodeId,
-                        $destination->agentType,
-                        $destination->agentIndex,
-                        $signal,
-                    );
-                    if (!$delivered) {
-                        Logger::warning("Peer signal dropped: {$signalType}/{$signalName}"
-                            . " -> node {$destination->nodeId} agent {$destination->agentType} - no live link");
-                        $this->answerUnreachableSubscription($signal);
+                    // The delivery itself owes nobody an answer and asks for no placement - the
+                    // reactions to what it reports are this walk's, and the two callers that
+                    // reach the same agent from a subscription record have different ones.
+                    switch ($this->deliverToAgentDestination($workerServer, $peerServer, $destination, $signal)) {
+                        case AgentDeliveryOutcome::ShutdownSkipped:
+                            $skipSignal = true;
+                            break;
+                        case AgentDeliveryOutcome::RemoteUnreachable:
+                            // A subscription waiting on the answer is told; anything else stays
+                            // dropped with the line the delivery already wrote.
+                            $this->answerUnreachableSubscription($signal);
+                            break;
+                        case AgentDeliveryOutcome::AddressUnknown:
+                            $this->answerUnreachableSubscription($signal);
+                            // The drop stands. What is added here is the reason it need not
+                            // repeat: an agent that starts by being addressed is asked for, so
+                            // the address the next frame asks about can exist (HIL-628). Holding
+                            // THIS frame is HIL-629.
+                            $this->requireOnDemandPlacement($destination->agentType, $destination->agentIndex);
+                            break;
+                        case AgentDeliveryOutcome::Delivered:
+                            break;
                     }
                 } elseif ($destination instanceof RemoteClientDestination) {
                     // Forward the signal to the browser on the node holding its socket. Same
@@ -3707,6 +3700,7 @@ abstract class DaemonManager extends BaseManager implements
      * @throws AgentDaemonCreationFailedException When the replaced subscription's agent daemon cannot be created
      * @throws AgentNotFoundException When the replaced subscription's agent is gone after a start attempt
      * @throws AgentNotLinkedToWorkerException When the replaced subscription's agent is not linked to a worker
+     * @throws EnvException When locating the replaced subscription's agent reads cluster configuration and it is invalid
      * @throws HilosException Whatever the project's agent-daemon factory raises reaching the replaced agent
      * @throws InvalidArgumentException When the unsubscribe of a replaced subscription cannot be named
      * @throws WorkerClientNotFoundException When the worker hosting the replaced subscription's agent is gone
@@ -3965,8 +3959,16 @@ abstract class DaemonManager extends BaseManager implements
      * No-op when the connection held nothing, when nothing was bound (the worker-side
      * replacement handles that case as it always has), or when the address has not moved.
      *
+     * The previous addressee is looked up before it is written to, not assumed to be here
+     * (HIL-745): a per-instance page moves between nodes, so the agent that used to serve this
+     * connection may well be on another one, and a straight local send would have told this
+     * node's workers about a subscription they never held. What the delivery reports is ignored
+     * on purpose - a page_unsubscribe owes nobody an answer, least of all the tab that has
+     * already moved on to its next page.
+     *
      * @param string $acceptKey Connection whose subscription is being replaced
      * @param ?PageAgentAddress $address Settled address the subscription is moving to, null when the new page is not per-instance
+     * @throws EnvException When the placement lookup reads cluster configuration and it is invalid
      */
     private function unsubscribeReplacedPageAgent(string $acceptKey, ?PageAgentAddress $address): void
     {
@@ -3987,9 +3989,10 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        $this->sendSignalToAgentDestination(
+        $this->deliverToAgentDestination(
             $workerServer,
-            new AgentDestination($previous->agentType, $previous->agentIndex),
+            $this->findPeerServer(),
+            Hilos::$sr->placeAgentDestination(new AgentDestination($previous->agentType, $previous->agentIndex)),
             new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
                 new SignalType(SignalTypeConstants::PAGE_UNSUBSCRIBE),
@@ -4073,9 +4076,17 @@ abstract class DaemonManager extends BaseManager implements
      * page's fallback agent, and a project usually names its lifecycle agent there. Delivering
      * again would run the agent's close hook twice for one disconnect.
      *
+     * The addressee is looked up rather than assumed local (HIL-745). A per-instance page is
+     * served by the node holding its entity, so on a follower the straight local send raised an
+     * AgentNotFoundException nobody catches - which by HIL-619 takes the node out of the
+     * cluster - and on a leader it started a second instance of an owner already running
+     * elsewhere. What the delivery reports is ignored on purpose: the subscription owed an
+     * answer here is the one whose connection just closed.
+     *
      * @param WorkerServer $workerServer Worker server the delivery goes through
      * @param SignalDTO $signal Signal just routed
-     * @param list<AgentDestination> $agentsDelivered Agent destinations the ordinary walk already reached
+     * @param list<AgentAddressedDestination> $agentsDelivered Agent destinations the ordinary walk already reached
+     * @throws EnvException When the placement lookup reads cluster configuration and it is invalid
      */
     private function fanOutConnectionCloseToPageAgents(
         WorkerServer $workerServer,
@@ -4104,9 +4115,10 @@ abstract class DaemonManager extends BaseManager implements
             }
         }
 
-        $this->sendSignalToAgentDestination(
+        $this->deliverToAgentDestination(
             $workerServer,
-            new AgentDestination($subscription->agentType, $subscription->agentIndex),
+            $this->findPeerServer(),
+            Hilos::$sr->placeAgentDestination(new AgentDestination($subscription->agentType, $subscription->agentIndex)),
             $signal,
         );
     }
@@ -4250,12 +4262,93 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Reaches one agent wherever the placement lookup says it runs, and reports what came of it.
+     *
+     * The one path from the master to an addressed agent. It exists because three callers used
+     * to have their own: the ordinary destination walk knew all three cases, while the
+     * connection-close fan-out and the unsubscribe of a replaced subscription knew only the
+     * local one and delivered into this node's workers whatever the answer was (HIL-745). On a
+     * follower that reaches workers running no such agent; on a leader it starts a second
+     * instance of an entity whose owner already runs elsewhere.
+     *
+     * Three cases, one per answer the placement gives: an agent here is handed the signal
+     * through the worker server, an agent on another node is forwarded over the peer channel,
+     * and an agent nobody can place is dropped with a line and no delivery attempt at all - not
+     * even a local one, which is the defect that named {@see UnknownAgentDestination} (HIL-670).
+     * The cross-node forward is best-effort: an offline node or a missing peer server drops and
+     * logs, matching the local path that skips when no worker hosts the agent. Durable delivery
+     * to a node that fell over is HIL-347.
+     *
+     * What it deliberately does NOT do is react. It answers no subscription and asks for no
+     * placement, because the right reaction differs by caller: the walk owes an answer to a
+     * browser waiting on a subscription, and the two record-driven deliveries owe nobody one -
+     * the connection whose close is being fanned out is the very connection that left.
+     *
+     * @param WorkerServer $workerServer Worker server hosting the agents of this node
+     * @param ?PeerServer $peerServer Peer server for the cross-node forward, or null when cluster mode is off
+     * @param AgentAddressedDestination $destination Agent to reach, already placed
+     * @param SignalDTO $signal Signal to deliver
+     * @return AgentDeliveryOutcome Delivered, or the reason it reached nobody
+     * @throws AgentException When a local agent cannot be reached and the daemon is not shutting down
+     */
+    private function deliverToAgentDestination(
+        WorkerServer $workerServer,
+        ?PeerServer $peerServer,
+        AgentAddressedDestination $destination,
+        SignalDTO $signal,
+    ): AgentDeliveryOutcome {
+        $signalType = $signal->signalType->getType();
+        $signalName = $signal->signalName->getName();
+
+        if ($destination instanceof RemoteAgentDestination) {
+            if ($peerServer === null) {
+                Logger::error("Peer signal dropped: {$signalType}/{$signalName}"
+                    . " -> node {$destination->nodeId} agent {$destination->agentType} - no peer server");
+
+                return AgentDeliveryOutcome::RemoteUnreachable;
+            }
+
+            $delivered = $peerServer->sendSignalToNode(
+                $destination->nodeId,
+                $destination->agentType,
+                $destination->agentIndex,
+                $signal,
+            );
+            if (!$delivered) {
+                Logger::warning("Peer signal dropped: {$signalType}/{$signalName}"
+                    . " -> node {$destination->nodeId} agent {$destination->agentType} - no live link");
+
+                return AgentDeliveryOutcome::RemoteUnreachable;
+            }
+
+            return AgentDeliveryOutcome::Delivered;
+        }
+
+        if ($destination instanceof UnknownAgentDestination) {
+            Logger::warning("Signal dropped: {$signalType}/{$signalName}"
+                . " -> agent {$destination->agentType} has no known node");
+
+            return AgentDeliveryOutcome::AddressUnknown;
+        }
+
+        // Neither rewrite the placement can make, so what is left is the agent running here -
+        // the case the walk had first, and the only one the two branches above do not take. The
+        // callee's parameter type is what holds that reasoning to account, loudly, if a fourth
+        // addressed destination is ever added without this method being told about it.
+        return $this->sendSignalToAgentDestination($workerServer, $destination, $signal)
+            ? AgentDeliveryOutcome::ShutdownSkipped
+            : AgentDeliveryOutcome::Delivered;
+    }
+
+    /**
      * Sends one signal to one agent instance through the worker server.
      *
-     * The single door to an agent from the master loop: the ordinary destination walk uses it,
-     * and so do the three deliveries that must not go through the queue - the unsubscribe of a
-     * replaced subscription, the one of a subscription that moved, and the connection-close
-     * fan-out ({@see unsubscribeReplacedPageAgent()}, {@see fanOutConnectionCloseToPageAgents()}).
+     * The single door to an agent of THIS node, and it is reached through one caller only:
+     * {@see deliverToAgentDestination()}, which picks this door or the peer channel by where
+     * the placement lookup says the agent runs. It used to be called from three places directly
+     * - the ordinary destination walk, the connection-close fan-out and the unsubscribe of a
+     * replaced subscription - and the latter two called it whatever the answer was, which is
+     * the defect HIL-745 closed. A new caller belongs on the method above this one, not here.
      *
      * @param WorkerServer $workerServer Worker server hosting the agents
      * @param AgentDestination $destination Agent instance to reach
