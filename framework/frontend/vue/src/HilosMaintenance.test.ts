@@ -4,11 +4,13 @@ import { describe, expect, it } from 'vitest'
 import {
   BACKUP_RESTORE_PROGRESS_SIGNAL,
   PROTECTED_MODE_INACTIVE,
+  RT_STALENESS_FRESH,
 } from '@hilos/core'
 import type {
   HilosConnection,
   HilosRestoreStatus,
   ProtectedModeStatus,
+  RtStalenessStatus,
 } from '@hilos/core'
 
 import HilosLayout from './HilosLayout.vue'
@@ -65,18 +67,28 @@ function restoreFrame(
   }
 }
 
-// A minimal connection stub: the shell only reads the transport state and the
-// protected-mode state off it, and subscribes to both. `push` drives the freeze
-// the way the daemon's pushed frame would, and `pushRestore` the addressed frame
-// the backup agent sends to every tab of the initiator's session.
-function fakeConnection(initial: ProtectedModeStatus): {
+/** A page reading a replica whose owner node went away at a known moment. */
+const FROZEN_DATA: RtStalenessStatus = { stale: true, since: 1_760_000_000_000 }
+
+// A minimal connection stub: the shell only reads the transport state, the
+// protected-mode state and the frozen-replica state off it, and subscribes to
+// all three. `push` drives the freeze the way the daemon's pushed frame would,
+// `pushStaleness` the worker's frozen-replica frame, and `pushRestore` the
+// addressed frame the backup agent sends to every tab of the initiator's session.
+function fakeConnection(
+  initial: ProtectedModeStatus,
+  initialStaleness: RtStalenessStatus = RT_STALENESS_FRESH,
+): {
   connection: HilosConnection
   push: (next: ProtectedModeStatus) => void
+  pushStaleness: (next: RtStalenessStatus) => void
   pushRestore: (frame: HilosRestoreStatus) => void
   presented: string[]
 } {
   let current = initial
+  let currentStaleness = initialStaleness
   const listeners: ((next: ProtectedModeStatus) => void)[] = []
+  const stalenessListeners: ((next: RtStalenessStatus) => void)[] = []
   const projectListeners: ((signal: {
     type: string
     data: unknown
@@ -87,9 +99,15 @@ function fakeConnection(initial: ProtectedModeStatus): {
     get protectedMode(): ProtectedModeStatus {
       return current
     },
+    get rtStaleness(): RtStalenessStatus {
+      return currentStaleness
+    },
     on(event: string, listener: (next: never) => void): () => void {
       if (event === 'protectedMode') {
         listeners.push(listener as (next: ProtectedModeStatus) => void)
+      }
+      if (event === 'rtStaleness') {
+        stalenessListeners.push(listener as (next: RtStalenessStatus) => void)
       }
       if (event === 'projectSignal') {
         projectListeners.push(
@@ -112,6 +130,12 @@ function fakeConnection(initial: ProtectedModeStatus): {
     push(next: ProtectedModeStatus): void {
       current = next
       for (const listener of listeners) {
+        listener(next)
+      }
+    },
+    pushStaleness(next: RtStalenessStatus): void {
+      currentStaleness = next
+      for (const listener of stalenessListeners) {
         listener(next)
       }
     },
@@ -365,6 +389,38 @@ describe('HilosLayout under protected mode', () => {
     expect(wrapper.find('[data-id="maintenance"]').exists()).toBe(false)
     expect(wrapper.find('[data-id="nav-brand"]').exists()).toBe(true)
     expect(wrapper.find('[data-id="app-footer"]').exists()).toBe(true)
+  })
+
+  it('marks the connection indicator when part of the page is a frozen replica', async () => {
+    const { connection, pushStaleness } = fakeConnection(
+      PROTECTED_MODE_INACTIVE,
+    )
+    const wrapper = mountShell(connection)
+
+    pushStaleness(FROZEN_DATA)
+    await nextTick()
+
+    const indicator = wrapper.find('[data-id="conn-state"]')
+    expect(indicator.find('i').classes()).toContain('bi-snow')
+    // The link is up, so the colour is the one a healthy socket has: what the
+    // mark says is that part of what is shown may be old, not that anything broke.
+    expect(indicator.classes()).toContain('text-success')
+    expect(indicator.attributes('title')).toContain('may be out of date')
+  })
+
+  it('takes the mark off again when the frozen data becomes current', async () => {
+    const { connection, pushStaleness } = fakeConnection(
+      PROTECTED_MODE_INACTIVE,
+      FROZEN_DATA,
+    )
+    const wrapper = mountShell(connection)
+
+    pushStaleness(RT_STALENESS_FRESH)
+    await nextTick()
+
+    expect(
+      wrapper.find('[data-id="conn-state"]').find('i').classes(),
+    ).toContain('bi-check-circle-fill')
   })
 
   it('replaces the page and every link with the maintenance surface', () => {

@@ -9,6 +9,7 @@ use Hilos\Runtime\Exception\Item\RtItemCloneException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\Exception\Item\RtItemReadOnlyException;
 use Hilos\Runtime\Exception\Item\RtItemUnserializeException;
+use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
 use Hilos\Runtime\View\Collection\RtCollection;
@@ -69,6 +70,27 @@ abstract class RtItem
     public function getId(): string
     {
         return $this->_state->getId();
+    }
+
+    /**
+     * Since when this row's source has been unreachable, if it has (HIL-711).
+     *
+     * On a cluster a row may be a replica of another node's, and a broken link leaves that copy
+     * exactly as it was — served, and no longer kept up to date. This is the only way to ask how
+     * old it may be, and the one a reader consults before an irreversible decision; a reader that
+     * only displays the row is welcome to ignore it, which is why the mark refuses nothing on its
+     * own. A row this node writes itself is always fresh, and so is every row off a cluster.
+     *
+     * A standalone state item — a framework singleton with no collection around it — answers
+     * fresh: nothing replicates it, since every master writes its own node's copy.
+     *
+     * @return ?float Microtime this copy stopped being kept up to date, or null when it is current
+     */
+    public function staleSince(): ?float
+    {
+        $collectionKey = $this->_rtCollection?->getCollectionName();
+
+        return $collectionKey === null ? null : RtStaleness::staleSince($collectionKey, $this->getId());
     }
 
     /**

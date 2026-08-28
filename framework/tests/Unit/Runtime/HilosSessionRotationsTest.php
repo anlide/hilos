@@ -9,11 +9,13 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Hilos;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\State\Collection\HilosSessionRotations as StateHilosSessionRotations;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\View\Actions\Collection\HilosSessionRotationsActions;
 use Hilos\Runtime\View\Collection\HilosSessionRotations;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -34,19 +36,32 @@ final class HilosSessionRotationsTest extends TestCase
 
     private const string AGENT_ID = 'unit-session-host';
 
+    /** @var float Microtime the frozen-replica cases lose the owner node at */
+    private const float FROZE_AT = 1000.5;
+
     private ?SignalRouter $previousSignalRouter = null;
+
+    /** Temporary main log file the refusal case reads its line back from */
+    private string $logFile = '';
 
     protected function setUp(): void
     {
         $this->previousSignalRouter = Hilos::$sr;
         Hilos::$sr = new SignalRouter();
         RtTruthSourceRegistry::register(StateHilosSessionRotation::RT_COLLECTION, true, self::AGENT_ID);
+        $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-session-rotations');
+        Logger::setLogFile($this->logFile);
     }
 
     protected function tearDown(): void
     {
         RtTruthSourceRegistry::unregister(StateHilosSessionRotation::RT_COLLECTION, self::AGENT_ID);
         Hilos::$sr = $this->previousSignalRouter;
+        RtStaleness::reset();
+        Logger::resetLogFile();
+        if (is_file($this->logFile)) {
+            unlink($this->logFile);
+        }
 
         parent::tearDown();
     }
@@ -89,6 +104,57 @@ final class HilosSessionRotationsTest extends TestCase
     public function testAnUnknownTicketYieldsNothing(): void
     {
         $this->assertNull($this->mounted()->claimable(self::TICKET));
+    }
+
+    /**
+     * The one reader in the framework that refuses on a frozen replica alone (HIL-711). Its
+     * decision is irreversible in the direction that matters: the burn is announced by whichever
+     * master accepted the handshake, so in a break this node's copy shows a spent ticket as
+     * still unspent, and honouring it would let one ticket open two sessions. The cost is named
+     * and accepted — the user logs in again.
+     */
+    public function testATicketWhoseReplicaFrozeIsRefusedAlthoughItLooksUnspent(): void
+    {
+        $rotations = $this->mounted();
+        $rotations->actions->register(self::TICKET, self::NEW_TOKEN, [], $this->inMs(30));
+        RtStaleness::mark(StateHilosSessionRotation::RT_COLLECTION, [self::TICKET], microtime(true));
+
+        // The row is there and live, so the refusal can only be coming from the frozen mark.
+        $this->assertNotNull($rotations->getStateCollection()->get(self::TICKET));
+        $this->assertNull($rotations->claimable(self::TICKET));
+    }
+
+    /**
+     * The refusal names itself in the log, because from the outside it is indistinguishable from
+     * an expired ticket: both send the user back to the login screen, and only this line says a
+     * peer link is what did it.
+     */
+    public function testTheRefusalOfAFrozenTicketSaysWhatFroze(): void
+    {
+        $rotations = $this->mounted();
+        $rotations->actions->register(self::TICKET, self::NEW_TOKEN, [], $this->inMs(30));
+        RtStaleness::mark(StateHilosSessionRotation::RT_COLLECTION, [self::TICKET], self::FROZE_AT);
+
+        $rotations->claimable(self::TICKET);
+
+        $this->assertStringContainsString(
+            'Session rotation ticket refused: its replica froze at ' . self::FROZE_AT
+            . ', the owner node is unreachable',
+            (string)file_get_contents($this->logFile),
+        );
+    }
+
+    /**
+     * A ticket this node minted itself is never in the origin map, so no dropped link can touch
+     * it — the single-node case, and the fleet case where the other master is the one that went.
+     */
+    public function testATicketThisNodeMintedIsUnaffectedByAnotherNodesFrozenRows(): void
+    {
+        $rotations = $this->mounted();
+        $rotations->actions->register(self::TICKET, self::NEW_TOKEN, [], $this->inMs(30));
+        RtStaleness::mark(StateHilosSessionRotation::RT_COLLECTION, ['some-other-ticket'], microtime(true));
+
+        $this->assertNotNull($rotations->claimable(self::TICKET));
     }
 
     public function testForgetBurnsTheTicketSoASecondHandshakeGetsNothing(): void

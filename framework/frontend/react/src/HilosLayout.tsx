@@ -32,6 +32,7 @@ import {
   HILOS_PAGE_ROUTES,
   HilosPages,
   createSignal,
+  rtStalenessLabel,
 } from '@hilos/core'
 import { useContext, useEffect } from 'react'
 import type { ReactNode } from 'react'
@@ -44,6 +45,7 @@ import { HilosRouterContext } from './hilosRouterContext.js'
 import { useConnectionState } from './useConnectionState.js'
 import { useFirstFrameHold } from './useFirstFrameHold.js'
 import { useProtectedMode } from './useProtectedMode.js'
+import { useRtStaleness } from './useRtStaleness.js'
 import { useSignal } from './useSignal.js'
 
 /** Props for {@link HilosLayout}. */
@@ -126,6 +128,21 @@ export function HilosLayout({
   // a page store, so it outlives routing and subscription lifecycles.
   const protectedMode = useProtectedMode(connection)
   const underMaintenance = protectedMode.active
+
+  // A live socket that is nonetheless showing part of a frozen replica
+  // (HIL-711): the same green, with a snowflake instead of the tick. It replaces
+  // the icon rather than standing beside it because the question is one — how
+  // much of what you see can be trusted — and two marks would read as two
+  // problems. Only while the socket is up: while it is down the transport itself
+  // is the news, and a stale copy is the least of what is out of date.
+  const staleness = useRtStaleness(connection)
+  const stalenessLabel = rtStalenessLabel(staleness)
+  const showsFrozenData = connectionState === 'connected' && staleness.stale
+  const connIcon = showsFrozenData ? 'bi-snow' : visual.icon
+  const connLabel =
+    showsFrozenData && stalenessLabel !== undefined
+      ? `${connectionState} - ${stalenessLabel}`
+      : connectionState
 
   // Before any of that can be read there is a frame where nothing has been
   // announced yet, and drawing the ordinary shell in it is what makes a reload
@@ -221,10 +238,10 @@ export function HilosLayout({
                   data-id="conn-state"
                   role="status"
                   aria-live="polite"
-                  title={connectionState}
+                  title={connLabel}
                 >
-                  <i className={`bi ${visual.icon}`} aria-hidden="true" />
-                  <span className="visually-hidden">{connectionState}</span>
+                  <i className={`bi ${connIcon}`} aria-hidden="true" />
+                  <span className="visually-hidden">{connLabel}</span>
                 </span>
               </div>
             </div>

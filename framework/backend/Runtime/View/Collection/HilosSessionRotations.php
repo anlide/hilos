@@ -9,11 +9,13 @@ use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
+use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\State\Collection\HilosSessionRotations as StateHilosSessionRotations;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\HilosSessionRotationsActions;
 use Hilos\Runtime\View\Item\HilosSessionRotation;
+use Hilos\Utils\Logger;
 
 /**
  * Read-only wrapper around the pending token rotations (HIL-582).
@@ -36,14 +38,32 @@ final class HilosSessionRotations extends RtCollection
      * cookie rule". Expiry is judged here rather than left to the caller because a row that
      * outlived its ticket must not be honoured anywhere, and there is only one clock.
      *
+     * A row whose source node is unreachable is refused too, and this is the one reader in the
+     * framework that refuses on the mark alone (HIL-711). The danger is not a ticket that went
+     * missing — its absence has always meant "log in again" — but one that a frozen copy still
+     * shows as unspent: the burn is announced by whichever master accepted the handshake, and in
+     * a break the other node does not hear it. A ticket good for a second handshake is worse
+     * than a login, so this decision fails closed while every other reader of a frozen row goes
+     * on being served.
+     *
      * @param string $ticket Ticket value presented on the handshake
-     * @return ?HilosSessionRotation Live rotation, or null when the ticket is unknown or spent
+     * @return ?HilosSessionRotation Live rotation, or null when the ticket is unknown, spent, or frozen
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     public function claimable(string $ticket): ?HilosSessionRotation
     {
         $state = $this->getStateCollection()->get($ticket);
         if ($state === null || !$state->isLiveAt(microtime(true) * TimeConstants::MS_PER_SECOND)) {
+            return null;
+        }
+
+        $frozenSince = RtStaleness::staleSince(StateHilosSessionRotation::RT_COLLECTION, $ticket);
+        if ($frozenSince !== null) {
+            Logger::warning(
+                "Session rotation ticket refused: its replica froze at {$frozenSince},"
+                . ' the owner node is unreachable',
+            );
+
             return null;
         }
 

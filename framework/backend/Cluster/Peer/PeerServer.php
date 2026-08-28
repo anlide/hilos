@@ -712,6 +712,12 @@ final class PeerServer extends AbstractServer implements
         // member already, but this link is what lets anything reach it. What of it actually goes
         // out is what that peer reads ({@see sendRtSnapshotToNode()}), and a peer this node has
         // yet to hear from asks again with its own announcement a moment later.
+        // Its deltas reach this node again from this moment, so the copies of its rows held here
+        // are being kept current again (HIL-711). Before the hand-over rather than after it: the
+        // hand-over repairs what the break cost, and a row it rewrites is fresh by that very act,
+        // so lifting the mark first leaves nothing for the two steps to disagree about.
+        Hilos::$cluster?->rtSyncSink()?->noteNodeReachable($remote->nodeId);
+
         Hilos::$cluster?->rtSyncSink()?->handOverRtSnapshots($remote->nodeId);
 
         // And the browser connections it holds (HIL-668), on exactly the same terms: without
@@ -1516,6 +1522,14 @@ final class PeerServer extends AbstractServer implements
         }
 
         $now = microtime(true);
+
+        // The last link to that node is gone, so its RT deltas stop arriving here and the copies
+        // this node holds of its rows stop being current (HIL-711). Told outside the branch
+        // below on purpose: that one is silent when the node was already marked offline by
+        // gossip, and a link dropping under a node believed offline is precisely the case where
+        // replication has just stopped and nothing else would say so.
+        Hilos::$cluster?->rtSyncSink()?->noteNodeUnreachable($remote->nodeId, $now);
+
         if ($registry->markOffline($remote->nodeId, $now)) {
             $this->notifyLeft($remote, $now);
             $this->broadcastAnnounce(PeerNodeEntry::fromIdentity($remote, false), $link);

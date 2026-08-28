@@ -19,6 +19,7 @@ import './hilos-styles.scss'
 
 export { useConnectionState } from './useConnectionState.js'
 export { useProtectedMode } from './useProtectedMode.js'
+export { useRtStaleness } from './useRtStaleness.js'
 export { useFirstFrameHold } from './useFirstFrameHold.js'
 export { useSignal } from './useSignal.js'
 export { useEntity } from './useEntity.js'

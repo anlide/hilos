@@ -26,13 +26,36 @@ final class SourceConsumer
         return 'agent:' . $agentId;
     }
 
+    /** @var string What a page subscription's consumer name starts with */
+    public const string PAGE_PREFIX = 'page:';
+
     /**
      * @param string $acceptKey Accept key of the subscribed connection
      * @return string Consumer name of that page subscription
      */
     public static function page(string $acceptKey): string
     {
-        return 'page:' . $acceptKey;
+        return self::PAGE_PREFIX . $acceptKey;
+    }
+
+    /**
+     * Reads back the connection a page consumer name was built from.
+     *
+     * The other direction of {@see page()}, and here for the reason the names themselves are:
+     * a caller holding a consumer name has to be able to reach the connection behind it without
+     * knowing how the name was spelled. Anything that is not a page answers null — an agent and
+     * a feature have no connection to address (HIL-711).
+     *
+     * @param string $consumerId Consumer name to read
+     * @return ?string Accept key it names, or null when it does not name a page subscription
+     */
+    public static function acceptKeyOf(string $consumerId): ?string
+    {
+        if (!str_starts_with($consumerId, self::PAGE_PREFIX)) {
+            return null;
+        }
+
+        return substr($consumerId, strlen(self::PAGE_PREFIX));
     }
 
     /**

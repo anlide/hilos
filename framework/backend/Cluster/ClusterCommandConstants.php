@@ -119,6 +119,13 @@ final class ClusterCommandConstants
     /** @var string RT-collection-row key: those rows themselves, keyed by id */
     public const string FIELD_RT_ROWS = 'rows';
 
+    /**
+     * @var string RT-collection-row key: those of the rows whose source node is unreachable, by
+     *     id, each with the microtime it stopped being kept up to date (HIL-711). An empty object
+     *     means every row of the collection is current, which is what a healthy mesh reports.
+     */
+    public const string FIELD_RT_STALE_ROWS = 'staleRows';
+
     /** @var string Inspect reply key: DB replicas from other nodes this one has accepted */
     public const string FIELD_DB_REPLICAS = 'dbReplicas';
 

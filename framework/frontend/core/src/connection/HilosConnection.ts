@@ -46,6 +46,10 @@ import {
   type ProtectedModeStatus,
 } from '../protocol/protectedMode.js'
 import {
+  RT_STALENESS_FRESH,
+  type RtStalenessStatus,
+} from '../protocol/rtStaleness.js'
+import {
   computeBackoffDelay,
   DEFAULT_RECONNECT_OPTIONS,
   type ReconnectOptions,
@@ -133,6 +137,13 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
    * consumer reloads on (there is no catch-up snapshot; see createHilosConnection).
    */
   protectedMode: ProtectedModeStatus
+  /**
+   * Whether anything the open page reads is a frozen replica, and since when
+   * (HIL-711). Emitted on every `rt_staleness` frame, and a frame arrives on
+   * every page subscription too — so a tab that opened during a break is told,
+   * although nothing moved while it was opening.
+   */
+  rtStaleness: RtStalenessStatus
   /**
    * The first frame is no longer held back: whatever the shell draws now, it
    * draws with the server's answer in hand (or with the fail-open verdict of a
@@ -244,6 +255,7 @@ export class HilosConnection {
   private heldRotation: SessionRotation | null = null
   private heldRotationTimer: ReturnType<typeof setTimeout> | null = null
   private protectedModeStatus: ProtectedModeStatus = PROTECTED_MODE_INACTIVE
+  private rtStalenessStatus: RtStalenessStatus = RT_STALENESS_FRESH
   /**
    * Whether the shell is still holding its first frame back, waiting to be told
    * what to draw.
@@ -295,6 +307,18 @@ export class HilosConnection {
    */
   get protectedMode(): ProtectedModeStatus {
     return this.protectedModeStatus
+  }
+
+  /**
+   * Whether anything this connection's open page reads has an unreachable source.
+   *
+   * Connection state and not page state, for the reason the freeze above is: the
+   * backend already sent this only to the connections it concerns, so there is
+   * nothing here to filter. A connection has one page, and every subscription is
+   * answered afresh — so a page change carries its own verdict with it.
+   */
+  get rtStaleness(): RtStalenessStatus {
+    return this.rtStalenessStatus
   }
 
   /**
@@ -577,6 +601,10 @@ export class HilosConnection {
         break
       case 'protectedMode':
         this.handleProtectedMode(signal)
+        break
+      case 'rtStaleness':
+        this.rtStalenessStatus = signal.state
+        this.emitter.emit('rtStaleness', signal.state)
         break
       case 'sessionRotate':
         this.handleSessionRotate(signal)

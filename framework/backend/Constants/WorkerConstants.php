@@ -119,6 +119,14 @@ final class WorkerConstants
     /** @var string Initial state of one RT collection, sent to a worker that has just asked to read it */
     public const string MESSAGE_RT_SNAPSHOT = 'rt_snapshot';
 
+    /**
+     * @var string Rows of one RT collection whose source became unreachable, or reachable again
+     *     (HIL-711). Beside the snapshot above because it answers about the same rows and travels
+     *     on the same interest filter: only the master sees a peer link open or close, and every
+     *     worker holds its own copy of what that link was keeping up to date.
+     */
+    public const string MESSAGE_RT_STALENESS = 'rt_staleness';
+
     // Message types from worker to daemon
     /** @var string Worker registration request */
     public const string MESSAGE_WORKER_REGISTER = 'worker_register';

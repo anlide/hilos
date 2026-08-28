@@ -36,8 +36,11 @@ Start with `agents.md`, then read the matching runtime guide.
   `docs/agents/runtime/rt-context.md`.
 - Ownership is claimed per collection OR per row: `register()` with a list of keys
   owns those entities, which is how a fleet splits one collection across nodes,
-  each member writing its own rows. A replica of an unreachable owner is served
-  as it is, frozen and unmarked. Both in `docs/agents/runtime/rt-context.md`.
+  each member writing its own rows. A replica of an unreachable owner is still
+  served, and carries the moment it stopped being kept up to date:
+  `RtItem::staleSince()` for a row, `RtCollection::staleSince()` for the earliest
+  among a collection's rows, `null` in both when the copy is current. Both in
+  `docs/agents/runtime/rt-context.md`.
 - `RtCollection` and `RtItem` expose read-oriented app APIs around the backing
   state rows. RT View collection reads treat `null` offsets as missing optional
   keys.
@@ -213,6 +216,11 @@ of duplicating runtime mutation logic in the page/table layer.
 - To change a collection this node does not own, send a signal to the owning
   agent. A replica is read-only, and writing it raises
   `RtTruthSourceWriteNotAllowedException`.
+- Before an IRREVERSIBLE decision about an RT row on a cluster, ask
+  `staleSince()`: a copy whose owner is unreachable is served unchanged, and that
+  is the only way to learn how old it may be. Reading it to display is fine
+  without asking; burning a one-time token or spending a quota off a frozen row is
+  the case that fails closed, as `HilosSessionRotations::claimable()` does.
 - Never register a state collection without its `setRepresent()` representation:
   with no actions class there is no write path that syncs, and every other
   worker keeps an empty collection forever.

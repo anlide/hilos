@@ -8,6 +8,12 @@ export const SIGNAL_TYPE_HANDSHAKE = 'handshake'
 export const SIGNAL_TYPE_PROTECTED_MODE = 'protected_mode'
 
 /**
+ * Server frame `type` saying whether anything this connection's page reads is a
+ * frozen replica (PHP `SignalTypeConstants::RT_STALENESS`).
+ */
+export const SIGNAL_TYPE_RT_STALENESS = 'rt_staleness'
+
+/**
  * Upgrade-request query parameter a verifier's protected-mode pass rides in (PHP
  * `ProtectedModeAdmissionConstants::HILOS_PASS_QUERY_PARAM`).
  *

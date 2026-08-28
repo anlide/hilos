@@ -114,11 +114,13 @@ use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\RtBaseException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\RtSnapshot;
+use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\TruthSource\RtClusterClaimRegistry;
 use Hilos\TruthSource\RtNodeSourceMap;
+use Hilos\TruthSource\RtReplicaOriginMap;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Environment\Exception\EnvException;
@@ -152,6 +154,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
@@ -2270,6 +2273,28 @@ abstract class DaemonManager extends BaseManager implements
 
         $this->rtFramesApplied++;
 
+        // Write down where the row came from, while the frame still says it (HIL-711). After the
+        // apply below the replica sits in the collection indistinguishable from a row this node
+        // wrote itself, and the origin is the only thing that will let a dropped link tell which
+        // of them stopped being kept up to date. A payload naming no row says nothing to write:
+        // it is judged by the collection here for the same reason, having no row to be about.
+        //
+        // And the arriving frame IS freshness, exactly as a snapshot is, so the mark comes off
+        // whichever branch runs. Without that, a row whose owner was re-placed onto another node
+        // would stay frozen for good: its new owner's deltas arrive and keep it current, while
+        // the only two things that lift the mark are a handshake with the node that is gone and
+        // a scoped hand-over. A deleted row is cleared for the plainer reason - what no longer
+        // exists cannot be out of date, and nothing would ever reach the mark again.
+        if ($stateId !== null) {
+            $originMap = $this->agentManagerDaemon->rtReplicaOriginMap();
+            if ($carriedType === SignalTypeConstants::RT_SYNC_DELETED) {
+                $originMap->forget($syncData->collectionKey, $stateId);
+            } else {
+                $originMap->note($originNodeId, $syncData->collectionKey, [$stateId]);
+            }
+            $this->clearStaleness($syncData->collectionKey, [$stateId]);
+        }
+
         $workerServer = $this->findWorkerServer();
         if ($workerServer !== null) {
             $this->sendSyncToWorkers($workerServer, $signal);
@@ -2438,6 +2463,19 @@ abstract class DaemonManager extends BaseManager implements
             $rows = array_intersect_key($rows, $scope);
             RtSnapshot::replaceScope($collectionKey, $scopeKeys, $rows);
         }
+
+        // What the snapshot carries is this node's replica of those rows, and it is current as of
+        // now: an arriving hand-over IS freshness, which is why the mark needs no expiry of its
+        // own (HIL-711). The rows it swept are gone, so what was known about them goes with them -
+        // an origin left behind would freeze a row that no longer exists on the next dropped link.
+        $arrived = array_map(strval(...), array_keys($rows));
+        $swept = array_map(strval(...), array_keys(array_diff_key($held, $rows)));
+        $originMap = $this->agentManagerDaemon->rtReplicaOriginMap();
+        $originMap->note($originNodeId, $collectionKey, $arrived);
+        foreach ($swept as $stateId) {
+            $originMap->forget($collectionKey, $stateId);
+        }
+        $this->clearStaleness($collectionKey, array_merge($arrived, $swept));
 
         $workerServer = $this->findWorkerServer();
         if ($workerServer === null) {
@@ -2756,6 +2794,7 @@ abstract class DaemonManager extends BaseManager implements
                 ClusterCommandConstants::FIELD_RT_READ => in_array($collectionKey, $reads, true),
                 ClusterCommandConstants::FIELD_RT_ROW_IDS => array_map(strval(...), array_keys($rows)),
                 ClusterCommandConstants::FIELD_RT_ROWS => $rows,
+                ClusterCommandConstants::FIELD_RT_STALE_ROWS => RtStaleness::staleRows($collectionKey),
             ];
         }
 
@@ -2788,6 +2827,88 @@ abstract class DaemonManager extends BaseManager implements
         // to that one node, since it is the only one short of the answer, and told whoever it is:
         // a node cannot tell whether the peer that just linked is the one that judges.
         $this->reportRtClaims($nodeId);
+    }
+
+    /**
+     * Freezes this node's replicas of a node the peer transport can no longer reach.
+     *
+     * Implements {@see RtSyncSink}. The rows go on being served exactly as they are — what
+     * changes is that they now answer "is my source still reachable" with no, since this moment
+     * (HIL-711). Which rows those are is the origin map's answer ({@see RtReplicaOriginMap}), and
+     * it is the only one there is: after the apply, a replica is a row of the collection like any
+     * other, and rows this node writes itself are simply absent from the map and stay fresh.
+     *
+     * The moment is the caller's, by this node's clock, for the reason the whole mark is measured
+     * here: the reader's question is how long IT has been unable to hear about the row, and node
+     * clocks are not synchronised well enough to answer any other one.
+     *
+     * @param string $nodeId Node that can no longer be reached
+     * @param float $at Microtime of this node's clock when the link closed
+     */
+    public function noteNodeUnreachable(string $nodeId, float $at): void
+    {
+        $workerServer = $this->findWorkerServer();
+        foreach ($this->agentManagerDaemon->rtReplicaOriginMap()->rowsOfNode($nodeId) as $collectionKey => $stateIds) {
+            RtStaleness::mark($collectionKey, $stateIds, $at);
+            if ($workerServer !== null) {
+                $this->writeFrameToWorkers(
+                    $workerServer,
+                    new WorkerRtStalenessMessageDTO($collectionKey, $stateIds, $at),
+                    SourceChange::KIND_RT,
+                    $collectionKey,
+                );
+            }
+        }
+    }
+
+    /**
+     * Un-freezes this node's replicas of a node the peer transport has linked to again.
+     *
+     * Implements {@see RtSyncSink}. Called off the completed handshake beside
+     * {@see handOverRtSnapshots()}: deltas flow again the moment the link exists, so the copy is
+     * being kept current again from here on, and the hand-over that follows repairs whatever it
+     * missed while the link was down. The mark therefore needs no expiry, no tick and no poll of
+     * its own — the two cues it has are the two events that actually change the answer.
+     *
+     * @param string $nodeId Node this one can reach again
+     */
+    public function noteNodeReachable(string $nodeId): void
+    {
+        foreach ($this->agentManagerDaemon->rtReplicaOriginMap()->rowsOfNode($nodeId) as $collectionKey => $stateIds) {
+            $this->clearStaleness($collectionKey, $stateIds);
+        }
+    }
+
+    /**
+     * Lifts the mark from some rows here and on the workers that read their collection.
+     *
+     * The workers are told only when something was actually frozen. Both callers reach this on
+     * paths that run whether or not anything ever froze — a handshake with a node this one holds
+     * replicas of, a hand-over of rows another node has taken over — and a lift announcing that
+     * nothing changed is a socket write per worker for no reader at all.
+     *
+     * @param string $collectionKey RT collection the rows belong to
+     * @param list<string> $stateIds Rows that are current again
+     */
+    private function clearStaleness(string $collectionKey, array $stateIds): void
+    {
+        $wasFrozen = array_intersect($stateIds, array_keys(RtStaleness::staleRows($collectionKey)));
+        RtStaleness::clear($collectionKey, $stateIds);
+        if ($wasFrozen === []) {
+            return;
+        }
+
+        $workerServer = $this->findWorkerServer();
+        if ($workerServer === null) {
+            return;
+        }
+
+        $this->writeFrameToWorkers(
+            $workerServer,
+            new WorkerRtStalenessMessageDTO($collectionKey, array_values($wasFrozen), null),
+            SourceChange::KIND_RT,
+            $collectionKey,
+        );
     }
 
     /**

@@ -448,15 +448,38 @@ speaks for those rows alone, and the receiver replaces them and leaves the rest 
 the collection as it found it. An owner of the whole collection sends no scope,
 and then the frame is the collection, as it has always been.
 
-**A replica whose owner cannot be reached is served exactly as it is.** Nothing
-marks it stale, nothing refuses the reader, and nothing sweeps it when the node
-that wrote it leaves the mesh — what this node can no longer hear about, it goes
-on answering with. The cost is real and accepted: a frozen row is indistinguishable
-from a fresh one, so a presence field can say "online" about a node that is gone.
-Revisiting that (a staleness mark on the row, or a refusal to the reader) is
-HIL-711. When the owner comes back, its hand-over brings the copy back in line —
-which is why a hand-over has to cover rows and not only whole collections, since
-delivery has no retries and everything written during the break is otherwise lost.
+**A replica whose owner cannot be reached is still served — and says so.** Nothing
+refuses the reader and nothing sweeps the rows when the node that wrote them
+leaves the mesh: refusing on a broken link would replace a stale answer with an
+empty one, which is no truer. What the row gains is an answer to "is my source
+still reachable": `RtItem::staleSince()` gives the moment this node stopped
+hearing about that row, and `RtCollection::staleSince()` the earliest such moment
+among its rows — `null` in both when the copy is current, which is what a local
+row and every row off a cluster always are.
+
+The mark is uniform across every RT collection and enumerates none of them. It is
+kept BESIDE the rows (`RtStaleness`) rather than in them, because a row is the
+owner's copy byte for byte and a housekeeping field inside it would travel into
+the browser's projection and into every snapshot diff. Reachability is measured by
+the LINK and not by membership: gossip from a third node keeps a peer online while
+nothing between these two reaches anything, so the cues are the last link closing
+and a completed handshake.
+
+**What a reader does with the mark is the reader's own decision.** One reader in
+the framework fails closed on it: `HilosSessionRotations::claimable()` refuses a
+one-time login ticket read off a frozen replica, because the burn is announced by
+whichever master took the handshake and in a break the other node does not hear
+it — a ticket good for a second handshake is worse than a login. Every other
+reader goes on being served. Presence is the standing exception and a deliberate
+one: it still says "online" about a node that is gone, and closing that is not
+this mechanism's job.
+
+The mark needs no expiry, tick or poll: when the owner comes back, its hand-over
+brings the copy back in line and clears the mark by that very act — which is why a
+hand-over has to cover rows and not only whole collections, since delivery has no
+retries and everything written during the break is otherwise lost. The browser
+sees the same state as one snowflake on the SDK shell's connection indicator,
+raised only when a collection the OPEN page reads is frozen.
 
 Application code should write through runtime actions, typed `RtState` fields,
 and `sync()`. Reserve `applyDiff()` / `applyDiffToState()` for inbound RT

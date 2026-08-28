@@ -14,6 +14,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\ReHydrateRound;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Runtime\RtSnapshot;
+use Hilos\Runtime\RtStaleness;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
@@ -460,6 +461,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $this->send((new WorkerRtSnapshotMessageDTO(
                 collectionKey: $collectionKey,
                 rows: RtSnapshot::rows($collectionKey),
+                staleRows: RtStaleness::staleRows($collectionKey),
             ))->toJson());
         }
     }

@@ -9,6 +9,7 @@ import {
   SIGNAL_TYPE_ACTION_SUCCESS,
   SIGNAL_TYPE_HANDSHAKE,
   SIGNAL_TYPE_PROTECTED_MODE,
+  SIGNAL_TYPE_RT_STALENESS,
   SIGNAL_TYPE_SESSION_ROTATE,
   SIGNAL_TYPE_TABLE_VIEWPORT_APPEND,
   SIGNAL_TYPE_TABLE_VIEWPORT_COUNT,
@@ -36,6 +37,11 @@ import {
   toProtectedModeStatus,
   type ProtectedModeStatus,
 } from './protectedMode.js'
+import {
+  rtStalenessBlockSchema,
+  toRtStalenessStatus,
+  type RtStalenessStatus,
+} from './rtStaleness.js'
 
 /**
  * Project-declared concrete signal schemas, keyed by signal `type`. Framework
@@ -63,6 +69,11 @@ export type ParsedSignal =
   | {
       kind: 'protectedMode'
       state: ProtectedModeStatus
+      envelope: SignalEnvelope
+    }
+  | {
+      kind: 'rtStaleness'
+      state: RtStalenessStatus
       envelope: SignalEnvelope
     }
   | {
@@ -113,6 +124,7 @@ export type ProtectedModeSignal = Extract<
   ParsedSignal,
   { kind: 'protectedMode' }
 >
+export type RtStalenessSignal = Extract<ParsedSignal, { kind: 'rtStaleness' }>
 export type ActionSuccessSignal = Extract<
   ParsedSignal,
   { kind: 'actionSuccess' }
@@ -262,6 +274,32 @@ export function parseSignal(
         signal: {
           kind: 'protectedMode',
           state: toProtectedModeStatus(data.data),
+          envelope: envelope.data,
+        },
+      }
+    }
+
+    case SIGNAL_TYPE_RT_STALENESS: {
+      // Read exactly as the freeze above is: the frame IS the message, and one that
+      // cannot be read would leave the client showing the wrong answer about how old
+      // its data is - so it is rejected and the state stays whatever was last known.
+      const data = rtStalenessBlockSchema.safeParse(envelope.data.data)
+      if (!data.success) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'invalid-signal-data',
+            type: SIGNAL_TYPE_RT_STALENESS,
+            message: data.error.message,
+          },
+        }
+      }
+
+      return {
+        ok: true,
+        signal: {
+          kind: 'rtStaleness',
+          state: toRtStalenessStatus(data.data),
           envelope: envelope.data,
         },
       }

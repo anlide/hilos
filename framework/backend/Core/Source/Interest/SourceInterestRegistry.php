@@ -235,4 +235,46 @@ final class SourceInterestRegistry
 
         return false;
     }
+
+    /**
+     * Which consumers here read one collection, by name.
+     *
+     * The addressed half of {@see hasConsumers()}, and needed by anything that has news about a
+     * collection rather than a row of it: telling a page that part of what it reads has stopped
+     * being kept up to date starts from this list (HIL-711). Names, because a consumer name is
+     * what the caller can turn back into the thing it addresses ({@see SourceConsumer}).
+     *
+     * @param string $kind Source kind, KIND_DB or KIND_RT of {@see SourceChange}
+     * @param string $collectionKey DB collection key or RT collection key
+     * @return list<string> Consumer names reading it, each named once
+     */
+    public static function consumersOf(string $kind, string $collectionKey): array
+    {
+        $consumers = [];
+        foreach (self::$byConsumer as $consumerId => $byKind) {
+            if (in_array($collectionKey, $byKind[$kind] ?? [], true)) {
+                $consumers[] = (string)$consumerId;
+            }
+        }
+
+        return $consumers;
+    }
+
+    /**
+     * What one consumer here reads, of one kind.
+     *
+     * The narrow twin of {@see collections()}, which answers for the whole process. The
+     * difference is the whole point where the answer is about one reader: a verdict over
+     * everything a page reads cannot be assembled from a per-process list, and news about one
+     * collection is not the answer either - a page reading two of them stays affected while
+     * either one is (HIL-711).
+     *
+     * @param string $consumerId Consumer name as {@see SourceConsumer} builds it
+     * @param string $kind Source kind, KIND_DB or KIND_RT of {@see SourceChange}
+     * @return list<string> Collection keys that consumer reads
+     */
+    public static function collectionsOfConsumer(string $consumerId, string $kind): array
+    {
+        return self::$byConsumer[$consumerId][$kind] ?? [];
+    }
 }

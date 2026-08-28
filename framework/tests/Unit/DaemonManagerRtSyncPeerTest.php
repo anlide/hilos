@@ -36,12 +36,14 @@ use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
+use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\State\Collection\HilosSessionRotations;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\TruthSource\RtReplicaOriginMap;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
@@ -72,6 +74,15 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     /** @var string Row id every case syncs */
     public const string ROW_ID = '7';
 
+    /** @var string Row of the same collection that a THIRD node owns, in the freezing cases */
+    public const string NEIGHBOUR_ROW_ID = '8';
+
+    /** @var string Row of the same collection that this node wrote itself */
+    public const string OWN_ROW_ID = '9';
+
+    /** @var float Microtime the freezing cases lose their link at */
+    public const float FROZE_AT = 1000.5;
+
     /** @var string One-time rotation ticket the session cases hand around */
     public const string TICKET = 'ticket-1';
 
@@ -79,6 +90,8 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     {
         Hilos::$sr = null;
         Hilos::$rt = null;
+        // Process-wide, so without this one case's frozen rows would be read by the next.
+        RtStaleness::reset();
 
         parent::tearDown();
     }
@@ -1164,6 +1177,227 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     }
 
     /**
+     * Where a replica came from is written down as it is applied (HIL-711).
+     *
+     * Nothing else can say it afterwards: the row goes into the same collection as everything
+     * else, and by the time a link drops, the frame that knew its origin is long gone. This is
+     * the whole basis of telling a frozen copy from a current one.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAReplicaIsRememberedAsHavingComeFromTheNodeThatSentIt(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+
+        $this->assertSame(
+            self::REMOTE_NODE,
+            $daemon->originMap()->nodeOfRow(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID),
+        );
+    }
+
+    /**
+     * A deleted row has no origin left to remember. Kept, it would freeze on the next dropped
+     * link a row that no longer exists — and the collection would report itself frozen over it.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAReplicaDeletedByItsOwnerIsForgotten(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+
+        $daemon->receive($daemon->rtSyncDeleted());
+
+        $this->assertNull(
+            $daemon->originMap()->nodeOfRow(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID),
+        );
+    }
+
+    /**
+     * The fleet case (HIL-589), and the reason the mark is per row rather than per collection:
+     * one collection has several remote owners at once, so losing one of them must freeze its
+     * rows and leave every other row of the same collection current.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     * @throws InvalidFormatException When the local row is not one the state can be built from
+     */
+    public function testALostLinkFreezesThatNodesRowsAndNothingElse(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $daemon->receiveFrom('node-c', $daemon->rtSyncCreated('Ada', self::NEIGHBOUR_ROW_ID));
+        $daemon->writeOwnRow(self::OWN_ROW_ID, 'Hedy');
+
+        $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+
+        $this->assertSame(
+            self::FROZE_AT,
+            RtStaleness::staleSince(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID),
+        );
+        $this->assertNull(
+            RtStaleness::staleSince(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::NEIGHBOUR_ROW_ID),
+            'A neighbour still linked keeps its rows current',
+        );
+        $this->assertNull(
+            RtStaleness::staleSince(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::OWN_ROW_ID),
+            'A row this node wrote itself has no link that could stop it being current',
+        );
+    }
+
+    /**
+     * A frame about a frozen row IS freshness, whoever sends it — which is the case a node dying
+     * for good produces: the leader re-places its fleet agents onto another node, that node
+     * writes the SAME row ids, and its deltas arrive here. Nothing else would ever lift the mark,
+     * because the two cues that do are a handshake with the node that is gone and a hand-over of
+     * its rows.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testADeltaFromTheNodeThatTookTheRowOverMakesItCurrentAgain(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+
+        $daemon->receiveFrom('node-c', $daemon->rtSyncCreated('Ada'));
+
+        $this->assertNull(RtStaleness::staleSince(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID));
+        $this->assertSame(
+            'node-c',
+            $daemon->originMap()->nodeOfRow(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID),
+        );
+    }
+
+    /**
+     * And a row its owner deleted takes its mark with it. Left behind, the mark would sit on a
+     * row that no longer exists — with its origin forgotten, no later event could reach it, and
+     * the collection would report itself frozen over a row nobody can see.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testADeletedRowTakesItsFrozenMarkWithIt(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+
+        $daemon->receiveFrom('node-c', $daemon->rtSyncDeleted());
+
+        $this->assertNull(RtStaleness::staleSince(DaemonManagerRtSyncPeerTestRtContext::ROWS));
+    }
+
+    /**
+     * The link coming back is the first of the two cues that lift the mark, and it lifts it at
+     * once rather than when the hand-over that follows lands: deltas already flow again.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testALinkComingBackMakesThatNodesRowsCurrentAgain(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+
+        $daemon->noteNodeReachable(self::REMOTE_NODE);
+
+        $this->assertNull(RtStaleness::staleSince(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID));
+    }
+
+    /**
+     * The workers keep their own copy, so a freeze the master kept to itself would leave every
+     * page on this node reading a frozen row as current. The frame rides the interest filter
+     * with the rows themselves (HIL-717) — a worker that does not read the collection has
+     * nothing to apply it to.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testTheWorkersAreToldWhichRowsFroze(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $daemon->workerServer->forgetFrames();
+
+        $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+
+        $this->assertSame([WorkerConstants::MESSAGE_RT_STALENESS], $daemon->workerServer->frameTypes());
+    }
+
+    /**
+     * A worker that reads nothing of the collection is written nothing about it, for the reason
+     * it is written no delta about it: it holds no copy the frame could be applied to.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAWorkerThatDoesNotReadTheCollectionIsNotToldItFroze(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $daemon->workerReads(StateHilosSessionRotation::RT_COLLECTION);
+        $daemon->workerServer->forgetFrames();
+
+        $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+
+        $this->assertSame([], $daemon->workerServer->frameTypes());
+    }
+
+    /**
+     * The lift travels the same way, and only when something was actually frozen: both cues that
+     * reach it run whether or not anything ever froze, and a frame saying nothing changed is a
+     * socket write per worker for no reader at all.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testTheWorkersAreToldOfTheLiftOnlyWhenSomethingHadFrozen(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+        $daemon->workerServer->forgetFrames();
+
+        $daemon->noteNodeReachable(self::REMOTE_NODE);
+        $daemon->noteNodeReachable(self::REMOTE_NODE);
+
+        $this->assertSame([WorkerConstants::MESSAGE_RT_STALENESS], $daemon->workerServer->frameTypes());
+    }
+
+    /**
+     * The second cue, and the reason the mark needs no expiry of its own (Design D8): a scoped
+     * snapshot IS the owner's current answer about the rows it names, so applying one makes them
+     * fresh by that very act.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAScopedSnapshotMakesTheRowsItCarriesCurrentAgain(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+
+        $daemon->receiveSnapshot(
+            DaemonManagerRtSyncPeerTestRtContext::ROWS,
+            [self::ROW_ID => [
+                DaemonManagerRtSyncPeerTestState::id => self::ROW_ID,
+                DaemonManagerRtSyncPeerTestState::name => 'Grace',
+            ]],
+            [self::ROW_ID],
+        );
+
+        $this->assertNull(RtStaleness::staleSince(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID));
+    }
+
+    /**
      * Builds the DB fact the two negative cases here offer where an RT one is expected.
      *
      * @return SignalDTO Signal announcing a created database row
@@ -1452,6 +1686,23 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
     }
 
     /**
+     * Builds the fact the owning node produces when it drops the row these cases sync.
+     *
+     * @param string $stateId Row the fact is about
+     * @return SignalDTO Signal announcing that the row is gone
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function rtSyncDeleted(string $stateId = DaemonManagerRtSyncPeerTest::ROW_ID): SignalDTO
+    {
+        return new SignalDTO(
+            new SignalSource(SignalSource::RT),
+            new SignalType(SignalTypeConstants::RT_SYNC_DELETED),
+            new SignalName(SignalConstants::RT_SYNC_DELETED),
+            new RtSyncDeletedSignalData(DaemonManagerRtSyncPeerTestRtContext::ROWS, $stateId),
+        );
+    }
+
+    /**
      * Builds the fact a master produces when a handshake spends a rotation ticket.
      *
      * @param string $ticket One-time ticket the handshake traded
@@ -1599,8 +1850,24 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
      */
     public function receive(SignalDTO $signal, bool $partialOwner = false): void
     {
+        $this->receiveFrom(DaemonManagerRtSyncPeerTest::REMOTE_NODE, $signal, $partialOwner);
+    }
+
+    /**
+     * Delivers a replica the way a handshaked link to a NAMED node does.
+     *
+     * The fleet cases need a second remote owner writing rows of the same collection, which is
+     * the arrangement ownership by keys allows (HIL-589) and the one a per-collection mark would
+     * get wrong.
+     *
+     * @param string $originNodeId Node the write happened on
+     * @param SignalDTO $signal RT sync fact that node announced
+     * @param bool $partialOwner Whether the announcing node marked itself a partial owner
+     */
+    public function receiveFrom(string $originNodeId, SignalDTO $signal, bool $partialOwner = false): void
+    {
         $this->applyRemoteRtSync(
-            DaemonManagerRtSyncPeerTest::REMOTE_NODE,
+            $originNodeId,
             $signal->signalType->getType(),
             $signal,
             $partialOwner,
@@ -1632,6 +1899,35 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
     public function handshaked(string $nodeId): void
     {
         $this->handOverRtSnapshots($nodeId);
+    }
+
+    /**
+     * What this node has written down about where its replicas came from.
+     *
+     * @return RtReplicaOriginMap Origin map as the frames received so far have filled it
+     */
+    public function originMap(): RtReplicaOriginMap
+    {
+        return $this->agentManagerDaemon->rtReplicaOriginMap();
+    }
+
+    /**
+     * Puts one row into the collection under test as an agent of THIS node would have.
+     *
+     * A locally written row is what the freezing cases are judged against: no remote node stands
+     * behind it, so no dropped link may touch it. Put there directly and not through a frame,
+     * because a frame is precisely what would make it a replica.
+     *
+     * @param string $stateId Row to write
+     * @param string $name Row label to write
+     * @throws InvalidFormatException When the row is missing a field it is built from
+     */
+    public function writeOwnRow(string $stateId, string $name): void
+    {
+        $this->mountCollection()->add(DaemonManagerRtSyncPeerTestState::fromRow([
+            DaemonManagerRtSyncPeerTestState::id => $stateId,
+            DaemonManagerRtSyncPeerTestState::name => $name,
+        ]));
     }
 
     /**
@@ -1912,6 +2208,22 @@ final class DaemonManagerRtSyncPeerTestWorkerServer extends WorkerServer
         return $types;
     }
 
+    /**
+     * Drops what has been written so far, so a case can assert on what one step wrote.
+     *
+     * The freezing cases need a replica in place before they cut the link, and putting it there
+     * is itself a write to the pool - without this, every one of them would be asserting on the
+     * frames of its own setup.
+     */
+    public function forgetFrames(): void
+    {
+        foreach ($this->clients as $client) {
+            if ($client instanceof DaemonManagerRtSyncPeerTestWorkerClient) {
+                $client->forgetFrames();
+            }
+        }
+    }
+
     protected function onStart(): void
     {
     }
@@ -1944,6 +2256,14 @@ final class DaemonManagerRtSyncPeerTestWorkerClient extends WorkerClient
     public function send(string $data): void
     {
         $this->written[] = $data;
+    }
+
+    /**
+     * Drops what has been written to this link so far.
+     */
+    public function forgetFrames(): void
+    {
+        $this->written = [];
     }
 
     /**

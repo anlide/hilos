@@ -3,11 +3,13 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   BACKUP_RESTORE_PROGRESS_SIGNAL,
   PROTECTED_MODE_INACTIVE,
+  RT_STALENESS_FRESH,
 } from '@hilos/core'
 import type {
   HilosConnection,
   HilosRestoreStatus,
   ProtectedModeStatus,
+  RtStalenessStatus,
 } from '@hilos/core'
 
 import { HilosLayout } from '../src/HilosLayout.js'
@@ -32,6 +34,9 @@ const FROZEN_WITHOUT_COPY: ProtectedModeStatus = {
   passIssued: false,
   passRejected: false,
 }
+
+/** A page reading a replica whose owner node went away at a known moment. */
+const FROZEN_DATA: RtStalenessStatus = { stale: true, since: 1_760_000_000_000 }
 
 /** The verification window: still locked out, but a code will open it. */
 const VERIFYING: ProtectedModeStatus = { ...FROZEN, acceptsPass: true }
@@ -65,17 +70,24 @@ function restoreFrame(
 }
 
 // A minimal connection stub: the shell only reads the transport state and the
-// protected-mode state off it, and subscribes to both. `push` drives the freeze
-// the way the daemon's pushed frame would, and `pushRestore` the addressed frame
-// the backup agent sends to every tab of the initiator's session.
-function fakeConnection(initial: ProtectedModeStatus): {
+// protected-mode state and the frozen-replica state off it, and subscribes to
+// all three. `push` drives the freeze the way the daemon's pushed frame would,
+// `pushStaleness` the worker's frozen-replica frame, and `pushRestore` the
+// addressed frame the backup agent sends to every tab of the initiator's session.
+function fakeConnection(
+  initial: ProtectedModeStatus,
+  initialStaleness: RtStalenessStatus = RT_STALENESS_FRESH,
+): {
   connection: HilosConnection
   push: (next: ProtectedModeStatus) => void
+  pushStaleness: (next: RtStalenessStatus) => void
   pushRestore: (frame: HilosRestoreStatus) => void
   presented: string[]
 } {
   let current = initial
+  let currentStaleness = initialStaleness
   const listeners: (() => void)[] = []
+  const stalenessListeners: (() => void)[] = []
   const projectListeners: ((signal: {
     type: string
     data: unknown
@@ -86,9 +98,15 @@ function fakeConnection(initial: ProtectedModeStatus): {
     get protectedMode(): ProtectedModeStatus {
       return current
     },
+    get rtStaleness(): RtStalenessStatus {
+      return currentStaleness
+    },
     on(event: string, listener: (signal: never) => void): () => void {
       if (event === 'protectedMode') {
         listeners.push(listener as () => void)
+      }
+      if (event === 'rtStaleness') {
+        stalenessListeners.push(listener as () => void)
       }
       if (event === 'projectSignal') {
         projectListeners.push(
@@ -111,6 +129,12 @@ function fakeConnection(initial: ProtectedModeStatus): {
     push(next: ProtectedModeStatus): void {
       current = next
       for (const listener of listeners) {
+        listener()
+      }
+    },
+    pushStaleness(next: RtStalenessStatus): void {
+      currentStaleness = next
+      for (const listener of stalenessListeners) {
         listener()
       }
     },
@@ -368,6 +392,41 @@ describe('HilosLayout under protected mode', () => {
     expect(surface(container, 'maintenance')).toBeNull()
     expect(surface(container, 'nav-brand')).not.toBeNull()
     expect(surface(container, 'app-footer')).not.toBeNull()
+  })
+
+  it('marks the connection indicator when part of the page is a frozen replica', () => {
+    const { connection, pushStaleness } = fakeConnection(
+      PROTECTED_MODE_INACTIVE,
+    )
+    const container = renderShell(connection)
+
+    act(() => {
+      pushStaleness(FROZEN_DATA)
+    })
+
+    const indicator = container.querySelector('[data-id="conn-state"]')
+    expect(indicator?.querySelector('i')?.className).toContain('bi-snow')
+    // The link is up, so the colour is the one a healthy socket has: what the
+    // mark says is that part of what is shown may be old, not that anything broke.
+    expect(indicator?.className).toContain('text-success')
+    expect(indicator?.getAttribute('title')).toContain('may be out of date')
+  })
+
+  it('takes the mark off again when the frozen data becomes current', () => {
+    const { connection, pushStaleness } = fakeConnection(
+      PROTECTED_MODE_INACTIVE,
+      FROZEN_DATA,
+    )
+    const container = renderShell(connection)
+
+    act(() => {
+      pushStaleness(RT_STALENESS_FRESH)
+    })
+
+    expect(
+      container.querySelector('[data-id="conn-state"]')?.querySelector('i')
+        ?.className,
+    ).toContain('bi-check-circle-fill')
   })
 
   it('replaces the page and every link with the maintenance surface', () => {

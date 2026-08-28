@@ -44,6 +44,7 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\TruthSource\RtNodeSourceMap;
+use Hilos\TruthSource\RtReplicaOriginMap;
 use Hilos\Utils\Logger;
 
 /**
@@ -89,6 +90,16 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * keyed by agent because that is what a report names - which is also this class's subject.
      */
     private ?RtNodeSourceMap $rtNodeSourceMap = null;
+
+    /**
+     * @var ?RtReplicaOriginMap Which node each replica this one holds came from, built lazily.
+     *
+     * Beside the map above and separate from it because the two are filled from opposite ends:
+     * that one from what this node's own workers report, this one from what the peer transport
+     * delivers. Here rather than in the daemon for the reason that one is - it is the shared
+     * answer between the frames arriving on one loop pass and the link closing on another.
+     */
+    private ?RtReplicaOriginMap $rtReplicaOriginMap = null;
 
     /**
      * @var ?SourceReaderMap What RT collections the workers of this node read, built lazily.
@@ -830,6 +841,16 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     public function rtNodeSourceMap(): RtNodeSourceMap
     {
         return $this->rtNodeSourceMap ??= new RtNodeSourceMap();
+    }
+
+    /**
+     * Returns which node each replica this one holds arrived from.
+     *
+     * @return RtReplicaOriginMap Map of the RT rows replicated onto this node, by origin
+     */
+    public function rtReplicaOriginMap(): RtReplicaOriginMap
+    {
+        return $this->rtReplicaOriginMap ??= new RtReplicaOriginMap();
     }
 
     /**

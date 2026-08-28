@@ -321,6 +321,7 @@ export {
 export {
   SIGNAL_TYPE_HANDSHAKE,
   SIGNAL_TYPE_PROTECTED_MODE,
+  SIGNAL_TYPE_RT_STALENESS,
   SIGNAL_TYPE_PAGE_SUBSCRIBE,
   SIGNAL_TYPE_PAGE_UNSUBSCRIBE,
   SIGNAL_TYPE_PAGE_RESPONSE,
@@ -390,6 +391,15 @@ export {
   type ProtectedModeStatus,
 } from './protocol/protectedMode.js'
 export {
+  rtStalenessBlockSchema,
+  toRtStalenessStatus,
+  rtStalenessLabel,
+  RT_STALENESS_FRESH,
+  RT_STALENESS_COPY,
+  type RtStalenessBlock,
+  type RtStalenessStatus,
+} from './protocol/rtStaleness.js'
+export {
   entityFragmentSchema,
   listItemSchema,
   listSectionSchema,
@@ -405,6 +415,7 @@ export {
   type ParsedSignal,
   type HandshakeSignal,
   type ProtectedModeSignal,
+  type RtStalenessSignal,
   type SessionRotateSignal,
   type ActionSuccessSignal,
   type ActionErrorSignal,

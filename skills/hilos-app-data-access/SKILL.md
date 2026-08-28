@@ -46,8 +46,10 @@ switch to the focused data-layer skill first.
   written only where its truth source runs; everywhere else it is a read-only
   replica kept current by the daemon. One collection may be written from several
   nodes when each owns its own rows by key. Reads look the same on every node,
-  including a replica whose owner is unreachable — it is served frozen and
-  unmarked (`docs/agents/runtime/rt-context.md`).
+  including a replica whose owner is unreachable — it is still served, and
+  `RtItem::staleSince()` / `RtCollection::staleSince()` say since when it stopped
+  being kept up to date, `null` when it is current
+  (`docs/agents/runtime/rt-context.md`).
 - A *set* of an entity is not the rows this process happens to hold. Ask the
   agent that holds that set, or query the database; iterating a lazy collection
   returns whatever was loaded earlier, and the end of it cannot be told apart
@@ -264,6 +266,11 @@ then call that API from the table/page.
   `RtTruthSourceWriteNotAllowedException`, on a cluster as off it. The same
   exception answers a write the claim does not cover - an agent library adds and
   removes rows it may not edit - and it names the operation it refused.
+- Do not make an IRREVERSIBLE decision about an RT row on a cluster without
+  asking `staleSince()` first: burning a one-time token, spending a quota, or
+  anything else that cannot be taken back. A frozen copy is served unchanged, so
+  it is the only way to learn the row may be out of date. Reading a row to display
+  it needs no such check.
 - Do not write DB/RT state directly from pages, tables, or signal handlers when
   a collection/item action owns the mutation.
 - Do not update or delete one known DB/RT item through collection actions that

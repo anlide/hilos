@@ -108,6 +108,71 @@ final class PeerServerRtHandOverTest extends TestCase
     }
 
     /**
+     * The freezing half of the same cue (HIL-711): the link is what carries deltas, so the link
+     * closing is the moment this node's copies of that peer's rows stop being kept up to date.
+     * Membership would answer this wrong in the direction that matters — gossip from a third
+     * node keeps a peer online while nothing between these two reaches anything.
+     *
+     * @throws EnvException When the link cannot read its socket and keepalive settings
+     * @throws HilosException When the hello refuses to become a frame
+     * @throws SocketException When the pair refuses the hello
+     */
+    public function testTheLastLinkToAPeerClosingFreezesTheReplicasItSent(): void
+    {
+        $sink = $this->registerSink();
+        $local = NodeIdentity::of('node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        [$link, $far] = $this->makeLinkedPair($server, $local);
+        $this->handshake($link, $far);
+
+        $server->onLinkClosed($link);
+
+        $this->assertSame(['node-b'], array_keys($sink->frozen));
+        $this->assertGreaterThan(0.0, $sink->frozen['node-b'], 'The moment is this node\'s own clock');
+    }
+
+    /**
+     * A peer already believed offline — marked so by a third node's gossip — losing its last
+     * link is exactly the case that must not go unnoticed: the roster changes nothing, so the
+     * branch that announces a departure stays silent, while replication has only now stopped.
+     *
+     * @throws EnvException When the link cannot read its socket and keepalive settings
+     * @throws HilosException When the hello refuses to become a frame
+     * @throws SocketException When the pair refuses the hello
+     */
+    public function testAPeerAlreadyBelievedOfflineStillFreezesWhenItsLinkGoes(): void
+    {
+        $sink = $this->registerSink();
+        $local = NodeIdentity::of('node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        [$link, $far] = $this->makeLinkedPair($server, $local);
+        $this->handshake($link, $far);
+        $server->onLinkClosed($link);
+        $sink->frozen = [];
+
+        $server->onLinkClosed($link);
+
+        $this->assertSame(['node-b'], array_keys($sink->frozen));
+    }
+
+    /**
+     * The handshake lifts the freeze, and it does so beside the hand-over rather than instead of
+     * it: deltas flow again the moment the link exists, and the hand-over that follows repairs
+     * whatever the break cost.
+     */
+    public function testACompletedHandshakeMakesThatPeersReplicasCurrentAgain(): void
+    {
+        $sink = $this->registerSink();
+        $local = NodeIdentity::of('node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $link = new PeerLink($this->makeSocket(), $server, $local, dialer: false);
+
+        $server->onHandshakeComplete($link, NodeIdentity::of('node-b', NodeRole::Master, []));
+
+        $this->assertSame(['node-b'], $sink->thawed);
+    }
+
+    /**
      * The second handshake with a peer already in the registry - a reconnect, or the third node
      * this one had only heard about. It merges no membership change, so a hand-over waiting on
      * that change would never happen; this one does.
@@ -498,6 +563,12 @@ final class PeerServerRtHandOverTest extends TestCase
             /** @var list<string> Nodes this one was asked to hand its collections to */
             public array $handedOverTo = [];
 
+            /** @var array<string, float> Nodes it was told had become unreachable, and when */
+            public array $frozen = [];
+
+            /** @var list<string> Nodes it was told were reachable again */
+            public array $thawed = [];
+
             /**
              * @param string $originNodeId Id of the node the write happened on
              * @param string $signalType RT sync signal type the frame carried
@@ -532,6 +603,23 @@ final class PeerServerRtHandOverTest extends TestCase
             public function handOverRtSnapshots(string $nodeId): void
             {
                 $this->handedOverTo[] = $nodeId;
+            }
+
+            /**
+             * @param string $nodeId Node that can no longer be reached
+             * @param float $at Microtime of this node's clock when the link closed
+             */
+            public function noteNodeUnreachable(string $nodeId, float $at): void
+            {
+                $this->frozen[$nodeId] = $at;
+            }
+
+            /**
+             * @param string $nodeId Node this one can reach again
+             */
+            public function noteNodeReachable(string $nodeId): void
+            {
+                $this->thawed[] = $nodeId;
             }
         };
         Hilos::$cluster->registerRtSyncSink($sink);

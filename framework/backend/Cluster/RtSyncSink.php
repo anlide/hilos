@@ -73,4 +73,29 @@ interface RtSyncSink
      * @param string $nodeId Node this one can now reach
      */
     public function handOverRtSnapshots(string $nodeId): void;
+
+    /**
+     * Tells the runtime that nothing more will arrive from a node until it links again.
+     *
+     * The replicas this node holds of that node's rows stop being kept up to date at this
+     * moment, and go on being served — so the one thing that must not happen is that they stay
+     * indistinguishable from rows that are current (HIL-711). The cue is the link closing and
+     * not the node leaving the roster: membership is gossip, and a third node's word can put a
+     * peer back online while nothing this node sends or receives reaches it.
+     *
+     * @param string $nodeId Node that can no longer be reached
+     * @param float $at Microtime of this node's clock when the link closed
+     */
+    public function noteNodeUnreachable(string $nodeId, float $at): void;
+
+    /**
+     * Tells the runtime that a node is reachable again, so its replicas are current once more.
+     *
+     * Called off the completed handshake, beside {@see handOverRtSnapshots()} and for the same
+     * reason: the link is what carries deltas, so it is the link coming back — not the roster
+     * saying the node is a member — that makes the copy trustworthy again.
+     *
+     * @param string $nodeId Node this one can reach again
+     */
+    public function noteNodeReachable(string $nodeId): void;
 }

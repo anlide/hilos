@@ -24,7 +24,12 @@ icons are Bootstrap Icons (`bi-*`), shipped with the view layer (src/index.ts)
 like Bootstrap. -->
 <script setup lang="ts">
 import type { ConnectionState, HilosConnection } from '@hilos/core'
-import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
+import {
+  HILOS_FOOTER_LINKS,
+  HILOS_PAGE_ROUTES,
+  HilosPages,
+  rtStalenessLabel,
+} from '@hilos/core'
 import { computed, inject, watch } from 'vue'
 
 import HilosLink from './HilosLink.vue'
@@ -35,6 +40,7 @@ import { hilosRouterKey } from './hilosRouterKey.js'
 import { useConnectionState } from './useConnectionState.js'
 import { useFirstFrameHold } from './useFirstFrameHold.js'
 import { useProtectedMode } from './useProtectedMode.js'
+import { useRtStaleness } from './useRtStaleness.js'
 import { useSignal } from './useSignal.js'
 
 const props = defineProps<{
@@ -107,6 +113,26 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
   disconnected: { icon: 'bi-exclamation-triangle-fill', color: 'text-danger' },
 }
 const connVisual = computed(() => CONN_VISUAL[connectionState.value])
+
+// A live socket that is nonetheless showing part of a frozen replica (HIL-711):
+// the same green, with a snowflake instead of the tick. It replaces the icon
+// rather than standing beside it because the question is one — how much of what
+// you see can be trusted — and two marks would read as two problems. Only while
+// the socket is up: while it is down the transport itself is the news, and a
+// stale copy is the least of what is out of date.
+const staleness = useRtStaleness(props.connection)
+const stalenessLabel = computed(() => rtStalenessLabel(staleness.value))
+const showsFrozenData = computed(
+  () => connectionState.value === 'connected' && staleness.value.stale,
+)
+const connIcon = computed(() =>
+  showsFrozenData.value ? 'bi-snow' : connVisual.value.icon,
+)
+const connLabel = computed(() =>
+  showsFrozenData.value && stalenessLabel.value !== undefined
+    ? `${connectionState.value} - ${stalenessLabel.value}`
+    : connectionState.value,
+)
 
 // The gear targets the framework's own dashboard page; its URL is owned by the
 // framework page catalog, not restated here as a literal (routing/hilosPages).
@@ -182,10 +208,10 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
             data-id="conn-state"
             role="status"
             aria-live="polite"
-            :title="connectionState"
+            :title="connLabel"
           >
-            <i class="bi" :class="connVisual.icon" aria-hidden="true"></i>
-            <span class="visually-hidden">{{ connectionState }}</span>
+            <i class="bi" :class="connIcon" aria-hidden="true"></i>
+            <span class="visually-hidden">{{ connLabel }}</span>
           </span>
         </div>
       </div>

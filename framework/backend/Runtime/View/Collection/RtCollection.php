@@ -15,6 +15,7 @@ use Hilos\Runtime\Exception\Collection\RtCollectionDirectSetException;
 use Hilos\Runtime\Exception\Collection\RtCollectionDirectUnsetException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
 use Hilos\Runtime\Exception\Collection\RtCollectionUnserializeException;
+use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
@@ -423,6 +424,24 @@ abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
     public function count(): int
     {
         return $this->getStateCollection()->count();
+    }
+
+    /**
+     * Since when anything in this collection has had an unreachable source, if anything has
+     * (HIL-711).
+     *
+     * The answer is the EARLIEST such moment among its rows, because that is the question a
+     * reader of a whole collection is asking: how out of date the worst of what it is being
+     * shown may be. Per row it is {@see RtItem::staleSince()} — with ownership by keys one
+     * collection has several remote owners, so losing one of them freezes part of it and leaves
+     * the rest current.
+     *
+     * @return ?float Microtime the oldest frozen copy here stopped being kept up to date, or
+     *     null when all of it is current
+     */
+    public function staleSince(): ?float
+    {
+        return $this->_collectionName === null ? null : RtStaleness::staleSince($this->_collectionName);
     }
 
     /**

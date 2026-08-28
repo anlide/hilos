@@ -34,12 +34,15 @@ import type {
   HilosConnection,
   PageRouteMatch,
   ProtectedModeStatus,
+  RtStalenessStatus,
 } from '@hilos/core'
 import {
   HILOS_FOOTER_LINKS,
   HILOS_PAGE_ROUTES,
   PROTECTED_MODE_INACTIVE,
+  RT_STALENESS_FRESH,
   HilosPages,
+  rtStalenessLabel,
 } from '@hilos/core'
 
 import { HilosLink } from './HilosLink.js'
@@ -132,10 +135,10 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                 data-id="conn-state"
                 role="status"
                 aria-live="polite"
-                [title]="connState()"
+                [title]="connLabel()"
               >
                 <i [class]="connIconClass()" aria-hidden="true"></i>
-                <span class="visually-hidden">{{ connState() }}</span>
+                <span class="visually-hidden">{{ connLabel() }}</span>
               </span>
             </div>
           </div>
@@ -238,9 +241,28 @@ export class HilosLayout {
       'navbar-text d-inline-flex align-items-center fs-5 ' +
       CONN_VISUAL[this.connState()].color,
   )
-  protected readonly connIconClass = computed(
-    () => 'bi ' + CONN_VISUAL[this.connState()].icon,
+  // A live socket that is nonetheless showing part of a frozen replica
+  // (HIL-711): the same green, with a snowflake instead of the tick. It replaces
+  // the icon rather than standing beside it because the question is one — how
+  // much of what you see can be trusted — and two marks would read as two
+  // problems. Only while the socket is up: while it is down the transport itself
+  // is the news, and a stale copy is the least of what is out of date.
+  protected readonly rtStaleness = signal<RtStalenessStatus>(RT_STALENESS_FRESH)
+  private readonly showsFrozenData = computed(
+    () => this.connState() === 'connected' && this.rtStaleness().stale,
   )
+  protected readonly connIconClass = computed(() =>
+    this.showsFrozenData()
+      ? 'bi bi-snow'
+      : 'bi ' + CONN_VISUAL[this.connState()].icon,
+  )
+  protected readonly connLabel = computed(() => {
+    const label = rtStalenessLabel(this.rtStaleness())
+
+    return this.showsFrozenData() && label !== undefined
+      ? `${this.connState()} - ${label}`
+      : this.connState()
+  })
 
   // Mirror the navigator's current page title: set it as the document title so
   // the browser tab tracks the no-refresh navigation, and render it in the live
@@ -284,6 +306,19 @@ export class HilosLayout {
       onCleanup(
         connection.on('protectedMode', (next) => {
           this.protectedMode.set(next)
+        }),
+      )
+    })
+
+    // And the same for the frozen replicas this page reads: seeded from the
+    // connection (a shell mounted during a break starts marked) and kept live by
+    // the pushed frame, which also arrives on every page subscription.
+    effect((onCleanup) => {
+      const connection = this.connection()
+      this.rtStaleness.set(connection.rtStaleness)
+      onCleanup(
+        connection.on('rtStaleness', (next) => {
+          this.rtStaleness.set(next)
         }),
       )
     })

@@ -8,6 +8,7 @@ use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentIdleTracker;
@@ -23,6 +24,9 @@ use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Runtime\ConnectionRosterReconciler;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\RtSnapshot;
+use Hilos\Runtime\View\Collection\RtCollection;
+use Hilos\Runtime\RtStaleness;
+use Hilos\Runtime\DTO\RtStalenessSignalData;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Router\AgentSignalData;
@@ -47,6 +51,9 @@ use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\SignalName;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -89,6 +96,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReReadMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSnapshotMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
@@ -428,7 +436,8 @@ abstract class WorkerManager extends BaseManager
      * @throws AgentCreationFailedException When agent creation fails
      * @throws PageSignalRouterNotFoundException When page routing is requested for an unsupported agent
      * @throws TableRowKeyMissingException When a windowed table row is a placeholder and carries no key
-     * @throws InvalidArgumentException When a command handler cannot name its reply, or a re-decision its page
+     * @throws InvalidArgumentException When a command handler cannot name its reply, a re-decision
+     *     its page, or a frozen-replica verdict its signal
      * @throws HilosException When a collection refuses to be re-read from the replaced database
      */
     public function handleDaemonMessage(WorkerDTO $data): void
@@ -570,6 +579,14 @@ abstract class WorkerManager extends BaseManager
                     break;
                 }
                 $this->handleRtSnapshotMessage($data);
+                break;
+
+            case WorkerConstants::MESSAGE_RT_STALENESS:
+                if (!$data instanceof WorkerRtStalenessMessageDTO) {
+                    Logger::error("handleRtStalenessMessage - unexpected type: " . get_class($data));
+                    break;
+                }
+                $this->handleRtStalenessMessage($data);
                 break;
 
             case WorkerConstants::MESSAGE_RT_SYNC_CREATED:
@@ -756,7 +773,44 @@ abstract class WorkerManager extends BaseManager
     private function handleRtSnapshotMessage(WorkerRtSnapshotMessageDTO $data): void
     {
         RtSnapshot::replace($data->collectionKey, $data->rows);
+        // Which of them are frozen arrives with them, and this is the only chance to learn it: a
+        // worker that came up during a break was not there for the frame that froze them, and
+        // nothing repeats that frame (HIL-711).
+        //
+        // Replacing what was held rather than adding to it, for the reason the rows themselves
+        // are replaced: the snapshot is the whole truth about this collection, freshness
+        // included. A worker whose last reader of it went away stops being sent the thaw frames -
+        // they are addressed by interest - so a mark from before would otherwise survive a
+        // snapshot that says the rows are current.
+        RtStaleness::clear(
+            $data->collectionKey,
+            array_map(strval(...), array_keys(RtStaleness::staleRows($data->collectionKey))),
+        );
+        foreach ($data->staleRows as $stateId => $since) {
+            RtStaleness::mark($data->collectionKey, [$stateId], $since);
+        }
         SourceInterestRegistry::markReady(SourceChange::KIND_RT, $data->collectionKey);
+    }
+
+    /**
+     * Records which rows of one RT collection froze, or thawed, on this worker's copy.
+     *
+     * Only the master sees a peer link open or close, and every worker holds its own copy of what
+     * that link was keeping up to date — so the verdict travels rather than being recomputed here
+     * (HIL-711). A frame with no moment is the mark being lifted.
+     *
+     * @param WorkerRtStalenessMessageDTO $data Rows whose source became unreachable, or reachable again
+     * @throws InvalidArgumentException When the staleness signal cannot be named
+     */
+    private function handleRtStalenessMessage(WorkerRtStalenessMessageDTO $data): void
+    {
+        if ($data->since === null) {
+            RtStaleness::clear($data->collectionKey, $data->stateIds);
+        } else {
+            RtStaleness::mark($data->collectionKey, $data->stateIds, $data->since);
+        }
+
+        $this->notifyStalenessToPages($data->collectionKey);
     }
 
     /**
@@ -1829,12 +1883,81 @@ abstract class WorkerManager extends BaseManager
      *
      * @param string $page Page being subscribed to
      * @param string $acceptKey Subscribing WebSocket accept key, which is the consumer
+     * @throws InvalidArgumentException When the staleness signal cannot be named
      */
     private function takeUpPageSources(string $page, string $acceptKey): void
     {
         $collectionKeys = Hilos::$browser?->rtSourceKeysOfPage($page) ?? [];
         $this->raiseSourceInterest(SourceConsumer::page($acceptKey), $collectionKeys);
         $this->awaitSourceInterest($collectionKeys);
+        // And where this page stands on frozen replicas, which nothing else would ever tell it:
+        // the frame that froze them went out before this subscription existed, and the next one
+        // only comes when a link moves (HIL-711). A connection has one page, so the answer is
+        // re-made on every subscription and the change of page needs no machinery of its own.
+        $this->notifyStalenessToPage($acceptKey);
+    }
+
+    /**
+     * Tells every page reading one RT collection where it now stands on frozen replicas.
+     *
+     * Called when the verdict about that collection has just moved, and it addresses pages
+     * rather than broadcasting: the mark is about what a reader is being shown, and one burning
+     * on a screen where everything is in order is one readers stop noticing (Design D7). Agents
+     * and features reading the same collection are passed over here — they ask
+     * {@see RtCollection::staleSince()} where they need it, and have no connection to address.
+     *
+     * @param string $collectionKey RT collection whose frozen rows have just changed
+     * @throws InvalidArgumentException When the staleness signal cannot be named
+     */
+    private function notifyStalenessToPages(string $collectionKey): void
+    {
+        foreach (SourceInterestRegistry::consumersOf(SourceChange::KIND_RT, $collectionKey) as $consumerId) {
+            $acceptKey = SourceConsumer::acceptKeyOf($consumerId);
+            if ($acceptKey !== null) {
+                $this->notifyStalenessToPage($acceptKey);
+            }
+        }
+    }
+
+    /**
+     * Tells one page where it stands on frozen replicas, over everything it reads.
+     *
+     * The verdict is assembled over the WHOLE page and not over the collection that moved: a
+     * page reading two collections stays affected while either one of them is frozen, so a
+     * per-collection answer would clear the mark on the first thaw and leave the reader looking
+     * at a screen that is still partly out of date.
+     *
+     * @param string $acceptKey Accept key of the connection to answer
+     * @throws InvalidArgumentException When the staleness signal cannot be named
+     */
+    private function notifyStalenessToPage(string $acceptKey): void
+    {
+        $frozenSince = null;
+        $collectionKeys = SourceInterestRegistry::collectionsOfConsumer(
+            SourceConsumer::page($acceptKey),
+            SourceChange::KIND_RT,
+        );
+        foreach ($collectionKeys as $collectionKey) {
+            $since = RtStaleness::staleSince($collectionKey);
+            if ($since !== null && ($frozenSince === null || $since < $frozenSince)) {
+                $frozenSince = $since;
+            }
+        }
+
+        Hilos::$sr?->queueSignal(
+            signalSource: new SignalSource(SignalSource::WORKER),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName(SignalTypeConstants::RT_STALENESS),
+            signalData: new WebSocketSignalData(
+                data: new RtStalenessSignalData(
+                    stale: $frozenSince !== null,
+                    since: $frozenSince === null
+                        ? null
+                        : (int)round($frozenSince * TimeConstants::MS_PER_SECOND),
+                ),
+                targetAcceptKey: $acceptKey,
+            ),
+        );
     }
 
     /**

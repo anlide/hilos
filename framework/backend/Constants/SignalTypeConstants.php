@@ -179,4 +179,13 @@ final class SignalTypeConstants
 
     /** @var string Protected-mode state frame type (daemon master -> every connected browser client) */
     public const string PROTECTED_MODE = 'protected_mode';
+
+    /**
+     * @var string Frozen-replica frame type (worker -> the one browser client whose page reads it).
+     *
+     * Addressed and not broadcast, unlike the freeze above: what it answers is whether anything
+     * the connection's own page reads has stopped being kept up to date (HIL-711), and a node
+     * where something unrelated froze has nothing to tell this reader.
+     */
+    public const string RT_STALENESS = 'rt_staleness';
 }

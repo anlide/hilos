@@ -34,6 +34,44 @@ describe('parseSignal', () => {
     }
   })
 
+  it('parses the frozen-replica frame', () => {
+    const result = parseSignal(
+      '{"type":"rt_staleness","data":{"stale":true,"since":1760000000000}}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.signal).toMatchObject({
+        kind: 'rtStaleness',
+        state: { stale: true, since: 1760000000000 },
+      })
+    }
+  })
+
+  it('reads a frozen-replica frame with no moment as nothing frozen', () => {
+    // Which is what the backend sends when the mark is lifted: the two fields
+    // move together, so `since` is null exactly when `stale` is false.
+    const result = parseSignal(
+      '{"type":"rt_staleness","data":{"stale":false,"since":null}}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.signal).toMatchObject({
+        kind: 'rtStaleness',
+        state: { stale: false, since: undefined },
+      })
+    }
+  })
+
+  it('rejects a frozen-replica frame that cannot say whether anything is frozen', () => {
+    // Unreadable, the frame would leave the client showing the wrong answer about
+    // how old its data is, so the last known state stands instead.
+    const result = parseSignal('{"type":"rt_staleness","data":{"since":1}}')
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.failure.kind).toBe('invalid-signal-data')
+    }
+  })
+
   it('parses the framework welcome', () => {
     const result = parseSignal(
       '{"type":"handshake","data":{"build":"1718000000"}}',

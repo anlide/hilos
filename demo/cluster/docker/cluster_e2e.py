@@ -261,6 +261,19 @@ def rt_rows(views, node, key=WORKER_STATUSES):
     return rows
 
 
+def rt_stale_rows(views, node, key=WORKER_STATUSES):
+    """The rows one node reports frozen, keyed by row id, with the moment each froze.
+
+    Turned back into a map for the reason rt_rows() is: an object keyed 0..n-1 in order comes
+    off PHP as a JSON array, and these row ids are fleet indices.
+    """
+    rows = rt_collection(views, node, key).get("staleRows") or {}
+    if isinstance(rows, list):
+        return {str(index): row for index, row in enumerate(rows) if row is not None}
+
+    return {str(rid): row for rid, row in rows.items()}
+
+
 def rt_refused(views, node):
     """Remote RT frames a node refused as a two-owner split, or -1 when unreachable."""
     view = views.get(node)
@@ -350,12 +363,17 @@ class ScenarioTimeout(AssertionError):
     (transient, env-driven) while failing hard invariant assertions immediately."""
 
 
-def wait_until(predicate, timeout, desc, nodes=ALL_NODES):
-    """Poll inspect(nodes) until predicate(views) is truthy; return the final views."""
+def wait_until(predicate, timeout, desc, nodes=ALL_NODES, local=False):
+    """Poll inspect(nodes) until predicate(views) is truthy; return the final views.
+
+    `local` asks each node from inside its own container instead of over the network, which is
+    the only way to ask one that is partitioned off it - and a partitioned node is exactly where
+    some answers only become true after a delay (a link takes a keepalive to be noticed dead).
+    """
     deadline = time.time() + timeout
     last = None
     while time.time() < deadline:
-        views = inspect_all(nodes)
+        views = {n: inspect_local(n) for n in nodes} if local else inspect_all(nodes)
         last = views
         if predicate(views):
             return views
@@ -752,13 +770,14 @@ def scenario_12_rt_replication():
 
 
 def scenario_13_rt_partition_converges():
-    """A node cut off from the mesh keeps serving what it has, and catches up on return (HIL-589).
+    """A node cut off from the mesh serves what it has, marked as frozen, and catches up (HIL-711).
 
-    The reader's side of a dead link is the decision this ticket locked: the replica is served AS
-    IS, frozen and indistinguishable from fresh - no staleness mark, no refusal, and nothing swept
-    when the owner goes away. The first half asserts that positively rather than staying silent
-    about it, because the rejected alternatives (marking rows stale, refusing the reader) will one
-    day be built, and a change of behaviour must fail a test rather than pass unnoticed.
+    The reader's side of a dead link: the replica is served AS IS - nothing is swept when the
+    owner goes away (HIL-589 D1/D2) - but it is no longer indistinguishable from fresh. Each row
+    of the unreachable owner now carries the moment this node stopped hearing about it, and the
+    heal takes the mark off again. The first half asserts both directions positively, because
+    each of them is a decision that a later change must fail a test to reverse: serving the rows
+    is one, and being able to tell how old they are is the other.
 
     The second half is the hole this ticket had to close. Delivery is best-effort with no retries
     (HIL-183), so everything written while the link was down is lost for good; catching up is the
@@ -788,6 +807,20 @@ def scenario_13_rt_partition_converges():
         still = rt_rows({victim: inspect_local(victim)}, victim)
         assert still == frozen, \
             f"{victim} kept changing rows nobody could have sent it"
+
+        # And said to be frozen, which is the half this ticket adds: the rows are still served,
+        # and every one of them now names the moment this node stopped hearing about it. Polled
+        # rather than read once - the mark is raised when the LINK closes, and a partitioned
+        # interface takes a keepalive to notice, so the rows are frozen for real some seconds
+        # before either side has said so.
+        def every_row_marked_frozen(v):
+            marked = rt_stale_rows(v, victim)
+            return len(marked) == WORKER_FLEET_SIZE and all(
+                isinstance(since, (int, float)) and since > 0 for since in marked.values())
+
+        wait_until(every_row_marked_frozen, CONVERGE_TIMEOUT,
+                   f"{victim} marks the replicas of the owners it can no longer reach",
+                   nodes=[victim], local=True)
 
         # And the connected side keeps moving, so the two really are apart. Any node still on
         # the network answers this: whichever of them hosts the fleet, they all hold its rows.
@@ -836,8 +869,18 @@ def scenario_13_rt_partition_converges():
         wait_until(caught_up, CONVERGE_TIMEOUT + WORKER_REPORT_INTERVAL_SEC,
                    f"{victim} catches up with what was written while it was cut off")
 
-        return (f"{victim} served its replica frozen through the split and caught up after the "
-                f"heal, never going backwards")
+        # And the mark comes off with the catch-up. It needs no expiry of its own: the handshake
+        # says the deltas flow again, and the hand-over that follows repairs what the break cost,
+        # so the two events that raise it are the two that clear it (Design D8).
+        def nothing_marked_frozen(v):
+            return rt_stale_rows(v, victim) == {}
+
+        wait_until(nothing_marked_frozen, CONVERGE_TIMEOUT,
+                   f"{victim} takes the frozen mark off once its owners are reachable again",
+                   nodes=[victim])
+
+        return (f"{victim} served its replica through the split with every row marked frozen, "
+                f"caught up after the heal without going backwards, and cleared the mark")
     finally:
         # The reconnect is what this scenario is about, and it is also why the node cannot be
         # left as it is: `heal` puts the interface back with half-open TCP on both sides, and a

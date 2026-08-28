@@ -229,4 +229,89 @@ final class SourceInterestRegistryTest extends TestCase
         $this->assertSame('page:abc123', SourceConsumer::page('abc123'));
         $this->assertSame('feature:backup', SourceConsumer::feature('backup'));
     }
+
+    /**
+     * The addressed half of the presence question (HIL-711): news about a collection has to reach
+     * the readers it concerns, and a name is what a caller turns back into the thing it addresses.
+     */
+    public function testTheReadersOfOneCollectionAreNamed(): void
+    {
+        SourceInterestRegistry::register(
+            SourceChange::KIND_RT,
+            self::COLLECTION,
+            SourceConsumer::page('unit-accept-key'),
+        );
+        SourceInterestRegistry::register(
+            SourceChange::KIND_RT,
+            self::OTHER_COLLECTION,
+            SourceConsumer::agent('unit_source_interest:1'),
+        );
+
+        $this->assertSame(
+            [SourceConsumer::page('unit-accept-key')],
+            SourceInterestRegistry::consumersOf(SourceChange::KIND_RT, self::COLLECTION),
+        );
+    }
+
+    public function testACollectionNobodyReadsNamesNoReaders(): void
+    {
+        $this->assertSame(
+            [],
+            SourceInterestRegistry::consumersOf(SourceChange::KIND_RT, self::COLLECTION),
+        );
+    }
+
+    /**
+     * What ONE reader reads, which a per-process list cannot answer: a verdict over everything a
+     * page is being shown is assembled from exactly this (HIL-711).
+     */
+    public function testWhatOneReaderReadsIsAskedOfItAlone(): void
+    {
+        SourceInterestRegistry::register(
+            SourceChange::KIND_RT,
+            self::COLLECTION,
+            SourceConsumer::page('unit-accept-key'),
+        );
+        SourceInterestRegistry::register(
+            SourceChange::KIND_RT,
+            self::OTHER_COLLECTION,
+            SourceConsumer::page('unit-accept-key'),
+        );
+        SourceInterestRegistry::register(
+            SourceChange::KIND_RT,
+            self::COLLECTION,
+            SourceConsumer::agent('unit_source_interest:1'),
+        );
+
+        $this->assertSame(
+            [self::COLLECTION, self::OTHER_COLLECTION],
+            SourceInterestRegistry::collectionsOfConsumer(
+                SourceConsumer::page('unit-accept-key'),
+                SourceChange::KIND_RT,
+            ),
+        );
+    }
+
+    public function testAReaderThatAskedForNothingReadsNothing(): void
+    {
+        $this->assertSame(
+            [],
+            SourceInterestRegistry::collectionsOfConsumer(
+                SourceConsumer::page('unit-accept-key'),
+                SourceChange::KIND_RT,
+            ),
+        );
+    }
+
+    /**
+     * The other direction of {@see SourceConsumer::page()}: a caller holding a consumer name must
+     * reach the connection behind it without knowing how the name was spelled. An agent and a
+     * feature have no connection, and say so rather than answering with part of their own name.
+     */
+    public function testOnlyAPageConsumerNamesAConnection(): void
+    {
+        $this->assertSame('abc123', SourceConsumer::acceptKeyOf(SourceConsumer::page('abc123')));
+        $this->assertNull(SourceConsumer::acceptKeyOf(SourceConsumer::agent('chat_moderator:1')));
+        $this->assertNull(SourceConsumer::acceptKeyOf(SourceConsumer::feature('backup')));
+    }
 }
