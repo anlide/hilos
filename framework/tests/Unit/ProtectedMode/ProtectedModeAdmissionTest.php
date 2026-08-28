@@ -202,6 +202,7 @@ final class ProtectedModeAdmissionTest extends TestCase
                 : StateProtectedModeRuntime::hashSessionToken($initiatorSessionToken),
             StateProtectedModeRuntime::initiatorAgentType => 'backup',
             StateProtectedModeRuntime::passHashes => $passHashes,
+            StateProtectedModeRuntime::admittedAcceptKeys => [],
         ]));
     }
 

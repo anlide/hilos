@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
@@ -82,22 +83,24 @@ final class ProtectedModeContractTest extends TestCase
         $this->assertSame($row, $runtime->toArray());
     }
 
-    public function testRuntimeReadsBothListsAsEmptyWhenTheRowPredatesThem(): void
+    public function testRuntimeRefusesARowThatCarriesNoLists(): void
     {
-        // A row minted by a node still on the pre-verifying shape carries neither list, and the
-        // reader must land on empty rather than on null - the lists are consulted by value.
-        $runtime = ProtectedModeRuntime::fromRow([
+        // Both lists are consulted by value and neither is nullable, so a row that carries
+        // neither is a frame that lost them rather than a node with nothing to list: a node
+        // with nothing to list writes two empty arrays.
+        $this->expectException(InvalidFormatException::class);
+
+        ProtectedModeRuntime::fromRow([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
         ]);
-
-        $this->assertSame([], $runtime->passHashes);
-        $this->assertSame([], $runtime->admittedAcceptKeys);
     }
 
     public function testRuntimeApplyDiffCarriesBothLists(): void
     {
         $runtime = ProtectedModeRuntime::fromRow([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
+            ProtectedModeRuntime::passHashes => [],
+            ProtectedModeRuntime::admittedAcceptKeys => [],
         ]);
 
         $runtime->applyDiff([
@@ -126,6 +129,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVATING,
             ProtectedModeRuntime::operation => 'restore',
             ProtectedModeRuntime::startedAt => 1_700_000_000,
+            ProtectedModeRuntime::passHashes => [],
+            ProtectedModeRuntime::admittedAcceptKeys => [],
         ]);
 
         $runtime->applyDiff([
@@ -145,6 +150,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
             ProtectedModeRuntime::operation => 'restore',
             ProtectedModeRuntime::initiatorAgentIndex => 2,
+            ProtectedModeRuntime::passHashes => [],
+            ProtectedModeRuntime::admittedAcceptKeys => [],
         ]);
 
         $runtime->applyDiff([
@@ -169,6 +176,8 @@ final class ProtectedModeContractTest extends TestCase
         $runtime = ProtectedModeRuntime::fromRow([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
+            ProtectedModeRuntime::passHashes => [],
+            ProtectedModeRuntime::admittedAcceptKeys => [],
         ]);
 
         $this->assertFalse($runtime->locksOut('accept-initiator', null));
@@ -184,6 +193,8 @@ final class ProtectedModeContractTest extends TestCase
         $runtime = ProtectedModeRuntime::fromRow([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVATING,
             ProtectedModeRuntime::initiatorAcceptKey => null,
+            ProtectedModeRuntime::passHashes => [],
+            ProtectedModeRuntime::admittedAcceptKeys => [],
         ]);
 
         $this->assertTrue($runtime->locksOut('accept-9', null));
@@ -195,6 +206,8 @@ final class ProtectedModeContractTest extends TestCase
         $runtime = ProtectedModeRuntime::fromRow([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_DEACTIVATING,
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
+            ProtectedModeRuntime::passHashes => [],
+            ProtectedModeRuntime::admittedAcceptKeys => [],
         ]);
 
         $this->assertFalse($runtime->locksOut('accept-initiator', null));
@@ -206,6 +219,7 @@ final class ProtectedModeContractTest extends TestCase
         $runtime = ProtectedModeRuntime::fromRow([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
+            ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedAcceptKeys => ['accept-verifier'],
         ]);
 
@@ -219,6 +233,7 @@ final class ProtectedModeContractTest extends TestCase
     {
         $runtime = ProtectedModeRuntime::fromRow([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
+            ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedAcceptKeys => ['accept-verifier'],
         ]);
 
@@ -246,6 +261,7 @@ final class ProtectedModeContractTest extends TestCase
             $runtime = ProtectedModeRuntime::fromRow([
                 ProtectedModeRuntime::phase => $phase,
                 ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
+                ProtectedModeRuntime::passHashes => [],
                 ProtectedModeRuntime::admittedAcceptKeys => ['accept-verifier'],
             ]);
 
@@ -391,6 +407,8 @@ final class ProtectedModeContractTest extends TestCase
         $runtime = ProtectedModeRuntime::fromRow([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
             ProtectedModeRuntime::progressAt => 1_700_000_030,
+            ProtectedModeRuntime::passHashes => [],
+            ProtectedModeRuntime::admittedAcceptKeys => [],
         ]);
 
         $this->assertSame(1_700_000_030, $runtime->progressAt);
@@ -408,6 +426,8 @@ final class ProtectedModeContractTest extends TestCase
         // which would be an operation last seen in 1970 and instantly overdue.
         $runtime = ProtectedModeRuntime::fromRow([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
+            ProtectedModeRuntime::passHashes => [],
+            ProtectedModeRuntime::admittedAcceptKeys => [],
         ]);
 
         $this->assertNull($runtime->progressAt);

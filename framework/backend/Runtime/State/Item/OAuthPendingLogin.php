@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\State\Item;
 
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * OAuthPendingLogin - one in-flight OAuth login exchange, keyed by accept key (HIL-281).
@@ -107,17 +108,19 @@ final class OAuthPendingLogin extends RtState
 
     /**
      * @param array<string, mixed> $row Serialized runtime row
+     * @return static Pending-login op restored from a sync row
+     * @throws InvalidFormatException When the row lost a field the op is built from
      */
     public static function fromRow(array $row): static
     {
         $instance = new static();
-        $instance->acceptKey = (string)$row[self::acceptKey];
-        $instance->sessionToken = (string)$row[self::sessionToken];
-        $instance->provider = (string)$row[self::provider];
-        $instance->code = (string)$row[self::code];
-        $instance->deadlineMs = (float)($row[self::deadlineMs] ?? 0.0);
-        $instance->mode = (string)($row[self::mode] ?? self::MODE_LOGIN);
-        $instance->linkUserId = (int)($row[self::linkUserId] ?? 0);
+        $instance->acceptKey = self::requireString($row, self::acceptKey);
+        $instance->sessionToken = self::requireString($row, self::sessionToken);
+        $instance->provider = self::requireString($row, self::provider);
+        $instance->code = self::requireString($row, self::code);
+        $instance->deadlineMs = self::requireFloat($row, self::deadlineMs);
+        $instance->mode = self::requireString($row, self::mode);
+        $instance->linkUserId = self::requireInt($row, self::linkUserId);
         $instance->markRtSyncBaseline();
 
         return $instance;

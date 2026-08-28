@@ -7,6 +7,7 @@ namespace Hilos\ProtectedMode;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\DockerManager;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\Exception\FileMoveException;
@@ -145,7 +146,14 @@ final class ProtectedModeFreezeStore
             );
         }
 
-        return ProtectedModeRuntime::fromRow($row);
+        try {
+            return ProtectedModeRuntime::fromRow($row);
+        } catch (InvalidFormatException $e) {
+            throw new ProtectedModeFreezeUnreadableException(
+                "Protected mode: the freeze left at {$path} carries a row this node cannot read: {$e->getMessage()}",
+                previous: $e,
+            );
+        }
     }
 
     /**

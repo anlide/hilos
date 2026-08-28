@@ -258,6 +258,8 @@ final class BackupActionDtoTest extends TestCase
             StateRestoreRuntime::phase => 'importing',
             StateRestoreRuntime::startedAt => '2026-08-15T10:30:00+00:00',
             StateRestoreRuntime::databaseTouched => true,
+            StateRestoreRuntime::rehydrateComplete => false,
+            StateRestoreRuntime::rehydrateProblems => [],
         ]);
         $view = new RestoreRuntime($state);
 

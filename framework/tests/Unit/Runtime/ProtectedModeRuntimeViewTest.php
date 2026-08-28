@@ -294,6 +294,8 @@ final class ProtectedModeRuntimeViewTest extends TestCase
             StateProtectedModeRuntime::operation => 'restore',
             StateProtectedModeRuntime::initiatorAcceptKey => self::INITIATOR_KEY,
             StateProtectedModeRuntime::initiatorSessionTokenHash => $initiatorSessionTokenHash,
+            StateProtectedModeRuntime::passHashes => [],
+            StateProtectedModeRuntime::admittedAcceptKeys => [],
         ]);
 
         return new ProtectedModeRuntime($state);

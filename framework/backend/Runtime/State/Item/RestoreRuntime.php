@@ -6,6 +6,7 @@ namespace Hilos\Runtime\State\Item;
 
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\RestorePhase;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * RestoreRuntime - the singleton runtime state of a restore run.
@@ -108,24 +109,25 @@ final class RestoreRuntime extends RtState
 
     /**
      * @param array<string, mixed> $row Serialized runtime row
+     * @return static Runtime singleton restored from a sync row
+     * @throws InvalidFormatException When the row lost a flag or list, or carries a field as another type
      */
     public static function fromRow(array $row): static
     {
         $instance = new static();
-        $instance->running = (bool)($row[self::running] ?? false);
-        $instance->backupId = self::nullableString($row[self::backupId] ?? null);
-        $instance->scope = self::nullableString($row[self::scope] ?? null);
-        $instance->phase = self::nullableString($row[self::phase] ?? null);
-        $instance->phaseStartedAt = self::nullableString($row[self::phaseStartedAt] ?? null);
-        $instance->startedAt = self::nullableString($row[self::startedAt] ?? null);
-        $instance->finishedAt = self::nullableString($row[self::finishedAt] ?? null);
-        $instance->outcome = self::nullableString($row[self::outcome] ?? null);
-        $instance->failureReason = self::nullableString($row[self::failureReason] ?? null);
-        $estimatedSeconds = $row[self::estimatedSeconds] ?? null;
-        $instance->estimatedSeconds = $estimatedSeconds === null ? null : (int)$estimatedSeconds;
-        $instance->rehydrateComplete = (bool)($row[self::rehydrateComplete] ?? false);
-        $instance->rehydrateProblems = self::stringList($row[self::rehydrateProblems] ?? []);
-        $instance->databaseTouched = (bool)($row[self::databaseTouched] ?? false);
+        $instance->running = self::requireBool($row, self::running);
+        $instance->backupId = self::optionalString($row, self::backupId);
+        $instance->scope = self::optionalString($row, self::scope);
+        $instance->phase = self::optionalString($row, self::phase);
+        $instance->phaseStartedAt = self::optionalString($row, self::phaseStartedAt);
+        $instance->startedAt = self::optionalString($row, self::startedAt);
+        $instance->finishedAt = self::optionalString($row, self::finishedAt);
+        $instance->outcome = self::optionalString($row, self::outcome);
+        $instance->failureReason = self::optionalString($row, self::failureReason);
+        $instance->estimatedSeconds = self::optionalInt($row, self::estimatedSeconds);
+        $instance->rehydrateComplete = self::requireBool($row, self::rehydrateComplete);
+        $instance->rehydrateProblems = self::requireStringList($row, self::rehydrateProblems);
+        $instance->databaseTouched = self::requireBool($row, self::databaseTouched);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -138,37 +140,23 @@ final class RestoreRuntime extends RtState
      * worker but the agent's would keep showing an idle row.
      *
      * @param array<string, mixed> $diff Changed fields and values from another worker
+     * @throws InvalidFormatException When the diff carries a field as the wrong type
      */
     public function applyDiff(array $diff): void
     {
-        foreach ([self::running, self::rehydrateComplete, self::databaseTouched] as $flag) {
-            if (array_key_exists($flag, $diff)) {
-                $this->{$flag} = (bool)$diff[$flag];
-            }
-        }
-        if (array_key_exists(self::rehydrateProblems, $diff)) {
-            $this->rehydrateProblems = self::stringList($diff[self::rehydrateProblems]);
-        }
-        if (array_key_exists(self::estimatedSeconds, $diff)) {
-            $value = $diff[self::estimatedSeconds];
-            $this->estimatedSeconds = $value === null ? null : (int)$value;
-        }
-        foreach (
-            [
-                self::backupId,
-                self::scope,
-                self::phase,
-                self::phaseStartedAt,
-                self::startedAt,
-                self::finishedAt,
-                self::outcome,
-                self::failureReason,
-            ] as $field
-        ) {
-            if (array_key_exists($field, $diff)) {
-                $this->{$field} = self::nullableString($diff[$field]);
-            }
-        }
+        $this->running = self::patchBool($diff, self::running, $this->running);
+        $this->backupId = self::patchOptionalString($diff, self::backupId, $this->backupId);
+        $this->scope = self::patchOptionalString($diff, self::scope, $this->scope);
+        $this->phase = self::patchOptionalString($diff, self::phase, $this->phase);
+        $this->phaseStartedAt = self::patchOptionalString($diff, self::phaseStartedAt, $this->phaseStartedAt);
+        $this->startedAt = self::patchOptionalString($diff, self::startedAt, $this->startedAt);
+        $this->finishedAt = self::patchOptionalString($diff, self::finishedAt, $this->finishedAt);
+        $this->outcome = self::patchOptionalString($diff, self::outcome, $this->outcome);
+        $this->failureReason = self::patchOptionalString($diff, self::failureReason, $this->failureReason);
+        $this->estimatedSeconds = self::patchOptionalInt($diff, self::estimatedSeconds, $this->estimatedSeconds);
+        $this->rehydrateComplete = self::patchBool($diff, self::rehydrateComplete, $this->rehydrateComplete);
+        $this->rehydrateProblems = self::patchStringList($diff, self::rehydrateProblems, $this->rehydrateProblems);
+        $this->databaseTouched = self::patchBool($diff, self::databaseTouched, $this->databaseTouched);
     }
 
     /**
@@ -207,27 +195,5 @@ final class RestoreRuntime extends RtState
             self::rehydrateProblems => $this->rehydrateProblems,
             self::databaseTouched => $this->databaseTouched,
         ];
-    }
-
-    /**
-     * @param mixed $value Raw row value
-     * @return list<string> Value as a list of strings, empty when the row carried no list
-     */
-    private static function stringList(mixed $value): array
-    {
-        if (!is_array($value)) {
-            return [];
-        }
-
-        return array_values(array_map(strval(...), $value));
-    }
-
-    /**
-     * @param mixed $value Raw row value
-     * @return ?string Value as string, null preserved
-     */
-    private static function nullableString(mixed $value): ?string
-    {
-        return $value === null ? null : (string)$value;
     }
 }

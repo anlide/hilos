@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\State\Item;
 
 use Hilos\Cluster\ClusterContext;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * ProtectedModeRuntime - the singleton runtime state of the protected mode subsystem.
@@ -141,22 +142,24 @@ final class ProtectedModeRuntime extends RtState
 
     /**
      * @param array<string, mixed> $row Serialized runtime row
+     * @return static Runtime singleton restored from a sync row
+     * @throws InvalidFormatException When the row lost a field the freeze is judged by
      */
     public static function fromRow(array $row): static
     {
         $instance = new static();
-        $instance->phase = (string)($row[self::phase] ?? self::PHASE_INACTIVE);
-        $instance->operation = self::stringOrNull($row[self::operation] ?? null);
-        $instance->initiatorAcceptKey = self::stringOrNull($row[self::initiatorAcceptKey] ?? null);
-        $instance->initiatorSessionTokenHash = self::stringOrNull($row[self::initiatorSessionTokenHash] ?? null);
-        $instance->initiatorAgentType = self::stringOrNull($row[self::initiatorAgentType] ?? null);
-        $instance->initiatorAgentIndex = self::intOrNull($row[self::initiatorAgentIndex] ?? null);
-        $instance->initiatorNodeId = self::stringOrNull($row[self::initiatorNodeId] ?? null);
-        $instance->startedAt = self::intOrNull($row[self::startedAt] ?? null);
-        $instance->activatedAt = self::intOrNull($row[self::activatedAt] ?? null);
-        $instance->progressAt = self::intOrNull($row[self::progressAt] ?? null);
-        $instance->passHashes = self::stringList($row[self::passHashes] ?? null);
-        $instance->admittedAcceptKeys = self::stringList($row[self::admittedAcceptKeys] ?? null);
+        $instance->phase = self::requireString($row, self::phase);
+        $instance->operation = self::optionalString($row, self::operation);
+        $instance->initiatorAcceptKey = self::optionalString($row, self::initiatorAcceptKey);
+        $instance->initiatorSessionTokenHash = self::optionalString($row, self::initiatorSessionTokenHash);
+        $instance->initiatorAgentType = self::optionalString($row, self::initiatorAgentType);
+        $instance->initiatorAgentIndex = self::optionalInt($row, self::initiatorAgentIndex);
+        $instance->initiatorNodeId = self::optionalString($row, self::initiatorNodeId);
+        $instance->startedAt = self::optionalInt($row, self::startedAt);
+        $instance->activatedAt = self::optionalInt($row, self::activatedAt);
+        $instance->progressAt = self::optionalInt($row, self::progressAt);
+        $instance->passHashes = self::requireStringList($row, self::passHashes);
+        $instance->admittedAcceptKeys = self::requireStringList($row, self::admittedAcceptKeys);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -169,45 +172,22 @@ final class ProtectedModeRuntime extends RtState
      * the local writer's would keep showing the mode inactive and let connections through.
      *
      * @param array<string, mixed> $diff Changed fields and values from another worker
+     * @throws InvalidFormatException When the diff carries a field as the wrong type
      */
     public function applyDiff(array $diff): void
     {
-        if (array_key_exists(self::phase, $diff)) {
-            $this->phase = (string)$diff[self::phase];
-        }
-        if (array_key_exists(self::operation, $diff)) {
-            $this->operation = self::stringOrNull($diff[self::operation]);
-        }
-        if (array_key_exists(self::initiatorAcceptKey, $diff)) {
-            $this->initiatorAcceptKey = self::stringOrNull($diff[self::initiatorAcceptKey]);
-        }
-        if (array_key_exists(self::initiatorSessionTokenHash, $diff)) {
-            $this->initiatorSessionTokenHash = self::stringOrNull($diff[self::initiatorSessionTokenHash]);
-        }
-        if (array_key_exists(self::initiatorAgentType, $diff)) {
-            $this->initiatorAgentType = self::stringOrNull($diff[self::initiatorAgentType]);
-        }
-        if (array_key_exists(self::initiatorAgentIndex, $diff)) {
-            $this->initiatorAgentIndex = self::intOrNull($diff[self::initiatorAgentIndex]);
-        }
-        if (array_key_exists(self::initiatorNodeId, $diff)) {
-            $this->initiatorNodeId = self::stringOrNull($diff[self::initiatorNodeId]);
-        }
-        if (array_key_exists(self::startedAt, $diff)) {
-            $this->startedAt = self::intOrNull($diff[self::startedAt]);
-        }
-        if (array_key_exists(self::activatedAt, $diff)) {
-            $this->activatedAt = self::intOrNull($diff[self::activatedAt]);
-        }
-        if (array_key_exists(self::progressAt, $diff)) {
-            $this->progressAt = self::intOrNull($diff[self::progressAt]);
-        }
-        if (array_key_exists(self::passHashes, $diff)) {
-            $this->passHashes = self::stringList($diff[self::passHashes]);
-        }
-        if (array_key_exists(self::admittedAcceptKeys, $diff)) {
-            $this->admittedAcceptKeys = self::stringList($diff[self::admittedAcceptKeys]);
-        }
+        $this->phase = self::patchString($diff, self::phase, $this->phase);
+        $this->operation = self::patchOptionalString($diff, self::operation, $this->operation);
+        $this->initiatorAcceptKey = self::patchOptionalString($diff, self::initiatorAcceptKey, $this->initiatorAcceptKey);
+        $this->initiatorSessionTokenHash = self::patchOptionalString($diff, self::initiatorSessionTokenHash, $this->initiatorSessionTokenHash);
+        $this->initiatorAgentType = self::patchOptionalString($diff, self::initiatorAgentType, $this->initiatorAgentType);
+        $this->initiatorAgentIndex = self::patchOptionalInt($diff, self::initiatorAgentIndex, $this->initiatorAgentIndex);
+        $this->initiatorNodeId = self::patchOptionalString($diff, self::initiatorNodeId, $this->initiatorNodeId);
+        $this->startedAt = self::patchOptionalInt($diff, self::startedAt, $this->startedAt);
+        $this->activatedAt = self::patchOptionalInt($diff, self::activatedAt, $this->activatedAt);
+        $this->progressAt = self::patchOptionalInt($diff, self::progressAt, $this->progressAt);
+        $this->passHashes = self::patchStringList($diff, self::passHashes, $this->passHashes);
+        $this->admittedAcceptKeys = self::patchStringList($diff, self::admittedAcceptKeys, $this->admittedAcceptKeys);
     }
 
     /**
@@ -333,36 +313,5 @@ final class ProtectedModeRuntime extends RtState
             self::passHashes => $this->passHashes,
             self::admittedAcceptKeys => $this->admittedAcceptKeys,
         ];
-    }
-
-    /**
-     * @param mixed $value Raw row value
-     * @return ?string Trimmed non-empty string, or null
-     */
-    private static function stringOrNull(mixed $value): ?string
-    {
-        return $value === null ? null : (string)$value;
-    }
-
-    /**
-     * @param mixed $value Raw row value
-     * @return list<string> String list; empty when the row carries no list at all
-     */
-    private static function stringList(mixed $value): array
-    {
-        if (!is_array($value)) {
-            return [];
-        }
-
-        return array_values(array_map(static fn(mixed $item): string => (string)$item, $value));
-    }
-
-    /**
-     * @param mixed $value Raw row value
-     * @return ?int Integer value, or null
-     */
-    private static function intOrNull(mixed $value): ?int
-    {
-        return $value === null ? null : (int)$value;
     }
 }

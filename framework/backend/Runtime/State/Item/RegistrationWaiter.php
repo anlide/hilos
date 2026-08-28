@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\State\Item;
 
 use Hilos\Auth\Registration\RegistrationReservationService;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * RegistrationWaiter - one session parked on the code step of a registration (HIL-415).
@@ -66,13 +67,15 @@ final class RegistrationWaiter extends RtState
 
     /**
      * @param array<string, mixed> $row Serialized runtime row
+     * @return static Waiter row restored from a sync row
+     * @throws InvalidFormatException When the row lost a field the waiter is built from
      */
     public static function fromRow(array $row): static
     {
         $instance = new static();
-        $instance->acceptKey = (string)$row[self::acceptKey];
-        $instance->identifier = (string)$row[self::identifier];
-        $instance->sessionToken = (string)$row[self::sessionToken];
+        $instance->acceptKey = self::requireString($row, self::acceptKey);
+        $instance->identifier = self::requireString($row, self::identifier);
+        $instance->sessionToken = self::requireString($row, self::sessionToken);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -96,15 +99,12 @@ final class RegistrationWaiter extends RtState
      * and never moves.
      *
      * @param array<string, mixed> $diff Partial update using the same string keys as `fromRow()`
+     * @throws InvalidFormatException When the diff carries a field as anything but a string
      */
     public function applyDiff(array $diff): void
     {
-        if (isset($diff[self::identifier])) {
-            $this->identifier = (string)$diff[self::identifier];
-        }
-        if (isset($diff[self::sessionToken])) {
-            $this->sessionToken = (string)$diff[self::sessionToken];
-        }
+        $this->identifier = self::patchString($diff, self::identifier, $this->identifier);
+        $this->sessionToken = self::patchString($diff, self::sessionToken, $this->sessionToken);
     }
 
     /**

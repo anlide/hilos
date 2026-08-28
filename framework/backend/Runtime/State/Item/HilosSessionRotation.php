@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\State\Collection\HilosSessionRotations;
 
 /**
@@ -90,15 +91,17 @@ final class HilosSessionRotation extends RtState
 
     /**
      * @param array<string, mixed> $row Serialized runtime row
+     * @return static Rotation row restored from a sync row
+     * @throws InvalidFormatException When the row lost a field the rotation is built from
      */
     public static function fromRow(array $row): static
     {
         $instance = new static();
-        $instance->ticket = (string)$row[self::ticket];
-        $instance->sessionToken = (string)$row[self::sessionToken];
-        $instance->acceptKeysToDrop = self::stringList($row[self::acceptKeysToDrop] ?? []);
-        $instance->expiresAtMs = (float)($row[self::expiresAtMs] ?? 0.0);
-        $instance->pendingAck = self::stringOrNull($row[self::pendingAck] ?? null);
+        $instance->ticket = self::requireString($row, self::ticket);
+        $instance->sessionToken = self::requireString($row, self::sessionToken);
+        $instance->acceptKeysToDrop = self::requireStringList($row, self::acceptKeysToDrop);
+        $instance->expiresAtMs = self::requireFloat($row, self::expiresAtMs);
+        $instance->pendingAck = self::optionalString($row, self::pendingAck);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -113,21 +116,14 @@ final class HilosSessionRotation extends RtState
      * processes, and the one it would disagree about is the token.
      *
      * @param array<string, mixed> $diff Changed fields and values from another process
+     * @throws InvalidFormatException When the diff carries a field as the wrong type
      */
     public function applyDiff(array $diff): void
     {
-        if (array_key_exists(self::sessionToken, $diff)) {
-            $this->sessionToken = (string)$diff[self::sessionToken];
-        }
-        if (array_key_exists(self::acceptKeysToDrop, $diff)) {
-            $this->acceptKeysToDrop = self::stringList($diff[self::acceptKeysToDrop]);
-        }
-        if (array_key_exists(self::expiresAtMs, $diff)) {
-            $this->expiresAtMs = (float)$diff[self::expiresAtMs];
-        }
-        if (array_key_exists(self::pendingAck, $diff)) {
-            $this->pendingAck = self::stringOrNull($diff[self::pendingAck]);
-        }
+        $this->sessionToken = self::patchString($diff, self::sessionToken, $this->sessionToken);
+        $this->acceptKeysToDrop = self::patchStringList($diff, self::acceptKeysToDrop, $this->acceptKeysToDrop);
+        $this->expiresAtMs = self::patchFloat($diff, self::expiresAtMs, $this->expiresAtMs);
+        $this->pendingAck = self::patchOptionalString($diff, self::pendingAck, $this->pendingAck);
     }
 
     /**
@@ -169,30 +165,5 @@ final class HilosSessionRotation extends RtState
             self::expiresAtMs => $this->expiresAtMs,
             self::pendingAck => $this->pendingAck,
         ];
-    }
-
-    /**
-     * @param mixed $value Raw row value
-     * @return ?string Value as a string, or null when the row carries none
-     */
-    private static function stringOrNull(mixed $value): ?string
-    {
-        return $value === null ? null : (string)$value;
-    }
-
-    /**
-     * @param mixed $value Raw row value
-     * @return list<string> Accept keys as a plain string list
-     */
-    private static function stringList(mixed $value): array
-    {
-        $keys = [];
-        foreach ((array)$value as $key) {
-            if (is_scalar($key)) {
-                $keys[] = (string)$key;
-            }
-        }
-
-        return $keys;
     }
 }

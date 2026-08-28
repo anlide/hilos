@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\State\Item;
 
 use Hilos\Auth\Recovery\PasswordRecoveryService;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * RecoveryWaiter - one session parked on the code step of a password recovery (HIL-416).
@@ -72,14 +73,16 @@ final class RecoveryWaiter extends RtState
 
     /**
      * @param array<string, mixed> $row Serialized runtime row
+     * @return static Waiter row restored from a sync row
+     * @throws InvalidFormatException When the row lost a field the waiter is built from
      */
     public static function fromRow(array $row): static
     {
         $instance = new static();
-        $instance->acceptKey = (string)$row[self::acceptKey];
-        $instance->identifier = (string)$row[self::identifier];
-        $instance->sessionToken = (string)$row[self::sessionToken];
-        $instance->codeAccepted = (bool)$row[self::codeAccepted];
+        $instance->acceptKey = self::requireString($row, self::acceptKey);
+        $instance->identifier = self::requireString($row, self::identifier);
+        $instance->sessionToken = self::requireString($row, self::sessionToken);
+        $instance->codeAccepted = self::requireBool($row, self::codeAccepted);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -103,18 +106,13 @@ final class RecoveryWaiter extends RtState
      * and never moves.
      *
      * @param array<string, mixed> $diff Partial update using the same string keys as `fromRow()`
+     * @throws InvalidFormatException When the diff carries a field as the wrong type
      */
     public function applyDiff(array $diff): void
     {
-        if (isset($diff[self::identifier])) {
-            $this->identifier = (string)$diff[self::identifier];
-        }
-        if (isset($diff[self::sessionToken])) {
-            $this->sessionToken = (string)$diff[self::sessionToken];
-        }
-        if (isset($diff[self::codeAccepted])) {
-            $this->codeAccepted = (bool)$diff[self::codeAccepted];
-        }
+        $this->identifier = self::patchString($diff, self::identifier, $this->identifier);
+        $this->sessionToken = self::patchString($diff, self::sessionToken, $this->sessionToken);
+        $this->codeAccepted = self::patchBool($diff, self::codeAccepted, $this->codeAccepted);
     }
 
     /**

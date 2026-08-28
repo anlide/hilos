@@ -10,6 +10,7 @@ use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupShipOutcome;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\BackupVerifyOutcome;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\State\Collection\BackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime;
@@ -123,14 +124,18 @@ final class BackupHistoryStateTest extends TestCase
         // And a synced update must land, or every worker but the writer keeps a stale estimate input.
         $history->applyDiff([BackupHistory::dumpBytes => 524288]);
         $this->assertSame(524288, $history->dumpBytes);
+    }
 
-        // A legacy row without the key reads back as 0 ("no data"), never a throw.
-        $this->assertSame(0, BackupHistory::fromRow([
-            BackupHistory::id => 'legacy',
-            BackupHistory::createdAt => '2026-08-01T00:00:00+00:00',
-            BackupHistory::env => 'prod',
-            BackupHistory::status => 'success',
-        ])->dumpBytes);
+    public function testFromRowRefusesARowThatCarriesNoDumpBytes(): void
+    {
+        // Zero is a value the sender chose - "this run wrote no data", which the space guard
+        // filters on - so a row without the key is a frame that lost it, not a run that had none.
+        $row = $this->requiredRow('legacy');
+        unset($row[BackupHistory::dumpBytes]);
+
+        $this->expectException(InvalidFormatException::class);
+
+        BackupHistory::fromRow($row);
     }
 
     public function testVerificationFieldsTransferFromMetadataRoundTripAndUpdateViaDiff(): void
@@ -173,12 +178,7 @@ final class BackupHistoryStateTest extends TestCase
         $this->assertNull($history->sha256);
 
         // A row written before checksums existed carries none of the three, and does not throw.
-        $legacy = BackupHistory::fromRow([
-            BackupHistory::id => 'legacy',
-            BackupHistory::createdAt => '2026-08-01T00:00:00+00:00',
-            BackupHistory::env => 'prod',
-            BackupHistory::status => 'success',
-        ]);
+        $legacy = BackupHistory::fromRow($this->requiredRow('legacy'));
         $this->assertNull($legacy->sha256);
         $this->assertNull($legacy->verifiedAt);
         $this->assertNull($legacy->verifyOutcome);
@@ -220,12 +220,7 @@ final class BackupHistoryStateTest extends TestCase
         $this->assertSame('ssh: connect timed out', $history->shipError);
 
         // A row written before shipping existed carries none of the three, and does not throw.
-        $legacy = BackupHistory::fromRow([
-            BackupHistory::id => 'legacy',
-            BackupHistory::createdAt => '2026-08-01T00:00:00+00:00',
-            BackupHistory::env => 'prod',
-            BackupHistory::status => 'success',
-        ]);
+        $legacy = BackupHistory::fromRow($this->requiredRow('legacy'));
         $this->assertNull($legacy->shippedAt);
         $this->assertNull($legacy->shipOutcome);
         $this->assertNull($legacy->shipError);
@@ -311,6 +306,28 @@ final class BackupHistoryStateTest extends TestCase
         $this->assertNull($runtime->currentBackupId);
         $this->assertNull($runtime->scope);
         $this->assertNull($runtime->startedAt);
+    }
+
+    /**
+     * A history row carrying every field it cannot be read without, and none of the optional ones.
+     *
+     * @param string $id Backup id
+     * @return array<string, mixed> Runtime row in its smallest legal shape
+     */
+    private function requiredRow(string $id): array
+    {
+        return [
+            BackupHistory::id => $id,
+            BackupHistory::createdAt => '2026-08-01T00:00:00+00:00',
+            BackupHistory::env => 'prod',
+            BackupHistory::status => 'success',
+            BackupHistory::connections => [],
+            BackupHistory::sizeBytes => 0,
+            BackupHistory::durationSeconds => 0,
+            BackupHistory::keep => false,
+            BackupHistory::dumpBytes => 0,
+            BackupHistory::restoreDurationSeconds => 0,
+        ];
     }
 
     /**

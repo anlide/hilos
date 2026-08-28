@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\View\Actions\Collection\HilosSessionConnectionsActions;
 
 /**
@@ -85,12 +86,13 @@ abstract class HilosSessionConnection extends HilosConnection
 
     /**
      * @param array<string, mixed> $row Serialized runtime row
+     * @throws InvalidFormatException When the row lost a base field or carries it as another type
      */
     protected function hydrateBase(array $row): void
     {
         parent::hydrateBase($row);
-        $this->sessionToken = self::stringOrNull($row[self::sessionToken] ?? null);
-        $this->pendingAck = self::stringOrNull($row[self::pendingAck] ?? null);
+        $this->sessionToken = self::optionalString($row, self::sessionToken);
+        $this->pendingAck = self::optionalString($row, self::pendingAck);
     }
 
     /**
@@ -106,24 +108,12 @@ abstract class HilosSessionConnection extends HilosConnection
 
     /**
      * @param array<string, mixed> $diff Partial update
+     * @throws InvalidFormatException When the diff carries a base field as another type
      */
     protected function applyBaseDiff(array $diff): void
     {
         parent::applyBaseDiff($diff);
-        if (array_key_exists(self::sessionToken, $diff)) {
-            $this->sessionToken = self::stringOrNull($diff[self::sessionToken]);
-        }
-        if (array_key_exists(self::pendingAck, $diff)) {
-            $this->pendingAck = self::stringOrNull($diff[self::pendingAck]);
-        }
-    }
-
-    /**
-     * @param mixed $value Raw row value
-     * @return ?string String value, or null
-     */
-    private static function stringOrNull(mixed $value): ?string
-    {
-        return $value === null ? null : (string)$value;
+        $this->sessionToken = self::patchOptionalString($diff, self::sessionToken, $this->sessionToken);
+        $this->pendingAck = self::patchOptionalString($diff, self::pendingAck, $this->pendingAck);
     }
 }

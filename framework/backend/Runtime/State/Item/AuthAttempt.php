@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\State\Item;
 
 use Hilos\Auth\Throttle\ThrottleScope;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\Object\Item\AuthBlock as ObjectAuthBlock;
 
 /**
@@ -104,18 +105,19 @@ final class AuthAttempt extends RtState
 
     /**
      * @param array<string, mixed> $row Serialized runtime row
+     * @return static Counter row restored from a sync row
+     * @throws InvalidFormatException When the row lost a field the counter is built from
      */
     public static function fromRow(array $row): static
     {
         $instance = new static();
-        $instance->scope = (string)($row[self::scope] ?? ThrottleScope::IP);
-        $instance->identity = (string)$row[self::identity];
-        $instance->action = (string)$row[self::action];
-        $instance->count = (int)($row[self::count] ?? 0);
-        $instance->windowStartedAt = (float)($row[self::windowStartedAt] ?? 0.0);
-        $instance->level = (int)($row[self::level] ?? 0);
-        $blockedUntil = $row[self::blockedUntil] ?? null;
-        $instance->blockedUntil = $blockedUntil === null ? null : (float)$blockedUntil;
+        $instance->scope = self::requireString($row, self::scope);
+        $instance->identity = self::requireString($row, self::identity);
+        $instance->action = self::requireString($row, self::action);
+        $instance->count = self::requireInt($row, self::count);
+        $instance->windowStartedAt = self::requireFloat($row, self::windowStartedAt);
+        $instance->level = self::requireInt($row, self::level);
+        $instance->blockedUntil = self::optionalFloat($row, self::blockedUntil);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -131,24 +133,14 @@ final class AuthAttempt extends RtState
 
     /**
      * @param array<string, mixed> $diff Partial update using the same string keys as `fromRow()`
+     * @throws InvalidFormatException When the diff carries a field as the wrong type
      */
     public function applyDiff(array $diff): void
     {
-        if (isset($diff[self::count])) {
-            $this->count = (int)$diff[self::count];
-        }
-        if (isset($diff[self::windowStartedAt])) {
-            $this->windowStartedAt = (float)$diff[self::windowStartedAt];
-        }
-        if (isset($diff[self::level])) {
-            $this->level = (int)$diff[self::level];
-        }
-        // array_key_exists rather than isset: lifting a block sends blockedUntil as
-        // null, and isset() would read that as "field absent" and keep the old moment.
-        if (array_key_exists(self::blockedUntil, $diff)) {
-            $blockedUntil = $diff[self::blockedUntil];
-            $this->blockedUntil = $blockedUntil === null ? null : (float)$blockedUntil;
-        }
+        $this->count = self::patchInt($diff, self::count, $this->count);
+        $this->windowStartedAt = self::patchFloat($diff, self::windowStartedAt, $this->windowStartedAt);
+        $this->level = self::patchInt($diff, self::level, $this->level);
+        $this->blockedUntil = self::patchOptionalFloat($diff, self::blockedUntil, $this->blockedUntil);
     }
 
     /**

@@ -305,6 +305,8 @@ final class ProtectedModeTestDriverTest extends TestCase
             StateProtectedModeRuntime::operation => 'restore',
             StateProtectedModeRuntime::initiatorAgentType => $initiatorType,
             StateProtectedModeRuntime::initiatorAgentIndex => $initiatorIndex,
+            StateProtectedModeRuntime::passHashes => [],
+            StateProtectedModeRuntime::admittedAcceptKeys => [],
         ]));
     }
 

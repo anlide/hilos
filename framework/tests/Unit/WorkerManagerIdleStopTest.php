@@ -230,6 +230,8 @@ final class WorkerManagerIdleStopTest extends TestCase
         Hilos::$rt = new IdleStopTestRtContext();
         Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::fromRow([
             StateProtectedModeRuntime::phase => $phase,
+            StateProtectedModeRuntime::passHashes => [],
+            StateProtectedModeRuntime::admittedAcceptKeys => [],
         ]));
     }
 

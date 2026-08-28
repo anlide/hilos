@@ -159,6 +159,12 @@ final class BackupShipPlannerTest extends TestCase
             StateBackupHistory::createdAt => '2026-08-16T00:00:00+00:00',
             StateBackupHistory::env => 'test',
             StateBackupHistory::status => 'success',
+            StateBackupHistory::connections => [],
+            StateBackupHistory::sizeBytes => 0,
+            StateBackupHistory::durationSeconds => 0,
+            StateBackupHistory::keep => false,
+            StateBackupHistory::dumpBytes => 0,
+            StateBackupHistory::restoreDurationSeconds => 0,
         ]);
         $rows = [new BackupHistory($state)];
 

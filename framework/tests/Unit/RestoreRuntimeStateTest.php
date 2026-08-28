@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Backup\BackupStatus;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Backup\RestorePhase;
 use Hilos\Runtime\State\Item\RestoreRuntime;
 use PHPUnit\Framework\TestCase;
@@ -54,14 +55,13 @@ final class RestoreRuntimeStateTest extends TestCase
         $this->assertNull($restored->failureReason);
     }
 
-    public function testFromRowToleratesMissingKeys(): void
+    public function testFromRowRefusesARowThatCarriesNoRequiredKey(): void
     {
-        $restored = RestoreRuntime::fromRow([]);
+        // The three flags and the problem list are not nullable, so an empty row is a frame
+        // that lost them: an idle restore still writes false, false, [] and false.
+        $this->expectException(InvalidFormatException::class);
 
-        $this->assertFalse($restored->running);
-        $this->assertNull($restored->backupId);
-        $this->assertNull($restored->phase);
-        $this->assertNull($restored->outcome);
+        RestoreRuntime::fromRow([]);
     }
 
     public function testApplyDiffUpdatesOnlyPresentFields(): void

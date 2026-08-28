@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Auth\OAuth;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\State\Item\OAuthPendingLogin;
 use PHPUnit\Framework\TestCase;
 
@@ -11,7 +12,8 @@ use PHPUnit\Framework\TestCase;
  * Unit tests for the in-flight OAuth login RT op (HIL-281).
  *
  * Pins the row contract the callback writer and the async agent share: the accept
- * key is the id, and a row round-trips through the RT-sync array form unchanged.
+ * key is the id, a row round-trips through the RT-sync array form unchanged, and a
+ * row that lost a field on the way is refused rather than completed from thin air.
  */
 final class OAuthPendingLoginTest extends TestCase
 {
@@ -69,18 +71,16 @@ final class OAuthPendingLoginTest extends TestCase
         $this->assertSame($row, OAuthPendingLogin::fromRow($row)->toArray());
     }
 
-    public function testFromRowDefaultsMissingFields(): void
+    public function testFromRowRefusesARowMissingARequiredField(): void
     {
-        $op = OAuthPendingLogin::fromRow([
+        $this->expectException(InvalidFormatException::class);
+
+        OAuthPendingLogin::fromRow([
             OAuthPendingLogin::acceptKey => 'accept-3',
             OAuthPendingLogin::sessionToken => 'session-ghi',
             OAuthPendingLogin::provider => 'stub',
             OAuthPendingLogin::code => 'oauth:stub',
         ]);
-
-        $this->assertSame(0.0, $op->deadlineMs);
-        $this->assertSame(OAuthPendingLogin::MODE_LOGIN, $op->mode);
-        $this->assertSame(0, $op->linkUserId);
     }
 
     public function testRtCollectionKeyIsStable(): void

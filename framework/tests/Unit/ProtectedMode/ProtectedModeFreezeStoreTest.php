@@ -245,6 +245,8 @@ final class ProtectedModeFreezeStoreTest extends TestCase
             StateProtectedModeRuntime::initiatorNodeId => 'node-a',
             StateProtectedModeRuntime::startedAt => self::STARTED_AT,
             StateProtectedModeRuntime::activatedAt => self::STARTED_AT + 1,
+            StateProtectedModeRuntime::passHashes => [],
+            StateProtectedModeRuntime::admittedAcceptKeys => [],
         ])->toArray();
     }
 

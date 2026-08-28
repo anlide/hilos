@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Auth\Session\SessionAck;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
@@ -53,6 +54,16 @@ final class HilosConnectionStateTest extends TestCase
         $this->assertNull($connection->userId);
         $this->assertSame('guest', $connection->label);
         $this->assertSame(1, $connection->baselineMarks);
+    }
+
+    public function testFromRowRefusesARowMissingTheAcceptKey(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        PresenceConnectionFixture::fromRow([
+            HilosConnection::userId => 42,
+            PresenceConnectionFixture::label => 'guest',
+        ]);
     }
 
     public function testApplyDiffMovesTheUserAndTheOwnFieldButNotTheAcceptKey(): void
@@ -187,10 +198,11 @@ final class PresenceConnectionFixture extends HilosConnection
 
     /**
      * @param array<string, mixed> $row Serialized runtime row
+     * @throws InvalidFormatException When the row lost the subclass-owned field
      */
     protected function hydrateOwn(array $row): void
     {
-        $this->label = (string)$row[self::label];
+        $this->label = self::requireString($row, self::label);
     }
 
     /**
@@ -203,12 +215,11 @@ final class PresenceConnectionFixture extends HilosConnection
 
     /**
      * @param array<string, mixed> $diff Changed fields => values
+     * @throws InvalidFormatException When the diff carries the subclass-owned field as a non-string
      */
     protected function applyOwnDiff(array $diff): void
     {
-        if (array_key_exists(self::label, $diff)) {
-            $this->label = (string)$diff[self::label];
-        }
+        $this->label = self::patchString($diff, self::label, $this->label);
     }
 }
 
@@ -238,10 +249,11 @@ final class SessionConnectionFixture extends HilosSessionConnection
 
     /**
      * @param array<string, mixed> $row Serialized runtime row
+     * @throws InvalidFormatException When the row lost the subclass-owned field
      */
     protected function hydrateOwn(array $row): void
     {
-        $this->label = (string)$row[self::label];
+        $this->label = self::requireString($row, self::label);
     }
 
     /**
@@ -254,12 +266,11 @@ final class SessionConnectionFixture extends HilosSessionConnection
 
     /**
      * @param array<string, mixed> $diff Changed fields => values
+     * @throws InvalidFormatException When the diff carries the subclass-owned field as a non-string
      */
     protected function applyOwnDiff(array $diff): void
     {
-        if (array_key_exists(self::label, $diff)) {
-            $this->label = (string)$diff[self::label];
-        }
+        $this->label = self::patchString($diff, self::label, $this->label);
     }
 }
 

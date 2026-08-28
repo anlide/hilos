@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\State\Item;
 
 use Hilos\Backup\BackupPhase;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * BackupRuntime - the singleton runtime state of the backup subsystem.
@@ -71,32 +72,24 @@ final class BackupRuntime extends RtState
 
     /**
      * @param array<string, mixed> $row Serialized runtime row
+     * @return static Runtime singleton restored from a sync row
+     * @throws InvalidFormatException When the row lost the running flag or carries a field as another type
      */
     public static function fromRow(array $row): static
     {
-        $currentBackupId = $row[self::currentBackupId] ?? null;
-        $scope = $row[self::scope] ?? null;
-        $startedAt = $row[self::startedAt] ?? null;
-        $phase = $row[self::phase] ?? null;
-        $phaseStartedAt = $row[self::phaseStartedAt] ?? null;
-        $estimatedSeconds = $row[self::estimatedSeconds] ?? null;
-
         $instance = new static();
-        $instance->running = (bool)($row[self::running] ?? false);
-        $instance->currentBackupId = $currentBackupId === null ? null : (string)$currentBackupId;
-        $instance->scope = $scope === null ? null : (string)$scope;
-        $instance->startedAt = $startedAt === null ? null : (string)$startedAt;
-        $instance->phase = $phase === null ? null : (string)$phase;
-        $instance->phaseStartedAt = $phaseStartedAt === null ? null : (string)$phaseStartedAt;
-        $instance->estimatedSeconds = $estimatedSeconds === null ? null : (int)$estimatedSeconds;
+        $instance->running = self::requireBool($row, self::running);
+        $instance->currentBackupId = self::optionalString($row, self::currentBackupId);
+        $instance->scope = self::optionalString($row, self::scope);
+        $instance->startedAt = self::optionalString($row, self::startedAt);
+        $instance->phase = self::optionalString($row, self::phase);
+        $instance->phaseStartedAt = self::optionalString($row, self::phaseStartedAt);
+        $instance->estimatedSeconds = self::optionalInt($row, self::estimatedSeconds);
         $instance->markRtSyncBaseline();
 
         return $instance;
     }
 
-    /**
-     * @return string Runtime collection key for the backup runtime singleton
-     */
     /**
      * Applies an inbound RT sync diff to this singleton.
      *
@@ -104,36 +97,17 @@ final class BackupRuntime extends RtState
      * worker but the agent's would show no running backup at all.
      *
      * @param array<string, mixed> $diff Changed fields and values from another worker
+     * @throws InvalidFormatException When the diff carries a field as the wrong type
      */
     public function applyDiff(array $diff): void
     {
-        if (array_key_exists(self::running, $diff)) {
-            $this->running = (bool)$diff[self::running];
-        }
-        if (array_key_exists(self::currentBackupId, $diff)) {
-            $value = $diff[self::currentBackupId];
-            $this->currentBackupId = $value === null ? null : (string)$value;
-        }
-        if (array_key_exists(self::scope, $diff)) {
-            $value = $diff[self::scope];
-            $this->scope = $value === null ? null : (string)$value;
-        }
-        if (array_key_exists(self::startedAt, $diff)) {
-            $value = $diff[self::startedAt];
-            $this->startedAt = $value === null ? null : (string)$value;
-        }
-        if (array_key_exists(self::phase, $diff)) {
-            $value = $diff[self::phase];
-            $this->phase = $value === null ? null : (string)$value;
-        }
-        if (array_key_exists(self::phaseStartedAt, $diff)) {
-            $value = $diff[self::phaseStartedAt];
-            $this->phaseStartedAt = $value === null ? null : (string)$value;
-        }
-        if (array_key_exists(self::estimatedSeconds, $diff)) {
-            $value = $diff[self::estimatedSeconds];
-            $this->estimatedSeconds = $value === null ? null : (int)$value;
-        }
+        $this->running = self::patchBool($diff, self::running, $this->running);
+        $this->currentBackupId = self::patchOptionalString($diff, self::currentBackupId, $this->currentBackupId);
+        $this->scope = self::patchOptionalString($diff, self::scope, $this->scope);
+        $this->startedAt = self::patchOptionalString($diff, self::startedAt, $this->startedAt);
+        $this->phase = self::patchOptionalString($diff, self::phase, $this->phase);
+        $this->phaseStartedAt = self::patchOptionalString($diff, self::phaseStartedAt, $this->phaseStartedAt);
+        $this->estimatedSeconds = self::patchOptionalInt($diff, self::estimatedSeconds, $this->estimatedSeconds);
     }
 
     /**

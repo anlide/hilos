@@ -101,16 +101,12 @@ final class HilosBackupHistoryTableTest extends TestCase
     public function testStoredBackupChangeProjectsFinishedRow(): void
     {
         $table = $this->table(histories: $this->historiesWith(
-            BackupHistory::fromRow([
-                BackupHistory::id => 'b1',
-                BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                BackupHistory::env => 'prod',
+            BackupHistory::fromRow($this->historyRow([
                 BackupHistory::scope => 'full',
                 BackupHistory::sizeBytes => 2048,
                 BackupHistory::durationSeconds => 7,
                 BackupHistory::keep => true,
-                BackupHistory::status => 'success',
-            ]),
+            ])),
         ));
 
         $mutation = $table->buildMutationForSourceEvent(
@@ -129,12 +125,10 @@ final class HilosBackupHistoryTableTest extends TestCase
     public function testFailedBackupProjectsNullFinished(): void
     {
         $table = $this->table(histories: $this->historiesWith(
-            BackupHistory::fromRow([
+            BackupHistory::fromRow($this->historyRow([
                 BackupHistory::id => 'b2',
-                BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                BackupHistory::env => 'prod',
                 BackupHistory::status => 'error',
-            ]),
+            ])),
         ));
 
         $mutation = $table->buildMutationForSourceEvent(
@@ -148,13 +142,11 @@ final class HilosBackupHistoryTableTest extends TestCase
     public function testFailedBackupCarriesItsStoredReason(): void
     {
         $table = $this->table(histories: $this->historiesWith(
-            BackupHistory::fromRow([
+            BackupHistory::fromRow($this->historyRow([
                 BackupHistory::id => 'b3',
-                BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                BackupHistory::env => 'prod',
                 BackupHistory::status => 'error',
                 BackupHistory::failureReason => 'timed out after 30s',
-            ]),
+            ])),
         ));
 
         $mutation = $table->buildMutationForSourceEvent(
@@ -180,12 +172,7 @@ final class HilosBackupHistoryTableTest extends TestCase
     {
         $table = $this->table(
             histories: $this->historiesWith(
-                BackupHistory::fromRow([
-                    BackupHistory::id => 'b1',
-                    BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                    BackupHistory::env => 'prod',
-                    BackupHistory::status => 'success',
-                ]),
+                BackupHistory::fromRow($this->historyRow()),
             ),
             runtime: $this->runningRuntime(),
         );
@@ -205,12 +192,7 @@ final class HilosBackupHistoryTableTest extends TestCase
     {
         $table = $this->table(
             histories: $this->historiesWith(
-                BackupHistory::fromRow([
-                    BackupHistory::id => 'b1',
-                    BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                    BackupHistory::env => 'prod',
-                    BackupHistory::status => 'success',
-                ]),
+                BackupHistory::fromRow($this->historyRow()),
             ),
             runtime: $this->runningRuntime([
                 StateBackupRuntime::phase => 'archiving',
@@ -315,12 +297,7 @@ final class HilosBackupHistoryTableTest extends TestCase
     public function testAStoredBackupRowIsNotLive(): void
     {
         $histories = $this->historiesWith(
-            BackupHistory::fromRow([
-                BackupHistory::id => 'b1',
-                BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                BackupHistory::env => 'prod',
-                BackupHistory::status => 'success',
-            ]),
+            BackupHistory::fromRow($this->historyRow()),
         );
         $mutation = $this->table($histories)->buildMutationForSourceEvent(
             SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, 'b1', []),
@@ -377,13 +354,10 @@ final class HilosBackupHistoryTableTest extends TestCase
 
         foreach ($states as $id => [$extra, $expected]) {
             $table = $this->table(histories: $this->historiesWith(
-                BackupHistory::fromRow([
+                BackupHistory::fromRow($this->historyRow([
                     BackupHistory::id => $id,
-                    BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                    BackupHistory::env => 'prod',
-                    BackupHistory::status => 'success',
                     ...$extra,
-                ]),
+                ])),
             ));
 
             $mutation = $table->buildMutationForSourceEvent(
@@ -403,13 +377,10 @@ final class HilosBackupHistoryTableTest extends TestCase
             BackupHistory::shipOutcome => 'ok',
         ]] as $id => $extra) {
             $table = $this->table(histories: $this->historiesWith(
-                BackupHistory::fromRow([
+                BackupHistory::fromRow($this->historyRow([
                     BackupHistory::id => $id,
-                    BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                    BackupHistory::env => 'prod',
-                    BackupHistory::status => 'success',
                     ...$extra,
-                ]),
+                ])),
             ));
 
             $mutation = $table->buildMutationForSourceEvent(
@@ -469,12 +440,10 @@ final class HilosBackupHistoryTableTest extends TestCase
     private function shipStateOfAnUnshippedRow(string $status = 'success'): ?BackupShipState
     {
         $table = $this->table(histories: $this->historiesWith(
-            BackupHistory::fromRow([
+            BackupHistory::fromRow($this->historyRow([
                 BackupHistory::id => 'owed',
-                BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                BackupHistory::env => 'prod',
                 BackupHistory::status => $status,
-            ]),
+            ])),
         ));
 
         return $table->buildMutationForSourceEvent(
@@ -487,15 +456,11 @@ final class HilosBackupHistoryTableTest extends TestCase
         // The two travel whatever the configured destination is: the state answers "should the
         // operator worry", these answer "when" and "why", and the row is where both are read.
         $table = $this->table(histories: $this->historiesWith(
-            BackupHistory::fromRow([
-                BackupHistory::id => 'b1',
-                BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                BackupHistory::env => 'prod',
-                BackupHistory::status => 'success',
+            BackupHistory::fromRow($this->historyRow([
                 BackupHistory::shippedAt => '2026-08-16T06:00:00+00:00',
                 BackupHistory::shipOutcome => 'failed',
                 BackupHistory::shipError => 'ssh: connect timed out',
-            ]),
+            ])),
         ));
 
         $mutation = $table->buildMutationForSourceEvent(
@@ -509,15 +474,11 @@ final class HilosBackupHistoryTableTest extends TestCase
     public function testAVerifiedRowCarriesWhenItWasChecked(): void
     {
         $table = $this->table(histories: $this->historiesWith(
-            BackupHistory::fromRow([
-                BackupHistory::id => 'b1',
-                BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                BackupHistory::env => 'prod',
-                BackupHistory::status => 'success',
+            BackupHistory::fromRow($this->historyRow([
                 BackupHistory::sha256 => 'ab',
                 BackupHistory::verifyOutcome => 'ok',
                 BackupHistory::verifiedAt => '2026-08-02T06:00:00+00:00',
-            ]),
+            ])),
         ));
 
         $mutation = $table->buildMutationForSourceEvent(
@@ -533,13 +494,10 @@ final class HilosBackupHistoryTableTest extends TestCase
     {
         // Defensive: an index row cannot honestly claim a check it has no digest for.
         $table = $this->table(histories: $this->historiesWith(
-            BackupHistory::fromRow([
+            BackupHistory::fromRow($this->historyRow([
                 BackupHistory::id => 'odd',
-                BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                BackupHistory::env => 'prod',
-                BackupHistory::status => 'success',
                 BackupHistory::verifyOutcome => 'ok',
-            ]),
+            ])),
         ));
 
         $mutation = $table->buildMutationForSourceEvent(
@@ -585,18 +543,10 @@ final class HilosBackupHistoryTableTest extends TestCase
     {
         $table = $this->table(
             histories: $this->historiesWith(
-                BackupHistory::fromRow([
-                    BackupHistory::id => 'b1',
-                    BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                    BackupHistory::env => 'prod',
-                    BackupHistory::status => 'success',
-                ]),
-                BackupHistory::fromRow([
+                BackupHistory::fromRow($this->historyRow()),
+                BackupHistory::fromRow($this->historyRow([
                     BackupHistory::id => 'b2',
-                    BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                    BackupHistory::env => 'prod',
-                    BackupHistory::status => 'success',
-                ]),
+                ])),
             ),
             restore: $this->restoreRuntime('b2'),
         );
@@ -616,12 +566,7 @@ final class HilosBackupHistoryTableTest extends TestCase
     {
         $table = $this->table(
             histories: $this->historiesWith(
-                BackupHistory::fromRow([
-                    BackupHistory::id => 'b1',
-                    BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                    BackupHistory::env => 'prod',
-                    BackupHistory::status => 'success',
-                ]),
+                BackupHistory::fromRow($this->historyRow()),
             ),
             restore: $this->restoreRuntime('gone'),
         );
@@ -634,12 +579,7 @@ final class HilosBackupHistoryTableTest extends TestCase
     public function testAnIdleRestoreRowMovesNothing(): void
     {
         $table = $this->table(histories: $this->historiesWith(
-            BackupHistory::fromRow([
-                BackupHistory::id => 'b1',
-                BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                BackupHistory::env => 'prod',
-                BackupHistory::status => 'success',
-            ]),
+            BackupHistory::fromRow($this->historyRow()),
         ));
 
         $this->assertNull($table->buildMutationForSourceEvent(
@@ -651,18 +591,10 @@ final class HilosBackupHistoryTableTest extends TestCase
     {
         $table = $this->table(
             histories: $this->historiesWith(
-                BackupHistory::fromRow([
-                    BackupHistory::id => 'b1',
-                    BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                    BackupHistory::env => 'prod',
-                    BackupHistory::status => 'success',
-                ]),
-                BackupHistory::fromRow([
+                BackupHistory::fromRow($this->historyRow()),
+                BackupHistory::fromRow($this->historyRow([
                     BackupHistory::id => 'b2',
-                    BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                    BackupHistory::env => 'prod',
-                    BackupHistory::status => 'success',
-                ]),
+                ])),
             ),
             restore: $this->restoreRuntime('b2', [
                 StateRestoreRuntime::running => false,
@@ -700,12 +632,7 @@ final class HilosBackupHistoryTableTest extends TestCase
         // warns about a half-replaced database on every restore that worked.
         $table = $this->table(
             histories: $this->historiesWith(
-                BackupHistory::fromRow([
-                    BackupHistory::id => 'b1',
-                    BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                    BackupHistory::env => 'prod',
-                    BackupHistory::status => 'success',
-                ]),
+                BackupHistory::fromRow($this->historyRow()),
             ),
             restore: $this->restoreRuntime('b1', [
                 StateRestoreRuntime::running => false,
@@ -769,11 +696,7 @@ final class HilosBackupHistoryTableTest extends TestCase
     {
         $this->listCodeMigrations(1, 40);
         $table = $this->table(histories: $this->historiesWith(
-            BackupHistory::fromRow([
-                BackupHistory::id => 'b1',
-                BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                BackupHistory::env => 'prod',
-                BackupHistory::status => 'success',
+            BackupHistory::fromRow($this->historyRow([
                 BackupHistory::connections => [
                     [
                         BackupConnectionMeta::index => 0,
@@ -786,7 +709,7 @@ final class HilosBackupHistoryTableTest extends TestCase
                         BackupConnectionMeta::migrationIndex => null,
                     ],
                 ],
-            ]),
+            ])),
         ));
 
         $row = $this->storedRowOf($table, 'b1');
@@ -827,11 +750,8 @@ final class HilosBackupHistoryTableTest extends TestCase
     private function rowOfArchiveAtLevel(string $id, ?int $migrationIndex): HilosBackupTableRow
     {
         $table = $this->table(histories: $this->historiesWith(
-            BackupHistory::fromRow([
+            BackupHistory::fromRow($this->historyRow([
                 BackupHistory::id => $id,
-                BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
-                BackupHistory::env => 'prod',
-                BackupHistory::status => 'success',
                 BackupHistory::connections => [
                     [
                         BackupConnectionMeta::index => 0,
@@ -839,7 +759,7 @@ final class HilosBackupHistoryTableTest extends TestCase
                         BackupConnectionMeta::migrationIndex => $migrationIndex,
                     ],
                 ],
-            ]),
+            ])),
         ));
 
         return $this->storedRowOf($table, $id);
@@ -914,6 +834,9 @@ final class HilosBackupHistoryTableTest extends TestCase
             StateRestoreRuntime::scope => 'full',
             StateRestoreRuntime::phase => 'importing',
             StateRestoreRuntime::startedAt => '2026-08-15T10:30:00+00:00',
+            StateRestoreRuntime::rehydrateComplete => false,
+            StateRestoreRuntime::rehydrateProblems => [],
+            StateRestoreRuntime::databaseTouched => false,
         ]);
 
         return new RestoreRuntime($state);
@@ -958,6 +881,28 @@ final class HilosBackupHistoryTableTest extends TestCase
         ]);
 
         return new BackupRuntime($state);
+    }
+
+    /**
+     * A stored backup row in the shape the runtime index holds one.
+     *
+     * @param array<string, mixed> $overrides Fields this row differs in
+     * @return array<string, mixed> Runtime row carrying every field it cannot be read without
+     */
+    private function historyRow(array $overrides = []): array
+    {
+        return $overrides + [
+            BackupHistory::id => 'b1',
+            BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
+            BackupHistory::env => 'prod',
+            BackupHistory::status => 'success',
+            BackupHistory::connections => [],
+            BackupHistory::sizeBytes => 0,
+            BackupHistory::durationSeconds => 0,
+            BackupHistory::keep => false,
+            BackupHistory::dumpBytes => 0,
+            BackupHistory::restoreDurationSeconds => 0,
+        ];
     }
 
     /**

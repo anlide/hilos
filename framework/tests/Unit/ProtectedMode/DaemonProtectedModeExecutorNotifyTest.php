@@ -229,6 +229,8 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         // mode again, so the node says so and stays where it is.
         Hilos::$rt?->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::fromRow([
             StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_VERIFYING,
+            StateProtectedModeRuntime::passHashes => [],
+            StateProtectedModeRuntime::admittedAcceptKeys => [],
         ]));
 
         $this->executor->reenterActive();

@@ -10,6 +10,7 @@ use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupShipOutcome;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\BackupVerifyOutcome;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\State\Collection\BackupHistories;
 
 /**
@@ -146,36 +147,31 @@ final class BackupHistory extends RtState
 
     /**
      * @param array<string, mixed> $row Serialized runtime row
+     * @return static History row restored from a sync row
+     * @throws InvalidFormatException When the row lost a field the index is built from
      */
     public static function fromRow(array $row): static
     {
-        $connections = [];
-        foreach ((array)($row[self::connections] ?? []) as $connectionRow) {
-            if (is_array($connectionRow)) {
-                $connections[] = BackupConnectionMeta::fromArray($connectionRow);
-            }
-        }
-
         $instance = new static();
-        $instance->id = (string)$row[self::id];
-        $instance->createdAt = (string)$row[self::createdAt];
-        $instance->env = (string)$row[self::env];
-        $instance->scope = self::stringOrNull($row[self::scope] ?? null);
-        $instance->connections = $connections;
-        $instance->sizeBytes = (int)($row[self::sizeBytes] ?? 0);
-        $instance->durationSeconds = (int)($row[self::durationSeconds] ?? 0);
-        $instance->keep = (bool)($row[self::keep] ?? false);
-        $instance->status = (string)$row[self::status];
-        $instance->failureReason = isset($row[self::failureReason]) ? (string)$row[self::failureReason] : null;
-        $instance->dumpBytes = (int)($row[self::dumpBytes] ?? 0);
-        $instance->sha256 = isset($row[self::sha256]) ? (string)$row[self::sha256] : null;
-        $instance->verifiedAt = isset($row[self::verifiedAt]) ? (string)$row[self::verifiedAt] : null;
-        $instance->verifyOutcome = isset($row[self::verifyOutcome]) ? (string)$row[self::verifyOutcome] : null;
-        $instance->restoredAt = isset($row[self::restoredAt]) ? (string)$row[self::restoredAt] : null;
-        $instance->restoreDurationSeconds = (int)($row[self::restoreDurationSeconds] ?? 0);
-        $instance->shippedAt = isset($row[self::shippedAt]) ? (string)$row[self::shippedAt] : null;
-        $instance->shipOutcome = isset($row[self::shipOutcome]) ? (string)$row[self::shipOutcome] : null;
-        $instance->shipError = isset($row[self::shipError]) ? (string)$row[self::shipError] : null;
+        $instance->id = self::requireString($row, self::id);
+        $instance->createdAt = self::requireString($row, self::createdAt);
+        $instance->env = self::requireString($row, self::env);
+        $instance->scope = self::optionalString($row, self::scope);
+        $instance->connections = self::readConnections($row);
+        $instance->sizeBytes = self::requireInt($row, self::sizeBytes);
+        $instance->durationSeconds = self::requireInt($row, self::durationSeconds);
+        $instance->keep = self::requireBool($row, self::keep);
+        $instance->status = self::requireString($row, self::status);
+        $instance->failureReason = self::optionalString($row, self::failureReason);
+        $instance->dumpBytes = self::requireInt($row, self::dumpBytes);
+        $instance->sha256 = self::optionalString($row, self::sha256);
+        $instance->verifiedAt = self::optionalString($row, self::verifiedAt);
+        $instance->verifyOutcome = self::optionalString($row, self::verifyOutcome);
+        $instance->restoredAt = self::optionalString($row, self::restoredAt);
+        $instance->restoreDurationSeconds = self::requireInt($row, self::restoreDurationSeconds);
+        $instance->shippedAt = self::optionalString($row, self::shippedAt);
+        $instance->shipOutcome = self::optionalString($row, self::shipOutcome);
+        $instance->shipError = self::optionalString($row, self::shipError);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -188,69 +184,30 @@ final class BackupHistory extends RtState
      * the row it first received - a pinned backup would stay unpinned everywhere else.
      *
      * @param array<string, mixed> $diff Changed fields and values from another worker
+     * @throws InvalidFormatException When the diff carries a field as the wrong type
      */
     public function applyDiff(array $diff): void
     {
-        if (array_key_exists(self::createdAt, $diff)) {
-            $this->createdAt = (string)$diff[self::createdAt];
-        }
-        if (array_key_exists(self::env, $diff)) {
-            $this->env = (string)$diff[self::env];
-        }
-        if (array_key_exists(self::scope, $diff)) {
-            $this->scope = (string)$diff[self::scope];
-        }
+        $this->createdAt = self::patchString($diff, self::createdAt, $this->createdAt);
+        $this->env = self::patchString($diff, self::env, $this->env);
+        $this->scope = self::patchOptionalString($diff, self::scope, $this->scope);
         if (array_key_exists(self::connections, $diff)) {
-            $connections = [];
-            foreach ((array)$diff[self::connections] as $connectionRow) {
-                if (is_array($connectionRow)) {
-                    $connections[] = BackupConnectionMeta::fromArray($connectionRow);
-                }
-            }
-            $this->connections = $connections;
+            $this->connections = self::readConnections($diff);
         }
-        if (array_key_exists(self::sizeBytes, $diff)) {
-            $this->sizeBytes = (int)$diff[self::sizeBytes];
-        }
-        if (array_key_exists(self::durationSeconds, $diff)) {
-            $this->durationSeconds = (int)$diff[self::durationSeconds];
-        }
-        if (array_key_exists(self::keep, $diff)) {
-            $this->keep = (bool)$diff[self::keep];
-        }
-        if (array_key_exists(self::status, $diff)) {
-            $this->status = (string)$diff[self::status];
-        }
-        if (array_key_exists(self::failureReason, $diff)) {
-            $this->failureReason = $diff[self::failureReason] === null ? null : (string)$diff[self::failureReason];
-        }
-        if (array_key_exists(self::dumpBytes, $diff)) {
-            $this->dumpBytes = (int)$diff[self::dumpBytes];
-        }
-        if (array_key_exists(self::sha256, $diff)) {
-            $this->sha256 = $diff[self::sha256] === null ? null : (string)$diff[self::sha256];
-        }
-        if (array_key_exists(self::verifiedAt, $diff)) {
-            $this->verifiedAt = $diff[self::verifiedAt] === null ? null : (string)$diff[self::verifiedAt];
-        }
-        if (array_key_exists(self::verifyOutcome, $diff)) {
-            $this->verifyOutcome = $diff[self::verifyOutcome] === null ? null : (string)$diff[self::verifyOutcome];
-        }
-        if (array_key_exists(self::restoredAt, $diff)) {
-            $this->restoredAt = $diff[self::restoredAt] === null ? null : (string)$diff[self::restoredAt];
-        }
-        if (array_key_exists(self::restoreDurationSeconds, $diff)) {
-            $this->restoreDurationSeconds = (int)$diff[self::restoreDurationSeconds];
-        }
-        if (array_key_exists(self::shippedAt, $diff)) {
-            $this->shippedAt = $diff[self::shippedAt] === null ? null : (string)$diff[self::shippedAt];
-        }
-        if (array_key_exists(self::shipOutcome, $diff)) {
-            $this->shipOutcome = $diff[self::shipOutcome] === null ? null : (string)$diff[self::shipOutcome];
-        }
-        if (array_key_exists(self::shipError, $diff)) {
-            $this->shipError = $diff[self::shipError] === null ? null : (string)$diff[self::shipError];
-        }
+        $this->sizeBytes = self::patchInt($diff, self::sizeBytes, $this->sizeBytes);
+        $this->durationSeconds = self::patchInt($diff, self::durationSeconds, $this->durationSeconds);
+        $this->keep = self::patchBool($diff, self::keep, $this->keep);
+        $this->status = self::patchString($diff, self::status, $this->status);
+        $this->failureReason = self::patchOptionalString($diff, self::failureReason, $this->failureReason);
+        $this->dumpBytes = self::patchInt($diff, self::dumpBytes, $this->dumpBytes);
+        $this->sha256 = self::patchOptionalString($diff, self::sha256, $this->sha256);
+        $this->verifiedAt = self::patchOptionalString($diff, self::verifiedAt, $this->verifiedAt);
+        $this->verifyOutcome = self::patchOptionalString($diff, self::verifyOutcome, $this->verifyOutcome);
+        $this->restoredAt = self::patchOptionalString($diff, self::restoredAt, $this->restoredAt);
+        $this->restoreDurationSeconds = self::patchInt($diff, self::restoreDurationSeconds, $this->restoreDurationSeconds);
+        $this->shippedAt = self::patchOptionalString($diff, self::shippedAt, $this->shippedAt);
+        $this->shipOutcome = self::patchOptionalString($diff, self::shipOutcome, $this->shipOutcome);
+        $this->shipError = self::patchOptionalString($diff, self::shipError, $this->shipError);
     }
 
     /**
@@ -301,11 +258,28 @@ final class BackupHistory extends RtState
     }
 
     /**
-     * @param mixed $value Raw row value
-     * @return ?string String value, or null
+     * Reads the connection list, the one field of this row that is a list of objects.
+     *
+     * The base readers stop at scalars and lists of strings, so the shape gets a reader of its
+     * own rather than a cast: a row whose connections are not a list of arrays is a row this
+     * state cannot describe, and the refusal is the same one every other field raises.
+     *
+     * @param array<string, mixed> $source Runtime row or diff
+     * @return list<BackupConnectionMeta> Connections captured in the backup
+     * @throws InvalidFormatException When the key is absent, holds a non-array, or holds a non-array element
      */
-    private static function stringOrNull(mixed $value): ?string
+    private static function readConnections(array $source): array
     {
-        return $value === null ? null : (string)$value;
+        $connections = [];
+        foreach (self::requireArray($source, self::connections) as $connectionRow) {
+            if (!is_array($connectionRow)) {
+                throw new InvalidFormatException(
+                    'Runtime row carries a non-array connection under key ' . self::connections,
+                );
+            }
+            $connections[] = BackupConnectionMeta::fromArray($connectionRow);
+        }
+
+        return $connections;
     }
 }

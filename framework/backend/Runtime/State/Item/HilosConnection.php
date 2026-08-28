@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\HilosException;
 
 /**
@@ -65,6 +66,7 @@ abstract class HilosConnection extends RtState
      *
      * @param array<string, mixed> $row Serialized runtime row (keys match the field constants)
      * @return static Connection row restored from a sync row
+     * @throws InvalidFormatException When the row lost a base field or carries it as another type
      */
     final public static function fromRow(array $row): static
     {
@@ -96,6 +98,7 @@ abstract class HilosConnection extends RtState
 
     /**
      * @param array<string, mixed> $diff Partial update; keys are the row field constants
+     * @throws InvalidFormatException When the diff carries a base field as another type
      * @throws HilosException Whatever the project's read of its own fields raises
      */
     final public function applyDiff(array $diff): void
@@ -155,11 +158,12 @@ abstract class HilosConnection extends RtState
      * Hydrates the base fields from a serialized runtime row.
      *
      * @param array<string, mixed> $row Serialized runtime row
+     * @throws InvalidFormatException When the row lost a base field or carries it as another type
      */
     protected function hydrateBase(array $row): void
     {
-        $this->acceptKey = (string)$row[self::acceptKey];
-        $this->userId = isset($row[self::userId]) ? (int)$row[self::userId] : null;
+        $this->acceptKey = self::requireString($row, self::acceptKey);
+        $this->userId = self::optionalInt($row, self::userId);
     }
 
     /**
@@ -182,11 +186,10 @@ abstract class HilosConnection extends RtState
      * (bound and unbound by the authenticate seam) can change.
      *
      * @param array<string, mixed> $diff Partial update
+     * @throws InvalidFormatException When the diff carries the user id as a non-integer
      */
     protected function applyBaseDiff(array $diff): void
     {
-        if (array_key_exists(self::userId, $diff)) {
-            $this->userId = $diff[self::userId] === null ? null : (int)$diff[self::userId];
-        }
+        $this->userId = self::patchOptionalInt($diff, self::userId, $this->userId);
     }
 }
