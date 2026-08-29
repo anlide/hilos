@@ -30,9 +30,9 @@ use Hilos\Users\AdminCommandConstants;
  *
  * What is pinned is everything the framework owns: that a token naming no session and an
  * unwired project each become exactly one error reply, that the project seam is reached with
- * the user the session carries (or with null when it carries none), and that `created` tells
- * a mint from a grant. The row the seam writes belongs to a project and is exercised by the
- * demo runs.
+ * the user the session carries (or with null when it carries none, expiry included), that
+ * `created` tells a mint from a grant and `expired` tells why the user changed (HIL-700).
+ * The row the seam writes belongs to a project and is exercised by the demo runs.
  */
 final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationTestCase
 {
@@ -44,6 +44,14 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
 
     /** User a seeded session already carries, standing in for today's visitor row. */
     private const int EXISTING_USER_ID = 7;
+
+    /**
+     * An expiry that has certainly passed, for seeding a session the door has to drop.
+     *
+     * A fixed date rather than an offset from the clock: the door only asks whether the
+     * value is behind now, and a literal cannot land on the wrong side of a slow test.
+     */
+    private const string PAST_EXPIRY = '2000-01-01 00:00:00';
 
     /**
      * @var list<string> Framework tables this case needs. `hilos_setting` is the one
@@ -152,6 +160,7 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
         self::assertSame(self::EXISTING_USER_ID, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_ADMIN]);
         self::assertFalse($reply->payload[AdminCommandConstants::FIELD_CREATED], 'Nothing was minted');
+        self::assertFalse($reply->payload[AdminCommandConstants::FIELD_EXPIRED], 'The session was open-ended');
         self::assertSame(self::EXISTING_USER_ID, self::boundUserId(self::TOKEN));
     }
 
@@ -171,8 +180,38 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
         self::assertNull($agent->seenUserId, 'A session with no user asks the seam to mint one');
         self::assertSame(AdminCreateRouteTestAgent::MINTED_USER_ID, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_CREATED]);
+        self::assertFalse($reply->payload[AdminCommandConstants::FIELD_EXPIRED], 'It carried nobody to lose');
         // The bind is the half that makes the mint usable: without it the operator owns an
         // administrator he has no session to reach it with.
+        self::assertSame(AdminCreateRouteTestAgent::MINTED_USER_ID, self::boundUserId(self::TOKEN));
+    }
+
+    /**
+     * An expired session loses the user it carried and the administrator is somebody new.
+     *
+     * The point of HIL-700. The command used to find the row with a plain lookup, so a
+     * cookie whose expiry had passed was re-bound and slid forward - an expired access
+     * became an administrator. It now goes through the same door a handshake uses, which
+     * drops it to anonymous first (HIL-398), so the seam is asked to mint rather than handed
+     * the stale user, and `expired` is what tells the operator why the reply names a user id
+     * he has never seen.
+     *
+     * @throws DatabaseException When the seed or the read-back fails
+     */
+    public function testAnExpiredSessionLosesItsUserAndTheSeamMintsANewOne(): void
+    {
+        self::seedSession(self::TOKEN, self::EXISTING_USER_ID, self::PAST_EXPIRY);
+        $agent = new AdminCreateRouteTestAgent();
+
+        $this->sendCommand($agent, self::TOKEN);
+
+        $reply = $this->consumeReply();
+        self::assertTrue($reply->isOk());
+        self::assertTrue($agent->called);
+        self::assertNull($agent->seenUserId, 'The expired user is gone before the seam is asked');
+        self::assertSame(AdminCreateRouteTestAgent::MINTED_USER_ID, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
+        self::assertTrue($reply->payload[AdminCommandConstants::FIELD_CREATED]);
+        self::assertTrue($reply->payload[AdminCommandConstants::FIELD_EXPIRED]);
         self::assertSame(AdminCreateRouteTestAgent::MINTED_USER_ID, self::boundUserId(self::TOKEN));
     }
 
@@ -237,15 +276,19 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
     /**
      * Inserts a session row the way the handshake would have.
      *
+     * The expiry is written too, because it is what the door judges: a null one is the
+     * open-ended session every other case here wants, and a past one is the drop.
+     *
      * @param string $token Session cookie token
      * @param ?int $userId Bound user id, or null for an anonymous session
+     * @param ?string $expiresAt SQL datetime the session expires at, or null for open-ended
      * @throws DatabaseException When the insert fails
      */
-    private static function seedSession(string $token, ?int $userId): void
+    private static function seedSession(string $token, ?int $userId, ?string $expiresAt = null): void
     {
         Database::sqlRun(
-            'INSERT INTO `hilos_session` (`token`, `user_id`) VALUES (?, ?)',
-            [$token, $userId],
+            'INSERT INTO `hilos_session` (`token`, `user_id`, `expires_at`) VALUES (?, ?, ?)',
+            [$token, $userId, $expiresAt],
         );
     }
 

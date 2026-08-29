@@ -783,10 +783,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * One path, taken whole every time: resolve the session by its token, take the user it
      * carries or mint one through {@see self::ensureAdminUser()}, then authenticate the
-     * session onto that user. The four outcomes an operator can meet - a session with no
+     * session onto that user. The five outcomes an operator can meet - a session with no
      * user, a session carrying a visitor, a session that is already an administrator, a
-     * token naming no session - fall out of that one path rather than out of four branches,
-     * which would be four places to forget the re-point that makes the grant visible.
+     * session whose expiry has passed, a token naming no session - fall out of that one path
+     * rather than out of five branches, which would be five places to forget the re-point
+     * that makes the grant visible.
      *
      * {@see self::authenticateSession()} runs even when the flag was already set: it is what
      * re-points the session's live connections and fans the handshake response out to every
@@ -801,16 +802,22 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * refused write - becomes exactly one error reply, because a CLI parked on the command
      * socket must learn the outcome rather than time out.
      *
-     * The session is resolved with a plain lookup rather than through
-     * {@see self::resolveHandshakeSession()}, so the HIL-398 expiry downgrade does NOT run
-     * here and an expired session named by an operator is re-bound and slid forward rather
-     * than refused. That is deliberate and of a piece with the block flag this command also
-     * does not consult: those guards judge a BROWSER presenting a cookie by itself, and this
-     * is an operator naming a session on purpose. It grants nothing extra either - whoever
-     * reaches this unauthenticated socket can already {@see CliCommands::ADMIN_GRANT} any
-     * user id. In the walked operator path it cannot even arise: the browser handshakes
-     * first, so an expired session has already been downgraded to anonymous and arrives here
-     * carrying no user at all.
+     * The session goes through {@see self::resolveHandshakeSession()}, the very door a
+     * handshake uses, so an expired session named by an operator is dropped to anonymous by
+     * the HIL-398 rule instead of being re-bound and slid forward: an expired access stays
+     * expired, and the administrator becomes a NEW user rather than the one the stale cookie
+     * still names. The operator learns it happened from
+     * {@see AdminCommandConstants::FIELD_EXPIRED}, because the reply otherwise differs only
+     * by a user id he has never seen.
+     *
+     * The plain lookup stays in FRONT of that door and is not redundant: the door mints an
+     * anonymous session for a token it does not know, so without the lookup an operator's
+     * typo would create both a session and an account.
+     *
+     * The block flag this command still does not consult, and that remains deliberate: it
+     * judges a BROWSER presenting a cookie by itself, and this is an operator naming a
+     * session on purpose. It grants nothing extra either - whoever reaches this
+     * unauthenticated socket can already {@see CliCommands::ADMIN_GRANT} any user id.
      *
      * @param CommandRequestDTO $data Command request carrying the session cookie token
      * @throws InvalidArgumentException When the reply carries an empty correlation id
@@ -831,7 +838,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 return;
             }
 
+            // What the row carried BEFORE the door, which is the only thing that tells an
+            // expiry drop from a session that was anonymous all along.
+            $userIdBeforeDoor = $session->userId;
+            $session = $this->resolveHandshakeSession($sessionToken);
+
             $created = $session->userId === null;
+            // The door unbinds a user for exactly one reason - the expiry - so the two reads
+            // around it name it without repeating the TTL comparison that lives inside.
+            $expired = $userIdBeforeDoor !== null && $session->userId === null;
             $userId = $this->ensureAdminUser($session->userId);
             $this->authenticateSession($sessionToken, $userId, null);
         } catch (Throwable $e) {
@@ -844,6 +859,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             AdminCommandConstants::FIELD_USER_ID => $userId,
             AdminCommandConstants::FIELD_ADMIN => true,
             AdminCommandConstants::FIELD_CREATED => $created,
+            AdminCommandConstants::FIELD_EXPIRED => $expired,
         ]));
     }
 

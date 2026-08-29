@@ -80,6 +80,11 @@ class AdminCreateCommand implements CommandInterface, DatabaseFreeCommand
         }
 
         $userId = (int)($reply->payload[AdminCommandConstants::FIELD_USER_ID] ?? 0);
+        if ((bool)($reply->payload[AdminCommandConstants::FIELD_EXPIRED] ?? false)) {
+            // Said on its own line and before the outcome, because the outcome names a user
+            // the operator has never seen and reads as a mistake until this explains it.
+            echo "The session had expired: its previous user was unbound by the expiry rule.\n";
+        }
         $outcome = ((bool)($reply->payload[AdminCommandConstants::FIELD_CREATED] ?? false))
             ? "created user #{$userId} as an administrator"
             : "made existing user #{$userId} an administrator";
@@ -136,6 +141,8 @@ Command: {$this->getName()} <sessionToken>
 Description:
   Make the browser session named by the token an administrator. A session that already
   carries a user has that user flagged; one that carries none has a user minted for it.
+  A session whose expiry has passed loses the user it carried, exactly as it would on a
+  handshake, so the administrator is a new user and the command says so.
   The running daemon writes the row, binds the session and re-sends the handshake
   response to that session's open tabs, so the admin entry appears without a reload.
   Granting a session that is already an admin is not an error.

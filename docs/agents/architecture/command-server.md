@@ -181,6 +181,12 @@ minting the user row when the session carries none. Its two halves are
 `AbstractSessionsLibraryAgent::handleAdminCreateCommand()` on the agent, with
 `ensureAdminUser()` as the project seam that writes the row.
 
+A session whose expiry has passed is dropped by the same door a handshake goes
+through (`resolveHandshakeSession()`, the HIL-398 rule), so the user it carried is
+unbound before the seam is asked: the administrator is a NEW user rather than the
+one a stale cookie still names, and the reply carries `expired` so the operator
+knows why the id is one he has never seen (HIL-700).
+
 It routes to the **sessions library** (`hilos_sessions_library`), where the grant
 now lands too: the operation ends in a session bind, and the session row is the
 library's. That is also why no reconnect is needed — the bind ends in a

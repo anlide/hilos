@@ -25,9 +25,9 @@ use Hilos\Core\CLI\Commands\AdminCreateCommand;
  *
  * {@see CliCommands::ADMIN_CREATE} joins the same vocabulary rather than opening a second
  * one: it addresses a session ({@see self::FIELD_SESSION_TOKEN}) instead of a user id and
- * adds {@see self::FIELD_CREATED} to its reply, but the user id and the flag it answers with
- * mean exactly what the grant's do. Its halves are {@see AdminCreateCommand} and
- * {@see AbstractSessionsLibraryAgent}.
+ * adds {@see self::FIELD_CREATED} and {@see self::FIELD_EXPIRED} to its reply, but the user
+ * id and the flag it answers with mean exactly what the grant's do. Its halves are
+ * {@see AdminCreateCommand} and {@see AbstractSessionsLibraryAgent}.
  *
  * The impersonation pair ({@see CliCommands::IMPERSONATE_START}, {@see CliCommands::IMPERSONATE_STOP})
  * addresses a session by the same key and adds {@see self::FIELD_TARGET_USER_ID} for the
@@ -59,4 +59,21 @@ final class AdminCommandConstants
      * @var string Reply key: whether a user row was minted
      */
     public const string FIELD_CREATED = 'created';
+
+    /**
+     * Reply key telling that the named session had outlived its expiry: true when it was
+     * authenticated, the expiry rule unbound the user it carried, and the administrator is
+     * therefore somebody new.
+     *
+     * Present in every ok reply, exactly like {@see self::FIELD_ADMIN} and
+     * {@see self::FIELD_CREATED}: a key that appeared only on the one branch it describes
+     * would leave a reader unable to tell "not expired" from "answered by an older daemon".
+     *
+     * The operator cannot infer this from anything else he is handed - the reply names a
+     * user id he has never seen, and without this key it reads as the command having picked
+     * the wrong session.
+     *
+     * @var string Reply key: whether the named session had expired
+     */
+    public const string FIELD_EXPIRED = 'expired';
 }
