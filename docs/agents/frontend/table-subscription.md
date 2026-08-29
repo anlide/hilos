@@ -1,9 +1,38 @@
 # Table Subscriptions
 
+> **Superseded in part — read this before anything below.** The owner approved a
+> redesign of the table on 2026-08-29, and its source of truth is the mockup
+> `hilos-ops/mockups/components/table/index.html`. Four rules stated below no
+> longer hold. Each section that states one carries a marker of its own, and this
+> block wins over any of them.
+>
+> 1. **The gate holds position and membership, not values.** A change to a shown
+>    row that leaves the row where it is applies at once, with a highlight that
+>    clears after about two seconds, and raises no badge. Only a change that moves
+>    a row, takes it out of the set, or brings one into it waits behind Apply.
+> 2. **A delta compares the rendered row, not the entity.** A change touching no
+>    rendered column produces no delta at all, so Apply can never be a button
+>    after which the screen looks the same.
+> 3. **A new row is judged by its sorted place, not by the end of the list.** It
+>    arrives on its own only when its place is the end of the window and the window
+>    has room. Landing inside or above the window it is announced ("N new rows")
+>    and nothing moves until the reader asks for it; landing on a later page it
+>    moves only the count. The author's own create applies at once wherever it
+>    lands, which is what the `own` tag is for — it must therefore cover a create,
+>    whose key the server mints.
+> 4. **Running work is a progress bar, not a row.** The live-row exception below is
+>    withdrawn. Work shows as a bar under its own row, above the table, or inside
+>    the selection panel, and never as a synthetic row in the set.
+>
+> Rewriting this document to the approved design is its own ticket; this block is
+> the stop-gap until that lands.
+
 How a table stays current without "jumping" under a live update stream: the
-client subscribes to the specific rows its viewport shows, and a change to a
-shown row hangs as a pending update the user applies deliberately. Counts and
-new-row appends update live — they never rearrange the rows on screen. Tables are
+client subscribes to the specific rows its viewport shows, and a change that would
+move a shown row, or take it out of the set, hangs as a pending change the user
+applies deliberately. A change to a value that leaves the row in place applies at
+once. Counts and qualifying new rows update live — they never rearrange the rows
+on screen. Tables are
 the heavy durable primitive; the lighter list and append-stream primitives are in
 [data-model.md](data-model.md).
 
@@ -41,6 +70,9 @@ events that do not disturb the displayed rows.
 
 ## Pending vs live
 
+> **Superseded** (see the block at the top): a value change that leaves its row in
+> place applies at once and raises no badge. Only position and membership wait.
+
 Changes split by whether they touch the rows on screen:
 
 - **row-updated and row-removed hang as pending.** Neither auto-applies; each
@@ -76,6 +108,10 @@ the displayed window only as a live tail append (last page with room) or on the
 next explicit re-navigation or re-filter.
 
 ## By-design exceptions to the gate
+
+> **Superseded** (see the block at the top): the live-row exception — a synthetic
+> `__running__` status row — is withdrawn, and running work is a progress bar. The
+> own-change exception stays and must be widened to cover a create.
 
 The gate freezes the **rows on screen** — their position and membership — not
 always the **value inside a cell**. Four changes are deliberately not gated:
@@ -156,6 +192,11 @@ explicit Apply or by the user changing the window.
 
 ## Anchor by row-id, not offset — the frozen viewport
 
+> **Superseded in part** (see the block at the top): anchoring by row-id says
+> *which* row, not *where* it belongs. The window is anchored by its sort key, so
+> the server can place an arriving row against the window's boundaries — which is
+> what decides between arriving, being announced, and moving only the count.
+
 Anchor the window by row-id, not by a raw offset. A server-side deletion *above*
 the window must not silently shift which rows a given offset returns; row-id
 anchoring keeps the displayed window stable against changes outside it.
@@ -166,6 +207,11 @@ viewport change recomputes the window; the sole live additions are a tail append
 and the pager count.
 
 ## Server-computed deltas (option A)
+
+> **Superseded in part** (see the block at the top): the point-wise diff must
+> compare the **rendered** row against the one delivered, and a new row is placed
+> by its sort key rather than admitted only at the tail of a last-page-with-room
+> window.
 
 The server holds each connection's viewport descriptor, the exact row-id keys it
 last delivered (the rows really on screen), and the filtered total. On a source
