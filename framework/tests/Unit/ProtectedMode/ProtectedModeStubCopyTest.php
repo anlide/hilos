@@ -64,9 +64,10 @@ final class ProtectedModeStubCopyTest extends TestCase
 
     public function testTheFrameworkShipsADefaultEntryEveryOperationCanFallBackOn(): void
     {
-        // Reads the live facade rather than the fixture above: the wiring from the constant to
-        // the resolver is what makes a project's override arrive, and a demo that registers
-        // nothing must still get words on the screen.
+        // Reads the live facade rather than the fixture above: the framework always ships a
+        // default entry, so a demo that registers nothing still gets words on the screen. Whether
+        // a project's own override actually reaches this seam is pinned separately, by
+        // {@see ProtectedModeStubLsbResolutionTest}.
         $copy = ProtectedModeStubCopy::forOperation('an-operation-nobody-registered');
 
         $this->assertNotNull($copy->title);
