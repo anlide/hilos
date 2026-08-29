@@ -41,9 +41,11 @@ Effort: max
   tool's own words: `low`, `medium`, `high`, `xhigh`, `max`. Read it, do not
   recall it: in Claude Code it is the `CLAUDE_EFFORT` environment variable
   (`echo $CLAUDE_EFFORT`).
-- The blank line before the block is required. Without it git does not read these
-  lines as trailers at all, and the block stops being something history can be
-  asked about.
+- The blank line before the block is required, and the block is the LAST thing in
+  the message. Git reads trailers only out of the final paragraph, so a line after
+  the block hides it as surely as a missing blank line before it, and either way
+  the block stops being something history can be asked about. A departure from the
+  plan, a measurement, a caveat — everything of that kind goes above the block.
 - Write only what this session knows. A value you cannot read takes its whole
   line out of the block; never write a placeholder such as `unknown`, which greps
   as a value.
