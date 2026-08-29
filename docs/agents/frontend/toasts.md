@@ -106,7 +106,7 @@ hilosToasts.push(reason, { severity: 'error' })
 
 There are **four severities**: `error` (something failed), `success`
 (something the user asked for completed), `warning` (it worked, with a
-caveat), and `info` (neither) (not in the code yet — HIL-765). Write the
+caveat), and `info` (neither). Write the
 message as one whole sentence the user can act on — and never the engine's own
 words ([wire-protocol.md](wire-protocol.md), "A failure reason is a domain
 sentence").
@@ -154,32 +154,32 @@ A project may render its own stack by creating an independent store
 
 - **Twenty seconds; an error — until dismissed.** Twenty seconds is time to
   read, not time to notice. An error does not expire at all: the user closes
-  it, and that is the only thing a toast ever requires of a person
-  (not in the code yet — HIL-765).
+  it, and that is the only thing a toast ever requires of a person.
 - **Time belongs to the store.** The caller does not set a lifetime, and the
-  push contract carries no `ttlMs` option — one behavior instead of a flag
-  (not in the code yet — HIL-765).
+  push contract carries no `ttlMs` option — one behavior instead of a flag.
 - **The countdown measures reading time, not wall time.** It freezes under
   three independent, counted holds: the cursor over the stack, keyboard focus
-  inside it, and the tab not being visible (not in the code yet — HIL-765).
+  inside it, and the tab not being visible.
   Releasing one hold while another is still held resumes nothing; on release
   the countdown continues from what is left. Walk away to another tab and
   everything is still there when you come back.
 - **The cap is a third of the window height, not a card count.** Five short
   notices and two long ones occupy different space, and a phone and a monitor
   differ more still — the limit is measured in the unit the problem actually
-  has (not in the code yet — HIL-765).
+  has.
 - **When space runs out, only an error has the right to wait.** Nothing old is
   silently evicted — the new card waits for a slot, but that right belongs to
   errors alone: a queued error takes the next slot freed by a dismissal.
   Success, info and warning collapse into a missed count instead. The stack
   carries one service line of the shape "N more waiting · M missed"; the line
-  does not count toward the height cap and resets once the stack empties
-  (not in the code yet — HIL-765). The count is honest and expands into
-  nothing — there is no history.
+  does not count toward the height cap and resets once the stack empties. The
+  count is honest and expands into nothing — there is no history. The store
+  keeps both numbers and publishes them; no host draws the line yet
+  (not in the code yet — HIL-777).
 - **A repeat does not multiply cards.** A push whose text *and* severity
   exactly match a visible card bumps a ×N counter on that card and restarts
-  its countdown (not in the code yet — HIL-765). Full-match dedup is
+  its countdown; the merge itself is in the store, while the ×N badge on the
+  card is not drawn yet (not in the code yet — HIL-766). Full-match dedup is
   deliberate: if the text carries an object's name, the texts differ anyway.
   Remember the merge treats a symptom — twenty identical failures are almost
   always one dead server that twenty actions crashed against; ×20 makes it
