@@ -5,6 +5,8 @@ namespace Hilos\Database\Object\Item;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
@@ -15,7 +17,9 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
+use Hilos\Database\Object\Objects;
 use Hilos\Hilos;
+use Hilos\HilosException;
 
 /**
  * Base Object class.
@@ -96,12 +100,37 @@ abstract class Object_
      * Apply partial entity update from another process (DB_SYNC_UPDATED).
      * Wire format: keys are Entity::_columns, same as created row / fromRow.
      *
+     * Announced on the source bus like a local update, so a reader of one row hears about an edit
+     * whichever process made it. The announcement is wrapped as an applied write, exactly as the
+     * applicator wraps a removal it applies: without the wrapping the provenance would claim this
+     * process authored the change, and whoever rebroadcasts local writes would echo it back.
+     *
+     * A collection with no key announces nothing, the same skip the local write makes: there is
+     * no name to announce the change under.
+     *
      * @param array<string, mixed> $row Column name => value (diff)
+     * @throws HilosException Whatever a subscriber to the announcement raises
+     * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
      */
     public function applyDbSyncEntityUpdate(array $row): void
     {
         $this->entity->applySyncPartialRow($row);
         $this->syncRelated();
+
+        $collectionKey = static::getCollectionKey();
+        if ($collectionKey === '' || $row === []) {
+            return;
+        }
+
+        $idString = $this->getIdString();
+        SourceChangeBus::whileApplyingRemote(function () use ($collectionKey, $idString, $row): void {
+            SourceChangeBus::publish(SourceChange::dbUpdated(
+                $collectionKey,
+                $idString,
+                $row,
+                ExecutionContext::currentAcceptKey(),
+            ));
+        });
     }
 
     /**
@@ -120,7 +149,9 @@ abstract class Object_
      * Saves only changed columns by comparing entity with entitySync.
      *
      * @throws DatabaseException If database operation fails
+     * @throws HilosException Whatever a subscriber to the update announcement raises
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
@@ -280,8 +311,16 @@ abstract class Object_
     /**
      * Broadcast DB sync after sync (created or updated).
      *
+     * An update is also announced on the source bus, beside the signal that carries it to the
+     * other processes. The two are not the same errand: the signal leaves this process, while the
+     * announcement is what lets something inside it react to a row it cares about - a settings
+     * row naming the log write level, say - without polling for the change. A create is not
+     * announced here because the store announces it: putting the object into its collection is
+     * the membership change, and {@see Objects::offsetSet()} publishes that.
+     *
      * @param bool $isCreate True if this was a create (new row)
      * @param array<string, mixed> $result Full row for create, diff for update
+     * @throws HilosException Whatever a subscriber to the announcement raises
      * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
      */
     private function broadcastDbSyncAfterSync(bool $isCreate, array $result): void
@@ -294,9 +333,17 @@ abstract class Object_
         $idString = $this->getIdString();
         if ($isCreate) {
             $this->queueDbSyncCreated($collectionKey, $idString, $result);
-        } else {
-            $this->queueDbSyncUpdated($collectionKey, $idString, $result);
+
+            return;
         }
+
+        $this->queueDbSyncUpdated($collectionKey, $idString, $result);
+        SourceChangeBus::publish(SourceChange::dbUpdated(
+            $collectionKey,
+            $idString,
+            $result,
+            ExecutionContext::currentAcceptKey(),
+        ));
     }
 
     /**

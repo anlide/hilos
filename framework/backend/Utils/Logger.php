@@ -15,16 +15,16 @@ use Hilos\Utils\Helpers\TimeHelper;
 class Logger
 {
     /** Log level: informational messages */
-    public const string LEVEL_INFO = 'INFO';
+    public const string LEVEL_INFO = LogLevel::Info->value;
 
     /** Log level: error messages */
-    public const string LEVEL_ERROR = 'ERROR';
+    public const string LEVEL_ERROR = LogLevel::Error->value;
 
     /** Log level: warning messages */
-    public const string LEVEL_WARNING = 'WARNING';
+    public const string LEVEL_WARNING = LogLevel::Warning->value;
 
     /** Log level: debug messages */
-    public const string LEVEL_DEBUG = 'DEBUG';
+    public const string LEVEL_DEBUG = LogLevel::Debug->value;
 
     /** Agent log marker for parsing in daemon */
     public const string AGENT_LOG_MARKER = '[AGENT_LOG]';
@@ -50,8 +50,18 @@ class Logger
     /** @var bool Whether to show log level prefix [INFO], [ERROR], [DEBUG] (default: false) */
     private static bool $showLogLevel = false;
 
-    /** @var bool Whether to enable debug logging (default: false) */
-    private static bool $debugEnabled = false;
+    /**
+     * @var LogLevel Lowest level still written; anything below it is dropped at the writer.
+     *
+     * Static, and read on every single line, because that is how often the logger is called -
+     * a process logs hundreds of times a second, and asking the settings catalog that often
+     * would cost more than the lines saved. Whoever owns the value writes it in here at the
+     * few moments it can change ({@see setWriteLevel()}).
+     *
+     * The default matches what an untouched installation did before a threshold existed:
+     * info/warning/error written, debug dropped.
+     */
+    private static LogLevel $writeLevel = LogLevel::Info;
 
     /**
      * Set log file path for daemon-side logging.
@@ -101,13 +111,43 @@ class Logger
     }
 
     /**
-     * Enable or disable debug logging.
+     * Set the lowest level this process still writes.
      *
-     * @param bool $enabled If true, debug messages will be logged, otherwise they will be ignored
+     * Takes effect on the next line; nothing already written is revisited. Says nothing about
+     * whether the new value differs from the old one and writes no trace of its own - the
+     * caller owns both questions, because only it knows where the value came from and what to
+     * name as its source ({@see logWriteLevelChange()}).
+     *
+     * @param LogLevel $level Level to write from, inclusive
      */
-    public static function setDebugEnabled(bool $enabled): void
+    public static function setWriteLevel(LogLevel $level): void
     {
-        self::$debugEnabled = $enabled;
+        self::$writeLevel = $level;
+    }
+
+    /**
+     * Lowest level this process currently writes.
+     *
+     * @return LogLevel Level the writer is set to
+     */
+    public static function writeLevel(): LogLevel
+    {
+        return self::$writeLevel;
+    }
+
+    /**
+     * Write one line about the write level itself changing, ignoring the threshold.
+     *
+     * The one line that bypasses the threshold, and the reason it has to: raising the level
+     * makes the log go quiet, and a log that falls silent without saying why reads exactly
+     * like a process that died. The text is the caller's - it is the caller that knows which
+     * source won, and which level it named.
+     *
+     * @param string $message Line to write, already carrying the new level and its source
+     */
+    public static function logWriteLevelChange(string $message): void
+    {
+        self::writeLine(self::LEVEL_INFO, $message);
     }
 
     /**
@@ -149,22 +189,56 @@ class Logger
     /**
      * Log debug message.
      *
-     * Only logs if debug logging is enabled via setDebugEnabled(true).
-     * By default, debug logging is disabled.
+     * Written only when the write level is set down to DEBUG, which is the whole of what
+     * "debug logging is on" means now; there is no second switch beside the threshold.
      *
      * @param string $message Debug message
      * @param array<string, mixed> $context Optional context data
      */
     public static function debug(string $message, array $context = []): void
     {
-        if (!self::$debugEnabled) {
-            return;
-        }
         self::log(self::LEVEL_DEBUG, $message, $context);
     }
 
     /**
-     * Log message.
+     * Log message, unless its level is below the write level.
+     *
+     * The threshold is asked first, before the timestamp is taken and before the context is
+     * encoded: a dropped line has to cost as close to nothing as it can, otherwise raising the
+     * level buys less than it costs.
+     *
+     * @param string $level Log level (INFO, ERROR, WARNING, DEBUG)
+     * @param string $message Message
+     * @param array<string, mixed> $context Optional context data
+     * @param bool $useStderr If true, write to stderr instead of stdout
+     */
+    private static function log(string $level, string $message, array $context = [], bool $useStderr = false): void
+    {
+        if (self::isBelowWriteLevel($level)) {
+            return;
+        }
+
+        self::writeLine($level, $message, $context, $useStderr);
+    }
+
+    /**
+     * Whether a line of this level is below the threshold and is to be dropped.
+     *
+     * A name that is not a level at all passes: it can only come from outside the four
+     * `LEVEL_*` constants, and dropping a line nobody can place is worse than writing it.
+     *
+     * @param string $level Log level of the line being considered
+     * @return bool True when the line is not to be written
+     */
+    private static function isBelowWriteLevel(string $level): bool
+    {
+        $lineLevel = LogLevel::fromName($level);
+
+        return $lineLevel !== null && $lineLevel->severity() < self::$writeLevel->severity();
+    }
+
+    /**
+     * Write a line that has already passed the threshold, or that bypasses it.
      *
      * With no main log file the line is echoed to stdout; an ERROR is additionally
      * appended to the error log file when one is set, and only falls back to stderr
@@ -175,7 +249,7 @@ class Logger
      * @param array<string, mixed> $context Optional context data
      * @param bool $useStderr If true, write to stderr instead of stdout
      */
-    private static function log(string $level, string $message, array $context = [], bool $useStderr = false): void
+    private static function writeLine(string $level, string $message, array $context = [], bool $useStderr = false): void
     {
         $timestamp = TimeHelper::getTimestampWithMs();
         // external-boundary: the neutral element of the concatenation below — no context prints nothing
@@ -347,22 +421,23 @@ class Logger
     /**
      * Log agent debug message
      *
-     * Only logs if debug logging is enabled via setDebugEnabled(true).
-     * By default, debug logging is disabled.
+     * Written only when the write level is set down to DEBUG, exactly as {@see debug()} is:
+     * the agent format is a different shape of line, not a different switch.
      *
      * @param string $agentId Agent ID
      * @param string $message Debug message
      */
     public static function logAgentDebug(string $agentId, string $message): void
     {
-        if (!self::$debugEnabled) {
-            return;
-        }
         self::logAgent($agentId, self::LEVEL_DEBUG, $message);
     }
 
     /**
-     * Log message in agent format
+     * Log message in agent format, unless its level is below the write level.
+     *
+     * Same threshold as {@see log()}, asked in the same place - first, before the line is
+     * built. The daemon that picks these lines out of the agent's output and files them does
+     * not ask again: a line that got here has already passed.
      *
      * @param string $agentId Agent ID
      * @param string $level Log level (INFO, ERROR, WARNING, DEBUG)
@@ -371,6 +446,10 @@ class Logger
      */
     private static function logAgent(string $agentId, string $level, string $message, bool $useStderr = false): void
     {
+        if (self::isBelowWriteLevel($level)) {
+            return;
+        }
+
         $timestamp = TimeHelper::getTimestampWithMs();
         $logLine = self::AGENT_LOG_MARKER . "{$agentId}" . self::AGENT_LOG_FIELD_SEPARATOR
             . "{$level}" . self::AGENT_LOG_FIELD_SEPARATOR . "[{$timestamp}] {$message}";

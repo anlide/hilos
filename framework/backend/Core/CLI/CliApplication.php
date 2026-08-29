@@ -13,6 +13,7 @@ use Hilos\Core\CLI\Commands\DatabaseFreeCommand;
 use Hilos\Database\Migration;
 use Hilos\Database\Seed;
 use Hilos\Hilos;
+use Hilos\Log\LogWriteLevelApplier;
 use Hilos\Utils\Logger;
 use Throwable;
 
@@ -69,6 +70,8 @@ final class CliApplication
         try {
             EntrypointPrelude::initEnvironment($hilosClass, $projectRoot);
 
+            LogWriteLevelApplier::applyFromEnv();
+
             // The schema track is named by the prelude, which every process runs; the routines
             // and seeds are configured here, by the entrypoint that applies them.
             Migration::setRoutinesPath($bootstrapDir . '/../Database/Migration/Routines');
@@ -83,6 +86,10 @@ final class CliApplication
 
             if ($cliManager->requiresDatabase($command)) {
                 $databaseInit();
+
+                // Only here: a command that never opens the database has no setting to read, and
+                // it lives for one command anyway, with a person watching its output.
+                LogWriteLevelApplier::applyFromSettings();
             }
 
             exit($cliManager->run());

@@ -10,6 +10,7 @@ use Hilos\Constants\ExitCode;
 use Hilos\Core\Bootstrap\EntrypointPrelude;
 use Hilos\Environment\Exception\MissingRequiredEnvironmentException;
 use Hilos\Hilos;
+use Hilos\Log\LogWriteLevelApplier;
 use Hilos\Utils\Logger;
 use Throwable;
 
@@ -60,6 +61,11 @@ final class DaemonApplication
 
             Logger::setLogFile(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]);
             Logger::setErrorLogFile(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]);
+
+            // The environment only: the master is forbidden the database, so it cannot read the
+            // setting that overrides this. A worker tells it the real level once one registers,
+            // and until then the node's own env is the honest answer.
+            LogWriteLevelApplier::applyFromEnv();
 
             $manager = new $daemonClass();
             $manager->boot(new DaemonContext($bootstrapDir, $projectRoot));

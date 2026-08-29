@@ -9,6 +9,7 @@ use Hilos\Constants\LLMConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Mail\SmtpSecurity;
+use Hilos\Utils\LogLevel;
 
 /**
  * Framework default catalog for environment variables.
@@ -350,6 +351,11 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name => self::entry(
                 EnvCatalogConstants::TYPE_INTEGER,
                 2592000,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::LOG_WRITE_LEVEL->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                LogLevel::Info->value,
                 emptyIsMissing: true,
             ),
             EnvConstants::LOG_INDEX_PUSH_INTERVAL_MS->name => self::entry(

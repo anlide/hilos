@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Utils\LogLevel;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -27,10 +28,10 @@ final class LoggerTest extends TestCase
             $property->setValue(null, null);
         }
 
-        foreach (['showLogLevel', 'debugEnabled'] as $propertyName) {
-            $property = $reflection->getProperty($propertyName);
-            $property->setValue(null, false);
-        }
+        $showLogLevel = $reflection->getProperty('showLogLevel');
+        $showLogLevel->setValue(null, false);
+
+        Logger::setWriteLevel(LogLevel::Info);
 
         parent::tearDown();
     }
@@ -135,9 +136,9 @@ final class LoggerTest extends TestCase
     }
 
     /**
-     * debug() does not write when debug logging is disabled.
+     * debug() does not write at the default INFO write level.
      */
-    public function testDebugDoesNotWriteWhenDisabled(): void
+    public function testDebugDoesNotWriteAtTheDefaultWriteLevel(): void
     {
         $logFile = $this->createTempLogFile();
         Logger::setLogFile($logFile);
@@ -148,13 +149,13 @@ final class LoggerTest extends TestCase
     }
 
     /**
-     * debug() writes DEBUG prefix when debug logging is enabled.
+     * debug() writes DEBUG prefix when the write level is lowered to DEBUG.
      */
-    public function testDebugWritesWhenEnabled(): void
+    public function testDebugWritesWhenWriteLevelIsDebug(): void
     {
         $logFile = $this->createTempLogFile();
         Logger::setLogFile($logFile);
-        Logger::setDebugEnabled(true);
+        Logger::setWriteLevel(LogLevel::Debug);
 
         Logger::debug('secret');
 

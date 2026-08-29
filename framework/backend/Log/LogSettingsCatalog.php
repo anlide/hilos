@@ -11,9 +11,11 @@ use Hilos\Database\Settings\Validation\CronExpressionRule;
 use Hilos\Database\Settings\Validation\NonNegativeIntegerRule;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Utils\LogLevel;
 
 /**
- * The framework settings-catalog fragment for log rotation, archive retention and index push (HIL-760).
+ * The framework settings-catalog fragment for log rotation, archive retention, index push and
+ * write level (HIL-760).
  *
  * Values an administrator could not reach before: they lived in the environment and were
  * read once, at agent start. A project folds this fragment into its own catalog with
@@ -47,6 +49,9 @@ final class LogSettingsCatalog implements CatalogProviderInterface
 
     /** Smallest interval in milliseconds between two log-index frames a node sends the aggregator (HIL-754). */
     public const string INDEX_PUSH_INTERVAL_MS = 'logs.index.push_interval_ms';
+
+    /** Lowest level a process still writes, read as "from this one and worse" (HIL-761). */
+    public const string WRITE_LEVEL = 'logs.write_level';
 
     /** Interval the index push falls back to when the environment cannot answer, in milliseconds. */
     public const int INDEX_PUSH_INTERVAL_FALLBACK_MS = 5000;
@@ -84,7 +89,28 @@ final class LogSettingsCatalog implements CatalogProviderInterface
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => self::pushIntervalDefault(),
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => LogIndexPushIntervalRule::class,
             ],
+            self::WRITE_LEVEL => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => self::writeLevelDefault(),
+                SettingsCatalogConstants::CATALOG_ENTRY_RULE => LogWriteLevelRule::class,
+            ],
         ];
+    }
+
+    /**
+     * Reads the write-level default, keeping it inside what its own rule accepts.
+     *
+     * An environment naming something that is not a level is treated the way an unreadable one
+     * is, for the reason {@see pushIntervalDefault()} gives: a catalog default the key's own rule
+     * would refuse shows the administrator a value they cannot save back.
+     *
+     * @return string Default value for the catalog entry
+     */
+    private static function writeLevelDefault(): string
+    {
+        $env = self::envString(EnvConstants::LOG_WRITE_LEVEL, LogLevel::Info->value);
+
+        return LogLevel::fromName($env) !== null ? $env : LogLevel::Info->value;
     }
 
     /**
@@ -144,10 +170,10 @@ final class LogSettingsCatalog implements CatalogProviderInterface
     }
 
     /**
-     * Reads the schedule default from the environment.
+     * Reads a textual default from the environment.
      *
      * @param EnvConstants $key Environment variable backing this setting
-     * @param string $fallback Value to use when the environment cannot answer (empty = schedule off)
+     * @param string $fallback Value to use when the environment cannot answer
      * @return string Default value for the catalog entry
      */
     private static function envString(EnvConstants $key, string $fallback): string

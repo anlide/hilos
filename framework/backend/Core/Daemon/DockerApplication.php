@@ -14,6 +14,7 @@ use Hilos\Core\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
 use Hilos\Hilos;
+use Hilos\Log\LogWriteLevelApplier;
 use Hilos\Utils\Logger;
 use Throwable;
 
@@ -70,6 +71,10 @@ final class DockerApplication
             // Only the error log address: setLogFile() would stop Logger from echoing and
             // leave the container's docker logs empty, which is where a dead node is read first.
             Logger::setErrorLogFile(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]);
+
+            // The environment only, and it stays that way: the watchdog receives no frame about
+            // a settings edit, so half-obeying the setting would be worse than not obeying it.
+            LogWriteLevelApplier::applyFromEnv();
 
             $dockerManager = new DockerManager();
             $dockerManager->runDockerWatchdog($bootstrapDir . '/daemon.php');

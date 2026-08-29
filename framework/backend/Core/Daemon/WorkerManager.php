@@ -127,6 +127,7 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncMessageInterface;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerSessionCarryOverDeferredDTO;
 use Hilos\Socket\Worker\DTO\WorkerSessionCarryOverDoneDTO;
+use Hilos\Log\LogWriteLevelApplier;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
@@ -665,6 +666,16 @@ abstract class WorkerManager extends BaseManager
             'workerIndex' => $this->workerIndex,
             'isMonopolistic' => $this->isMonopolistic,
         ]);
+
+        // Here and not at connectToDaemon(): the channel is a channel from this moment on, and
+        // the master would drop a frame that arrived before it wrote this worker down. The level
+        // in force is sent at once because the reporter only ever hears about CHANGES, and by now
+        // the settings have already been read.
+        if ($this->daemonClient !== null) {
+            $reporter = new WorkerLogWriteLevelReporter($this->daemonClient);
+            LogWriteLevelApplier::setListener($reporter);
+            $reporter->onWriteLevelChanged(Logger::writeLevel());
+        }
 
         // The framework declared its own readers while mounting, long before there was a link to
         // say so on. This is the first moment there is one, and the wait is here rather than at

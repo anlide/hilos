@@ -11,6 +11,7 @@ use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Hilos;
@@ -106,6 +107,8 @@ final class DbSyncApplicator
      * @param DbSyncUpdatedSignalData $data Diff payload from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
      * @param ?string $originNodeId Node the write happened on, or null when it was this one
+     * @throws HilosException Whatever a subscriber to the mirror's announcement raises
+     * @throws ObjectGetIdStringNotImplementedException When the updated row's primary key is null
      */
     public static function applyUpdated(
         DbSyncUpdatedSignalData $data,

@@ -16,8 +16,8 @@ use Hilos\Core\Daemon\WorkerApplication;
  * startup spine lives in WorkerApplication; ChatWorkerManager hosts this demo's workers.
  */
 
-// Enable debug logging (optional - uncomment to enable)
-#Logger::setDebugEnabled(true);
+// How much this process writes is the LOG_WRITE_LEVEL env value, overridden by the
+// logs.write_level setting; DEBUG is the lowest step of that one scale.
 
 WorkerApplication::run(
     projectRoot: dirname(__DIR__, 2),

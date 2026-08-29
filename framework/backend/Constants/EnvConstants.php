@@ -805,6 +805,17 @@ enum EnvConstants
      */
     case LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS;
 
+    // ── Log write level (HIL-761) ────────────────────────────────────────────
+
+    /**
+     * @var string Name of the lowest level a process still writes to its log: DEBUG, INFO,
+     * WARNING or ERROR, read as "write from this one and worse". Default INFO, which is what
+     * an installation did before the threshold existed. An unrecognized name is treated as
+     * INFO rather than refused - a process that cannot read its own level still has to log.
+     * Serves as the default of the logs.write_level setting, which overrides it.
+     */
+    case LOG_WRITE_LEVEL;
+
     // ── Log index (HIL-754) ──────────────────────────────────────────────────
 
     /**

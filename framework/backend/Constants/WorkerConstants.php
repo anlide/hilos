@@ -139,6 +139,14 @@ final class WorkerConstants
     /** @var string Worker registration request */
     public const string MESSAGE_WORKER_REGISTER = 'worker_register';
 
+    /**
+     * @var string Level the worker writes its log from, told to the master (HIL-761). Sent right
+     *     after registration and again on every change, because the master cannot read the
+     *     setting that decides it - it is forbidden the database - and daemon.log answers to the
+     *     same switch as the worker logs do.
+     */
+    public const string MESSAGE_WORKER_LOG_WRITE_LEVEL = 'worker_log_write_level';
+
     /** @var string Agent started notification */
     public const string MESSAGE_AGENT_STARTED = 'agent_started';
 

@@ -141,6 +141,7 @@ final class NotificationDeliveries extends Objects
      *
      * @param ObjectNotificationDelivery $delivery Loaded delivery row
      * @throws DatabaseException If the update query fails
+     * @throws HilosException Whatever a subscriber to the update announcement raises
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
      * @throws WriteNotAllowedException When no truth source in this process may write that row
@@ -157,6 +158,7 @@ final class NotificationDeliveries extends Objects
      *
      * @param ObjectNotificationDelivery $delivery Loaded delivery row
      * @throws DatabaseException If the update query fails
+     * @throws HilosException Whatever a subscriber to the update announcement raises
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
      * @throws WriteNotAllowedException When no truth source in this process may write that row
@@ -209,6 +211,7 @@ final class NotificationDeliveries extends Objects
      *
      * @param ObjectNotificationDelivery $delivery Loaded failed delivery row
      * @throws DatabaseException If the update query fails
+     * @throws HilosException Whatever a subscriber to the update announcement raises
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
      * @throws WriteNotAllowedException When no truth source in this process may write that row
@@ -234,6 +237,7 @@ final class NotificationDeliveries extends Objects
      * @param string $error Failure detail (truncated to the column width)
      * @param int $maxAttempts Attempt ceiling after which the row fails terminally
      * @throws DatabaseException If the update query fails
+     * @throws HilosException Whatever a subscriber to the update announcement raises
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
      * @throws WriteNotAllowedException When no truth source in this process may write that row

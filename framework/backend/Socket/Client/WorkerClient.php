@@ -14,6 +14,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Database\ReHydrateRound;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Log\LogWriteLevelApplier;
 use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
@@ -34,6 +35,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerGroupJoinDTO;
+use Hilos\Socket\Worker\DTO\WorkerLogWriteLevelDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
@@ -54,6 +56,7 @@ use Hilos\Socket\Worker\DTO\WorkerSessionCarryOverDeferredDTO;
 use Hilos\Socket\Worker\DTO\WorkerSessionCarryOverDoneDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\WorkerDTO;
+use Hilos\Utils\LogLevel;
 use Hilos\Utils\Logger;
 
 /**
@@ -201,6 +204,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         // Handle different message types using match with instanceof
         match (true) {
             $workerDTO instanceof WorkerRegisterDTO => $this->handleWorkerRegisterMessage($workerDTO),
+            $workerDTO instanceof WorkerLogWriteLevelDTO => $this->handleWorkerLogWriteLevelMessage($workerDTO),
             $workerDTO instanceof WorkerAgentStartedDTO => $this->handleAgentStartedMessage($workerDTO),
             $workerDTO instanceof WorkerAgentStoppedDTO => $this->handleAgentStoppedMessage($workerDTO),
             $workerDTO instanceof WorkerAgentMessageDTO => $this->handleAgentMessageMessage($workerDTO),
@@ -256,6 +260,31 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             monopolistic: $dto->monopolistic,
         );
         $this->send($responseDto->toJson());
+    }
+
+    /**
+     * Handle the write level a worker reports.
+     *
+     * The master cannot read the setting behind this itself - it is forbidden the database - so
+     * what a worker tells it is the only word it gets. The applier writes a line only when the
+     * value differs from the one in force, which is what keeps a node with several workers from
+     * saying the same thing once per worker.
+     *
+     * A name that is not a level changes nothing: it can only mean the frame was built wrong, and
+     * silencing daemon.log on the strength of a malformed frame is worse than ignoring it.
+     *
+     * @param WorkerLogWriteLevelDTO $dto Level the worker writes from
+     */
+    private function handleWorkerLogWriteLevelMessage(WorkerLogWriteLevelDTO $dto): void
+    {
+        $level = LogLevel::fromName($dto->level);
+        if ($level === null) {
+            Logger::error("Worker reported an unknown log write level: {$dto->level}");
+
+            return;
+        }
+
+        LogWriteLevelApplier::applyReported($level, $this->getWorkerIndex());
     }
 
     /**

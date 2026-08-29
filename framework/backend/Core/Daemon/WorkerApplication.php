@@ -9,6 +9,7 @@ use Hilos\Constants\ExitCode;
 use Hilos\Core\Bootstrap\EntrypointPrelude;
 use Hilos\Core\Daemon\Exception\InvalidWorkerIdException;
 use Hilos\Hilos;
+use Hilos\Log\LogWriteLevelApplier;
 use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Logger;
 use Throwable;
@@ -47,6 +48,11 @@ final class WorkerApplication
 
         try {
             EntrypointPrelude::run($hilosClass, $projectRoot, $persistenceInit);
+
+            // Both, and in this order: the environment answers long before the database does,
+            // and the worker writes its first lines before the settings are reachable at all.
+            LogWriteLevelApplier::applyFromEnv();
+            LogWriteLevelApplier::applyFromSettings();
 
             $workerIndex = ArgumentHelper::getWorkerIndex($argv);
 

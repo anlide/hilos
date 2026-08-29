@@ -48,6 +48,7 @@ use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogStub;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
+use Hilos\Log\LogWriteLevelSubscriber;
 use Hilos\LLM\Routing\LlmProfileCatalogStub;
 use Hilos\LLM\Routing\LlmProfileOverrideSource;
 use Hilos\LLM\Routing\LlmRouter;
@@ -925,6 +926,7 @@ abstract class Hilos
         SourceChangeBus::reset();
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
         SourceChangeBus::subscribe(new OutboundRtSyncSubscriber());
+        SourceChangeBus::subscribe(new LogWriteLevelSubscriber());
 
         static::validateTopologyReferences();
     }
