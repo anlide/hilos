@@ -5,15 +5,16 @@ declare(strict_types=1);
 namespace Hilos\Backup\Anonymization;
 
 use Hilos\Backup\BackupConstants;
+use Hilos\Database\Entity\Item\Entity;
 
 /**
  * AnonymizationStrategy - what a restore does to one declared PII column, or to a
  * whole table.
  *
- * A project names one of these per column in its PII registry
- * ({@see BackupConstants::CATALOG_PII}); the framework owns what each one means in SQL
- * ({@see AnonymizationSqlBuilder}). Values are the strings a catalog is written in, so
- * they read as configuration rather than as PHP case names.
+ * A table names one of these per column in its own verdict ({@see Entity::META_PII});
+ * the framework owns what each one means in SQL ({@see AnonymizationSqlBuilder}). Values
+ * are the strings a declaration is written in, so they read as configuration rather than
+ * as PHP case names.
  *
  * `fake` is deliberately not a single case: faker-likeness is a set of formatters, and
  * guessing a column's meaning from its name is not something the framework may do - so

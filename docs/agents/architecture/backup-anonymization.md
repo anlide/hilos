@@ -9,15 +9,16 @@ production archive lands in a lesser environment: declared columns are rewritten
 and declared tables emptied, so a staging copy keeps the shape of the system it
 came from without carrying its personal data. The machinery is
 `framework/backend/Backup/Anonymization/`, reached through the
-`RestoreAnonymizer` seam that `BackupRestorer` calls; the implementation a
-catalog-configured installation gets is `CatalogRestoreAnonymizer`.
+`RestoreAnonymizer` seam that `BackupRestorer` calls; the implementation an
+installation that declares its personal data gets is `CatalogRestoreAnonymizer`.
 
 This document holds what the code does not: how to choose a strategy, what to do
 after adding a table, and the one hazard the framework does not check for you.
 What each strategy means, which tables the framework classifies and why, and the
 SQL each one becomes are documented where they live — read `AnonymizationStrategy`,
-`FrameworkPiiDeclaration` and `AnonymizationSqlBuilder` for those. Nothing here
-restates them, because a copy of a list goes stale without saying so.
+the `_pii` constants of the framework's own Entities, `FrameworkTablesWithoutEntity`
+and `AnonymizationSqlBuilder` for those. Nothing here restates them, because a copy
+of a list goes stale without saying so.
 
 ## Core Rule
 
@@ -27,7 +28,9 @@ the feature, because an unclassified table is the shape a leak takes: a migratio
 adds one, nobody writes a row for it, and its rows ride into staging untouched.
 
 An empty column map is a classification, not an omission: it says the table was
-looked at and holds nothing personal. There is no bypass flag and none is to be
+looked at and holds nothing personal — and `_piiNotPersonal` beside it names the
+columns that judgement covers, so a column added later is missing from both halves
+rather than hiding inside the first. There is no bypass flag and none is to be
 added. The cost was accepted knowingly — a new table breaks anonymized restores
 until somebody classifies it.
 
@@ -51,55 +54,67 @@ going, and the environment matrix (`RestoreEnvGuard`) decides:
 A staging target is a non-production target, so a production archive still has to
 be anonymized to land there; a staging archive is a non-production source, so it
 never overwrites production. That is the row most projects meet first, and reading
-staging as production-like is how a project ends up without a registry it needs.
+staging as production-like is how a project ends up without the verdicts it needs.
 
 Only the second row reaches anything else in this document. A restore under
 `REQUIRE_ANONYMIZATION` whose scope is `schema-only` is exempt and says so in the
 log: that archive carries no rows, so there is nothing to anonymize and nothing an
 undeclared registry could fail to anonymize.
 
-## How A Project Declares Its Registry
+## Where A Verdict Is Declared
 
-The registry lives under the `BackupConstants::CATALOG_PII` key (`'pii'`) of the
-project's backup catalog, next to its reference and schedule registries:
+On the table itself. An Entity carries its verdict in two constants beside
+`_columns`, and the registry a restore runs under is collected by walking the
+collections a `DbContext` mounted:
 
 ```php
-BackupConstants::CATALOG_PII => [
-    0 => [
-        Users::class => ['name' => AnonymizationStrategy::FAKE_NAME],
-        ApiTokens::class => AnonymizationStrategy::PURGE,
-        Events::class => [],
-    ],
-],
+final class User extends Entity
+{
+    // ... _table, _columns, _types, _indexes
+
+    public const array _pii = [self::name => AnonymizationStrategy::FAKE_NAME];
+
+    public const array _piiNotPersonal = [
+        self::id,
+        self::admin,
+        self::last_activity,
+    ];
+}
 ```
 
-- Rows are written for the tables the *project* creates. The framework's own
-  tables are already classified and are named here only to overrule that
-  classification, which is a decision and not a step of activation.
-- The outer key is the connection index; the inner key is a table.
-- Name a table by its Entity or Object collection class wherever one exists, so a
-  table rename does not silently un-classify it. A raw table name is accepted only
-  where no class exists at all.
-- A row is either a column-to-strategy map or `AnonymizationStrategy::PURGE` for
+- `_pii` is either a column-to-strategy map or `AnonymizationStrategy::PURGE` for
   the table as a whole. `PURGE` is the only table-level strategy; declaring any
-  other one on a table, or `PURGE` on a column, is refused as a malformed registry.
-- The framework declares rows for its own tables (`FrameworkPiiDeclaration`) and
-  the project's declaration is laid over it. **A project row replaces the framework
-  row for that table whole** — it is not merged column by column, so restating a
-  framework table means restating all of its columns.
+  other one on a table, or `PURGE` on a column, is refused as a malformed verdict.
+- `_piiNotPersonal` names the columns looked at and found to hold nothing
+  personal. A purged table declares none: no row of it survives. A column named by
+  both constants is refused — the two say opposite things about the same data.
+- The column set to judge is the *live* one, not `_columns`. A table may carry
+  columns the ORM does not map (`Identity::secret` is the framework's own case),
+  and those are personal data like any other.
+- No connection index is written: a verdict on an Entity lands on the primary
+  connection, which is the only one an Entity knows.
 
-The worked example is `demo/chat/backend/Backup/BackupCatalog.php`; the shape and
-the override rule are documented on `PiiRegistry`.
+**A table with no Entity declares both facts in a `TablesWithoutEntityProvider`** —
+which live tables are unmapped on purpose, and what of them is personal. The
+framework's own are `FrameworkTablesWithoutEntity`; a project with such tables
+implements the interface and names its class under
+`BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY` in its backup catalog. A project
+whose tables all have an Entity, like the chat demo, names nothing there.
 
-A project that declares no registry at all is not a project without personal data,
-and both halves of the restore say so. The CLI preflight refuses with
-`this restore requires anonymization, but the backup catalog declares no [pii]
-registry` and exits `ExitCode::CONFIG_ERROR`; the engine refuses on its own before
-the first destructive step, so a restore driven past the CLI cannot slip through.
+The worked examples are the framework's own Entities and
+`demo/chat/backend/Database/Entity/Item/`; the collection is documented on
+`PiiRegistry`.
+
+An installation that classifies nothing at all is not an installation without
+personal data, and both halves of the restore say so. The CLI preflight refuses
+with `this restore requires anonymization, but no table declares what of it is
+personal data` and exits `ExitCode::CONFIG_ERROR`; the engine refuses on its own
+before the first destructive step, so a restore driven past the CLI cannot slip
+through.
 
 ## The Seven Strategies
 
-The values are the strings a catalog is written in; the case names are how they
+The values are the strings a verdict is written in; the case names are how they
 are referred to in code.
 
 | Value | Case | Writes | Take it when |
@@ -178,9 +193,11 @@ judged the archive.
 
 ## Adding A Table Or A Column
 
-1. **Write the row.** A new table needs one in the project's `CATALOG_PII` section,
-   even if it is an empty column map. A new column on a classified table needs an
-   entry only if it holds personal data.
+1. **Write the verdict where the table is declared.** A new table needs `_pii` on
+   its Entity, even if the map is empty. A new column needs naming too — in `_pii`
+   when it holds personal data, in `_piiNotPersonal` when it does not. Both, or
+   neither, is the answer; leaving a column out of both is the gap the per-column
+   verdict exists to close.
 2. **Choose the strategy** by *Choosing A Strategy* above, and check the incoming
    foreign keys yourself if you reach for `purge`.
 3. **Run the project's coverage test.** It answers in seconds and does not need a

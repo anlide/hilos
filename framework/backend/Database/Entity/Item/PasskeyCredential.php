@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Entity\Item;
 
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Database\Entity\Collection\PasskeyCredentials as EntityPasskeyCredentials;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\PasskeyCredential as ObjectPasskeyCredential;
@@ -84,6 +85,10 @@ final class PasskeyCredential extends Entity
         'idx_passkey_identity' => [Entity::INDEX_COLUMNS => [self::identity_id]],
         'idx_passkey_user' => [Entity::INDEX_COLUMNS => [self::user_id]],
     ];
+
+    // A credential is a public key bound to one person's authenticator; masking it
+    // would leave a usable-looking credential nobody can authenticate with.
+    public const AnonymizationStrategy _pii = AnonymizationStrategy::PURGE;
 
     public ?int $id = null;
     public int $identity_id;

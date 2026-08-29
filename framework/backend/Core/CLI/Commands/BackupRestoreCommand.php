@@ -33,6 +33,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
+use Hilos\Database\Entity\Item\Entity;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -336,14 +337,13 @@ HELP;
     private function reportPiiRegistry(): bool
     {
         try {
-            if (!PiiRegistry::fromCatalog()->isEmpty()) {
+            if (!PiiRegistry::collect()->isEmpty()) {
                 return true;
             }
-            echo 'Error: this restore requires anonymization, but the backup catalog declares no ['
-                . BackupConstants::CATALOG_PII . "] registry\n";
+            echo 'Error: this restore requires anonymization, but no table declares what of it is '
+                . 'personal data (Entity constant [' . Entity::META_PII . "])\n";
         } catch (AnonymizationConfigException $refusal) {
-            echo "Error: the declared [" . BackupConstants::CATALOG_PII . "] registry is not usable: "
-                . "{$refusal->getMessage()}\n";
+            echo "Error: the declared personal-data verdicts are not usable: {$refusal->getMessage()}\n";
         }
 
         return false;

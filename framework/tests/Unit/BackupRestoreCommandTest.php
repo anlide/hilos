@@ -16,6 +16,7 @@ use Hilos\Backup\RestorePhase;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\BackupRestoreCommand;
 use Hilos\Core\CLI\Commands\CommandChannelResult;
+use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Migration;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
@@ -160,12 +161,12 @@ final class BackupRestoreCommandTest extends TestCase
         $probe = new BackupRestoreCommandProbe();
         $output = $this->runCommand($probe, ['b1'], [BackupConstants::YES_OPTION => true]);
 
-        // The ENV guard demands anonymization, and this installation declares no catalog of
-        // its own - yet the merged registry is not empty, because the framework classifies
+        // The ENV guard demands anonymization, and this installation mounts no collection of
+        // its own - yet the collected registry is not empty, because the framework classifies
         // the tables it ships (HIL-585). So the preflight has nothing to refuse on and the
         // run reaches the daemon; what an installation failed to classify is caught later by
         // the coverage gate, which refuses before the first import and names the tables.
-        $this->assertStringNotContainsString(BackupConstants::CATALOG_PII, $output['text']);
+        $this->assertStringNotContainsString(Entity::META_PII, $output['text']);
         $this->assertNotSame([], $probe->sent, 'A declared registry must not hold the run back');
         // The canned channel answers nothing, so the run ends on the silent-daemon path.
         $this->assertSame(ExitCode::ERROR, $output['code']);
@@ -184,7 +185,7 @@ final class BackupRestoreCommandTest extends TestCase
         // Same ENV verdict as the case above, and the same missing registry - but this archive
         // carries no rows, so the engine skips the pass and the preflight has nothing to demand.
         $this->assertNotSame(ExitCode::CONFIG_ERROR, $output['code']);
-        $this->assertStringNotContainsString(BackupConstants::CATALOG_PII, $output['text']);
+        $this->assertStringNotContainsString(Entity::META_PII, $output['text']);
         $this->assertNotSame([], $probe->sent, 'A schema-only restore must reach the daemon');
     }
 

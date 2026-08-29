@@ -49,6 +49,15 @@ final class Event extends Entity
         'timestamp' => [Entity::INDEX_COLUMNS => [self::timestamp]],
     ];
 
+    // An event is a type and a moment; who it was about is held by the row that extends it.
+    public const array _pii = [];
+
+    public const array _piiNotPersonal = [
+        self::id,
+        self::type,
+        self::timestamp,
+    ];
+
     // Properties
     public ?int $id = null;
     public string $type;

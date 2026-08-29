@@ -88,7 +88,8 @@ cannot give. `EntitySchemaAudit::auditTableCoverage()` asks the opposite questio
 `BASE TABLE` of the live schema must be the table of an audited Entity, or a table
 declared to have none. The framework declares its own in
 `Hilos\Database\Schema\FrameworkTablesWithoutEntity` — `migration`, the analytics tables
-and the change-log tables all live outside the ORM. A project table that does the same
+and the change-log tables all live outside the ORM. That same class carries their
+personal-data verdict, for the reason the next section gives. A project table that does the same
 is named in the `$allowedTablesWithoutEntity` argument; anything left over is a finding
 on the `table_unmapped` axis. Without this direction a table nobody mapped passes the
 suite in silence, which is exactly what it used to do (HIL-605).
@@ -105,7 +106,8 @@ and picking between them is one question: **does the application need to read th
   notification tables' `created_at` / `updated_at`.
 - **The database owns it.** The column is left out of `_columns` entirely, so the ORM
   neither writes nor reads it and the DEFAULT is its only writer. `hilos_identity` is the
-  example: its `created_at` / `updated_at` exist in the DDL and nowhere in the Entity.
+  example: its `created_at` / `updated_at` exist in the DDL, and in the Entity only as
+  column-name constants, which the personal-data verdict below needs to name them.
 
 The criterion is not taste: hydration walks `_columns` (`Entity::fromRow()`), so leaving a
 column out of it makes the value invisible to the ORM. Need to read it — first shape; do
@@ -136,6 +138,25 @@ Nothing expands that string — it reaches the column as a literal. Catching it 
 would mean comparing the initializer against `COLUMN_DEFAULT`, pulling the DDL back into
 PHP again, so it stays a rule for whoever writes the Entity: a property initializer is a
 PHP value, never a piece of SQL.
+
+## The personal-data verdict
+
+An Entity also declares what of its table is personal data, in two constants beside
+`_indexes`:
+
+- `_pii` — a column-to-`AnonymizationStrategy` map, or `AnonymizationStrategy::PURGE`
+  for a table a restore empties whole;
+- `_piiNotPersonal` — the columns looked at and found to hold nothing personal. Absent
+  on a purged table, where no row survives to hold one.
+
+The verdict lives here rather than in a registry of its own so that a migration adding a
+column is classified in the file the column was added to. Every column of the *live*
+table belongs to one of the two lists — including a column outside `_columns`, which the
+ORM does not map but a restore still rewrites. A table with no Entity says the same two
+things in a `TablesWithoutEntityProvider`.
+
+How to choose a strategy, and what the two gates of a restore refuse on:
+[../architecture/backup-anonymization.md](../architecture/backup-anonymization.md).
 
 ## Settings Entity (special case)
 

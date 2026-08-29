@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Entity\Item;
 
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Demo\Chat\Database\Entity\Collection\EventAttachments as EntityEventAttachments;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
@@ -49,6 +50,18 @@ final class EventAttachment extends Entity
     public const array _indexes = [
         'event_id' => [Entity::INDEX_COLUMNS => [self::event_id]],
         'stored_name' => [Entity::INDEX_COLUMNS => [self::stored_name], Entity::INDEX_UNIQUE => true],
+    ];
+
+    // The name the uploader gave the file; `stored_name` is the name it has on disk and
+    // identifies a file rather than a person - the attachment would be unreachable
+    // without it.
+    public const array _pii = [self::filename => AnonymizationStrategy::MASK];
+
+    public const array _piiNotPersonal = [
+        self::id,
+        self::event_id,
+        self::mime_type,
+        self::stored_name,
     ];
 
     public ?int $id = null;

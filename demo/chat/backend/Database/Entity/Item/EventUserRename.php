@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Entity\Item;
 
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Demo\Chat\Database\Entity\Collection\EventUserRenames as EntityEventUserRenames;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
@@ -51,6 +52,19 @@ final class EventUserRename extends Entity
     public const array _indexes = [
         'target_user_id' => [Entity::INDEX_COLUMNS => [self::target_user_id]],
         'actor_user_id' => [Entity::INDEX_COLUMNS => [self::actor_user_id]],
+    ];
+
+    // Only the new name is faked: both derive from the same primary key, so faking both
+    // would render every rename as "User 42 -> User 42".
+    public const array _pii = [
+        self::old_name => AnonymizationStrategy::MASK,
+        self::new_name => AnonymizationStrategy::FAKE_NAME,
+    ];
+
+    public const array _piiNotPersonal = [
+        self::event_id,
+        self::target_user_id,
+        self::actor_user_id,
     ];
 
     public int $event_id;

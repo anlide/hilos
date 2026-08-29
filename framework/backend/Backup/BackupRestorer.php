@@ -15,6 +15,7 @@ use Hilos\Core\Process;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionConfig;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Migration;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\Exception\FilePermissionException;
@@ -126,8 +127,8 @@ final class BackupRestorer
                 $anonymizer = $this->resolveAnonymizer();
                 if ($anonymizer === null) {
                     throw new RestoreFailedException(
-                        'Restore requires anonymization, but the project declares no PII registry '
-                        . '(backup catalog key: ' . BackupConstants::CATALOG_PII . ')',
+                        'Restore requires anonymization, but no table declares what of it is '
+                        . 'personal data (Entity constant: ' . Entity::META_PII . ')',
                     );
                 }
             }

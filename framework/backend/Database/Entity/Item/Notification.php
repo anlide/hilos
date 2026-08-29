@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Entity\Item;
 
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Database\Entity\Collection\Notifications as EntityNotifications;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
@@ -63,6 +64,23 @@ final class Notification extends Entity
     public const array _indexes = [
         'idx_notification_user_read' => [Entity::INDEX_COLUMNS => [self::user_id, self::read_at]],
         'idx_notification_user_created' => [Entity::INDEX_COLUMNS => [self::user_id, self::created_at]],
+    ];
+
+    // What a notification says is written for one person to read, and `data` carries
+    // whatever the sending feature put there.
+    public const array _pii = [
+        self::title => AnonymizationStrategy::MASK,
+        self::body => AnonymizationStrategy::MASK,
+        self::data => AnonymizationStrategy::NULLIFY,
+    ];
+
+    public const array _piiNotPersonal = [
+        self::id,
+        self::user_id,
+        self::type,
+        self::severity,
+        self::read_at,
+        self::created_at,
     ];
 
     public ?int $id = null;

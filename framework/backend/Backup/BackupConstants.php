@@ -6,7 +6,8 @@ namespace Hilos\Backup;
 
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
-use Hilos\Backup\Anonymization\PiiRegistry;
+use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Schema\TablesWithoutEntityProvider;
 use Hilos\Runtime\State\Item\RestoreRuntime;
 
 /**
@@ -111,21 +112,16 @@ final class BackupConstants
     public const string CATALOG_SCHEDULE = 'schedule';
 
     /**
-     * Backup catalog key under which a project declares which of its data is personal.
+     * Backup catalog key under which a project names its tables that live outside the ORM.
      *
-     * The value at this key is
-     * `array<int, array<class-string|string, array<string, AnonymizationStrategy>|AnonymizationStrategy>>`:
-     * per connection index, one row per table. The row key is the table's Entity or Object
-     * collection class wherever one exists (a raw table name only where none does), and the
-     * row is either a map of column name to {@see AnonymizationStrategy}, or
-     * {@see AnonymizationStrategy::PURGE} for a table emptied whole.
-     *
-     * An empty map is the row that says "this table holds no personal data" - the registry
-     * has no second key listing clean tables, because a table nobody wrote a row for must
-     * stay indistinguishable from a table nobody thought about. {@see PiiRegistry}
-     * reads the key, and every table of a restored archive has to appear in it.
+     * The value at this key is a `class-string<TablesWithoutEntityProvider>`: one class, not a
+     * per-connection list, because a table with no Entity is declared by the code that creates
+     * it and that code belongs to one installation. The class answers both questions such a
+     * table has nowhere else to answer - which live tables are unmapped on purpose, and what of
+     * them is personal data. A table with an Entity needs nothing here: it carries its own
+     * verdict in {@see Entity::META_PII} / {@see Entity::META_PII_NOT_PERSONAL}.
      */
-    public const string CATALOG_PII = 'pii';
+    public const string CATALOG_TABLES_WITHOUT_ENTITY = 'tablesWithoutEntity';
 
     /**
      * Replacement written by {@see AnonymizationStrategy::MASK}.

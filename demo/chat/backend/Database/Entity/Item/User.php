@@ -2,6 +2,7 @@
 
 namespace Demo\Chat\Database\Entity\Item;
 
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Demo\Chat\Database\Entity\Collection\Users as EntityUsers;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
@@ -55,6 +56,18 @@ final class User extends Entity
         'block' => [Entity::INDEX_COLUMNS => [self::block]],
         'merged_into' => [Entity::INDEX_COLUMNS => [self::merged_into]],
         'last_activity' => [Entity::INDEX_COLUMNS => [self::last_activity]],
+    ];
+
+    // A display name is derived from the primary key rather than masked, so the restored
+    // chat still reads as a conversation between distinct people.
+    public const array _pii = [self::name => AnonymizationStrategy::FAKE_NAME];
+
+    public const array _piiNotPersonal = [
+        self::id,
+        self::admin,
+        self::block,
+        self::merged_into,
+        self::last_activity,
     ];
 
     // Properties

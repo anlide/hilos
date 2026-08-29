@@ -29,6 +29,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
+use Hilos\Database\Schema\TablesWithoutEntityProvider;
 use Hilos\Database\Schema\Schema;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
@@ -988,9 +989,45 @@ final class PiiRestoreTestDbContext extends DbContext
 }
 
 /**
- * Catalog covering both fixture tables: the probe rewritten column by column, the
- * token-shaped table emptied whole. Both are declared by raw table name - they have no
- * Entity class, which is the case the raw-name key exists for.
+ * Tables outside the ORM covering both fixture tables: the probe rewritten column by
+ * column, the token-shaped table emptied whole. The fixtures have no Entity class, which
+ * is the case a provider of tables without one exists for.
+ */
+final class FullPiiRestoreTestTables implements TablesWithoutEntityProvider
+{
+    /**
+     * @return list<string> Fixture table names
+     */
+    public static function tables(): array
+    {
+        return array_keys(self::pii());
+    }
+
+    /**
+     * @return array<string, array<string, AnonymizationStrategy>|AnonymizationStrategy> Verdict per table
+     */
+    public static function pii(): array
+    {
+        return [
+            BackupRestorerIntegrationTest::PROBE_TABLE => [
+                'label' => AnonymizationStrategy::MASK,
+                'email' => AnonymizationStrategy::FAKE_EMAIL,
+            ],
+            BackupRestorerIntegrationTest::TOKEN_TABLE => AnonymizationStrategy::PURGE,
+        ];
+    }
+
+    /**
+     * @return array<string, list<string>> Non-personal columns per table
+     */
+    public static function piiNotPersonal(): array
+    {
+        return [BackupRestorerIntegrationTest::PROBE_TABLE => ['id']];
+    }
+}
+
+/**
+ * Backup catalog naming the provider that covers both fixture tables.
  */
 final class FullPiiRestoreTestCatalog implements CatalogProviderInterface
 {
@@ -1000,22 +1037,51 @@ final class FullPiiRestoreTestCatalog implements CatalogProviderInterface
     public static function getCatalog(): array
     {
         return [
-            BackupConstants::CATALOG_PII => [
-                0 => [
-                    BackupRestorerIntegrationTest::PROBE_TABLE => [
-                        'label' => AnonymizationStrategy::MASK,
-                        'email' => AnonymizationStrategy::FAKE_EMAIL,
-                    ],
-                    BackupRestorerIntegrationTest::TOKEN_TABLE => AnonymizationStrategy::PURGE,
-                ],
-            ],
+            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => FullPiiRestoreTestTables::class,
         ];
     }
 }
 
 /**
- * Catalog of a project whose registry has run ahead of the archive: it classifies the
+ * Tables of a project whose verdict has run ahead of the archive: it classifies the
  * column a forward migration adds, which no dump written before that migration carries.
+ */
+final class MigratedPiiRestoreTestTables implements TablesWithoutEntityProvider
+{
+    /**
+     * @return list<string> Fixture table names
+     */
+    public static function tables(): array
+    {
+        return array_keys(self::pii());
+    }
+
+    /**
+     * @return array<string, array<string, AnonymizationStrategy>|AnonymizationStrategy> Verdict per table
+     */
+    public static function pii(): array
+    {
+        return [
+            BackupRestorerIntegrationTest::PROBE_TABLE => [
+                'label' => AnonymizationStrategy::MASK,
+                'email' => AnonymizationStrategy::FAKE_EMAIL,
+                BackupRestorerIntegrationTest::MIGRATED_COLUMN => AnonymizationStrategy::MASK,
+            ],
+            BackupRestorerIntegrationTest::TOKEN_TABLE => AnonymizationStrategy::PURGE,
+        ];
+    }
+
+    /**
+     * @return array<string, list<string>> Non-personal columns per table
+     */
+    public static function piiNotPersonal(): array
+    {
+        return [BackupRestorerIntegrationTest::PROBE_TABLE => ['id']];
+    }
+}
+
+/**
+ * Backup catalog naming the provider whose verdict ran ahead of the archive.
  */
 final class MigratedPiiRestoreTestCatalog implements CatalogProviderInterface
 {
@@ -1025,23 +1091,50 @@ final class MigratedPiiRestoreTestCatalog implements CatalogProviderInterface
     public static function getCatalog(): array
     {
         return [
-            BackupConstants::CATALOG_PII => [
-                0 => [
-                    BackupRestorerIntegrationTest::PROBE_TABLE => [
-                        'label' => AnonymizationStrategy::MASK,
-                        'email' => AnonymizationStrategy::FAKE_EMAIL,
-                        BackupRestorerIntegrationTest::MIGRATED_COLUMN => AnonymizationStrategy::MASK,
-                    ],
-                    BackupRestorerIntegrationTest::TOKEN_TABLE => AnonymizationStrategy::PURGE,
-                ],
-            ],
+            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => MigratedPiiRestoreTestTables::class,
         ];
     }
 }
 
 /**
- * Catalog of a project that declared `null` on a column the archive carries as nullable
+ * Tables of a project that declared `null` on a column the archive carries as nullable
  * and the code has since made NOT NULL.
+ */
+final class TightenedPiiRestoreTestTables implements TablesWithoutEntityProvider
+{
+    /**
+     * @return list<string> Fixture table names
+     */
+    public static function tables(): array
+    {
+        return array_keys(self::pii());
+    }
+
+    /**
+     * @return array<string, array<string, AnonymizationStrategy>|AnonymizationStrategy> Verdict per table
+     */
+    public static function pii(): array
+    {
+        return [
+            BackupRestorerIntegrationTest::PROBE_TABLE => [
+                'email' => AnonymizationStrategy::FAKE_EMAIL,
+                BackupRestorerIntegrationTest::NULLABLE_COLUMN => AnonymizationStrategy::NULLIFY,
+            ],
+            BackupRestorerIntegrationTest::TOKEN_TABLE => AnonymizationStrategy::PURGE,
+        ];
+    }
+
+    /**
+     * @return array<string, list<string>> Non-personal columns per table
+     */
+    public static function piiNotPersonal(): array
+    {
+        return [BackupRestorerIntegrationTest::PROBE_TABLE => ['id', 'label']];
+    }
+}
+
+/**
+ * Backup catalog naming the provider that declared `null` on a tightened column.
  */
 final class TightenedPiiRestoreTestCatalog implements CatalogProviderInterface
 {
@@ -1051,21 +1144,48 @@ final class TightenedPiiRestoreTestCatalog implements CatalogProviderInterface
     public static function getCatalog(): array
     {
         return [
-            BackupConstants::CATALOG_PII => [
-                0 => [
-                    BackupRestorerIntegrationTest::PROBE_TABLE => [
-                        'email' => AnonymizationStrategy::FAKE_EMAIL,
-                        BackupRestorerIntegrationTest::NULLABLE_COLUMN => AnonymizationStrategy::NULLIFY,
-                    ],
-                    BackupRestorerIntegrationTest::TOKEN_TABLE => AnonymizationStrategy::PURGE,
-                ],
-            ],
+            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => TightenedPiiRestoreTestTables::class,
         ];
     }
 }
 
 /**
- * Catalog that forgot a table, the way a project does when a migration adds one.
+ * Tables of a project that forgot one, the way a project does when a migration adds it.
+ */
+final class PartialPiiRestoreTestTables implements TablesWithoutEntityProvider
+{
+    /**
+     * @return list<string> Fixture table names
+     */
+    public static function tables(): array
+    {
+        return array_keys(self::pii());
+    }
+
+    /**
+     * @return array<string, array<string, AnonymizationStrategy>|AnonymizationStrategy> Verdict per table
+     */
+    public static function pii(): array
+    {
+        return [
+            BackupRestorerIntegrationTest::PROBE_TABLE => [
+                'label' => AnonymizationStrategy::MASK,
+                'email' => AnonymizationStrategy::FAKE_EMAIL,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, list<string>> Non-personal columns per table
+     */
+    public static function piiNotPersonal(): array
+    {
+        return [BackupRestorerIntegrationTest::PROBE_TABLE => ['id']];
+    }
+}
+
+/**
+ * Backup catalog naming the provider that forgot a table.
  */
 final class PartialPiiRestoreTestCatalog implements CatalogProviderInterface
 {
@@ -1075,14 +1195,7 @@ final class PartialPiiRestoreTestCatalog implements CatalogProviderInterface
     public static function getCatalog(): array
     {
         return [
-            BackupConstants::CATALOG_PII => [
-                0 => [
-                    BackupRestorerIntegrationTest::PROBE_TABLE => [
-                        'label' => AnonymizationStrategy::MASK,
-                        'email' => AnonymizationStrategy::FAKE_EMAIL,
-                    ],
-                ],
-            ],
+            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => PartialPiiRestoreTestTables::class,
         ];
     }
 }

@@ -1,22 +1,25 @@
 ---
 name: hilos-backup-anonymization
-description: Classify a Hilos project's personal data for restore-time anonymization — the PII registry of its backup catalog. Use when declaring that registry, classifying a table or column a migration just added, choosing an anonymization strategy for a column, or reading a restore refused by the coverage or the compatibility gate.
+description: Classify a Hilos installation's personal data for restore-time anonymization — the per-column verdict each table carries. Use when declaring that verdict, classifying a table or column a migration just added, choosing an anonymization strategy for a column, or reading a restore refused by the coverage or the compatibility gate.
 ---
 
 # Hilos Backup Anonymization
 
 Use this skill inside a Hilos repository when the task is classifying data rather
 than building a surface. Start by reading `agents.md`, then the guide below before
-writing a registry row.
+writing a verdict.
 
 ## Read First
 
-- The guide — core rule, registry shape, the seven strategies, the selection
-  rules, the two gates: `docs/agents/architecture/backup-anonymization.md`
-- Where the registry sits among the other backup catalog keys, and the rest of
-  backup activation: `docs/agents/architecture/admin-feature-scaffold.md`
+- The guide — core rule, where a verdict is declared, the seven strategies, the
+  selection rules, the two gates: `docs/agents/architecture/backup-anonymization.md`
+- Where the tables-without-entity class sits among the other backup catalog keys,
+  and the rest of backup activation:
+  `docs/agents/architecture/admin-feature-scaffold.md`
 - What a migration obliges: `docs/agents/orm/migrations.md`
-- The worked registry: `demo/chat/backend/Backup/BackupCatalog.php`
+- The worked verdicts: `demo/chat/backend/Database/Entity/Item/User.php` and the
+  framework's own Entities; for tables with no Entity,
+  `framework/backend/Database/Schema/FrameworkTablesWithoutEntity.php`
 - The test every project with backup keeps:
   `demo/chat/tests/Integration/PiiRegistryCoverageTest.php`
 - Strategy semantics and the SQL each one becomes: the PHPDoc of
@@ -27,16 +30,18 @@ writing a registry row.
 
 ## Workflow
 
-1. Read the guide, then the project's existing registry under
-   `BackupConstants::CATALOG_PII` in its backup catalog.
-2. Write a row for every table the project creates and does not yet classify —
-   keyed by its Entity or Object collection class, an empty column map when the
-   table holds nothing personal.
-3. Choose a strategy per column by the guide's selection rules, and check the
+1. Read the guide, then the `_pii` / `_piiNotPersonal` constants already on the
+   Entities of the tables you are about to touch.
+2. Write a verdict on every table that does not yet carry one — `_pii` on its
+   Entity, an empty column map when the table holds nothing personal, and
+   `_piiNotPersonal` naming the columns that judgement covers.
+3. Judge every column of the live table, not only the ones the ORM maps: a column
+   named by neither constant is the gap the per-column verdict exists to close.
+4. Choose a strategy per column by the guide's selection rules, and check the
    incoming foreign keys yourself before declaring a whole-table purge.
-4. Replace a framework row only whole: naming a framework table in the project
-   registry drops the framework's columns for it, so restate them.
-5. Run the project's PII coverage test through composer, not a restore.
+5. Declare a table with no Entity in a `TablesWithoutEntityProvider` instead, and
+   name that class under `BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY`.
+6. Run the project's PII coverage test through composer, not a restore.
 
 ## Hard Rules
 
@@ -45,6 +50,8 @@ writing a registry row.
   an "anonymize everything" default, or a second entry that skips the gates.
 - Never treat an empty column map as a gap to fill later; it is the declaration
   that the table holds nothing personal.
+- Never name one column in both `_pii` and `_piiNotPersonal`, and never declare
+  `_piiNotPersonal` on a table purged whole: neither survives the collection.
 - Never declare `AnonymizationStrategy::PURGE` on a table with an incoming
   `ON DELETE RESTRICT` foreign key: nothing checks the order, and the pass fails
   after the import, over a database already holding production data.

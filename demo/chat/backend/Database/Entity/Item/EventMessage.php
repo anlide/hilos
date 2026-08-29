@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Entity\Item;
 
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Demo\Chat\Database\Entity\Collection\EventMessages as EntityEventMessages;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
@@ -48,6 +49,15 @@ final class EventMessage extends Entity
     public const array _indexes = [
         'author_user_id' => [Entity::INDEX_COLUMNS => [self::author_user_id]],
         'author_bot_id' => [Entity::INDEX_COLUMNS => [self::author_bot_id]],
+    ];
+
+    // What somebody typed into the chat.
+    public const array _pii = [self::message => AnonymizationStrategy::MASK];
+
+    public const array _piiNotPersonal = [
+        self::event_id,
+        self::author_user_id,
+        self::author_bot_id,
     ];
 
     public int $event_id;

@@ -5,18 +5,27 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
-use Hilos\Backup\Anonymization\FrameworkPiiDeclaration;
 use Hilos\Backup\Anonymization\PiiRegistry;
+use Hilos\Backup\BackupConstants;
 use Hilos\Backup\Exception\AnonymizationConfigException;
+use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Entity\Item\Identity;
+use Hilos\Database\Entity\Item\Session;
+use Hilos\Database\Schema\TablesWithoutEntityProvider;
+use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the merged PII registry.
+ * Unit tests for the collected PII registry.
  *
- * The two things worth pinning here are the ones a reader of the catalog cannot verify
- * for themselves: that a project row replaces a framework row whole rather than merging
- * into it, and that the empty column map is a classification rather than an absence.
+ * The thing worth pinning here is that the collection walks what an installation already
+ * declared - the collections a DbContext mounted and the classes naming its tables
+ * outside the ORM - rather than a list somebody keeps in step by hand. A verdict that
+ * says opposite things about one column is refused rather than resolved, and the empty
+ * column map stays a classification rather than an absence.
  *
  * The framework's own declaration is checked here too, on the one axis that needs no
  * database: that it is a well-formed registry at all. Whether it covers a real archive
@@ -25,32 +34,130 @@ use PHPUnit\Framework\TestCase;
 final class PiiRegistryTest extends TestCase
 {
     /**
-     * Lower bound on the framework declaration, so a row list that lost its contents
-     * cannot pass as a healthy one. The count is the framework's share of the demo/chat
-     * schema at the time of writing (15 archive tables, 24 analytics, one push table the
-     * demo does not create); it is a floor, not the exact number, because a new framework
-     * table adds a row here and must not fail this test for it.
+     * Lower bound on what the framework classifies, so a verdict list that lost its
+     * contents cannot pass as a healthy one. Eleven Entities of the framework's own plus
+     * the twenty-nine tables it ships outside the ORM; it is a floor, not the exact
+     * number, because a new framework table adds a row here and must not fail this test
+     * for it.
      */
     private const int MIN_FRAMEWORK_ROWS = 40;
 
-    public function testTheFrameworkDeclarationIsAWellFormedRegistry(): void
+    protected function tearDown(): void
     {
-        $registry = PiiRegistry::fromDeclarations(FrameworkPiiDeclaration::rows());
+        // Restore the unmounted context and the base facade class for later cases.
+        Hilos::$db = null;
+        Hilos::initBrowser();
+        Hilos::resetBrowser();
+
+        parent::tearDown();
+    }
+
+    public function testTheFrameworkCollectsAWellFormedRegistryOfItsOwn(): void
+    {
+        Hilos::$db = new FrameworkPiiTestDbContext();
+        Hilos::$db->configure();
+
+        $registry = PiiRegistry::collect();
         $tables = $registry->declaredTables(0);
 
         $this->assertGreaterThanOrEqual(
             self::MIN_FRAMEWORK_ROWS,
             count($tables),
-            'The framework declaration lost rows; an emptied one would leave every framework '
-            . 'table for a project to classify',
+            'The framework lost verdicts; an unclassified framework table is one every project '
+            . 'would then have to classify for it',
         );
         foreach ($tables as $table) {
             $this->assertStringNotContainsString(
                 '\\',
                 $table,
-                "Declared key [{$table}] stayed a class name, so it names a class that no longer exists",
+                "Declared table [{$table}] stayed a class name, so a collection resolved to no table",
             );
         }
+    }
+
+    public function testAVerdictIsCollectedOffTheEntityOfAMountedCollection(): void
+    {
+        Hilos::$db = new FrameworkPiiTestDbContext();
+        Hilos::$db->configure();
+
+        $registry = PiiRegistry::collect();
+
+        $this->assertSame(
+            [
+                Identity::identifier => AnonymizationStrategy::FAKE_EMAIL,
+                Identity::secret => AnonymizationStrategy::NULLIFY,
+            ],
+            $registry->strategiesFor(0, Identity::_table),
+        );
+        $this->assertContains(
+            Identity::provider,
+            $registry->notPersonalColumns(0, Identity::_table) ?? [],
+            'The non-personal half of the verdict must come out of the registry too',
+        );
+    }
+
+    public function testAPurgedTableCarriesNoColumnWorkOfEitherHalf(): void
+    {
+        Hilos::$db = new FrameworkPiiTestDbContext();
+        Hilos::$db->configure();
+
+        $registry = PiiRegistry::collect();
+
+        $this->assertTrue($registry->isPurged(0, Session::_table));
+        $this->assertSame([], $registry->strategiesFor(0, Session::_table));
+        $this->assertSame([], $registry->notPersonalColumns(0, Session::_table));
+    }
+
+    public function testAnUnclassifiedTableIsToldApartFromOneDeclaredClean(): void
+    {
+        $registry = PiiRegistry::collect();
+
+        $this->assertNull($registry->strategiesFor(0, 'never_mentioned'));
+        $this->assertNull($registry->notPersonalColumns(0, 'never_mentioned'));
+        $this->assertSame([], $registry->strategiesFor(0, 'hilos_change_log_table'));
+        $this->assertSame(
+            ['id', 'name'],
+            $registry->notPersonalColumns(0, 'hilos_change_log_table'),
+        );
+    }
+
+    public function testTheProjectTablesWithoutEntityAreCollectedAfterTheFrameworkOnes(): void
+    {
+        ProjectTablesWithoutEntityHilos::initBrowser();
+
+        $registry = PiiRegistry::collect();
+        $tables = $registry->declaredTables(0);
+
+        $this->assertSame(
+            ['label' => AnonymizationStrategy::MASK],
+            $registry->strategiesFor(0, 'project_probe'),
+        );
+        $this->assertSame(['id'], $registry->notPersonalColumns(0, 'project_probe'));
+        // Declaration order is pass order, and the framework's own tables lead it.
+        $this->assertGreaterThan(
+            array_search('migration', $tables, true),
+            array_search('project_probe', $tables, true),
+        );
+    }
+
+    public function testAColumnCalledBothPersonalAndNotIsRefused(): void
+    {
+        ContradictoryTablesWithoutEntityHilos::initBrowser();
+
+        $this->expectException(AnonymizationConfigException::class);
+        $this->expectExceptionMessage('project_probe.label');
+
+        PiiRegistry::collect();
+    }
+
+    public function testACatalogNamingSomethingElseThanAProviderIsRefused(): void
+    {
+        NotAProviderHilos::initBrowser();
+
+        $this->expectException(AnonymizationConfigException::class);
+        $this->expectExceptionMessage(BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY);
+
+        PiiRegistry::collect();
     }
 
     public function testAnEntityKeyResolvesToItsTable(): void
@@ -79,41 +186,13 @@ final class PiiRegistryTest extends TestCase
         );
     }
 
-    public function testAnUndeclaredTableIsToldApartFromOneDeclaredClean(): void
+    public function testADeclaredCleanTableIsToldApartFromAnAbsentOne(): void
     {
         $registry = PiiRegistry::fromDeclarations([0 => ['clean_table' => []]]);
 
         $this->assertSame([], $registry->strategiesFor(0, 'clean_table'));
         $this->assertNull($registry->strategiesFor(0, 'never_mentioned'));
         $this->assertNull($registry->strategiesFor(1, 'clean_table'), 'Rows belong to one connection');
-    }
-
-    public function testAProjectRowReplacesTheFrameworkRowWhole(): void
-    {
-        $registry = PiiRegistry::fromDeclarations(
-            [0 => [PiiEntityFixture::class => [
-                'email' => AnonymizationStrategy::FAKE_EMAIL,
-                'phone' => AnonymizationStrategy::FAKE_PHONE,
-            ]]],
-            [0 => [PiiEntityFixture::class => ['email' => AnonymizationStrategy::HASH]]],
-        );
-
-        $this->assertSame(
-            ['email' => AnonymizationStrategy::HASH],
-            $registry->strategiesFor(0, 'pii_entity'),
-            'A column the project did not write about must not survive from the framework row',
-        );
-    }
-
-    public function testTheOverrideMatchesOnTheTableRatherThanTheSpelling(): void
-    {
-        $registry = PiiRegistry::fromDeclarations(
-            [0 => [PiiEntityFixture::class => ['email' => AnonymizationStrategy::FAKE_EMAIL]]],
-            [0 => ['pii_entity' => []]],
-        );
-
-        $this->assertSame(['pii_entity'], $registry->declaredTables(0));
-        $this->assertSame([], $registry->strategiesFor(0, 'pii_entity'));
     }
 
     public function testRowsOfDifferentTablesAreKeptSideBySide(): void
@@ -191,4 +270,161 @@ final class PiiRegistryTest extends TestCase
 final class PiiEntityFixture extends Entity
 {
     public const string _table = 'pii_entity';
+}
+
+/**
+ * DB context fixture mounting the framework's own collections and nothing else.
+ */
+final class FrameworkPiiTestDbContext extends HilosDbContext
+{
+}
+
+/**
+ * Tables outside the ORM a project might ship, classified the way one should be.
+ */
+final class ProjectTablesWithoutEntity implements TablesWithoutEntityProvider
+{
+    /**
+     * @return list<string> Table names of the fixture project
+     */
+    public static function tables(): array
+    {
+        return array_keys(self::pii());
+    }
+
+    /**
+     * @return array<string, array<string, AnonymizationStrategy>|AnonymizationStrategy> Verdict per table
+     */
+    public static function pii(): array
+    {
+        return ['project_probe' => ['label' => AnonymizationStrategy::MASK]];
+    }
+
+    /**
+     * @return array<string, list<string>> Non-personal columns per table
+     */
+    public static function piiNotPersonal(): array
+    {
+        return ['project_probe' => ['id']];
+    }
+}
+
+/**
+ * The same tables with one column called personal and not personal at once.
+ */
+final class ContradictoryTablesWithoutEntity implements TablesWithoutEntityProvider
+{
+    /**
+     * @return list<string> Table names of the fixture project
+     */
+    public static function tables(): array
+    {
+        return array_keys(self::pii());
+    }
+
+    /**
+     * @return array<string, array<string, AnonymizationStrategy>|AnonymizationStrategy> Verdict per table
+     */
+    public static function pii(): array
+    {
+        return ['project_probe' => ['label' => AnonymizationStrategy::MASK]];
+    }
+
+    /**
+     * @return array<string, list<string>> Non-personal columns per table
+     */
+    public static function piiNotPersonal(): array
+    {
+        return ['project_probe' => ['id', 'label']];
+    }
+}
+
+/**
+ * Backup catalog fixture naming a well-formed provider.
+ */
+final class ProjectTablesWithoutEntityCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, mixed> Backup catalog of the fixture project
+     */
+    public static function getCatalog(): array
+    {
+        return [BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => ProjectTablesWithoutEntity::class];
+    }
+}
+
+/**
+ * Backup catalog fixture naming a provider that contradicts itself.
+ */
+final class ContradictoryTablesWithoutEntityCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, mixed> Backup catalog of the fixture project
+     */
+    public static function getCatalog(): array
+    {
+        return [BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => ContradictoryTablesWithoutEntity::class];
+    }
+}
+
+/**
+ * Backup catalog fixture naming a class that provides nothing of the sort.
+ */
+final class NotAProviderCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, mixed> Backup catalog of the fixture project
+     */
+    public static function getCatalog(): array
+    {
+        return [BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => PiiEntityFixture::class];
+    }
+}
+
+/**
+ * Project facade fixture naming the well-formed provider's catalog.
+ */
+final class ProjectTablesWithoutEntityHilos extends Hilos
+{
+    protected const ?string BACKUP_CATALOG = ProjectTablesWithoutEntityCatalog::class;
+
+    /**
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new FrameworkPiiTestDbContext();
+    }
+}
+
+/**
+ * Project facade fixture naming the self-contradicting provider's catalog.
+ */
+final class ContradictoryTablesWithoutEntityHilos extends Hilos
+{
+    protected const ?string BACKUP_CATALOG = ContradictoryTablesWithoutEntityCatalog::class;
+
+    /**
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new FrameworkPiiTestDbContext();
+    }
+}
+
+/**
+ * Project facade fixture naming a catalog whose provider key holds no provider.
+ */
+final class NotAProviderHilos extends Hilos
+{
+    protected const ?string BACKUP_CATALOG = NotAProviderCatalog::class;
+
+    /**
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new FrameworkPiiTestDbContext();
+    }
 }

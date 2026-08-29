@@ -2,6 +2,7 @@
 
 namespace Hilos\Database\Entity\Item;
 
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Database;
@@ -23,6 +24,12 @@ use Hilos\Database\SqlSortDirection;
  * - const array _types — column types mapping
  * - const array _foreign — foreign key relationships (optional)
  * - const array _indexes — index definitions (optional)
+ * - const array|AnonymizationStrategy _pii — the personal-data verdict: a column to
+ *   {@see AnonymizationStrategy} map, or {@see AnonymizationStrategy::PURGE} for a table
+ *   emptied whole. Absent means the table was never classified, which is what the
+ *   coverage gate of a restore names table by table.
+ * - const array _piiNotPersonal — the columns looked at and found to hold no personal
+ *   data. Absent on a purged table, where no row survives to hold anything.
  *
  * @property-read bool $_related
  */
@@ -35,6 +42,8 @@ abstract class Entity
     public const string META_TYPES = '_types';
     public const string META_FOREIGN = '_foreign';
     public const string META_INDEXES = '_indexes';
+    public const string META_PII = '_pii';
+    public const string META_PII_NOT_PERSONAL = '_piiNotPersonal';
 
     // Index definition keys (for _indexes array structure)
     public const string INDEX_COLUMNS = 'columns';

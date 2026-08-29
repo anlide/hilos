@@ -73,6 +73,25 @@ final class Bot extends Entity
         'active' => [Entity::INDEX_COLUMNS => [self::active]],
     ];
 
+    // A bot is written by the installation, not by a person, and is the same for everyone.
+    public const array _pii = [];
+
+    public const array _piiNotPersonal = [
+        self::id,
+        self::name,
+        self::description,
+        self::style,
+        self::topics,
+        self::personality,
+        self::active,
+        self::reaction_delay_min,
+        self::reaction_delay_max,
+        self::reaction_chance,
+        self::topic_match_required,
+        self::cooldown_after_message,
+        self::priority,
+    ];
+
     // Properties
     public ?int $id = null;
     public string $name;

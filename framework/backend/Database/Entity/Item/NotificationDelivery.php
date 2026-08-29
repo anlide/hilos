@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Entity\Item;
 
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Database\Entity\Collection\NotificationDeliveries as EntityNotificationDeliveries;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
@@ -63,6 +64,20 @@ final class NotificationDelivery extends Entity
         'idx_notification_delivery_channel_status' => [Entity::INDEX_COLUMNS => [self::channel, self::status]],
         'idx_notification_delivery_created' => [Entity::INDEX_COLUMNS => [self::created_at]],
         'idx_notification_delivery_status_created' => [Entity::INDEX_COLUMNS => [self::status, self::created_at]],
+    ];
+
+    // A transport's error text quotes what it was given - an address, a token, a body.
+    public const array _pii = [self::last_error => AnonymizationStrategy::MASK];
+
+    public const array _piiNotPersonal = [
+        self::id,
+        self::notification_id,
+        self::channel,
+        self::status,
+        self::attempts,
+        self::created_at,
+        self::updated_at,
+        self::delivered_at,
     ];
 
     public ?int $id = null;

@@ -13,7 +13,7 @@ the recipe before generating code.
 - Per-feature generation recipe + the contract shapes:
   `docs/agents/architecture/admin-feature-scaffold.md`
 - Normative boundary + the two modes: `docs/agents/architecture/admin-features.md`
-- The PII registry a backup catalog must declare, and the restore gates that
+- The personal-data verdict every table must carry, and the restore gates that
   demand it: `docs/agents/architecture/backup-anonymization.md`
 - Browser table / source fan-out mechanics:
   `docs/agents/architecture/browser-source-fanout.md`

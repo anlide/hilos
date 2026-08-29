@@ -58,6 +58,19 @@ final class NotificationPreference extends Entity
         ],
     ];
 
+    // A preference is a channel and a flag: it says how somebody is reached, never who
+    // they are or what was said.
+    public const array _pii = [];
+
+    public const array _piiNotPersonal = [
+        self::id,
+        self::user_id,
+        self::channel,
+        self::enabled,
+        self::created_at,
+        self::updated_at,
+    ];
+
     public ?int $id = null;
     public int $user_id;
     public string $channel = '';

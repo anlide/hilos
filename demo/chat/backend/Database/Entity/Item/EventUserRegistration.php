@@ -42,6 +42,14 @@ final class EventUserRegistration extends Entity
         'target_user_id' => [Entity::INDEX_COLUMNS => [self::target_user_id]],
     ];
 
+    // Two keys and nothing else; the name behind the key is anonymized on the user row.
+    public const array _pii = [];
+
+    public const array _piiNotPersonal = [
+        self::event_id,
+        self::target_user_id,
+    ];
+
     public int $event_id;
     public int $target_user_id;
 }

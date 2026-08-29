@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Entity\Item;
 
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Database\Entity\Collection\UserVerifications as EntityUserVerifications;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\UserVerification as ObjectUserVerification;
@@ -79,6 +80,10 @@ final class UserVerification extends Entity
         'idx_uv_type_identifier' => [Entity::INDEX_COLUMNS => [self::type, self::identifier]],
         'idx_uv_user' => [Entity::INDEX_COLUMNS => [self::user_id]],
     ];
+
+    // A verification code is a live secret with no value once the archive is a copy,
+    // and no other table points at it.
+    public const AnonymizationStrategy _pii = AnonymizationStrategy::PURGE;
 
     public ?int $id = null;
     public ?int $user_id = null;

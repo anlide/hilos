@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Entity\Item;
 
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Database\Entity\Collection\Settings as EntitySettings;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
@@ -42,6 +43,16 @@ final class Setting extends Entity
 
     public const array _indexes = [
         'uk_key' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::key]],
+    ];
+
+    // A setting value is masked because the framework cannot know what a project put
+    // in one; the key and the type describe the setting rather than its content.
+    public const array _pii = [self::value => AnonymizationStrategy::MASK];
+
+    public const array _piiNotPersonal = [
+        self::id,
+        self::key,
+        self::type,
     ];
 
     public ?int $id = null;

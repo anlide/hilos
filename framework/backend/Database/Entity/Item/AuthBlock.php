@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Entity\Item;
 
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Database\Entity\Collection\AuthBlocks as EntityAuthBlocks;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
@@ -56,6 +57,10 @@ final class AuthBlock extends Entity
     public const array _indexes = [
         'uk_auth_block_scope_identity_action' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::scope, self::identity, self::action]],
     ];
+
+    // A block names the identity it was raised against - an address or a phone - and
+    // means nothing outside the installation that raised it.
+    public const AnonymizationStrategy _pii = AnonymizationStrategy::PURGE;
 
     public ?int $id = null;
     public string $scope;

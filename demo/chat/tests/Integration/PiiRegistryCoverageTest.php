@@ -15,15 +15,15 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\SqlParamCollection;
 
 /**
- * Integration test: the merged PII registry against the demo's live schema.
+ * Integration test: the collected PII registry against the demo's live schema.
  *
- * The registry is a hand-written list of tables and columns, and the two ways it goes
- * wrong are invisible to a unit test. It can fall behind the schema - a migration adds a
- * table and nobody classifies it - and it can name a strategy the column cannot carry.
- * The first is what the coverage gate refuses at restore time, and this test asks that
- * gate the same question against the database the demo actually creates. The second no
- * gate can see, because it is the database's opinion of an `UPDATE`, so the second test
- * builds the whole pass and runs it.
+ * The registry is collected out of what each table declares about itself, and the two
+ * ways it goes wrong are invisible to a unit test. It can fall behind the schema - a
+ * migration adds a table and nobody classifies it - and it can name a strategy the
+ * column cannot carry. The first is what the coverage gate refuses at restore time, and
+ * this test asks that gate the same question against the database the demo actually
+ * creates. The second no gate can see, because it is the database's opinion of an
+ * `UPDATE`, so the second test builds the whole pass and runs it.
  *
  * Runs on top of the test database raised by composer run test:db-reset; it neither
  * creates nor drops schema, reads information_schema, and rolls back everything it writes.
@@ -84,7 +84,7 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
             . 'query, not the registry, is what to look at first',
         );
 
-        $registry = PiiRegistry::fromCatalog();
+        $registry = PiiRegistry::collect();
         AnonymizationCoverageValidator::validate(
             $registry,
             [self::CONNECTION_INDEX => array_keys($schemas)],
@@ -111,7 +111,7 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
      */
     public function testPassStatementsExecute(): void
     {
-        $registry = PiiRegistry::fromCatalog();
+        $registry = PiiRegistry::collect();
         $schemas = LiveSchemaReader::read(self::CONNECTION_INDEX);
         $builder = new AnonymizationSqlBuilder(self::TEST_SALT);
         $statements = [];

@@ -38,6 +38,15 @@ final class ModeratorPromptPiece extends Entity
         self::prompt_piece => PhpType::TEXT->value,
     ];
 
+    // Prompt text the installation wrote for its moderator bot.
+    public const array _pii = [];
+
+    public const array _piiNotPersonal = [
+        self::id,
+        self::section,
+        self::prompt_piece,
+    ];
+
     // Properties
     public ?int $id = null;
     public string $section;

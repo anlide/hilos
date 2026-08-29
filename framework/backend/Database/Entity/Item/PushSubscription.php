@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Entity\Item;
 
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Database\Entity\Collection\PushSubscriptions as EntityPushSubscriptions;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
@@ -67,6 +68,10 @@ final class PushSubscription extends Entity
         ],
         'idx_push_subscription_user' => [Entity::INDEX_COLUMNS => [self::user_id]],
     ];
+
+    // An endpoint addresses one person's browser and is a live credential of it; a
+    // restored copy that kept it could push to a real device.
+    public const AnonymizationStrategy _pii = AnonymizationStrategy::PURGE;
 
     public ?int $id = null;
     public int $user_id;

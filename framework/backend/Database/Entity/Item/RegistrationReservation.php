@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Entity\Item;
 
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Database\Entity\Collection\RegistrationReservations as EntityRegistrationReservations;
 use Hilos\Database\Entity\Item\Entity;
@@ -79,6 +80,10 @@ final class RegistrationReservation extends Entity
         'idx_reservation_identifier' => [Entity::INDEX_COLUMNS => [self::identifier]],
         'idx_reservation_expires' => [Entity::INDEX_COLUMNS => [self::expires_at]],
     ];
+
+    // A held registration is a token-shaped row that expires on its own; a restored
+    // copy has no use for one.
+    public const AnonymizationStrategy _pii = AnonymizationStrategy::PURGE;
 
     public ?int $id = null;
     public string $type;

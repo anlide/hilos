@@ -15,7 +15,7 @@ use Random\RandomException;
 /**
  * CatalogRestoreAnonymizer - the anonymizer a catalog-configured installation gets.
  *
- * Holds the two things one restore run needs and nothing else: the merged registry
+ * Holds the two things one restore run needs and nothing else: the collected registry
  * ({@see PiiRegistry}) and the salt its hashes take. The salt is minted here, per run,
  * from the secure source and is never written down. That is the whole correlation story:
  * one salt across every table of the run keeps a value equal to itself, so a join by
@@ -50,15 +50,15 @@ final class CatalogRestoreAnonymizer implements RestoreAnonymizer
     }
 
     /**
-     * Builds the anonymizer this installation's catalog describes.
+     * Builds the anonymizer this installation's declarations describe.
      *
-     * @return ?self Anonymizer over the declared registry, or null when nothing is declared
-     * @throws AnonymizationConfigException When a declaration is not a registry
+     * @return ?self Anonymizer over the collected registry, or null when nothing is declared
+     * @throws AnonymizationConfigException When a verdict is malformed
      * @throws RandomException When the platform's secure random source refuses to mint a salt
      */
     public static function fromCatalog(): ?self
     {
-        $registry = PiiRegistry::fromCatalog();
+        $registry = PiiRegistry::collect();
         if ($registry->isEmpty()) {
             return null;
         }

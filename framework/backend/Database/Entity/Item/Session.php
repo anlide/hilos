@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Entity\Item;
 
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Database\Entity\Collection\Sessions as EntitySessions;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
@@ -76,6 +77,10 @@ final class Session extends Entity
             Entity::INDEX_COLUMNS => [self::pending_registration_identifier],
         ],
     ];
+
+    // A session token is NOT NULL and UNIQUE, so a hash would leave a structurally
+    // valid session behind; nothing points at this table, so emptying it costs nothing.
+    public const AnonymizationStrategy _pii = AnonymizationStrategy::PURGE;
 
     public ?int $id = null;
     public string $token;

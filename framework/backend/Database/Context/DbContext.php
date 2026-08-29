@@ -120,6 +120,24 @@ abstract class DbContext
     }
 
     /**
+     * Names the object collection classes this context mounted, in registration order.
+     *
+     * The list a backup restore reads every table's personal-data verdict out of: a
+     * collection is where an installation says a table of its is part of the system, so
+     * walking them needs no second hand-written list of tables to fall behind the first.
+     * Order is registration order, which the anonymization pass then executes in.
+     *
+     * @return list<class-string<Objects>> Object collection classes, in registration order
+     */
+    public function getObjectCollectionClasses(): array
+    {
+        return array_values(array_map(
+            static fn(Objects $collection): string => $collection::class,
+            $this->_objectCollections,
+        ));
+    }
+
+    /**
      * Get DB item view collection by name.
      *
      * The registry of views has no way in from outside otherwise: {@see self::__get()} loads the
