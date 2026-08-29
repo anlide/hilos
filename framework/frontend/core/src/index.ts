@@ -22,8 +22,11 @@ export {
   hilosToasts,
   type HilosToast,
   type HilosToastOptions,
+  type HilosToastOverflow,
+  type HilosToastScope,
   type HilosToastSeverity,
   type HilosToastStore,
+  type HilosToastViewer,
 } from './state/toasts.js'
 export {
   EntityStore,

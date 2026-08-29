@@ -4,13 +4,25 @@ It renders the shared core store (hilosToasts), so anything in the SDK or in a
 project can report an outcome without threading a store through props — the shell
 mounts this once (HilosLayout) and every page is covered.
 
+The host owns no policy: it draws the cards, reports raw measurements (the window
+height and each card's occupied height) and reports the holds on the countdown.
+How long a notice lives, how much of the corner it may fill and what happens to
+the ones that do not fit is the store's business, in one copy for the three SDKs
+(core/src/state/toasts.ts).
+
 Markup is the Bootstrap toast component driven declaratively — `.toast.show`
 rendered by the store rather than Bootstrap's JS Toast (the SDK ships Bootstrap's
 CSS, not its JS; HilosModal does the same). Colored variants use the documented
 header-less form: a body plus a close button on a `text-bg-*` surface. Bootstrap
 classes only, no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
-import type { HilosToastSeverity, HilosToastStore } from '@hilos/core'
+import type { ComponentPublicInstance } from 'vue'
+import { onMounted, onUnmounted, onUpdated } from 'vue'
+import type {
+  HilosToastSeverity,
+  HilosToastStore,
+  HilosToastViewer,
+} from '@hilos/core'
 import { hilosToasts } from '@hilos/core'
 
 import { useSignal } from './useSignal.js'
@@ -28,17 +40,19 @@ const toasts = useSignal(store.toasts)
 const SURFACE: Record<HilosToastSeverity, string> = {
   error: 'text-bg-danger',
   success: 'text-bg-success',
+  warning: 'text-bg-warning',
   info: 'text-bg-secondary',
 }
 
-// Only a failure earns an interrupt; a success or a plain notice waits its turn
-// rather than cutting into what the screen-reader user is listening to.
+// Only a failure earns an interrupt; a success, a caveat or a plain notice waits
+// its turn rather than cutting into what the screen-reader user is listening to.
 const LIVE_REGION: Record<
   HilosToastSeverity,
   { role: string; ariaLive: 'assertive' | 'polite' }
 > = {
   error: { role: 'alert', ariaLive: 'assertive' },
   success: { role: 'status', ariaLive: 'polite' },
+  warning: { role: 'status', ariaLive: 'polite' },
   info: { role: 'status', ariaLive: 'polite' },
 }
 
@@ -53,6 +67,101 @@ function movesWithin(event: FocusEvent): boolean {
   return container.contains(event.relatedTarget as Node | null)
 }
 
+/**
+ * How much of the stack one card takes: its own box plus the spacing under it.
+ *
+ * The store adds these up against a third of the window, so what it is given has
+ * to be the room the card occupies, not the room it paints in.
+ *
+ * @param element The rendered card.
+ */
+function occupiedHeight(element: HTMLElement): number {
+  const spacing = Number.parseFloat(getComputedStyle(element).marginBottom)
+
+  return (
+    element.getBoundingClientRect().height +
+    (Number.isNaN(spacing) ? 0 : spacing)
+  )
+}
+
+// Attached for as long as this host is mounted. While no viewer is attached the
+// store's countdown does not run at all, which is what keeps a notice that
+// arrived before the first frame from burning down behind the splash screen.
+let viewer: HilosToastViewer | null = null
+const cards = new Map<number, HTMLElement>()
+
+// A tab nobody is looking at is a hold like the cursor and the focus: walk away
+// and everything is still there when you come back. It is tracked because
+// visibilitychange fires on every switch and the host owes the store exactly one
+// hold of each kind.
+let tabHeld = false
+
+function onResize(): void {
+  viewer?.setViewportHeight(window.innerHeight)
+}
+
+function onVisibility(): void {
+  if (viewer === null || document.hidden === tabHeld) {
+    return
+  }
+  tabHeld = document.hidden
+  if (tabHeld) {
+    viewer.hold()
+
+    return
+  }
+  viewer.release()
+}
+
+/**
+ * Remember the element of one card, or forget it when the card is gone.
+ *
+ * @param id The toast's id.
+ * @param element The rendered card, or `null` when it leaves the DOM.
+ */
+function keep(
+  id: number,
+  element: Element | ComponentPublicInstance | null,
+): void {
+  if (element === null) {
+    cards.delete(id)
+
+    return
+  }
+  cards.set(id, element as HTMLElement)
+}
+
+// Measured after the browser has laid the cards out, and again after every
+// render: a card is only really on screen once the store knows how tall it is,
+// and every report after the first only updates the number.
+function reportHeights(): void {
+  if (viewer === null) {
+    return
+  }
+  for (const [id, element] of cards) {
+    viewer.reportHeight(id, occupiedHeight(element))
+  }
+}
+
+onMounted(() => {
+  viewer = store.attach()
+  viewer.setViewportHeight(window.innerHeight)
+  onVisibility()
+  window.addEventListener('resize', onResize)
+  document.addEventListener('visibilitychange', onVisibility)
+  reportHeights()
+})
+
+onUpdated(reportHeights)
+
+onUnmounted(() => {
+  window.removeEventListener('resize', onResize)
+  document.removeEventListener('visibilitychange', onVisibility)
+  // detach gives back whatever holds this host was still holding.
+  viewer?.detach()
+  viewer = null
+})
+
 // The host owns at most one hold of each kind and knows whether it is holding it,
 // because a toast that closes under the pointer takes the release event with it:
 // Chrome and WebKit fire no mouseleave and no focusout for an element that leaves
@@ -65,30 +174,30 @@ let cursorHeld = false
 let focusHeld = false
 
 function holdOnCursor(): void {
-  if (!cursorHeld) {
+  if (viewer !== null && !cursorHeld) {
     cursorHeld = true
-    store.pause()
+    viewer.hold()
   }
 }
 
 function releaseCursorHold(): void {
   if (cursorHeld) {
     cursorHeld = false
-    store.resume()
+    viewer?.release()
   }
 }
 
 function releaseFocusHold(): void {
   if (focusHeld) {
     focusHeld = false
-    store.resume()
+    viewer?.release()
   }
 }
 
 function holdOnFocus(event: FocusEvent): void {
-  if (!focusHeld && !movesWithin(event)) {
+  if (viewer !== null && !focusHeld && !movesWithin(event)) {
     focusHeld = true
-    store.pause()
+    viewer.hold()
   }
 }
 
@@ -117,6 +226,7 @@ function dismiss(id: number): void {
     <div
       v-for="toast in toasts"
       :key="toast.id"
+      :ref="(element) => keep(toast.id, element)"
       class="toast show align-items-center border-0 d-flex"
       :class="SURFACE[toast.severity]"
       :role="LIVE_REGION[toast.severity].role"

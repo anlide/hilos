@@ -4,15 +4,81 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosToastHost } from '../src/HilosToastHost.js'
 
-// The host is the only place the pause events and the live-region wiring are
-// written down, so this covers them once for the three SDKs — the store's own
-// behavior (lifetimes, holds, the visible cap) is a core unit test.
+// The host is the only place the hold events, the measurement reports and the
+// live-region wiring are written down, so this covers them once for the three
+// SDKs — the store's own behavior (lifetimes, holds, the height cap) is a core
+// unit test.
 function byId(container: HTMLElement, id: string): HTMLElement | null {
   return container.querySelector(`[data-id="${id}"]`)
 }
 
+/**
+ * Switch the tab away or back, the way the browser reports it.
+ *
+ * @param hidden Whether the document is now hidden.
+ */
+function switchTab(hidden: boolean): void {
+  Object.defineProperty(document, 'hidden', {
+    configurable: true,
+    get: () => hidden,
+  })
+  fireEvent(document, new Event('visibilitychange'))
+}
+
 describe('HilosToastHost', () => {
-  afterEach(cleanup)
+  afterEach(() => {
+    cleanup()
+    switchTab(false)
+  })
+
+  it('reports the height of every card it drew, so the store can admit it', () => {
+    const store = createHilosToastStore()
+    store.push('Backup created.', { severity: 'success' })
+    render(<HilosToastHost store={store} />)
+
+    expect(store.toasts.get()[0].measured).toBe(true)
+  })
+
+  it('holds the countdown while the tab is not the one being looked at', () => {
+    vi.useFakeTimers()
+    try {
+      const store = createHilosToastStore()
+      store.push('Backup created.', { severity: 'success' })
+      const { container } = render(<HilosToastHost store={store} />)
+
+      switchTab(true)
+      act(() => {
+        vi.advanceTimersByTime(60_000)
+      })
+      expect(byId(container, 'hilos-toast-success')).not.toBeNull()
+
+      switchTab(false)
+      act(() => {
+        vi.advanceTimersByTime(20_000)
+      })
+      expect(byId(container, 'hilos-toast-success')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops the countdown once it is no longer there to watch the stack', () => {
+    vi.useFakeTimers()
+    try {
+      const store = createHilosToastStore()
+      store.push('Backup created.', { severity: 'success' })
+      const { unmount } = render(<HilosToastHost store={store} />)
+
+      unmount()
+      act(() => {
+        vi.advanceTimersByTime(60_000)
+      })
+
+      expect(store.toasts.get()).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 
   it('holds the countdown while the cursor rests on the stack', () => {
     vi.useFakeTimers()
@@ -74,7 +140,7 @@ describe('HilosToastHost', () => {
       fireEvent.click(byId(container, 'hilos-toast-close') as HTMLElement)
 
       act(() => {
-        vi.advanceTimersByTime(40_000)
+        vi.advanceTimersByTime(20_000)
       })
       expect(store.toasts.get()).toEqual([])
       expect(byId(container, 'hilos-toast-success')).toBeNull()
@@ -98,7 +164,7 @@ describe('HilosToastHost', () => {
       fireEvent.click(byId(container, 'hilos-toast-close') as HTMLElement)
 
       act(() => {
-        vi.advanceTimersByTime(40_000)
+        vi.advanceTimersByTime(20_000)
       })
       expect(store.toasts.get()).toEqual([])
       expect(byId(container, 'hilos-toast-success')).toBeNull()
