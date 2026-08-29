@@ -27,6 +27,9 @@ use Hilos\Utils\Helpers\FileSystemHelper;
  */
 final class LogStoreReader
 {
+    /** Index key for the two daemon streams, matched by exact basename rather than by prefix. */
+    public const string CLASS_DAEMON = 'daemon';
+
     /** Index key for `agent-*.log` streams. */
     public const string CLASS_AGENT = 'agent';
 
@@ -47,29 +50,63 @@ final class LogStoreReader
 
     /**
      * @param ?string $logDirectory Log root holding the live `*.log` files and the archive subtree, or null when it could not be resolved
+     * @param list<string> $daemonBasenames Exact basenames of the two daemon logs, classified as {@see self::CLASS_DAEMON}
      */
-    public function __construct(private readonly ?string $logDirectory)
-    {
+    public function __construct(
+        private readonly ?string $logDirectory,
+        private readonly array $daemonBasenames = [],
+    ) {
     }
 
     /**
      * Build a reader over the daemon log root (the directory of `DAEMON_LOG_FILE`).
      *
-     * A missing env value yields a reader whose {@see read()} returns an unavailable snapshot,
-     * mirroring the overview page's former unavailable state rather than raising.
+     * The same env values also name the two daemon streams: they carry no classifying prefix, so
+     * the reader recognizes them by exact basename (HIL-753). A missing env value yields a reader
+     * whose {@see read()} returns an unavailable snapshot, mirroring the overview page's former
+     * unavailable state rather than raising.
      *
      * @return self Reader bound to the configured log directory, or an unresolved reader
      */
     public static function fromEnv(): self
     {
-        return new self(self::tryResolveLogRoot());
+        try {
+            $daemonLogFile = Hilos::$env[EnvConstants::DAEMON_LOG_FILE];
+        } catch (EnvException) {
+            return new self(null);
+        }
+
+        return new self(dirname($daemonLogFile), self::daemonBasenamesFromEnv($daemonLogFile));
+    }
+
+    /**
+     * Basenames of the daemon's own streams, which carry no classifying prefix of their own.
+     *
+     * Each env value is read on its own: a store that resolves through `DAEMON_LOG_FILE` alone
+     * stays readable, and an env missing the error stream loses that one class rather than the
+     * whole walk.
+     *
+     * @param string $daemonLogFile Value of `DAEMON_LOG_FILE`, already resolved by the caller
+     *
+     * @return list<string> One basename per daemon stream the env names
+     */
+    private static function daemonBasenamesFromEnv(string $daemonLogFile): array
+    {
+        $basenames = [basename($daemonLogFile)];
+        try {
+            $basenames[] = basename(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]);
+        } catch (EnvException) {
+            return $basenames;
+        }
+
+        return $basenames;
     }
 
     /**
      * Walk the log store once and return a classified snapshot.
      *
      * @return LogStoreSnapshot Live + archive index, or {@see LogStoreSnapshot::unavailable()} when
-     *                          the log root is unresolved or the archive cannot be listed
+     *                          the log root is unresolved or a directory cannot be listed
      */
     public function read(): LogStoreSnapshot
     {
@@ -99,25 +136,39 @@ final class LogStoreReader
                 if ($timestamp === null) {
                     continue;
                 }
-                $archiveBatches[$timestamp] = self::scanLogFilesInDirectory($full);
+                $batch = $this->scanLogFilesInDirectory($full);
+                if ($batch === null) {
+                    return LogStoreSnapshot::unavailable();
+                }
+                $archiveBatches[$timestamp] = $batch;
             }
         }
 
-        return new LogStoreSnapshot(true, $archiveBatches, self::scanLogFilesInDirectory($this->logDirectory));
+        $liveFiles = $this->scanLogFilesInDirectory($this->logDirectory);
+        if ($liveFiles === null) {
+            return LogStoreSnapshot::unavailable();
+        }
+
+        return new LogStoreSnapshot(true, $archiveBatches, $liveFiles);
     }
 
     /**
-     * Resolve the daemon log directory from {@see EnvConstants::DAEMON_LOG_FILE}.
+     * Walk the log root alone, skipping the archive subtree.
      *
-     * @return ?string Absolute log root path, or null when the env value is missing
+     * The cheap half of the split walk (HIL-753): live files change every second while a batch
+     * changes only when rotation or cleanup runs, so a caller sampling often takes this and reaches
+     * for {@see read()} rarely. Feed the result to {@see LogStoreSnapshot::withLiveFiles()}.
+     *
+     * @return ?array{daemon: array<string, int>, agent: array<string, int>, worker: array<string, int>, workerMonopolistic: array<string, int>}
+     *         Classified basename → size in bytes, or null when the log root is unresolved or cannot be listed
      */
-    private static function tryResolveLogRoot(): ?string
+    public function readLiveFiles(): ?array
     {
-        try {
-            return dirname(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]);
-        } catch (EnvException) {
+        if ($this->logDirectory === null) {
             return null;
         }
+
+        return $this->scanLogFilesInDirectory($this->logDirectory);
     }
 
     /**
@@ -138,29 +189,28 @@ final class LogStoreReader
     }
 
     /**
-     * Scan one directory for `*.log` files and classify by filename prefix.
+     * Scan one directory for `*.log` files and classify them.
      *
-     * Order matters: `worker-monopolistic-` is tested before `worker-` before `agent-` so the
-     * prefixes do not overlap incorrectly.
+     * Order matters twice over. The two daemon basenames are tested first, by exact match: they
+     * carry no prefix of their own, are configurable, and a catch-all "any other `*.log` is the
+     * daemon" rule would swallow every stray file in the directory. The prefixes follow, with
+     * `worker-monopolistic-` before `worker-` before `agent-` so they do not overlap incorrectly.
      *
      * @param string $dir Absolute directory path (log root or one archive batch folder)
      *
-     * @return array{agent: array<string, int>, worker: array<string, int>, workerMonopolistic: array<string, int>}
-     *         Basename → size in bytes (0 when the size could not be read)
+     * @return ?array{daemon: array<string, int>, agent: array<string, int>, worker: array<string, int>, workerMonopolistic: array<string, int>}
+     *         Basename → size in bytes (0 when the size could not be read), or null when the directory cannot be listed
      */
-    private static function scanLogFilesInDirectory(string $dir): array
+    private function scanLogFilesInDirectory(string $dir): ?array
     {
+        $daemon = [];
         $agent = [];
         $worker = [];
         $workerMonopolistic = [];
 
         $files = glob($dir . DIRECTORY_SEPARATOR . '*.log');
         if ($files === false) {
-            return [
-                self::CLASS_AGENT => [],
-                self::CLASS_WORKER => [],
-                self::CLASS_WORKER_MONOPOLISTIC => [],
-            ];
+            return null;
         }
 
         foreach ($files as $path) {
@@ -173,7 +223,9 @@ final class LogStoreReader
             if ($size === false) {
                 $size = 0;
             }
-            if (str_starts_with($name, self::PREFIX_WORKER_MONOPOLISTIC)) {
+            if (in_array($name, $this->daemonBasenames, true)) {
+                $daemon[$name] = $size;
+            } elseif (str_starts_with($name, self::PREFIX_WORKER_MONOPOLISTIC)) {
                 $workerMonopolistic[$name] = $size;
             } elseif (str_starts_with($name, self::PREFIX_WORKER)) {
                 $worker[$name] = $size;
@@ -183,6 +235,7 @@ final class LogStoreReader
         }
 
         return [
+            self::CLASS_DAEMON => $daemon,
             self::CLASS_AGENT => $agent,
             self::CLASS_WORKER => $worker,
             self::CLASS_WORKER_MONOPOLISTIC => $workerMonopolistic,

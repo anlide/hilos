@@ -9,8 +9,8 @@ namespace Hilos\Log;
  *
  * A read model projected by {@see LogStoreSnapshot::batches()} from a single log-store walk: the
  * rotation timestamp plus file counts and byte weights for each classified stream group (agent,
- * worker, worker-monopolistic). It is an internal read value-object, not a signal payload; pages
- * 385/386/387 map it into their own transport DTOs.
+ * worker, worker-monopolistic, daemon). It is an internal read value-object, not a signal payload;
+ * pages 385/386/387 map it into their own transport DTOs.
  */
 final class LogBatchSummary
 {
@@ -22,6 +22,8 @@ final class LogBatchSummary
      * @param int $workerBytes Summed size in bytes of the worker files
      * @param int $workerMonopolisticFileCount Number of `worker-monopolistic-*.log` files in the batch
      * @param int $workerMonopolisticBytes Summed size in bytes of the worker-monopolistic files
+     * @param int $daemonFileCount Number of daemon files in the batch (`daemon.log` and `daemon-error.log` by default)
+     * @param int $daemonBytes Summed size in bytes of the daemon files
      */
     public function __construct(
         public readonly int $timestamp,
@@ -31,6 +33,8 @@ final class LogBatchSummary
         public readonly int $workerBytes,
         public readonly int $workerMonopolisticFileCount,
         public readonly int $workerMonopolisticBytes,
+        public readonly int $daemonFileCount,
+        public readonly int $daemonBytes,
     ) {
     }
 }

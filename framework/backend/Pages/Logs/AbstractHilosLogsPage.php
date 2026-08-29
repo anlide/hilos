@@ -204,10 +204,11 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
             $workerKeys = 0;
             $workerBytes = 0;
             foreach ($snapshot->keys() as $key) {
+                // The daemon's own streams (HIL-753) are a third class here and belong to neither tile.
                 if ($key->class === LogKeySummary::CLASS_AGENT) {
                     $agentKeys++;
                     $agentBytes += $key->totalBytes;
-                } else {
+                } elseif ($key->class === LogKeySummary::CLASS_WORKER) {
                     $workerKeys++;
                     $workerBytes += $key->totalBytes;
                 }

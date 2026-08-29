@@ -163,6 +163,8 @@ use Hilos\Hilos as HilosFacade;
 use Hilos\HilosException;
 use Hilos\Log\LogRotationAgent;
 use Hilos\Log\LogRotationAgentDaemon;
+use Hilos\Log\LogStoreAgent;
+use Hilos\Log\LogStoreAgentDaemon;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Push\Delivery\PushDeliveryChannelAgent;
@@ -392,6 +394,11 @@ final class Hilos extends HilosFacade
         LogRotationAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => LogRotationAgent::class,
             AgentRegistryKey::DAEMON => LogRotationAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        LogStoreAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => LogStoreAgent::class,
+            AgentRegistryKey::DAEMON => LogStoreAgentDaemon::class,
             AgentRegistryKey::SCOPE => AgentScope::NODE,
         ],
         AuthThrottleAgent::AGENT_TYPE => [

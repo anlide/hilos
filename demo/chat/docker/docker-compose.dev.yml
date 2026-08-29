@@ -39,7 +39,7 @@ services:
       # in this container (admin:create / admin:grant / admin:revoke /
       # protected-mode:open) reaches the command channel over loopback.
       - HILOS_DAEMON_HOST=127.0.0.1
-      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-14}
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-15}
       # Mail goes to the stand's own interceptor, whose UI is published below, so
       # a message can be read with the eyes instead of dug out of a .eml file. The
       # transport is pinned rather than auto-selected: a stand that loses the

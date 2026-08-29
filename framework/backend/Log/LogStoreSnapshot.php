@@ -13,16 +13,18 @@ namespace Hilos\Log;
  * list, mirroring the overview page's former `setUnavailableState`.
  *
  * The index is keyed by the {@see LogStoreReader} class constants; the projections fold the two
- * worker prefixes together for {@see keys()} but keep them apart for {@see workers()}.
+ * worker prefixes together for {@see keys()} but keep them apart for {@see workers()}, and the
+ * daemon streams reach {@see keys()} and {@see batches()} but never {@see workers()} — the daemon
+ * is not a worker.
  */
 final class LogStoreSnapshot
 {
     /**
      * @param bool $available Whether the log store could be read
-     * @param array<int, array{agent: array<string, int>, worker: array<string, int>, workerMonopolistic: array<string, int>}> $archiveBatches
-     *        Batch Unix timestamp → classified basename → size in bytes
-     * @param array{agent: array<string, int>, worker: array<string, int>, workerMonopolistic: array<string, int>} $liveFiles
-     *        Live (non-archived) classified basename → size in bytes
+     * @param array<int, array{daemon: array<string, int>, agent: array<string, int>, worker: array<string, int>,
+     *     workerMonopolistic: array<string, int>}> $archiveBatches Batch Unix timestamp → classified basename → size in bytes
+     * @param array{daemon: array<string, int>, agent: array<string, int>, worker: array<string, int>,
+     *     workerMonopolistic: array<string, int>} $liveFiles Live (non-archived) classified basename → size in bytes
      */
     public function __construct(
         public readonly bool $available,
@@ -39,10 +41,43 @@ final class LogStoreSnapshot
     public static function unavailable(): self
     {
         return new self(false, [], [
+            LogStoreReader::CLASS_DAEMON => [],
             LogStoreReader::CLASS_AGENT => [],
             LogStoreReader::CLASS_WORKER => [],
             LogStoreReader::CLASS_WORKER_MONOPOLISTIC => [],
         ]);
+    }
+
+    /**
+     * Copy of this snapshot carrying a fresh live-file index over the batches already walked.
+     *
+     * The cheap half of the split walk (HIL-753): {@see LogStoreReader::readLiveFiles()} resamples
+     * the log root every few seconds, while the archive — which only rotation and cleanup change —
+     * keeps the batches of the last full {@see LogStoreReader::read()}.
+     *
+     * @param array{daemon: array<string, int>, agent: array<string, int>, worker: array<string, int>,
+     *     workerMonopolistic: array<string, int>} $liveFiles Live (non-archived) classified basename → size in bytes
+     *
+     * @return self Snapshot with this snapshot's batches and the given live files
+     */
+    public function withLiveFiles(array $liveFiles): self
+    {
+        return new self($this->available, $this->archiveBatches, $liveFiles);
+    }
+
+    /**
+     * The live (non-archived) half of the walk, as classified.
+     *
+     * The archive half is projected; this one is handed back whole because a caller watching for
+     * rotation compares live weights against live weights — a key's total, which counts its batches
+     * too, would answer a different question (HIL-753).
+     *
+     * @return array{daemon: array<string, int>, agent: array<string, int>, worker: array<string, int>,
+     *     workerMonopolistic: array<string, int>} Classified basename → size in bytes
+     */
+    public function liveFiles(): array
+    {
+        return $this->liveFiles;
     }
 
     /**
@@ -59,6 +94,7 @@ final class LogStoreSnapshot
             $agent = $this->archiveBatches[$timestamp][LogStoreReader::CLASS_AGENT];
             $worker = $this->archiveBatches[$timestamp][LogStoreReader::CLASS_WORKER];
             $workerMonopolistic = $this->archiveBatches[$timestamp][LogStoreReader::CLASS_WORKER_MONOPOLISTIC];
+            $daemon = $this->archiveBatches[$timestamp][LogStoreReader::CLASS_DAEMON];
             $summaries[] = new LogBatchSummary(
                 timestamp: $timestamp,
                 agentFileCount: count($agent),
@@ -67,6 +103,8 @@ final class LogStoreSnapshot
                 workerBytes: array_sum($worker),
                 workerMonopolisticFileCount: count($workerMonopolistic),
                 workerMonopolisticBytes: array_sum($workerMonopolistic),
+                daemonFileCount: count($daemon),
+                daemonBytes: array_sum($daemon),
             );
         }
 
@@ -77,13 +115,22 @@ final class LogStoreSnapshot
      * Per log key summary across live and archive, sorted by key.
      *
      * The two worker prefixes are folded into {@see LogKeySummary::CLASS_WORKER}; use {@see workers()}
-     * when the monopolistic distinction is needed.
+     * when the monopolistic distinction is needed. The daemon streams keep a class of their own.
      *
      * @return list<LogKeySummary> One entry per distinct basename, sorted ascending by key
      */
     public function keys(): array
     {
         $summaries = [];
+        foreach ($this->collectStreams([LogStoreReader::CLASS_DAEMON]) as $key => $stream) {
+            $summaries[] = new LogKeySummary(
+                key: $key,
+                class: LogKeySummary::CLASS_DAEMON,
+                live: $stream->live,
+                batchTimestamps: $stream->batchTimestamps,
+                totalBytes: $stream->totalBytes,
+            );
+        }
         foreach ($this->collectStreams([LogStoreReader::CLASS_AGENT]) as $key => $stream) {
             $summaries[] = new LogKeySummary(
                 key: $key,

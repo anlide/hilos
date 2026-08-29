@@ -125,7 +125,7 @@ services:
       # because a monopolistic singleton needs a worker of its own - the thirteenth is
       # the sessions library every handshake is resolved in (HIL-710) and the fourteenth
       # is the notifications library that owns the notification tables (HIL-771).
-      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-14}
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-15}
       - WORKER_COMM_HOST=0.0.0.0
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
