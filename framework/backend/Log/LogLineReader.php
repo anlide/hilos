@@ -385,11 +385,15 @@ final class LogLineReader
     /**
      * Whether a value is one of the recognized {@see Logger} `LEVEL_*` constants.
      *
+     * Public because a caller asking for a filtered read must be able to refuse a level this
+     * reader would never match, and the answer is the reader's own: a second list elsewhere
+     * would drift into rejecting a level the filter still recognizes.
+     *
      * @param string $level Candidate level token
      *
      * @return bool True when the token is a known level
      */
-    private static function isKnownLevel(string $level): bool
+    public static function isKnownLevel(string $level): bool
     {
         return in_array($level, [Logger::LEVEL_INFO, Logger::LEVEL_ERROR, Logger::LEVEL_WARNING, Logger::LEVEL_DEBUG], true);
     }

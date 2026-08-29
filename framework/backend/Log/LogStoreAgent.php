@@ -6,9 +6,21 @@ namespace Hilos\Log;
 
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\LogRotationConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentSignalConfigKey;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Log\DTO\LogsReadLinesSignalData;
+use Hilos\Pages\Logs\AbstractHilosLogsViewPage;
+use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
+use Hilos\Pages\Logs\DTO\LogsReadLinesReplyDTO;
+use Throwable;
 
 /**
  * Node-local monopolistic agent owning the log directory (HIL-753).
@@ -38,6 +50,20 @@ use Hilos\Hilos;
 final class LogStoreAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = HilosAgentType::HILOS_LOG_STORE;
+
+    /**
+     * Reads addressed to this node's replica: the node id in the payload is the address, and the
+     * router turns a foreign one into a delivery over the peer channel (HIL-757).
+     */
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::LOGS_AGENT_READ_LINES => [
+            AgentSignalConfigKey::NODE_FIELD => LogsReadLinesActionDTO::nodeId,
+            AgentSignalConfigKey::DTO => LogsReadLinesSignalData::class,
+        ],
+    ];
+
+    /** @var int Lines one page of the viewer holds, the number the mockup shows */
+    private const int READ_PAGE_LINES = 200;
 
     /** @var float Minimum seconds between two live walks of the log root */
     private const float LIVE_SCAN_INTERVAL_SECONDS = 5.0;
@@ -122,6 +148,37 @@ final class LogStoreAgent extends AbstractAgent
     }
 
     /**
+     * Answers one read of one file of this node's log directory.
+     *
+     * The blocking file walk is legitimate here and nowhere else: this agent is monopolistic and
+     * node-local (HIL-753), so one reader of one directory is exactly what it is for.
+     *
+     * @param AgentSignalData $data Signal data (container with inner payload)
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @throws AgentUnknownSignalException When the agent is reached by a signal it does not own
+     * @throws InvalidAgentSignalPayloadException When the read frame carries the wrong payload
+     * @throws InvalidArgumentException When the answer to the read cannot be named
+     */
+    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    {
+        switch ($name) {
+            case HilosSignalConstants::LOGS_AGENT_READ_LINES:
+                $request = $data->data;
+                if (!$request instanceof LogsReadLinesSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, LogsReadLinesSignalData::class, $request);
+                }
+
+                $this->handleReadLines($request);
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
+    }
+
+    /**
      * This node's log index as of the last walk.
      *
      * @return NodeLogIndex Current index, unavailable when the directory could not be read
@@ -182,6 +239,96 @@ final class LogStoreAgent extends AbstractAgent
         }
 
         $this->publish($this->snapshot->withLiveFiles($liveFiles), $now, false);
+    }
+
+    /**
+     * Reads the page the viewer asked for and acks the browser that is waiting for it.
+     *
+     * The whole read is guarded because this agent is the LAST step of somebody else's action:
+     * {@see AbstractHilosLogsViewPage} deferred its ack when it handed the request over, so a
+     * failure that only reached the log would leave the browser waiting out its own timeout with
+     * the reason recorded where the person waiting cannot see it.
+     *
+     * An unreadable file is not such a failure and is not treated as one: a missing file, a batch
+     * rotation carried off and a path the traversal guard refused all come back as a successful
+     * page with {@see LogsReadLinesReplyDTO::$readable} false, the way the whole log index answers.
+     *
+     * @param LogsReadLinesSignalData $request Read request, carrying whom to answer
+     * @throws InvalidArgumentException When the success or failure ack cannot be named
+     */
+    private function handleReadLines(LogsReadLinesSignalData $request): void
+    {
+        if ($request->requestId === null) {
+            // Nothing to answer: an untracked read has no ack to correlate, and reading a file for
+            // a reply nobody receives is work spent on nobody.
+            $this->logAgentWarning('Ignoring an untracked log read: no request id to answer on');
+
+            return;
+        }
+
+        try {
+            $this->sendActionSuccess(
+                $request->acceptKey,
+                $request->action,
+                $request->requestId,
+                LogsReadLinesReplyDTO::fromPage($this->readPage($request)),
+            );
+        } catch (Throwable $e) {
+            $this->logAgentError('Log read failed: ' . $e->getMessage());
+            $this->sendActionFail($request->acceptKey, $request->action, $request->requestId, $e->getMessage());
+        }
+    }
+
+    /**
+     * Reads the requested slice through the shared reader.
+     *
+     * Reading runs backwards and only backwards: the first page and the Earlier button are the
+     * same query, with and without a cursor. Following the end of a live file is a different
+     * mechanism and a different leaf (HIL-389).
+     *
+     * @param LogsReadLinesSignalData $request Read request naming the file and the slice
+     * @return LogLinePage Matched lines, or an unavailable page when the request names no file
+     */
+    private function readPage(LogsReadLinesSignalData $request): LogLinePage
+    {
+        $relativePath = $this->relativePath($request);
+        if ($relativePath === null) {
+            $this->logAgentWarning("Ignoring a log read that names no file: source '{$request->source}'");
+
+            return LogLinePage::unavailable();
+        }
+
+        return LogLineReader::fromEnv()->read($relativePath, new LogReadQuery(
+            LogReadQuery::ANCHOR_TAIL,
+            $request->cursor,
+            self::READ_PAGE_LINES,
+            $request->level,
+            $request->substring,
+        ));
+    }
+
+    /**
+     * Turns the structural name of a file into its path under the log root.
+     *
+     * The browser names a source, a batch stamp and a stream, never a path - so this is where the
+     * archive layout is known, and it is the only place the wire's unix stamp meets the directory
+     * name rotation writes ({@see LogRotationConstants::TIMESTAMP_FORMAT}).
+     *
+     * @param LogsReadLinesSignalData $request Read request naming the file
+     * @return ?string Path relative to the log root, or null when the request names no file at all
+     */
+    private function relativePath(LogsReadLinesSignalData $request): ?string
+    {
+        if ($request->source === LogsReadLinesActionDTO::SOURCE_LIVE) {
+            return $request->stream;
+        }
+        if ($request->source !== LogsReadLinesActionDTO::SOURCE_BATCH || $request->batchTimestamp === null) {
+            return null;
+        }
+
+        return LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME
+            . '/' . date(LogRotationConstants::TIMESTAMP_FORMAT, $request->batchTimestamp)
+            . '/' . $request->stream;
     }
 
     /**

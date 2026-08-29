@@ -1635,6 +1635,8 @@ abstract class DaemonManager extends BaseManager implements
      *     worker, daemon creation, agent lookup, or worker-link failure)
      * @throws InvalidArgumentException When the unsubscribe of a replaced subscription cannot be named
      * @throws EnvException When resolving a destination reads cluster configuration and it is invalid
+     * @throws ClusterConfigurationException When a node-addressed agent signal reads the local node
+     *     id and cluster mode is on with a missing or invalid node config
      * @throws HilosException Whatever the project's agent-daemon factory raises reaching an agent
      */
     private function dispatchSignals(): void

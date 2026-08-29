@@ -155,6 +155,16 @@ final class TopologyIndexedAgentUnknownConfigKeyDaemon extends TopologyTestAgent
     public const string AGENT_TYPE = 'indexed_unknown_key_agent';
 }
 
+final class TopologyNodeAddressedAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'node_addressed_agent';
+}
+
+final class TopologyNodeAddressedAgentEmptyNodeFieldDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'node_addressed_empty_field_agent';
+}
+
 final class TopologyAgentSignalDtoAgentDaemon extends TopologyTestAgentDaemon
 {
     public const string AGENT_TYPE = 'agent_signal_dto_agent';

@@ -7,6 +7,7 @@ namespace Hilos\Core\Router;
 use Hilos\API\Router\Exception\GroupSubscriptionNotFoundException;
 use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
 use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
+use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Placement\AgentLocationKind;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\SignalTypeConstants;
@@ -782,6 +783,8 @@ class SignalRouter
      * @param SignalDTO $signal Signal DTO
      * @return list<Destination> Resolved delivery targets (agent and/or WebSocket), de-duplicated
      * @throws EnvException When the placement post-pass reads cluster configuration and it is invalid
+     * @throws ClusterConfigurationException When a node-addressed agent signal reads the local node
+     *     id and cluster mode is on with a missing or invalid node config
      */
     public function getDestinations(SignalDTO $signal): array
     {
@@ -1528,8 +1531,21 @@ class SignalRouter
      * string values are both accepted as agent index. Absent or invalid values
      * produce no destination and a warning is logged.
      *
+     * A node-local agent can also be addressed on a NAMED node: a signal declaring
+     * AgentSignalConfigKey::NODE_FIELD carries the id of the node hosting the
+     * addressee, and a non-empty id naming another node becomes a
+     * {@see RemoteAgentDestination} — the one case where the placement lookup is not
+     * asked, because the sender already knows the answer and the lookup does not
+     * (it reports every node-scoped agent as running here). An empty id is the
+     * local node and not an error, which is where the key parts ways with
+     * INDEX_FIELD: off a cluster the single node publishes itself under an empty
+     * id, so a reader written against it must not grow a branch for standalone.
+     *
      * @param SignalDTO $signal Signal DTO
-     * @return list<AgentDestination> Single agent destination (optionally indexed), or empty when unrouted
+     * @return list<AgentAddressedDestination> Single agent destination — local, or on the node the
+     *     payload names — or empty when unrouted
+     * @throws EnvException When reading the local node id reads cluster configuration and it is invalid
+     * @throws ClusterConfigurationException When cluster mode is on but the local node config is missing or invalid
      */
     private function getAgentDestinations(SignalDTO $signal): array
     {
@@ -1553,11 +1569,12 @@ class SignalRouter
             return [];
         }
 
+        $payloadFields = $signal->data instanceof AgentSignalData ? $signal->data->data?->toArray() : null;
+
         $agentIndex = null;
         $indexField = $hilosClass::getAgentSignalIndexFields()[$signalName] ?? null;
         if (is_string($indexField) && $indexField !== '') {
-            $payload = $signal->data instanceof AgentSignalData ? $signal->data->data : null;
-            $value = $payload?->toArray()[$indexField] ?? null;
+            $value = $payloadFields[$indexField] ?? null;
             if (is_int($value) && $value > 0) {
                 $agentIndex = (string) $value;
             } elseif (is_string($value) && $value !== '') {
@@ -1568,7 +1585,35 @@ class SignalRouter
             }
         }
 
-        return [new AgentDestination($agentType, $agentIndex)];
+        $nodeField = $hilosClass::getAgentSignalNodeFields()[$signalName] ?? null;
+        $nodeId = is_string($nodeField) && $nodeField !== '' ? $payloadFields[$nodeField] ?? null : null;
+        // Silence on a missing or empty id is the contract, not a swallowed error: the field is
+        // how a sender NAMES a node, and saying nothing means the addressee is here.
+        if (!is_string($nodeId) || $nodeId === '' || $this->isLocalNode($nodeId)) {
+            return [new AgentDestination($agentType, $agentIndex)];
+        }
+
+        return [new RemoteAgentDestination($nodeId, $agentType, $agentIndex)];
+    }
+
+    /**
+     * Tells whether a node id names the node this router runs on.
+     *
+     * Off a cluster there is no local id to compare against — identity() throws there — so a
+     * named node is never this one, and the destination stays remote for the daemon to judge.
+     * That is not a lost case: off-cluster nothing publishes a non-empty id in the first place,
+     * and a sender that named one is addressing a node this installation does not have.
+     *
+     * @param string $nodeId Non-empty node id read from a signal payload
+     * @return bool True when the id is this node's own
+     * @throws EnvException When the cluster-enabled flag or the node config cannot be read
+     * @throws ClusterConfigurationException When cluster mode is on but the local node config is missing or invalid
+     */
+    private function isLocalNode(string $nodeId): bool
+    {
+        $cluster = Hilos::$cluster;
+
+        return $cluster !== null && $cluster->isEnabled() && $cluster->identity()->nodeId === $nodeId;
     }
 
     /**

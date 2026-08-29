@@ -160,6 +160,45 @@ Do **not** override `SignalRouter::getDestinations()` for indexed routing when
 `INDEX_FIELD` covers the case. Reserve overrides for routing patterns that the
 topology registry cannot express at all.
 
+## Node-addressed agent signals
+
+A node-scoped agent (`AgentScope::NODE`) runs a replica on every node, and the
+placement lookup answers "here" for all of them — so a sender that wants one
+particular node has nothing to address. Declare
+`AgentSignalConfigKey::NODE_FIELD` on the receiving agent class to let the
+signal carry the id of the node hosting the addressee:
+
+```php
+use Hilos\Core\Agent\Config\AgentSignalConfigKey;
+
+final class MyNodeLocalAgent extends AbstractAgent
+{
+    public const array AGENT_SIGNALS = [
+        MySignalConstants::NODE_LOCAL_SIGNAL => [
+            AgentSignalConfigKey::NODE_FIELD => 'nodeId',
+            AgentSignalConfigKey::DTO => MyNodeLocalSignalData::class,
+        ],
+    ];
+}
+```
+
+`SignalRouter::getAgentDestinations()` reads the named field from the inner
+payload's `toArray()`. A non-empty id naming another node becomes a
+`RemoteAgentDestination` the daemon forwards over the peer channel; an id equal
+to this node's own, an empty id, and an absent field all stay the
+`AgentDestination` they are without the declaration. The placement lookup is not
+consulted for a named node — it is the one case where the sender knows the
+answer and the lookup does not.
+
+Off a cluster nothing changes: the single node publishes itself under an EMPTY
+id (`hilosClusterNodes`), so a reader written against that collection needs no
+standalone branch. This is where the key parts ways with `INDEX_FIELD`, which
+logs and drops the signal on an empty value: an absent index is a sender that
+forgot, an absent node id is a sender that means "here".
+
+The declarations compose — a signal may name both a node and an agent index,
+and the index travels with it to the node that hosts the instance.
+
 ## Per-instance page subscriptions
 
 A page is normally served by the agent of a TYPE. A page that is the surface of ONE

@@ -113,4 +113,34 @@ final class AgentSignalRouteRegistry
 
         return $indexFields;
     }
+
+    /**
+     * Returns node field names for node-addressed agent signal routes.
+     *
+     * @param array $agents Agent registry
+     * @return array<string, string> Payload field name keyed by signal name
+     */
+    public static function nodeFields(array $agents): array
+    {
+        $nodeFields = [];
+        foreach ($agents as $agentType => $registryEntry) {
+            $agentClass = AgentRegistry::workerClass($registryEntry);
+            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
+                continue;
+            }
+
+            foreach ($agentClass::AGENT_SIGNALS as $key => $value) {
+                if (!is_string($key) || $key === '' || !is_array($value)) {
+                    continue;
+                }
+
+                $nodeField = $value[AgentSignalConfigKey::NODE_FIELD] ?? null;
+                if (is_string($nodeField) && $nodeField !== '') {
+                    $nodeFields[$key] = $nodeField;
+                }
+            }
+        }
+
+        return $nodeFields;
+    }
 }

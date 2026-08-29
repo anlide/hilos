@@ -17,6 +17,10 @@ namespace Hilos\Core\Agent\Config;
  *         AgentSignalConfigKey::INDEX_FIELD => 'entityId',
  *         AgentSignalConfigKey::DTO => MyIndexedSignalData::class,
  *     ],
+ *     MySignal::NODE_LOCAL_SIGNAL => [
+ *         AgentSignalConfigKey::NODE_FIELD => 'nodeId',
+ *         AgentSignalConfigKey::DTO => MyNodeLocalSignalData::class,
+ *     ],
  * ];
  * ```
  *
@@ -30,6 +34,18 @@ final class AgentSignalConfigKey
      * Accepted field values: positive int or non-empty string.
      */
     public const string INDEX_FIELD = 'indexField';
+
+    /**
+     * Payload field whose value names the cluster node hosting the target agent.
+     *
+     * An empty or absent value means the addressee is on this node, and the signal
+     * routes exactly as it would without the declaration; a non-empty value is the
+     * id of the node to address, and routing honours it in place of the placement
+     * lookup. This is where the key differs from {@see self::INDEX_FIELD}, which
+     * treats an empty value as an error: a node id is legitimately empty off a
+     * cluster, where the single node publishes itself under one.
+     */
+    public const string NODE_FIELD = 'nodeField';
 
     /**
      * Inner payload DTO class for topology-driven parsing at dispatch time.

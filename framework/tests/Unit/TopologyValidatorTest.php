@@ -382,6 +382,29 @@ final class TopologyValidatorTest extends TestCase
         );
     }
 
+    /**
+     * A node-addressed signal declares no index: it names WHICH node runs the replica, not which
+     * of many instances, so the config array is complete without an index field.
+     */
+    public function testNodeAddressedAgentSignalIsAcceptedWithoutAnIndexField(): void
+    {
+        TopologyNodeAddressedAgentSignalHilos::validateTopology();
+
+        $this->assertSame(
+            [TopologyNodeAddressedAgent::NODE_SIGNAL => 'nodeId'],
+            TopologyNodeAddressedAgentSignalHilos::getAgentSignalNodeFields(),
+        );
+        $this->assertSame([], TopologyNodeAddressedAgentSignalHilos::getAgentSignalIndexFields());
+    }
+
+    public function testNodeAddressedAgentSignalEmptyNodeFieldFails(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(AgentSignalConfigKey::NODE_FIELD);
+
+        TopologyNodeAddressedAgentEmptyNodeFieldHilos::validateTopology();
+    }
+
     public function testIndexedAgentSignalMissingIndexFieldFails(): void
     {
         $this->expectException(InvalidTopologyException::class);
@@ -2032,6 +2055,70 @@ final class TopologyIndexedAgentSignalHilos extends HilosFacade
         TopologyIndexedAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => TopologyIndexedAgent::class,
             AgentRegistryKey::DAEMON => TopologyIndexedAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyNodeAddressedAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'node_addressed_agent';
+
+    public const string NODE_SIGNAL = 'node_addressed_signal';
+
+    public const array AGENT_SIGNALS = [
+        self::NODE_SIGNAL => [
+            AgentSignalConfigKey::NODE_FIELD => 'nodeId',
+        ],
+    ];
+}
+
+final class TopologyNodeAddressedAgentSignalHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyNodeAddressedAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyNodeAddressedAgent::class,
+            AgentRegistryKey::DAEMON => TopologyNodeAddressedAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyNodeAddressedAgentEmptyNodeField extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'node_addressed_empty_field_agent';
+
+    public const array AGENT_SIGNALS = [
+        'some_node_addressed_signal' => [
+            AgentSignalConfigKey::NODE_FIELD => '',
+        ],
+    ];
+}
+
+final class TopologyNodeAddressedAgentEmptyNodeFieldHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyNodeAddressedAgentEmptyNodeField::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyNodeAddressedAgentEmptyNodeField::class,
+            AgentRegistryKey::DAEMON => TopologyNodeAddressedAgentEmptyNodeFieldDaemon::class,
         ],
     ];
 

@@ -810,6 +810,20 @@ abstract class Hilos
     }
 
     /**
+     * Returns node field names for node-addressed agent signal routes.
+     *
+     * Only signals declared with AgentSignalConfigKey::NODE_FIELD are returned.
+     * At dispatch time SignalRouter reads this field from the inner payload's
+     * toArray() and addresses the named node instead of asking the placement lookup.
+     *
+     * @return array<string, string> Payload field name keyed by signal name
+     */
+    public static function getAgentSignalNodeFields(): array
+    {
+        return AgentSignalRouteRegistry::nodeFields(static::AGENTS);
+    }
+
+    /**
      * Returns agent-owned client-action owner agent types keyed by action name.
      *
      * The page-independent action seam: actions declared in agent AGENT_ACTIONS route

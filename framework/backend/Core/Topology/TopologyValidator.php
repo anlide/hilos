@@ -1693,16 +1693,33 @@ final class TopologyValidator
                     continue;
                 }
 
-                $unknownKeys = array_diff(array_keys($value), [AgentSignalConfigKey::INDEX_FIELD, AgentSignalConfigKey::DTO]);
+                $unknownKeys = array_diff(array_keys($value), [
+                    AgentSignalConfigKey::INDEX_FIELD,
+                    AgentSignalConfigKey::NODE_FIELD,
+                    AgentSignalConfigKey::DTO,
+                ]);
                 if ($unknownKeys !== []) {
                     $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}] contains"
                         . ' unknown config keys: ' . implode(', ', $unknownKeys);
                 }
 
+                // A config array is how a signal says WHICH replica it means, and there are two
+                // ways to say it - an instance index, a node id, or both. Declaring neither leaves
+                // an array that addresses nothing and reads as a route the author meant to finish.
                 $indexField = $value[AgentSignalConfigKey::INDEX_FIELD] ?? null;
-                if (!is_string($indexField) || $indexField === '') {
+                $nodeField = $value[AgentSignalConfigKey::NODE_FIELD] ?? null;
+                if ($indexField === null && $nodeField === null) {
                     $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}] must declare"
-                        . " a non-empty '" . AgentSignalConfigKey::INDEX_FIELD . "'";
+                        . " a non-empty '" . AgentSignalConfigKey::INDEX_FIELD . "'"
+                        . " or '" . AgentSignalConfigKey::NODE_FIELD . "'";
+                }
+                if ($indexField !== null && (!is_string($indexField) || $indexField === '')) {
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}]["
+                        . AgentSignalConfigKey::INDEX_FIELD . '] must name a non-empty payload field';
+                }
+                if ($nodeField !== null && (!is_string($nodeField) || $nodeField === '')) {
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}]["
+                        . AgentSignalConfigKey::NODE_FIELD . '] must name a non-empty payload field';
                 }
 
                 $dtoClass = $value[AgentSignalConfigKey::DTO] ?? null;

@@ -17,7 +17,10 @@ use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Log\DTO\LogsReadLinesSignalData;
+use Hilos\Log\LogStoreAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\HilosMailer;
@@ -27,6 +30,7 @@ use Hilos\Notification\DTO\DeliveryRetryDoneSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
 use Hilos\Notification\HilosNotifier;
+use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
 use Hilos\Push\Delivery\PushDeliveryChannel;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Sms\DTO\SmsSendSignalData;
@@ -328,6 +332,20 @@ final class HilosSignalConstants
      * zero attempts and re-queues the channel's deliver signal.
      */
     public const string COMMUNICATIONS_DELIVERY_RETRY = 'communications_delivery_retry';
+
+    // ── Hilos logs admin: viewer page actions (client → server) ──
+    /**
+     * Client → server: read one page of lines from one log file (HIL-757).
+     *
+     * Owned by the viewer page, which is where the browser is attached - the file itself lives
+     * on the node the payload names, and the page forwards the request there rather than
+     * answering it. The ack therefore comes from that node, correlated by this action's own
+     * request id; the page owes none.
+     *
+     * The file is named structurally (source, batch stamp, stream) and never as a path, so the
+     * browser cannot address the file system. Carried by {@see LogsReadLinesActionDTO}.
+     */
+    public const string LOGS_READ_LINES = 'logs_read_lines';
 
     // ── Hilos sign-in surface: guest commands (client → server) ──
     /** Client → server: look an identifier up while it is typed (public, anonymous-reachable). */
@@ -783,6 +801,21 @@ final class HilosSignalConstants
      * backstop: between the page's answer and this signal the agent may have taken work on.
      */
     public const string BACKUP_AGENT_RESTORE = 'backup_agent_restore';
+
+    // ── Hilos logs admin: viewer page → the node that owns the files (agent signal) ──
+    /**
+     * Viewer page → {@see LogStoreAgent} on the named node: read this page of lines (HIL-757).
+     *
+     * The cross-node half of {@see self::LOGS_READ_LINES}. The owner declares
+     * {@see AgentSignalConfigKey::NODE_FIELD} on it, so the id in the payload is what the router
+     * addresses by; an empty id is this node and the frame never leaves it.
+     *
+     * It carries the accept key, the action name and the request id as well as the request,
+     * because the page deferred its own ack: the owner is the last step of this action and
+     * answers the browser itself, over a socket another node may be holding. Carried by
+     * {@see LogsReadLinesSignalData}.
+     */
+    public const string LOGS_AGENT_READ_LINES = 'logs_agent_read_lines';
 
     // ── Mail subsystem: facade → sharded hilos_mail agent pool (agent signal) ──
     /**
