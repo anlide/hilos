@@ -23,6 +23,8 @@ use Hilos\Log\DTO\LogsFollowStartSignalData;
 use Hilos\Log\DTO\LogsFollowStopSignalData;
 use Hilos\Log\DTO\LogsLinesAppendedSignalData;
 use Hilos\Log\DTO\LogsReadLinesSignalData;
+use Hilos\Log\DTO\NodeLogIndexSignalData;
+use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Mail\DTO\MailSendSignalData;
@@ -935,4 +937,19 @@ final class HilosSignalConstants
      * no raw-send intake, so this is the channel's only signal.
      */
     public const string HILOS_PUSH_DELIVER = 'hilos_push_deliver';
+
+    // ── Hilos logs admin: the node that owns the files → the cluster log aggregator (agent signal) ──
+    /**
+     * {@see LogStoreAgent} on one node → the cluster-wide {@see LogAggregatorAgent}: my store, whole (HIL-755).
+     *
+     * Sent by the owner of a log directory on its own tick, unasked, and carrying the node's index
+     * in FULL rather than what changed since the last frame ({@see NodeLogIndexSignalData}). That is
+     * what makes a lost frame, a restarted aggregator and an aggregator moved by policy repair
+     * themselves: the next ordinary frame is already the whole picture, so there is no protocol for
+     * asking anybody to send everything again.
+     *
+     * One direction only. The aggregator never answers and never opens a log directory of its own;
+     * it files the frame under that node's slot and nothing else.
+     */
+    public const string LOGS_NODE_INDEX_REPORT = 'logs_node_index_report';
 }

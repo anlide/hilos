@@ -8,18 +8,22 @@ use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\LogRotationConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
 use Hilos\Log\DTO\LogsFollowStopSignalData;
 use Hilos\Log\DTO\LogsLinesAppendedSignalData;
 use Hilos\Log\DTO\LogsReadLinesSignalData;
+use Hilos\Log\DTO\NodeLogIndexSignalData;
 use Hilos\Pages\Logs\AbstractHilosLogsViewPage;
 use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
 use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
@@ -100,6 +104,15 @@ final class LogStoreAgent extends AbstractAgent
     /** @var int Backlog in bytes past which the owner jumps to the end instead of catching up */
     private const int FOLLOW_CATCHUP_MAX_BYTES = 1048576;
 
+    /** @var float Seconds after which the index is reported even though nothing about it changed */
+    private const float KEEPALIVE_INTERVAL_SECONDS = 60.0;
+
+    /** @var int Milliseconds between two frames when no administrator has written the setting */
+    private const int DEFAULT_PUSH_INTERVAL_MS = 5000;
+
+    /** @var int Smallest interval a written setting is obeyed at, in milliseconds */
+    private const int MIN_PUSH_INTERVAL_MS = 100;
+
     private LogStoreReader $reader;
 
     /** @var LogStoreSnapshot Result of the last full walk, the archive half of every live resample */
@@ -131,11 +144,23 @@ final class LogStoreAgent extends AbstractAgent
     /** @var float Timestamp of the last round of appended-line reads, for throttling */
     private float $lastFollowPushAt = 0.0;
 
+    /** @var float Timestamp of the last index frame sent to the aggregator, for throttling */
+    private float $lastPushAt = 0.0;
+
+    /**
+     * @var bool Whether a walk has found anything to report since the last frame went out. It
+     *     ACCUMULATES rather than being read off the last walk: frames are rarer than walks, so
+     *     the walk that happens to be the latest when a frame is due is often the one that found
+     *     nothing, while an earlier one did.
+     */
+    private bool $indexChangedSincePush = false;
+
     /**
      * Builds the reader, learns which node this is, and takes the first full walk as the baseline.
      *
      * @throws EnvException When the cluster-enabled flag or a cluster environment value cannot be read
      * @throws ClusterConfigurationException When cluster mode is on but the local node config is missing or invalid
+     * @throws InvalidArgumentException When the first frame to the aggregator cannot be named
      */
     public function onStart(): void
     {
@@ -150,28 +175,34 @@ final class LogStoreAgent extends AbstractAgent
         $this->lastFullScanAt = microtime(true);
         $this->lastLiveScanAt = $this->lastFullScanAt;
         $this->walkStore(time());
+        // Reported at once rather than at the first due moment: a node that comes up after the
+        // aggregator would otherwise be missing from the cluster picture for a whole interval, and
+        // nothing about that absence would say it is only the schedule.
+        $this->pushIndex();
     }
 
     /**
      * Throttle only: it decides WHICH work is due and does none of it itself.
      *
-     * Two independent clocks, because the two jobs answer different questions at different rates:
-     * the walk says what files this node has, the follow says what one of them just gained. The
-     * follow runs after the walk and never instead of it, so a minute-old rotation cannot be
-     * reported by one half and denied by the other.
+     * Three independent clocks, because the three jobs answer different questions at different
+     * rates: the walk says what files this node has, the follow says what one of them just gained,
+     * and the report tells the cluster aggregator both. The follow runs after the walk and never
+     * instead of it, so a minute-old rotation cannot be reported by one half and denied by the
+     * other; the report runs last of all, on what the walk of this same tick has just published.
      *
-     * @throws InvalidArgumentException When a frame to a following viewer cannot be named
+     * @throws InvalidArgumentException When a frame to a following viewer or to the aggregator cannot be named
+     * @throws DatabaseException When the written push interval cannot be read
      */
     public function onTick(): void
     {
         $now = microtime(true);
         $this->walkWhicheverIsDue($now);
-        if ($this->followers === [] || $now - $this->lastFollowPushAt < self::FOLLOW_TICK_INTERVAL_SECONDS) {
-            return;
+        if ($this->followers !== [] && $now - $this->lastFollowPushAt >= self::FOLLOW_TICK_INTERVAL_SECONDS) {
+            $this->lastFollowPushAt = $now;
+            $this->pushAppendedLines();
         }
-        $this->lastFollowPushAt = $now;
 
-        $this->pushAppendedLines();
+        $this->pushIndexIfDue($now);
     }
 
     /**
@@ -636,6 +667,12 @@ final class LogStoreAgent extends AbstractAgent
             growthBytesPerDay: $growth,
         );
         $this->lastDelta = self::diff($previous, $this->index);
+        // Raised here and not where the frame is scheduled, because this is the one moment the
+        // question can be answered: by the time a frame is due the last walk has usually found
+        // nothing, and asking it then would deny a change an earlier walk did find.
+        if (!$this->lastDelta->isEmpty()) {
+            $this->indexChangedSincePush = true;
+        }
         $this->rememberLiveKeys($snapshot);
         $this->reportChanges($this->index, $this->lastDelta);
     }
@@ -711,6 +748,107 @@ final class LogStoreAgent extends AbstractAgent
         foreach ($delta->appearedBatchTimestamps as $timestamp) {
             $this->logAgentDebug("Log store: batch {$timestamp} appeared");
         }
+    }
+
+    /**
+     * Sends this node's index to the cluster aggregator when it is time to, and nothing otherwise.
+     *
+     * Two ways a frame becomes due, and the cheap one is asked first. Ordinarily something has
+     * changed and the interval since the last frame has run out. Failing that, one frame a minute
+     * goes out with nothing new to say - not as a sign of life, which cluster membership answers,
+     * but so that an aggregator restarted or moved by policy rebuilds its picture of a quiet
+     * system instead of waiting for the next thing to happen in its logs. A minute is the full
+     * walk's own period: nothing this node could report changes faster than it is measured.
+     *
+     * The written interval is read only when a change is waiting on it, which keeps the settings
+     * lookup off the ticks of a node with nothing to say.
+     *
+     * The clock is a parameter rather than a reading, the way the walks take theirs: the tick is
+     * only this method's throttle, and when a frame is due should not depend on when the loop got
+     * round to asking.
+     *
+     * @param float $now Monotonic-enough wall clock of this tick
+     * @throws InvalidArgumentException When the frame cannot be named
+     * @throws DatabaseException When the written push interval cannot be read
+     */
+    public function pushIndexIfDue(float $now): void
+    {
+        $sinceLastFrame = $now - $this->lastPushAt;
+        if ($sinceLastFrame >= self::KEEPALIVE_INTERVAL_SECONDS) {
+            $this->pushIndex();
+
+            return;
+        }
+        if (!$this->indexChangedSincePush) {
+            return;
+        }
+        if ($sinceLastFrame * TimeConstants::MS_PER_SECOND < $this->resolvePushIntervalMs()) {
+            return;
+        }
+
+        $this->pushIndex();
+    }
+
+    /**
+     * Sends the index as it stands and forgets what it had to report.
+     *
+     * Nothing is waited for: {@see AbstractAgent::sendToAgent()} queues the frame and returns, no
+     * acknowledgement comes back, and no retry of this node's own is built. The frame is the whole
+     * index, so a lost one costs nothing that the next does not repair - and while the aggregator
+     * is unplaced or moving there is no address at all and the signal is dropped, which is the
+     * same case seen from the other end.
+     *
+     * @throws InvalidArgumentException When the frame cannot be named
+     */
+    private function pushIndex(): void
+    {
+        $this->sendToAgent(
+            HilosSignalConstants::LOGS_NODE_INDEX_REPORT,
+            NodeLogIndexSignalData::fromIndex($this->index),
+        );
+        // DEBUG, like the rest of what this agent says about its own routine: it writes into the
+        // directory it measures, and a line per frame would be the biggest thing in the index.
+        $this->logAgentDebug(
+            'Log store: index reported, ' . count($this->index->keys) . ' key(s), '
+            . count($this->index->batches) . ' batch(es)',
+        );
+        $this->indexChangedSincePush = false;
+        $this->lastPushAt = microtime(true);
+    }
+
+    /**
+     * How long this node waits between two frames, in milliseconds.
+     *
+     * The WRITTEN setting and nothing beneath it. The catalog default under this key resolves out
+     * of the node's own environment, so walking the full ladder would let three nodes of one
+     * cluster report at three different rates with nothing on any screen to explain why; the
+     * literal below is the same on every node, which is the property that matters more than the
+     * number. A value under the floor is clamped rather than obeyed - the same floor the rule on
+     * the setting refuses a write below, applied again here because a row can be older than the
+     * rule or written past it.
+     *
+     * Asked at the moment the next frame is planned, so an administrator's edit is obeyed within
+     * one round and not at the next restart of the node.
+     *
+     * @return int Milliseconds between two frames
+     * @throws DatabaseException When the settings lookup fails
+     */
+    private function resolvePushIntervalMs(): int
+    {
+        if (!Hilos::$db instanceof HilosDbContext) {
+            return self::DEFAULT_PUSH_INTERVAL_MS;
+        }
+
+        /**
+         * @noinspection PhpPossiblePolymorphicInvocationInspection Framework-level magic settings
+         *     property on abstract HilosDbContext; runtime instance is always concrete
+         */
+        $written = Hilos::$db->settings[LogSettingsCatalog::INDEX_PUSH_INTERVAL_MS]?->value;
+        if ($written === null || !is_numeric($written)) {
+            return self::DEFAULT_PUSH_INTERVAL_MS;
+        }
+
+        return max(self::MIN_PUSH_INTERVAL_MS, (int)$written);
     }
 
     /**

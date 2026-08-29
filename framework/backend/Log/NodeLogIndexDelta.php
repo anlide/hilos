@@ -31,4 +31,24 @@ final class NodeLogIndexDelta
         public readonly bool $availabilityChanged,
     ) {
     }
+
+    /**
+     * Whether the walk found nothing to say.
+     *
+     * The question the sender asks before spending a frame on the aggregator (HIL-755): a store
+     * that has not moved since the last walk is worth no report, and on a quiet node most walks
+     * find exactly that. Availability counts as a change on its own - a directory that has become
+     * unreadable is news even though no key moved.
+     *
+     * @return bool True when nothing appeared, grew, vanished or changed side
+     */
+    public function isEmpty(): bool
+    {
+        return $this->appearedKeys === []
+            && $this->vanishedKeys === []
+            && $this->grownKeys === []
+            && $this->appearedBatchTimestamps === []
+            && $this->vanishedBatchTimestamps === []
+            && !$this->availabilityChanged;
+    }
 }

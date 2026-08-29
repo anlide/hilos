@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Log;
 use DateTimeImmutable;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LogRotationConstants;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Log\LogGrowthWindow;
@@ -71,6 +72,10 @@ final class LogStoreAgentIndexTest extends TestCase
         Hilos::$env = new EnvAccessor();
         putenv(EnvConstants::DAEMON_LOG_FILE->name . '=' . $this->dir . '/daemon.log');
         putenv(EnvConstants::DAEMON_ERROR_LOG_FILE->name . '=' . $this->dir . '/daemon-error.log');
+        // The agent reports its index to the cluster aggregator from its start hook onward
+        // (HIL-755), so a router has to be there for the frames to queue into. What the frames
+        // carry is {@see LogIndexPushTest}'s subject; here they are only the side effect of a walk.
+        Hilos::$sr = new SignalRouter();
     }
 
     protected function tearDown(): void
@@ -80,6 +85,7 @@ final class LogStoreAgentIndexTest extends TestCase
         if ($this->previousEnv !== null) {
             Hilos::$env = $this->previousEnv;
         }
+        Hilos::$sr = null;
         Logger::resetLogFile();
         if (is_file($this->logFile)) {
             unlink($this->logFile);

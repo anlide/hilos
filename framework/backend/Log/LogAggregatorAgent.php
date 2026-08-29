@@ -5,7 +5,16 @@ declare(strict_types=1);
 namespace Hilos\Log;
 
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Hilos;
+use Hilos\Log\DTO\NodeLogIndexSignalData;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 
 /**
  * Cluster-wide owner of the merged log index across nodes (HIL-754).
@@ -29,17 +38,45 @@ use Hilos\Core\Agent\AbstractAgent;
  * collection is shared, so a picture there would spill a full replica onto every node and
  * duplicate this agent besides.
  *
- * It arrives an empty receiver. The transport that fills it is HIL-755, and the frames that carry
- * projections to a subscribed page are HIL-756; {@see onTick()} stays the base class's no-op
- * because all the work there is to do happens on a frame.
+ * It is filled by one signal and nothing else ({@see HilosSignalConstants::LOGS_NODE_INDEX_REPORT},
+ * HIL-755), which every node sends unasked on its own tick; the frames that carry projections to a
+ * subscribed page are HIL-756. {@see onTick()} stays the base class's no-op because all the work
+ * there is to do happens on a frame.
+ *
+ * Whether a node is still THERE is not something the frames can answer - the last one arrived
+ * before the machine fell over - so {@see nodeViews()} reads cluster membership out of
+ * {@see HilosClusterNode} at the moment it hands the picture over. The aggregator keeps no silence
+ * clock of its own: "which nodes exist" belongs to the master's register, and a second answer to it
+ * here would be a second truth.
  *
  * It also answers how often a node may report ({@see pushIntervalMs()}), because that number is one
- * setting for the whole cluster and this is the one thing in the cluster. Obeying it is the
- * sender's job, which is HIL-755 again.
+ * setting for the whole cluster and this is the one thing in the cluster. The sender obeys the
+ * WRITTEN setting directly instead (HIL-755), so this door stands without a consumer for now.
  */
 final class LogAggregatorAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = HilosAgentType::HILOS_LOG_AGGREGATOR;
+
+    /**
+     * The one frame it takes: a node's whole log index, sent by the owner of that directory.
+     *
+     * No index field, because there is nothing to index by - the aggregator is one instance for
+     * the whole cluster, and the placement policy names the node it runs on.
+     */
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::LOGS_NODE_INDEX_REPORT => NodeLogIndexSignalData::class,
+    ];
+
+    /**
+     * Cluster membership, which is what tells a node that fell over from one that is quiet.
+     *
+     * Declared on the class rather than registered from {@see onStart()} so the worker raises the
+     * interest and waits for the copy BEFORE this instance exists: the first frame can arrive on
+     * the tick after the start, and the answer it produces must not depend on that race.
+     *
+     * @var list<string>
+     */
+    public const array READS_RT = [HilosClusterNode::RT_COLLECTION];
 
     /** @var ClusterLogIndex Slot per node, as each of them last reported */
     private ClusterLogIndex $index;
@@ -93,6 +130,34 @@ final class LogAggregatorAgent extends AbstractAgent
     }
 
     /**
+     * Takes the one frame this agent owns and files it.
+     *
+     * The door is thin on purpose: the payload is already parsed and checked against the class
+     * this agent declared, so all that is left is to unwrap the index and hand it to
+     * {@see applyNodeIndex()}. Nothing is answered back - the report travels one way, and a node
+     * that hears nothing simply sends the next one on its own schedule.
+     *
+     * @param AgentSignalData $data Wrapped agent-signal payload
+     * @param string $source Signal source (unused)
+     * @param string $name Routed agent-signal name
+     * @throws AgentUnknownSignalException When the agent is reached by a signal it does not own
+     */
+    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    {
+        switch ($name) {
+            case HilosSignalConstants::LOGS_NODE_INDEX_REPORT:
+                if ($data->data instanceof NodeLogIndexSignalData) {
+                    $this->applyNodeIndex($data->data->toIndex());
+                }
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
+    }
+
+    /**
      * The merged picture of every node that has reported.
      *
      * @return ClusterLogIndex Current cluster index, empty until the first frame arrives
@@ -100,6 +165,33 @@ final class LogAggregatorAgent extends AbstractAgent
     public function clusterIndex(): ClusterLogIndex
     {
         return $this->index;
+    }
+
+    /**
+     * Every node that has reported, each with the cluster's word on whether it is still connected.
+     *
+     * Membership is read HERE, when the picture is handed over, and not when a frame lands: a node
+     * falls over after sending its last frame, so a liveness recorded on arrival would always read
+     * "alive". A node with no row at all counts as online - the frame really did come from it, and
+     * the register is only a publication behind.
+     *
+     * A node the cluster no longer sees keeps its slot and its figures; what it measured is still
+     * on a disk somewhere. Saying so is this view's whole job.
+     *
+     * @return list<ClusterLogNodeView> Slots in node order, each with its membership verdict
+     * @throws RtCollectionNotFoundException When the cluster register is not mounted in this process
+     * @throws RtCollectionNotReadableException When this process was not told it reads the register
+     * @throws RtActionsStateCollectionNullException When the register's backing state is unavailable
+     */
+    public function nodeViews(): array
+    {
+        $views = [];
+        foreach ($this->index->nodes() as $slot) {
+            $row = Hilos::$rt?->hilosClusterNodes[$slot->nodeId ?? HilosClusterNode::STANDALONE_NODE_ID];
+            $views[] = new ClusterLogNodeView($slot->nodeId, $slot, $row?->online ?? true);
+        }
+
+        return $views;
     }
 
     /**
