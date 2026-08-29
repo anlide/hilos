@@ -93,4 +93,24 @@ final class LogRotationTriggerPolicyTest extends TestCase
         $this->assertTrue($policy->isActive());
         $this->assertTrue($policy->shouldRotate(60.0, 0));
     }
+
+    public function testGarbageInsideAFieldDisablesTheScheduleToo(): void
+    {
+        // Five fields, so counting them accepted this; the rule that would run it does not.
+        $policy = new LogRotationTriggerPolicy(0, 0, '0 3 * * abc');
+
+        $this->assertNull($policy->createCronRule());
+        $this->assertFalse($policy->isActive());
+    }
+
+    public function testPolicyBuiltFromValuesCarriesThemAsGiven(): void
+    {
+        // The shape the settings resolver builds: values in, no environment read.
+        $policy = new LogRotationTriggerPolicy(3600, 1_048_576, '*/5 * * * *');
+
+        $this->assertSame(3600, $policy->maxAgeSeconds);
+        $this->assertSame(1_048_576, $policy->maxLiveSizeBytes);
+        $this->assertSame('*/5 * * * *', $policy->cronExpression);
+        $this->assertInstanceOf(CronRule::class, $policy->createCronRule());
+    }
 }

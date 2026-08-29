@@ -22,9 +22,6 @@ use Hilos\Hilos;
  */
 final class LogRotationTriggerPolicy
 {
-    /** Number of whitespace-separated fields a valid cron expression carries. */
-    private const int CRON_FIELD_COUNT = 5;
-
     /** Name of the cron rule the schedule axis builds. */
     private const string CRON_RULE_NAME = 'log-rotation';
 
@@ -72,8 +69,8 @@ final class LogRotationTriggerPolicy
     /**
      * Materializes the schedule axis as a cron rule.
      *
-     * @return ?CronRule Rule carrying the configured expression, or null when it is empty or not
-     *                   exactly {@see self::CRON_FIELD_COUNT} whitespace-separated fields
+     * @return ?CronRule Rule carrying the configured expression, or null when it is empty or not a
+     *                   schedule {@see CronRule} can run
      */
     public function createCronRule(): ?CronRule
     {
@@ -126,8 +123,7 @@ final class LogRotationTriggerPolicy
     /**
      * Whether the configured cron expression is a well-formed schedule.
      *
-     * @return bool True when the expression is non-empty and carries exactly
-     *              {@see self::CRON_FIELD_COUNT} whitespace-separated fields
+     * @return bool True when the expression is non-empty and runnable by {@see CronRule}
      */
     private function hasSchedule(): bool
     {
@@ -137,8 +133,12 @@ final class LogRotationTriggerPolicy
     /**
      * Normalizes the configured expression down to the schedule the cron rule can run.
      *
-     * @return ?string Trimmed expression, or null when none was configured, it is empty, or it does
-     *                 not carry exactly {@see self::CRON_FIELD_COUNT} whitespace-separated fields
+     * Well-formedness is asked of {@see CronRule} itself, so an expression this policy accepts is
+     * one the rule actually fires on — counting fields here accepted "0 3 * * abc" and then left
+     * the schedule silently dead.
+     *
+     * @return ?string Trimmed expression, or null when none was configured, it is empty, or it is
+     *                 not a schedule the cron rule can run
      */
     private function scheduleExpression(): ?string
     {
@@ -147,7 +147,7 @@ final class LogRotationTriggerPolicy
         }
 
         $expression = trim($this->cronExpression);
-        if ($expression === '' || count(preg_split('/\s+/', $expression) ?: []) !== self::CRON_FIELD_COUNT) {
+        if ($expression === '' || !CronRule::isValidExpression($expression)) {
             return null;
         }
 

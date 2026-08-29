@@ -95,6 +95,15 @@ final class LogArchiveRetentionPolicyTest extends TestCase
         );
     }
 
+    public function testPolicyBuiltFromValuesCarriesThemAsGiven(): void
+    {
+        // The shape the settings resolver builds: values in, no environment read.
+        $policy = new LogArchiveRetentionPolicy(7, 604_800);
+
+        $this->assertSame(7, $policy->keepBatches);
+        $this->assertSame(604_800, $policy->maxAgeSeconds);
+    }
+
     /**
      * Builds a batch timestamp `$days` days before {@see NOW}.
      *

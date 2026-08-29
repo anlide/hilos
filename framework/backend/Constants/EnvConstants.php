@@ -766,6 +766,7 @@ enum EnvConstants
      * @var string Seconds of elapsed time since the last rotation after which the per-node
      * LogRotationAgent rotates the live logs into the archive. Default 0 disables the age
      * criterion; 0 for both age and size preserves the start-only rotation behavior.
+     * Serves as the default of the logs.rotation.max_age_seconds setting, which overrides it.
      */
     case LOG_ROTATION_MAX_AGE_SECONDS;
 
@@ -773,6 +774,7 @@ enum EnvConstants
      * @var string Summed size in bytes of the live *.log files above which the per-node
      * LogRotationAgent rotates them into the archive. Default 0 disables the size criterion;
      * 0 for both age and size preserves the start-only rotation behavior.
+     * Serves as the default of the logs.rotation.max_live_size_bytes setting, which overrides it.
      */
     case LOG_ROTATION_MAX_LIVE_SIZE_BYTES;
 
@@ -781,6 +783,7 @@ enum EnvConstants
      * LogRotationAgent rotates the live logs — the planned-rotation axis alongside the age and
      * size axes. Empty disables the schedule axis; an unparseable expression is logged and also
      * leaves it disabled. A missed window is not caught up (the state is worker-process-local).
+     * Serves as the default of the logs.rotation.cron setting, which overrides it.
      */
     case LOG_ROTATION_CRON;
 
@@ -790,6 +793,7 @@ enum EnvConstants
      * @var string How many of the newest archived rotation batches are always kept, exempt
      * from eviction regardless of age. Default 20; 0 disables the count criterion (with a
      * 0 max-age too, nothing is ever a candidate).
+     * Serves as the default of the logs.archive_retention.keep_batches setting, which overrides it.
      */
     case LOG_ARCHIVE_RETENTION_KEEP_BATCHES;
 
@@ -797,6 +801,7 @@ enum EnvConstants
      * @var string Age in seconds beyond which an archived rotation batch becomes an eviction
      * candidate, provided it is also outside the newest kept batches. Default 2592000 (30 days);
      * 0 disables the age criterion (with a 0 keep-batches too, nothing is ever a candidate).
+     * Serves as the default of the logs.archive_retention.max_age_seconds setting, which overrides it.
      */
     case LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS;
 }

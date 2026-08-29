@@ -15,6 +15,7 @@ use Hilos\Database\Settings\Exception\SettingKeyInvalidException;
 use Hilos\Database\Settings\Exception\SettingMutationNotSupportedException;
 use Hilos\Database\Settings\Exception\SettingNotInCatalogException;
 use Hilos\Database\Settings\Exception\SettingTypeMismatchException;
+use Hilos\Database\Settings\Validation\SettingValueRuleInterface;
 use Hilos\Hilos;
 
 /**
@@ -97,6 +98,42 @@ class SettingsAccessor implements ArrayAccess
 
         return $this->getCatalog()[$key][SettingsCatalogConstants::CATALOG_ENTRY_TYPE]
             ?? SettingsCatalogConstants::TYPE_STRING;
+    }
+
+    /**
+     * Returns the validation rule class a setting key declares, when it declares one.
+     *
+     * Unlike {@see typeFor()} an unknown key is not an error here but an answer: a key outside the
+     * catalog — an orphan row being written — simply has no rule, and the write paths ask this
+     * before they know which of the two a key is.
+     *
+     * @param string $key Setting key
+     * @return ?class-string<SettingValueRuleInterface> Rule class, or null when the key declares none
+     * @throws SettingInvalidValueException When the catalog entry names a rule that is not a rule class
+     */
+    public function ruleFor(string $key): ?string
+    {
+        $entry = $this->getCatalog()[$key] ?? null;
+        if ($entry === null) {
+            return null;
+        }
+
+        $rule = $entry[SettingsCatalogConstants::CATALOG_ENTRY_RULE] ?? null;
+        if ($rule === null) {
+            return null;
+        }
+
+        if (!is_string($rule) || !is_subclass_of($rule, SettingValueRuleInterface::class)) {
+            throw new SettingInvalidValueException(
+                "Setting '{$key}' catalog entry must name a "
+                . SettingValueRuleInterface::class
+                . " class under '"
+                . SettingsCatalogConstants::CATALOG_ENTRY_RULE
+                . "'",
+            );
+        }
+
+        return $rule;
     }
 
     /**

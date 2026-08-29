@@ -14,6 +14,7 @@ final class SettingsCatalogConstants
     // Catalog entry keys (structure of each catalog entry)
     public const string CATALOG_ENTRY_TYPE = 'type';
     public const string CATALOG_ENTRY_DEFAULT_VALUE = 'default_value';
+    public const string CATALOG_ENTRY_RULE = 'rule';
     public const string CATALOG_DEFAULT_SETTING_KEY = 'setting_key';
 
     // Setting value types

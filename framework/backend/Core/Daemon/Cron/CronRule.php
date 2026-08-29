@@ -72,6 +72,34 @@ class CronRule
     }
 
     /**
+     * Whether an expression is a schedule this class can run.
+     *
+     * The public companion of the private parsing below, so that whoever accepts a schedule for
+     * storage — a settings write, a config check — asks the same class that later runs it. An
+     * expression that passes here is understood field by field by {@see shouldRun()}; without this
+     * companion a caller counts fields instead, and "0 3 * * abc" passes the count and then never
+     * fires.
+     *
+     * @param string $expression Cron expression to check (minute hour day month weekday)
+     * @return bool True when the expression carries five fields and every field is well-formed
+     */
+    public static function isValidExpression(string $expression): bool
+    {
+        $parts = self::parseExpression($expression);
+        if ($parts === []) {
+            return false;
+        }
+
+        [$minute, $hour, $day, $month, $weekday] = $parts;
+
+        return self::isValidPart($minute, self::MINUTE_MIN, self::MINUTE_MAX)
+            && self::isValidPart($hour, self::HOUR_MIN, self::HOUR_MAX)
+            && self::isValidPart($day, self::DAY_MIN, self::DAY_MAX)
+            && self::isValidPart($month, self::MONTH_MIN, self::MONTH_MAX)
+            && self::isValidPart($weekday, self::WEEKDAY_MIN, self::WEEKDAY_MAX);
+    }
+
+    /**
      * Check if cron job should run now.
      *
      * Checks if current time matches cron expression.
@@ -100,7 +128,7 @@ class CronRule
         $currentWeekday = (int)$now['wday']; // 0 = Sunday, 6 = Saturday
 
         // Parse and check cron expression
-        $parts = $this->parseExpression();
+        $parts = self::parseExpression($this->expression);
         if (count($parts) !== self::FIELD_COUNT) {
             return false;
         }
@@ -129,15 +157,88 @@ class CronRule
     /**
      * Parse cron expression into parts.
      *
-     * @return list<string> Five parts: minute, hour, day, month, weekday
+     * @param string $expression Cron expression (minute hour day month weekday)
+     * @return list<string> Five parts: minute, hour, day, month, weekday; empty when the field count is wrong
      */
-    private function parseExpression(): array
+    private static function parseExpression(string $expression): array
     {
-        $parts = explode(self::FIELD_SEPARATOR, trim($this->expression));
+        $parts = explode(self::FIELD_SEPARATOR, trim($expression));
         if (count($parts) !== self::FIELD_COUNT) {
             return [];
         }
         return $parts;
+    }
+
+    /**
+     * Check whether a single field is well-formed for its value bounds.
+     *
+     * The syntax half of {@see matchesPart()}: same token shapes (wildcard, step, range, list,
+     * single value), asked without a current value to compare against.
+     *
+     * @param string $part Cron expression part (e.g., "*\/5", "*", "15", "1-5")
+     * @param int $min Minimum value for this field
+     * @param int $max Maximum value for this field
+     * @return bool True when the part is a token this class understands
+     */
+    private static function isValidPart(string $part, int $min, int $max): bool
+    {
+        $part = trim($part);
+        if ($part === '') {
+            return false;
+        }
+        if ($part === self::WILDCARD) {
+            return true;
+        }
+
+        // Step value: */N or N-M/N.
+        $slashPos = strpos($part, self::STEP_SEPARATOR);
+        if ($slashPos !== false) {
+            $range = substr($part, 0, $slashPos);
+            $stepStr = substr($part, $slashPos + 1);
+
+            if ($stepStr === '' || !ctype_digit($stepStr) || (int)$stepStr <= 0) {
+                return false;
+            }
+
+            return $range === self::WILDCARD || self::parseRange($range, $min, $max) !== null;
+        }
+
+        // Range: N-M.
+        if (str_contains($part, self::RANGE_SEPARATOR)) {
+            return self::parseRange($part, $min, $max) !== null;
+        }
+
+        // List: N,M,K - every member has to be a value of this field.
+        if (str_contains($part, self::LIST_SEPARATOR)) {
+            foreach (explode(self::LIST_SEPARATOR, $part) as $value) {
+                if (!self::isValidValue(trim($value), $min, $max)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        return self::isValidValue($part, $min, $max);
+    }
+
+    /**
+     * Check whether a token is a plain number inside the field bounds.
+     *
+     * @param string $token Single cron token
+     * @param int $min Minimum value for this field
+     * @param int $max Maximum value for this field
+     * @return bool True when the token is digits inside the bounds
+     */
+    private static function isValidValue(string $token, int $min, int $max): bool
+    {
+        if ($token === '' || !ctype_digit($token)) {
+            return false;
+        }
+
+        $value = (int)$token;
+
+        return $value >= $min && $value <= $max;
     }
 
     /**
@@ -190,7 +291,7 @@ class CronRule
             }
 
             // N-M/N - range with step; a missing dash means an invalid step format
-            $bounds = $this->parseRange($range, $min, $max);
+            $bounds = self::parseRange($range, $min, $max);
             if ($bounds === null) {
                 return false;
             }
@@ -206,7 +307,7 @@ class CronRule
 
         // Check for range: N-M (before list check, as ranges are more common)
         if (str_contains($part, self::RANGE_SEPARATOR)) {
-            $bounds = $this->parseRange($part, $min, $max);
+            $bounds = self::parseRange($part, $min, $max);
             if ($bounds === null) {
                 return false;
             }
@@ -253,7 +354,7 @@ class CronRule
      * @param int $max Maximum value allowed for this field
      * @return array{int, int}|null [rangeMin, rangeMax], or null when malformed or out of bounds
      */
-    private function parseRange(string $range, int $min, int $max): ?array
+    private static function parseRange(string $range, int $min, int $max): ?array
     {
         $dashPos = strpos($range, self::RANGE_SEPARATOR);
         if ($dashPos === false) {

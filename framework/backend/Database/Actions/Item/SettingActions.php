@@ -11,7 +11,9 @@ use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
+use Hilos\Database\Settings\Exception\SettingInvalidValueException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Database\Settings\Validation\SettingValueRules;
 use Hilos\Database\View\Item\Setting;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
@@ -31,6 +33,7 @@ final class SettingActions extends DbActions
      *
      * @param mixed $value New value (null = use catalog default when reading)
      * @throws ItemNotFoundForUpdateException When setting object has no persisted id
+     * @throws SettingInvalidValueException When the key declares a catalog rule the value fails
      * @throws DatabaseException When collection loading or setting persistence fails
      * @throws ObjectCollectionNullException When the setting action is detached from its object collection
      * @throws ObjectGetIdStringNotImplementedException When the setting primary key is null during the per-item write check
@@ -44,6 +47,11 @@ final class SettingActions extends DbActions
 
         if ($this->object->id === null) {
             throw new ItemNotFoundForUpdateException('Setting not found for update (id is null)');
+        }
+
+        // Clearing the value is a reset to the catalog default, not a value of its own: nothing to check.
+        if ($value !== null) {
+            SettingValueRules::assertValid($this->object->key, $value);
         }
 
         $this->object->value = $value !== null ? $this->serializeValue($value, $this->object->type) : null;

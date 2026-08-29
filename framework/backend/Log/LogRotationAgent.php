@@ -24,6 +24,12 @@ use Hilos\Utils\Exception\LogRotationException;
  * {@see LogRotator::rotate()} and resets the shared baseline. The last-rotation timestamp is held
  * in the agent (worker-process-local, per node). Rotation failures are best-effort: logged, never
  * fatal. With no axis configured the policy is inert and the daemon's start-only rotation stands.
+ *
+ * The policy itself is rebuilt on every one of those checks (HIL-760), so an administrator editing
+ * the thresholds is obeyed within seconds and without restarting the node. The schedule is the one
+ * exception: its {@see CronRule} remembers when it last ran, so it is rebuilt only when the
+ * expression itself changes — rebuilding it every check would restart that memory and the schedule
+ * would never fire.
  */
 final class LogRotationAgent extends AbstractAgent
 {
@@ -34,9 +40,13 @@ final class LogRotationAgent extends AbstractAgent
 
     private LogRotationTriggerPolicy $policy;
     private LogRotator $rotator;
+    private LogSettingsResolver $resolver;
 
-    /** @var ?CronRule Schedule axis, built once in onStart(); null when no valid expression is configured */
+    /** @var ?CronRule Schedule axis; null when no valid expression is configured */
     private ?CronRule $cronRule = null;
+
+    /** @var ?string Expression the current schedule axis was built from, so it is rebuilt only on a change */
+    private ?string $cronExpression = null;
 
     /** @var float Monotonic-ish timestamp (microtime) of the last rotation, the age-trigger baseline */
     private float $lastRotationAt = 0.0;
@@ -45,42 +55,41 @@ final class LogRotationAgent extends AbstractAgent
     private float $lastCheckAt = 0.0;
 
     /**
-     * Loads the policy and rotator, builds the schedule axis, and anchors the age baseline.
+     * Loads the rotator, takes the first policy, and anchors the age baseline.
      *
      * The daemon already rotated the live logs on start, so the baseline is now. A non-empty but
      * unparseable cron expression disables the schedule axis only and is logged once.
      *
-     * @throws EnvException When a rotation env key is missing, outside the catalog, or of the
+     * @throws EnvException When a rotator env key is missing, outside the catalog, or of the
      *                      wrong type
      */
     public function onStart(): void
     {
-        $this->policy = LogRotationTriggerPolicy::fromEnv();
         $this->rotator = LogRotator::fromEnv();
-        $this->cronRule = $this->policy->createCronRule();
-        $expression = $this->policy->cronExpression;
-        if ($this->cronRule === null && $expression !== null && trim($expression) !== '') {
-            $this->logAgentError("Log rotation: ignoring invalid cron expression '{$expression}'");
-        }
+        $this->resolver = new LogSettingsResolver();
+        $this->refreshPolicy();
+
         $now = microtime(true);
         $this->lastRotationAt = $now;
         $this->lastCheckAt = $now;
     }
 
     /**
-     * Throttled trigger check; rotates when the schedule, age, or size axis fires.
+     * Throttled trigger check; re-reads the policy, then rotates when an axis fires.
      */
     public function onTick(): void
     {
-        if (!$this->policy->isActive()) {
-            return;
-        }
-
         $now = microtime(true);
         if ($now - $this->lastCheckAt < self::CHECK_INTERVAL_SECONDS) {
             return;
         }
         $this->lastCheckAt = $now;
+
+        $this->refreshPolicy();
+
+        if (!$this->policy->isActive()) {
+            return;
+        }
 
         if (!$this->shouldRotate($now)) {
             return;
@@ -95,6 +104,34 @@ final class LogRotationAgent extends AbstractAgent
         } catch (LogRotationException $exception) {
             // Best-effort: a failed rotation must never crash the agent; retry on the next check.
             $this->logAgentError('Log rotation failed: ' . $exception->getMessage());
+        }
+    }
+
+    /**
+     * Re-reads the policy from the settings and re-arms the schedule axis when it changed.
+     *
+     * Whatever the resolver had to complain about goes to the journal here, and it only speaks when
+     * the outcome changed, so a value that stays wrong does not fill the log it configures.
+     */
+    private function refreshPolicy(): void
+    {
+        $this->policy = $this->resolver->rotationPolicy();
+
+        while (($complaint = $this->resolver->takeComplaint()) !== null) {
+            $this->logAgentError($complaint);
+        }
+
+        // Compared by expression and not by "is there a rule": an expression that yields no rule is
+        // refused once, and re-deciding it every check would report the same refusal every check.
+        $expression = $this->policy->cronExpression;
+        if ($expression === $this->cronExpression) {
+            return;
+        }
+
+        $this->cronExpression = $expression;
+        $this->cronRule = $this->policy->createCronRule();
+        if ($this->cronRule === null && $expression !== null && trim($expression) !== '') {
+            $this->logAgentError("Log rotation: ignoring invalid cron expression '{$expression}'");
         }
     }
 

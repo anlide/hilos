@@ -16,10 +16,12 @@ use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
+use Hilos\Database\Settings\Exception\SettingInvalidValueException;
 use Hilos\Database\Settings\Exception\SettingKeyInCatalogException;
 use Hilos\Database\Settings\Exception\SettingNotInCatalogException;
 use Hilos\Database\Settings\Exception\SettingTypeMismatchException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Database\Settings\Validation\SettingValueRules;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Item\Setting;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
@@ -45,6 +47,7 @@ final class SettingsActions extends DbActions
      * @param array<string, array<string, mixed>> $catalog Catalog: key => [type, default_value]
      * @return Setting Created setting Db item
      * @throws SettingNotInCatalogException When key is not declared in the settings catalog
+     * @throws SettingInvalidValueException When the key declares a catalog rule the value fails
      * @throws CallbackNotSetException When the collection cannot wrap the created object as a DB item
      * @throws DatabaseException When collection loading or setting persistence fails
      * @throws DuplicateIdException When the created setting id already exists in the collection
@@ -61,6 +64,11 @@ final class SettingsActions extends DbActions
 
         if (!array_key_exists($key, $catalog)) {
             throw new SettingNotInCatalogException("Setting key '{$key}' is not in catalog");
+        }
+
+        // Storing null is a row without an override, so it carries no value for a rule to judge.
+        if ($value !== null) {
+            SettingValueRules::assertValid($key, $value);
         }
 
         $entry = $catalog[$key];

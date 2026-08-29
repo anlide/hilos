@@ -58,25 +58,26 @@ test('paginates the server window', async ({ page }) => {
   await signUpAdmin(page)
   await openSettings(page)
 
-  // The catalog spans four pages of ten; the first page holds the chat_* keys,
-  // the example_* keys sort onto the second, and the notifications.* keys (the
-  // email and sms delivery channels plus the delivery-log retention setting)
-  // trail onto the third and fourth.
-  await expect(page.getByTestId('hilos-table-page')).toContainText('1 / 4')
+  // The catalog spans five pages of ten; the first page holds the chat_* keys,
+  // the example_* keys sort onto the second next to the logs.* rotation and
+  // retention keys, and the notifications.* keys (the email, push and sms
+  // delivery channels plus the delivery-log retention setting) trail onto the
+  // third, fourth and fifth.
+  await expect(page.getByTestId('hilos-table-page')).toContainText('1 / 5')
   await expect(
     page.getByTestId('hilos-table-row-chat_attachment_max_file_bytes'),
   ).toBeVisible()
   await expect(page.getByTestId('hilos-table-row-example_string')).toHaveCount(0)
 
   await page.getByTestId('hilos-table-next').click()
-  await expect(page.getByTestId('hilos-table-page')).toContainText('2 / 4')
+  await expect(page.getByTestId('hilos-table-page')).toContainText('2 / 5')
   await expect(page.getByTestId('hilos-table-row-example_string')).toBeVisible()
   await expect(
     page.getByTestId('hilos-table-row-chat_attachment_max_file_bytes'),
   ).toHaveCount(0)
 
   await page.getByTestId('hilos-table-prev').click()
-  await expect(page.getByTestId('hilos-table-page')).toContainText('1 / 4')
+  await expect(page.getByTestId('hilos-table-page')).toContainText('1 / 5')
 })
 
 test('a third click on a sorted header returns the table to its initial order', async ({
