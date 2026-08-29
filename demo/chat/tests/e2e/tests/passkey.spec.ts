@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 
-import { logout, signUp } from '../helpers/session'
+import { clickSubmit, logout, signUp } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
 
 // Passkey (WebAuthn) e2e (HIL-284): the register -> login round-trip driven
@@ -23,6 +23,14 @@ import { gotoPage } from '../helpers/page'
 // tests/.env): the authenticator scopes the credential to the RP id and the
 // server matches the clientDataJSON origin exactly, so a mismatch fails the
 // assertion before any assertion is even attempted.
+//
+// HIL-695 adds the third ceremony this file covers: CANCEL. An anonymous visitor
+// parks the discoverable login on the waiting screen and backs out of it. That
+// test builds its authenticator with presence simulation OFF: Chrome does not
+// answer the virtual device's transaction until presence is simulated, so
+// navigator.credentials.get() hangs and the external step stays parked for as
+// long as the test needs — which is exactly what makes the Cancel button
+// reachable instead of the ceremony resolving instantly.
 
 /**
  * Attach a CDP virtual platform authenticator to the page so
@@ -34,8 +42,14 @@ import { gotoPage } from '../helpers/page'
  * page.
  *
  * @param page The page whose browser context gets the authenticator.
+ * @param automaticPresence Whether the authenticator auto-answers the
+ *   user-presence gesture. Pass false to leave the ceremony hanging on the
+ *   waiting screen — the cancel test parks there on purpose.
  */
-async function addVirtualAuthenticator(page: Page): Promise<void> {
+async function addVirtualAuthenticator(
+  page: Page,
+  automaticPresence = true,
+): Promise<void> {
   const client = await page.context().newCDPSession(page)
   await client.send('WebAuthn.enable')
   await client.send('WebAuthn.addVirtualAuthenticator', {
@@ -45,7 +59,7 @@ async function addVirtualAuthenticator(page: Page): Promise<void> {
       hasResidentKey: true,
       hasUserVerification: true,
       isUserVerified: true,
-      automaticPresenceSimulation: true,
+      automaticPresenceSimulation: automaticPresence,
     },
   })
 }
@@ -99,4 +113,52 @@ test('signs in usernameless with a discoverable passkey — no email', async ({
   // user's name renders with no navigation.
   await expect(page.getByTestId('profile-name')).toBeVisible()
   expect(new URL(page.url()).pathname).toBe('/profile')
+})
+
+test('cancels a parked passkey ceremony and leaves the surface usable', async ({
+  page,
+}) => {
+  // Presence simulation OFF: the ceremony parks on the waiting screen instead of
+  // resolving, so Cancel is reachable. The client-side ceremony timeout is 60 s —
+  // far beyond what this test needs.
+  await addVirtualAuthenticator(page, false)
+
+  // An anonymous visitor lands on the gated profile: the auth surface mounts in
+  // its place.
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await expect(page.getByTestId('profile-name')).toHaveCount(0)
+
+  // Start the discoverable login from the icon row (visible while the identifier
+  // field is empty — and the visitor typed nothing).
+  const passkey = page.getByTestId('auth-icon-passkey')
+  await passkey.scrollIntoViewIfNeeded()
+  await expect(passkey).toBeEnabled()
+  await passkey.click()
+
+  // The surface parks on the external step: the Cancel button is the mark.
+  const cancel = page.getByTestId('auth-cancel')
+  await expect(cancel).toBeVisible()
+
+  // Back out. cancelMethod aborts the ceremony first, then clears pending and
+  // returns to the identifier step.
+  await clickSubmit(cancel)
+  await expect(page.getByTestId('auth-identifier')).toBeVisible()
+  await expect(page.getByTestId('auth-cancel')).toHaveCount(0)
+
+  // Nothing is left hanging: no error (a cancel is not a failure), the surface
+  // is still mounted (no sign-in happened), and the icon is active again.
+  await expect(page.getByTestId('auth-error')).toHaveCount(0)
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await expect(passkey).toBeEnabled()
+
+  // The ceremony starts over cleanly — neither pending nor the single-flight
+  // guard got stuck.
+  await passkey.click()
+  await expect(page.getByTestId('auth-cancel')).toBeVisible()
+
+  // Close the second ceremony too so the test leaves no WebAuthn request in
+  // flight.
+  await clickSubmit(page.getByTestId('auth-cancel'))
+  await expect(page.getByTestId('auth-identifier')).toBeVisible()
 })
