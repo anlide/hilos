@@ -187,10 +187,13 @@ otherwise: a comma-separated list in CIDR notation, a single address written as
 `/32` or `/128`, host names not accepted (resolving one would block the master's
 accept loop). It is empty by default.
 
-There is no wildcard, and `0.0.0.0/0` is not the missing one: it parses, it trusts
-every peer there is, and it therefore lets any client name its own address — the
-exact hole this variable exists to close. Name the network your proxy connects
-from, however small; if that is one machine, write it as `/32`.
+There is no wildcard, and `0.0.0.0/0` is not the missing one: it is refused by the
+parse, as is any entry whose prefix is zero bits long — `::/0` and `10.0.0.0/0`
+alike, since the prefix decides and not the address. A list holding nothing else
+collapses to the empty one, which counts every connection by its TCP peer: one
+throttle key for everyone behind the proxy, the cost spelled out below. Name the
+network your proxy connects from, however small; if that is one machine, write it
+as `/32`.
 
 The rule is one sentence, and it is applied once per connection, on the 101:
 **a peer inside one of those networks names the visitor through `X-Real-IP`;

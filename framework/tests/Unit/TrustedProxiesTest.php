@@ -149,6 +149,39 @@ final class TrustedProxiesTest extends TestCase
     }
 
     /**
+     * @param string $configured Entry whose prefix trusts every peer
+     */
+    #[DataProvider('entriesTrustingEveryPeer')]
+    public function testAnEntryTrustingEveryPeerIsDroppedAndItsNeighborKeepsWorking(string $configured): void
+    {
+        $proxies = $this->configured($configured . ',10.0.0.0/8');
+
+        $this->assertTrue($proxies->trusts('10.1.2.3'));
+        $this->assertFalse($proxies->trusts('192.168.1.1'));
+    }
+
+    public function testAListOfOnlyEveryPeerTrustsNobody(): void
+    {
+        $proxies = $this->configured('0.0.0.0/0');
+
+        $this->assertFalse($proxies->trusts('203.0.113.9'));
+        $this->assertFalse($proxies->trusts('10.1.2.3'));
+    }
+
+    /**
+     * @return array<string, array{string}> Entry that must be dropped, by how it is written
+     */
+    public static function entriesTrustingEveryPeer(): array
+    {
+        return [
+            'every IPv4 peer' => ['0.0.0.0/0'],
+            'every IPv6 peer' => ['::/0'],
+            'a named network with no prefix left of it' => ['10.0.0.0/0'],
+            'an IPv4-mapped address with no prefix left of it' => ['::ffff:0.0.0.0/0'],
+        ];
+    }
+
+    /**
      * Builds the list a configured env value produces.
      *
      * @param string $value Comma-separated networks as a deployment would configure them

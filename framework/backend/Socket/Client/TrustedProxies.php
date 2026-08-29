@@ -22,8 +22,8 @@ use Hilos\Utils\Logger;
  *
  * Nothing is cached between handshakes. Splitting one to three entries and packing them
  * costs microseconds on the accept loop, while a cache would need invalidating whenever
- * the environment is re-read and would carry one test case's list into the next. The one
- * static here is the flag that keeps a misconfiguration from logging once per connection.
+ * the environment is re-read and would carry one test case's list into the next. The only
+ * statics here are the flags that keep a misconfiguration from logging once per connection.
  */
 final class TrustedProxies
 {
@@ -57,6 +57,9 @@ final class TrustedProxies
     /** @var bool Whether an unusable entry has already been reported in this process */
     private static bool $unusableEntryReported = false;
 
+    /** @var bool Whether an entry trusting every peer has already been reported in this process */
+    private static bool $everyoneEntryReported = false;
+
     /**
      * @param list<array{address: string, bits: int}> $networks Parsed networks, packed address and prefix length
      */
@@ -65,7 +68,11 @@ final class TrustedProxies
     }
 
     /**
-     * Reads the trusted networks from the environment, dropping every entry it cannot parse.
+     * Reads the trusted networks from the environment, dropping every entry it refuses.
+     *
+     * An entry is refused when it cannot be parsed, and when its prefix is zero bits long:
+     * that one parses perfectly and trusts every peer there is, which is the hole this
+     * class exists to close.
      *
      * A dropped entry narrows trust rather than widening it, so the deployment keeps
      * working and the mistake is invisible in behavior - which is why the drop is logged.
@@ -106,7 +113,7 @@ final class TrustedProxies
 
     /**
      * @param ?string $configured Comma-separated networks as configured, or null with no environment
-     * @return list<array{address: string, bits: int}> Networks that parsed, in configured order
+     * @return list<array{address: string, bits: int}> Networks that were accepted, in configured order
      */
     private static function parseNetworks(?string $configured): array
     {
@@ -124,6 +131,11 @@ final class TrustedProxies
             $network = self::parseNetwork($entry);
             if ($network === null) {
                 self::reportUnusableEntry($entry);
+                continue;
+            }
+
+            if ($network[self::NETWORK_BITS] === 0) {
+                self::reportEveryoneEntry($entry);
                 continue;
             }
 
@@ -227,6 +239,30 @@ final class TrustedProxies
         self::$unusableEntryReported = true;
         Logger::error(
             'Ignoring an unparsable entry in ' . EnvConstants::HILOS_TRUSTED_PROXIES->name,
+            ['entry' => $entry],
+        );
+    }
+
+    /**
+     * Reports an entry whose prefix trusts every peer, once per process.
+     *
+     * It carries its own complaint rather than the unparsable one because nothing is
+     * wrong with how it is written: an operator sent looking for a typo would not find
+     * one. It also carries its own flag, so that a list holding both mistakes still
+     * says the one this refusal exists for.
+     *
+     * @param string $entry Entry that trusts every peer
+     */
+    private static function reportEveryoneEntry(string $entry): void
+    {
+        if (self::$everyoneEntryReported) {
+            return;
+        }
+
+        self::$everyoneEntryReported = true;
+        Logger::error(
+            'Refusing an entry that trusts every peer in ' . EnvConstants::HILOS_TRUSTED_PROXIES->name
+                . '; name the network your proxy connects from',
             ['entry' => $entry],
         );
     }

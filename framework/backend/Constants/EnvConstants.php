@@ -365,6 +365,8 @@ enum EnvConstants
      * default, which trusts nobody and leaves every connection counted by the address
      * of its TCP peer. A deployment behind its own nginx puts that nginx's network
      * here; one that leaves it empty counts everyone behind the proxy as one client.
+     * A zero-length prefix is refused (HIL-714): an entry trusting every peer would
+     * hand the choice of address back to the client this variable guards against.
      */
     case HILOS_TRUSTED_PROXIES;
 
