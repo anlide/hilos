@@ -1322,7 +1322,18 @@ abstract class BrowserContext
     ): void {
         try {
             $mutation = $table->buildMutationForSourceEvent($change);
-        } catch (Throwable) {
+        } catch (Throwable $e) {
+            // This window stops receiving deltas and freezes on its old rows while
+            // every neighboring window stays live. Without this line the refusal is
+            // indistinguishable from the routine "this table is not touched" below.
+            Logger::error(
+                "Viewport delta skipped a change the table failed to build: table={$viewport->tableKey}, "
+                    . "page={$page}, acceptKey={$acceptKey}, "
+                    . "source={$change->kind}:{$change->sourceKey}#{$change->sourceId}, "
+                    . 'exception=' . $e::class . ", message={$e->getMessage()}, "
+                    . 'at=' . basename($e->getFile()) . ':' . $e->getLine(),
+            );
+
             return;
         }
 
@@ -1440,7 +1451,7 @@ abstract class BrowserContext
         string $page,
         string $browserKey,
     ): void {
-        $newTotal = $this->viewportTotalAfterMutation($table, $viewport, $mutation);
+        $newTotal = $this->viewportTotalAfterMutation($table, $viewport, $mutation, $page, $acceptKey);
         if ($newTotal === null || $newTotal === $viewport->totalCount()) {
             return;
         }
@@ -1460,22 +1471,26 @@ abstract class BrowserContext
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
+     * @param string $page Subscribed page key
+     * @param string $acceptKey Target accept key
      * @return ?int New filtered total, or null when the count does not change
      */
     private function viewportTotalAfterMutation(
         ViewportTable $table,
         TableViewportSubscription $viewport,
         TableRowMutationDTO $mutation,
+        string $page,
+        string $acceptKey,
     ): ?int {
         if ($this->viewportQuery($viewport)->search !== null) {
-            return $this->viewportFilteredTotal($table, $viewport);
+            return $this->viewportFilteredTotal($table, $viewport, $page, $acceptKey);
         }
 
         return match ($mutation->type) {
             TableMutationType::Create => $viewport->totalCount() + 1,
             TableMutationType::Delete => max(0, $viewport->totalCount() - 1),
             TableMutationType::Update => null,
-            default => $this->viewportFilteredTotal($table, $viewport),
+            default => $this->viewportFilteredTotal($table, $viewport, $page, $acceptKey),
         };
     }
 
@@ -1484,13 +1499,29 @@ abstract class BrowserContext
      *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window
+     * @param string $page Subscribed page key
+     * @param string $acceptKey Target accept key
      * @return ?int Filtered total, or null when the query fails
      */
-    private function viewportFilteredTotal(ViewportTable $table, TableViewportSubscription $viewport): ?int
-    {
+    private function viewportFilteredTotal(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        string $page,
+        string $acceptKey,
+    ): ?int {
         try {
             return $table->getPage($this->viewportQuery($viewport))->totalCount;
-        } catch (Throwable) {
+        } catch (Throwable $e) {
+            // Null here means "the count did not change", so a refused re-query is
+            // indistinguishable from a steady total: this window's paginator freezes
+            // on its old number and nothing anywhere says why.
+            Logger::error(
+                "Viewport count kept a stale total after its re-query failed: table={$viewport->tableKey}, "
+                    . "page={$page}, acceptKey={$acceptKey}, "
+                    . 'exception=' . $e::class . ", message={$e->getMessage()}, "
+                    . 'at=' . basename($e->getFile()) . ':' . $e->getLine(),
+            );
+
             return null;
         }
     }
