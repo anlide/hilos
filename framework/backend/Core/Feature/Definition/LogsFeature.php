@@ -37,7 +37,7 @@ final class LogsFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements The five log pages and the overview, rotation and store agents
+     * @return FeatureRequirements The five log pages and the overview, rotation, store and aggregator agents
      */
     public function requirements(): FeatureRequirements
     {
@@ -53,6 +53,7 @@ final class LogsFeature extends FeatureDefinition
                 HilosAgentType::HILOS_LOGS,
                 HilosAgentType::HILOS_LOG_ROTATION,
                 HilosAgentType::HILOS_LOG_STORE,
+                HilosAgentType::HILOS_LOG_AGGREGATOR,
             ],
         );
     }

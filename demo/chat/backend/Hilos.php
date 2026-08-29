@@ -161,6 +161,8 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\HilosException;
+use Hilos\Log\LogAggregatorAgent;
+use Hilos\Log\LogAggregatorAgentDaemon;
 use Hilos\Log\LogRotationAgent;
 use Hilos\Log\LogRotationAgentDaemon;
 use Hilos\Log\LogStoreAgent;
@@ -400,6 +402,11 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => LogStoreAgent::class,
             AgentRegistryKey::DAEMON => LogStoreAgentDaemon::class,
             AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        LogAggregatorAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => LogAggregatorAgent::class,
+            AgentRegistryKey::DAEMON => LogAggregatorAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         AuthThrottleAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => AuthThrottleAgent::class,

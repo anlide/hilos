@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Log;
 
+use Hilos\Constants\EnvConstants;
 use Hilos\Database\Settings\Validation\CronExpressionRule;
 use Hilos\Database\Settings\Validation\NonNegativeIntegerRule;
 use Hilos\Environment\Exception\EnvException;
@@ -11,10 +12,11 @@ use Hilos\Hilos;
 use Throwable;
 
 /**
- * Builds the rotation and retention policies from the settings, with the environment beneath them (HIL-760).
+ * Builds the log policies and intervals from the settings, with the environment beneath them (HIL-760).
  *
  * The reader behind {@see LogRotationAgent}: it is asked for a policy on every throttled check, so
  * an administrator's edit takes effect within seconds instead of at the next restart of the node.
+ * {@see LogAggregatorAgent} asks it the same way for the push interval (HIL-754).
  *
  * Two ways down to the environment, and they are not the same thing. A project that never folded
  * {@see LogSettingsCatalog} into its catalog has no such keys, so the settings are not consulted at
@@ -34,6 +36,9 @@ final class LogSettingsResolver
 
     /** Scope name under which the retention outcome is remembered. */
     private const string SCOPE_RETENTION = 'retention';
+
+    /** Scope name under which the index-push outcome is remembered. */
+    private const string SCOPE_INDEX_PUSH = 'index push';
 
     /** @var array<string, string> Last trouble text per scope, so an unchanged fault stays silent */
     private array $lastTrouble = [];
@@ -84,6 +89,28 @@ final class LogSettingsResolver
     }
 
     /**
+     * Reads how often a node may send its log index to the cluster aggregator.
+     *
+     * One setting for the whole cluster rather than a value each node reads from its own
+     * environment: the database is shared and the environment is not, so three nodes reading their
+     * own env would run at three different rates with nothing on screen to explain the difference.
+     *
+     * Asked for at the moment the interval is needed, like the policies above, so an edit is obeyed
+     * without restarting anything. The value is read here and handed out; who obeys it is HIL-755.
+     *
+     * @return int Milliseconds between two frames, never below the floor its rule declares
+     */
+    public function pushIntervalMs(): int
+    {
+        $setting = $this->pushIntervalValue(LogSettingsCatalog::INDEX_PUSH_INTERVAL_MS);
+        $interval = $setting ?? $this->pushIntervalFromEnv();
+
+        $this->conclude(self::SCOPE_INDEX_PUSH);
+
+        return $interval;
+    }
+
+    /**
      * Hands over one complaint raised since the last call, oldest first.
      *
      * @return ?string Line for the journal, or null when there is nothing new to say
@@ -107,6 +134,29 @@ final class LogSettingsResolver
         }
 
         $refusal = NonNegativeIntegerRule::validate($value);
+        if ($refusal !== null) {
+            $this->trouble("setting '{$key}' is refused by its own rule ({$refusal})");
+
+            return null;
+        }
+
+        return (int)$value;
+    }
+
+    /**
+     * Reads the index-push setting, or reports why it cannot be used.
+     *
+     * @param string $key Setting key
+     * @return ?int Interval to use, or null when the environment should answer instead
+     */
+    private function pushIntervalValue(string $key): ?int
+    {
+        $value = $this->rawValue($key);
+        if ($value === null) {
+            return null;
+        }
+
+        $refusal = LogIndexPushIntervalRule::validate($value);
         if ($refusal !== null) {
             $this->trouble("setting '{$key}' is refused by its own rule ({$refusal})");
 
@@ -183,6 +233,42 @@ final class LogSettingsResolver
 
             return new LogRotationTriggerPolicy(0, 0);
         }
+    }
+
+    /**
+     * Reads the push interval from the environment, falling back to the literal below the floor.
+     *
+     * An environment value under the minimum is refused rather than clamped up to it, for the
+     * reason the rule gives: there is no "off" here, so a too-small number is a mistake and not an
+     * instruction, and obeying a corrected version of it would hide the mistake.
+     *
+     * @return int Interval from the environment, or the fallback when it cannot answer usably
+     */
+    private function pushIntervalFromEnv(): int
+    {
+        $fallback = LogSettingsCatalog::INDEX_PUSH_INTERVAL_FALLBACK_MS;
+        $env = Hilos::$env;
+        if ($env === null) {
+            $this->trouble('log index push environment is unreadable: no environment in this process');
+
+            return $fallback;
+        }
+
+        try {
+            $interval = $env->int(EnvConstants::LOG_INDEX_PUSH_INTERVAL_MS);
+        } catch (EnvException $exception) {
+            $this->trouble('log index push environment is unreadable: ' . $exception->getMessage());
+
+            return $fallback;
+        }
+
+        if ($interval < LogIndexPushIntervalRule::MINIMUM_MS) {
+            $this->trouble("log index push environment says {$interval} ms, below the minimum");
+
+            return $fallback;
+        }
+
+        return $interval;
     }
 
     /**

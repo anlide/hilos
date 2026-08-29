@@ -804,4 +804,14 @@ enum EnvConstants
      * Serves as the default of the logs.archive_retention.max_age_seconds setting, which overrides it.
      */
     case LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS;
+
+    // ── Log index (HIL-754) ──────────────────────────────────────────────────
+
+    /**
+     * @var string Smallest interval in milliseconds between two log-index frames one node sends
+     * the cluster aggregator. Default 5000, the step at which a node notices a change at all;
+     * the minimum accepted is 100, and there is no value that turns the reporting off.
+     * Serves as the default of the logs.index.push_interval_ms setting, which overrides it.
+     */
+    case LOG_INDEX_PUSH_INTERVAL_MS;
 }

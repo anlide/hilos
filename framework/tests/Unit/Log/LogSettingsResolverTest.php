@@ -9,6 +9,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogStub;
 use Hilos\Hilos;
+use Hilos\Log\LogIndexPushIntervalRule;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Log\LogSettingsResolver;
 use PHPUnit\Framework\TestCase;
@@ -22,6 +23,10 @@ use Throwable;
  * value that fails its rule falls back with one complaint — plus the promise that keeps the
  * complaint out of the journal it configures: it is written when the outcome changes, not on
  * every one of the five-second checks.
+ *
+ * The index push interval (HIL-754) walks the same ladder and is checked here beside the policies,
+ * with the one difference that belongs to it: it has no "off", so its floor is a floor for the
+ * environment too and not only for what an administrator may write.
  */
 final class LogSettingsResolverTest extends TestCase
 {
@@ -197,6 +202,55 @@ final class LogSettingsResolverTest extends TestCase
         $resolver->rotationPolicy();
         $resolver->retentionPolicy();
         $this->assertNull($resolver->takeComplaint());
+    }
+
+    public function testTheWrittenPushIntervalWinsOverTheEnvironment(): void
+    {
+        LogSettingsResolverTestAccessor::$values = [
+            LogSettingsCatalog::INDEX_PUSH_INTERVAL_MS => '250',
+        ];
+
+        $resolver = new LogSettingsResolver();
+
+        $this->assertSame(250, $resolver->pushIntervalMs());
+        $this->assertNull($resolver->takeComplaint());
+    }
+
+    public function testWithoutAWrittenPushIntervalTheCatalogDefaultAnswers(): void
+    {
+        $resolver = new LogSettingsResolver();
+
+        $this->assertSame(LogSettingsCatalog::INDEX_PUSH_INTERVAL_FALLBACK_MS, $resolver->pushIntervalMs());
+        $this->assertNull($resolver->takeComplaint());
+    }
+
+    /**
+     * A stored interval below the floor is not clamped up to it: there is no "off" here, so a
+     * too-small number is a mistake, and obeying a corrected version of it would hide the mistake.
+     */
+    public function testAPushIntervalBelowTheFloorFallsBackAndComplains(): void
+    {
+        LogSettingsResolverTestAccessor::$values = [
+            LogSettingsCatalog::INDEX_PUSH_INTERVAL_MS => '10',
+        ];
+
+        $resolver = new LogSettingsResolver();
+
+        $this->assertSame(LogSettingsCatalog::INDEX_PUSH_INTERVAL_FALLBACK_MS, $resolver->pushIntervalMs());
+        $complaint = $resolver->takeComplaint();
+        $this->assertNotNull($complaint);
+        $this->assertStringContainsString(LogSettingsCatalog::INDEX_PUSH_INTERVAL_MS, $complaint);
+        $this->assertGreaterThanOrEqual(LogIndexPushIntervalRule::MINIMUM_MS, $resolver->pushIntervalMs());
+    }
+
+    public function testUninitializedSettingsLeaveThePushIntervalOnItsFallback(): void
+    {
+        Hilos::$setting = null;
+
+        $resolver = new LogSettingsResolver();
+
+        $this->assertSame(LogSettingsCatalog::INDEX_PUSH_INTERVAL_FALLBACK_MS, $resolver->pushIntervalMs());
+        $this->assertNotNull($resolver->takeComplaint());
     }
 
     /**

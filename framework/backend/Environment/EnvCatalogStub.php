@@ -352,6 +352,11 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 2592000,
                 emptyIsMissing: true,
             ),
+            EnvConstants::LOG_INDEX_PUSH_INTERVAL_MS->name => self::entry(
+                EnvCatalogConstants::TYPE_INTEGER,
+                5000,
+                emptyIsMissing: true,
+            ),
         ];
     }
 

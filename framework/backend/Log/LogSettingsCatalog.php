@@ -13,12 +13,12 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 
 /**
- * The framework settings-catalog fragment for log rotation and archive retention (HIL-760).
+ * The framework settings-catalog fragment for log rotation, archive retention and index push (HIL-760).
  *
- * Five values an administrator could not reach before: they lived in the environment and were
+ * Values an administrator could not reach before: they lived in the environment and were
  * read once, at agent start. A project folds this fragment into its own catalog with
- * `array_replace(...)`, the same way it folds the delivery-channel fragment, and the five keys
- * appear in the settings table as ordinary rows.
+ * `array_replace(...)`, the same way it folds the delivery-channel fragment, and the keys appear
+ * in the settings table as ordinary rows.
  *
  * The environment stays the default under each key rather than a layer beside it: with no row
  * written, the key reads exactly what the node's env says, so an installation that configured
@@ -44,6 +44,12 @@ final class LogSettingsCatalog implements CatalogProviderInterface
 
     /** Age in seconds beyond which an archived batch becomes an eviction candidate; 0 disables it. */
     public const string ARCHIVE_RETENTION_MAX_AGE_SECONDS = 'logs.archive_retention.max_age_seconds';
+
+    /** Smallest interval in milliseconds between two log-index frames a node sends the aggregator (HIL-754). */
+    public const string INDEX_PUSH_INTERVAL_MS = 'logs.index.push_interval_ms';
+
+    /** Interval the index push falls back to when the environment cannot answer, in milliseconds. */
+    public const int INDEX_PUSH_INTERVAL_FALLBACK_MS = 5000;
 
     /**
      * Builds the log settings entries, each defaulting to its environment value.
@@ -73,7 +79,29 @@ final class LogSettingsCatalog implements CatalogProviderInterface
             self::ARCHIVE_RETENTION_MAX_AGE_SECONDS => self::integerEntry(
                 self::envInt(EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS, 2_592_000),
             ),
+            self::INDEX_PUSH_INTERVAL_MS => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => self::pushIntervalDefault(),
+                SettingsCatalogConstants::CATALOG_ENTRY_RULE => LogIndexPushIntervalRule::class,
+            ],
         ];
+    }
+
+    /**
+     * Reads the index-push default, keeping it inside what its own rule accepts.
+     *
+     * The other numeric keys clamp to zero because zero disables their axis; this one cannot be
+     * disabled, so an environment saying less than the floor is treated the way an unreadable one
+     * is. A catalog default its own rule would refuse is worse than a fallback: the administrator
+     * would be shown a value they cannot save back.
+     *
+     * @return int Default value for the catalog entry
+     */
+    private static function pushIntervalDefault(): int
+    {
+        $env = self::envInt(EnvConstants::LOG_INDEX_PUSH_INTERVAL_MS, self::INDEX_PUSH_INTERVAL_FALLBACK_MS);
+
+        return $env >= LogIndexPushIntervalRule::MINIMUM_MS ? $env : self::INDEX_PUSH_INTERVAL_FALLBACK_MS;
     }
 
     /**
