@@ -13,8 +13,10 @@ use Hilos\Utils\Logger;
  * walks forward from the start, {@see ANCHOR_TAIL} walks backward from the end (the live-tail default) —
  * and {@see $cursor} continues a previous page from the {@see LogLinePage::$nextCursor} it returned; null
  * means start at the anchor's natural end. Up to {@see $limit} lines that pass the optional
- * {@see $levelFilter} (a {@see Logger} `LEVEL_*` value) and {@see $substring} filter are returned. Internal
- * read value-object, not a signal payload.
+ * {@see $levelFilter} (a {@see Logger} `LEVEL_*` value) and {@see $substring} filter are returned.
+ * {@see $inheritedLevel} carries the running level across a cut, so a live tail resuming mid-entry keeps
+ * the stack trace of an ERROR classified as ERROR (HIL-389). Internal read value-object, not a signal
+ * payload.
  */
 final class LogReadQuery
 {
@@ -30,6 +32,9 @@ final class LogReadQuery
      * @param int $limit Maximum number of matched lines to return (clamped to at least 1 by the reader)
      * @param ?string $levelFilter Keep only lines of this level (a {@see Logger} `LEVEL_*` value), or null for any level
      * @param ?string $substring Keep only lines containing this text, or null/empty for no substring filter
+     * @param ?string $inheritedLevel Entry level (a {@see Logger} `LEVEL_*` value) inherited from the page before this
+     *     one, so a continuation opening this page keeps its entry's level; null starts the scan at the reader's
+     *     {@see Logger::LEVEL_INFO} default
      */
     public function __construct(
         public readonly string $anchor,
@@ -37,6 +42,7 @@ final class LogReadQuery
         public readonly int $limit = 200,
         public readonly ?string $levelFilter = null,
         public readonly ?string $substring = null,
+        public readonly ?string $inheritedLevel = null,
     ) {
     }
 }

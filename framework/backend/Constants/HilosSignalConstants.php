@@ -19,6 +19,9 @@ use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Log\DTO\LogsFollowStartSignalData;
+use Hilos\Log\DTO\LogsFollowStopSignalData;
+use Hilos\Log\DTO\LogsLinesAppendedSignalData;
 use Hilos\Log\DTO\LogsReadLinesSignalData;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
@@ -30,6 +33,8 @@ use Hilos\Notification\DTO\DeliveryRetryDoneSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
 use Hilos\Notification\HilosNotifier;
+use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
+use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
 use Hilos\Push\Delivery\PushDeliveryChannel;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
@@ -309,6 +314,22 @@ final class HilosSignalConstants
      */
     public const string BACKUP_RESTORE_PROGRESS = 'backup_restore_progress';
 
+    // ── Hilos logs admin: the node that owns the files → the following viewer (WS_USER) ──
+    /**
+     * {@see LogStoreAgent} → the following viewer: what happened to the file since the last frame (HIL-389).
+     *
+     * Sent by the node that owns the file straight to the socket, which another node may be
+     * holding, without going back through the page: the page has nothing to add and would only be
+     * one more place for the frame to be lost.
+     *
+     * One of four things and never two at once - lines were appended, the file was rotated away
+     * and reading restarted, the viewer fell so far behind that the owner jumped to the end, or the
+     * follow ended on the owner's side. A tick with nothing to say sends nothing at all. Stamped
+     * with the request id of the start, so frames of a follow the viewer has already replaced are
+     * recognized and dropped. Carried by {@see LogsLinesAppendedSignalData}.
+     */
+    public const string LOGS_LINES_APPENDED = 'logs_lines_appended';
+
     // ── Hilos communications admin: channel-config actions (client → server) ──
     /**
      * Client → server: write one channel config field's settings override.
@@ -346,6 +367,30 @@ final class HilosSignalConstants
      * browser cannot address the file system. Carried by {@see LogsReadLinesActionDTO}.
      */
     public const string LOGS_READ_LINES = 'logs_read_lines';
+
+    // ── Hilos logs admin: viewer follow actions (client → server) ──
+    /**
+     * Client → server: start following the end of one live log file (HIL-389).
+     *
+     * Owned by the viewer page, and the same shape as {@see self::LOGS_READ_LINES}: the file lives
+     * on the node the payload names, and the page forwards the request there. It answers with the
+     * page of lines a read would have answered with and begins following from exactly that point,
+     * because two calls - show me the end, now follow it - would lose whatever was written between
+     * them. Returning to the tail from the mockup is this action again, not a third one.
+     *
+     * A rotated batch is never followed: nobody writes into one. Carried by
+     * {@see LogsFollowStartActionDTO}.
+     */
+    public const string LOGS_FOLLOW_START = 'logs_follow_start';
+
+    /**
+     * Client → server: stop following, on the switch going off or the viewer scrolling up (HIL-389).
+     *
+     * Answered synchronously by the page, unlike the start: removal cannot fail in a way the
+     * viewer could act on, and waiting for the owner to confirm would hold a browser in loading
+     * for a fact about somebody else. Carried by {@see LogsFollowStopActionDTO}.
+     */
+    public const string LOGS_FOLLOW_STOP = 'logs_follow_stop';
 
     // ── Hilos sign-in surface: guest commands (client → server) ──
     /** Client → server: look an identifier up while it is typed (public, anonymous-reachable). */
@@ -816,6 +861,27 @@ final class HilosSignalConstants
      * {@see LogsReadLinesSignalData}.
      */
     public const string LOGS_AGENT_READ_LINES = 'logs_agent_read_lines';
+
+    /**
+     * Viewer page → {@see LogStoreAgent} on the named node: follow this file from its end (HIL-389).
+     *
+     * The cross-node half of {@see self::LOGS_FOLLOW_START}, routed by the same
+     * {@see AgentSignalConfigKey::NODE_FIELD} the read is routed by. It carries the accept key, the
+     * action name and the request id along with the request: the page deferred its own ack, and the
+     * owner both answers the first page and goes on sending the file's growth to that same socket.
+     * Carried by {@see LogsFollowStartSignalData}.
+     */
+    public const string LOGS_AGENT_FOLLOW_START = 'logs_agent_follow_start';
+
+    /**
+     * Viewer page → {@see LogStoreAgent} on the remembered node: drop this connection's follow.
+     *
+     * Sent when the viewer asks, and when it leaves the page or its socket closes - the page hears
+     * both as one unsubscribe. Addressed to the node the page recorded at the start rather than to
+     * the one the browser names, so a viewer that has switched nodes still releases the reader it
+     * left behind. Carried by {@see LogsFollowStopSignalData}.
+     */
+    public const string LOGS_AGENT_FOLLOW_STOP = 'logs_agent_follow_stop';
 
     // ── Mail subsystem: facade → sharded hilos_mail agent pool (agent signal) ──
     /**

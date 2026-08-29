@@ -639,6 +639,32 @@ abstract class AbstractPage implements ActionHostInterface
     }
 
     /**
+     * Queues a signal to the agent the application router sends this signal name to.
+     *
+     * The twin of {@see sendToUser()} for the case where a page is NOT the last step of its own
+     * action: it checks what only it can check, hands the work to the agent that owns the thing,
+     * and defers its ack ({@see deferActionReply()}). The owner may be on another node, which is
+     * how the log viewer answers about a file this machine does not have (HIL-757).
+     *
+     * It lives on the page rather than being reached for on the agent because
+     * {@see PageAgentInterface} is deliberately a small subset of the agent - a page that could
+     * call anything on its agent is a page that could restart it.
+     *
+     * @param string $signalName Signal name the router picks the target agent by
+     * @param SignalDataInterface $data Signal payload
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    protected function sendToAgent(string $signalName, SignalDataInterface $data): void
+    {
+        Hilos::$sr->queueSignal(
+            signalSource: $this->agent->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            signalName: new SignalName($signalName),
+            signalData: new AgentSignalData(data: $data),
+        );
+    }
+
+    /**
      * Queues a broadcast signal to all WebSocket connections.
      *
      * Uses the owning agent signal source for routing context without depending

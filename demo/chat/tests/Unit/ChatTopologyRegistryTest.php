@@ -66,7 +66,11 @@ use Hilos\Backup\BackupConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Log\DTO\LogsFollowStartSignalData;
+use Hilos\Log\DTO\LogsFollowStopSignalData;
 use Hilos\Log\DTO\LogsReadLinesSignalData;
+use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
+use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
@@ -288,6 +292,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_SET_KEEP => PageConstants::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_RESTORE => PageConstants::HILOS_BACKUP,
             HilosSignalConstants::LOGS_READ_LINES => PageConstants::HILOS_LOGS_VIEW,
+            HilosSignalConstants::LOGS_FOLLOW_START => PageConstants::HILOS_LOGS_VIEW,
+            HilosSignalConstants::LOGS_FOLLOW_STOP => PageConstants::HILOS_LOGS_VIEW,
             HilosSignalConstants::HILOS_USER_UPDATE => PageConstants::HILOS_USER,
             ChatSignalConstants::ACCOUNT_MERGE => PageConstants::HILOS_USER,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
@@ -321,6 +327,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_SET_KEEP => AgentType::HILOS_INDEX,
             HilosSignalConstants::BACKUP_RESTORE => AgentType::HILOS_INDEX,
             HilosSignalConstants::LOGS_READ_LINES => AgentType::HILOS_INDEX,
+            HilosSignalConstants::LOGS_FOLLOW_START => AgentType::HILOS_INDEX,
+            HilosSignalConstants::LOGS_FOLLOW_STOP => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_UPDATE => AgentType::HILOS_INDEX,
             ChatSignalConstants::ACCOUNT_MERGE => AgentType::HILOS_INDEX,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET => AgentType::HILOS_INDEX,
@@ -391,6 +399,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_SMS_SEND => AgentType::HILOS_SMS,
             HilosSignalConstants::HILOS_PUSH_DELIVER => AgentType::HILOS_PUSH,
             HilosSignalConstants::LOGS_AGENT_READ_LINES => HilosAgentType::HILOS_LOG_STORE,
+            HilosSignalConstants::LOGS_AGENT_FOLLOW_START => HilosAgentType::HILOS_LOG_STORE,
+            HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP => HilosAgentType::HILOS_LOG_STORE,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => AgentType::HILOS_AUTH_THROTTLE,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => AgentType::HILOS_AUTH_THROTTLE,
             HilosSignalConstants::HILOS_AUTH_CODE_SEND => AgentType::HILOS_AUTH_CODE,
@@ -480,6 +490,8 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             HilosSignalConstants::LOGS_AGENT_READ_LINES => LogsReadLinesActionDTO::nodeId,
+            HilosSignalConstants::LOGS_AGENT_FOLLOW_START => LogsFollowStartActionDTO::nodeId,
+            HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP => LogsFollowStopActionDTO::nodeId,
         ], Hilos::getAgentSignalNodeFields());
     }
 
@@ -538,6 +550,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_SMS_SEND => SmsSendSignalData::class,
             HilosSignalConstants::HILOS_PUSH_DELIVER => NotificationDeliverSignalData::class,
             HilosSignalConstants::LOGS_AGENT_READ_LINES => LogsReadLinesSignalData::class,
+            HilosSignalConstants::LOGS_AGENT_FOLLOW_START => LogsFollowStartSignalData::class,
+            HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP => LogsFollowStopSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => ThrottleCheckSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => ThrottleSuccessSignalData::class,
             HilosSignalConstants::HILOS_AUTH_CODE_SEND => AuthCodeSendSignalData::class,

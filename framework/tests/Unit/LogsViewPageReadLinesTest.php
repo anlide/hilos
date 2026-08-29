@@ -11,12 +11,9 @@ use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
-use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
-use Hilos\Core\Router\SignalType;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Hilos;
 use Hilos\Log\DTO\LogsReadLinesSignalData;
@@ -246,7 +243,7 @@ final class LogsViewTestPage extends AbstractHilosLogsViewPage
 }
 
 /**
- * Page agent that queues what the page hands it, the way a live agent does.
+ * Page agent carrying only what a page may reach for: its id and its signal source.
  */
 final class LogsViewTestAgent implements PageAgentInterface
 {
@@ -258,20 +255,6 @@ final class LogsViewTestAgent implements PageAgentInterface
     public function getAgentSignalSource(): SignalSourceInterface
     {
         return new SignalSource(SignalSource::AGENT, $this->getId());
-    }
-
-    /**
-     * @param string $signalName Signal name
-     * @param SignalDataInterface $data Signal payload
-     */
-    public function sendToAgent(string $signalName, SignalDataInterface $data): void
-    {
-        Hilos::$sr?->queueSignal(
-            signalSource: $this->getAgentSignalSource(),
-            signalType: new SignalType(SignalTypeConstants::AGENT_SIGNAL),
-            signalName: new SignalName($signalName),
-            signalData: new AgentSignalData(data: $data),
-        );
     }
 }
 

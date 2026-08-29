@@ -25,8 +25,13 @@ use Hilos\Utils\Logger;
  * (`[ERROR]`/`ERROR:` and the like, or the `agentId|level|message` agent-pipe format under
  * {@see Logger::AGENT_LOG_MARKER}) updates a running level, a line without one is a continuation that
  * inherits it — so an `ERROR` filter also catches the entry's stack trace. The running level resets to
- * {@see Logger::LEVEL_INFO} at each page boundary, so a continuation at the very start of a page defaults
- * to INFO rather than inheriting across the cut.
+ * {@see Logger::LEVEL_INFO} at each page boundary unless the caller carries it over in
+ * {@see LogReadQuery::$inheritedLevel}, so a continuation at the very start of a page defaults to INFO
+ * rather than inheriting across the cut.
+ *
+ * A forward read serves the live tail too (HIL-389) and is therefore append-aware: a trailing line with no
+ * newline yet is half-written, so it is neither returned nor counted into {@see LogLinePage::$endCursor} —
+ * the next read picks it up whole once the writer has finished it.
  *
  * A missing/unreadable file, or a path escaping the log root via {@see realpath()} validation, yields
  * {@see LogLinePage::unavailable()} rather than a fatal.
@@ -106,6 +111,29 @@ final class LogLineReader
     }
 
     /**
+     * Size in bytes of a log file under the log root.
+     *
+     * The live tail needs both a starting position and a way to see the file grow, and the log root is
+     * private to this reader — a caller reaching for `filesize()` itself would leave the traversal guard
+     * of {@see resolveReadablePath()} standing aside (HIL-389).
+     *
+     * @param string $relativePath Path of the target file relative to the log root
+     *
+     * @return ?int Size in bytes, or null when the path is unresolved, escapes the log root, or is not a readable file
+     */
+    public function size(string $relativePath): ?int
+    {
+        $path = $this->resolveReadablePath($relativePath);
+        if ($path === null) {
+            return null;
+        }
+
+        $size = filesize($path);
+
+        return $size === false ? null : $size;
+    }
+
+    /**
      * Validate that a relative path resolves to a readable file inside the log root.
      *
      * The traversal guard is `realpath()`-based: both the root and the candidate are canonicalized and
@@ -143,11 +171,14 @@ final class LogLineReader
     /**
      * Scan forward from the cursor, collecting up to `$limit` matched lines.
      *
+     * Stops before a trailing line that carries no newline: the writer is still appending it, and handing
+     * out half of it now would deliver the other half as a separate line on the next read.
+     *
      * @param string $path Canonical file path
-     * @param LogReadQuery $query Query providing the cursor and filters
+     * @param LogReadQuery $query Query providing the cursor, the inherited level and the filters
      * @param int $limit Positive page size
      *
-     * @return LogLinePage Matched lines in file order plus the next forward cursor
+     * @return LogLinePage Matched lines in file order plus the next forward cursor and the read's end position
      */
     private function readHead(string $path, LogReadQuery $query, int $limit): LogLinePage
     {
@@ -158,33 +189,39 @@ final class LogLineReader
 
         $fileSize = filesize($path);
         $start = max(0, $query->cursor ?? 0);
+        $currentLevel = $query->inheritedLevel ?? Logger::LEVEL_INFO;
         if ($fileSize === false || $start >= $fileSize) {
             fclose($handle);
 
-            return new LogLinePage(true, [], null, false);
+            return new LogLinePage(true, [], null, false, $start, $currentLevel);
         }
         fseek($handle, $start);
 
         $lines = [];
-        $currentLevel = Logger::LEVEL_INFO;
         $nextCursor = null;
         $hasMore = false;
+        $endCursor = $start;
+        $endLevel = $currentLevel;
         while (($raw = fgets($handle)) !== false) {
+            if (!str_ends_with($raw, "\n")) {
+                break;
+            }
             $text = rtrim($raw, "\r\n");
             [$currentLevel, $isContinuation] = self::classify($text, $currentLevel);
+            $endCursor += strlen($raw);
+            $endLevel = $currentLevel;
             if (self::passesFilter($text, $currentLevel, $query)) {
                 $lines[] = new LogLine($text, $currentLevel, $isContinuation);
                 if (count($lines) === $limit) {
-                    $position = ftell($handle);
-                    $hasMore = $position !== false && $position < $fileSize;
-                    $nextCursor = $hasMore ? $position : null;
+                    $hasMore = $endCursor < $fileSize;
+                    $nextCursor = $hasMore ? $endCursor : null;
                     break;
                 }
             }
         }
         fclose($handle);
 
-        return new LogLinePage(true, $lines, $nextCursor, $hasMore);
+        return new LogLinePage(true, $lines, $nextCursor, $hasMore, $endCursor, $endLevel);
     }
 
     /**

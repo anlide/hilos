@@ -16,10 +16,16 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Log\DTO\LogsFollowStartSignalData;
+use Hilos\Log\DTO\LogsFollowStopSignalData;
+use Hilos\Log\DTO\LogsLinesAppendedSignalData;
 use Hilos\Log\DTO\LogsReadLinesSignalData;
 use Hilos\Pages\Logs\AbstractHilosLogsViewPage;
+use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
+use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesReplyDTO;
+use Hilos\Runtime\ConnectionRosterReconciler;
 use Throwable;
 
 /**
@@ -46,6 +52,12 @@ use Throwable;
  * It is deliberately quiet. It writes into the very directory it measures, so only a CHANGE of
  * availability reaches the log at all, one line per crossing; keys and batches coming and going are
  * DEBUG, visible under investigation and nowhere else.
+ *
+ * Owning the directory is also what makes it the only process that can answer about a file in it:
+ * it serves one page of lines on request (HIL-757), and it FOLLOWS one on request (HIL-389) - once
+ * a second it reads what each followed file gained and sends it straight to the viewer's socket,
+ * which another node may be holding. A follow is dropped when the viewer asks, when its page
+ * unsubscribes, and when its connection is no longer on the roster.
  */
 final class LogStoreAgent extends AbstractAgent
 {
@@ -60,6 +72,14 @@ final class LogStoreAgent extends AbstractAgent
             AgentSignalConfigKey::NODE_FIELD => LogsReadLinesActionDTO::nodeId,
             AgentSignalConfigKey::DTO => LogsReadLinesSignalData::class,
         ],
+        HilosSignalConstants::LOGS_AGENT_FOLLOW_START => [
+            AgentSignalConfigKey::NODE_FIELD => LogsFollowStartActionDTO::nodeId,
+            AgentSignalConfigKey::DTO => LogsFollowStartSignalData::class,
+        ],
+        HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP => [
+            AgentSignalConfigKey::NODE_FIELD => LogsFollowStopActionDTO::nodeId,
+            AgentSignalConfigKey::DTO => LogsFollowStopSignalData::class,
+        ],
     ];
 
     /** @var int Lines one page of the viewer holds, the number the mockup shows */
@@ -70,6 +90,15 @@ final class LogStoreAgent extends AbstractAgent
 
     /** @var float Minimum seconds between two full walks, archive included */
     private const float FULL_SCAN_INTERVAL_SECONDS = 60.0;
+
+    /** @var float Minimum seconds between two rounds of reading what the followed files gained */
+    private const float FOLLOW_TICK_INTERVAL_SECONDS = 1.0;
+
+    /** @var int Lines one follower is sent per round, the rest waiting for the next one */
+    private const int FOLLOW_PUSH_MAX_LINES = 200;
+
+    /** @var int Backlog in bytes past which the owner jumps to the end instead of catching up */
+    private const int FOLLOW_CATCHUP_MAX_BYTES = 1048576;
 
     private LogStoreReader $reader;
 
@@ -96,6 +125,12 @@ final class LogStoreAgent extends AbstractAgent
     /** @var float Timestamp of the last full walk, for throttling */
     private float $lastFullScanAt = 0.0;
 
+    /** @var array<string, LogFollowWatcher> Accept key → what that viewer is following and where it has got to */
+    private array $followers = [];
+
+    /** @var float Timestamp of the last round of appended-line reads, for throttling */
+    private float $lastFollowPushAt = 0.0;
+
     /**
      * Builds the reader, learns which node this is, and takes the first full walk as the baseline.
      *
@@ -118,11 +153,34 @@ final class LogStoreAgent extends AbstractAgent
     }
 
     /**
-     * Throttle only: it decides WHICH walk is due and does none of the work itself.
+     * Throttle only: it decides WHICH work is due and does none of it itself.
+     *
+     * Two independent clocks, because the two jobs answer different questions at different rates:
+     * the walk says what files this node has, the follow says what one of them just gained. The
+     * follow runs after the walk and never instead of it, so a minute-old rotation cannot be
+     * reported by one half and denied by the other.
+     *
+     * @throws InvalidArgumentException When a frame to a following viewer cannot be named
      */
     public function onTick(): void
     {
         $now = microtime(true);
+        $this->walkWhicheverIsDue($now);
+        if ($this->followers === [] || $now - $this->lastFollowPushAt < self::FOLLOW_TICK_INTERVAL_SECONDS) {
+            return;
+        }
+        $this->lastFollowPushAt = $now;
+
+        $this->pushAppendedLines();
+    }
+
+    /**
+     * Runs the live or the full walk when its interval has come round, and neither otherwise.
+     *
+     * @param float $now Monotonic-enough wall clock of this tick
+     */
+    private function walkWhicheverIsDue(float $now): void
+    {
         if ($now - $this->lastFullScanAt >= self::FULL_SCAN_INTERVAL_SECONDS) {
             $this->lastFullScanAt = $now;
             $this->lastLiveScanAt = $now;
@@ -148,7 +206,7 @@ final class LogStoreAgent extends AbstractAgent
     }
 
     /**
-     * Answers one read of one file of this node's log directory.
+     * Answers one read of one file of this node's log directory, or takes a follow of one on or off.
      *
      * The blocking file walk is legitimate here and nowhere else: this agent is monopolistic and
      * node-local (HIL-753), so one reader of one directory is exactly what it is for.
@@ -157,8 +215,8 @@ final class LogStoreAgent extends AbstractAgent
      * @param string $source Signal source
      * @param string $name Signal name
      * @throws AgentUnknownSignalException When the agent is reached by a signal it does not own
-     * @throws InvalidAgentSignalPayloadException When the read frame carries the wrong payload
-     * @throws InvalidArgumentException When the answer to the read cannot be named
+     * @throws InvalidAgentSignalPayloadException When a frame carries the wrong payload
+     * @throws InvalidArgumentException When the answer to the read or the follow cannot be named
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
@@ -170,6 +228,26 @@ final class LogStoreAgent extends AbstractAgent
                 }
 
                 $this->handleReadLines($request);
+
+                return;
+
+            case HilosSignalConstants::LOGS_AGENT_FOLLOW_START:
+                $start = $data->data;
+                if (!$start instanceof LogsFollowStartSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, LogsFollowStartSignalData::class, $start);
+                }
+
+                $this->handleFollowStart($start);
+
+                return;
+
+            case HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP:
+                $stop = $data->data;
+                if (!$stop instanceof LogsFollowStopSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, LogsFollowStopSignalData::class, $stop);
+                }
+
+                unset($this->followers[$stop->acceptKey]);
 
                 return;
 
@@ -305,6 +383,183 @@ final class LogStoreAgent extends AbstractAgent
             $request->level,
             $request->substring,
         ));
+    }
+
+    /**
+     * Starts following one live file, answering with the page that ends where the follow begins.
+     *
+     * The size is taken BEFORE the first read and is the position the follow continues from. Taken
+     * after, it would skip whatever the writer appended while the page was being read; reading
+     * from the end of the file and then taking it would send those lines twice.
+     *
+     * A file that is not there is not a refusal and does not cancel the follow: a worker may not
+     * have started yet, and its log will appear under the name the viewer already chose. The first
+     * page simply says it could not be read, and the follow picks the file up when it exists.
+     *
+     * @param LogsFollowStartSignalData $request Follow request, carrying whom to answer
+     * @throws InvalidArgumentException When the success or failure ack cannot be named
+     */
+    private function handleFollowStart(LogsFollowStartSignalData $request): void
+    {
+        try {
+            $reader = LogLineReader::fromEnv();
+            $size = $reader->size($request->stream);
+            $page = $reader->read($request->stream, new LogReadQuery(
+                LogReadQuery::ANCHOR_TAIL,
+                cursor: $size,
+                limit: self::READ_PAGE_LINES,
+                levelFilter: $request->level,
+                substring: $request->substring,
+            ));
+
+            $this->followers[$request->acceptKey] = new LogFollowWatcher(
+                acceptKey: $request->acceptKey,
+                requestId: $request->requestId,
+                stream: $request->stream,
+                level: $request->level,
+                substring: $request->substring,
+                offset: $size ?? 0,
+            );
+            $this->sendActionSuccess(
+                $request->acceptKey,
+                $request->action,
+                $request->requestId,
+                LogsReadLinesReplyDTO::fromPage($page),
+            );
+        } catch (Throwable $e) {
+            unset($this->followers[$request->acceptKey]);
+            $this->logAgentError('Log follow failed to start: ' . $e->getMessage());
+            $this->sendActionFail($request->acceptKey, $request->action, $request->requestId, $e->getMessage());
+        }
+    }
+
+    /**
+     * Sends every following viewer what its file gained since the last round.
+     *
+     * Public and unthrottled for the reason the two walks are ({@see walkStore()}): the round is
+     * the agent's work and {@see onTick()} is only its clock, so what a round reads does not depend
+     * on when it was scheduled. That clock runs once a second, because every read here is blocking
+     * file I/O in the one worker that also walks this directory, and a log tail does not need
+     * milliseconds.
+     *
+     * Viewers are read one by one even when they share a file: each has its own position and its
+     * own filters, and folding them into a single pass would be a scheduler built for a screen
+     * that a handful of administrators look at.
+     *
+     * @throws InvalidArgumentException When a frame to a following viewer cannot be named
+     */
+    public function pushAppendedLines(): void
+    {
+        $reader = LogLineReader::fromEnv();
+        foreach ($this->followers as $acceptKey => $watcher) {
+            if (!$this->viewerStillConnected($acceptKey)) {
+                unset($this->followers[$acceptKey]);
+
+                continue;
+            }
+
+            try {
+                $this->pushToViewer($reader, $watcher);
+            } catch (Throwable $e) {
+                unset($this->followers[$acceptKey]);
+                $this->logAgentError("Log follow of '{$watcher->stream}' failed: " . $e->getMessage());
+                $this->sendToUser(
+                    HilosSignalConstants::LOGS_LINES_APPENDED,
+                    $acceptKey,
+                    LogsLinesAppendedSignalData::stopped($watcher->requestId),
+                );
+            }
+        }
+    }
+
+    /**
+     * Whether the socket a follow answers to is still on the node's connection roster.
+     *
+     * Asked before the file is touched, deliberately: reading for somebody who has gone is exactly
+     * the work this leaf promised not to do. It is also the only thing that catches a viewer who
+     * left without a word - a tab that closed cleanly is released by the page's own unsubscribe,
+     * and a socket struck out by {@see ConnectionRosterReconciler::reconcile()} is caught here.
+     *
+     * A project with no connections collection at all cannot answer, and a follow nobody can ever
+     * verify would live as long as the process; it is treated as gone.
+     *
+     * @param string $acceptKey Accept key of the following connection
+     * @return bool True when the roster still carries that connection
+     */
+    private function viewerStillConnected(string $acceptKey): bool
+    {
+        $connections = Hilos::$rt?->connectionsSource();
+
+        return $connections?->get($acceptKey) !== null;
+    }
+
+    /**
+     * Reads one viewer's file forward and sends the one thing that happened to it, if anything did.
+     *
+     * The four outcomes are exclusive and each is a whole frame. A file smaller than the position
+     * read from was carried off by rotation or truncated, so the follow restarts at the beginning
+     * of the file now under that name and says so - a missing file counts as size zero, which is
+     * why a follow of a file that never appears sends nothing rather than a rotation a second. A
+     * file that has not grown says nothing at all: silence under a level filter is the right
+     * answer. A backlog past {@see self::FOLLOW_CATCHUP_MAX_BYTES} is jumped over rather than
+     * shipped, because a tail showing the day before yesterday is lying about the word "now", and
+     * a queue of unshown lines grows faster than a reader drains it.
+     *
+     * @param LogLineReader $reader Reader bound to this node's log root
+     * @param LogFollowWatcher $watcher Viewer to serve, whose position this advances
+     * @throws InvalidArgumentException When the frame to the viewer cannot be named
+     */
+    private function pushToViewer(LogLineReader $reader, LogFollowWatcher $watcher): void
+    {
+        $size = $reader->size($watcher->stream) ?? 0;
+        if ($size < $watcher->offset()) {
+            $watcher->jumpTo(0);
+            $this->sendFrame($watcher, LogsLinesAppendedSignalData::rotated($watcher->requestId));
+
+            return;
+        }
+        if ($size === $watcher->offset()) {
+            return;
+        }
+
+        $behind = $size - $watcher->offset();
+        if ($behind > self::FOLLOW_CATCHUP_MAX_BYTES) {
+            $watcher->jumpTo($size);
+            $this->sendFrame($watcher, LogsLinesAppendedSignalData::skipped($watcher->requestId, $behind));
+
+            return;
+        }
+
+        $page = $reader->read($watcher->stream, new LogReadQuery(
+            LogReadQuery::ANCHOR_HEAD,
+            cursor: $watcher->offset(),
+            limit: self::FOLLOW_PUSH_MAX_LINES,
+            levelFilter: $watcher->level,
+            substring: $watcher->substring,
+            inheritedLevel: $watcher->inheritedLevel(),
+        ));
+        $watcher->advanceTo($page->endCursor, $page->endLevel);
+        if ($page->lines === []) {
+            return;
+        }
+
+        $this->sendFrame($watcher, LogsLinesAppendedSignalData::appended($watcher->requestId, $page));
+    }
+
+    /**
+     * Sends one frame to the socket a follow answers to.
+     *
+     * Straight to the connection rather than back through the page: the page has nothing to add
+     * to it, and the browser may be attached to a different node altogether, which the router
+     * already knows how to reach.
+     *
+     * @param LogFollowWatcher $watcher Viewer the frame is for
+     * @param LogsLinesAppendedSignalData $frame What happened to the file
+     * @throws InvalidArgumentException When the frame cannot be named
+     */
+    private function sendFrame(LogFollowWatcher $watcher, LogsLinesAppendedSignalData $frame): void
+    {
+        $this->sendToUser(HilosSignalConstants::LOGS_LINES_APPENDED, $watcher->acceptKey, $frame);
     }
 
     /**

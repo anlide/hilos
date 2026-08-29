@@ -6,6 +6,7 @@ namespace Hilos\Pages\Logs\DTO;
 
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
+use Hilos\Log\DTO\LogsLinesAppendedSignalData;
 use Hilos\Log\LogLine;
 use Hilos\Log\LogLinePage;
 
@@ -70,16 +71,31 @@ final class LogsReadLinesReplyDTO extends ActionReplyDTO
     {
         return new self(
             readable: $page->readable,
-            lines: array_map(
-                static fn(LogLine $line): array => [
-                    self::text => $line->text,
-                    self::level => $line->detectedLevel,
-                    self::isContinuation => $line->isContinuation,
-                ],
-                $page->lines,
-            ),
+            lines: self::linesFromPage($page),
             nextCursor: $page->nextCursor,
             hasMore: $page->hasMore,
+        );
+    }
+
+    /**
+     * Flattens the lines of a page into their wire form.
+     *
+     * Public because the live tail sends the same lines in its own frame
+     * ({@see LogsLinesAppendedSignalData}, HIL-389) and the browser draws both with one renderer:
+     * a second copy of these three keys would be a second shape for the same thing, free to drift.
+     *
+     * @param LogLinePage $page Page the reader produced
+     * @return list<array{text: string, level: string, isContinuation: bool}> Lines, oldest first
+     */
+    public static function linesFromPage(LogLinePage $page): array
+    {
+        return array_map(
+            static fn(LogLine $line): array => [
+                self::text => $line->text,
+                self::level => $line->detectedLevel,
+                self::isContinuation => $line->isContinuation,
+            ],
+            $page->lines,
         );
     }
 
