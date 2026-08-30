@@ -556,13 +556,41 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     }
 
     /**
-     * Remove client from server
+     * Remove client from server, and put back what a dead worker took that nothing will ask for.
+     *
+     * An agent forgotten with its worker comes back by being addressed - a frame, an action, a
+     * cron rule, which outlives the agent that registered it. A node-scoped one has none of
+     * that by declaration: the registry says it runs on every node, so the start pass is the
+     * only thing that ever asks for it, and the agent lifecycle says as much - a node replica
+     * "comes up from the bootstrap, and nothing would address it back into existence". Without
+     * this it would stay down until the daemon restarts, silently, exactly the shape of defect
+     * the roster cleanup above it was written to end.
+     *
+     * Here and not beside that cleanup, because here the order is certain: a client is closed
+     * before it is removed, so {@see WorkerClient::onClose()} has already emptied the roster of
+     * this worker, and a start pass that ran first would find the dead agents still listed and
+     * do nothing. {@see startPerNodeAgents()} is idempotent, so the ones on the surviving
+     * workers are untouched, and it contains a per-agent failure of its own.
+     *
+     * Nothing is started while the node is leaving - a shutdown that starts what it is about to
+     * stop never ends - and nothing is started for a client that never registered as a worker,
+     * which carried no agents to lose.
      *
      * @param ClientInterface $client Client to remove
      */
     public function removeClient(ClientInterface $client): void
     {
         parent::removeClient($client);
+
+        if ($this->preparingShutdown) {
+            return;
+        }
+
+        if (!$client instanceof WorkerClient || $client->getWorkerIndex() <= 0) {
+            return;
+        }
+
+        $this->startPerNodeAgents();
     }
 
     /**
