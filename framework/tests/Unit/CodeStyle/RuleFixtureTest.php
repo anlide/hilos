@@ -130,6 +130,21 @@ final class RuleFixtureTest extends TestCase
                 'EMPTY-STRING-SENTINEL Bad/Core/Router/TernaryBranch.php:24 — a ternary branch hands back '
                     . '\'\' where the value is missing; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',
+                'PAYLOAD-SENTINEL Bad/DiffReaderSentinelSamples.php:30 — ?? \'\' mints a stub where the diff '
+                    . 'does not carry the key; an absent key means the field did not change, so read it with '
+                    . 'patch* (see docs/agents/code-style/method-contracts.md)',
+                'PAYLOAD-SENTINEL Bad/DiffReaderSentinelSamples.php:31 — optionalString() answers null to a '
+                    . 'key the diff does not carry and clears a field it never touched; read it with its '
+                    . 'patch* twin (see docs/agents/code-style/method-contracts.md)',
+                'PAYLOAD-SENTINEL Bad/DiffReaderSentinelSamples.php:41 — match falls back to 0 where the diff '
+                    . 'does not carry the key; an absent key means the field did not change, so read it with '
+                    . 'patch* (see docs/agents/code-style/method-contracts.md)',
+                'PAYLOAD-SENTINEL Bad/DiffReaderSentinelSamples.php:50 — ?? 0.0 mints a stub where the diff '
+                    . 'does not carry the key; an absent key means the field did not change, so read it with '
+                    . 'patch* (see docs/agents/code-style/method-contracts.md)',
+                'PAYLOAD-SENTINEL Bad/DiffReaderSentinelSamples.php:51 — optionalInt() answers null to a key '
+                    . 'the diff does not carry and clears a field it never touched; read it with its patch* '
+                    . 'twin (see docs/agents/code-style/method-contracts.md)',
                 'ERROR-SUPPRESSION Bad/ErrorSuppressionSamples.php:20 — @ silences a warning with no '
                     . '`// warning-suppressed:` marker on the line above '
                     . '(see docs/agents/code-style/error-suppression.md)',
@@ -235,6 +250,15 @@ final class RuleFixtureTest extends TestCase
                     . 'pseudorandom; a secret takes secureBytes()/secureHex(), and a value that only has to '
                     . 'be unique takes this file into the rule\'s list '
                     . '(see docs/agents/code-style/random-source.md)',
+                'PAYLOAD-SENTINEL Bad/RowReaderSentinelSamples.php:28 — ?? \'\' mints a stub where the '
+                    . 'payload field is missing; refuse the payload or let the field be null '
+                    . '(see docs/agents/code-style/method-contracts.md)',
+                'PAYLOAD-SENTINEL Bad/RowReaderSentinelSamples.php:38 — ?? 0 mints a stub where the payload '
+                    . 'field is missing; refuse the payload or let the field be null '
+                    . '(see docs/agents/code-style/method-contracts.md)',
+                'PAYLOAD-SENTINEL Bad/RowReaderSentinelSamples.php:46 — a ternary branch hands back "" where '
+                    . 'the payload field is missing; refuse the payload or let the field be null '
+                    . '(see docs/agents/code-style/method-contracts.md)',
                 'RT-STATE-REACH Bad/RtStateReach.php:22 — getStateCollection() reaches backing RT state '
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
                 'RT-STATE-REACH Bad/RtStateReach.php:23 — getStateItem() reaches backing RT state '

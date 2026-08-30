@@ -14,10 +14,19 @@ use Hilos\Tests\CodeStyle\Violation;
  * so it arrives as null — and `'' `, `0` and `0.0` are the three values that
  * quietly pretend to be a third one.
  *
- * The rule judges the body of `fromArray()` and `fromJson()` and nothing else.
- * That is what tells minting from ordinary defaulting: the same `?? 0` in a
- * constructor or a getter is a decision about this object's own state, while in
- * a payload reader it is a decision about a frame somebody else sent.
+ * The rule judges the body of eight readers by name and nothing else — the frame
+ * readers `fromArray()` and `fromJson()`, and the runtime-row readers
+ * `fromRow()`, `hydrateBase()`, `hydrateOwn()`, `applyDiff()`, `applyBaseDiff()`
+ * and `applyOwnDiff()`. That is what tells minting from ordinary defaulting: the
+ * same `?? 0` in a constructor or a getter is a decision about this object's own
+ * state, while in a payload reader it is a decision about a row somebody else
+ * sent. The name is judged wherever it stands, because the two families the
+ * runtime declares are `final` and only delegate, so the reading itself lives in
+ * the helpers named beside them.
+ *
+ * The group a name falls into is its {@see PayloadReaderKind}, and it decides
+ * what the report names as the cure: a whole row is refused or its field made
+ * nullable, while a diff reads the field with its `patch*` twin.
  *
  * Three spellings mint the stub, and the rule counts occurrences, not lines:
  * `??`, the branch of a ternary that hands the literal back, and `match`'s
@@ -26,13 +35,23 @@ use Hilos\Tests\CodeStyle\Violation;
  * payload means. Only real tokens are read, so any of these inside a comment or
  * quoted inside a string literal is not a hit.
  *
+ * A diff body carries a second finding, and it is about reading rather than
+ * minting: an `optional*` reader answers `null` to a key the diff does not
+ * carry, which clears a field the diff never mentioned. It is matched by the
+ * name's prefix rather than by a list, because the `optional*` family grows on
+ * demand and one added tomorrow would slip out from under the guard the very way
+ * the runtime row did.
+ *
  * A value that genuinely arrives from outside as the literal is legal, and a
  * `// external-boundary: <reason>` marker on the line directly above says so.
  * The form is the one `ErrorSuppressionRule` and `EmptyStringSentinelRule`
  * already use, so the repository carries one way of legalizing a single
  * occurrence rather than three. That line has to be the whole marker: a reason
  * wrapped onto a second line leaves a plain comment directly above the
- * occurrence, and a plain comment there legalizes nothing.
+ * occurrence, and a plain comment there legalizes nothing. The marker covers a
+ * minted stub only: the misread diff key has no legitimate case to name, since a
+ * field a diff does clear arrives as a key holding `null` and is read by the
+ * `patch*` twin.
  */
 final class PayloadSentinelRule implements CodeStyleRule
 {
@@ -40,8 +59,11 @@ final class PayloadSentinelRule implements CodeStyleRule
 
     private const string DOC = 'docs/agents/code-style/method-contracts.md';
 
-    /** The readers whose bodies are judged; a method name is matched case-insensitively, as PHP resolves it. */
-    private const array PAYLOAD_READERS = ['fromarray', 'fromjson'];
+    /** Readers handed a whole row or frame; a method name is matched case-insensitively, as PHP resolves it. */
+    private const array FULL_ROW_READERS = ['fromarray', 'fromjson', 'fromrow', 'hydratebase', 'hydrateown'];
+
+    /** Readers handed a partial update, matched the same way. */
+    private const array DIFF_READERS = ['applydiff', 'applybasediff', 'applyowndiff'];
 
     /** Both spellings of the empty string; `token_get_all()` keeps the quotes. */
     private const array EMPTY_STRING_LITERALS = ["''", '""'];
@@ -49,15 +71,26 @@ final class PayloadSentinelRule implements CodeStyleRule
     /** The marker that legalizes one occurrence; the reason after the colon is the point of it. */
     private const string MARKER_PATTERN = '~^//\s*external-boundary:(?<reason>.*)$~';
 
-    /** What every report ends with, whichever spelling minted the stub. */
+    /** What a report about a whole row or frame ends with, whichever spelling minted the stub. */
     private const string CURE = ' the payload field is missing; refuse the payload or let the field be null';
 
-    /** One message per spelling that mints a stub; `%s` takes the literal as it is written. */
-    private const string COALESCE_MESSAGE = '?? %s mints a stub where' . self::CURE;
+    /** What the same report ends with in a diff, where an absent key is not a missing field. */
+    private const string DIFF_CURE = ' the diff does not carry the key; an absent key means the field did not '
+        . 'change, so read it with patch*';
 
-    private const string TERNARY_MESSAGE = 'a ternary branch hands back %s where' . self::CURE;
+    /** One message per spelling that mints a stub; the literal as it is written, then the cure of the kind. */
+    private const string COALESCE_MESSAGE = '?? %s mints a stub where%s';
 
-    private const string MATCH_MESSAGE = 'match falls back to %s where' . self::CURE;
+    private const string TERNARY_MESSAGE = 'a ternary branch hands back %s where%s';
+
+    private const string MATCH_MESSAGE = 'match falls back to %s where%s';
+
+    /** The family that reads an absent key as null; matched by prefix, since it grows on demand. */
+    private const string OPTIONAL_READER_PREFIX = 'optional';
+
+    /** The second finding, reported in a diff body only; `%s` takes the called name as it is written. */
+    private const string OPTIONAL_IN_DIFF_MESSAGE = '%s() answers null to a key the diff does not carry and '
+        . 'clears a field it never touched; read it with its patch* twin';
 
     /** Tokens that open a bracket pair; the ternary bookkeeping is kept per depth. */
     private const array OPENING_TOKENS = ['(', '[', '{'];
@@ -109,7 +142,7 @@ final class PayloadSentinelRule implements CodeStyleRule
      *
      * @param string $relativePath File path relative to the scanned root
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
-     * @return iterable<Violation> One entry per minted stub
+     * @return iterable<Violation> One entry per finding, left to right
      */
     public function check(string $relativePath, array $tokens): iterable
     {
@@ -120,7 +153,12 @@ final class PayloadSentinelRule implements CodeStyleRule
 
         $lines = $this->lineNumbers($tokens);
 
-        foreach ($this->mintedStubs($tokens, $bodies) as $index => $message) {
+        foreach ($this->findings($tokens, $bodies) as $index => [$message, $markerApplies]) {
+            if (!$markerApplies) {
+                yield new Violation(self::ID, $relativePath, $lines[$index], $message);
+                continue;
+            }
+
             $reason = $this->markerReason($tokens, $lines, $index);
             if ($reason === null) {
                 yield new Violation(self::ID, $relativePath, $lines[$index], $message);
@@ -143,7 +181,7 @@ final class PayloadSentinelRule implements CodeStyleRule
      * interface declaration ends at a semicolon and has no body to judge.
      *
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
-     * @return array<int, array{0: int, 1: int}> Index of the opening and the closing brace of each body
+     * @return array<int, array{0: int, 1: int, 2: PayloadReaderKind}> Opening brace, closing brace and kind of each body
      */
     private function payloadReaderBodies(array $tokens): array
     {
@@ -155,13 +193,18 @@ final class PayloadSentinelRule implements CodeStyleRule
             }
 
             $nameIndex = $this->significantIndex($tokens, $index);
-            if ($nameIndex === null || !$this->isPayloadReaderName($tokens[$nameIndex])) {
+            if ($nameIndex === null) {
+                continue;
+            }
+
+            $kind = $this->readerKind($tokens[$nameIndex]);
+            if ($kind === null) {
                 continue;
             }
 
             $bodyStart = $this->bodyStart($tokens, $nameIndex);
             if ($bodyStart !== null) {
-                $bodies[] = [$bodyStart, $this->bodyEnd($tokens, $bodyStart)];
+                $bodies[] = [$bodyStart, $this->bodyEnd($tokens, $bodyStart), $kind];
             }
         }
 
@@ -170,13 +213,20 @@ final class PayloadSentinelRule implements CodeStyleRule
 
     /**
      * @param string|array{0: int, 1: string, 2: int} $token Token following the `function` keyword
-     * @return bool True when the token names a payload reader
+     * @return PayloadReaderKind|null What the reader is handed, or null when the name is not judged
      */
-    private function isPayloadReaderName(string|array $token): bool
+    private function readerKind(string|array $token): ?PayloadReaderKind
     {
-        return is_array($token)
-            && $token[0] === T_STRING
-            && in_array(strtolower($token[1]), self::PAYLOAD_READERS, true);
+        if (!is_array($token) || $token[0] !== T_STRING) {
+            return null;
+        }
+
+        $name = strtolower($token[1]);
+        if (in_array($name, self::FULL_ROW_READERS, true)) {
+            return PayloadReaderKind::FullRow;
+        }
+
+        return in_array($name, self::DIFF_READERS, true) ? PayloadReaderKind::Diff : null;
     }
 
     /**
@@ -248,19 +298,20 @@ final class PayloadSentinelRule implements CodeStyleRule
     }
 
     /**
-     * Walks the file once and collects every stub literal that is being minted
-     * inside a payload reader. The ternary branch is the reason for the walk: a
-     * `:` also separates a named argument, closes a `case`, opens the alternative
-     * syntax and introduces a return type, so it counts only while a `?` of the
-     * same bracket depth is still open.
+     * Walks the file once and collects both findings, so the report stays
+     * positional — left to right, the order the token index already gives. The
+     * ternary branch is the reason for the walk: a `:` also separates a named
+     * argument, closes a `case`, opens the alternative syntax and introduces a
+     * return type, so it counts only while a `?` of the same bracket depth is
+     * still open.
      *
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
-     * @param array<int, array{0: int, 1: int}> $bodies Spans of the payload reader bodies
-     * @return array<int, string> Message keyed by the token index of the minted literal
+     * @param array<int, array{0: int, 1: int, 2: PayloadReaderKind}> $bodies Spans of the judged reader bodies
+     * @return array<int, array{0: string, 1: bool}> Message and whether a marker may legalize it, by token index
      */
-    private function mintedStubs(array $tokens, array $bodies): array
+    private function findings(array $tokens, array $bodies): array
     {
-        $minted = [];
+        $found = [];
         $openTernaries = [0];
         $depth = 0;
 
@@ -284,7 +335,7 @@ final class PayloadSentinelRule implements CodeStyleRule
 
             if ($token === ':' && $openTernaries[$depth] > 0) {
                 $openTernaries[$depth]--;
-                $this->recordStub($minted, $tokens, $bodies, $this->stubIndex($tokens, $index), self::TERNARY_MESSAGE);
+                $this->recordStub($found, $tokens, $bodies, $this->stubIndex($tokens, $index), self::TERNARY_MESSAGE);
                 continue;
             }
 
@@ -293,50 +344,115 @@ final class PayloadSentinelRule implements CodeStyleRule
             }
 
             if ($token[0] === T_COALESCE) {
-                $this->recordStub($minted, $tokens, $bodies, $this->stubIndex($tokens, $index), self::COALESCE_MESSAGE);
+                $this->recordStub($found, $tokens, $bodies, $this->stubIndex($tokens, $index), self::COALESCE_MESSAGE);
                 continue;
             }
 
             if ($token[0] === T_DEFAULT) {
-                $this->recordStub($minted, $tokens, $bodies, $this->matchDefaultIndex($tokens, $index), self::MATCH_MESSAGE);
+                $this->recordStub($found, $tokens, $bodies, $this->matchDefaultIndex($tokens, $index), self::MATCH_MESSAGE);
+                continue;
+            }
+
+            if ($token[0] === T_STRING) {
+                $this->recordMisreadDiffKey($found, $tokens, $bodies, $index);
             }
         }
 
-        return $minted;
+        return $found;
     }
 
     /**
-     * @param array<int, string> $minted Messages collected so far, keyed by token index
+     * @param array<int, array{0: string, 1: bool}> $found Findings collected so far, keyed by token index
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
-     * @param array<int, array{0: int, 1: int}> $bodies Spans of the payload reader bodies
+     * @param array<int, array{0: int, 1: int, 2: PayloadReaderKind}> $bodies Spans of the judged reader bodies
      * @param int|null $literalIndex Index of the stub literal, or null when the spelling hands back something else
-     * @param string $message Message of the spelling that minted it, taking the literal
+     * @param string $message Message of the spelling that minted it, taking the literal and then the cure
      */
-    private function recordStub(array &$minted, array $tokens, array $bodies, ?int $literalIndex, string $message): void
+    private function recordStub(array &$found, array $tokens, array $bodies, ?int $literalIndex, string $message): void
     {
-        if ($literalIndex === null || !$this->isInPayloadReader($bodies, $literalIndex)) {
+        if ($literalIndex === null) {
+            return;
+        }
+
+        $kind = $this->bodyKind($bodies, $literalIndex);
+        if ($kind === null) {
             return;
         }
 
         /** @var array{0: int, 1: string, 2: int} $literal */
         $literal = $tokens[$literalIndex];
-        $minted[$literalIndex] = sprintf($message, $literal[1]);
+        $cure = match ($kind) {
+            PayloadReaderKind::FullRow => self::CURE,
+            PayloadReaderKind::Diff => self::DIFF_CURE,
+        };
+
+        $found[$literalIndex] = [sprintf($message, $literal[1], $cure), true];
     }
 
     /**
-     * @param array<int, array{0: int, 1: int}> $bodies Spans of the payload reader bodies
-     * @param int $index Token index to place
-     * @return bool True when the token sits inside one of the bodies
+     * Records a call of the `optional*` family made inside a diff body. What is
+     * judged is the reading, so the name counts only where it is being called: a
+     * bare mention reads nothing, and a `function` of that name declared inside
+     * the body — which PHP allows — declares a reader rather than calling one.
+     * The body a full row is read with needs no exclusion here; it is another
+     * body, and a token of it is placed by its own kind.
+     *
+     * @param array<int, array{0: string, 1: bool}> $found Findings collected so far, keyed by token index
+     * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
+     * @param array<int, array{0: int, 1: int, 2: PayloadReaderKind}> $bodies Spans of the judged reader bodies
+     * @param int $index Index of the name token
      */
-    private function isInPayloadReader(array $bodies, int $index): bool
+    private function recordMisreadDiffKey(array &$found, array $tokens, array $bodies, int $index): void
     {
-        foreach ($bodies as [$start, $end]) {
+        /** @var array{0: int, 1: string, 2: int} $name */
+        $name = $tokens[$index];
+        if (!str_starts_with(strtolower($name[1]), self::OPTIONAL_READER_PREFIX)) {
+            return;
+        }
+
+        if ($this->bodyKind($bodies, $index) !== PayloadReaderKind::Diff || !$this->isCall($tokens, $index)) {
+            return;
+        }
+
+        $found[$index] = [sprintf(self::OPTIONAL_IN_DIFF_MESSAGE, $name[1]), false];
+    }
+
+    /**
+     * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
+     * @param int $index Index of the name token
+     * @return bool True when the name is being called rather than declared
+     */
+    private function isCall(array $tokens, int $index): bool
+    {
+        $openIndex = $this->significantIndex($tokens, $index);
+        if ($openIndex === null || $tokens[$openIndex] !== '(') {
+            return false;
+        }
+
+        $previousIndex = $this->previousSignificantIndex($tokens, $index);
+        if ($previousIndex === null) {
+            return true;
+        }
+
+        $previous = $tokens[$previousIndex];
+
+        return !is_array($previous) || $previous[0] !== T_FUNCTION;
+    }
+
+    /**
+     * @param array<int, array{0: int, 1: int, 2: PayloadReaderKind}> $bodies Spans of the judged reader bodies
+     * @param int $index Token index to place
+     * @return PayloadReaderKind|null Kind of the body holding the token, or null when it sits in none
+     */
+    private function bodyKind(array $bodies, int $index): ?PayloadReaderKind
+    {
+        foreach ($bodies as [$start, $end, $kind]) {
             if ($index > $start && $index < $end) {
-                return true;
+                return $kind;
             }
         }
 
-        return false;
+        return null;
     }
 
     /**
@@ -453,6 +569,23 @@ final class PayloadSentinelRule implements CodeStyleRule
     private function significantIndex(array $tokens, int $index): ?int
     {
         for ($cursor = $index + 1; isset($tokens[$cursor]); $cursor++) {
+            $token = $tokens[$cursor];
+            if (!is_array($token) || !in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                return $cursor;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
+     * @param int $index Index to walk back from
+     * @return int|null Index of the nearest preceding token that is not whitespace or a comment
+     */
+    private function previousSignificantIndex(array $tokens, int $index): ?int
+    {
+        for ($cursor = $index - 1; $cursor >= 0; $cursor--) {
             $token = $tokens[$cursor];
             if (!is_array($token) || !in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
                 return $cursor;

@@ -20,7 +20,7 @@ rule.
 | `BLOCKING-RESOLUTION` | A host name is never turned into an address by a call that blocks the process: `gethostbyname`, `gethostbynamel`, `gethostbyaddr`, `dns_get_record`, `dns_get_mx`, `checkdnsrr`. Read in call position only, so one of these names in a string, in a comment, or worn by a method is not a hit; `gethostname()` is not in the family, being a `uname(2)` read with no resolver behind it. The list of allowed files is empty and is meant to stay so. Every root, tests included. | [blocking-resolution.md](blocking-resolution.md) |
 | `MAGIC-REPEAT` | The same number is written twice or more in one file. Numbers inside a `const` declaration, inside the value of a keyed array entry — which is what takes a data catalog out of the rule, entry by entry — and the structural `0`, `1`, `2` are not counted. Production roots only. | [magic-values.md](magic-values.md) |
 | `EMPTY-STRING-SENTINEL` | An empty string literal is minted where a value is absent: `??` falls back to it, a ternary branch hands it back, or a `match` `default` arm does. Inside the checked zone only, and unless a `// external-boundary: <reason>` marker on the line directly above names the outside source the value comes from. | [method-contracts.md](method-contracts.md) |
-| `PAYLOAD-SENTINEL` | A payload reader mints a stub for a field that did not arrive: inside the body of `fromArray()` or `fromJson()`, `''`, `0` or `0.0` is fallen back to with `??`, handed back by a ternary branch, or returned by a `match` `default` arm. `?? null` and `?? []` are legal there, and a `// external-boundary: <reason>` marker on the line directly above legalizes one occurrence. Every root. | [method-contracts.md](method-contracts.md) |
+| `PAYLOAD-SENTINEL` | A judged reader reads an absent key as a value. Eight method names are judged, by name wherever they stand, in two groups: `fromArray()`, `fromJson()`, `fromRow()`, `hydrateBase()` and `hydrateOwn()` are handed a whole frame or row, `applyDiff()`, `applyBaseDiff()` and `applyOwnDiff()` a partial one. Two findings. A minted stub — `''`, `0` or `0.0` fallen back to with `??`, handed back by a ternary branch, or returned by a `match` `default` arm — is reported in either group, and the group picks the cure the report names: refuse the payload or let the field be null, against read it with `patch*`. A call of the `optional*` family, matched by the prefix of the name, is reported in a diff body only: it answers null to a key the diff does not carry and clears a field it never touched. `?? null` and `?? []` are legal in both groups, and a `// external-boundary: <reason>` marker on the line directly above legalizes one minted stub — the misread diff key has no legitimate case and no marker. Every root. | [method-contracts.md](method-contracts.md) |
 | `WIRE-KEY-CASE` | A field key that crosses PHP → wire → TS is spelled camelCase. Two halves under one id: PHP judges a constant named in camelCase, TypeScript a constant named `<NAME>_FIELD` and the entries of an `as const` `*RowKey` map. A value that is a reference to another constant is judged where the key is spelled out. | [cross-layer-field-names.md](cross-layer-field-names.md) |
 | `LINE-LENGTH` | A PHP line is wider than 150 characters. Width is counted in characters and not in bytes, so a multi-byte dash costs one column. A line inside a heredoc or nowdoc body is not checked: a break there would land in the string itself. | [line-length.md](line-length.md) |
 | `THROWS-PROPAGATION` | An exception a callee documents is named by the caller's own `@throws` too, unless an enclosing `catch` swallows it; and an implementation does not document an exception the declaration it overrides is silent about. A `throw new X` is judged as its own callee. Only calls whose target is known without inferring a type; a private helper is walked through rather than trusted. | [phpdoc.md](phpdoc.md) |
@@ -82,7 +82,7 @@ stands before it — only a ternary follows something an expression can end with
 by the arrow alone, which is also how an array element is written.
 
 `PAYLOAD-SENTINEL` overlaps `EMPTY-STRING-SENTINEL` on purpose and is not a
-widening of it. It reads two more literals but only two method bodies, and the
+widening of it. It reads two more literals but only eight method bodies, and the
 scope is the point: the same `?? 0` is a decision about this object's own state
 in a constructor and a decision about somebody else's frame in a payload reader.
 Zero was deliberately left out of the empty-string rule for that reason — `?? 0`
@@ -93,12 +93,17 @@ is reported by both rules, which reads as two lines about one site and is the
 honest report: both are owed, and both go away with the same edit.
 
 The narrowness is the same kind the rules above have. It cannot see a bare
-`return 0;` out of a reader, it does not read a helper the reader delegates to,
-and it judges a method by its name, so a payload read in a method called
-something else is invisible to it. It also asks nothing about agreement between
-fields — that check belongs in the constructor and no token walk can make it.
+`return 0;` out of a reader, it does not follow a call into a helper the reader
+delegates to, and it judges a method by its name, so a payload read in a method
+called something else is invisible to it. That last one is why the name list
+carries the helpers of the runtime row and not only the readers themselves: the
+`fromRow()` and `applyDiff()` a state declares are `final` and only delegate, so
+the reading lives in `hydrateBase()`, `hydrateOwn()` and their diff twins, and a
+rule that judged the two entry names alone would see none of it. The rule also
+asks nothing about agreement between fields — that check belongs in the
+constructor and no token walk can make it.
 
-It needs no zone, unlike the empty-string rule below: two method bodies across
+It needs no zone, unlike the empty-string rule below: eight method bodies across
 every root is a small enough subject that its debt fits one baseline and stays
 readable as a list of owed work.
 

@@ -149,8 +149,14 @@ Checked automatically: `PAYLOAD-SENTINEL`
 (see [automated-checks.md](automated-checks.md)).
 
 The rule above is about a value the code mints anywhere. This one is about the
-one place where minting is most tempting and most expensive: `fromArray()` and
-`fromJson()`, where a frame somebody else sent is turned into an object.
+place where minting is most tempting and most expensive: the reader that turns
+something somebody else sent into an object. There are eight of them, in two
+groups. A whole frame or row is read by `fromArray()`, `fromJson()`, `fromRow()`,
+`hydrateBase()` and `hydrateOwn()`; a partial update is read by `applyDiff()`,
+`applyBaseDiff()` and `applyOwnDiff()`. The runtime-row half of that list is the
+subject of [rt-state.md](../runtime/rt-state.md), which names the three reader
+families a state calls; this section is about what the reader must not do,
+whichever of the two it is.
 
 **A payload field has two roles and no third one.**
 
@@ -192,15 +198,25 @@ branch, and a `match` `default` arm. `?? null` and `?? []` are neither: the firs
 is how a legitimately absent field arrives, and the second is what an omitted
 section of a payload means.
 
+**In a diff, an absent key is not an absent field.** A diff carries the fields
+that changed, so a key it does not carry says that field did not change — and the
+cure is not the one above. The field is read with the `patch*` twin of its reader,
+which hands back the value the object already holds. Reading it with `optional*`
+answers `null` to every diff about some other field and clears a field the sender
+never touched, so the guard reports an `optional*` call inside a diff reader as a
+finding of its own. It has no marker: a field a diff really does empty arrives as
+a key holding `null`, and the `patch*` twin reads that.
+
 What the check does **not** judge is agreement between fields — that one field is
 required only because another one is set, or that two of them cannot both be
 filled. That stays in the constructor, where the whole object is visible;
 `MailSendSignalData` is the sample. `fromArray()` answers presence and type, and
 nothing else.
 
-The `// external-boundary: <reason>` marker legalizes one occurrence here as
+The `// external-boundary: <reason>` marker legalizes one minted stub here as
 well, and means the same thing: the value really did arrive from outside as that
-literal.
+literal. It says nothing about the misread diff key, which has no legitimate case
+to name.
 
 ## Polling APIs
 

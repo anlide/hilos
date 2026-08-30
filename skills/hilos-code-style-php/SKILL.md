@@ -20,7 +20,7 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 | `docs/agents/code-style/qualified-names.md` | writing a class name in code — a `catch`, a `new`, a base class, a static access, or a type in a signature — or removing a leading backslash from one |
 | `docs/agents/code-style/phpdoc.md` | creating a method, changing a signature, visibility, parameters, return type, or thrown exceptions, overriding a method, adding `@see` links, or explaining in a comment why a value can be trusted |
 | `docs/agents/code-style/exceptions.md` | choosing an exception class, documenting `@throws`, handling validation or business errors |
-| `docs/agents/code-style/method-contracts.md` | changing a return type, a success/failure contract, a command method, a predicate, or a result-consumption API — also owns the empty string minted as a "no value" marker, and reading a field inside `fromArray()` / `fromJson()` |
+| `docs/agents/code-style/method-contracts.md` | changing a return type, a success/failure contract, a command method, a predicate, or a result-consumption API — also owns the empty string minted as a "no value" marker, and reading a field inside a payload or runtime-row reader |
 | `docs/agents/code-style/static-factories.md` | adding or changing `fromArray`, `fromRow`, `create`, or another named constructor |
 | `docs/agents/code-style/internal-backend-api.md` | changing backend contracts, DB actions, table actions, DTO/value-object boundaries, or typed collections |
 | `docs/agents/code-style/magic-values.md` | writing a bare number or string into production code |
@@ -58,8 +58,14 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
   `default` arm — in a test suite either (`method-contracts.md`).
 - A payload field has two roles and no third: `BaseDTO::require*` for one the
   signal has no meaning without, `optional*` for one the sender may omit. Falling
-  back to `''`, `0` or `0.0` inside `fromArray()` / `fromJson()` fails the
-  `PAYLOAD-SENTINEL` guard in `test:framework:unit` (`method-contracts.md`).
+  back to `''`, `0` or `0.0` fails the `PAYLOAD-SENTINEL` guard in
+  `test:framework:unit`, and the guard judges the runtime-row readers too —
+  `fromRow()`, `hydrateBase()` and `hydrateOwn()` beside `fromArray()` /
+  `fromJson()` (`method-contracts.md`).
+- Inside `applyDiff()`, `applyBaseDiff()` or `applyOwnDiff()` an absent key means
+  the field did not change, so read it with `RtState::patch*`; the same guard
+  reports an `optional*` call there, which would clear a field the diff never
+  carried (`method-contracts.md`).
 - A factory typed `: static` or `@return static` returns `new static()`, never
   `new self()` (`static-factories.md`).
 - A surviving `@` carries `// warning-suppressed: <what is checked instead>` on

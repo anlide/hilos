@@ -271,6 +271,9 @@ collection keeps what it had, and the collection key, the row id and the reason
 are named in a warning by `RtSyncApplicator::logRefusedRow()`. One broken row of
 one collection therefore costs that row, not the worker.
 
+Checked automatically: `PAYLOAD-SENTINEL`, see
+[automated-checks.md](../code-style/automated-checks.md).
+
 ## Reading from state
 
 Application code normally reads through the view item or collection:
