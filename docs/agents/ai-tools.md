@@ -27,6 +27,33 @@ artifacts are pruned. Re-run it after pulling rule changes.
 `scripts/install-codex-skills.ps1` (global `$CODEX_HOME/skills` copy) is
 superseded by the in-repo `.agents/skills` tree the installer creates.
 
+## When the installer refuses
+
+A `[blocked]` line means the installer could **not** write an artifact and did not
+pretend otherwise. The pass runs to the end, applies everything else, and exits
+non-zero, so one report names every path you have to fix rather than one path per
+run.
+
+```text
+[blocked ] .claude/skills/hilos-cli-commands  (cannot write 4 file(s): permission denied (owner root) — sudo chown -R you:you .claude/skills/hilos-cli-commands)
+```
+
+The usual cause is ownership: `composer` was once run from inside a container, so
+the artifacts it created belong to `root` while you are not `root`. Fix it with
+the chown the report already spells out, then re-run `composer ai:install`.
+
+Two consequences worth knowing:
+
+- **A skill is all-or-nothing.** If any file of a skill tree cannot be written,
+  nothing in that tree is touched — an agent keeps reading the previous version
+  whole, instead of a mixture of old and new files that never existed upstream.
+- **`ai:install:check` stops advising a run that cannot help.** A blocked path is
+  not drift the installer can apply; when everything pending is blocked, the
+  summary says so and names no command to run.
+
+Running the installer as `root` in a checkout somebody else owns prints a warning
+in the header, because that run is what manufactures the problem above.
+
 ## What it materializes
 
 All generated artifacts are **git-ignored and machine-local**. The strategy per

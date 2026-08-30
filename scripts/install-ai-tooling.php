@@ -59,6 +59,38 @@ enum ArtifactStatus: string
     }
 }
 
+/** What a single planned write does to its path once the plan is applied. */
+enum WriteKind
+{
+    /** Create the path as a regular file, or overwrite the one already there. */
+    case File;
+    /** Create the path as a directory, parents included. */
+    case Directory;
+    /** Create a symlink at the path. */
+    case Symlink;
+    /** Delete a file, a link, or a whole tree at the path. */
+    case Removal;
+}
+
+/**
+ * One write an artifact needs, described before anything touches the disk.
+ *
+ * The walk of a source tree builds a plain list of these, the list is judged for
+ * feasibility as a whole, and only then applied — which is what makes a skill
+ * all-or-nothing and lets one report name every path that cannot be written.
+ */
+final class PlannedWrite
+{
+    public function __construct(
+        public readonly WriteKind $kind,
+        public readonly string $path,
+        public readonly ?string $source = null,
+        public readonly ?string $body = null,
+        public readonly ?string $linkTarget = null,
+    ) {
+    }
+}
+
 /**
  * Declarative description of one artifact the installer manages.
  *
@@ -157,7 +189,9 @@ final class AiToolingInstaller
         echo "  repo:     {$this->repoRoot}\n";
         echo '  mode:     ' . ($this->dryRun ? 'check (no changes)' : 'install / repair / update') . "\n";
         echo '  symlinks: ' . ($symlinkCapable ? 'enabled' : 'disabled (copy / generate only)') . "\n";
-        echo '  fs:       ' . ($caseInsensitive ? 'case-insensitive' : 'case-sensitive') . "\n\n";
+        echo '  fs:       ' . ($caseInsensitive ? 'case-insensitive' : 'case-sensitive') . "\n";
+        echo $this->rootWarningLine();
+        echo "\n";
 
         foreach (self::artifacts() as $spec) {
             echo "{$spec->label}  ({$spec->tools})\n";
@@ -190,7 +224,11 @@ final class AiToolingInstaller
         }
 
         $targetRoot = $this->absolute($spec->target);
-        $this->ensureDirectory($targetRoot);
+        $rootBlockers = $this->performPlan(is_dir($targetRoot) ? [] : [new PlannedWrite(WriteKind::Directory, $targetRoot)]);
+        if ($rootBlockers !== []) {
+            $this->report(ArtifactStatus::Blocked, $spec->target, $this->blockDetail($rootBlockers, $spec->target));
+            return;
+        }
 
         $expected = [];
         foreach ($sources as $sourceDir) {
@@ -233,8 +271,10 @@ final class AiToolingInstaller
             $this->report(ArtifactStatus::Ok, $spec->target);
             return;
         }
-        if (!$this->dryRun) {
-            copy($source, $target);
+        $blockers = $this->performPlan([new PlannedWrite(WriteKind::File, $target, source: $source)]);
+        if ($blockers !== []) {
+            $this->report(ArtifactStatus::Blocked, $spec->target, $this->blockDetail($blockers, $spec->target));
+            return;
         }
         $this->report(ArtifactStatus::Created, $spec->target, 'copied (no symlink support)');
     }
@@ -255,11 +295,13 @@ final class AiToolingInstaller
         }
 
         $existed = file_exists($target) || is_link($target);
-        if (!$this->dryRun) {
-            if (is_link($target)) {
-                unlink($target);
-            }
-            file_put_contents($target, $body);
+        $plan = is_link($target) ? [new PlannedWrite(WriteKind::Removal, $target)] : [];
+        $plan[] = new PlannedWrite(WriteKind::File, $target, body: $body);
+
+        $blockers = $this->performPlan($plan);
+        if ($blockers !== []) {
+            $this->report(ArtifactStatus::Blocked, $spec->target, $this->blockDetail($blockers, $spec->target));
+            return;
         }
         $this->report($existed ? ArtifactStatus::Updated : ArtifactStatus::Created, $spec->target);
     }
@@ -272,9 +314,13 @@ final class AiToolingInstaller
                 $this->report(ArtifactStatus::Ok, $displayPath);
                 return;
             }
-            if (!$this->dryRun) {
-                unlink($linkPath);
-                symlink($relativeTarget, $linkPath);
+            $blockers = $this->performPlan([
+                new PlannedWrite(WriteKind::Removal, $linkPath),
+                new PlannedWrite(WriteKind::Symlink, $linkPath, linkTarget: $relativeTarget),
+            ]);
+            if ($blockers !== []) {
+                $this->report(ArtifactStatus::Blocked, $displayPath, $this->blockDetail($blockers, $displayPath));
+                return;
             }
             $this->report(ArtifactStatus::Repaired, $displayPath, "→ {$relativeTarget}");
             return;
@@ -285,8 +331,10 @@ final class AiToolingInstaller
             return;
         }
 
-        if (!$this->dryRun) {
-            symlink($relativeTarget, $linkPath);
+        $blockers = $this->performPlan([new PlannedWrite(WriteKind::Symlink, $linkPath, linkTarget: $relativeTarget)]);
+        if ($blockers !== []) {
+            $this->report(ArtifactStatus::Blocked, $displayPath, $this->blockDetail($blockers, $displayPath));
+            return;
         }
         $this->report(ArtifactStatus::Created, $displayPath, "→ {$relativeTarget}");
     }
@@ -299,76 +347,284 @@ final class AiToolingInstaller
             $this->report(ArtifactStatus::Blocked, $displayPath, 'existing symlink where a copy is required; not replacing');
             return;
         }
-        $this->ensureDirectory($target);
-
-        $changed = false;
-        $keep = [];
-        foreach ($this->directoryEntries($source) as $entry) {
-            $keep[$entry] = true;
-            $sourcePath = $source . '/' . $entry;
-            $targetPath = $target . '/' . $entry;
-            if (is_dir($sourcePath)) {
-                $this->syncDirectorySilently($sourcePath, $targetPath, $changed);
-                continue;
-            }
-            if (!is_file($targetPath) || !$this->fileEquals($targetPath, $sourcePath)) {
-                if (!$this->dryRun) {
-                    copy($sourcePath, $targetPath);
-                }
-                $changed = true;
-            }
+        $plan = $this->planDirectorySync($source, $target);
+        $blockers = $this->performPlan($plan);
+        if ($blockers !== []) {
+            $this->report(ArtifactStatus::Blocked, $displayPath, $this->blockDetail($blockers, $displayPath));
+            return;
         }
-        $changed = $this->removeExtraEntries($target, $keep) || $changed;
 
         if (!$existedAsTree) {
             $this->report(ArtifactStatus::Created, $displayPath);
-        } elseif ($changed) {
+        } elseif ($plan !== []) {
             $this->report(ArtifactStatus::Updated, $displayPath);
         } else {
             $this->report(ArtifactStatus::Ok, $displayPath);
         }
     }
 
-    /** Recursive copy step used inside syncDirectory; aggregates the changed flag by reference. */
-    private function syncDirectorySilently(string $source, string $target, bool &$changed): void
+    /**
+     * Walks $source and $target and writes down what mirroring one into the other
+     * would take, without touching either. Nothing here is a side effect on
+     * purpose: the caller judges the whole list first, so a tree that cannot be
+     * mirrored is left as it was rather than half rewritten.
+     *
+     * @param string $source Absolute path of the source directory
+     * @param string $target Absolute path of the directory it is mirrored into
+     * @return list<PlannedWrite> Directories to create, files to copy, extras to delete
+     */
+    private function planDirectorySync(string $source, string $target): array
     {
-        if (!is_dir($target)) {
-            $this->ensureDirectory($target);
-            $changed = true;
-        }
+        $plan = is_dir($target) ? [] : [new PlannedWrite(WriteKind::Directory, $target)];
+
         $keep = [];
         foreach ($this->directoryEntries($source) as $entry) {
             $keep[$entry] = true;
             $sourcePath = $source . '/' . $entry;
             $targetPath = $target . '/' . $entry;
             if (is_dir($sourcePath)) {
-                $this->syncDirectorySilently($sourcePath, $targetPath, $changed);
+                foreach ($this->planDirectorySync($sourcePath, $targetPath) as $nested) {
+                    $plan[] = $nested;
+                }
                 continue;
             }
             if (!is_file($targetPath) || !$this->fileEquals($targetPath, $sourcePath)) {
-                if (!$this->dryRun) {
-                    copy($sourcePath, $targetPath);
-                }
-                $changed = true;
+                $plan[] = new PlannedWrite(WriteKind::File, $targetPath, source: $sourcePath);
             }
         }
-        $changed = $this->removeExtraEntries($target, $keep) || $changed;
+
+        foreach ($this->directoryEntries($target) as $entry) {
+            if (!isset($keep[$entry])) {
+                $plan[] = new PlannedWrite(WriteKind::Removal, $target . '/' . $entry);
+            }
+        }
+
+        return $plan;
     }
 
-    /** Delete target entries not present in $keep; returns whether anything was removed. */
-    private function removeExtraEntries(string $target, array $keep): bool
+    /**
+     * @param list<PlannedWrite> $plan Writes to judge, and outside check mode to perform
+     * @return array<string, string> Reason keyed by absolute path; empty when the plan went through
+     */
+    private function performPlan(array $plan): array
     {
-        $removed = false;
-        foreach ($this->directoryEntries($target) as $entry) {
-            if (isset($keep[$entry])) {
-                continue;
-            }
-            if (!$this->dryRun) {
-                $this->deleteRecursively($target . '/' . $entry);
-            }
-            $removed = true;
+        $blockers = $this->blockersFor($plan);
+        if ($blockers !== [] || $this->dryRun) {
+            return $blockers;
         }
-        return $removed;
+        return $this->applyPlan($plan);
+    }
+
+    /**
+     * @param list<PlannedWrite> $plan Writes to judge against the filesystem as it is now
+     * @return array<string, string> Reason keyed by absolute path, in plan order
+     */
+    private function blockersFor(array $plan): array
+    {
+        $blockers = [];
+        foreach ($plan as $write) {
+            $blocker = $this->writeBlocker($write);
+            if ($blocker !== null) {
+                $blockers[$write->path] = $blocker;
+            }
+        }
+        return $blockers;
+    }
+
+    /**
+     * Reads feasibility off the filesystem rather than off a PHP warning, so the
+     * common failure — a target somebody else owns — is named before any write is
+     * issued and no warning is emitted for it.
+     *
+     * @param PlannedWrite $write Write whose feasibility is asked
+     * @return string|null Reason the write cannot be made, or null when it can
+     */
+    private function writeBlocker(PlannedWrite $write): ?string
+    {
+        if ($write->kind === WriteKind::Removal) {
+            return $this->removalBlocker($write->path);
+        }
+
+        if ($write->kind === WriteKind::File) {
+            if (is_dir($write->path) && !is_link($write->path)) {
+                return 'target is a directory where a file is required';
+            }
+            if (file_exists($write->path) || is_link($write->path)) {
+                return is_writable($write->path) ? null : $this->permissionReason($write->path);
+            }
+        }
+
+        if ($write->kind === WriteKind::Directory) {
+            if (is_dir($write->path)) {
+                return null;
+            }
+            if (file_exists($write->path) || is_link($write->path)) {
+                return $this->display($write->path) . ' is a file where a directory is required';
+            }
+        }
+
+        // Creating anything, and replacing a link, is granted by the nearest directory that already exists.
+        $ancestor = dirname($write->path);
+        while (!file_exists($ancestor) && !is_link($ancestor) && dirname($ancestor) !== $ancestor) {
+            $ancestor = dirname($ancestor);
+        }
+        if (!is_dir($ancestor)) {
+            return $this->display($ancestor) . ' is a file where a directory is required';
+        }
+        return is_writable($ancestor) ? null : $this->permissionReason($ancestor);
+    }
+
+    /**
+     * POSIX grants removal through the containing directory rather than through the
+     * entry, and a tree comes out one entry at a time — so every directory on the
+     * way has to be writable, not just the top one.
+     *
+     * @param string $path Absolute path about to be deleted
+     * @return string|null Reason the deletion cannot happen, or null when it can
+     */
+    private function removalBlocker(string $path): ?string
+    {
+        if (!is_writable(dirname($path))) {
+            return $this->permissionReason(dirname($path));
+        }
+        if (is_link($path) || !is_dir($path)) {
+            return null;
+        }
+        if (!is_writable($path)) {
+            return $this->permissionReason($path);
+        }
+        foreach ($this->directoryEntries($path) as $entry) {
+            $blocker = $this->removalBlocker($path . '/' . $entry);
+            if ($blocker !== null) {
+                return $blocker;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The second layer over feasibility: a write can still fail on a race, a full
+     * disk or an immutable flag, and such a failure becomes a block rather than a
+     * change, exactly like one the first layer predicted.
+     *
+     * @param list<PlannedWrite> $plan Writes already judged performable
+     * @return array<string, string> Reason keyed by absolute path of every write that failed anyway
+     */
+    private function applyPlan(array $plan): array
+    {
+        $failures = [];
+        foreach ($plan as $write) {
+            error_clear_last();
+            $done = match ($write->kind) {
+                WriteKind::File => $write->body === null
+                    ? copy((string) $write->source, $write->path)
+                    : file_put_contents($write->path, $write->body) !== false,
+                WriteKind::Directory => $this->ensureDirectory($write->path),
+                WriteKind::Symlink => symlink((string) $write->linkTarget, $write->path),
+                WriteKind::Removal => $this->deleteRecursively($write->path),
+            };
+            if (!$done) {
+                $failures[$write->path] = 'write failed: ' . (error_get_last()['message'] ?? 'unknown');
+            }
+        }
+        return $failures;
+    }
+
+    /**
+     * One line per artifact, because the operator repairs ownership by directory:
+     * it names how much is unwritable, why, and the command that fixes it.
+     *
+     * @param array<string, string> $blockers Reason keyed by absolute path, non-empty
+     * @param string $displayPath Artifact path as reported, relative to the repository root
+     * @return string Detail printed in parentheses after the blocked artifact
+     */
+    private function blockDetail(array $blockers, string $displayPath): string
+    {
+        $reason = (string) reset($blockers);
+        $blockedPath = (string) array_key_first($blockers);
+        $single = count($blockers) === 1;
+        $head = $single
+            ? 'cannot overwrite ' . $this->display($blockedPath) . ': ' . $reason
+            : 'cannot write ' . count($blockers) . ' file(s): ' . $reason;
+
+        $command = $this->ownershipCommand($single ? $blockedPath : $this->absolute($displayPath));
+        return $head . ' — ' . ($command === '' ? 'fix ownership or rerun as the owner' : $command);
+    }
+
+    /**
+     * @param string $path Absolute path whose ownership the operator has to take
+     * @return string Ready-to-paste chown, or an empty string where ext-posix cannot name the user
+     */
+    private function ownershipCommand(string $path): string
+    {
+        if (!function_exists('posix_geteuid') || !function_exists('posix_getpwuid') || !function_exists('posix_getgrgid')) {
+            return '';
+        }
+        $user = posix_getpwuid(posix_geteuid());
+        $group = posix_getgrgid(posix_getegid());
+        if ($user === false || $group === false) {
+            return '';
+        }
+        $command = is_dir($path) ? 'sudo chown -R ' : 'sudo chown ';
+        return $command . $user['name'] . ':' . $group['name'] . ' ' . $this->display($path);
+    }
+
+    /**
+     * @param string $path Absolute path that refused the write
+     * @return string Reason naming the owner, or the bare reason where ext-posix cannot name one
+     */
+    private function permissionReason(string $path): string
+    {
+        $owner = $this->ownerName($path);
+        return $owner === null ? 'permission denied' : "permission denied (owner {$owner})";
+    }
+
+    /**
+     * @param string $path Absolute path whose owner is asked
+     * @return string|null Login name of the owner, or null without ext-posix
+     */
+    private function ownerName(string $path): ?string
+    {
+        if (!function_exists('posix_getpwuid')) {
+            return null;
+        }
+        $uid = fileowner($path);
+        if ($uid === false) {
+            return null;
+        }
+        $entry = posix_getpwuid($uid);
+        return $entry === false ? null : (string) $entry['name'];
+    }
+
+    /**
+     * Warns the one run that manufactures the very defect this installer refuses:
+     * root writing into somebody else's checkout. A checkout root owned by root —
+     * CI, a container — is the normal case and says nothing.
+     *
+     * @return string Header line to print, or an empty string when there is nothing to warn about
+     */
+    private function rootWarningLine(): string
+    {
+        if (!function_exists('posix_geteuid') || posix_geteuid() !== 0) {
+            return '';
+        }
+        $uid = fileowner($this->repoRoot);
+        if ($uid === false || $uid === 0) {
+            return '';
+        }
+        $owner = $this->ownerName($this->repoRoot) ?? (string) $uid;
+        return "  warning:  running as root while {$owner} owns this checkout — artifacts created now will be owned"
+            . " by root, and a later run as {$owner} will be refused\n";
+    }
+
+    /**
+     * @param string $absolute Absolute path inside the repository
+     * @return string The same path relative to the repository root, for report text
+     */
+    private function display(string $absolute): string
+    {
+        $prefix = $this->repoRoot . '/';
+        return str_starts_with($absolute, $prefix) ? substr($absolute, strlen($prefix)) : $absolute;
     }
 
     /** Remove managed `hilos-*` children of $targetRoot whose source no longer exists. */
@@ -378,10 +634,13 @@ final class AiToolingInstaller
             if (!str_starts_with($entry, self::MANAGED_CHILD_PREFIX) || isset($expected[$entry])) {
                 continue;
             }
-            if (!$this->dryRun) {
-                $this->deleteRecursively($targetRoot . '/' . $entry);
+            $displayPath = $displayRoot . '/' . $entry;
+            $blockers = $this->performPlan([new PlannedWrite(WriteKind::Removal, $targetRoot . '/' . $entry)]);
+            if ($blockers !== []) {
+                $this->report(ArtifactStatus::Blocked, $displayPath, $this->blockDetail($blockers, $displayPath));
+                continue;
             }
-            $this->report(ArtifactStatus::Pruned, $displayRoot . '/' . $entry, 'source removed');
+            $this->report(ArtifactStatus::Pruned, $displayPath, 'source removed');
         }
     }
 
@@ -410,23 +669,35 @@ final class AiToolingInstaller
         return $entries;
     }
 
-    private function deleteRecursively(string $path): void
+    /**
+     * Apply step of a {@see WriteKind::Removal} entry; stops at the first entry that
+     * survives, so the caller reports a block instead of a removal that never was.
+     *
+     * @param string $path Absolute path to delete
+     * @return bool True when nothing is left at the path
+     */
+    private function deleteRecursively(string $path): bool
     {
         if (is_link($path) || is_file($path)) {
-            unlink($path);
-            return;
+            return unlink($path);
         }
         foreach ($this->directoryEntries($path) as $entry) {
-            $this->deleteRecursively($path . '/' . $entry);
+            if (!$this->deleteRecursively($path . '/' . $entry)) {
+                return false;
+            }
         }
-        rmdir($path);
+        return rmdir($path);
     }
 
-    private function ensureDirectory(string $path): void
+    /**
+     * Apply step of a {@see WriteKind::Directory} entry.
+     *
+     * @param string $path Absolute path of the directory
+     * @return bool True when the directory is there afterwards
+     */
+    private function ensureDirectory(string $path): bool
     {
-        if (!$this->dryRun && !is_dir($path)) {
-            mkdir($path, 0755, true);
-        }
+        return is_dir($path) || mkdir($path, 0755, true);
     }
 
     private function fileEquals(string $a, string $b): bool
@@ -490,7 +761,15 @@ final class AiToolingInstaller
                 echo "Up to date — no changes needed.\n";
                 return 0;
             }
-            echo "Drift detected: {$this->changes} change(s) pending, {$this->blocks} blocked. Run `composer ai:install`.\n";
+            if ($this->blocks === 0) {
+                echo "Drift detected: {$this->changes} change(s) pending. Run `composer ai:install`.\n";
+            } elseif ($this->changes === 0) {
+                echo "Drift detected: {$this->blocks} blocked — `composer ai:install` cannot fix these; resolve them first.\n";
+            } else {
+                echo "Drift detected: {$this->changes} change(s) pending, {$this->blocks} blocked."
+                    . " Run `composer ai:install` for the pending ones;"
+                    . " the blocked ones it cannot fix — resolve them first.\n";
+            }
             return 1;
         }
 
