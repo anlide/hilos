@@ -18,9 +18,12 @@ use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
+use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
 use Hilos\Log\DTO\LogsFollowStopSignalData;
+use Hilos\Log\DTO\LogsIndexWatchSignalData;
 use Hilos\Log\DTO\LogsLinesAppendedSignalData;
 use Hilos\Log\DTO\LogsReadLinesSignalData;
 use Hilos\Log\DTO\NodeLogIndexSignalData;
@@ -952,4 +955,36 @@ final class HilosSignalConstants
      * it files the frame under that node's slot and nothing else.
      */
     public const string LOGS_NODE_INDEX_REPORT = 'logs_node_index_report';
+
+    // ── Hilos logs admin: the logs pages agent → the cluster log aggregator (agent signal) ──
+    /**
+     * {@see AbstractHilosLogsAgent} → the cluster-wide {@see LogAggregatorAgent}: this many people
+     * are watching (HIL-756).
+     *
+     * The whole of the subscription protocol, carried by {@see LogsIndexWatchSignalData}. There is
+     * no pair of subscribe and unsubscribe frames: the number of viewers both renews the lease and
+     * cancels it by being zero, so a subscriber that dies mid-conversation is forgotten by the
+     * lease running out rather than by a farewell nobody was there to send.
+     *
+     * Repeated on the sender's own tick, which is what makes a restarted aggregator and one moved
+     * by the placement policy repair themselves: the new instance starts with an empty register and
+     * the next ordinary claim puts the sender back in it.
+     */
+    public const string LOGS_INDEX_WATCH = 'logs_index_watch';
+
+    // ── Hilos logs admin: the cluster log aggregator → the logs pages agent (agent signal) ──
+    /**
+     * {@see LogAggregatorAgent} → {@see AbstractHilosLogsAgent}: the nodes that changed, whole
+     * (HIL-756).
+     *
+     * The answer to a claim of interest, carried by {@see ClusterLogIndexPortionSignalData}: a full
+     * snapshot of every slot on the first non-zero claim from a subscriber, and afterwards only the
+     * slots that changed since that subscriber was last written to, no more often than the
+     * aggregator's coalescing window. Nothing goes out at all while nobody claims to be watching.
+     *
+     * Each slot travels whole, never as a line-level difference - the same decision the frames
+     * beneath it are built on (HIL-754/755), and what makes a lost frame repair itself with the
+     * next one instead of needing a protocol for asking again.
+     */
+    public const string LOGS_CLUSTER_INDEX_PORTION = 'logs_cluster_index_portion';
 }

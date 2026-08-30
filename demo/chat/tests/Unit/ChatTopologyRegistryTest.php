@@ -66,8 +66,10 @@ use Hilos\Backup\BackupConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
 use Hilos\Log\DTO\LogsFollowStopSignalData;
+use Hilos\Log\DTO\LogsIndexWatchSignalData;
 use Hilos\Log\DTO\LogsReadLinesSignalData;
 use Hilos\Log\DTO\NodeLogIndexSignalData;
 use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
@@ -332,9 +334,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_DELETE => AgentType::HILOS_INDEX,
             HilosSignalConstants::BACKUP_SET_KEEP => AgentType::HILOS_INDEX,
             HilosSignalConstants::BACKUP_RESTORE => AgentType::HILOS_INDEX,
-            HilosSignalConstants::LOGS_READ_LINES => AgentType::HILOS_INDEX,
-            HilosSignalConstants::LOGS_FOLLOW_START => AgentType::HILOS_INDEX,
-            HilosSignalConstants::LOGS_FOLLOW_STOP => AgentType::HILOS_INDEX,
+            HilosSignalConstants::LOGS_READ_LINES => AgentType::HILOS_LOGS,
+            HilosSignalConstants::LOGS_FOLLOW_START => AgentType::HILOS_LOGS,
+            HilosSignalConstants::LOGS_FOLLOW_STOP => AgentType::HILOS_LOGS,
             HilosSignalConstants::HILOS_USER_UPDATE => AgentType::HILOS_INDEX,
             ChatSignalConstants::ACCOUNT_MERGE => AgentType::HILOS_INDEX,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET => AgentType::HILOS_INDEX,
@@ -394,6 +396,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             ChatSignalConstants::BOT_AGENT_START => AgentType::BOT,
+            HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => HilosAgentType::HILOS_LOGS,
             HilosSignalConstants::BACKUP_AGENT_CREATE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_DELETE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP => AgentType::HILOS_BACKUP,
@@ -408,6 +411,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::LOGS_AGENT_FOLLOW_START => HilosAgentType::HILOS_LOG_STORE,
             HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP => HilosAgentType::HILOS_LOG_STORE,
             HilosSignalConstants::LOGS_NODE_INDEX_REPORT => HilosAgentType::HILOS_LOG_AGGREGATOR,
+            HilosSignalConstants::LOGS_INDEX_WATCH => HilosAgentType::HILOS_LOG_AGGREGATOR,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => AgentType::HILOS_AUTH_THROTTLE,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => AgentType::HILOS_AUTH_THROTTLE,
             HilosSignalConstants::HILOS_AUTH_CODE_SEND => AgentType::HILOS_AUTH_CODE,
@@ -546,6 +550,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => NotificationEmitSignalData::class,
             HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
             ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,
+            HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => ClusterLogIndexPortionSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP => BackupSetKeepSignalData::class,
@@ -560,6 +565,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::LOGS_AGENT_FOLLOW_START => LogsFollowStartSignalData::class,
             HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP => LogsFollowStopSignalData::class,
             HilosSignalConstants::LOGS_NODE_INDEX_REPORT => NodeLogIndexSignalData::class,
+            HilosSignalConstants::LOGS_INDEX_WATCH => LogsIndexWatchSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => ThrottleCheckSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => ThrottleSuccessSignalData::class,
             HilosSignalConstants::HILOS_AUTH_CODE_SEND => AuthCodeSendSignalData::class,

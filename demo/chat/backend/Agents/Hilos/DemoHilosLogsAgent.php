@@ -7,9 +7,10 @@ namespace Demo\Chat\Agents\Hilos;
 use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
 
 /**
- * DemoHilosLogsAgent - Concrete Hilos logs overview agent for chat demo.
+ * DemoHilosLogsAgent - Concrete Hilos logs section agent for chat demo.
  *
- * Handles Hilos logs overview page (rotation batch metrics) in the demo project.
+ * Serves every page of the logs section in the demo project - overview, keys, workers, rotations
+ * and the viewer - and holds the cluster log picture they are drawn from.
  */
 final class DemoHilosLogsAgent extends AbstractHilosLogsAgent
 {

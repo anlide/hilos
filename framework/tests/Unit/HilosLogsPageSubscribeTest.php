@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
-use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -19,9 +18,15 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Pages\PageCatalogConstants;
-use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Log\ClusterLogIndexMirror;
+use Hilos\Log\ClusterLogNodeSlot;
+use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
+use Hilos\Log\LogBatchSummary;
+use Hilos\Log\LogKeySummary;
+use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsPage;
+use Hilos\Pages\Logs\DTO\HilosLogsOverviewSignalData;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -33,8 +38,10 @@ use PHPUnit\Framework\TestCase;
  * tests hold down is the order of the two answers, the identity riding the second one, and that
  * a connection joins the tick's push list only once the subscription has actually been answered.
  *
- * Metric values are not judged here: they are whatever the temporary log store beneath the test
- * happens to hold, and the leaf changes neither the overview nor how it is refreshed.
+ * Since HIL-756 the figures come from the CLUSTER picture in {@see ClusterLogIndexMirror} rather
+ * than from a walk of this node's own directory, so the cases move the mirror instead of writing
+ * files - and one of them asks what the page answers when no picture has arrived at all, which is
+ * a third state the payload gained with the same leaf.
  */
 final class HilosLogsPageSubscribeTest extends TestCase
 {
@@ -45,13 +52,11 @@ final class HilosLogsPageSubscribeTest extends TestCase
     /** Comfortably past the ~100ms throttle {@see AbstractHilosLogsPage::onAgentTick()} keeps. */
     private const int PAST_THE_TICK_THROTTLE_MICROSECONDS = 150_000;
 
-    /** Daemon log directory the overview is read from */
-    private string $logDirectory = '';
+    /** Any fixed instant, so a timestamp in a fixture means something to read. */
+    private const int T0 = 1_800_000_000;
 
-    /** How many probe logs the store already holds; each new one moves the fingerprint */
-    private int $logFileCount = 0;
-
-    private ?EnvAccessor $previousEnv = null;
+    /** How many bytes the fixture node's one key holds; each move of it moves the fingerprint */
+    private int $keyBytes = 0;
 
     protected function setUp(): void
     {
@@ -62,33 +67,20 @@ final class HilosLogsPageSubscribeTest extends TestCase
         // base creates no browser context, so this clears the browser in the same call.
         Hilos::initBrowser();
 
-        $this->logDirectory = (string)tempnam(sys_get_temp_dir(), 'hilos-logs-page');
-        unlink($this->logDirectory);
-        mkdir($this->logDirectory);
-
-        $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
-        Hilos::$env = new EnvAccessor();
-        putenv(EnvConstants::DAEMON_LOG_FILE->name . '=' . $this->logDirectory . '/daemon.log');
-        $this->growTheLogStore();
+        $this->emptyTheMirror();
+        $this->growTheClusterPicture();
     }
 
     protected function tearDown(): void
     {
         // The subscriber set is static and outlives the test; a key left in it would push at
-        // nobody for the rest of the suite.
+        // nobody for the rest of the suite. The mirror is static for the same reason.
         AbstractHilosLogsPage::removeSubscriber(self::ACCEPT_KEY);
         AbstractHilosLogsPage::removeSubscriber(self::REFUSED_ACCEPT_KEY);
+        $this->emptyTheMirror();
 
         Hilos::$sr = null;
         Hilos::$browser = null;
-
-        foreach ((array)glob($this->logDirectory . '/*') as $leftover) {
-            unlink((string)$leftover);
-        }
-        rmdir($this->logDirectory);
-
-        putenv(EnvConstants::DAEMON_LOG_FILE->name);
-        Hilos::$env = $this->previousEnv;
 
         parent::tearDown();
     }
@@ -110,6 +102,61 @@ final class HilosLogsPageSubscribeTest extends TestCase
             ],
             $this->queuedSignalNames(),
         );
+    }
+
+    /**
+     * The overview is the CLUSTER's, projected out of the mirror: the page walks no directory, so
+     * these are figures every node reported and not the ones lying on whichever node answered.
+     */
+    public function testTheOverviewIsProjectedFromTheClusterPicture(): void
+    {
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertTrue($overview->available);
+        $this->assertSame(1, $overview->totalRotationsAllTime);
+        $this->assertSame(1, $overview->logKeysPerAgent);
+        $this->assertSame(100, $overview->totalWeightAgentKeysBytes);
+        $this->assertSame(1, $overview->logKeysPerWorker);
+        $this->assertSame(300, $overview->totalWeightWorkerKeysBytes);
+    }
+
+    /**
+     * Opening the page before the aggregator has answered gives the third state and not zeros: the
+     * figures are UNKNOWN, where false would report every log store in the cluster as unreadable
+     * and a zero would claim a measurement nobody took.
+     */
+    public function testAnEmptyMirrorAnswersWithTheThirdState(): void
+    {
+        $this->emptyTheMirror();
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertNull($overview->available);
+        $this->assertNull($overview->totalRotationsAllTime);
+        $this->assertNull($overview->logKeysPerAgent);
+        $this->assertNull($overview->totalWeightWorkerKeysBytes);
+    }
+
+    /**
+     * Subscribing counts the connection as a viewer of the section, which is the only thing that
+     * makes the aggregator send anything: without it the mirror would stay empty for good.
+     */
+    public function testSubscribingCountsTheConnectionAsAViewerOfTheSection(): void
+    {
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $this->assertSame([self::ACCEPT_KEY], ClusterLogIndexMirror::viewerKeys());
+
+        $page->onUnsubscribe(self::ACCEPT_KEY);
+
+        $this->assertSame(0, ClusterLogIndexMirror::viewerCount());
     }
 
     /**
@@ -173,6 +220,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
 
         $this->assertSame([HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS], $this->queuedSignalNames());
         $this->assertSame([], $this->tickRecipients());
+        $this->assertSame(0, ClusterLogIndexMirror::viewerCount(), 'And no viewer either');
     }
 
     /**
@@ -200,7 +248,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
      */
     private function tickRecipients(): array
     {
-        $this->growTheLogStore();
+        $this->growTheClusterPicture();
         usleep(self::PAST_THE_TICK_THROTTLE_MICROSECONDS);
         AbstractHilosLogsPage::onAgentTick(new LogsPageSubscribeTestAgent());
 
@@ -230,16 +278,61 @@ final class HilosLogsPageSubscribeTest extends TestCase
     }
 
     /**
-     * Adds one more agent log to the store, so the overview scalars - and with them the
-     * fingerprint the page compares against - are not what they were a moment ago.
+     * Files one more frame of the cluster picture, heavier than the last, so the overview scalars -
+     * and with them the fingerprint the page compares against - are not what they were a moment ago.
      */
-    private function growTheLogStore(): void
+    private function growTheClusterPicture(): void
     {
-        $this->logFileCount++;
-        file_put_contents(
-            $this->logDirectory . '/agent-probe-' . $this->logFileCount . '.log',
-            "probe\n",
-        );
+        $this->keyBytes += 100;
+        ClusterLogIndexMirror::applyPortion(ClusterLogIndexPortionSignalData::ofSlots(
+            [
+                new ClusterLogNodeSlot(
+                    nodeId: 'node-1',
+                    index: new NodeLogIndex(
+                        nodeId: 'node-1',
+                        available: true,
+                        sampledAt: self::T0,
+                        batches: [new LogBatchSummary(self::T0 - 3600, 1, 10, 0, 0, 0, 0, 0, 0)],
+                        keys: [
+                            new LogKeySummary('agent-a.log', LogKeySummary::CLASS_AGENT, true, [], $this->keyBytes),
+                            new LogKeySummary('worker-0.log', LogKeySummary::CLASS_WORKER, true, [], 300),
+                        ],
+                        workers: [],
+                        growthBytesPerDay: [],
+                    ),
+                    receivedAt: self::T0,
+                ),
+            ],
+            true,
+        ));
+    }
+
+    /**
+     * The mirror belongs to the worker process, so a case leaves it as it found it.
+     */
+    private function emptyTheMirror(): void
+    {
+        ClusterLogIndexMirror::forgetPicture();
+        foreach (ClusterLogIndexMirror::viewerKeys() as $acceptKey) {
+            ClusterLogIndexMirror::removeViewer($acceptKey);
+        }
+    }
+
+    /**
+     * Takes the overview the page answered a subscription with.
+     *
+     * @return HilosLogsOverviewSignalData Payload of the first queued signal
+     */
+    private function overview(): HilosLogsOverviewSignalData
+    {
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+
+        $this->assertNotNull($signal, 'The subscription answers with an overview');
+        $this->assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(HilosLogsOverviewSignalData::class, $signal->data->data);
+
+        return $signal->data->data;
     }
 }
 

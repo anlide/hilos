@@ -163,10 +163,15 @@ final class ClusterLogIndex
     /**
      * The array key one node's slot lives under.
      *
+     * Public because it is the cluster picture's rule and not one map's: {@see LogAggregatorAgent}
+     * keeps a revision per slot and has to name a slot the same way, and two places deciding on
+     * their own what a node with no id is called is exactly how a single-node installation ends up
+     * with a revision nobody can find.
+     *
      * @param ?string $nodeId Node id, or null in a single-node installation
      * @return string Slot key, {@see self::SINGLE_NODE_KEY} when there is no node id
      */
-    private static function slotKey(?string $nodeId): string
+    public static function slotKey(?string $nodeId): string
     {
         return $nodeId ?? self::SINGLE_NODE_KEY;
     }

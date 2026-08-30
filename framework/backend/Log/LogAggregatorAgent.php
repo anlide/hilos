@@ -8,8 +8,12 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Hilos;
+use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
+use Hilos\Log\DTO\LogsIndexWatchSignalData;
 use Hilos\Log\DTO\NodeLogIndexSignalData;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
@@ -38,10 +42,11 @@ use Hilos\Runtime\State\Item\HilosClusterNode;
  * collection is shared, so a picture there would spill a full replica onto every node and
  * duplicate this agent besides.
  *
- * It is filled by one signal and nothing else ({@see HilosSignalConstants::LOGS_NODE_INDEX_REPORT},
- * HIL-755), which every node sends unasked on its own tick; the frames that carry projections to a
- * subscribed page are HIL-756. {@see onTick()} stays the base class's no-op because all the work
- * there is to do happens on a frame.
+ * It is filled by one signal ({@see HilosSignalConstants::LOGS_NODE_INDEX_REPORT}, HIL-755), which
+ * every node sends unasked on its own tick, and it hands the picture up by another
+ * ({@see HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION}, HIL-756) to whoever claims to have
+ * somebody watching. Nothing goes up while nobody does - a cluster with no administrator looking at
+ * it costs one frame per node per interval and not a byte more.
  *
  * Whether a node is still THERE is not something the frames can answer - the last one arrived
  * before the machine fell over - so {@see nodeViews()} reads cluster membership out of
@@ -58,13 +63,14 @@ final class LogAggregatorAgent extends AbstractAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_LOG_AGGREGATOR;
 
     /**
-     * The one frame it takes: a node's whole log index, sent by the owner of that directory.
+     * The two frames it takes: a node's whole log index, and a claim of interest from above.
      *
-     * No index field, because there is nothing to index by - the aggregator is one instance for
-     * the whole cluster, and the placement policy names the node it runs on.
+     * No index field on either, because there is nothing to index by - the aggregator is one
+     * instance for the whole cluster, and the placement policy names the node it runs on.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::LOGS_NODE_INDEX_REPORT => NodeLogIndexSignalData::class,
+        HilosSignalConstants::LOGS_INDEX_WATCH => LogsIndexWatchSignalData::class,
     ];
 
     /**
@@ -78,11 +84,59 @@ final class LogAggregatorAgent extends AbstractAgent
      */
     public const array READS_RT = [HilosClusterNode::RT_COLLECTION];
 
+    /**
+     * @var float Smallest gap between two portions, in seconds
+     *
+     * The coalescing window, and a constant rather than a setting: it protects the wire, which is
+     * not something an administrator has a view about. Half a second is well under the interval a
+     * node reports at (five seconds by default, HIL-754), so it never delays a frame that had
+     * nothing to wait for - it only folds a burst of them into one.
+     */
+    private const float FANOUT_WINDOW_SECONDS = 0.5;
+
+    /**
+     * @var float Seconds of silence after which a subscriber is forgotten
+     *
+     * Three missed claims in a row at the subscriber's keepalive of thirty seconds. Long enough
+     * that a busy tick or a lost frame does not cancel a live subscription, short enough that a
+     * subscriber whose process died stops being sent to within a minute and a half.
+     */
+    private const float WATCH_LEASE_SECONDS = 90.0;
+
+    /** Watcher record field: how many viewers that subscriber last claimed. */
+    private const string WATCH_VIEWERS = 'viewers';
+
+    /** Watcher record field: wall clock of that subscriber's last claim, which is what the lease is measured from. */
+    private const string WATCH_RENEWED_AT = 'renewedAt';
+
+    /** Watcher record field: revision this subscriber has already been written up to. */
+    private const string WATCH_SENT_REVISION = 'sentRevision';
+
     /** @var ClusterLogIndex Slot per node, as each of them last reported */
     private ClusterLogIndex $index;
 
     /** @var LogSettingsResolver Reader of the push interval, kept so an unchanged fault is reported once */
     private LogSettingsResolver $resolver;
+
+    /**
+     * @var array<string, array{viewers: int, renewedAt: float, sentRevision: int}> Signal source → what it claimed and how far it has been written
+     */
+    private array $watchers = [];
+
+    /** @var array<string, int> Slot key → the revision at which that node's slot last changed */
+    private array $slotRevision = [];
+
+    /**
+     * @var int Bumped by every accepted node index, so a slot can be told from the one before it
+     *
+     * A counter and not a clock: {@see ClusterLogNodeSlot::$receivedAt} is whole seconds, and two
+     * frames from one node inside the same second are a normal thing to happen - told apart by
+     * arrival time, the second of them would never reach a screen.
+     */
+    private int $revision = 0;
+
+    /** @var float Wall clock of the last portion sent to anybody, the window is measured from it */
+    private float $lastFanoutAt = 0.0;
 
     /**
      * Opens with an empty picture and touches nothing else.
@@ -109,6 +163,11 @@ final class LogAggregatorAgent extends AbstractAgent
      * the slot is exchanged for it. That also makes a lost frame self-healing, where stitching
      * deltas would leave the screen and the disks quietly disagreeing with no error anywhere.
      *
+     * Nothing is sent from here either, however long a subscriber has been waiting: a node that
+     * reports a hundred times in a second would otherwise be a hundred frames going up. What each
+     * subscriber still owes is written down as a revision, and {@see fanOutIfDue()} pays it at the
+     * pace of the coalescing window.
+     *
      * @param NodeLogIndex $index Index as the node that owns those files measured it
      */
     public function applyNodeIndex(NodeLogIndex $index): void
@@ -127,20 +186,25 @@ final class LogAggregatorAgent extends AbstractAgent
             "Log aggregator: {$subject} index accepted, "
             . count($index->keys) . ' key(s), ' . count($index->batches) . ' batch(es)',
         );
+
+        $this->revision++;
+        $this->slotRevision[ClusterLogIndex::slotKey($index->nodeId)] = $this->revision;
     }
 
     /**
-     * Takes the one frame this agent owns and files it.
+     * Takes the two frames this agent owns and files each of them.
      *
-     * The door is thin on purpose: the payload is already parsed and checked against the class
-     * this agent declared, so all that is left is to unwrap the index and hand it to
-     * {@see applyNodeIndex()}. Nothing is answered back - the report travels one way, and a node
-     * that hears nothing simply sends the next one on its own schedule.
+     * Each door is thin on purpose: the payload is already parsed and checked against the class
+     * this agent declared, so all that is left is to unwrap it. A node's report is answered with
+     * nothing - it travels one way, and a node that hears back simply sends the next one on its own
+     * schedule. A claim of interest is the one thing this agent ever answers, and only the first
+     * non-zero one from a source, which is answered with the whole picture at once.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $source Signal source (unused)
+     * @param string $source Signal source
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the agent is reached by a signal it does not own
+     * @throws InvalidArgumentException When the answering frame cannot be named
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
@@ -152,8 +216,47 @@ final class LogAggregatorAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::LOGS_INDEX_WATCH:
+                if ($data->data instanceof LogsIndexWatchSignalData) {
+                    $this->applyWatch($source, $data->data->viewers, microtime(true));
+                }
+
+                return;
+
             default:
                 throw new AgentUnknownSignalException($name);
+        }
+    }
+
+    /**
+     * Sends every subscriber the slots it has not been sent yet, no more often than the window.
+     *
+     * The clock is a parameter rather than a reading, the way {@see LogStoreAgent::pushIndexIfDue()}
+     * takes its own: the tick is only this method's throttle, and when a portion is due should not
+     * depend on when the loop got round to asking.
+     *
+     * Leases are collected first, so a round never writes to a subscriber that has already gone
+     * quiet for good. The window is measured from the last frame that actually LEFT, not from the
+     * last round: a round with nothing to say must not push the next real change half a second into
+     * the future.
+     *
+     * @param float $now Wall clock of this tick
+     * @throws InvalidArgumentException When a portion cannot be named
+     */
+    public function fanOutIfDue(float $now): void
+    {
+        $this->forgetExpiredWatchers($now);
+        if ($now - $this->lastFanoutAt < self::FANOUT_WINDOW_SECONDS) {
+            return;
+        }
+
+        foreach ($this->watchers as $source => $watcher) {
+            $slots = $this->slotsChangedSince($watcher[self::WATCH_SENT_REVISION]);
+            if ($slots === []) {
+                continue;
+            }
+
+            $this->sendPortion($source, $slots, false, $now);
         }
     }
 
@@ -215,11 +318,134 @@ final class LogAggregatorAgent extends AbstractAgent
     }
 
     /**
+     * Pays the subscribers what the frames since the last round owe them.
+     *
+     * @throws InvalidArgumentException When a portion cannot be named
+     */
+    public function onTick(): void
+    {
+        $this->fanOutIfDue(microtime(true));
+    }
+
+    /**
      * Nothing owned to release: the picture is derived from frames and dies with the worker.
      */
     public function onStop(): void
     {
         // No-op.
+    }
+
+    /**
+     * Opens, renews or cancels one subscriber's claim on the picture.
+     *
+     * There is no subscribe and unsubscribe pair to keep in step: the count does both jobs, and
+     * zero is a cancellation that takes effect at once rather than at the end of a lease - a
+     * subscriber whose last viewer just closed the tab must stop costing frames immediately.
+     *
+     * A claim that OPENS a subscription is answered on the spot with the whole picture, outside the
+     * window. The window exists to fold a burst of changes into one frame, and there is no burst
+     * here: making the first screen of a page wait half a second for something already in memory
+     * would be the window charging for work it did not do.
+     *
+     * @param string $source Signal source of the subscriber
+     * @param int $viewers Viewers it claims, zero to cancel
+     * @param float $now Wall clock of this claim
+     * @throws InvalidArgumentException When the answering frame cannot be named
+     */
+    private function applyWatch(string $source, int $viewers, float $now): void
+    {
+        if ($viewers === 0) {
+            if (isset($this->watchers[$source])) {
+                unset($this->watchers[$source]);
+                $this->logAgentInfo("Log aggregator: {$source} stopped watching");
+            }
+
+            return;
+        }
+
+        if (isset($this->watchers[$source])) {
+            $this->watchers[$source][self::WATCH_VIEWERS] = $viewers;
+            $this->watchers[$source][self::WATCH_RENEWED_AT] = $now;
+
+            return;
+        }
+
+        $this->watchers[$source] = [
+            self::WATCH_VIEWERS => $viewers,
+            self::WATCH_RENEWED_AT => $now,
+            self::WATCH_SENT_REVISION => 0,
+        ];
+        $this->logAgentInfo("Log aggregator: {$source} started watching, {$viewers} viewer(s)");
+        $this->sendPortion($source, $this->index->nodes(), true, $now);
+    }
+
+    /**
+     * Drops every subscriber that has not renewed its claim within the lease.
+     *
+     * Silently, because it is not a fault: a subscriber renews on its own tick, so the only way to
+     * miss three in a row is for the process holding it to be gone - and the frames it would have
+     * received have nowhere to arrive anyway. Saying so at ERROR would fill the journal of every
+     * ordinary restart.
+     *
+     * @param float $now Wall clock of this tick
+     */
+    private function forgetExpiredWatchers(float $now): void
+    {
+        foreach ($this->watchers as $source => $watcher) {
+            if ($now - $watcher[self::WATCH_RENEWED_AT] >= self::WATCH_LEASE_SECONDS) {
+                unset($this->watchers[$source]);
+            }
+        }
+    }
+
+    /**
+     * The slots that have changed since a subscriber was last written to.
+     *
+     * @param int $revision Revision that subscriber has already been sent up to
+     * @return list<ClusterLogNodeSlot> Slots newer than it, in node order
+     */
+    private function slotsChangedSince(int $revision): array
+    {
+        $slots = [];
+        foreach ($this->index->nodes() as $slot) {
+            if (($this->slotRevision[ClusterLogIndex::slotKey($slot->nodeId)] ?? 0) > $revision) {
+                $slots[] = $slot;
+            }
+        }
+
+        return $slots;
+    }
+
+    /**
+     * Sends one subscriber a frame and writes down how far it has now been told.
+     *
+     * The mark is the current revision and not the newest slot in the frame, and the two are the
+     * same number: every accepted index bumps the counter and stamps a slot with it, and this is
+     * only ever called with everything the subscriber was owed. Nothing can arrive between building
+     * the frame and marking it either - a frame is queued, not awaited, and one process handles the
+     * arrival and the send.
+     *
+     * @param string $source Signal source of the subscriber
+     * @param list<ClusterLogNodeSlot> $slots Slots to carry, each one whole
+     * @param bool $snapshot Whether the frame replaces that subscriber's whole picture
+     * @param float $now Wall clock the window is measured from after this
+     * @throws InvalidArgumentException When the frame cannot be named
+     */
+    private function sendPortion(string $source, array $slots, bool $snapshot, float $now): void
+    {
+        $this->sendToAgent(
+            HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION,
+            ClusterLogIndexPortionSignalData::ofSlots($slots, $snapshot),
+        );
+        $this->watchers[$source][self::WATCH_SENT_REVISION] = $this->revision;
+        $this->lastFanoutAt = $now;
+
+        // DEBUG for the same reason the per-frame line below it is: this agent writes into the very
+        // directory it measures, and a line per portion would outgrow what it reports on.
+        $this->logAgentDebug(
+            'Log aggregator: ' . ($snapshot ? 'snapshot' : 'portion') . " sent to {$source}, "
+            . count($slots) . ' node(s)',
+        );
     }
 
     /**

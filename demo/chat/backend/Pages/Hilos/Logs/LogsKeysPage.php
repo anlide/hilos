@@ -12,5 +12,5 @@ use Hilos\Pages\Logs\AbstractHilosLogsKeysPage;
  */
 final class LogsKeysPage extends AbstractHilosLogsKeysPage
 {
-    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_LOGS;
 }
