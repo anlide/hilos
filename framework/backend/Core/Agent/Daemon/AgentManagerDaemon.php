@@ -18,6 +18,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Source\Interest\SourceReaderMap;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Daemon\AgentLossSink;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
 use Hilos\Database\DTO\ReHydrateVerdict;
@@ -132,6 +133,16 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     private ?ProtectedModeAgentStopSink $agentStopSink = null;
 
     /**
+     * @var ?AgentLossSink Who to tell that a worker died hosting agents, or null when nobody asked.
+     *
+     * Registered by {@see DaemonManager} at start, like the stop sink above. Separate from it on
+     * purpose: that one is told about agents this node stopped, one at a time and for a reason,
+     * while this one is told about agents nobody stopped at all. A project reading the first for
+     * the second would count an ordinary idle stop as a lost process.
+     */
+    private ?AgentLossSink $agentLossSink = null;
+
+    /**
      * Create agent daemon instance (factory method)
      *
      * Must be implemented in child classes to create specific agent daemon types.
@@ -169,6 +180,18 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     public function registerAgentStopSink(ProtectedModeAgentStopSink $sink): void
     {
         $this->agentStopSink = $sink;
+    }
+
+    /**
+     * Registers who is told that a worker died hosting agents.
+     *
+     * One sink and not a list, for the same reason as the stop sink above.
+     *
+     * @param AgentLossSink $sink Who to tell when agents go down with their worker
+     */
+    public function registerAgentLossSink(AgentLossSink $sink): void
+    {
+        $this->agentLossSink = $sink;
     }
 
     /**
@@ -923,6 +946,14 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
 
             $stopped = AgentId::fromId($agentId);
             Hilos::$cluster?->placement()?->noteAgentStopped($stopped->type, $stopped->index);
+        }
+
+        // Told once for the worker rather than once per agent: what a reader can act on is that a
+        // host went down with a roster on it, and the agents are that fact's detail. Told after the
+        // roster is empty, so a sink that looks at it finds them already gone - the same order
+        // {@see handleAgentStopped()} keeps for the stop sink.
+        if ($agentIds !== []) {
+            $this->agentLossSink?->reportAgentsLostWithWorker($workerIndex, $isMonopolistic, $agentIds);
         }
 
         return $agentIds;

@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
+use Hilos\Core\Daemon\AgentLossSink;
 use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
@@ -123,6 +124,51 @@ final class WorkerDeathForgetsItsAgentsTest extends TestCase
         $this->assertFalse($manager->hasAgent($this->agentId('1')));
         $this->assertFalse($manager->hasAgent($this->agentId('2')));
         $this->assertTrue($survivor->stopped, 'The agent after the failing hook still has to be stopped.');
+    }
+
+    public function testTheLossSinkIsToldOnceWithEveryAgentTheWorkerHosted(): void
+    {
+        $manager = new WorkerDeathTestAgentManagerDaemon();
+        $sink = new WorkerDeathTestLossSink();
+        $manager->registerAgentLossSink($sink);
+        $manager->addAgent($this->agentId('1'), new WorkerDeathTestAgentDaemon('1'), self::HOST_WORKER, false);
+        $manager->addAgent($this->agentId('2'), new WorkerDeathTestAgentDaemon('2'), self::HOST_WORKER, false);
+
+        $manager->forgetAgentsOfWorker(self::HOST_WORKER, false);
+
+        $this->assertSame(
+            [[self::HOST_WORKER, false, [$this->agentId('1'), $this->agentId('2')]]],
+            $sink->reports,
+            'One report for the worker, naming every agent it hosted - not one report per agent.',
+        );
+    }
+
+    public function testTheLossSinkHearsNothingWhenTheWorkerHostedNoAgents(): void
+    {
+        // Workers come and go without carrying anything, and a project told about each of those
+        // would learn to ignore the report that matters.
+        $manager = new WorkerDeathTestAgentManagerDaemon();
+        $sink = new WorkerDeathTestLossSink();
+        $manager->registerAgentLossSink($sink);
+        $manager->addAgent($this->agentId('1'), new WorkerDeathTestAgentDaemon('1'), self::HOST_WORKER + 1, false);
+
+        $manager->forgetAgentsOfWorker(self::HOST_WORKER, false);
+
+        $this->assertSame([], $sink->reports);
+    }
+
+    public function testTheLossSinkIsToldAfterTheRosterIsAlreadyEmpty(): void
+    {
+        // The order the stop sink keeps too: a reader that looks at the roster has to find the
+        // agents gone, or it would answer about something the master no longer has.
+        $manager = new WorkerDeathTestAgentManagerDaemon();
+        $sink = new WorkerDeathTestLossSink($manager, $this->agentId('1'));
+        $manager->registerAgentLossSink($sink);
+        $manager->addAgent($this->agentId('1'), new WorkerDeathTestAgentDaemon('1'), self::HOST_WORKER, false);
+
+        $manager->forgetAgentsOfWorker(self::HOST_WORKER, false);
+
+        $this->assertFalse($sink->rosterStillNamedIt);
     }
 
     public function testARosterThatStillNamesTheAgentRefusesToStartItAgain(): void
@@ -290,6 +336,42 @@ final class WorkerDeathTestBoundAgentDaemon extends WorkerDeathTestAgentDaemon
     public function hasWorkerClient(): bool
     {
         return true;
+    }
+}
+
+/**
+ * Loss sink that records what it was told, and when.
+ */
+final class WorkerDeathTestLossSink implements AgentLossSink
+{
+    /** @var list<array{0: int, 1: bool, 2: list<string>}> Every report, in order */
+    public array $reports = [];
+
+    /** Whether the roster still named the watched agent at the moment of the report. */
+    public bool $rosterStillNamedIt = false;
+
+    /**
+     * @param ?WorkerDeathTestAgentManagerDaemon $manager Roster to read back, when the test asks
+     * @param ?string $watchedAgentId Agent to look for in it
+     */
+    public function __construct(
+        private readonly ?WorkerDeathTestAgentManagerDaemon $manager = null,
+        private readonly ?string $watchedAgentId = null,
+    ) {
+    }
+
+    /**
+     * @param int $workerIndex Index of the worker that died
+     * @param bool $isMonopolistic True when that worker was monopolistic
+     * @param list<string> $agentIds Ids of the agents it was hosting
+     */
+    public function reportAgentsLostWithWorker(int $workerIndex, bool $isMonopolistic, array $agentIds): void
+    {
+        $this->reports[] = [$workerIndex, $isMonopolistic, $agentIds];
+
+        if ($this->manager !== null && $this->watchedAgentId !== null) {
+            $this->rosterStillNamedIt = $this->manager->hasAgent($this->watchedAgentId);
+        }
     }
 }
 
