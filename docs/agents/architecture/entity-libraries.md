@@ -564,3 +564,7 @@ Answer `SUBSCRIPTION_PAGE_ERROR`. An empty list is a claim about the data.
   happened to host an owner of something else — and of co-ownership by operation: a
   delivery channel agent updates the journal row of the attempt it is running, while
   the library adds and prunes rows.
+- [../antipatterns/action-outside-its-lock.md](../antipatterns/action-outside-its-lock.md) —
+  what it looks like when an action's name follows the write to the owner and
+  leaves its lock behind; the rule is *The Lock Does Not Travel With The Name*
+  above.
