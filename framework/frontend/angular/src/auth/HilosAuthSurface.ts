@@ -52,7 +52,7 @@ import {
   PASSWORD_METHOD_KEY,
   PASSWORD_MIN_LENGTH,
   sessionPendingAck,
-  sessionPendingRegistration,
+  sessionPendingAuthStep,
   SMS_CODE_CHANNEL,
   TELEGRAM_CODE_CHANNEL,
   subscribeSignal,
@@ -782,8 +782,8 @@ export class HilosAuthSurface {
   // The two pending facts the surface resumes from are DERIVED from the session
   // scope by the framework's own factories, never handed in: a project cannot
   // pass a stale copy of state the framework already owns.
-  private readonly pendingRegistration = computed(() =>
-    sessionPendingRegistration(this.context().scopes),
+  private readonly pendingAuthStep = computed(() =>
+    sessionPendingAuthStep(this.context().scopes),
   )
   private readonly pendingAck = computed(() =>
     sessionPendingAck(this.context().scopes),
@@ -1161,7 +1161,7 @@ export class HilosAuthSurface {
       // device all resume the same screen. Both pending facts are read from
       // their signals rather than from the mirrors, which the effect must not
       // depend on: a mirror changing would re-run the whole mount.
-      auth.resume(this.pendingRegistration().get())
+      auth.resume(this.pendingAuthStep().get())
       const patch = authAckToFlowPatch(this.pendingAck().get())
       if (patch !== null) {
         auth.applyExternal(patch)

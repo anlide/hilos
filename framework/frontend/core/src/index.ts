@@ -108,12 +108,12 @@ export {
   sessionImpersonating,
   sessionImpersonatedByName,
   sessionPendingAck,
-  sessionPendingRegistration,
+  sessionPendingAuthStep,
   SESSION_ACK_PASSWORD_CHANGED,
   SESSION_ACK_REGISTERED,
   SESSION_ACK_SIGNED_IN,
   SESSION_SIGNAL_SCHEMAS,
-  type PendingRegistration,
+  type PendingAuthStep,
   type SessionScopeOptions,
 } from './session/sessionScope.js'
 export { applyServerTime, offsetMs, toLocal } from './session/serverClock.js'

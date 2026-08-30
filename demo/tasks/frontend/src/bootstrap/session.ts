@@ -6,7 +6,7 @@
 import {
   ScopeManager,
   sessionPendingAck,
-  sessionPendingRegistration,
+  sessionPendingAuthStep,
   sessionUserId,
   sessionUserIsAdmin,
   sessionUserName,
@@ -25,12 +25,12 @@ export const currentUserId = sessionUserId(scopes)
 export const currentUserIsAdmin = sessionUserIsAdmin(scopes)
 
 /**
- * The registration this session started and has not finished, or null when it
- * has none (HIL-486). Answered by the server on every handshake, so the auth
- * surface comes back to the code screen after a reload, in a second tab, and on
- * another device — and nothing about it is kept in this tab.
+ * The auth step this session stands on and has not finished, or null when it
+ * stands on none (HIL-486, HIL-648). Answered by the server on every handshake,
+ * so the auth surface comes back to that screen after a reload, in a second tab,
+ * and on another device — and nothing about it is kept in this tab.
  */
-export const pendingRegistration = sessionPendingRegistration(scopes)
+export const pendingAuthStep = sessionPendingAuthStep(scopes)
 
 /**
  * The announcement this connection still owes its person, or null when it owes

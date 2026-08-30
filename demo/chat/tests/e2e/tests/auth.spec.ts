@@ -6,6 +6,7 @@ import {
   readMagicLinkCode,
   readMagicLinkUrl,
   readRegisterCode,
+  readResetCode,
 } from '../helpers/mail'
 import {
   clickSubmit,
@@ -54,6 +55,9 @@ import { setTelegramReachable, waitForTelegramCode } from '../helpers/telegram'
 
 /** Seconds in a minute, for reading the `m:ss` countdown as a number. */
 const SECONDS_PER_MINUTE = 60
+
+/** The passphrase a recovery saves, told apart from the one it replaces. */
+const RECOVERED_PASSWORD = 'a whole new passphrase'
 
 test('registers through the gated profile surface, auto-logs-in, and resumes it in place', async ({
   page,
@@ -509,6 +513,51 @@ test('offers the held address its own code back, instead of "Create account"', a
   await continueFromDone(page)
   await expect(page.getByTestId('profile-name')).toHaveText(nameFromEmail(email))
   expect(await mailsTo(email)).toHaveLength(1)
+})
+
+test('opens a fresh tab on the new-password step once the code is accepted', async ({
+  page,
+  context,
+}) => {
+  // HIL-648. The recovery leg's own e2e is HIL-426; this case is here because the
+  // defect is here: a tab opened AFTER the code was accepted was drawing the code
+  // screen again, a step its session had already passed.
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await register(page, email)
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await logout(page)
+
+  // Tab A recovers as far as the accepted code: the key icon beside the password
+  // is what starts it, and the mailed code buys the password screen.
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await typeInto(page.getByTestId('auth-identifier'), email)
+  await expect(page.getByTestId('auth-password')).toBeVisible()
+  await page.getByTestId('auth-recovery').click()
+  await expect(page.getByTestId('auth-code')).toBeVisible()
+  await typeInto(page.getByTestId('auth-code'), await readResetCode(email))
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await expect(page.getByTestId('auth-new-password')).toBeVisible()
+
+  // Tab B opens the same session's surface and lands where the SESSION stands -
+  // on the new password, not back on the code it never typed. The grant belongs
+  // to the session, so the step is answered to every tab of it.
+  const second = await context.newPage()
+  await gotoPage(second, '/')
+  await expect(second.getByTestId('conn-state')).toHaveText('connected')
+  await second.getByTestId('message-signin').click()
+  await expect(second.getByTestId('auth-new-password')).toBeVisible()
+  await expect(second.getByTestId('auth-code')).toHaveCount(0)
+
+  // And it is a real screen rather than a drawing: the password typed in the tab
+  // that proved nothing itself is accepted, on the grant its session holds. A
+  // DIFFERENT passphrase, so a save that silently did nothing could not pass.
+  await typeInto(second.getByTestId('auth-new-password'), RECOVERED_PASSWORD)
+  await clickSubmit(second.getByTestId('auth-submit'))
+  await expect(second.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 })
 
 test('offers a countdown instead of a resend while the cooldown holds', async ({

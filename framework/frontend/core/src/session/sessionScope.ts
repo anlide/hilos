@@ -37,24 +37,30 @@ const DEFAULT_PENDING_ACK_SLOT = 'pendingAck'
 const SERVER_TIME_MS_KEY = 'serverTimeMs'
 
 /**
- * Plain session-scope key carrying the registration this session left
- * unfinished, or null when it has none (HIL-486). Fixed for the same reason as
- * the clock beside it: the backend writes it on every handshake.
+ * Plain session-scope key carrying the authentication step this session stands
+ * on, or null when it stands on none (HIL-486, HIL-648). Fixed for the same
+ * reason as the clock beside it: the backend writes it on every handshake.
  */
-const PENDING_REGISTRATION_KEY = 'pendingRegistration'
+const PENDING_AUTH_STEP_KEY = 'pendingAuthStep'
 
 /**
- * The registration a session started and has not finished, as the handshake
- * reports it (HIL-486). `channel` names the code channel a phone code went over
- * and is null for a mail flow, which has no choice to name; `expiresAt` arrives
- * as a SERVER moment and is handed on in local ms, like every other moment the
- * backend sends.
+ * The authentication step a session stands on and has not finished, as the
+ * handshake reports it (HIL-486, HIL-648). `intent` names which flow it belongs
+ * to and `step` which screen of it, so one node describes a registration and a
+ * password recovery alike — a session cannot stand in both at once. `channel`
+ * names the code channel a phone code went over and is null for a mail flow,
+ * which has no choice to name; `expiresAt` arrives as a SERVER moment and is
+ * handed on in local ms, like every other moment the backend sends.
  */
-export interface PendingRegistration {
+export interface PendingAuthStep {
   /** The identifier the code went to, shown on the screen it is restored to. */
   readonly identifier: string
   /** What that identifier is — the classification the backend made of it. */
   readonly kind: 'email' | 'phone'
+  /** Which flow the session is standing in. */
+  readonly intent: 'register' | 'recovery'
+  /** Which screen of that flow it is standing on. */
+  readonly step: 'code' | 'set_password'
   /** The code channel it went over, or `null` for a mail flow. */
   readonly channel: string | null
   /** The LOCAL epoch-ms moment the code stops being good. */
@@ -292,51 +298,62 @@ export function sessionPendingAck(
 }
 
 /**
- * The registration this session left unfinished, or null when it has none
- * (HIL-486). The step a reloaded tab, a second tab and another device all come
- * back to: it is answered by the server on every handshake, so nothing about it
- * is remembered in the tab.
+ * The authentication step this session stands on, or null when it stands on
+ * none (HIL-486, HIL-648). The step a reloaded tab, a second tab and another
+ * device all come back to: it is answered by the server on every handshake, so
+ * nothing about it is remembered in the tab.
  *
  * The moment is converted to the local scale on the way out, so a view compares
  * it with `Date.now()` and never with the server's clock.
  *
  * @param scopes The application's scope-partitioned stores.
  */
-export function sessionPendingRegistration(
+export function sessionPendingAuthStep(
   scopes: ScopeManager,
-): ReadonlySignal<PendingRegistration | null> {
-  const slot = scopes.session.data.signal(PENDING_REGISTRATION_KEY)
+): ReadonlySignal<PendingAuthStep | null> {
+  const slot = scopes.session.data.signal(PENDING_AUTH_STEP_KEY)
 
-  return computedSignal(() => readPendingRegistration(slot.get()))
+  return computedSignal(() => readPendingAuthStep(slot.get()))
 }
 
 /**
- * Read the unfinished-registration node the handshake delivered, or null when
+ * Read the unfinished auth-step node the handshake delivered, or null when
  * there is none — and equally when what arrived is not one: a half-written node
  * would restore a code screen naming no address or counting down to nothing,
  * which is worse than the identifier field this falls back to.
  *
  * @param value The raw session-scope slot.
  */
-function readPendingRegistration(value: unknown): PendingRegistration | null {
+function readPendingAuthStep(value: unknown): PendingAuthStep | null {
   if (value === null || typeof value !== 'object') {
     return null
   }
   const node = value as Record<string, unknown>
   const identifier = node['identifier']
   const kind = node['kind']
+  const intent = node['intent']
+  const step = node['step']
   const channel = node['channel'] ?? null
   const expiresAt = node['expiresAt']
   if (
     typeof identifier !== 'string' ||
     (kind !== 'email' && kind !== 'phone') ||
+    (intent !== 'register' && intent !== 'recovery') ||
+    (step !== 'code' && step !== 'set_password') ||
     (channel !== null && typeof channel !== 'string') ||
     typeof expiresAt !== 'number'
   ) {
     return null
   }
 
-  return { identifier, kind, channel, expiresAt: toLocal(expiresAt) }
+  return {
+    identifier,
+    kind,
+    intent,
+    step,
+    channel,
+    expiresAt: toLocal(expiresAt),
+  }
 }
 
 /**

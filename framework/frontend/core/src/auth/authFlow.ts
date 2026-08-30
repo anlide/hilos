@@ -34,7 +34,7 @@
 // `Object.is` (signal.ts): replace objects on update, never mutate them.
 
 import { toLocal } from '../session/serverClock.js'
-import { type PendingRegistration } from '../session/sessionScope.js'
+import { type PendingAuthStep } from '../session/sessionScope.js'
 import {
   computedSignal,
   createSignal,
@@ -417,19 +417,20 @@ export interface AuthFlow {
   readonly expiresAt: ReadonlySignal<number | null>
   /**
    * Restore the step a session left unfinished, as the handshake reports it
-   * (HIL-486). Parks the flow on the code screen under the register intent with
-   * the identifier back in the form, so a reload, a second tab and another
-   * device all come back to the screen they left.
+   * (HIL-486, HIL-648). Parks the flow on the screen the node NAMES, with the
+   * identifier back in the form, so a reload, a second tab and another device
+   * all come back to where the session stands - a registration on its code
+   * screen, a recovery on its code or its new-password screen.
    *
-   * A `null` pending registration does NOTHING, deliberately: a reconnect that
-   * lands while somebody is halfway through typing an identifier must not wipe
-   * what they are doing. A step is only ever taken AWAY by the server saying so
+   * A `null` pending step does NOTHING, deliberately: a reconnect that lands
+   * while somebody is halfway through typing an identifier must not wipe what
+   * they are doing. A step is only ever taken AWAY by the server saying so
    * (the converge signal), never by a handshake that had nothing to say.
    *
-   * @param pending The unfinished registration, or `null` when the session has
-   *   none.
+   * @param pending The unfinished auth step, or `null` when the session stands
+   *   on none.
    */
-  resume(pending: PendingRegistration | null): void
+  resume(pending: PendingAuthStep | null): void
   /**
    * Update one form field, typed by the field's name (the boolean flags take a
    * boolean, not a string). Editing `identifier` restarts the flow, clears the
@@ -1348,14 +1349,14 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     screenKey,
     resendAvailableAt,
     expiresAt,
-    resume(pending: PendingRegistration | null): void {
+    resume(pending: PendingAuthStep | null): void {
       if (pending === null) {
         return
       }
       flow.set({
         ...flow.get(),
-        step: 'code',
-        intent: 'register',
+        step: pending.step,
+        intent: pending.intent,
         methodKey: null,
         identifierKind: pending.kind,
         channelKey: pending.channel,

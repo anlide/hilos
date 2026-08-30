@@ -1618,12 +1618,14 @@ describe('reset', () => {
   })
 })
 
-describe('resuming an unfinished registration', () => {
+describe('resuming an unfinished auth step', () => {
   it('parks on the code screen with the identifier and the expiry back', () => {
     const flow = setup()
     flow.resume({
       identifier: 'ada@b.com',
       kind: 'email',
+      intent: 'register',
+      step: 'code',
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
     })
@@ -1643,6 +1645,8 @@ describe('resuming an unfinished registration', () => {
     flow.resume({
       identifier: '+79991234567',
       kind: 'phone',
+      intent: 'register',
+      step: 'code',
       channel: 'telegram',
       expiresAt: Date.now() + 10 * SECOND_MS,
     })
@@ -1652,7 +1656,7 @@ describe('resuming an unfinished registration', () => {
     })
   })
 
-  it('does nothing when the session has no unfinished registration', async () => {
+  it('does nothing when the session stands on no unfinished step', async () => {
     // A reconnect lands while somebody is typing: a handshake with nothing to
     // say must not take away what they are doing.
     const flow = setup()
@@ -1669,6 +1673,8 @@ describe('resuming an unfinished registration', () => {
     flow.resume({
       identifier: 'ada@b.com',
       kind: 'email',
+      intent: 'register',
+      step: 'code',
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
     })
@@ -1701,11 +1707,49 @@ describe('resuming an unfinished registration', () => {
     flow.resume({
       identifier: 'ada@b.com',
       kind: 'email',
+      intent: 'register',
+      step: 'code',
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
     })
     flow.setField('code', '000000')
     await flow.submit()
     expect(flow.expiresAt.get()).toBe(Date.now() + 10 * SECOND_MS)
+  })
+
+  it('parks on the new-password screen when the node names that step', () => {
+    // HIL-648: a tab opened after the code was accepted is told where its SESSION
+    // stands, so it lands on the password screen instead of retyping the code.
+    const flow = setup()
+    flow.resume({
+      identifier: 'ada@b.com',
+      kind: 'email',
+      intent: 'recovery',
+      step: 'set_password',
+      channel: null,
+      expiresAt: Date.now() + 10 * SECOND_MS,
+    })
+    expect(flow.flow.get()).toMatchObject({
+      step: 'set_password',
+      intent: 'recovery',
+      identifierKind: 'email',
+    })
+    expect(flow.form.get().identifier).toBe('ada@b.com')
+  })
+
+  it('parks on the code screen of a recovery that has not been proven yet', () => {
+    const flow = setup()
+    flow.resume({
+      identifier: 'ada@b.com',
+      kind: 'email',
+      intent: 'recovery',
+      step: 'code',
+      channel: null,
+      expiresAt: Date.now() + 10 * SECOND_MS,
+    })
+    expect(flow.flow.get()).toMatchObject({
+      step: 'code',
+      intent: 'recovery',
+    })
   })
 })

@@ -28,6 +28,9 @@ const REGISTER_SUBJECT = 'Confirm your email address'
 /** The subject MagicLinkMailTemplate sends the sign-in letter under. */
 const MAGIC_LINK_SUBJECT = 'Your sign-in link'
 
+/** The subject PasswordResetMailTemplate sends the recovery code under. */
+const RESET_SUBJECT = 'Reset your password'
+
 // The magic-link letter carries TWO secrets (HIL-606), and only one of them is
 // typed: the line that offers the code is what the read anchors on. A bare
 // digit-run match cannot be used here — the URL above it is hex, so any four
@@ -154,6 +157,22 @@ export async function waitForMailCode(
  */
 export async function readRegisterCode(email: string): Promise<string> {
   return waitForMailCode(email, REGISTER_SUBJECT)
+}
+
+/**
+ * Wait for the password-recovery letter and return the code it carries.
+ *
+ * Its own read rather than {@link readRegisterCode} with another argument: the
+ * two letters are told apart by SUBJECT, and one address can be holding both at
+ * once — a spec that asked for "the newest letter" would type a registration
+ * code into a recovery screen on any run where the timing went the other way.
+ *
+ * @param email The address the reset was requested for.
+ * @returns The plaintext reset code.
+ * @throws Error When the delivered letter carries no code.
+ */
+export async function readResetCode(email: string): Promise<string> {
+  return waitForMailCode(email, RESET_SUBJECT)
 }
 
 /**

@@ -1055,7 +1055,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
             $this->openSession($agent, 'reconnect-abandon-new', $token);
 
             $this->assertNull(
-                $this->drainHandshakeResponses()['reconnect-abandon-new']?->pendingRegistration,
+                $this->drainHandshakeResponses()['reconnect-abandon-new']?->pendingAuthStep,
                 'A browser that walked away is not put back on the code screen by its own hold',
             );
         } finally {

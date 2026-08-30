@@ -380,7 +380,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
             $signalName,
             $acceptKey,
             $identity
-                ->withSessionContext(TimeHelper::nowMs(), $state->pendingRegistration)
+                ->withSessionContext(TimeHelper::nowMs(), $state->pendingAuthStep)
                 ->withPendingAck($state->pendingAck),
         );
     }

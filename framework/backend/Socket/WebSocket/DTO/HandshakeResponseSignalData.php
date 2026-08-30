@@ -33,13 +33,19 @@ use Hilos\Core\Router\SignalDataInterface;
  * the same identity carries a different value to each socket of the session.
  *
  * The same section carries the session context every socket is told (HIL-486):
- * `serverTimeMs`, the server's own "now", and `pendingRegistration`, the registration
- * this session started and has not finished. Server time rides the handshake because
- * the browser clock is not evidence — a countdown drawn against it runs out early or
- * never — so the client measures the offset once per handshake and reads every
- * absolute moment the backend sends against that. Both keys are written for an
- * anonymous session too: an anonymous session is exactly the one that may be halfway
- * through a registration, and it needs the clock to draw that step's expiry.
+ * `serverTimeMs`, the server's own "now", and `pendingAuthStep`, the authentication
+ * step this session stands on and has not finished. The step node names its own flow
+ * (HIL-648): `intent` says whether the session is registering or recovering a
+ * password, `step` says which screen of that flow it stands on, and the remaining
+ * members describe the address the flow runs against. One node covers both flows
+ * because a session cannot stand in two of them at once, so a fresh tab reads its
+ * screen from a single key instead of guessing which of several was written.
+ * Server time rides the handshake because the browser clock is not evidence — a
+ * countdown drawn against it runs out early or never — so the client measures the
+ * offset once per handshake and reads every absolute moment the backend sends
+ * against that. Both keys are written for an anonymous session too: an anonymous
+ * session is exactly the one that may be halfway through such a flow, and it needs
+ * the clock to draw that step's expiry.
  */
 final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -52,9 +58,11 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string data = 'data';
     public const string pendingAck = 'pendingAck';
     public const string serverTimeMs = 'serverTimeMs';
-    public const string pendingRegistration = 'pendingRegistration';
+    public const string pendingAuthStep = 'pendingAuthStep';
     public const string identifier = 'identifier';
     public const string kind = 'kind';
+    public const string intent = 'intent';
+    public const string step = 'step';
     public const string channel = 'channel';
     public const string expiresAt = 'expiresAt';
 
@@ -79,8 +87,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param ?string $impersonatorName Impersonating admin's display name, or null when not impersonating
      * @param ?string $pendingAck Ack the receiving connection still owes (a {@see SessionAck} value), or null
      * @param ?int $serverTimeMs Server "now" in epoch milliseconds, or null before the session context is stamped
-     * @param ?array{identifier: string, kind: string, channel: ?string, expiresAt: int} $pendingRegistration
-     *     Registration the session left unfinished, or null when it has none
+     * @param ?array{identifier: string, kind: string, intent: string, step: string, channel: ?string, expiresAt: int} $pendingAuthStep
+     *     Authentication step the session stands on, or null when it stands on none
      */
     public function __construct(
         public readonly ?int $selfId = null,
@@ -90,7 +98,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         public readonly ?string $impersonatorName = null,
         public readonly ?string $pendingAck = null,
         public readonly ?int $serverTimeMs = null,
-        public readonly ?array $pendingRegistration = null,
+        public readonly ?array $pendingAuthStep = null,
     ) {
     }
 
@@ -115,7 +123,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             impersonatorName: $this->impersonatorName,
             pendingAck: $pendingAck,
             serverTimeMs: $this->serverTimeMs,
-            pendingRegistration: $this->pendingRegistration,
+            pendingAuthStep: $this->pendingAuthStep,
         );
     }
 
@@ -124,17 +132,17 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *
      * The twin of {@see withPendingAck()} on the other axis: the identity half is
      * built by the project hook, which knows the user store and nothing about the
-     * clock or the registration table, so the framework stamps those onto whatever
+     * clock or the auth flows, so the framework stamps those onto whatever
      * the project answered. Every send path goes through it — a response that left
      * either key out would silently keep the browser on the offset and the step it
      * happened to hold, which is exactly what a re-handshake exists to refresh.
      *
      * @param int $serverTimeMs Server "now" in epoch milliseconds
-     * @param ?array{identifier: string, kind: string, channel: ?string, expiresAt: int} $pendingRegistration
-     *     Registration the session left unfinished, or null when it has none
+     * @param ?array{identifier: string, kind: string, intent: string, step: string, channel: ?string, expiresAt: int} $pendingAuthStep
+     *     Authentication step the session stands on, or null when it stands on none
      * @return self The same response carrying that session context
      */
-    public function withSessionContext(int $serverTimeMs, ?array $pendingRegistration): self
+    public function withSessionContext(int $serverTimeMs, ?array $pendingAuthStep): self
     {
         return new self(
             selfId: $this->selfId,
@@ -144,7 +152,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             impersonatorName: $this->impersonatorName,
             pendingAck: $this->pendingAck,
             serverTimeMs: $serverTimeMs,
-            pendingRegistration: $pendingRegistration,
+            pendingAuthStep: $pendingAuthStep,
         );
     }
 
@@ -174,7 +182,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             self::data => [
                 self::pendingAck => $this->pendingAck,
                 self::serverTimeMs => $this->serverTimeMs,
-                self::pendingRegistration => $this->pendingRegistration,
+                self::pendingAuthStep => $this->pendingAuthStep,
             ],
         ];
     }
@@ -193,12 +201,12 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * still owe the socket a sentence, and dropping it on the anonymous branch would
      * make the round trip lossy for exactly the payload the logout path sends. The
      * session context is read on both for the stronger reason: the session halfway
-     * through a registration is anonymous by definition, so the anonymous branch is
-     * the one that carries it.
+     * through registration or password recovery is anonymous by definition, so the
+     * anonymous branch is the one that carries it.
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When a present identity or registration node lacks a required field
+     * @throws InvalidFormatException When a present identity or auth-step node lacks a required field
      */
     public static function fromArray(array $data): static
     {
@@ -208,12 +216,12 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         $section = self::optionalArray($data, self::data) ?? [];
         $pendingAck = self::optionalString($section, self::pendingAck);
         $serverTimeMs = self::optionalInt($section, self::serverTimeMs);
-        $pendingRegistration = self::readPendingRegistration($section);
+        $pendingAuthStep = self::readPendingAuthStep($section);
         if ($currentUser === null) {
             return new static(
                 pendingAck: $pendingAck,
                 serverTimeMs: $serverTimeMs,
-                pendingRegistration: $pendingRegistration,
+                pendingAuthStep: $pendingAuthStep,
             );
         }
 
@@ -225,12 +233,12 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             impersonatorName: $impersonatedBy === null ? null : self::optionalString($impersonatedBy, self::name),
             pendingAck: $pendingAck,
             serverTimeMs: $serverTimeMs,
-            pendingRegistration: $pendingRegistration,
+            pendingAuthStep: $pendingAuthStep,
         );
     }
 
     /**
-     * Reads the unfinished-registration node back into its declared shape.
+     * Reads the unfinished authentication step back into its declared shape.
      *
      * Rebuilt field by field rather than handed through as the map that arrived:
      * this is the parse boundary, and the node is the one part of the response the
@@ -238,12 +246,12 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * with no identifier to name and no moment to count down to.
      *
      * @param array<string, mixed> $section Plain data section of the response
-     * @return ?array{identifier: string, kind: string, channel: ?string, expiresAt: int} Node, or null when absent
-     * @throws InvalidFormatException When a present node lacks its identifier, kind, or expiry
+     * @return ?array{identifier: string, kind: string, intent: string, step: string, channel: ?string, expiresAt: int} Node, or null when absent
+     * @throws InvalidFormatException When a present node lacks a required member
      */
-    private static function readPendingRegistration(array $section): ?array
+    private static function readPendingAuthStep(array $section): ?array
     {
-        $node = self::optionalArray($section, self::pendingRegistration);
+        $node = self::optionalArray($section, self::pendingAuthStep);
         if ($node === null) {
             return null;
         }
@@ -251,6 +259,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         return [
             self::identifier => self::requireString($node, self::identifier),
             self::kind => self::requireString($node, self::kind),
+            self::intent => self::requireString($node, self::intent),
+            self::step => self::requireString($node, self::step),
             self::channel => self::optionalString($node, self::channel),
             self::expiresAt => self::requireInt($node, self::expiresAt),
         ];

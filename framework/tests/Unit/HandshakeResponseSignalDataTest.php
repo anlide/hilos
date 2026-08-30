@@ -19,9 +19,11 @@ final class HandshakeResponseSignalDataTest extends TestCase
     private const int SERVER_TIME_MS = 1_700_000_000_000;
 
     /** The unfinished registration a session carries while it waits for its code. */
-    private const array PENDING_REGISTRATION = [
+    private const array PENDING_AUTH_STEP = [
         'identifier' => 'ada@example.com',
         'kind' => 'email',
+        'intent' => 'register',
+        'step' => 'code',
         'channel' => null,
         'expiresAt' => 1_700_000_600_000,
     ];
@@ -50,7 +52,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'data' => [
                     'pendingAck' => null,
                     'serverTimeMs' => null,
-                    'pendingRegistration' => null,
+                    'pendingAuthStep' => null,
                 ],
             ],
             $data->toArray(),
@@ -81,7 +83,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'data' => [
                     'pendingAck' => null,
                     'serverTimeMs' => null,
-                    'pendingRegistration' => null,
+                    'pendingAuthStep' => null,
                 ],
             ],
             $data->toArray(),
@@ -123,7 +125,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'data' => [
                     'pendingAck' => null,
                     'serverTimeMs' => null,
-                    'pendingRegistration' => null,
+                    'pendingAuthStep' => null,
                 ],
             ],
             $data->toArray(),
@@ -157,7 +159,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
             [
                 'pendingAck' => SessionAck::REGISTERED,
                 'serverTimeMs' => null,
-                'pendingRegistration' => null,
+                'pendingAuthStep' => null,
             ],
             $data->toArray()['data'],
         );
@@ -210,13 +212,13 @@ final class HandshakeResponseSignalDataTest extends TestCase
     public function testSessionContextTravelsInTheDataSection(): void
     {
         $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7')
-            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_REGISTRATION);
+            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP);
 
         $this->assertSame(
             [
                 'pendingAck' => null,
                 'serverTimeMs' => self::SERVER_TIME_MS,
-                'pendingRegistration' => self::PENDING_REGISTRATION,
+                'pendingAuthStep' => self::PENDING_AUTH_STEP,
             ],
             $data->toArray()['data'],
         );
@@ -227,35 +229,50 @@ final class HandshakeResponseSignalDataTest extends TestCase
         // The two re-address different halves of the same response and are applied
         // in this order on every send path, so the clock has to outlive the ack.
         $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7')
-            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_REGISTRATION)
+            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP)
             ->withPendingAck(SessionAck::SIGNED_IN);
 
         $this->assertSame(self::SERVER_TIME_MS, $data->serverTimeMs);
-        $this->assertSame(self::PENDING_REGISTRATION, $data->pendingRegistration);
+        $this->assertSame(self::PENDING_AUTH_STEP, $data->pendingAuthStep);
         $this->assertSame(SessionAck::SIGNED_IN, $data->pendingAck);
     }
 
     public function testAnonymousRoundtripKeepsTheSessionContext(): void
     {
         // The anonymous branch is the one that matters here: a session halfway
-        // through a registration has no user yet.
+        // through registration or recovery has no user yet.
         $data = new HandshakeResponseSignalData()
-            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_REGISTRATION);
+            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP);
 
         $restored = HandshakeResponseSignalData::fromArray($data->toArray());
 
         $this->assertNull($restored->selfId);
         $this->assertSame(self::SERVER_TIME_MS, $restored->serverTimeMs);
-        $this->assertSame(self::PENDING_REGISTRATION, $restored->pendingRegistration);
+        $this->assertSame(self::PENDING_AUTH_STEP, $restored->pendingAuthStep);
         $this->assertSame($data->toArray(), $restored->toArray());
     }
 
-    public function testRoundtripRejectsARegistrationNodeWithoutItsIdentifier(): void
+    public function testRoundtripRejectsAnAuthStepNodeWithoutItsIdentifier(): void
     {
         $payload = new HandshakeResponseSignalData()
-            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_REGISTRATION)
+            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP)
             ->toArray();
-        unset($payload['data']['pendingRegistration']['identifier']);
+        unset($payload['data']['pendingAuthStep']['identifier']);
+
+        $this->expectException(InvalidFormatException::class);
+
+        HandshakeResponseSignalData::fromArray($payload);
+    }
+
+    public function testRoundtripRejectsAnAuthStepNodeWithoutItsStep(): void
+    {
+        // The member the node was widened to carry (HIL-648): without it the surface
+        // cannot tell a code screen from a new-password one, which is the whole point
+        // of the node reaching a tab that submitted nothing.
+        $payload = new HandshakeResponseSignalData()
+            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP)
+            ->toArray();
+        unset($payload['data']['pendingAuthStep']['step']);
 
         $this->expectException(InvalidFormatException::class);
 

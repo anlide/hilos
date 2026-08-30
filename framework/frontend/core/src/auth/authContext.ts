@@ -8,7 +8,7 @@
 // what it declares here, never by a switch on the surface (HIL-423 made the surface
 // method-agnostic, and this is the other half of that).
 //
-// `pendingAck` and `pendingRegistration` are deliberately NOT here: the surface
+// `pendingAck` and `pendingAuthStep` are deliberately NOT here: the surface
 // derives both from `scopes` through the framework's own session factories, so a
 // project cannot hand in a stale copy of state the framework already owns.
 import { ActionLifecycle } from '../connection/actionLifecycle.js'

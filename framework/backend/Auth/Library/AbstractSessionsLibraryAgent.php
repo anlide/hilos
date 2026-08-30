@@ -10,6 +10,7 @@ use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
+use Hilos\Auth\Library\Command\RecoveryCommands;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
@@ -17,6 +18,7 @@ use Hilos\Auth\Library\DTO\AuthRegistrationAbandonedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
+use Hilos\Auth\Recovery\PasswordRecoveryService;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Registration\RegistrationReservationSweeper;
 use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
@@ -73,6 +75,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
+use Hilos\Runtime\View\Actions\Collection\RecoveryWaitersActions;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
@@ -581,14 +584,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         SessionToken::ensureValid($sessionToken);
 
         $session = $this->resolveHandshakeSession($sessionToken);
-        $this->parkPendingRegistration($data->acceptKey, $session);
+        $this->parkPendingAuthStep($data->acceptKey, $session);
 
         $this->publishSessionState(new SessionStateSignalData(
             sessionToken: $session->token,
             userId: $session->userId,
             acceptKeys: [$data->acceptKey],
             pendingAck: $data->inheritedAck,
-            pendingRegistration: $this->pendingRegistrationFor($session),
+            pendingAuthStep: $this->pendingAuthStepFor($session),
         ));
     }
 
@@ -638,14 +641,20 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Describes the registration a session started and has not finished (HIL-486).
+     * Describes the auth step a session stands on and has not finished (HIL-486, HIL-648).
      *
      * The step the surface comes back to, served from the server rather than kept in
      * the tab: a reload, a second tab and another device all ask the same question at
-     * their handshake and get the same answer. A session holding no live reservation
-     * answers null - its registration completed or ran out, and the person belongs on
-     * the identifier field, not on a code screen for a code that can no longer be
+     * their handshake and get the same answer. A session standing on neither flow
+     * answers null - the flow completed or ran out, and the person belongs on the
+     * identifier field, not on a code screen for a code that can no longer be
      * confirmed.
+     *
+     * RECOVERY IS ASKED FIRST, and the reason is what each record survives (HIL-648).
+     * A recovery row exists only while the flow is open in a live tab, so its presence
+     * is evidence the person is on it now; a registration wait is durable and may have
+     * been abandoned a week ago. A session cannot honestly stand on both, and when the
+     * two records disagree the fresher one is the truthful answer.
      *
      * TWO records have to agree, and they answer different questions (HIL-608). The WAIT
      * on the session row says this browser is sitting on a code screen: it is written by
@@ -662,13 +671,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * choice nobody made.
      *
      * @param ?Session $session Session to describe, or null for an anonymous response
-     * @return ?array{identifier: string, kind: string, channel: ?string, expiresAt: int} Step, or null when there is none
-     * @throws HilosException When the reservation or verification query fails
+     * @return ?array{identifier: string, kind: string, intent: string, step: string, channel: ?string, expiresAt: int}
+     *     Step, or null when there is none
+     * @throws HilosException When the reservation, runtime or verification query fails
      */
-    private function pendingRegistrationFor(?Session $session): ?array
+    private function pendingAuthStepFor(?Session $session): ?array
     {
         if ($session === null) {
             return null;
+        }
+
+        $recovery = $this->recoveryStepFor($session);
+        if ($recovery !== null) {
+            return $recovery;
         }
 
         if ($session->pendingRegistrationIdentifier === null) {
@@ -698,6 +713,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         return [
             HandshakeResponseSignalData::identifier => $identifier,
             HandshakeResponseSignalData::kind => $kind,
+            HandshakeResponseSignalData::intent => AuthFlowIntent::REGISTER,
+            HandshakeResponseSignalData::step => AuthFlowStep::CODE,
             HandshakeResponseSignalData::channel => $kind === IdentifierDetection::KIND_PHONE
                 ? new VerificationService()->activeChannel(VerificationType::SMS_LOGIN, $identifier)
                 : null,
@@ -706,7 +723,85 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Parks a connection on the registration its session left unfinished (HIL-486).
+     * Describes the password recovery a session stands on, or null when it stands on none (HIL-648).
+     *
+     * The recovery half of {@see pendingAuthStepFor()}, and the reason a tab opened after
+     * the code was accepted lands on the password screen instead of typing the code again:
+     * the grant belongs to the SESSION, so a connection that never submitted anything still
+     * inherits the step its siblings reached.
+     *
+     * The row is chosen by the SAME rule the saving step finds its address with
+     * ({@see RecoveryCommands::grantedRecoveryIdentifier()}): the first row of the session
+     * carrying a grant names the password step, and with no granted row the first parked
+     * row names the code step. One rule and not two - a screen and a submit that picked
+     * different rows would offer "choose a new password" and then refuse the save for an
+     * address the person never saw.
+     *
+     * Answered only while the code behind it is still alive, because the grant is worth
+     * exactly what the code is: a dead code makes the password step a screen that refuses
+     * on submit, and the honest place for that person is the identifier field. The kind is
+     * email and the channel is null without asking, since recovery accepts nothing else.
+     *
+     * The sign-in surface is asked about FIRST, and this is the one gate that has to be
+     * here: the waiter collection is mounted by {@see AuthFeature::mount()}, so a project
+     * that carries sessions without a login (tasks, simple-poll) holds no such collection,
+     * and reading it would fail every handshake of a project that has no recovery to
+     * describe. Registration's half needs no such gate - it asks the session row, which
+     * every project has.
+     *
+     * @param Session $session Session to describe
+     * @return ?array{identifier: string, kind: string, intent: string, step: string, channel: ?string, expiresAt: int}
+     *     Step, or null when the session stands on no live recovery
+     * @throws HilosException When the runtime read or a verification query fails
+     */
+    private function recoveryStepFor(Session $session): ?array
+    {
+        if (!$this->hasSignInSurface()) {
+            return null;
+        }
+
+        $granted = null;
+        $firstParked = null;
+        foreach (Hilos::$rt?->hilosRecoveryWaiters->forSessionToken($session->token) ?? [] as $parked) {
+            $firstParked ??= $parked;
+            if ($parked->codeAccepted) {
+                $granted = $parked;
+                break;
+            }
+        }
+
+        $waiter = $granted ?? $firstParked;
+        if ($waiter === null) {
+            return null;
+        }
+
+        $identifier = $waiter->identifier;
+        if (!new PasswordRecoveryService()->hasLiveCode($identifier)) {
+            return null;
+        }
+
+        $expiresAt = new VerificationService()->activeExpiresAt(VerificationType::PASSWORD_RESET, $identifier);
+        if ($expiresAt === null) {
+            // The live-code check and this read are two queries, and a challenge that
+            // died between them leaves nothing to count down to. Telling the session it
+            // stands on no step is the same answer a dead code gets one line above.
+            return null;
+        }
+
+        return [
+            HandshakeResponseSignalData::identifier => $identifier,
+            HandshakeResponseSignalData::kind => IdentifierDetection::KIND_EMAIL,
+            HandshakeResponseSignalData::intent => AuthFlowIntent::RECOVERY,
+            HandshakeResponseSignalData::step => $granted === null
+                ? AuthFlowStep::CODE
+                : AuthFlowStep::SET_PASSWORD,
+            HandshakeResponseSignalData::channel => null,
+            HandshakeResponseSignalData::expiresAt => $expiresAt,
+        ];
+    }
+
+    /**
+     * Parks a connection on the auth step its session left unfinished (HIL-486, HIL-648).
      *
      * The runtime waiter list stops being state of its own and becomes a projection
      * of the durable wait: a socket that opens into a session with a wait joins the
@@ -715,18 +810,38 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * requires, and which no amount of per-connection memory could give it, because
      * the connection asking is new.
      *
+     * Recovery is parked for the same reason and by the same existing actions: a fresh
+     * tab told which step it stands on would otherwise stand there deaf, and never hear
+     * that the password was already changed from another device - converge travels the
+     * parked rows. Its grant is copied along with it, because the step the tab was just
+     * told is exactly the step its row has to buy; {@see RecoveryWaitersActions::acceptCodeForSession()}
+     * is idempotent and grants the address the session already proved.
+     *
+     * Both flows are parked rather than the one that won the response: which step is
+     * SHOWN is a question about now, and which broadcasts a connection belongs to is a
+     * question about what it must not miss. Registration's park is unchanged.
+     *
      * Called by the project's handshake handler, which is the only place holding both
      * the accept key and the moment: the response builder above is also used for
      * broadcasts to sockets that are already parked or deliberately are not.
      *
      * @param string $acceptKey Accept key of the connection that just handshook
      * @param ?Session $session Session the connection resolved to, or null when it has none
-     * @throws HilosException When the runtime write fails
+     * @throws HilosException When the runtime read, a verification query, or the runtime write fails
      */
-    private function parkPendingRegistration(string $acceptKey, ?Session $session): void
+    private function parkPendingAuthStep(string $acceptKey, ?Session $session): void
     {
         if ($session === null) {
             return;
+        }
+
+        $recovery = $this->recoveryStepFor($session);
+        if ($recovery !== null) {
+            $recovered = $recovery[HandshakeResponseSignalData::identifier];
+            Hilos::$rt?->hilosRecoveryWaiters->actions->park($acceptKey, $recovered, $session->token);
+            if ($recovery[HandshakeResponseSignalData::step] === AuthFlowStep::SET_PASSWORD) {
+                Hilos::$rt?->hilosRecoveryWaiters->actions->acceptCodeForSession($session->token, $recovered);
+            }
         }
 
         $identifier = $session->pendingRegistrationIdentifier;
@@ -1184,7 +1299,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 userId: $userId,
                 acceptKeys: $this->sessionConnectionKeys($sessionToken),
                 pendingAck: $ack ?? $this->sessionPendingAck($sessionToken),
-                pendingRegistration: $this->pendingRegistrationFor($session),
+                pendingAuthStep: $this->pendingAuthStepFor($session),
                 requestId: $requestId,
                 action: $action,
                 outcome: $outcome,
@@ -1210,7 +1325,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             userId: $userId,
             acceptKeys: [$initiatorAcceptKey],
             pendingAck: $pendingAck,
-            pendingRegistration: $this->pendingRegistrationFor($session),
+            pendingAuthStep: $this->pendingAuthStepFor($session),
             rotationTicket: $this->announceRotation($rotated, $keysToDrop, $pendingAck),
             requestId: $requestId,
             action: $action,
@@ -1433,7 +1548,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             userId: $session->userId,
             acceptKeys: $this->sessionConnectionKeys($sessionToken),
             pendingAck: $ack,
-            pendingRegistration: $this->pendingRegistrationFor($session),
+            pendingAuthStep: $this->pendingAuthStepFor($session),
             requestId: $requestId,
             action: $action,
         ));
@@ -2834,7 +2949,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             userId: $session?->userId,
             acceptKeys: [$acceptKey],
             pendingAck: $this->connectionPendingAck($acceptKey),
-            pendingRegistration: $this->pendingRegistrationFor($session),
+            pendingAuthStep: $this->pendingAuthStepFor($session),
             requestId: $requestId,
             action: $action,
             outcome: $outcome,

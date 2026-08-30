@@ -1267,7 +1267,7 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
             $this->openSession($agent, 'link-wait-new', $token);
 
             $this->assertNull(
-                $this->drainHandshakeResponses()['link-wait-new']?->pendingRegistration,
+                $this->drainHandshakeResponses()['link-wait-new']?->pendingAuthStep,
                 'A hold with no code screen behind it resumes nothing',
             );
         } finally {

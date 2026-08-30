@@ -42,7 +42,7 @@ import {
   PASSWORD_METHOD_KEY,
   PASSWORD_MIN_LENGTH,
   sessionPendingAck,
-  sessionPendingRegistration,
+  sessionPendingAuthStep,
   SMS_CODE_CHANNEL,
   TELEGRAM_CODE_CHANNEL,
   toFlowPatch,
@@ -252,8 +252,8 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   // The two pending facts the surface resumes from are DERIVED from the session
   // scope by the framework's own factories, never handed in: a project cannot
   // pass a stale copy of state the framework already owns.
-  const pendingRegistration = useMemo(
-    () => sessionPendingRegistration(context.scopes),
+  const pendingAuthStep = useMemo(
+    () => sessionPendingAuthStep(context.scopes),
     [context],
   )
   const pendingAck = useMemo(() => sessionPendingAck(context.scopes), [context])
@@ -680,7 +680,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     // resume the same screen. Both pending facts are read from their signals
     // rather than from this render, so neither becomes a dependency that would
     // re-run the whole mount.
-    auth.resume(pendingRegistration.get())
+    auth.resume(pendingAuthStep.get())
     const patch = authAckToFlowPatch(pendingAck.get())
     if (patch !== null) {
       auth.applyExternal(patch)
@@ -692,7 +692,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
       stopWatchingTrip()
       clearInterval(clock)
     }
-  }, [auth, authActions, oauth, context, pendingRegistration, pendingAck])
+  }, [auth, authActions, oauth, context, pendingAuthStep, pendingAck])
 
   return (
     <section data-id="auth-surface" className="mx-auto" style={MAX_WIDTH}>

@@ -31,8 +31,8 @@ use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
  * ticket has a single rightful holder, and an action is answered to the connection that
  * submitted it.
  *
- * {@see self::$pendingRegistration} travels here rather than being read again by the
- * project: the unfinished registration step is the library's knowledge, and a project
+ * {@see self::$pendingAuthStep} travels here rather than being read again by the
+ * project: the unfinished authentication step is the library's knowledge, and a project
  * asking for it would be a second reader of a table it does not own.
  */
 final class SessionStateSignalData extends BaseDTO implements SignalDataInterface
@@ -42,8 +42,8 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param ?int $userId User the session is bound to, or null when it is anonymous
      * @param list<string> $acceptKeys Accept keys of the live connections this state applies to
      * @param ?string $pendingAck Ack the sockets owe (a {@see SessionAck} value), or null for none
-     * @param ?array{identifier: string, kind: string, channel: ?string, expiresAt: int} $pendingRegistration
-     *     Registration step the session has not finished ({@see HandshakeResponseSignalData}), or null
+     * @param ?array{identifier: string, kind: string, intent: string, step: string, channel: ?string, expiresAt: int} $pendingAuthStep
+     *     Authentication step the session has not finished ({@see HandshakeResponseSignalData}), or null
      * @param ?string $rotationTicket Ticket the named socket trades for the rotated cookie, or null when nothing rotated
      * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
      * @param ?string $action Action name to answer, or null when this ending finished none
@@ -54,7 +54,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
         public readonly ?int $userId,
         public readonly array $acceptKeys,
         public readonly ?string $pendingAck = null,
-        public readonly ?array $pendingRegistration = null,
+        public readonly ?array $pendingAuthStep = null,
         public readonly ?string $rotationTicket = null,
         public readonly ?string $requestId = null,
         public readonly ?string $action = null,
@@ -74,7 +74,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             'userId' => $this->userId,
             'acceptKeys' => $this->acceptKeys,
             'pendingAck' => $this->pendingAck,
-            'pendingRegistration' => $this->pendingRegistration,
+            'pendingAuthStep' => $this->pendingAuthStep,
             'rotationTicket' => $this->rotationTicket,
             'requestId' => $this->requestId,
             'action' => $this->action,
@@ -103,7 +103,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
                 self::optionalArray($data, 'acceptKeys') ?? [],
             )),
             pendingAck: self::optionalString($data, 'pendingAck'),
-            pendingRegistration: self::optionalArray($data, 'pendingRegistration'),
+            pendingAuthStep: self::optionalArray($data, 'pendingAuthStep'),
             rotationTicket: self::optionalString($data, 'rotationTicket'),
             requestId: self::optionalString($data, 'requestId'),
             action: self::optionalString($data, 'action'),

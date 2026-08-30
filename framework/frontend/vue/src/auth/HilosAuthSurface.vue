@@ -43,7 +43,7 @@ import {
   PASSWORD_METHOD_KEY,
   PASSWORD_MIN_LENGTH,
   sessionPendingAck,
-  sessionPendingRegistration,
+  sessionPendingAuthStep,
   SMS_CODE_CHANNEL,
   TELEGRAM_CODE_CHANNEL,
   toFlowPatch,
@@ -191,7 +191,7 @@ const expiresAt = useSignal(auth.expiresAt)
 // The two pending facts the surface resumes from are DERIVED from the session
 // scope by the framework's own factories, never handed in: a project cannot pass a
 // stale copy of state the framework already owns.
-const resumable = useSignal(sessionPendingRegistration(context.scopes))
+const resumable = useSignal(sessionPendingAuthStep(context.scopes))
 const ack = useSignal(sessionPendingAck(context.scopes))
 
 // Set on mount when an OAuth email collision armed a pending link (HIL-282): the
@@ -738,7 +738,7 @@ onMounted(() => {
   stopWatchingTrip = oauth.subscribeOAuthOutcome(applyTripOutcome)
 
   promptToFinishLink()
-  // The unfinished registration comes back from the SESSION, not from anything
+  // The unfinished auth step comes back from the SESSION, not from anything
   // this tab remembers, so a reload, a second tab and another device all resume
   // the same screen.
   auth.resume(resumable.value)

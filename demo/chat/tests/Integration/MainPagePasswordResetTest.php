@@ -38,6 +38,7 @@ use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\HilosException;
+use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -455,6 +456,133 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
         } finally {
             $this->cleanUp();
         }
+    }
+
+    /**
+     * A tab opened after the code was accepted starts on the password step (HIL-648).
+     *
+     * The defect this list was filed for. The grant belongs to the session, so a
+     * connection that submitted nothing inherits the step its siblings reached - and
+     * gets its own parked row, without which it would stand on the right screen and
+     * never hear that the password was changed from another device.
+     *
+     * @throws HilosException When setup or reset handling fails
+     */
+    public function testAFreshConnectAfterTheAcceptedCodeOpensOnThePasswordStep(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedUserWithPassword($email);
+        $token = $this->openSession($agent, 'accept-ak-2');
+
+        try {
+            $this->requestReset($agent, 'accept-ak-2', $email);
+            $this->seedKnownCode($email);
+            $this->confirm($agent, 'accept-ak-2', $email, self::CODE);
+
+            $this->drainHandshakeResponses();
+            $this->openSession($agent, 'resume-granted-ak', $token);
+            $step = $this->drainHandshakeResponses()['resume-granted-ak']?->pendingAuthStep;
+
+            $this->assertNotNull($step, 'A session standing on a live recovery is told so');
+            $this->assertSame(AuthFlowIntent::RECOVERY, $step[HandshakeResponseSignalData::intent]);
+            $this->assertSame(AuthFlowStep::SET_PASSWORD, $step[HandshakeResponseSignalData::step]);
+            $this->assertSame($email, $step[HandshakeResponseSignalData::identifier]);
+            $this->assertTrue(
+                Hilos::$rt->hilosRecoveryWaiters['resume-granted-ak']?->codeAccepted,
+                'The fresh tab is parked with the grant its session already holds',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * A tab opened before the code was accepted starts on the code step (HIL-648).
+     *
+     * The other half of the same projection: the step answered is the one the session
+     * stands on, not the furthest one the flow has.
+     *
+     * @throws HilosException When setup or reset handling fails
+     */
+    public function testAFreshConnectBeforeTheCodeIsAcceptedOpensOnTheCodeStep(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedUserWithPassword($email);
+        $token = $this->openSession($agent, 'pending-ak');
+
+        try {
+            $this->requestReset($agent, 'pending-ak', $email);
+            $this->seedKnownCode($email);
+
+            $this->drainHandshakeResponses();
+            $this->openSession($agent, 'resume-pending-ak', $token);
+            $step = $this->drainHandshakeResponses()['resume-pending-ak']?->pendingAuthStep;
+
+            $this->assertNotNull($step, 'A session waiting on a code is told so');
+            $this->assertSame(AuthFlowIntent::RECOVERY, $step[HandshakeResponseSignalData::intent]);
+            $this->assertSame(AuthFlowStep::CODE, $step[HandshakeResponseSignalData::step]);
+            $this->assertFalse(
+                Hilos::$rt->hilosRecoveryWaiters['resume-pending-ak']?->codeAccepted,
+                'A tab that inherits the code step inherits no grant',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * A dead code leaves the fresh tab on the identifier field (HIL-648).
+     *
+     * The grant is worth exactly what the code behind it is worth: answering the
+     * password step here would draw a screen that refuses on submit, so the honest
+     * answer is no step at all.
+     *
+     * @throws HilosException When setup or reset handling fails
+     */
+    public function testAFreshConnectIsToldNoStepOnceTheCodeIsGone(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedUserWithPassword($email);
+        $token = $this->openSession($agent, 'dead-code-ak');
+
+        try {
+            $this->requestReset($agent, 'dead-code-ak', $email);
+            $this->seedKnownCode($email);
+            $this->confirm($agent, 'dead-code-ak', $email, self::CODE);
+            $this->verifications()->voidActive(VerificationType::PASSWORD_RESET, $email, $this->maxAttempts());
+
+            $this->drainHandshakeResponses();
+            $this->openSession($agent, 'resume-dead-ak', $token);
+
+            $this->assertNull(
+                $this->drainHandshakeResponses()['resume-dead-ak']?->pendingAuthStep,
+                'A recovery whose code died puts nobody on a screen that would refuse them',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * Empties the signal queue and returns the handshake responses it held, by target.
+     *
+     * @return array<string, HandshakeResponseSignalData> Handshake payload by target accept key
+     */
+    private function drainHandshakeResponses(): array
+    {
+        $responses = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
+            $envelope = $signal->data instanceof WebSocketSignalData ? $signal->data : null;
+            $payload = $envelope?->data;
+            if ($payload instanceof HandshakeResponseSignalData) {
+                $responses[(string)$envelope?->targetAcceptKey] = $payload;
+            }
+        }
+
+        return $responses;
     }
 
     /**
