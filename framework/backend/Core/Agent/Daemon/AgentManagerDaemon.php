@@ -18,6 +18,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Source\Interest\SourceReaderMap;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Daemon\AgentLossSink;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
 use Hilos\Database\DTO\ReHydrateVerdict;
@@ -46,6 +47,7 @@ use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\TruthSource\RtNodeSourceMap;
 use Hilos\TruthSource\RtReplicaOriginMap;
 use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * AgentManagerDaemon - Base class for managing agent daemons in daemon process.
@@ -131,6 +133,16 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     private ?ProtectedModeAgentStopSink $agentStopSink = null;
 
     /**
+     * @var ?AgentLossSink Who to tell that a worker died hosting agents, or null when nobody asked.
+     *
+     * Registered by {@see DaemonManager} at start, like the stop sink above. Separate from it on
+     * purpose: that one is told about agents this node stopped, one at a time and for a reason,
+     * while this one is told about agents nobody stopped at all. A project reading the first for
+     * the second would count an ordinary idle stop as a lost process.
+     */
+    private ?AgentLossSink $agentLossSink = null;
+
+    /**
      * Create agent daemon instance (factory method)
      *
      * Must be implemented in child classes to create specific agent daemon types.
@@ -168,6 +180,18 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     public function registerAgentStopSink(ProtectedModeAgentStopSink $sink): void
     {
         $this->agentStopSink = $sink;
+    }
+
+    /**
+     * Registers who is told that a worker died hosting agents.
+     *
+     * One sink and not a list, for the same reason as the stop sink above.
+     *
+     * @param AgentLossSink $sink Who to tell when agents go down with their worker
+     */
+    public function registerAgentLossSink(AgentLossSink $sink): void
+    {
+        $this->agentLossSink = $sink;
     }
 
     /**
@@ -349,13 +373,18 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * Runs the daemon-side onStart hook for an already-registered agent, records it as started, and logs it.
      *
      * @param WorkerAgentStartedDTO $dto DTO with agent started data
-     * @throws AgentDaemonNotRegisteredException When the worker reports an agent the manager never registered
+     * @throws AgentDaemonNotRegisteredException When the roster does not name the agent reported
      */
     public function handleAgentStarted(WorkerAgentStartedDTO $dto): void
     {
         $agentId = $dto->agentId;
 
-        // The worker only reports agents the daemon already registered; a missing one is a registration bug
+        // Two ways the roster can be missing an agent a worker just started, and this says only
+        // that it is: a registration bug, or a stop that crossed the start report on the wire -
+        // a freeze deregisters here while the report is already travelling. Which of the two it
+        // was, and what to do about it, belongs to the caller that holds the link
+        // ({@see WorkerClient::handleAgentStartedMessage()}); raising it any further than that
+        // would cost the whole worker for one stale line.
         if (!$this->hasAgent($agentId)) {
             throw new AgentDaemonNotRegisteredException($agentId);
         }
@@ -862,6 +891,77 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
                 $this->rtNodeSourceMap()->release((string)$agentId);
             }
         }
+    }
+
+    /**
+     * Forgets the agents a dead worker was hosting, as if each had reported its own stop.
+     *
+     * An agent leaves the roster when its worker reports the stop ({@see handleAgentStopped()}),
+     * and that report never comes from a process that died - the same reason the RT ownership
+     * above is handed back here rather than waited for (HIL-586). Left alone, the roster goes on
+     * naming agents that went down with their process, still bound to its dead client:
+     * `AbstractAgentDaemon::hasWorkerClient()` is a null check on a reference nothing clears, so
+     * every later reader takes them for alive.
+     *
+     * That costs far more than a stale row - it silently disables the restart. "The agent lives
+     * until the worker does" and "starting is what addressing does" are one bargain, and the
+     * second half only holds while a lost agent looks missing: `WorkerServer::sendSignalToAgent()`
+     * declines to start what the roster already claims, so frames to such an agent are written
+     * into a dead client and lost with nothing logged anywhere. An agent nothing stopped on
+     * purpose - the mail pool the freeze deliberately spares - is then gone until the daemon
+     * restarts.
+     *
+     * Each agent leaves through the same four effects a reported stop has: the daemon-side stop
+     * hook, the roster, the freeze's stop sink and the placement map. Dropping any of them would
+     * move the silence rather than end it - the freeze watchdog is counting on hearing that an
+     * initiator stopped (HIL-482), and the placement map would keep naming a host that no longer
+     * runs the agent.
+     *
+     * A failing stop hook is contained per agent so one bad hook never strands the rest of the
+     * roster, mirroring the worker-side cleanup this is the daemon's answer to.
+     *
+     * @param int $workerIndex Index of the worker that died
+     * @param bool $isMonopolistic True when that worker was monopolistic
+     * @return list<string> Ids of the agents forgotten, in roster order; empty when it hosted none
+     */
+    public function forgetAgentsOfWorker(int $workerIndex, bool $isMonopolistic): array
+    {
+        $workerId = $this->calculateWorkerId($workerIndex, $isMonopolistic);
+
+        // Collected before anything is removed: the removal below mutates the very map a direct
+        // foreach would be walking.
+        $agentIds = [];
+        foreach ($this->agentToWorker as $agentId => $agentWorkerId) {
+            if ($agentWorkerId === $workerId) {
+                $agentIds[] = (string)$agentId;
+            }
+        }
+
+        foreach ($agentIds as $agentId) {
+            try {
+                $this->getAgent($agentId)?->onStop();
+            } catch (Throwable $e) {
+                Logger::logAgentError(
+                    $agentId,
+                    "Stop hook failed for an agent lost with its worker: {$e->getMessage()}",
+                );
+            }
+            $this->removeAgent($agentId);
+            $this->agentStopSink?->onAgentStopped($agentId);
+
+            $stopped = AgentId::fromId($agentId);
+            Hilos::$cluster?->placement()?->noteAgentStopped($stopped->type, $stopped->index);
+        }
+
+        // Told once for the worker rather than once per agent: what a reader can act on is that a
+        // host went down with a roster on it, and the agents are that fact's detail. Told after the
+        // roster is empty, so a sink that looks at it finds them already gone - the same order
+        // {@see handleAgentStopped()} keeps for the stop sink.
+        if ($agentIds !== []) {
+            $this->agentLossSink?->reportAgentsLostWithWorker($workerIndex, $isMonopolistic, $agentIds);
+        }
+
+        return $agentIds;
     }
 
     /**

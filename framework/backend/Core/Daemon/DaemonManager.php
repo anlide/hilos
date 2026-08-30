@@ -205,6 +205,7 @@ abstract class DaemonManager extends BaseManager implements
     ConnectionDropper,
     LiveConnectionRoster,
     ContainedFailureSink,
+    AgentLossSink,
     MasterSignalSender,
     ProtectedModeSnapshotSource,
     ProtectedModeAdmissionRecorder,
@@ -393,6 +394,9 @@ abstract class DaemonManager extends BaseManager implements
         // initiator's type start again under the freeze it left behind, so a later look at the
         // roster would find a fresh instance and read a dead operation as a live one (HIL-482).
         $this->agentManagerDaemon->registerAgentStopSink($this->protectedModeWatchdog);
+        // The manager empties the roster of a dead worker itself; this is only the door out to the
+        // project, so the master takes the report rather than a watcher of its own.
+        $this->agentManagerDaemon->registerAgentLossSink($this);
     }
 
     /**
@@ -979,6 +983,32 @@ abstract class DaemonManager extends BaseManager implements
     {
         try {
             $this->onContainedFailure($failure);
+        } catch (Throwable $hookFailure) {
+            $this->logException(sprintf(
+                self::HOOK_FAILURE_FORMAT,
+                get_class($hookFailure),
+                basename($hookFailure->getFile()),
+                $hookFailure->getLine(),
+                $hookFailure->getMessage()
+            ));
+        }
+    }
+
+    /**
+     * Takes the agents a dead worker was hosting, on the way to the project ({@see AgentLossSink}).
+     *
+     * Guarded like {@see reportContainedFailure()} above and for the same reason: a project
+     * answering a lost worker must not be able to take the master down with it, least of all
+     * while the node is already a worker short.
+     *
+     * @param int $workerIndex Index of the worker that died
+     * @param bool $isMonopolistic True when that worker was monopolistic
+     * @param list<string> $agentIds Ids of the agents it was hosting, in roster order
+     */
+    public function reportAgentsLostWithWorker(int $workerIndex, bool $isMonopolistic, array $agentIds): void
+    {
+        try {
+            $this->onAgentsLostWithWorker($workerIndex, $isMonopolistic, $agentIds);
         } catch (Throwable $hookFailure) {
             $this->logException(sprintf(
                 self::HOOK_FAILURE_FORMAT,
@@ -5347,6 +5377,42 @@ abstract class DaemonManager extends BaseManager implements
      * @param ContainedFailure $failure Failure, the unit it belongs to and where it happened
      */
     protected function onContainedFailure(ContainedFailure $failure): void
+    {
+    }
+
+    /**
+     * Answers a worker that died hosting agents, for the project to react to.
+     *
+     * Empty by default: the framework has already done the whole of its part by the time this
+     * is called - the agents are off the roster, so the next frame addressed to one starts it
+     * again. This is where a project adds what only it knows, and usually that is nothing.
+     *
+     * Called AFTER the journal line and never instead of it, the same bargain
+     * {@see onContainedFailure()} keeps. The record of a lost worker is not overridable,
+     * because it is the one report that answered a day of looking for silent mail.
+     *
+     * NOT a failure hook. No throwable reaches here, because a death observed on a socket has
+     * none, and no {@see MasterFailureUnit} names a worker - a unit there is what can fail
+     * without its neighbours being any the worse for it, and every agent on this worker is
+     * worse off. NOT {@see onPlacementDegraded()} either: that one is the leader saying an
+     * agent could be placed nowhere at all, while these come back on this node by themselves.
+     *
+     * What it is for is the work that was in flight on that worker and nobody will finish:
+     * a project that handed an agent a job and is waiting for the answer learns here that the
+     * answer is not coming. Restarting the agent is not its business - that already happens.
+     *
+     * It must not throw - a failure raised here is written as the hook's own and the hook is
+     * not called with it again ({@see reportAgentsLostWithWorker()}).
+     *
+     * It runs on the master loop, which serves every connection of this node, so it does no
+     * database, no file, no network and no waiting: nothing costlier than a line or a counter.
+     * Anything above that leaves through {@see MasterSignalSender}.
+     *
+     * @param int $workerIndex Index of the worker that died
+     * @param bool $isMonopolistic True when that worker was monopolistic
+     * @param list<string> $agentIds Ids of the agents it was hosting, in roster order
+     */
+    protected function onAgentsLostWithWorker(int $workerIndex, bool $isMonopolistic, array $agentIds): void
     {
     }
 
