@@ -292,6 +292,74 @@ Where the answer is not known it says so rather than falling back to local deliv
 (HIL-670) — an owner on a follower announcing to nobody was exactly the silent case
 that made the fallback wrong.
 
+### The Lock Does Not Travel With The Name (HIL-771)
+
+The client sends the action name itself, so an action is closed by whoever holds
+the name and by nothing else. Move an admin page's action to the agent that owns
+the row, and the page — with the `ADMIN` level that closed the action — is no
+longer part of the check at all. Before an action writes an entity the page does
+not own, ask what closes it today:
+
+| Closed today by | Can the owner reproduce it | What happens to the name |
+|---|---|---|
+| the page's AUTHENTICATED level | yes — that is what `AbstractAgent::AUTH_ACTIONS` is | the name moves to the owner whole |
+| the page's ADMIN level (`AbstractHilosPage::ACCESS_LEVEL`, `framework/backend/Core/Page/AbstractHilosPage.php:24`) | no | the name STAYS; the body sends the owner a signal |
+| a project `isAdmin()`, or a right over one object | no | the name STAYS; the body sends the owner a signal |
+
+**An action closed by anything stronger than AUTHENTICATED does not travel to the
+owner** (owner's decision, 2026-08-30). There is no "unless the owner can
+reproduce the check": a conditional sentence is a loophole — an agent that finds
+the move convenient will persuade itself that the owner checks somehow, and the
+miss is silent, because an open admin action neither fails nor turns a test red.
+The roles series (HIL-93..99; HIL-97 is rights over actions checked at dispatch)
+will have to rewrite this sentence, and that is the wanted outcome: the roles
+leaf meets the line and lifts it explicitly instead of slipping past it by
+interpretation.
+
+The action then has two halves, and the words are fixed here so the next leaf
+does not coin its own. The **gatekeeper** is the page and its agent: it checks
+the right, accepts the client's frame, and is the only one that answers the
+client. The **writer** is the entity's owner: it performs the write and reports
+the outcome back. The form is three statements:
+
+1. **The gatekeeper answers the client itself, and only after the writer
+   confirms.** Answering at send time is a lie — the owner may still refuse.
+2. **The wait is non-blocking, and the mechanism exists.**
+   `AbstractPage::deferActionReply()`
+   (`framework/backend/Core/Page/AbstractPage.php:492`) and
+   `AbstractAgent::deferActionReply()`
+   (`framework/backend/Core/Agent/AbstractAgent.php:1136`) tell the dispatcher
+   that the ack is on its way from another process. Not a deadline in
+   `onTick()`.
+3. **The writer's refusal reaches the client as a frame carrying a reason as
+   text, not as a throw.** A bare failure leaves the gatekeeper with nothing to
+   say to the person. `PageSignalRouter::dispatchAgentSignalActionException()`
+   (`framework/backend/Core/Page/PageSignalRouter.php:1344`) is page-only and
+   does not work outside a page.
+
+An agent action has no ADMIN level, and we are not adding one (owner's decision,
+2026-08-28).
+
+*On server deadlines.* The client always times out on its own —
+`framework/frontend/core/src/connection/actionLifecycle.ts:30`,
+`DEFAULT_TIMEOUT_MS = 30000`, refusal `The action timed out.` — so a silent
+writer never hangs the person; it gives them a generic sentence instead of a
+clear one. A server-side deadline (the shape is
+`BackupAgent::REHYDRATE_WAIT_SECONDS`) is therefore not part of the form: it is
+written for the case where the owner may be silent for long, and its job is to
+tell the person "the owner did not answer" rather than "it expired".
+
+**Worked example** —
+`framework/backend/Pages/Communications/AbstractHilosCommunicationsDeliveriesPage.php`.
+`handleRetry()` (`:147`) sends `HilosSignalConstants::HILOS_DELIVERY_RETRY`
+with `DeliveryRetrySignalData(deliveryId, acceptKey, requestId)` and calls
+`deferActionReply()` only when `currentActionRequestId()` is not null — an
+untracked submit owes no ack. `answerRetry()` (`:172`) answers in three
+branches: `sendActionSuccess()`, `sendActionFail($done->error)`, and for an
+untracked submit `sendToUser(SignalConstants::ACTION_ERROR, acceptKey, new
+PageActionErrorSignalData(...))`. The reason is a string,
+`DeliveryRetryDoneSignalData::$error`, which is what statement 3 asks for.
+
 ## Refusals
 
 | Situation | What happens |

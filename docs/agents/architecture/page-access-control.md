@@ -52,7 +52,13 @@ mandatory — silence would open the profile to guests.
   guest gets 401 `ActionUnauthorizedException`, an authenticated non-admin 403
   `ActionForbiddenException`. A page's actions are closed by its level; the
   per-action `AUTH_ACTIONS` list remains for project pages with the
-  anonymous-read + authenticated-write model.
+  anonymous-read + authenticated-write model. The level closes the actions the
+  *page* holds, and it does not travel with the name: an action name moved to an
+  agent is closed by `AbstractAgent::AUTH_ACTIONS`
+  (`framework/backend/Core/Agent/AbstractAgent.php:138`) and by nothing else.
+  Which names may leave the page, and the two-step shape of the ones that may
+  not, is in
+  [entity-libraries.md](entity-libraries.md#the-lock-does-not-travel-with-the-name-hil-771).
 
 Identity comes from two `BrowserContext` seams (see the identity hook below):
 `resolveActionUserId()` answers "which user", and `isAdmin(int $userId): bool` —
