@@ -9,9 +9,10 @@ use Hilos\Auth\Library\AbstractUsersLibraryAgentDaemon;
 /**
  * UsersLibraryAgentDaemon - daemon proxy for the tasks users library (HIL-623).
  *
- * Inherits the framework placement whole: a cluster-leader-pinned monopolistic singleton,
- * because minting an account is a claim only one process may hold. This demo has nothing
- * to add to that - it hosts the library, it does not place it differently.
+ * Inherits the framework placement whole: a cluster-wide monopolistic singleton, because
+ * minting an account is a claim only one process may hold. Where that process runs this demo
+ * leaves to the placement policy in its registry entry - it hosts the library, it does not
+ * place it differently.
  */
 final class UsersLibraryAgentDaemon extends AbstractUsersLibraryAgentDaemon
 {

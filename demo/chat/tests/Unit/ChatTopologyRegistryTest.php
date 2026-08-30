@@ -218,13 +218,15 @@ final class ChatTopologyRegistryTest extends TestCase
             AgentType::HILOS_AUTH_CODE,
         ], $nodeScoped);
 
-        // The two libraries, the delivery shards and the log aggregator: one instance
-        // cluster-wide (per shard index, for the shards), on the node policy picks. Sessions
-        // and notifications are placed rather than pinned because every handshake touches the
-        // one and every worker emits into the other, and the leader has enough to do; the
-        // aggregator is placed so that one holder of the merged log picture survives a
-        // re-election instead of dying with the term.
+        // The three libraries, the delivery shards and the log aggregator: one instance
+        // cluster-wide (per shard index, for the shards), on the node policy picks. An entity
+        // library is placed rather than pinned by rule, and each of the three has a reason of
+        // its own besides: minting an account is a claim one process holds wherever it sits,
+        // every handshake touches sessions, every worker emits into notifications, and the
+        // leader has enough to do. The aggregator is placed so that one holder of the merged
+        // log picture survives a re-election instead of dying with the term.
         $this->assertSame([
+            HilosAgentType::HILOS_USERS_LIBRARY,
             HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             AgentType::HILOS_MAIL,

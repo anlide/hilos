@@ -323,6 +323,7 @@ final class Hilos extends HilosFacade
         UsersLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => UsersLibraryAgent::class,
             AgentRegistryKey::DAEMON => UsersLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         SessionsLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => SessionsLibraryAgent::class,
