@@ -23,6 +23,15 @@ const ENTER_COMMAND = 'test:protected-mode:enter'
 const OPEN_COMMAND = 'test:protected-mode:open'
 
 /**
+ * A refusal the daemon answered with, as opposed to a command it never answered.
+ *
+ * The distinction is the whole point of {@link openProtectedModeIfAny}: "there is no freeze
+ * here" is an answer and means the teardown has nothing left to do, while a timeout or a dead
+ * socket means the node never said it was open. Those two must not share a catch.
+ */
+export class ProtectedModeCommandRefused extends Error {}
+
+/**
  * Takes the installation into protected mode through the live initiator agent.
  *
  * Resolves once the freeze has actually taken hold — the agent answers from its
@@ -50,8 +59,16 @@ export async function enterProtectedMode(operation: string): Promise<string> {
 export async function openProtectedModeIfAny(): Promise<void> {
   try {
     await sendCommand(OPEN_COMMAND, {})
-  } catch {
-    // Nothing to lift, which is the state the teardown wanted anyway.
+  } catch (error) {
+    if (error instanceof ProtectedModeCommandRefused) {
+      // Answered, and the answer was that there is nothing to lift - the state the teardown
+      // wanted anyway.
+      return
+    }
+    // Anything else is the opposite of "nothing to lift". A freeze left standing takes the
+    // whole node with it, so the spec that left it has to be the one that goes red: swallowed
+    // here, the failure surfaces in whatever spec runs next and looks like that one's defect.
+    throw error
   }
 }
 
@@ -106,7 +123,7 @@ function sendCommand(
         resolve(reply.payload ?? {})
       } else {
         reject(
-          new Error(
+          new ProtectedModeCommandRefused(
             `${command} failed: ${reply.payload?.message ?? 'unknown error'}`,
           ),
         )
