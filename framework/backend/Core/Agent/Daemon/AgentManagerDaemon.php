@@ -46,6 +46,7 @@ use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\TruthSource\RtNodeSourceMap;
 use Hilos\TruthSource\RtReplicaOriginMap;
 use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * AgentManagerDaemon - Base class for managing agent daemons in daemon process.
@@ -862,6 +863,69 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
                 $this->rtNodeSourceMap()->release((string)$agentId);
             }
         }
+    }
+
+    /**
+     * Forgets the agents a dead worker was hosting, as if each had reported its own stop.
+     *
+     * An agent leaves the roster when its worker reports the stop ({@see handleAgentStopped()}),
+     * and that report never comes from a process that died - the same reason the RT ownership
+     * above is handed back here rather than waited for (HIL-586). Left alone, the roster goes on
+     * naming agents that went down with their process, still bound to its dead client:
+     * `AbstractAgentDaemon::hasWorkerClient()` is a null check on a reference nothing clears, so
+     * every later reader takes them for alive.
+     *
+     * That costs far more than a stale row - it silently disables the restart. "The agent lives
+     * until the worker does" and "starting is what addressing does" are one bargain, and the
+     * second half only holds while a lost agent looks missing: `WorkerServer::sendSignalToAgent()`
+     * declines to start what the roster already claims, so frames to such an agent are written
+     * into a dead client and lost with nothing logged anywhere. An agent nothing stopped on
+     * purpose - the mail pool the freeze deliberately spares - is then gone until the daemon
+     * restarts.
+     *
+     * Each agent leaves through the same four effects a reported stop has: the daemon-side stop
+     * hook, the roster, the freeze's stop sink and the placement map. Dropping any of them would
+     * move the silence rather than end it - the freeze watchdog is counting on hearing that an
+     * initiator stopped (HIL-482), and the placement map would keep naming a host that no longer
+     * runs the agent.
+     *
+     * A failing stop hook is contained per agent so one bad hook never strands the rest of the
+     * roster, mirroring the worker-side cleanup this is the daemon's answer to.
+     *
+     * @param int $workerIndex Index of the worker that died
+     * @param bool $isMonopolistic True when that worker was monopolistic
+     * @return list<string> Ids of the agents forgotten, in roster order; empty when it hosted none
+     */
+    public function forgetAgentsOfWorker(int $workerIndex, bool $isMonopolistic): array
+    {
+        $workerId = $this->calculateWorkerId($workerIndex, $isMonopolistic);
+
+        // Collected before anything is removed: the removal below mutates the very map a direct
+        // foreach would be walking.
+        $agentIds = [];
+        foreach ($this->agentToWorker as $agentId => $agentWorkerId) {
+            if ($agentWorkerId === $workerId) {
+                $agentIds[] = (string)$agentId;
+            }
+        }
+
+        foreach ($agentIds as $agentId) {
+            try {
+                $this->getAgent($agentId)?->onStop();
+            } catch (Throwable $e) {
+                Logger::logAgentError(
+                    $agentId,
+                    "Stop hook failed for an agent lost with its worker: {$e->getMessage()}",
+                );
+            }
+            $this->removeAgent($agentId);
+            $this->agentStopSink?->onAgentStopped($agentId);
+
+            $stopped = AgentId::fromId($agentId);
+            Hilos::$cluster?->placement()?->noteAgentStopped($stopped->type, $stopped->index);
+        }
+
+        return $agentIds;
     }
 
     /**

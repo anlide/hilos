@@ -754,6 +754,15 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * What its agents owned in RT is given back here for the same reason (HIL-586): the release
      * a stopping agent sends never comes from a process that died, and an ownership claim left
      * behind would have this node refusing replicas for a collection nobody here writes.
+     *
+     * The agents themselves are forgotten last, for the third time that same reason: no stop
+     * report is coming, so without it the roster keeps them alive on a client that is gone, and
+     * an agent the roster claims is one the master will not restart when it is next addressed.
+     * Last, because the two releases above find their work by walking the roster for this
+     * worker - emptying it first would leave them nothing to hand back. The guard is the one the
+     * log line uses: an index of zero is a client that never registered, and every real worker
+     * counts from one, so an unregistered client must not match agents by a zero it shares
+     * with nobody.
      */
     protected function onClose(): void
     {
@@ -766,5 +775,15 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         $this->agentManager->dropReHydrateParticipant(ReHydrateRound::workerParticipant($this->workerIndex));
         $this->agentManager->releaseRtSourcesOfWorker($this->workerIndex, $this->isMonopolistic);
         $this->agentManager->releaseReaderInterestOfWorker($this->workerIndex);
+
+        if ($this->workerIndex > 0) {
+            $lost = $this->agentManager->forgetAgentsOfWorker($this->workerIndex, $this->isMonopolistic);
+            if ($lost !== []) {
+                Logger::info(
+                    "Worker #{$this->workerIndex} died hosting " . count($lost) . ' agent(s): '
+                    . implode(', ', $lost),
+                );
+            }
+        }
     }
 }
