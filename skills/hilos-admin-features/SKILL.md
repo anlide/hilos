@@ -1,6 +1,6 @@
 ---
 name: hilos-admin-features
-description: Graduate or build a Hilos admin feature — an admin page backed by a browser table and its actions (settings, hilos-users, roles, or a project's own admin table). Use when moving admin table/page/action code between framework and project, deciding the framework/project boundary, choosing framework-owned (activate/configure/use) vs project-owned-by-pattern, abstracting a presence source, or designing extension points for an admin entity.
+description: Graduate or build a Hilos admin feature — an admin page backed by a browser table and its actions (settings, hilos-users, roles, or a project's own admin table). Use when moving admin table/page/action code between framework and project, deciding the framework/project boundary, choosing framework-owned (activate/configure/use) vs project-owned-by-pattern, abstracting a presence source, or designing extension points for an admin entity, or when an action of the feature changes an entity the page does not own and you need to know what closes it.
 ---
 
 # Hilos Admin Features
@@ -23,6 +23,10 @@ read the canonical spec before editing.
 - DB/RT data work: use `$hilos-orm`, `$hilos-runtime`, `$hilos-db-rt-state`
 - Frontend views/context: `docs/agents/frontend/sdk-packaging.md` and
   `$hilos-frontend-page-structure`
+- An action of this feature writes an entity the page does not own — what
+  closes it today, and the two-step form when the name stays on the page:
+  `docs/agents/architecture/entity-libraries.md`
+  (section "The Lock Does Not Travel With The Name")
 
 ## Workflow
 
@@ -37,8 +41,14 @@ read the canonical spec before editing.
    framework never imports the project entity type.
 4. Abstract the presence source for hilos-users: the project binds its RT
    connections collection, the framework owns the merge.
-5. Pass every framework/project boundary shift through the contract gate.
-6. Validate with composer scripts via `$hilos-testing-cli`; keep existing admin
+5. Before an action of this feature writes an entity the page does not own,
+   check what closes it today; if more than AUTHENTICATED, the name stays on
+   the page — the page sends the owner a signal, defers its ack, and answers
+   the client after the owner confirms
+   (`docs/agents/architecture/entity-libraries.md`, section "The Lock Does
+   Not Travel With The Name").
+6. Pass every framework/project boundary shift through the contract gate.
+7. Validate with composer scripts via `$hilos-testing-cli`; keep existing admin
    e2e green and add framework unit coverage for the graduated base.
 
 ## Hard Rules
@@ -57,5 +67,9 @@ read the canonical spec before editing.
   (Mode 1, framework-owned); do not fold one into the other.
 - Do not pass `Hilos::$db`/`$rt`/`$setting`/`$table` through constructors to reach
   a graduated base; read the facade at the point of use.
+- Do not move an admin action's name to the owning agent, and do not write one
+  straight onto it: an agent action is closed by `AUTH_ACTIONS` alone. An action
+  closed by more than AUTHENTICATED keeps its name on the page; the page forwards
+  the write and answers the client after the owner confirms.
 - Stop and ask before changing hilos-user DB fields, RT presence shape, signals,
   action DTOs, or declarative routing.

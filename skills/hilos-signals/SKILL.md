@@ -22,6 +22,10 @@ Use this skill for every change that affects signal shape, route, subscription, 
 - You just wrote a fact and someone is looking at a screen it devalues right
   now — whether the server owes that screen a move, and which frame moves it:
   `docs/agents/signals/screen-invalidation.md`
+- An action that changes what its page does not own — the route out to the
+  owner, the deferred ack, and the frame that carries the refusal back:
+  `docs/agents/architecture/entity-libraries.md`
+  (section "The Lock Does Not Travel With The Name")
 - Page action handler style: `docs/agents/code-style/page-action-handlers.md`
 - Named signal handler style: `docs/agents/code-style/signal-handlers.md`
 
@@ -36,19 +40,25 @@ Use this skill for every change that affects signal shape, route, subscription, 
    `AGENT_SIGNALS[$signal][AgentSignalConfigKey::INDEX_FIELD]` instead of
    overriding `SignalRouter::getDestinations()`. See
    `docs/agents/signals/routing.md` "Indexed agent signals".
-3. Route named signal handlers with `switch ($name)` and explicit cases.
-4. Omit empty `default` branches in partial shared-broadcast handlers; document
+3. When an action changes what its page does not own, check what closes the
+   action today before deciding where its name lives: more than AUTHENTICATED
+   means the name stays on the page, the write goes to the owner as an agent
+   signal, the page defers its ack, and the refusal comes back as a frame
+   carrying a reason as text (`docs/agents/architecture/entity-libraries.md`,
+   section "The Lock Does Not Travel With The Name").
+4. Route named signal handlers with `switch ($name)` and explicit cases.
+5. Omit empty `default` branches in partial shared-broadcast handlers; document
    the ignore contract in PHPDoc instead.
-5. Define or update payload DTOs for new wire contracts.
-6. Keep serialization roundtrips explicit with `toArray()` and `fromArray()` where applicable.
-7. If the signal crosses worker-to-daemon IPC, add backend roundtrip coverage.
-8. If the signal reaches frontend code, add or update the TypeScript parser tests.
-9. When the change writes a fact rather than answering a request, ask who is on
+6. Define or update payload DTOs for new wire contracts.
+7. Keep serialization roundtrips explicit with `toArray()` and `fromArray()` where applicable.
+8. If the signal crosses worker-to-daemon IPC, add backend roundtrip coverage.
+9. If the signal reaches frontend code, add or update the TypeScript parser tests.
+10. When the change writes a fact rather than answering a request, ask who is on
    an open screen the fact devalues. If that screen declared what you changed as
    its own source, the browser fan-out already carries it and you send nothing;
    if it did not, and the next action there now fails, read
    `docs/agents/signals/screen-invalidation.md` before choosing a frame.
-10. After changing a topology registry (`ACTIONS`, `SIGNALS`, `AGENT_SIGNALS`,
+11. After changing a topology registry (`ACTIONS`, `SIGNALS`, `AGENT_SIGNALS`,
    `Hilos::AGENTS`, and peers), update the demo's `*TopologyRegistryTest`
    snapshot and run its `test:unit` — the snapshot is a shared cross-ticket
    guard. See `docs/agents/app-topology.md` step 12.
