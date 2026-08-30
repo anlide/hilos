@@ -7,8 +7,11 @@ namespace Hilos\Socket\Client;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
+use Hilos\Core\Agent\Exception\AgentDaemonNotRegisteredException;
+use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Source\SourceChange;
@@ -290,12 +293,37 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     /**
      * Handle agent started message
      *
+     * A report naming an agent the roster does not have is answered here rather than allowed
+     * out, because the guard above this one is the wrong size for it: an exception leaving this
+     * method reaches {@see DaemonManager::onClientRead()}, which discards the client - and the
+     * client is the whole worker. One stale line about one agent would cost the process and
+     * every other agent on it, which is how a freeze came to kill healthy workers.
+     *
+     * It is a race and not only a bug. A freeze deregisters an agent while its start report is
+     * already on the wire, so the report lands in a roster that no longer names it; the stop
+     * the freeze sent is on its way down the same link. The stop below is for the other case,
+     * where nothing was sent: an agent the master does not know must not go on running,
+     * ticking and holding truth sources where nothing will ever address or stop it. Sending it
+     * twice is harmless, and saying nothing at all is not.
+     *
      * @param WorkerAgentStartedDTO $dto DTO with agent started data
      * @throws AgentDaemonCreationFailedException If agent creation fails
      */
     private function handleAgentStartedMessage(WorkerAgentStartedDTO $dto): void
     {
-        $this->agentManager->handleAgentStarted($dto);
+        try {
+            $this->agentManager->handleAgentStarted($dto);
+        } catch (AgentDaemonNotRegisteredException $notRegistered) {
+            // Kept loud: the roster missing an agent a worker just started is worth a line
+            // whichever of the two cases produced it.
+            Logger::error(
+                "Worker #{$this->workerIndex} reported a start of '{$dto->agentId}', which this"
+                . ' roster does not have; stopping it there: ' . $notRegistered->getMessage(),
+            );
+
+            $orphan = AgentId::fromId($dto->agentId);
+            $this->sendAgentStop($orphan->type, $orphan->index);
+        }
     }
 
     /**

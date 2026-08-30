@@ -373,13 +373,18 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * Runs the daemon-side onStart hook for an already-registered agent, records it as started, and logs it.
      *
      * @param WorkerAgentStartedDTO $dto DTO with agent started data
-     * @throws AgentDaemonNotRegisteredException When the worker reports an agent the manager never registered
+     * @throws AgentDaemonNotRegisteredException When the roster does not name the agent reported
      */
     public function handleAgentStarted(WorkerAgentStartedDTO $dto): void
     {
         $agentId = $dto->agentId;
 
-        // The worker only reports agents the daemon already registered; a missing one is a registration bug
+        // Two ways the roster can be missing an agent a worker just started, and this says only
+        // that it is: a registration bug, or a stop that crossed the start report on the wire -
+        // a freeze deregisters here while the report is already travelling. Which of the two it
+        // was, and what to do about it, belongs to the caller that holds the link
+        // ({@see WorkerClient::handleAgentStartedMessage()}); raising it any further than that
+        // would cost the whole worker for one stale line.
         if (!$this->hasAgent($agentId)) {
             throw new AgentDaemonNotRegisteredException($agentId);
         }
