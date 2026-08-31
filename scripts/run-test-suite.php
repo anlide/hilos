@@ -26,6 +26,11 @@ declare(strict_types=1);
  *                  alone on the same HEAD.
  *   --log-dir=DIR  where the per-step logs land (default `var/test-suite`).
  *   --rc-file=PATH where the `<id> rc=<n>` ledger lands (default `<log-dir>/rc`).
+ *   --artifact-dir=DIR
+ *                  where each step's snapshot of the stand lands (default
+ *                  `<log-dir>/artifacts`), one subdirectory per step. Taken at
+ *                  every outcome, so that reading a red step starts from what it
+ *                  left behind rather than from what the log seemed to say.
  *
  * This file knows nothing about hilos-ops or about any particular CI: composer,
  * GitHub Actions and hilos-ops/verify-run.sh all drive it through the same command
@@ -73,6 +78,7 @@ enum StepOutcome: string
 
 $root = dirname(__DIR__);
 require_once $root . '/scripts/unstable-line.php';
+require_once $root . '/scripts/step-artifacts.php';
 $options = parseArguments(array_slice($argv, 1));
 $manifest = indexById(require $root . '/scripts/test-suite.php');
 $plan = planFor($manifest, $options['targets']);
@@ -84,7 +90,15 @@ if ($options['list']) {
     exit(0);
 }
 
-exit(runPlan($root, $manifest, $plan, $lanes, $logDir, $options['rcFile'] ?? $logDir . '/rc'));
+exit(runPlan(
+    $root,
+    $manifest,
+    $plan,
+    $lanes,
+    $logDir,
+    $options['rcFile'] ?? $logDir . '/rc',
+    $options['artifactDir'] ?? $logDir . '/artifacts',
+));
 
 // ------------------------------------------------------------------ arguments
 
@@ -93,11 +107,18 @@ exit(runPlan($root, $manifest, $plan, $lanes, $logDir, $options['rcFile'] ?? $lo
  *
  * @param array<int, string> $arguments Everything after the script name.
  * @return array{targets: array<int, string>, lanes: int|null, logDir: string|null,
- *     rcFile: string|null, list: bool}
+ *     rcFile: string|null, artifactDir: string|null, list: bool}
  */
 function parseArguments(array $arguments): array
 {
-    $parsed = ['targets' => [], 'lanes' => null, 'logDir' => null, 'rcFile' => null, 'list' => false];
+    $parsed = [
+        'targets' => [],
+        'lanes' => null,
+        'logDir' => null,
+        'rcFile' => null,
+        'artifactDir' => null,
+        'list' => false,
+    ];
     foreach ($arguments as $argument) {
         if ($argument === '--help' || $argument === '-h') {
             printUsage();
@@ -110,6 +131,8 @@ function parseArguments(array $arguments): array
             $parsed['logDir'] = rtrim(substr($argument, strlen('--log-dir=')), '/');
         } elseif (str_starts_with($argument, '--rc-file=')) {
             $parsed['rcFile'] = substr($argument, strlen('--rc-file='));
+        } elseif (str_starts_with($argument, '--artifact-dir=')) {
+            $parsed['artifactDir'] = rtrim(substr($argument, strlen('--artifact-dir=')), '/');
         } elseif (str_starts_with($argument, '-')) {
             fail('unknown option ' . $argument);
         } else {
@@ -148,6 +171,9 @@ function printUsage(): void
           --lanes=N       steps at a time (overrides HILOS_TEST_LANES).
           --log-dir=DIR   per-step logs (default var/test-suite).
           --rc-file=PATH  the `<id> rc=<n>` ledger (default <log-dir>/rc).
+          --artifact-dir=DIR
+                          per-step snapshots of the stand (default
+                          <log-dir>/artifacts).
           --list          print the plan and exit.
 
         USAGE);
@@ -340,19 +366,32 @@ function readProcFile(string $path): ?string
  * @param int $lanes Steps at a time.
  * @param string $logDir Directory for the per-step logs.
  * @param string $rcFile Path of the `<id> rc=<n>` ledger.
+ * @param string $artifactDir Directory the per-step snapshots of the stand go under.
  * @return int
  */
-function runPlan(string $root, array $manifest, array $plan, int $lanes, string $logDir, string $rcFile): int
-{
+function runPlan(
+    string $root,
+    array $manifest,
+    array $plan,
+    int $lanes,
+    string $logDir,
+    string $rcFile,
+    string $artifactDir,
+): int {
     $logs = prepareLogDir($logDir, $plan);
+    prepareArtifactDir($artifactDir, $plan);
     $rc = openLedger($rcFile);
     $startedAt = microtime(true);
     fwrite(STDOUT, sprintf("=== SUITE START %s — %d steps, %d lane(s) ===\n", now(), count($plan), $lanes));
 
     /** @var array<int, string> $pending Ids not started yet, longest first. */
     $pending = sortByDurationDescending($manifest, $plan);
-    /** @var array<string, array{handle: resource, since: float, at: string}> $running */
+    /** @var array<string, array{handle: resource, since: float, at: string,
+     *     neighbors: array<int, string>}> $running */
     $running = [];
+    /** @var array<string, array{path: string, reason: string, standUp: bool,
+     *     missing: array<int, string>}> $artifacts Snapshots taken, by step id. */
+    $artifacts = [];
     /** @var array<string, array{outcome: StepOutcome, rc: int, at: string, seconds: float, note: string,
      *     unstable: array{count: int, tests: array<int, string>}}> $done */
     $done = [];
@@ -360,7 +399,7 @@ function runPlan(string $root, array $manifest, array $plan, int $lanes, string 
     while ($pending !== [] || $running !== []) {
         foreach (launchable($manifest, $pending, $running, $done, $lanes) as $id) {
             $pending = array_values(array_diff($pending, [$id]));
-            $running[$id] = launch($root, $manifest[$id], $logs[$id]);
+            $running[$id] = launch($root, $manifest[$id], $logs[$id], array_keys($running));
             fwrite(STDOUT, sprintf(">>> launched %s at %s (%d running)\n", $id, $running[$id]['at'], count($running)));
         }
         if ($running === []) {
@@ -374,16 +413,25 @@ function runPlan(string $root, array $manifest, array $plan, int $lanes, string 
         }
         usleep(POLL_INTERVAL_MICROSECONDS);
         foreach (reap($running, $logs) as $id => $finished) {
+            // Collected here rather than inside reap(), which knows neither the
+            // step's working directory nor who it shared the box with.
+            $context = [
+                'lanes' => $lanes,
+                'logPath' => $logs[$id],
+                'neighborsAtStart' => $running[$id]['neighbors'],
+                'neighborsAtFinish' => array_values(array_diff(array_keys($running), [$id])),
+            ];
             unset($running[$id]);
             $done[$id] = $finished;
-            reportFinish($id, $finished, $logs[$id], $rc);
+            $artifacts[$id] = collectStepArtifacts($root, $id, $manifest[$id], $finished, $context, $artifactDir);
+            reportFinish($id, $finished, $logs[$id], $rc, $artifacts[$id], $manifest[$id]['cwd']);
         }
     }
 
     fwrite($rc, 'ALL DONE ' . now() . "\n");
     fclose($rc);
 
-    return summarize($plan, $done, $lanes, microtime(true) - $startedAt, $logDir);
+    return summarize($plan, $done, $artifacts, $lanes, microtime(true) - $startedAt, $logDir);
 }
 
 /**
@@ -470,9 +518,11 @@ function dependenciesMet(array $deps, array $done): bool
  * @param string $root Repository root.
  * @param array{id: string, command: string, cwd: string} $step The step to start.
  * @param string $logPath Where its output goes.
- * @return array{handle: resource, since: float, at: string}
+ * @param array<int, string> $neighbors Ids already running, kept beside the record so
+ *     that the step's snapshot can name who it shared the box with.
+ * @return array{handle: resource, since: float, at: string, neighbors: array<int, string>}
  */
-function launch(string $root, array $step, string $logPath): array
+function launch(string $root, array $step, string $logPath, array $neighbors): array
 {
     $streams = [1 => ['file', $logPath, 'w'], 2 => ['redirect', 1]];
     $handle = proc_open($step['command'], $streams, $pipes, $root . '/' . $step['cwd']);
@@ -480,7 +530,7 @@ function launch(string $root, array $step, string $logPath): array
         fail('could not start ' . $step['id']);
     }
 
-    return ['handle' => $handle, 'since' => microtime(true), 'at' => now()];
+    return ['handle' => $handle, 'since' => microtime(true), 'at' => now(), 'neighbors' => $neighbors];
 }
 
 /**
@@ -490,7 +540,8 @@ function launch(string $root, array $step, string $logPath): array
  * log is complete the moment the process is gone, and every consumer downstream —
  * the ledger, the summary — then gets a record that is whole.
  *
- * @param array<string, array{handle: resource, since: float, at: string}> $running Ids in flight.
+ * @param array<string, array{handle: resource, since: float, at: string,
+ *     neighbors: array<int, string>}> $running Ids in flight.
  * @param array<string, string> $logs Log path by step id.
  * @return array<string, array{outcome: StepOutcome, rc: int, at: string, seconds: float, note: string,
  *     unstable: array{count: int, tests: array<int, string>}}>
@@ -578,8 +629,11 @@ function skipped(array $step, array $done): array
  *     unstable: array{count: int, tests: array<int, string>}} $finished How it went.
  * @param string $logPath Its output file.
  * @param resource $rc The ledger.
+ * @param array{path: string, reason: string, standUp: bool} $artifacts Where the step's
+ *     snapshot of the stand went.
+ * @param string $cwd The step's working directory, as the manifest spells it.
  */
-function reportFinish(string $id, array $finished, string $logPath, $rc): void
+function reportFinish(string $id, array $finished, string $logPath, $rc, array $artifacts, string $cwd): void
 {
     fwrite(STDOUT, sprintf("=== START %s %s ===\n", $id, $finished['at']));
     replay($logPath);
@@ -590,6 +644,9 @@ function reportFinish(string $id, array $finished, string $logPath, $rc): void
         now(),
         formatDuration($finished['seconds']),
     ));
+    // Straight under the verdict, because that is where the reader already is, and
+    // the stand it points at is about to be torn down by whatever runs next.
+    fwrite(STDOUT, artifactPointerLine($id, $artifacts, $cwd) . "\n");
     fwrite($rc, sprintf("%s rc=%d%s\n", $id, $finished['rc'], unstableLedgerField($finished['unstable'])));
 }
 
@@ -645,17 +702,20 @@ function reportSkip(string $id, array $skipped, $rc): void
  * @param array<int, string> $plan Step ids that were planned, in manifest order.
  * @param array<string, array{outcome: StepOutcome, seconds: float, note: string,
  *     unstable: array{count: int, tests: array<int, string>}}> $done Results by id.
+ * @param array<string, array{path: string, reason: string}> $artifacts Snapshots taken, by id.
+ *     A skipped step has none: it never ran, so there was nothing of it on the stand.
  * @param int $lanes Steps at a time.
  * @param float $wall Seconds the whole run took.
  * @param string $logDir Where the per-step logs are.
  * @return int
  */
-function summarize(array $plan, array $done, int $lanes, float $wall, string $logDir): int
+function summarize(array $plan, array $done, array $artifacts, int $lanes, float $wall, string $logDir): int
 {
     fwrite(STDOUT, sprintf("=== SUMMARY %s — %s at %d lane(s) ===\n", now(), formatDuration($wall), $lanes));
     $red = 0;
     $notRun = 0;
     $unstable = [];
+    $collected = [];
     foreach ($plan as $id) {
         $result = $done[$id];
         $isSkip = $result['outcome'] === StepOutcome::Skipped;
@@ -666,6 +726,9 @@ function summarize(array $plan, array $done, int $lanes, float $wall, string $lo
             $notRun++;
         }
         $unstable[$id] = $result['unstable'];
+        if (isset($artifacts[$id])) {
+            $collected[$id] = $artifacts[$id];
+        }
         fwrite(STDOUT, sprintf(
             "  %-8s %-20s %8s  %s\n",
             $result['outcome']->value,
@@ -681,6 +744,7 @@ function summarize(array $plan, array $done, int $lanes, float $wall, string $lo
         $notRun,
         $logDir,
     ));
+    fwrite(STDOUT, artifactSummarySection($collected));
     // A run with nothing to report writes nothing here, so a green log is the same
     // text it has always been and the section showing up is itself the news.
     fwrite(STDOUT, unstableSummarySection($unstable));
@@ -713,6 +777,51 @@ function prepareLogDir(string $logDir, array $plan): array
     }
 
     return $paths;
+}
+
+/**
+ * Create the artifact directory if needed and drop this plan's previous snapshots.
+ *
+ * The same rule the logs keep: only the planned ids are removed, so re-running one
+ * step leaves the rest of the previous run's evidence readable beside it. Failing
+ * here is a fatal configuration error rather than a line inside a snapshot, because
+ * it happens before any step has run and so cannot colour anybody's verdict.
+ *
+ * @param string $artifactDir Directory the per-step snapshots go under.
+ * @param array<int, string> $plan Step ids to run.
+ */
+function prepareArtifactDir(string $artifactDir, array $plan): void
+{
+    if (!is_dir($artifactDir) && !mkdir($artifactDir, ARTIFACT_DIR_MODE, true) && !is_dir($artifactDir)) {
+        fail('could not create the artifact directory ' . $artifactDir);
+    }
+    foreach ($plan as $id) {
+        removeArtifactTree($artifactDir . '/' . $id);
+    }
+}
+
+/**
+ * Delete one step's previous snapshot, whole. A snapshot is the runner's own output
+ * and nothing else writes there, so this walks the tree rather than shelling out.
+ *
+ * @param string $path The directory to remove.
+ */
+function removeArtifactTree(string $path): void
+{
+    if (!is_dir($path)) {
+        return;
+    }
+    foreach (scandir($path) ?: [] as $entry) {
+        if ($entry === '.' || $entry === '..') {
+            continue;
+        }
+        if (is_dir($path . '/' . $entry)) {
+            removeArtifactTree($path . '/' . $entry);
+            continue;
+        }
+        unlink($path . '/' . $entry);
+    }
+    rmdir($path);
 }
 
 /**

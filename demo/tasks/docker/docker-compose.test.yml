@@ -14,6 +14,11 @@ services:
   tasks-mysql-test:
     image: mariadb:11.4
     container_name: tasks-mysql-test
+    # How the runner's artifact collector finds this container: the three demos spell
+    # their database service three different ways, so it is asked for by role rather
+    # than guessed at by name, which would have broken silently on the fourth (HIL-841).
+    labels:
+      hilos.role: database
     ports:
       # Host-side of every publish binds to loopback by default; set
       # HILOS_BIND_HOST in docker/.env to expose this stack to a LAN/tailnet.
@@ -94,6 +99,11 @@ services:
       - path: ../tests/.env
         required: false
     container_name: tasks-daemon-test
+    # Found by role for the same reason the database is (HIL-841): the collector runs
+    # this demo's own db:migration:status inside a container that is ALREADY up, never
+    # starting one, because a stand it raised is no longer the stand that failed.
+    labels:
+      hilos.role: app
     volumes:
       - ..:/app
       - ../../../composer.json:/hilos/composer.json:ro
