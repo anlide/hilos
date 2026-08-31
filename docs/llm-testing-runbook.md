@@ -84,7 +84,7 @@ The daemon uses `LLM_LOCAL_URL`, default `http://host.docker.internal:11434`.
 
 - **Docker Desktop (Windows/macOS/WSL2):** works out of the box.
 - **Native Docker on Linux:** `host.docker.internal` does not resolve. Set
-  `LLM_LOCAL_URL` to the bridge gateway (`http://172.26.0.1:11434`) in
+  `LLM_LOCAL_URL` to the bridge gateway (`http://10.196.0.1:11434`) in
   `demo/chat/docker/.env` — the compose interpolation file, not `demo/chat/.env`,
   because the daemon's `environment:` block re-declares this one variable and
   would shadow the `env_file` value.

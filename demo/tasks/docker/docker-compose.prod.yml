@@ -35,7 +35,7 @@ services:
       # as well, and a connection that reaches it without passing through nginx
       # arrives from the docker network's gateway - a peer that must never be
       # trusted to name anyone.
-      - HILOS_TRUSTED_PROXIES=${DOCKER_NGINX_IP:-172.27.0.12}/32
+      - HILOS_TRUSTED_PROXIES=${DOCKER_NGINX_IP:-10.197.0.12}/32
       # The CLI command channel, the socket admin:create / admin:grant /
       # admin:revoke / protected-mode:open speak.
       - COMMAND_HOST=0.0.0.0
@@ -55,7 +55,7 @@ services:
     restart: unless-stopped
     networks:
       hilos-tasks-prod-network:
-        ipv4_address: ${DOCKER_DAEMON_IP:-172.27.0.11}
+        ipv4_address: ${DOCKER_DAEMON_IP:-10.197.0.11}
 
   # Builds the production frontend artifact into ../frontend/dist, which
   # tasks-frontend-prod serves. Mounts the whole repo at /hilos so the
@@ -97,7 +97,7 @@ services:
     restart: unless-stopped
     networks:
       hilos-tasks-prod-network:
-        ipv4_address: ${DOCKER_NGINX_IP:-172.27.0.12}
+        ipv4_address: ${DOCKER_NGINX_IP:-10.197.0.12}
 
   tasks-cli-prod:
     build: .
@@ -114,7 +114,7 @@ services:
     environment:
       - APP_ENV=prod
       - TERM=xterm-256color
-      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-172.27.0.11}
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-10.197.0.11}
       - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
       - COMMAND_PORT=8094
@@ -137,7 +137,7 @@ services:
     working_dir: /app
     environment:
       - APP_ENV=prod
-      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-172.27.0.11}
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-10.197.0.11}
       - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
       - COMMAND_PORT=8094
@@ -154,4 +154,11 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: ${DOCKER_NETWORK_SUBNET:-172.27.0.0/16}
+        # Deliberately outside 172.16.0.0/12 and 192.168.0.0/16 - Docker's default
+        # address pools. nginx needs a fixed address (the daemon trusts it by that
+        # address and nothing else), so this subnet is claimed, not assigned. Inside
+        # a default pool that claim loses a race: any other stack whose network came
+        # up first may already hold the range, and then the stand fails to start with
+        # "Pool overlaps with other one on this address space". 10.0.0.0/8 is never
+        # auto-assigned (demo/cluster/docker/docker-compose.cluster.yml).
+        - subnet: ${DOCKER_NETWORK_SUBNET:-10.197.0.0/16}

@@ -67,7 +67,7 @@ services:
     restart: unless-stopped
     networks:
       hilos-demo-chat-dev-network:
-        ipv4_address: ${DOCKER_DAEMON_IP:-172.26.0.11}
+        ipv4_address: ${DOCKER_DAEMON_IP:-10.196.0.11}
 
   # Mail interceptor for the dev stand: the daemon sends over SMTP to it and its
   # web UI is published on the host, so a verification code or a notification is
@@ -127,7 +127,7 @@ services:
     environment:
       - APP_ENV=dev
       - TERM=xterm-256color
-      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-172.26.0.11}
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-10.196.0.11}
       - HTTP_STATUS_PORT=8090
       - WORKER_COMM_PORT=8091
       - COMMAND_PORT=8094
@@ -151,7 +151,7 @@ services:
     working_dir: /app
     environment:
       - APP_ENV=dev
-      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-172.26.0.11}
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-10.196.0.11}
       - HTTP_STATUS_PORT=8090
       - WORKER_COMM_PORT=8091
       - COMMAND_PORT=8094
@@ -166,4 +166,12 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: ${DOCKER_NETWORK_SUBNET:-172.26.0.0/16}
+        # Deliberately outside 172.16.0.0/12 and 192.168.0.0/16 - Docker's default
+        # address pools. The cli and monitor containers need a fixed daemon address
+        # (they reach it by that address and nothing else), so this subnet is claimed,
+        # not assigned. Inside a default pool that claim loses a race: any other stack
+        # whose network came up first may already hold the range, and then the stand
+        # fails to start with "Pool overlaps with other one on this address space".
+        # 10.0.0.0/8 is never auto-assigned
+        # (demo/cluster/docker/docker-compose.cluster.yml).
+        - subnet: ${DOCKER_NETWORK_SUBNET:-10.196.0.0/16}

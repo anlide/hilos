@@ -39,7 +39,7 @@ services:
     restart: unless-stopped
     networks:
       hilos-demo-chat-local-network:
-        ipv4_address: ${DOCKER_MYSQL_IP:-172.26.0.10}
+        ipv4_address: ${DOCKER_MYSQL_IP:-10.196.0.10}
 
   phpmyadmin-local:
     image: phpmyadmin:latest
@@ -135,7 +135,7 @@ services:
       # as well, and a connection that reaches it without passing through nginx
       # arrives from the docker network's gateway - a peer that must never be
       # trusted to name anyone.
-      - HILOS_TRUSTED_PROXIES=${DOCKER_NGINX_IP:-172.26.0.12}/32
+      - HILOS_TRUSTED_PROXIES=${DOCKER_NGINX_IP:-10.196.0.12}/32
       - COMMAND_HOST=0.0.0.0
       - COMMAND_PORT=8094
       # The daemon addresses itself, so an operator command run with `docker exec`
@@ -188,7 +188,7 @@ services:
     restart: unless-stopped
     networks:
       hilos-demo-chat-local-network:
-        ipv4_address: ${DOCKER_DAEMON_IP:-172.26.0.11}
+        ipv4_address: ${DOCKER_DAEMON_IP:-10.196.0.11}
 
   # On-demand CLI container. Sits behind the `composer` profile, not the `cli` one the other
   # demos use: the composer scripts of this demo name it that way, and the profile is a word
@@ -210,7 +210,7 @@ services:
       - APP_ENV=local
       - TERM=xterm-256color
       - DOCKER=true
-      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-172.26.0.11}
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-10.196.0.11}
       - HTTP_STATUS_PORT=8090
       - WORKER_COMM_PORT=8091
       - COMMAND_PORT=8094
@@ -243,7 +243,7 @@ services:
     working_dir: /app
     environment:
       - APP_ENV=local
-      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-172.26.0.11}
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-10.196.0.11}
       - HTTP_STATUS_PORT=8090
       - WORKER_COMM_PORT=8091
       - COMMAND_PORT=8094
@@ -274,7 +274,7 @@ services:
       - full
     networks:
       hilos-demo-chat-local-network:
-        ipv4_address: ${DOCKER_NGINX_IP:-172.26.0.12}
+        ipv4_address: ${DOCKER_NGINX_IP:-10.196.0.12}
 
   # Vite dev server with HMR for the chat frontend. No profile: it is part of the
   # default local stack, so `daemon-start` brings it up with the backend. Mounts the
@@ -325,4 +325,11 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: ${DOCKER_NETWORK_SUBNET:-172.26.0.0/16}
+        # Deliberately outside 172.16.0.0/12 and 192.168.0.0/16 - Docker's default
+        # address pools. nginx needs a fixed address (the daemon trusts it by that
+        # address and nothing else), so this subnet is claimed, not assigned. Inside
+        # a default pool that claim loses a race: any other stack whose network came
+        # up first may already hold the range, and then the stand fails to start with
+        # "Pool overlaps with other one on this address space". 10.0.0.0/8 is never
+        # auto-assigned (demo/cluster/docker/docker-compose.cluster.yml).
+        - subnet: ${DOCKER_NETWORK_SUBNET:-10.196.0.0/16}

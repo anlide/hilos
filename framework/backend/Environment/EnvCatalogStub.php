@@ -86,12 +86,12 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::DAEMON_ERROR_LOG_FILE->name => self::required(EnvCatalogConstants::TYPE_STRING),
             EnvConstants::DOCKER_NETWORK_SUBNET->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,
-                '172.25.0.0/16',
+                '10.190.0.0/16',
                 emptyIsMissing: true,
             ),
             EnvConstants::DOCKER_DAEMON_IP->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,
-                '172.25.0.10',
+                '10.190.0.10',
                 emptyIsMissing: true,
             ),
             EnvConstants::DOCKER->name => self::entry(EnvCatalogConstants::TYPE_BOOLEAN, false, emptyIsMissing: true),

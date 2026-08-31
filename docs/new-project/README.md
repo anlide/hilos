@@ -147,9 +147,16 @@ registry of taken host ports:
 | simple-poll local | 33065 | 8104/8105/8106 | 8082 | 82/445 | 5175 |
 | simple-poll test | 33066 | 8107/8108/8109 | — | 8088/8448 | — |
 
-A new project takes the next free block. Each local network also needs its own
-subnet (`172.26/16` chat, `172.27/16` tasks, `172.28/16` poll, …) because the
-cli reaches the daemon by a static IP (`HILOS_DAEMON_HOST`).
+A new project takes the next free block. Each network also needs its own subnet,
+because the cli reaches the daemon by a static IP (`HILOS_DAEMON_HOST`), and that
+subnet must sit **outside Docker's default address pools** (`172.16.0.0/12` and
+`192.168.0.0/16`). A subnet claimed inside a pool Docker also hands out loses the
+race against whichever network came up first, and the stand then fails to start
+with `Pool overlaps with other one on this address space`. `10.0.0.0/8` is never
+auto-assigned, so the ranges live there: `10.185` cluster, `10.186`/`10.187`/
+`10.188` the three test stands, `10.196`/`10.197`/`10.198` the three
+local+prod+dev stands. A new project claims the next free range in the
+`10.19x` row.
 
 **Worker pool.** The daemon pre-starts `WORKER_MIN_REGULAR` regular and
 `WORKER_MIN_MONOPOLISTIC` monopolistic workers (regular ones scale up to
