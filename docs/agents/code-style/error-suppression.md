@@ -97,7 +97,10 @@ result is checked and the checking branch throws: the failure becomes an excepti
 either way, so it belongs behind the seam. A result nobody examines is class D and
 stays legal, and the stream and socket primitives (`fwrite`, `fread`, `fclose`,
 `feof`, `stream_*`, `socket_*`) are not judged at all — they work over a descriptor
-rather than a path, which is where class B lives.
+rather than a path, which is where class B lives. A suppression written over the
+whole assignment — `@$handle = fopen($path, 'rb');` — is the same class as one
+written over the call, and both signs read it by the call the `@` covers, so moving
+the sign one token left buys nothing.
 
 **Checked automatically: `ERROR-SUPPRESSION`, `FS-SEAM`.**
 

@@ -74,4 +74,21 @@ final class FsSeamLookAlikes
 
         return $chunk;
     }
+
+    /**
+     * The class D shape written with the suppression over the whole assignment. Sign 2
+     * now DOES walk this far — it did not before the anchor was normalized — and has to
+     * stay silent all the same, because the statement after it is a `return` rather than
+     * an `if` that throws.
+     *
+     * @param string $path Path of the sidecar that may not have been written yet
+     * @return int|null Size in bytes, or null while the sidecar is absent
+     */
+    public function sidecarSizeUnderWholeStatementSuppression(string $path): ?int
+    {
+        // warning-suppressed: a sidecar that is not there yet has no size, and the caller says so
+        @$size = filesize($path . '.meta');
+
+        return $size === false ? null : $size;
+    }
 }

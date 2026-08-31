@@ -36,6 +36,12 @@ use Hilos\Tests\CodeStyle\Violation;
  * and class B — a non-blocking socket answering `EAGAIN` — would light up on every
  * tick of the event loop.
  *
+ * A suppression written over a whole assignment — `@$handle = fopen($path, 'rb');` — is
+ * read by the call it covers, so moving the `@` one token left changes nothing: the rule
+ * anchors every sign on the call rather than on the sign. List destructuring
+ * (`@[$a, $b] = ...`) is deliberately not read — it carries no single covered call for
+ * the two signs to be about.
+ *
  * Only real tokens are read, so `@fopen` inside a docblock or a string literal is not
  * a suppression and cannot be a hit.
  */
@@ -91,6 +97,24 @@ final class FsSeamRule implements CodeStyleRule
     ];
 
     /**
+     * The tokens an assignment target is made of, walked over on the way to its `=`.
+     * Whitespace and comments stand among them because the walk reads raw tokens rather
+     * than significant ones — it has to count brackets, which the significant readers skip.
+     *
+     * @var array<int, int>
+     */
+    private const array TARGET_TOKENS = [
+        T_WHITESPACE,
+        T_COMMENT,
+        T_DOC_COMMENT,
+        T_OBJECT_OPERATOR,
+        T_NULLSAFE_OBJECT_OPERATOR,
+        T_DOUBLE_COLON,
+        T_STRING,
+        T_VARIABLE,
+    ];
+
+    /**
      * @return string Rule id
      */
     public function id(): string
@@ -124,7 +148,12 @@ final class FsSeamRule implements CodeStyleRule
                 continue;
             }
 
-            $function = $this->suppressedFunction($tokens, $index);
+            $callIndex = $this->coveredCall($tokens, $index);
+            if ($callIndex === null) {
+                continue;
+            }
+
+            $function = $this->suppressedFunction($tokens, $callIndex);
             if ($function === null) {
                 continue;
             }
@@ -133,17 +162,17 @@ final class FsSeamRule implements CodeStyleRule
                 yield new Violation(
                     self::ID,
                     $relativePath,
-                    $lines[$index],
+                    $lines[$callIndex],
                     'a file is opened under @ outside the Fs seam; read it through Hilos\Fs\FsPath instead',
                 );
                 continue;
             }
 
-            if (in_array($function, self::PATH_PRIMITIVES, true) && $this->failureBecomesThrow($tokens, $index)) {
+            if (in_array($function, self::PATH_PRIMITIVES, true) && $this->failureBecomesThrow($tokens, $callIndex)) {
                 yield new Violation(
                     self::ID,
                     $relativePath,
-                    $lines[$index],
+                    $lines[$callIndex],
                     'a suppressed ' . $function . '() turns its failure into an exception outside the Fs seam;'
                         . ' call Hilos\Fs\FsPath and catch its Fs exception',
                 );
@@ -161,26 +190,94 @@ final class FsSeamRule implements CodeStyleRule
     }
 
     /**
+     * Finds the call a suppression covers, which is the index every sign is then judged
+     * from. The sign stands either in front of the call itself — `$h = @fopen(...)` — or
+     * in front of a whole assignment — `@$h = fopen(...)`; both spell the same
+     * suppression, and anchoring on the call is what makes the rule read them alike.
+     *
+     * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
+     * @param int $index Index of the `@` token
+     * @return int|null Index the covered call starts at, or null when `@` covers no single call
+     */
+    private function coveredCall(array $tokens, int $index): ?int
+    {
+        $next = $this->significantIndex($tokens, $index, 1);
+        if ($next === null) {
+            return null;
+        }
+
+        $token = $tokens[$next];
+        if (!is_array($token) || $token[0] !== T_VARIABLE) {
+            return $next;
+        }
+
+        $assignment = $this->assignmentOperator($tokens, $next);
+
+        return $assignment === null ? null : $this->significantIndex($tokens, $assignment, 1);
+    }
+
+    /**
+     * Steps over the target of an assignment a suppression covers — a variable and the
+     * property, static member or offset chain hanging off it — and stops on the `=` that
+     * ends it. Anything else on the way means the `@` covers no assignment, and the shape
+     * is skipped the way an unrecognised one is.
+     *
+     * No list of compound operators is needed: `token_get_all()` gives `.=`, `??=`, `&=`,
+     * `==`, `===` and `=>` each their own multi-character token, so a bare `=` arrives as
+     * a single-character one and is a plain assignment and nothing else.
+     *
+     * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
+     * @param int $variableIndex Index of the variable the assignment target starts at
+     * @return int|null Index of the `=` that ends the target, or null when this is no assignment
+     */
+    private function assignmentOperator(array $tokens, int $variableIndex): ?int
+    {
+        $depth = 0;
+
+        for ($cursor = $variableIndex + 1; isset($tokens[$cursor]); $cursor++) {
+            $token = $tokens[$cursor];
+            if ($token === '[') {
+                $depth++;
+                continue;
+            }
+
+            if ($token === ']') {
+                $depth--;
+                continue;
+            }
+
+            if ($depth > 0) {
+                continue;
+            }
+
+            if ($token === '=') {
+                return $cursor;
+            }
+
+            if (!is_array($token) || !in_array($token[0], self::TARGET_TOKENS, true)) {
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Reads the function a suppression covers. A name written fully qualified is one
      * token, so the tail after the separator is what names the builtin.
      *
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
-     * @param int $index Index of the `@` token
+     * @param int $callIndex Index the covered call starts at
      * @return string|null Lower-cased function name, or null when `@` covers something else than a call
      */
-    private function suppressedFunction(array $tokens, int $index): ?string
+    private function suppressedFunction(array $tokens, int $callIndex): ?string
     {
-        $nameIndex = $this->significantIndex($tokens, $index, 1);
-        if ($nameIndex === null) {
-            return null;
-        }
-
-        $name = $tokens[$nameIndex];
+        $name = $tokens[$callIndex];
         if (!is_array($name) || !in_array($name[0], [T_STRING, T_NAME_FULLY_QUALIFIED], true)) {
             return null;
         }
 
-        if ($this->significantToken($tokens, $nameIndex, 1) !== '(') {
+        if ($this->significantToken($tokens, $callIndex, 1) !== '(') {
             return null;
         }
 
@@ -196,7 +293,7 @@ final class FsSeamRule implements CodeStyleRule
      * that same variable. A result nobody examines is class D and stays silent.
      *
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
-     * @param int $index Index of the `@` token
+     * @param int $index Index the covered call starts at
      * @return bool True when the failure of this call reaches a `throw`
      */
     private function failureBecomesThrow(array $tokens, int $index): bool
@@ -218,7 +315,7 @@ final class FsSeamRule implements CodeStyleRule
      * read as standing in the condition.
      *
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
-     * @param int $index Index of the `@` token
+     * @param int $index Index the covered call starts at
      * @return int|null Index of the closing parenthesis of the condition, or null when there is none
      */
     private function enclosingConditionEnd(array $tokens, int $index): ?int
@@ -254,13 +351,22 @@ final class FsSeamRule implements CodeStyleRule
     }
 
     /**
+     * Reads back from the call to the variable it is assigned to. The suppression sign
+     * may stand between the two — `$ok = @unlink($p)` — or in front of the whole
+     * assignment — `@$ok = unlink($p)`; stepping over it here is what makes the two
+     * spellings one shape rather than two.
+     *
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
-     * @param int $index Index of the `@` token
+     * @param int $index Index the covered call starts at
      * @return string|null Name of the variable the call is assigned to, or null when it is not assigned
      */
     private function assignedVariable(array $tokens, int $index): ?string
     {
         $assignment = $this->significantIndex($tokens, $index, -1);
+        if ($assignment !== null && $tokens[$assignment] === '@') {
+            $assignment = $this->significantIndex($tokens, $assignment, -1);
+        }
+
         if ($assignment === null || $tokens[$assignment] !== '=') {
             return null;
         }
@@ -276,7 +382,7 @@ final class FsSeamRule implements CodeStyleRule
      * else in between means the result travels on as data, which is a different defect.
      *
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
-     * @param int $index Index of the `@` token
+     * @param int $index Index the covered call starts at
      * @param string $variable Name of the variable the call is assigned to
      * @return bool True when the very next statement rejects that variable by throwing
      */

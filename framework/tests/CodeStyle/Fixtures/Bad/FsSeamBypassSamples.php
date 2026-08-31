@@ -11,9 +11,9 @@ use RuntimeException;
  * are therefore legal by ERROR-SUPPRESSION, which is the whole point — a marker no
  * longer buys a file primitive the right to owe an exception outside the seam.
  *
- * The first goes down by sign 1 (a file is opened under `@`), the other two by sign 2
+ * The first goes down by sign 1 (a file is opened under `@`), the next two by sign 2
  * (a suppressed path primitive whose checked failure becomes a throw) — one of them
- * written brace-less, where the branch is the `throw` itself.
+ * brace-less; the last two repeat both signs with the `@` over the whole assignment.
  */
 final class FsSeamBypassSamples
 {
@@ -48,5 +48,34 @@ final class FsSeamBypassSamples
     {
         // warning-suppressed: false becomes RuntimeException on the same line
         if (!@unlink($path)) throw new RuntimeException("Cannot delete: {$path}");
+    }
+
+    /**
+     * The same open as read(), with the suppression moved one token left. Sign 1 has to
+     * fire here too: the shape the guard used to walk past is the reason this leaf exists.
+     *
+     * @param string $path Path opened without the seam, under a suppression covering the assignment
+     */
+    public function openUnderWholeStatementSuppression(string $path): void
+    {
+        // warning-suppressed: the handle is closed on the next line either way
+        @$handle = fopen($path, 'rb');
+        fclose($handle);
+    }
+
+    /**
+     * Sign 2 under the same spelling — the half a reader-only fix would have left open,
+     * since the walk back to the assignment starts at the call rather than at the `@`.
+     *
+     * @param string $path Path of the file the caller insists on removing
+     * @throws RuntimeException When the file resists removal
+     */
+    public function dropUnderWholeStatementSuppression(string $path): void
+    {
+        // warning-suppressed: false becomes RuntimeException on the next line
+        @$ok = unlink($path);
+        if (!$ok) {
+            throw new RuntimeException("Cannot delete: {$path}");
+        }
     }
 }

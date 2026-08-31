@@ -165,6 +165,12 @@ final class RuleFixtureTest extends TestCase
                 'FS-SEAM Bad/FsSeamBypassSamples.php:50 — a suppressed unlink() turns its failure into an '
                     . 'exception outside the Fs seam; call Hilos\Fs\FsPath and catch its Fs exception '
                     . '(see docs/agents/code-style/error-suppression.md)',
+                'FS-SEAM Bad/FsSeamBypassSamples.php:62 — a file is opened under @ outside the Fs seam; '
+                    . 'read it through Hilos\Fs\FsPath instead '
+                    . '(see docs/agents/code-style/error-suppression.md)',
+                'FS-SEAM Bad/FsSeamBypassSamples.php:76 — a suppressed unlink() turns its failure into an '
+                    . 'exception outside the Fs seam; call Hilos\Fs\FsPath and catch its Fs exception '
+                    . '(see docs/agents/code-style/error-suppression.md)',
                 'LINE-LENGTH Bad/LineLengthSamples.php:15 — line is 158 characters, limit 150 '
                     . '(see docs/agents/code-style/line-length.md)',
                 'LINE-LENGTH Bad/LineLengthSamples.php:21 — line is 154 characters, limit 150 '

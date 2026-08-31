@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime;
 
+use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
@@ -27,10 +28,17 @@ final class RtSyncApplicator
      * Applies RT_SYNC_CREATED payload to Hilos::$rt.
      *
      * A row an {@see RtState} refuses never enters the collection: the state is
-     * built whole before it is added, so the refusal costs exactly that row. It
-     * is caught rather than let out because the worker loop around
-     * `handleDaemonMessage()` catches only its two agent exceptions, so an
-     * escaping refusal would take the worker down over one broken row.
+     * built whole before it is added, so the refusal costs exactly that row. It is
+     * caught rather than let out because this method runs in the MASTER as well as
+     * in a worker. The master reaches it from {@see DaemonManager::handleDaemonSignal()}
+     * inside {@see DaemonManager::dispatchSignals()}, which drains the whole queued
+     * batch of the tick with no catch of its own: an escaping refusal would abandon
+     * the rest of that batch and land in the run loop's `catch (Throwable)`, which
+     * takes the node out of the cluster the way SIGTERM would — the cost
+     * {@see DaemonManager::applyReHydrateContained()} already names for its own
+     * sibling case. In a worker the loop around `handleDaemonMessage()` has contained
+     * a `Throwable` since HIL-574, so there the catch here keeps the failure down to
+     * one row rather than to one message.
      *
      * The write itself is marked as applied-remote, so the announcement the collection makes
      * repairs the local views and stops there instead of being sent back where it came from.
