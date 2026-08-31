@@ -8,6 +8,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\PageReach;
 
 /**
  * AbstractHilosLogsKeysPage - Abstract base for Hilos logs by key list page.
@@ -17,6 +18,8 @@ use Hilos\Core\Page\AbstractHilosPage;
 abstract class AbstractHilosLogsKeysPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_LOGS_KEYS;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_KEYS,

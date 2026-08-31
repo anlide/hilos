@@ -11,6 +11,7 @@ use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
+use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Pages\DTO\HilosGuardianAgentPageSubscribeParams;
 
@@ -25,6 +26,8 @@ use Hilos\Pages\DTO\HilosGuardianAgentPageSubscribeParams;
 abstract class AbstractHilosGuardianAgentPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_GUARDIAN_AGENT;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT,

@@ -8,6 +8,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\PageReach;
 
 /**
  * AbstractHilosChangeLogTablesPage - Abstract base for Hilos change log tracked tables list.
@@ -20,6 +21,8 @@ use Hilos\Core\Page\AbstractHilosPage;
 abstract class AbstractHilosChangeLogTablesPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_CHANGE_LOG_TABLES;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLES,

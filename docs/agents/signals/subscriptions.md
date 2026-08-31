@@ -119,6 +119,32 @@ the page built, so the client receives them in the same `page_response` instead
 of asking the catalog for them. The client side needs nothing new for any of
 this — `bindPageScope` ingests the one frame that arrives.
 
+### A page declares whether anybody navigates to it
+
+A page answers with `AbstractPage::REACH`, a `PageReach` constant, and the answer is
+one of two: `ROUTE` when the browser navigates here, `ACTION_HOST` when nobody does
+and the page only hosts actions that arrive while the person is on another page. The
+constant is inherited, so a base answers for its whole branch and a thin subclass
+writes nothing; `UNDECLARED` belongs to `AbstractPage` alone, because an answer on a
+common root would declare every page in the repository at once.
+
+The answer matters because `READS_DB` is taken up on a page subscription and let go on
+unsubscribe (`WorkerManager::takeUpPageSources()`, reached from the `page_subscribe`
+route). A page nobody subscribes to is never the subject of a take-up, so a list it
+writes there sits unread and its reads are refused at the moment the person presses the
+button. Those reads belong in `DbContext::processWideReadCollections()` instead, which
+holds interest for the life of the process — the framework's own entries are in
+`HilosDbContext`, and a project overrides the method and calls the parent.
+
+Nothing reads the declaration at runtime. It is judged by the `PAGE-REACH` guard, which
+reports a page nothing in its chain answers for, an `ACTION_HOST` that still fills
+`READS_DB`, and a common root that answers at all. Exactly one `ACTION_HOST` exists:
+`AbstractHilosNotificationsPage`, which is a page by mistake — the bell lives in the
+application shell and its live channel is the group above — and HIL-860 retires it.
+
+Checked automatically: `PAGE-REACH`, see
+[automated-checks.md](../code-style/automated-checks.md).
+
 ### Exceptions, and the test that finds them
 
 Ask one question about the data in dispute: **would the page render complete

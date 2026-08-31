@@ -9,6 +9,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageAccessLevel;
+use Hilos\Core\Page\PageReach;
 use Hilos\Groups\AbstractHilosNotificationsGroup;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Notification\NotificationAction;
@@ -50,6 +51,18 @@ use Hilos\Notification\NotificationSignalName;
 abstract class AbstractHilosNotificationsPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_NOTIFICATIONS;
+
+    /**
+     * A page by mistake, and the only ACTION_HOST there is.
+     *
+     * Nobody navigates to the notification center: the bell lives in the layout above
+     * whatever page the person is on, and its live channel is the group
+     * {@see AbstractHilosNotificationsGroup}. This page hosted the bell's actions until
+     * HIL-771 and now hosts nothing, which is why its reads are process-wide and its
+     * READS_DB is empty. HIL-860 retires it; the declaration says out loud, until then,
+     * that a subscription to it is not what takes its reads up.
+     */
+    public const PageReach REACH = PageReach::ACTION_HOST;
 
     /**
      * Per-user surface, not an admin one: any signed-in user reads their own notifications.

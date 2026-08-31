@@ -30,6 +30,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
@@ -53,6 +54,8 @@ final class MainPage extends AbstractPage
     public const array READS_DB = [ChatDbContext::events, ChatDbContext::eventAttachments];
 
     public const string PAGE = PageConstants::MAIN;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 

@@ -8,6 +8,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\PageReach;
 
 /**
  * AbstractHilosSecurityPage - Security center overview.
@@ -15,6 +16,8 @@ use Hilos\Core\Page\AbstractHilosPage;
 abstract class AbstractHilosSecurityPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_SECURITY;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_SECURITY,

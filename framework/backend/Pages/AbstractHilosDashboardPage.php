@@ -9,6 +9,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogResolver;
@@ -21,6 +22,8 @@ use Hilos\Database\Pages\PageCatalogResolver;
 abstract class AbstractHilosDashboardPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_DASHBOARD;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_DASHBOARD,

@@ -25,6 +25,7 @@ use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
+use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
 
 /**
@@ -43,6 +44,8 @@ final class UserPage extends AbstractPage
     public const array READS_DB = [ChatDbContext::users];
 
     public const string PAGE = PageConstants::USER;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 

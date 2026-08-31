@@ -8,6 +8,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\PageReach;
 
 /**
  * AbstractHilosMcpSkillsDashboardPage - Abstract base for Hilos MCP and Skills hub.
@@ -17,6 +18,8 @@ use Hilos\Core\Page\AbstractHilosPage;
 abstract class AbstractHilosMcpSkillsDashboardPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_MCP_SKILLS;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MCP_SKILLS,

@@ -7,10 +7,10 @@ namespace Hilos\Tests\CodeStyle\Throws;
 use Hilos\Tests\CodeStyle\SourceScanner;
 
 /**
- * One tokenization pass over the production roots, kept as the little the throws rule
- * needs: which classes exist, what they extend, use and implement, which methods
- * they declare with which visibility and `@throws`, and where inside each body a
- * call or a `throw` sits.
+ * One tokenization pass over the production roots, kept as the little the cross-file
+ * rules need: which classes exist, where they stand, whether they are abstract, what
+ * they extend, use and implement, which constants and methods they declare with which
+ * visibility and `@throws`, and where inside each body a call or a `throw` sits.
  *
  * The index is always built over every production root, whatever zone is judged: a
  * demo calls the framework, and an index cut down to the judged zone would answer
@@ -132,6 +132,32 @@ final class SourceIndex
             if ($found !== null) {
                 return $found;
             }
+        }
+
+        return null;
+    }
+
+    /**
+     * Walks the parent chain the way an inherited constant is resolved: the class
+     * itself first, then its parents, the nearest declaration winning. Interfaces and
+     * traits are left out — a constant reached through one is not the inheritance a
+     * declaration on a base class is written for, and reading it as one would let a
+     * shared interface answer for classes that never declared anything.
+     *
+     * @param string $class Fully qualified name of the class the constant is read on
+     * @param string $constant Constant name as written
+     * @return ?string Raw value text of the declaration that wins, or null when nothing in the chain declares it
+     */
+    public function resolveConstant(string $class, string $constant): ?string
+    {
+        $seen = [];
+        $current = $this->find($class);
+        while ($current !== null && !isset($seen[strtolower($current->name)])) {
+            if (isset($current->constants[$constant])) {
+                return $current->constants[$constant];
+            }
+            $seen[strtolower($current->name)] = true;
+            $current = $current->parent === null ? null : $this->find($current->parent);
         }
 
         return null;
@@ -275,13 +301,39 @@ final class SourceIndex
         }
 
         $name = $this->namespace === '' ? $nameToken[1] : $this->namespace . '\\' . $nameToken[1];
+        $isAbstract = $this->declaredAbstract($this->cursor - 2);
+        $line = $nameToken[2];
         $this->cursor++;
         [$parent, $interfaces] = $this->readInheritance($keyword === T_INTERFACE);
         if (($this->tokens[$this->cursor][0] ?? null) !== '{') {
             return;
         }
 
-        $this->readBody($name, $parent, $interfaces);
+        $this->readBody($name, $parent, $interfaces, $isAbstract, $line);
+    }
+
+    /**
+     * The modifiers of a class stand in front of its keyword and may be written in
+     * either order (`abstract readonly class`, `readonly abstract class`), so the walk
+     * goes backwards over the whole run of them rather than reading the one token
+     * before the keyword.
+     *
+     * @param int $cursor Index of the token directly before the declaration keyword
+     * @return bool True when `abstract` stands among the modifiers
+     */
+    private function declaredAbstract(int $cursor): bool
+    {
+        for (; $cursor >= 0; $cursor--) {
+            $type = $this->tokens[$cursor][0];
+            if ($type === T_ABSTRACT) {
+                return true;
+            }
+            if ($type !== T_FINAL && $type !== T_READONLY) {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -345,8 +397,10 @@ final class SourceIndex
      * @param string $name Fully qualified name of the class being declared
      * @param ?string $parent Fully qualified parent class
      * @param array<int, string> $interfaces Fully qualified interfaces
+     * @param bool $isAbstract True when the declaration carries the `abstract` modifier
+     * @param int $line Line the declaration sits on
      */
-    private function readBody(string $name, ?string $parent, array $interfaces): void
+    private function readBody(string $name, ?string $parent, array $interfaces, bool $isAbstract, int $line): void
     {
         $this->cursor++;
         $this->currentClass = $name;
@@ -354,6 +408,7 @@ final class SourceIndex
         $traits = [];
         $methods = [];
         $properties = [];
+        $constants = [];
         $doc = null;
         $modifiers = [];
         $typeTokens = [];
@@ -382,7 +437,12 @@ final class SourceIndex
                 [$doc, $modifiers, $typeTokens] = [null, [], []];
                 continue;
             }
-            if ($type === T_CONST || $type === T_CASE) {
+            if ($type === T_CONST) {
+                $constants = [...$constants, ...$this->readConstants()];
+                [$doc, $modifiers, $typeTokens] = [null, [], []];
+                continue;
+            }
+            if ($type === T_CASE) {
                 $this->skipMember();
                 [$doc, $modifiers, $typeTokens] = [null, [], []];
                 continue;
@@ -419,8 +479,81 @@ final class SourceIndex
             $this->cursor++;
         }
 
-        $this->classes[strtolower($name)]
-            = new ClassRecord($name, $this->path, $parent, $interfaces, $traits, $methods, $properties);
+        $this->classes[strtolower($name)] = new ClassRecord(
+            $name,
+            $this->path,
+            $parent,
+            $interfaces,
+            $traits,
+            $methods,
+            $properties,
+            $constants,
+            $isAbstract,
+            $line,
+        );
+    }
+
+    /**
+     * Reads one `const` statement into raw value text by name, keeping the text as
+     * written rather than evaluating it: unevaluated it still tells an enum case from
+     * an empty list, and evaluating would mean loading sources the index deliberately
+     * only tokenizes.
+     *
+     * Everything in front of the `=` is the optional type and the name, so the name is
+     * whatever name token stands directly before it — which is also how one statement
+     * declaring several constants is read, one comma-separated part at a time.
+     *
+     * @return array<string, string> Raw value text by constant name
+     */
+    private function readConstants(): array
+    {
+        $this->cursor++;
+        $constants = [];
+        $declared = null;
+        $name = null;
+        $value = '';
+        while (isset($this->tokens[$this->cursor])) {
+            $token = $this->tokens[$this->cursor];
+            $type = $token[0];
+            if ($type === '}') {
+                break;
+            }
+            if ($type === ';') {
+                $this->cursor++;
+                break;
+            }
+            if ($name === null) {
+                if ($type === '=') {
+                    $name = $declared;
+                }
+                if ($this->isName($token)) {
+                    $declared = $token[1];
+                }
+                $this->cursor++;
+                continue;
+            }
+            if ($type === ',') {
+                $constants[$name] = $value;
+                [$declared, $name, $value] = [null, null, ''];
+                $this->cursor++;
+                continue;
+            }
+            if ($type === '(' || $type === '[') {
+                $close = $this->matchingBracket($this->cursor, $type, $type === '(' ? ')' : ']');
+                for (; $this->cursor <= $close; $this->cursor++) {
+                    $value .= $this->tokens[$this->cursor][1];
+                }
+                continue;
+            }
+            $value .= $token[1];
+            $this->cursor++;
+        }
+
+        if ($name !== null) {
+            $constants[$name] = $value;
+        }
+
+        return $constants;
     }
 
     /**

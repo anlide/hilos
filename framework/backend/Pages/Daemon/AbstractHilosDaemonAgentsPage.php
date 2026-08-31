@@ -8,6 +8,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\PageReach;
 
 /**
  * AbstractHilosDaemonAgentsPage - Abstract base for Hilos daemon agents list page.
@@ -17,6 +18,8 @@ use Hilos\Core\Page\AbstractHilosPage;
 abstract class AbstractHilosDaemonAgentsPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_DAEMON_AGENTS;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_DAEMON_AGENTS,

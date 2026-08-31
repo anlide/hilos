@@ -16,6 +16,7 @@ use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\MalformedInputMarkerRule;
 use Hilos\Tests\CodeStyle\Rule\ObjectStoreMutationRule;
+use Hilos\Tests\CodeStyle\Rule\PageReachRule;
 use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
@@ -188,7 +189,7 @@ final class CodeStyleGuardTest extends TestCase
      */
     private function crossFileRules(): array
     {
-        return [ThrowsPropagationRule::forWholeIndex()];
+        return [ThrowsPropagationRule::forWholeIndex(), PageReachRule::forPageHierarchy()];
     }
 
     /**

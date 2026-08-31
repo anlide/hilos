@@ -6,7 +6,9 @@ namespace Hilos\Tests\CodeStyle\Throws;
 
 /**
  * One class, interface, trait or enum as the index read it, with the links a call
- * target is resolved through and the property types a receiver is resolved through.
+ * target is resolved through, the property types a receiver is resolved through and
+ * the declarations a rule judges the class itself by — its constants, whether it is
+ * abstract, and where it stands.
  */
 final readonly class ClassRecord
 {
@@ -18,6 +20,9 @@ final readonly class ClassRecord
      * @param array<int, string> $traits Fully qualified used traits
      * @param array<string, MethodRecord> $methods Methods keyed by lowercased name
      * @param array<string, string> $propertyTypes Declared type by property name, a leading `$` marking a static one
+     * @param array<string, string> $constants Raw value text by constant name, as it stands after the `=`
+     * @param bool $isAbstract True when the declaration carries the `abstract` modifier
+     * @param int $line Line the declaration sits on, which is where a hit about the class as a whole is reported
      */
     public function __construct(
         public string $name,
@@ -27,6 +32,9 @@ final readonly class ClassRecord
         public array $traits,
         public array $methods,
         public array $propertyTypes,
+        public array $constants,
+        public bool $isAbstract,
+        public int $line,
     ) {
     }
 

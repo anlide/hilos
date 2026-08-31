@@ -9,6 +9,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -34,6 +35,8 @@ use Hilos\Tables\Settings\HilosSettingsTable;
 abstract class AbstractHilosSettingsPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_SETTINGS;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const array ACTIONS = [
         HilosSignalConstants::SETTING_ADD => HilosSettingAddActionDTO::class,

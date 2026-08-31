@@ -24,6 +24,7 @@ rule.
 | `WIRE-KEY-CASE` | A field key that crosses PHP → wire → TS is spelled camelCase. Two halves under one id: PHP judges a constant named in camelCase, TypeScript a constant named `<NAME>_FIELD` and the entries of an `as const` `*RowKey` map. A value that is a reference to another constant is judged where the key is spelled out. | [cross-layer-field-names.md](cross-layer-field-names.md) |
 | `LINE-LENGTH` | A PHP line is wider than 150 characters. Width is counted in characters and not in bytes, so a multi-byte dash costs one column. A line inside a heredoc or nowdoc body is not checked: a break there would land in the string itself. | [line-length.md](line-length.md) |
 | `THROWS-PROPAGATION` | An exception a callee documents is named by the caller's own `@throws` too, unless an enclosing `catch` swallows it; and an implementation does not document an exception the declaration it overrides is silent about. A `throw new X` is judged as its own callee. Only calls whose target is known without inferring a type; a private helper is walked through rather than trusted. | [phpdoc.md](phpdoc.md) |
+| `PAGE-REACH` | Every concrete page says whether the browser navigates to it, and a page that says it does not may not lean on `READS_DB`. The answer is the `REACH` constant, resolved up the parent chain, so a base answers for its whole branch. Three findings: a page for which nothing resolves, an `ACTION_HOST` whose `READS_DB` resolves to a non-empty list — that list is taken up on a page subscription only, so those reads belong in `DbContext::processWideReadCollections()` — and one of the two common roots carrying anything but `UNDECLARED`, which would declare the whole repository at once. Abstract classes are never required to answer. No baseline and no in-comment marker: the two roots are a line in the rule, with their reason. Every production root. | [subscriptions.md](../signals/subscriptions.md) |
 | `E2E-PAGE-GOTO` | An e2e spec opens a page through `gotoPage()`, never through Playwright's `goto`, which waits for the document and not for the subscription's answer. TypeScript only; the `helpers/page.ts` that owns the wrappers is the one place the call is allowed. | [testing-strategy.md](../frontend/testing-strategy.md) |
 | `DOC-ROUTE` | Every file of this catalog, at any depth, is mentioned by at least one `skills/*/SKILL.md`, or declines a route in itself and says why. A file that is both routed and declining is reported the same way. | [rule-authoring.md](../rule-authoring.md) |
 | `DOC-LINK` | A local reference in the agent docs names something that exists. In a skill wrapper both a markdown link and a backticked path count as one; in a document only a markdown link does. | [rule-authoring.md](../rule-authoring.md) |
@@ -472,10 +473,15 @@ A rule whose subject is a contract *between* two files has a third home. The
 steps above cannot reach it: the contract a call has to honour is written in the
 callee, and the callee almost never sits in the file being read.
 
-1. Put it in `framework/tests/CodeStyle/Throws/`, next to `SourceIndex`, which
-   tokenizes the production roots once and answers what a class extends, uses and
-   implements, what each of its methods declares and with what visibility, and
-   where inside a body a call or a `throw` sits.
+1. Build it on `SourceIndex` in `framework/tests/CodeStyle/Throws/`, which
+   tokenizes the production roots once and answers where a class stands, whether
+   it is abstract, what it extends, uses and implements, which constants it
+   declares with which raw value text, what each of its methods declares and with
+   what visibility, and where inside a body a call or a `throw` sits. The rule
+   file itself goes beside the single-file ones in
+   `framework/tests/CodeStyle/Rule/` unless it belongs to the index's own subject,
+   as `THROWS-PROPAGATION` does — the index serves more than one rule, and its
+   directory is named after the first.
 2. Implement `Hilos\Tests\CodeStyle\Throws\CrossFileRule`, not `CodeStyleRule`.
    That interface carries the tokens of one file by construction, and widening it
    would hand eight existing rules an index none of them reads. Do keep yielding

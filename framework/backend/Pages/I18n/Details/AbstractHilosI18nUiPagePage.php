@@ -8,6 +8,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\PageReach;
 
 /**
  * AbstractHilosI18nUiPagePage - Abstract base for Hilos i18n UI page detail page.
@@ -17,6 +18,8 @@ use Hilos\Core\Page\AbstractHilosPage;
 abstract class AbstractHilosI18nUiPagePage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_I18N_UI_PAGE;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_I18N_UI_PAGE,

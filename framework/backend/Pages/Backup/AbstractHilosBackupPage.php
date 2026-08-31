@@ -22,6 +22,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
@@ -64,6 +65,8 @@ use Hilos\Runtime\View\Collection\BackupHistories;
 abstract class AbstractHilosBackupPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_BACKUP;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const array ACTIONS = [
         HilosSignalConstants::BACKUP_CREATE => BackupCreateActionDTO::class,

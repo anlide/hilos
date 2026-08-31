@@ -10,6 +10,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\PageReach;
 
 /**
  * AdminPage - Admin page handler.
@@ -19,6 +20,8 @@ use Hilos\Core\Page\AbstractPage;
 final class AdminPage extends AbstractPage
 {
     public const string PAGE = PageConstants::ADMIN;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 

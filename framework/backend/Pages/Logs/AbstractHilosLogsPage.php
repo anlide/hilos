@@ -14,6 +14,7 @@ use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -45,6 +46,8 @@ use Hilos\Core\Page\PageRouteParams;
 abstract class AbstractHilosLogsPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_LOGS;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS,

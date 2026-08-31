@@ -15,6 +15,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
@@ -51,6 +52,8 @@ use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 abstract class AbstractHilosCommunicationsDeliveriesPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const array ACTIONS = [
         HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY => HilosDeliveryRetryActionDTO::class,

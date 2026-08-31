@@ -6,6 +6,7 @@ namespace Hilos\Pages\Users;
 
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\PageReach;
 
 /**
  * Base class for the framework Hilos users-list page.
@@ -17,4 +18,6 @@ use Hilos\Core\Page\AbstractHilosPage;
 abstract class AbstractHilosUsersPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_USERS;
+
+    public const PageReach REACH = PageReach::ROUTE;
 }

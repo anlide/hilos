@@ -9,6 +9,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageAccessLevel;
+use Hilos\Core\Page\PageReach;
 
 /**
  * AbstractHilosProfilePage - Abstract base for the Hilos current-user profile page.
@@ -32,6 +33,8 @@ use Hilos\Core\Page\PageAccessLevel;
 abstract class AbstractHilosProfilePage extends AbstractPage
 {
     public const string PAGE = HilosPageConstants::HILOS_PROFILE;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     /** Signed-in-only surface; see the class doc for why this must stay explicit. */
     public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::AUTHENTICATED;

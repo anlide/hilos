@@ -8,6 +8,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
+use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\HilosException;
 use Hilos\Pages\Users\DTO\HilosUserPageSubscribeParams;
@@ -21,6 +22,8 @@ use Hilos\Pages\Users\DTO\HilosUserPageSubscribeParams;
 abstract class AbstractHilosUserPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_USER;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     /**
      * Parses route params and runs the typed hook, once the client has been answered.

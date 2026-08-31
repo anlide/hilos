@@ -17,6 +17,7 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageAccessLevel;
+use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -34,6 +35,8 @@ final class AdminModeratorPage extends AbstractPage
     public const array READS_DB = [ChatDbContext::moderatorPromptPieces];
 
     public const string PAGE = PageConstants::ADMIN_MODERATOR;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     /**
      * A project's own administrative surface, closed on the server like every

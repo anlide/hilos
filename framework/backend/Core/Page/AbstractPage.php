@@ -139,6 +139,21 @@ abstract class AbstractPage implements ActionHostInterface
      */
     public const array READS_DB = [];
 
+    /**
+     * Whether the browser navigates to this page, or it only hosts actions.
+     *
+     * PageReach::ROUTE says a person can be on this page, so a subscription takes up
+     * what it reads; PageReach::ACTION_HOST says nobody navigates here and its actions
+     * arrive while the person is looking at something else, which is exactly when
+     * READS_DB above is never taken up. UNDECLARED is the value of this root alone —
+     * an answer here would declare every page in the repository at once.
+     *
+     * Nothing reads this at runtime: it is a declaration the PAGE-REACH guard judges,
+     * not a switch. Like {@see PageAccessLevel} it is inherited, so a base answers for
+     * its whole branch and a thin subclass writes nothing.
+     */
+    public const PageReach REACH = PageReach::UNDECLARED;
+
     /** Agent instance that owns this page handler. */
     protected PageAgentInterface $agent;
 

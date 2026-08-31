@@ -8,6 +8,7 @@ use Demo\Tasks\Agents\TasksAgent;
 use Demo\Tasks\Constants\AgentType;
 use Demo\Tasks\Constants\PageConstants;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\PageReach;
 
 /**
  * MainPage - Main tasks page handler.
@@ -20,6 +21,8 @@ use Hilos\Core\Page\AbstractPage;
 final class MainPage extends AbstractPage
 {
     public const string PAGE = PageConstants::MAIN;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::TASKS;
 }

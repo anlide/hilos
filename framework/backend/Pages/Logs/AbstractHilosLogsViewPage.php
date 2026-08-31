@@ -11,6 +11,7 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -44,6 +45,8 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_LOGS_VIEW;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_VIEW,

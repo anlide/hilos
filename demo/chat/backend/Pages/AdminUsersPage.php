@@ -24,6 +24,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
@@ -45,6 +46,8 @@ final class AdminUsersPage extends AbstractPage
     public const array READS_DB = [ChatDbContext::users, ChatDbContext::events];
 
     public const string PAGE = PageConstants::ADMIN_USERS;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 

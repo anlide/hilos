@@ -10,6 +10,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -55,6 +56,8 @@ use LogicException;
 abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL;
+
+    public const PageReach REACH = PageReach::ROUTE;
 
     public const array ACTIONS = [
         HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET => HilosChannelSettingUpdateActionDTO::class,
