@@ -24,8 +24,8 @@ use Random\RandomException;
  * The three operator commands are what a human uses to end a destructive operation: mint a pass
  * for a verifier, open the system to everyone, or close it back for another attempt. They are NOT
  * test-only - nothing else opens a system that a restore left frozen, because
- * {@see AbstractAgent::requestProtectedModeVerify()} deliberately replaced the automatic lift. A
- * fourth name reaches the same handler for the test path's mint alone (see below).
+ * {@see AbstractAgent::requestProtectedModeVerify()} deliberately replaced the automatic lift. Two
+ * further names reach the same handler for the test path's mint and its close (see below).
  *
  * A trait rather than a base class for the reason {@see ProtectedModeTestDriverTrait} is one:
  * its carriers share no ancestor but {@see AbstractAgent}, and the freeze may only be driven by
@@ -37,10 +37,11 @@ use Random\RandomException;
  * and a project may hold two initiators: the one that runs real operations, and the test
  * driver's carrier. Sharing a name would hand the freeze of one to the other, which the
  * identity check would then refuse - so the test path has its own explicit open
- * ({@see CliCommands::PROTECTED_MODE_TEST_OPEN}) and its own mint
- * ({@see CliCommands::PROTECTED_MODE_TEST_PASS}) instead. Different names, one handler: the mint
- * below fires on either of them, so there is a single minting path, a single identity check and
- * a single wait for the hash to land.
+ * ({@see CliCommands::PROTECTED_MODE_TEST_OPEN}), its own mint
+ * ({@see CliCommands::PROTECTED_MODE_TEST_PASS}) and its own close
+ * ({@see CliCommands::PROTECTED_MODE_TEST_CLOSE}) instead. Different names, one handler: the mint
+ * and the close below each fire on either of their two names, so there is a single minting path,
+ * a single refreeze path, a single identity check and a single wait for the row to move.
  *
  * **The reply is a verdict, not an acknowledgement.** Each command answers once the row has
  * really moved - the pass once its hash is on the row, open once the mode is inactive, close
@@ -101,12 +102,12 @@ trait ProtectedModeOperatorTrait
     private ?string $protectedModeOperatorPass = null;
 
     /**
-     * Whether this command is one of the four this trait drives.
+     * Whether this command is one of the five this trait drives.
      *
-     * The mint answers to two names: the operator's and the test path's. Which of them ever
-     * reaches a given carrier is decided by that carrier's AGENT_COMMANDS declaration, because a
-     * command routes to exactly one agent type per project - so recognizing both here costs
-     * nothing and duplicates no minting path.
+     * The mint and the close each answer to two names: the operator's and the test path's. Which
+     * of them ever reaches a given carrier is decided by that carrier's AGENT_COMMANDS
+     * declaration, because a command routes to exactly one agent type per project - so
+     * recognizing both here costs nothing and duplicates no minting or refreeze path.
      *
      * @param string $command Command-channel wire name
      * @return bool True when {@see handleProtectedModeOperatorCommand()} owns it
@@ -114,8 +115,8 @@ trait ProtectedModeOperatorTrait
     protected function isProtectedModeOperatorCommand(string $command): bool
     {
         return $this->isProtectedModePassCommand($command)
-            || $command === CliCommands::PROTECTED_MODE_OPEN
-            || $command === CliCommands::PROTECTED_MODE_CLOSE;
+            || $this->isProtectedModeCloseCommand($command)
+            || $command === CliCommands::PROTECTED_MODE_OPEN;
     }
 
     /**
@@ -128,6 +129,18 @@ trait ProtectedModeOperatorTrait
     {
         return $command === CliCommands::PROTECTED_MODE_PASS
             || $command === CliCommands::PROTECTED_MODE_TEST_PASS;
+    }
+
+    /**
+     * Whether this command asks for the close, under either of the two names that do.
+     *
+     * @param string $command Command-channel wire name
+     * @return bool True when the command closes the window back into a full freeze
+     */
+    private function isProtectedModeCloseCommand(string $command): bool
+    {
+        return $command === CliCommands::PROTECTED_MODE_CLOSE
+            || $command === CliCommands::PROTECTED_MODE_TEST_CLOSE;
     }
 
     /**
@@ -180,7 +193,7 @@ trait ProtectedModeOperatorTrait
             return;
         }
 
-        // Both remaining commands act on a window that is open: a pass minted for a window
+        // Every remaining command acts on a window that is open: a pass minted for a window
         // nobody opened would sit on the row waiting for one, and a close is the other exit
         // out of that same window.
         if ($freeze->phase !== StateProtectedModeRuntime::PHASE_VERIFYING) {
@@ -198,7 +211,18 @@ trait ProtectedModeOperatorTrait
             return;
         }
 
-        $this->closeProtectedModeForOperator($data);
+        if ($this->isProtectedModeCloseCommand($data->command)) {
+            $this->closeProtectedModeForOperator($data);
+
+            return;
+        }
+
+        // Unreachable while the recognizer above lists exactly what is branched on here, and
+        // written out anyway so that adding a sixth name to it cannot make this method fall off
+        // the end in silence: a command accepted and never answered strands its CLI on the
+        // channel until that side's own timeout, which is the one outcome this handler exists
+        // to prevent.
+        $this->refuseProtectedModeOperator($data->correlationId, "'{$data->command}' is not driven here");
     }
 
     /**

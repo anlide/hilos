@@ -65,7 +65,7 @@ past the agent. The precedent is the backup test commands, which ride
 
 ### The Test Tool That Obligation Produced
 
-Five test-only commands, and the split between them is the whole design:
+Six test-only commands, and the split between them is the whole design:
 
 | Command | Answered by | Why there |
 |---|---|---|
@@ -74,8 +74,11 @@ Five test-only commands, and the split between them is the whole design:
 | `test:protected-mode:leave` | the initiator agent | the driven operation is over: it calls `requestProtectedModeVerify()` and lands in the verification window, where a real one lands too |
 | `test:protected-mode:open` | the initiator agent | the explicit lift, authorized by initiator identity exactly as in production |
 | `test:protected-mode:pass` | the initiator agent | mints one code into the driven window and prints it, so a test has something to type into the verifier's field (HIL-616) |
+| `test:protected-mode:close` | the initiator agent | the window's other exit, back into the full freeze: without it nothing ever drove the way out an operator takes when the verifiers found something wrong (HIL-704) |
 
-`ProtectedModeTestDriverTrait` carries the agent half. A trait, because its two
+`ProtectedModeTestDriverTrait` carries the agent half of the drive trio — enter,
+leave and open; the mint and the close are answered by `ProtectedModeOperatorTrait`
+under their second names (see the operator section below). A trait, because its two
 carriers share no ancestor but `AbstractAgent`, and putting the commands there
 would hand a test-drive of the freeze to every agent of every project. The
 carriers are `AbstractHilosIndexAgent` (so chat, tasks and simple-poll get
@@ -87,8 +90,9 @@ Two properties are worth keeping when this code is touched:
 
 - **Every drive command answers on the move, not on acceptance.** Enter answers
   from `onProtectedModeReady()`, leave when this node's row reads verifying, open
-  when it is back to inactive. That is what makes the reply a verdict and lets a
-  test act on the next line instead of polling.
+  when it is back to inactive, close when it reads active again. That is what
+  makes the reply a verdict and lets a test act on the next line instead of
+  polling.
 - **The pre-checks exist because the core answers nobody.** A repeat enable, a
   disable with no freeze and a disable from the wrong agent are all
   log-and-return paths. Reading the row first turns each into a stated reason
@@ -98,8 +102,8 @@ Two properties are worth keeping when this code is touched:
 
 There is deliberately **no production-environment refusal on the agent side**,
 and since HIL-566 there is no need for one: the socket itself refuses a
-test-only command before it parks anything, so the drive trio is gated on the
-path e2e actually takes — directly over TCP, since the Playwright runner has no
+test-only command before it parks anything, so every test-only name is gated on
+the path e2e actually takes — directly over TCP, since the Playwright runner has no
 PHP. What the socket still does not do is authenticate its caller, which is why
 `admin:grant` and the other unflagged commands remain reachable to anyone who can
 open `COMMAND_PORT`; that is an existing property of the channel, recorded here
@@ -125,13 +129,19 @@ driver's carrier — and a freeze may only be driven by the agent the row names.
 shared name would hand one initiator's freeze to the other, and the identity
 check would then refuse it. Hence the two ladders, same shape, different owners.
 
-The mint answers to **two** names — `protected-mode:pass` and
-`test:protected-mode:pass` — and that is not a hole in the rule above but the
-rule applied: which of the two ever reaches a given carrier is decided by that
-carrier's `AGENT_COMMANDS`, so each name still has exactly one owner per project.
-What is shared is the handler, deliberately: one minting path, one identity
-check, one wait for the hash to land. A second implementation of "what a pass is"
-is the thing worth avoiding, not a second name.
+The mint and the close each answer to **two** names — `protected-mode:pass` and
+`test:protected-mode:pass`, `protected-mode:close` and `test:protected-mode:close`
+— and that is not a hole in the rule above but the rule applied: which of the two
+ever reaches a given carrier is decided by that carrier's `AGENT_COMMANDS`, so
+each name still has exactly one owner per project. What is shared is the handler,
+deliberately: one minting path, one refreeze path, one identity check, one wait
+for the row to move. A second implementation of "what a pass is" or of "what
+closing back does" is the thing worth avoiding, not a second name.
+
+The open has no second name of that kind and does not need one: the test path's
+`test:protected-mode:open` is its own command on `ProtectedModeTestDriverTrait`,
+because the drive ladder needs a lift that works from every phase — which is also
+why teardown uses it and never the close, which is refused outside the window.
 
 The pass is minted from the secure half of `RandomHelper` and never falls back to
 the pseudorandom one: a guessable pass is indistinguishable from a real one to

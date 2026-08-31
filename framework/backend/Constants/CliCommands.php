@@ -235,6 +235,23 @@ final class CliCommands
     public const string PROTECTED_MODE_TEST_PASS = 'test:protected-mode:pass';
 
     /**
+     * Close the system back from the verification window, through the initiator (test-only).
+     *
+     * The test path's own close, for the reason its own mint exists: the operator's
+     * {@see self::PROTECTED_MODE_CLOSE} belongs to the agent that runs real operations, and a
+     * freeze may only be driven by the agent the row records as its initiator - which on the
+     * test path is this driver's carrier. Both names are answered by the same handler and
+     * refreeze through the same request, so the second exit out of the window behaves the same
+     * whichever name asked for it.
+     *
+     * Not a teardown lever: {@see self::PROTECTED_MODE_TEST_OPEN} stays the unconditional one,
+     * because it lifts from any phase while this is refused outside the window.
+     *
+     * @var string Command: Close the system back from the verification window (test-only)
+     */
+    public const string PROTECTED_MODE_TEST_CLOSE = 'test:protected-mode:close';
+
+    /**
      * Mint one pass into the verification window and print it (operator).
      *
      * Not test-only: the three commands below are how a human ends a real destructive operation,

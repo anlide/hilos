@@ -57,6 +57,7 @@ use Hilos\Core\CLI\Commands\PingCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeCloseCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeOpenCommand;
 use Hilos\Core\CLI\Commands\ProtectedModePassCommand;
+use Hilos\Core\CLI\Commands\ProtectedModeTestCloseCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestEnterCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestInspectCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestLeaveCommand;
@@ -168,6 +169,7 @@ class CliManager
         $this->commands[CliCommands::PROTECTED_MODE_TEST_LEAVE] = new ProtectedModeTestLeaveCommand();
         $this->commands[CliCommands::PROTECTED_MODE_TEST_OPEN] = new ProtectedModeTestOpenCommand();
         $this->commands[CliCommands::PROTECTED_MODE_TEST_PASS] = new ProtectedModeTestPassCommand();
+        $this->commands[CliCommands::PROTECTED_MODE_TEST_CLOSE] = new ProtectedModeTestCloseCommand();
         $this->commands[CliCommands::PROTECTED_MODE_PASS] = new ProtectedModePassCommand();
         $this->commands[CliCommands::PROTECTED_MODE_OPEN] = new ProtectedModeOpenCommand();
         $this->commands[CliCommands::PROTECTED_MODE_CLOSE] = new ProtectedModeCloseCommand();

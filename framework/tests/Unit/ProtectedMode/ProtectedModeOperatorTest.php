@@ -31,9 +31,9 @@ use PHPUnit\Framework\TestCase;
  * really moved, and above all that the minted pass reaches the terminal and nothing else - the
  * signal carries its hash, and the agent hands the clear value back only once the row confirms.
  *
- * The mint answers to a second name as well (HIL-616): the test path's, whose carrier is a
- * different initiator. It is the same handler behind both, which is what these cases pin - a
- * separate name must not become a separate set of rules.
+ * The mint answers to a second name as well (HIL-616), and so does the close (HIL-704): the test
+ * path's, whose carrier is a different initiator. It is the same handler behind both, which is
+ * what these cases pin - a separate name must not become a separate set of rules.
  */
 final class ProtectedModeOperatorTest extends TestCase
 {
@@ -257,6 +257,57 @@ final class ProtectedModeOperatorTest extends TestCase
         $agent->handle($this->request(CliCommands::PROTECTED_MODE_CLOSE));
 
         $this->assertRefused($this->singleReply(), StateProtectedModeRuntime::PHASE_VERIFYING);
+        $this->assertNull($this->nextExitRequest(), 'A refused close must queue no refreeze.');
+    }
+
+    public function testTheTestNameClosesThroughTheVerySamePath(): void
+    {
+        // The same bargain the test mint struck: a driven freeze is initiated by an agent the
+        // operator's close does not belong to, so the test path needs its own name - and must
+        // not get its own refreeze. Same request, same wait for the row to read active.
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, ['a-hash']);
+        $agent = new OperatorTestAgent(null);
+
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_CLOSE));
+
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_REFREEZE, $this->nextExitRequest());
+        $agent->onTick();
+        $this->assertSame([], $this->replies(), 'Still in the window, so there is nothing to report yet.');
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null, []);
+        $agent->onTick();
+
+        $reply = $this->singleReply();
+        $this->assertSame(CommandConstants::STATUS_OK, $reply->status);
+        $this->assertSame(
+            StateProtectedModeRuntime::PHASE_ACTIVE,
+            $reply->payload[ProtectedModeCommandConstants::FIELD_PHASE],
+        );
+    }
+
+    public function testTheTestCloseIsRefusedOutsideTheWindowLikeTheOperatorName(): void
+    {
+        // The gate is what keeps the close out of teardown: a suite wanting its stand back has
+        // to take the open, which is the exit that lifts from any phase.
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null, []);
+        $agent = new OperatorTestAgent(null);
+
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_CLOSE));
+
+        $this->assertRefused($this->singleReply(), StateProtectedModeRuntime::PHASE_VERIFYING);
+        $this->assertNull($this->nextExitRequest(), 'A refused close must queue no refreeze.');
+    }
+
+    public function testTheTestCloseIsRefusedFromAnAgentThatDidNotStartTheFreeze(): void
+    {
+        // Inheriting the identity check is the point of sharing the handler: a test name must
+        // not become a way around the one rule the freeze has.
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, 'somebody-else', null, ['a-hash']);
+        $agent = new OperatorTestAgent(null);
+
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_CLOSE));
+
+        $this->assertRefused($this->singleReply(), 'somebody-else');
         $this->assertNull($this->nextExitRequest(), 'A refused close must queue no refreeze.');
     }
 

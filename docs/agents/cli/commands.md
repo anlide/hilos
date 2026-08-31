@@ -157,9 +157,10 @@ master answers them out of memory, and a partitioned node is exactly where they 
 running),
 `test:notification:emit` (every row it causes is written by the agent that answers it, so
 the CLI process itself has nothing to read or write), the protected-mode family
-`test:protected-mode:inspect` / `:enter` / `:leave` / `:open` / `:pass` (the inspector reads
-in-memory state and has to answer on a frozen node, which is exactly where a connect would
-hang; the drive commands write nothing from this process, and the mint's row is the agent's)
+`test:protected-mode:inspect` / `:enter` / `:leave` / `:open` / `:pass` / `:close` (the
+inspector reads in-memory state and has to answer on a frozen node, which is exactly where a
+connect would hang; the drive commands write nothing from this process, and the rows the mint
+and the close move are the agent's)
 and the account and session family `admin:grant` / `:revoke` / `:create`,
 `impersonate:start` / `:stop` and `account:merge` (same reason as `test:notification:emit`:
 every row they cause is written where the account lives). Everything else keeps the full

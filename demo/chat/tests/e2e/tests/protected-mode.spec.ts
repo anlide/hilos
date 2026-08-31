@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test'
 
 import { gotoAdmitted, gotoMaintenance, gotoPage } from '../helpers/page'
 import {
+  closeProtectedMode,
   enterProtectedMode,
   inspectProtectedMode,
   leaveProtectedMode,
@@ -226,9 +227,9 @@ test('the minted code admits the verifier while everyone else keeps the stub', a
 test('leaving the window takes the field and the sentence away together', async ({
   page,
 }) => {
-  // The open is the only exit the driven path has: closing back to a full freeze
-  // is an operator command, owned by the agent that runs real operations, and no
-  // test-only name for it exists yet.
+  // The open, which is one of the window's two exits; the close back into the full
+  // freeze is the other, and it takes the same pair away — asserted on its own
+  // below, because the frames it rides are different ones.
   await enterProtectedMode(OPERATION)
   expect(await leaveProtectedMode()).toBe('verifying')
   await mintProtectedModePass()
@@ -270,9 +271,10 @@ test('a public page live through the switch gains no code field', async ({
   await expect(page.getByTestId('maintenance-pass-pending')).toBeHidden()
 })
 
-test('a finished operation lands in the verification window, and only the open ends it', async () => {
-  // The ladder as the master reports it: the window is a phase of the same freeze,
-  // so the start gate stays closed and no pass is outstanding until one is minted.
+test('a finished operation lands in the verification window, and either exit ends it', async () => {
+  // The ladder as the master reports it, both exits walked in one climb: the window
+  // is a phase of the same freeze, and it ends either by closing back into that
+  // freeze or by opening out of it.
   await enterProtectedMode(OPERATION)
   expect(await leaveProtectedMode()).toBe('verifying')
 
@@ -280,17 +282,102 @@ test('a finished operation lands in the verification window, and only the open e
   expect(verifying.phase).toBe('verifying')
   expect(verifying.operation).toBe(OPERATION)
   expect(verifying.passCount).toBe(0)
+  // The half of the freeze where the node runs again — which is what makes
+  // verifying anything possible at all: the gate is open and the roster the freeze
+  // took down has been replayed.
+  expect(verifying.agentStartGateClosed).toBe(false)
+  expect(verifying.stoppedAgents).toEqual([])
 
   // The count is the one place a number about the circle exists: the wire carries
   // a boolean, so a browser learns that a code stands and never how many.
   await mintProtectedModePass()
   expect((await inspectProtectedMode()).passCount).toBe(1)
 
+  // The exit an operator takes when the verifiers found something wrong. Everything
+  // the window relaxed goes back at once, which is why all four are read together:
+  // a close that voided the codes but left the node running would report exactly
+  // the same passCount.
+  expect(await closeProtectedMode()).toBe('active')
+
+  const refrozen = await inspectProtectedMode()
+  expect(refrozen.phase).toBe('active')
+  expect(refrozen.operation).toBe(OPERATION)
+  expect(refrozen.passCount).toBe(0)
+  expect(refrozen.agentStartGateClosed).toBe(true)
+  expect(refrozen.stoppedAgents.length).toBeGreaterThan(0)
+
+  // And the other exit, taken from the full freeze the close just restored — so
+  // the close leaves a node another destructive operation could run on, rather
+  // than a phase nothing gets out of.
   await openProtectedMode()
 
   const lifted = await inspectProtectedMode()
   expect(lifted.phase).toBe('inactive')
   expect(lifted.passCount).toBe(0)
+})
+
+test('closing the window puts the admitted verifier back behind the stub', async ({
+  page,
+}) => {
+  // The browser half of the close, and the reason it is asserted on a live tab
+  // rather than after a reload: what is in question is the delivery of the
+  // transition — the frame goes to everyone but the connection that asked — and a
+  // reload would only prove the frame a cold load gets.
+  await enterProtectedMode(OPERATION)
+  expect(await leaveProtectedMode()).toBe('verifying')
+  const pass = await mintProtectedModePass()
+
+  await gotoMaintenance(page, ADMIN_URL)
+  await presentCode(page, pass)
+  await expect(page.getByTestId('maintenance')).toBeHidden()
+
+  expect(await closeProtectedMode()).toBe('active')
+
+  // Back behind the stub with everybody else, and without the field or the
+  // sentence that stands in for it: both bits of the frame go down together, so
+  // the surface never offers a box that admits nothing.
+  await expect(page.getByTestId('maintenance')).toBeVisible()
+  await expect(page.getByTestId('maintenance-pass-form')).toBeHidden()
+  await expect(page.getByTestId('maintenance-pass-pending')).toBeHidden()
+})
+
+test('a code from a closed window opens no later one', async ({
+  page,
+  context,
+}) => {
+  // The price of doing nothing, named in P-127. The count going to zero says the
+  // row forgot the hash; only this says nobody walks in on the forgotten code once
+  // a window is open again — which is the whole of what voiding a pass has to mean.
+  await enterProtectedMode(OPERATION)
+  expect(await leaveProtectedMode()).toBe('verifying')
+  const closedWindowPass = await mintProtectedModePass()
+
+  await gotoMaintenance(page, ADMIN_URL)
+  await presentCode(page, closedWindowPass)
+  await expect(page.getByTestId('maintenance')).toBeHidden()
+
+  // Close and leave again: a second window of the same freeze, which is the
+  // sequence an operator walks when the first round found something wrong.
+  expect(await closeProtectedMode()).toBe('active')
+  expect(await leaveProtectedMode()).toBe('verifying')
+  const openWindowPass = await mintProtectedModePass()
+  expect(openWindowPass).not.toBe(closedWindowPass)
+
+  // The old code, typed by hand: the tab dropped its own copy when the close said
+  // the window was over, so this is a verifier reading it off the note they were
+  // given a minute ago.
+  await expect(page.getByTestId('maintenance-pass-form')).toBeVisible()
+  await presentCode(page, closedWindowPass)
+  await expect(page.getByTestId('maintenance-pass-error')).toBeVisible()
+  await expect(page.getByTestId('maintenance')).toBeVisible()
+
+  // The current code, so the refusal above is about the code and not about a
+  // window that had stopped admitting anyone.
+  const verifier = await context.newPage()
+  await gotoMaintenance(verifier, ADMIN_URL)
+  await presentCode(verifier, openWindowPass)
+  await expect(verifier.getByTestId('maintenance')).toBeHidden()
+  await verifier.close()
 })
 
 test('the inspector answers mid-freeze, when every other agent is stopped', async () => {

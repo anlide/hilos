@@ -20,6 +20,7 @@ const REPLY_TIMEOUT_MS = 10_000
 const ENTER_COMMAND = 'test:protected-mode:enter'
 const LEAVE_COMMAND = 'test:protected-mode:leave'
 const OPEN_COMMAND = 'test:protected-mode:open'
+const CLOSE_COMMAND = 'test:protected-mode:close'
 const PASS_COMMAND = 'test:protected-mode:pass'
 const INSPECT_COMMAND = 'test:protected-mode:inspect'
 
@@ -118,6 +119,27 @@ export async function leaveProtectedMode(): Promise<string> {
  */
 export async function openProtectedMode(): Promise<string> {
   const reply = await sendCommand(OPEN_COMMAND, {})
+
+  return String(reply.phase ?? '')
+}
+
+/**
+ * Closes the system back from the verification window, through the agent that entered the freeze.
+ *
+ * The window's other exit, and the one an operator takes when the verifiers found
+ * something wrong: every pass is voided, this node's agents are stopped again, the
+ * maintenance screen comes back for the verifiers too, and another destructive
+ * operation may run.
+ *
+ * Not for teardown — it is refused outside the window, which is why
+ * {@link openProtectedModeIfAny} is the unconditional one. Resolves once this
+ * node's runtime row reads active, so a caller may assert on the re-frozen app
+ * without polling for the transition to arrive.
+ *
+ * @returns The phase the agent observed.
+ */
+export async function closeProtectedMode(): Promise<string> {
+  const reply = await sendCommand(CLOSE_COMMAND, {})
 
   return String(reply.phase ?? '')
 }

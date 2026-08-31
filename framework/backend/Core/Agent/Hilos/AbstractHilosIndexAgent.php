@@ -44,7 +44,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * any process called - and {@see AbstractNotificationsLibraryAgent} is now that agent, so
      * the command sits beside the tables it writes.
      *
-     * The protected-mode quartet (HIL-344, HIL-481, HIL-616) rides the same inheritance for the
+     * The protected-mode names (HIL-344, HIL-481, HIL-616, HIL-704) ride the same inheritance for the
      * same reason - chat, tasks and simple-poll get a freeze they can drive by extending this
      * class alone. The inspector is not among them: it is answered by the master, because a
      * freeze stops every agent but the initiator. The operator commands are not either: they
@@ -52,6 +52,9 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * type. The fourth name is the test path's mint: it is answered by the operator trait this
      * class also carries, because a driven window otherwise has no way to produce the code its
      * maintenance screen now asks for - and the operator's own three names stay where they are.
+     * The fifth (HIL-704) is that trait's other half, the test path's close: the window has two
+     * exits, and without it nothing ever drove the one that freezes the node again instead of
+     * opening it to everyone.
      *
      * The channel echo (HIL-729) rides it for the plainest reason of the lot: it proves the
      * command round-trip and nothing else, so the answer is the same wherever it is asked, and
@@ -67,6 +70,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
         CliCommands::PROTECTED_MODE_TEST_LEAVE => [AgentCommandConfigKey::TEST_ONLY => true],
         CliCommands::PROTECTED_MODE_TEST_OPEN => [AgentCommandConfigKey::TEST_ONLY => true],
         CliCommands::PROTECTED_MODE_TEST_PASS => [AgentCommandConfigKey::TEST_ONLY => true],
+        CliCommands::PROTECTED_MODE_TEST_CLOSE => [AgentCommandConfigKey::TEST_ONLY => true],
     ];
 
     /**
