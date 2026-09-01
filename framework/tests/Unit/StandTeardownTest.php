@@ -155,7 +155,7 @@ final class StandTeardownTest extends TestCase
     public function testDescribesAStandThatWasAlreadyClean(): void
     {
         $this->assertSame(
-            'stands: chat — чисто',
+            'stands: chat — clean',
             describeTeardown(self::cleanResult('chat')),
         );
     }
@@ -170,7 +170,7 @@ final class StandTeardownTest extends TestCase
             'residue' => ['containers' => [], 'networks' => []],
         ];
 
-        $this->assertSame('stands: chat — снесено: контейнеров 2, сетей 1', describeTeardown($result));
+        $this->assertSame('stands: chat — removed: 2 container(s), 1 network(s)', describeTeardown($result));
     }
 
     /** What survived is named rather than counted: the run is about to stop, and by what. */
@@ -184,7 +184,7 @@ final class StandTeardownTest extends TestCase
         ];
 
         $this->assertSame(
-            'stands: chat — ОСТАЛОСЬ: hilos-chat-test-app-run-abc123, hilos-chat-test_default',
+            'stands: chat — LEFT BEHIND: hilos-chat-test-app-run-abc123, hilos-chat-test_default',
             describeTeardown($result),
         );
     }

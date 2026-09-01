@@ -135,14 +135,14 @@ function describeTeardown(array $result): string
 {
     $left = [...$result['residue']['containers'], ...$result['residue']['networks']];
     if ($left !== []) {
-        return 'stands: ' . $result['id'] . ' — ОСТАЛОСЬ: ' . implode(', ', $left);
+        return 'stands: ' . $result['id'] . ' — LEFT BEHIND: ' . implode(', ', $left);
     }
     if ($result['removedContainers'] === [] && $result['removedNetworks'] === []) {
-        return 'stands: ' . $result['id'] . ' — чисто';
+        return 'stands: ' . $result['id'] . ' — clean';
     }
 
     return sprintf(
-        'stands: %s — снесено: контейнеров %d, сетей %d',
+        'stands: %s — removed: %d container(s), %d network(s)',
         $result['id'],
         count($result['removedContainers']),
         count($result['removedNetworks']),
