@@ -28,9 +28,16 @@ canonical rule before writing or moving command code.
    `ChatCliManager`, demonstrated rather than used.
 3. Write the command as a CLI half: parse the operator's arguments into a payload, send it
    with `CommandChannelClientTrait::sendCommand()`, render the reply. Declare
-   `CommandExecution::daemon()`.
+   `CommandExecution::daemon()`. Print the SUCCESS yourself, on stdout; hand a refusal to
+   `printRefusal()` and a failed round-trip to `printChannelFailure()`, both of which word
+   it, write it to stderr and answer `ExitCode::ERROR`.
 4. Wire the answering half on the owner: add the wire name to its `AGENT_COMMANDS`, branch
    in `onSignalCommand()`, and reply exactly once on every path, success and refusal alike.
+   Three of those paths are no longer yours: since HIL-730 the framework itself refuses a
+   command no agent owns, one whose agent nothing placed, and one whose node has no live
+   link, and it turns an `AgentException` out of your handler into a reply too. What is
+   left to you is the refusal only your handler knows about — and the one silence nothing
+   can see for you, a handler that returns having neither thrown nor replied.
 5. Only if the work genuinely cannot happen in the daemon, declare a departure — and write
    the reason as the factory argument, not as a comment beside it. A departure whose reason
    is blank fails `CommandExecutionRoleTest`.
@@ -46,8 +53,11 @@ canonical rule before writing or moving command code.
 
 - Do not write state a running daemon owns from a CLI process. If a command already does,
   move the write to the owner rather than adding a check beside it.
-- Do not word a channel failure in a command. `printChannelFailure()` is the only place
-  either sentence is written; a command prints its own success and nothing else.
+- Do not word a channel failure or a refusal in a command. `channelFailureText()` and
+  `refusalText()` are the only places those sentences are written; a command prints its own
+  success and nothing else. A command that knows a FACT beyond the refusal writes it as a
+  second line under the shared one, in the same stream — it does not get a parameter on the
+  shared printer.
 - Do not copy the round-trip into a command. Five commands each carried their own with a
   budget nobody had decided on, and they disagreed.
 - Do not read a command's site off its class hierarchy. `CliManager::executions()` asks the

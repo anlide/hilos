@@ -142,6 +142,7 @@ use Hilos\HilosException;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\Server\ServerInterface;
 use Hilos\Socket\Server\WebSocketServer;
@@ -223,6 +224,15 @@ abstract class DaemonManager extends BaseManager implements
 
     /** @var string Message a browser is answered with when no registered class serves the group it named */
     private const string SUBSCRIPTION_GROUP_UNSERVED_MESSAGE = 'This channel is not available.';
+
+    /** @var string Refusal an operator is answered with when no agent owns the command they named: command */
+    private const string COMMAND_UNOWNED_MESSAGE = 'No agent in this installation answers %s';
+
+    /** @var string Refusal an operator is answered with when nothing placed the agent owning the command: command */
+    private const string COMMAND_UNPLACED_MESSAGE = 'No node of this cluster runs the agent that answers %s';
+
+    /** @var string Refusal an operator is answered with when the node holding the agent has no live link: command */
+    private const string COMMAND_NODE_UNREACHABLE_MESSAGE = 'The node running the agent for %s is unreachable';
 
     /** @var string How the master facade's log line names "every worker of this node" as an addressee */
     private const string MASTER_SIGNAL_WORKERS_LABEL = 'workers';
@@ -1663,7 +1673,8 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @throws AgentException When routing a signal to its agent fails (no suitable
      *     worker, daemon creation, agent lookup, or worker-link failure)
-     * @throws InvalidArgumentException When the unsubscribe of a replaced subscription cannot be named
+     * @throws InvalidArgumentException When a signal this walk queues cannot be named - the
+     *     unsubscribe of a replaced subscription, or a refusal answering a command
      * @throws EnvException When resolving a destination reads cluster configuration and it is invalid
      * @throws ClusterConfigurationException When a node-addressed agent signal reads the local node
      *     id and cluster mode is on with a missing or invalid node config
@@ -1814,6 +1825,7 @@ abstract class DaemonManager extends BaseManager implements
                     "Signal {$signalName} (type {$signalType}) from {$source} has no destination"
                     . " - no route is declared for this signal name",
                 );
+                $this->refuseUnownedCommand($signal);
             }
 
             // Deliver signal to each destination
@@ -1840,12 +1852,15 @@ abstract class DaemonManager extends BaseManager implements
                             $skipSignal = true;
                             break;
                         case AgentDeliveryOutcome::RemoteUnreachable:
-                            // A subscription waiting on the answer is told; anything else stays
-                            // dropped with the line the delivery already wrote.
+                            // A subscription waiting on the answer is told, and so is an operator
+                            // waiting on a command; anything else stays dropped with the line the
+                            // delivery already wrote.
                             $this->answerUnreachableSubscription($signal);
+                            $this->refuseUndeliveredCommand($signal, self::COMMAND_NODE_UNREACHABLE_MESSAGE);
                             break;
                         case AgentDeliveryOutcome::AddressUnknown:
                             $this->answerUnreachableSubscription($signal);
+                            $this->refuseUndeliveredCommand($signal, self::COMMAND_UNPLACED_MESSAGE);
                             // The drop stands. What is added here is the reason it need not
                             // repeat: an agent that starts by being addressed is asked for, so
                             // the address the next frame asks about can exist (HIL-628). Holding
@@ -3213,6 +3228,81 @@ abstract class DaemonManager extends BaseManager implements
                 ),
                 targetAcceptKey: $data->acceptKey,
             ),
+        );
+    }
+
+    /**
+     * Answers a command no agent of this installation owns.
+     *
+     * The command channel's half of {@see refuseUnservedGroupSubscription()}, and it is here for
+     * the same reason: the name resolved to no owner, so no worker was sent the frame and no
+     * agent will ever hear of it. Left alone, the operator's terminal waits out its five-second
+     * budget and blames the daemon for not answering - a hang where a "no" belongs.
+     *
+     * One sentence covers both ways the name can be unowned - a command that does not exist, and
+     * a command whose feature this installation never activated. Telling them apart would need
+     * the CLI registry, which the master deliberately does not hold: the daemon knows the agents
+     * it routes to, not the commands a terminal offers.
+     *
+     * A request carrying no correlation id is left alone rather than answered: nothing is held
+     * for it, so the reply would address nobody - the same clause the group refusal carries about
+     * a join with no accept key.
+     *
+     * @param SignalDTO $signal Signal that resolved to no destination, a command request or not
+     * @throws InvalidArgumentException When the reply signal cannot be named
+     */
+    private function refuseUnownedCommand(SignalDTO $signal): void
+    {
+        $data = $signal->data;
+        if (!$data instanceof CommandRequestDTO || $data->correlationId === '') {
+            return;
+        }
+
+        Logger::warning("Command '{$data->command}' refused: no agent of this installation owns it");
+
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DAEMON),
+            signalType: new SignalType(SignalTypeConstants::COMMAND_REPLY),
+            signalName: new SignalName($data->correlationId),
+            signalData: CommandReplyDTO::error(
+                $data->correlationId,
+                sprintf(self::COMMAND_UNOWNED_MESSAGE, $data->command),
+            ),
+        );
+    }
+
+    /**
+     * Answers a command whose owning agent could not be reached.
+     *
+     * The delivery walk knows two ways an addressed agent goes missing, and both used to end the
+     * command's journey in a log line: nothing placed the agent anywhere, or the node holding it
+     * has no live link. Both leave the operator's terminal waiting, so both answer here.
+     *
+     * The message is the caller's because the two cases are fixed differently - one is a
+     * placement that never happened, the other a link that broke - and an operator who is told
+     * which one it is knows where to look. The road back is the same for both, which is why they
+     * share the method rather than the sentence.
+     *
+     * A request carrying no correlation id is left alone, as in {@see refuseUnownedCommand()}.
+     *
+     * @param SignalDTO $signal Signal that could not be delivered, a command request or not
+     * @param string $message Refusal format taking the command name, one of the COMMAND_* messages
+     * @throws InvalidArgumentException When the reply signal cannot be named
+     */
+    private function refuseUndeliveredCommand(SignalDTO $signal, string $message): void
+    {
+        $data = $signal->data;
+        if (!$data instanceof CommandRequestDTO || $data->correlationId === '') {
+            return;
+        }
+
+        Logger::warning("Command '{$data->command}' refused: the agent that answers it could not be reached");
+
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DAEMON),
+            signalType: new SignalType(SignalTypeConstants::COMMAND_REPLY),
+            signalName: new SignalName($data->correlationId),
+            signalData: CommandReplyDTO::error($data->correlationId, sprintf($message, $data->command)),
         );
     }
 

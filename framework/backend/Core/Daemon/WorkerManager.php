@@ -1523,6 +1523,10 @@ abstract class WorkerManager extends BaseManager
                         $agent->replyToCommand(CommandReplyDTO::error($signalData->correlationId, $e->getMessage()));
                     } catch (AgentException $e) {
                         Logger::logAgentError($agent->getId(), "Command handler failed: {$e->getMessage()}");
+                        $agent->replyToCommand(CommandReplyDTO::error(
+                            $signalData->correlationId,
+                            "{$name} failed: {$e->getMessage()}",
+                        ));
                     }
                 } else {
                     Logger::error("onSignalCommand - invalid signal data type: " . get_class($signalData));

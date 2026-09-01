@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
-use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Environment\Exception\EnvException;
@@ -75,10 +74,7 @@ abstract class AbstractSetAdminCommand implements CommandInterface, DatabaseFree
         $reply = $result->reply;
 
         if (!$reply->isOk()) {
-            $detail = (string)($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');
-            echo "Command failed: {$detail}\n";
-
-            return ExitCode::ERROR;
+            return $this->printRefusal($reply);
         }
 
         $state = ((bool)($reply->payload[AdminCommandConstants::FIELD_ADMIN] ?? false)) ? 'admin' : 'not admin';

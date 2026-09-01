@@ -100,9 +100,7 @@ HELP;
         $reply = $result->reply;
 
         if (!$reply->isOk()) {
-            $detail = (string) ($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');
-            echo "Command failed: {$detail}\n";
-            return ExitCode::ERROR;
+            return $this->printRefusal($reply);
         }
 
         // The echo of the very field this command put on the wire, mirrored back by the master.

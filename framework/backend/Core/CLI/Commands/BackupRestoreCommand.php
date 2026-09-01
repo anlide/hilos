@@ -30,7 +30,6 @@ use Hilos\Backup\RestoreNotifier;
 use Hilos\Backup\RestorePhase;
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\CliCommands;
-use Hilos\Constants\CommandConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Database\Entity\Item\Entity;
@@ -558,21 +557,18 @@ HELP;
             $payload[BackupConstants::FIELD_MIGRATION_INDEX] = $migrationIndex;
         }
 
-        // Not printChannelFailure(): a refused restore has a second road, and naming it is the
-        // whole point of the sentence. The shared text says the channel is down; this one says
-        // what to do about it.
+        // The shared text says which way the channel failed; the line under it says what to do
+        // about it, because a refused restore has a second road and this is the only command
+        // that can name it. Two facts, two lines, one stream - not one sentence carrying both.
         $result = $this->sendCommand(BackupConstants::RESTORE_REQUEST_COMMAND, $payload);
         $reply = $result->reply;
         if ($reply === null) {
-            echo "Error: the daemon did not answer; start it, or restore with --cold\n";
+            $this->printChannelFailure($result, BackupConstants::RESTORE_REQUEST_COMMAND);
 
-            return ExitCode::ERROR;
+            return $this->printToStandardError('Start the daemon, or restore with --cold');
         }
         if (!$reply->isOk()) {
-            $message = (string)($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');
-            echo "Error: restore refused: {$message}\n";
-
-            return ExitCode::ERROR;
+            return $this->printRefusal($reply);
         }
 
         echo "Restore accepted: {$id} (scope={$scope->value}); the node is entering protected mode\n";
@@ -610,11 +606,12 @@ HELP;
             }
             if (!$reply->isOk()) {
                 // An error reply is an answer, not silence: the daemon named a problem
-                // (e.g. an unmounted restore row), and the operator should read exactly it.
-                $message = (string)($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');
-                echo "Error: restore status unavailable: {$message}; the restore may still be running\n";
+                // (e.g. an unmounted restore row), and the operator should read exactly it. What
+                // the monitor adds is the fact only it knows - giving up on watching the run is
+                // not the same as the run stopping.
+                $this->printRefusal($reply);
 
-                return ExitCode::ERROR;
+                return $this->printToStandardError('The restore may still be running');
             }
             $silentPolls = 0;
 

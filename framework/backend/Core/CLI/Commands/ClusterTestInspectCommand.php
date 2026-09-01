@@ -93,9 +93,7 @@ HELP;
         $reply = $result->reply;
 
         if (!$reply->isOk()) {
-            $detail = (string) ($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');
-            echo "Command failed: {$detail}\n";
-            return ExitCode::ERROR;
+            return $this->printRefusal($reply);
         }
 
         echo json_encode($reply->payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";

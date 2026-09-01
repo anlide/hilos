@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
-use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
 use Hilos\Environment\Exception\EnvException;
@@ -112,10 +111,7 @@ HELP;
         $reply = $result->reply;
 
         if (!$reply->isOk()) {
-            $detail = (string)($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');
-            echo "Command failed: {$detail}\n";
-
-            return ExitCode::ERROR;
+            return $this->printRefusal($reply);
         }
 
         echo json_encode($reply->payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";

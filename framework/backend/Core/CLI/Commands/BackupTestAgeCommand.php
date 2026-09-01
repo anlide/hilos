@@ -11,7 +11,6 @@ use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupScope;
 use Hilos\Constants\CliCommands;
-use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Environment\Exception\EnvException;
@@ -129,9 +128,7 @@ HELP;
         $reply = $result->reply;
 
         if (!$reply->isOk()) {
-            $detail = (string)($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');
-            echo "Command failed: {$detail}\n";
-            return ExitCode::ERROR;
+            return $this->printRefusal($reply);
         }
 
         // The instant the agent actually stamped, echoed back. A reply without it is a broken

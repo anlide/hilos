@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
-use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Environment\Exception\EnvException;
@@ -110,10 +109,7 @@ HELP;
         $reply = $result->reply;
 
         if (!$reply->isOk()) {
-            $detail = (string)($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');
-            echo "Refused: {$detail}\n";
-
-            return ExitCode::ERROR;
+            return $this->printRefusal($reply);
         }
 
         $phase = (string)($reply->payload[ProtectedModeCommandConstants::FIELD_PHASE] ?? 'unknown');

@@ -137,10 +137,7 @@ HELP;
         $reply = $result->reply;
 
         if (!$reply->isOk()) {
-            $detail = (string)($reply->payload[CommandConstants::FIELD_MESSAGE] ?? 'unknown error');
-            echo "Refused: {$detail}\n";
-
-            return ExitCode::ERROR;
+            return $this->printRefusal($reply);
         }
 
         $phase = (string)($reply->payload[ProtectedModeCommandConstants::FIELD_PHASE] ?? 'unknown');

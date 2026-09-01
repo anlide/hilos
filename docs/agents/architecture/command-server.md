@@ -79,6 +79,10 @@ Both implement `SignalDataInterface`; `SignalDTO` serializes `dataType =
 get_class($data)` and restores via `::fromArray`, so no separate signal-data
 classes are needed.
 
+`CommandReplyDTO::error()` is the whole shape of a refusal, whoever builds it — an agent
+that refused the work, or the daemon that found nobody to hand it to (HIL-730). There is no
+second status and no second key: `STATUS_ERROR` with the sentence under `FIELD_MESSAGE`.
+
 ## Flow
 
 1. **CLI** opens an `AsyncCommandClient`, sends a `CommandRequestDTO`, and polls
@@ -95,8 +99,16 @@ classes are needed.
 5. **Master** routes `COMMAND_REPLY` to a `CommandReplyDestination{correlationId}`
    → delivers to the held client → the CLI's `hasResult()` turns true.
 
-A parked command times out (the client returns no reply) if the agent never
-answers; the held connection is forgotten on close.
+**Steps 3 and 4 can fail, and when they do the master answers instead of the agent**
+(HIL-730). An empty destination list, an agent nothing placed, a node with no live link —
+in all three the master knows the work will not happen, and it queues the same
+`CommandReplyDTO::error()` an agent would have. A handler that threw is answered by the
+worker, out of the `AgentException` catch beside the payload one. All four keep their log
+line: the operator has a terminal, operations has a journal.
+
+A parked command still times out (the client returns no reply) when the agent neither
+threw nor answered — the one silence nothing on the path can see. The held connection is
+forgotten on close.
 
 ## Wiring a command
 
@@ -202,3 +214,9 @@ an operator who typed the command at the wrong installation gets a no rather tha
 command socket that never answers, which reads as a hang. Before HIL-710 the name
 was carried by whichever agent chose to, so a project that did not carry it left
 the socket silent.
+
+Since HIL-730 the daemon closes that gap from its own side as well: a name no agent of the
+installation owns is refused by the master rather than left to the client's timeout. So a
+project seam answering `no` is no longer the only thing between an operator and a hang —
+but it is still the better answer of the two, because the seam knows WHY and the master
+only knows that nobody is there.

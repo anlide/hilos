@@ -29,6 +29,7 @@ use Hilos\Auth\Session\DTO\LogoutActionDTO;
 use Hilos\Auth\Session\DTO\SessionCarryOverDoneSignalData;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Auth\Session\Exception\SessionNotOnConnectionException;
 use Hilos\Auth\Session\Exception\SessionTokenExhaustedException;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Session\SessionCarrier;
@@ -237,6 +238,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * minute is what the chat demo scheduled by hand before this became the library's.
      */
     private const string RESERVATION_SWEEP_CRON = '* * * * *';
+
+    /** @var string What a browser is told when its connection carries no session to act on */
+    private const string SESSION_NOT_ON_CONNECTION_MESSAGE
+        = 'The session behind this tab could not be found; reload the page and try again';
 
     /** @var ?CronRule Schedule of the abandoned-registration sweep, or null when it is switched off */
     private ?CronRule $pendingRegistrationSweepRule = null;
@@ -2028,9 +2033,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * Runs one of the page-independent controls of the sign-in surface.
      *
      * Every one of them takes its session from the ACTING connection, read off the project's
-     * own connection rows - which this library may read but never write. A stale accept key
-     * or a connection belonging to no session is a no-op, because there is nothing to end,
-     * dismiss or vacate and refusing would only tell a closed tab about it.
+     * own connection rows - which this library may read but never write. A connection carrying
+     * no session is refused for all four, because there is nothing to end, dismiss or vacate
+     * and returning was read by the browser as having done it (HIL-730). Signing out is not the
+     * exception it looks like: the token is gone from the runtime but the cookie is still in the
+     * browser, so "you are signed out" would be undone by the next reload.
+     *
+     * One sentence covers all four, because the reason is not about the action: the connection
+     * does not carry a session.
      *
      * None of them answers here. What each ends in is a session state, which the project
      * puts on the wire, so the answer is carried in that frame and leaves behind the
@@ -2046,6 +2056,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param string $action Owned action name from {@see AGENT_ACTIONS}
      * @param ActionPayloadDTO $dto Parsed action payload
      * @return ?ActionReplyDTO Always null: the project answers on the state frame instead
+     * @throws SessionNotOnConnectionException When the acting connection carries no session
      * @throws AgentUnknownActionException When the action is not one this library owns
      * @throws InvalidActionPayloadException When the payload does not match the action name
      * @throws ValidationException When an impersonation guard rejects the request
@@ -2056,14 +2067,16 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     public function onAgentAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
         $sessionToken = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey)?->sessionToken;
+        if ($sessionToken === null || $sessionToken === '') {
+            throw new SessionNotOnConnectionException(self::SESSION_NOT_ON_CONNECTION_MESSAGE);
+        }
+
         switch ($action) {
             case HilosSignalConstants::HILOS_LOGOUT:
                 if (!$dto instanceof LogoutActionDTO) {
                     throw new InvalidActionPayloadException($action, LogoutActionDTO::class, $dto);
                 }
-                if ($sessionToken !== null && $sessionToken !== '') {
-                    $this->deauthenticateSession($sessionToken, $this->currentActionRequestId(), $action);
-                }
+                $this->deauthenticateSession($sessionToken, $this->currentActionRequestId(), $action);
 
                 return null;
 
@@ -2071,9 +2084,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 if (!$dto instanceof DismissSessionAckActionDTO) {
                     throw new InvalidActionPayloadException($action, DismissSessionAckActionDTO::class, $dto);
                 }
-                if ($sessionToken !== null && $sessionToken !== '') {
-                    $this->clearSessionAck($sessionToken, $this->currentActionRequestId(), $action);
-                }
+                $this->clearSessionAck($sessionToken, $this->currentActionRequestId(), $action);
 
                 return null;
 
@@ -2081,9 +2092,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 if (!$dto instanceof ImpersonateStartActionDTO) {
                     throw new InvalidActionPayloadException($action, ImpersonateStartActionDTO::class, $dto);
                 }
-                if ($sessionToken !== null && $sessionToken !== '') {
-                    $this->startImpersonation($sessionToken, $dto->targetUserId, $acceptKey, null);
-                }
+                $this->startImpersonation($sessionToken, $dto->targetUserId, $acceptKey, null);
 
                 return null;
 
@@ -2091,9 +2100,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 if (!$dto instanceof ImpersonateStopActionDTO) {
                     throw new InvalidActionPayloadException($action, ImpersonateStopActionDTO::class, $dto);
                 }
-                if ($sessionToken !== null && $sessionToken !== '') {
-                    $this->stopImpersonation($sessionToken, $acceptKey, null);
-                }
+                $this->stopImpersonation($sessionToken, $acceptKey, null);
 
                 return null;
 

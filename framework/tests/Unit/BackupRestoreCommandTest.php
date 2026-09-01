@@ -39,6 +39,9 @@ final class BackupRestoreCommandProbe extends BackupRestoreCommand
     /** @var list<?CommandReplyDTO> Replies consumed in order; empty means "daemon silent" */
     public array $replies = [];
 
+    /** @var list<string> Sentences the command wrote to stderr, in order */
+    public array $printedToStandardError = [];
+
     /** Address the canned round-trip reports itself as having used. */
     private const string ADDRESS = '127.0.0.1:8094';
 
@@ -56,6 +59,24 @@ final class BackupRestoreCommandProbe extends BackupRestoreCommand
         return $reply === null
             ? CommandChannelResult::unreachable(self::ADDRESS)
             : CommandChannelResult::replied($reply, self::ADDRESS);
+    }
+
+    /**
+     * Records what would have gone to stderr, which no output buffer can read back.
+     *
+     * The stream is the one thing about a refusal the process cannot show a test - `ob_start()`
+     * captures stdout and nothing else - so the double stands in for it here, the same way it
+     * stands in for the command channel above. The sentence and the exit code stay the real
+     * ones: what is replaced is the writing, not the wording.
+     *
+     * @param string $text Sentence the command wrote
+     * @return int Exit code to return from the command
+     */
+    protected function printToStandardError(string $text): int
+    {
+        $this->printedToStandardError[] = $text;
+
+        return ExitCode::ERROR;
     }
 }
 
@@ -421,7 +442,7 @@ final class BackupRestoreCommandTest extends TestCase
         $output = $this->runCommand($probe, ['b1'], [BackupConstants::YES_OPTION => true]);
 
         $this->assertSame(ExitCode::ERROR, $output['code']);
-        $this->assertStringContainsString('--cold', $output['text']);
+        $this->assertContains('Start the daemon, or restore with --cold', $probe->printedToStandardError);
         $this->assertCount(1, $probe->sent, 'A silent daemon must not be retried into a cold restore');
     }
 
@@ -457,7 +478,10 @@ final class BackupRestoreCommandTest extends TestCase
         $output = $this->runCommand($probe, ['b1'], [BackupConstants::YES_OPTION => true]);
 
         $this->assertSame(ExitCode::ERROR, $output['code']);
-        $this->assertStringContainsString('Restore runtime row is not mounted', $output['text']);
+        $this->assertSame(
+            ['Refused: Restore runtime row is not mounted', 'The restore may still be running'],
+            $probe->printedToStandardError,
+        );
         $this->assertStringNotContainsString('stopped answering', $output['text']);
     }
 
@@ -470,7 +494,10 @@ final class BackupRestoreCommandTest extends TestCase
         $output = $this->runCommand($probe, ['b1'], [BackupConstants::YES_OPTION => true]);
 
         $this->assertSame(ExitCode::ERROR, $output['code']);
-        $this->assertStringContainsString('busy', $output['text']);
+        $this->assertSame(
+            ['Refused: Backup subsystem busy: 2026-08-08_03-00-00'],
+            $probe->printedToStandardError,
+        );
     }
 
     public function testColdPathEntersTheRealEngineWithoutTheDaemon(): void

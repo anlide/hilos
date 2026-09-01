@@ -123,10 +123,51 @@ says so in two sentences rather than one:
 - `Cannot reach the daemon command channel at <host>:<port>`
 - `The daemon did not answer <command> within 5s`
 
-Both come from `CommandChannelClientTrait::printChannelFailure()`, which is the only place
+Both come from `CommandChannelClientTrait::channelFailureText()`, which is the only place
 either is written; a command prints its own SUCCESS, because that is its to word. Both
 answer `ExitCode::ERROR`.
 
-A command whose name reaches the daemon but which no agent serves is a third case, and it
-is not built yet — the server returns an empty destination list and the request is simply
-never answered, so it reads as the timeout above. HIL-730 makes it a refusal.
+## When the daemon has nobody to hand the command to
+
+A name that reaches the daemon and finds no agent behind it used to read as the timeout
+above: the router returned an empty destination list, nothing answered, and the operator
+waited out the five-second budget to be told the daemon was silent — which it was not. The
+daemon knows, at the moment it happens, that the work will not be done, so it says so
+(HIL-730). Three sentences, one per way it knows:
+
+- `No agent in this installation answers <command>` — no entry in
+  `Hilos::getCommandAgentRoutes()` for that name. One sentence covers both a command that
+  does not exist and a command whose feature this installation never activated: telling
+  them apart needs the CLI registry, and the master deliberately does not hold it.
+- `No node of this cluster runs the agent that answers <command>` — nothing placed the
+  owning agent anywhere.
+- `The node running the agent for <command> is unreachable` — the node is known and the
+  link to it is not. Worded apart from the one above it because the two are fixed apart.
+
+A fourth silence stays: a handler that neither threw nor replied is still waited out, and
+nothing on the path knows it happened. What is no longer silent is a handler that threw —
+its `AgentException` becomes `<command> failed: <reason>`, the same relay the payload check
+beside it already did. The command port is closed, so the reader is the installation owner.
+
+A request carrying no correlation id is logged and left alone in all three daemon cases:
+nothing is held for it, and a reply addressed at nobody is a delivery that fails later and
+further away than the drop it replaced.
+
+## Which stream a command writes to
+
+A command's SUCCESS goes to stdout, because that one is the result. Everything else — the
+two transport sentences above, and any refusal the daemon answers with — goes to stderr
+through `CommandChannelClientTrait::printRefusal()` / `printChannelFailure()`, which relay
+the daemon's reason as `Refused: <message>` and answer `ExitCode::ERROR`.
+
+A command does not word a refusal itself, for the reason it does not word a transport
+failure: thirty-five of them used to, and twenty-seven called it `Command failed` while
+eight called it `Refused`, for one and the same reply. A command that has a FACT beyond the
+refusal — `backup:restore` knows the run may still be going, and that there is a `--cold`
+road — writes it as a second line in the same stream, under the shared one. It does not get
+a parameter on the shared printer: two facts are two lines, not one sentence with a slot.
+
+The wording and the writing are separate methods on purpose. Nothing in this repository can
+read stderr back — PHPUnit's output expectations see stdout only — so the sentences are
+returned by `channelFailureText()` / `refusalText()` and pinned there, and a test double
+stands in for the stream by overriding `printToStandardError()`.
