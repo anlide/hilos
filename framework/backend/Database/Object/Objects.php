@@ -15,8 +15,11 @@ use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\CollectionNotFullyLoadedException;
 use Hilos\Hilos;
 use Hilos\Database\Entity\Collection\EntityCollection;
+use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Filter\ColumnFilter;
 use Hilos\Database\Filter\FilterInterface;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -211,6 +214,139 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     }
 
     /**
+     * Loads the rows whose column holds one of the given values, and answers with their keys.
+     *
+     * This is how a set owned by somebody else is read: a collection keyed by its own primary
+     * key cannot answer "all rows of user 6" by walking what it happens to hold, because a key
+     * lazy collection holds only what was asked for by key. The database answers instead, and
+     * what came back is hydrated rather than announced, so a read stays a read.
+     *
+     * Answering with keys rather than with objects keeps the unstructured array out of the
+     * contract: the caller turns each key into whatever its own layer speaks.
+     *
+     * @param string $column Entity column to match, or the object field name standing for it
+     * @param int|string ...$values Values to match; no values means no query and no keys
+     * @return Generator<int, int|string> Keys of the rows the database answered with
+     * @throws InvalidArgumentException When the column is neither a column of this entity nor a field naming one
+     * @throws DatabaseException When the lookup query fails
+     */
+    public function loadByColumn(string $column, int|string ...$values): Generator
+    {
+        $resolvedColumn = $this->columnForField($column);
+        if ($resolvedColumn === null) {
+            throw new InvalidArgumentException(
+                "database collection '" . $this->getCollectionKey() . "' has no column '{$column}'"
+            );
+        }
+        if ($values === []) {
+            return;
+        }
+        $objectClass = static::OBJECT_CLASS;
+        $entityClass = $objectClass::ENTITY_CLASS;
+
+        $entityCollection = count($values) === 1
+            ? $entityClass::get([$resolvedColumn => $values[0]])
+            : $entityClass::get(
+                filters: '`' . str_replace('`', '``', $resolvedColumn) . '` IN ('
+                    . implode(', ', array_fill(0, count($values), '?')) . ')',
+                filtersParam: array_values($values),
+            );
+
+        foreach ($entityCollection as $key => $entity) {
+            if (!isset($this->objects[$key])) {
+                $this->hydrate($key, $objectClass::fromEntity($entity));
+            }
+            yield $key;
+        }
+    }
+
+    /**
+     * Tells whether a column is the one this collection keys its rows by.
+     *
+     * The question a join asks before it decides how to read: a child row found by its own
+     * primary key is already reachable by key, and only a column that is somebody else's needs
+     * the table asked. A composite primary key is no single join column, so it answers false.
+     *
+     * @param string $column Entity column name, or the object field name standing for it
+     * @return bool True when the column is this entity's whole primary key
+     */
+    public function isKeyColumn(string $column): bool
+    {
+        $resolvedColumn = $this->columnForField($column);
+        if ($resolvedColumn === null) {
+            return false;
+        }
+        $objectClass = static::OBJECT_CLASS;
+        $entityClass = $objectClass::ENTITY_CLASS;
+
+        return $resolvedColumn === $entityClass::_primary;
+    }
+
+    /**
+     * Tells whether a column is one the table can be searched by without reading all of it.
+     *
+     * The question a declaration is held against: reading a set by a column the table has no
+     * index for turns a silently short answer into a silently full scan, which is the same
+     * defect wearing a different cost. Only the LEFTMOST column of an index counts - that is the
+     * only position a lookup by one column can use.
+     *
+     * @param string $column Entity column name, or the object field name standing for it
+     * @return bool True when an index of this entity begins with the column
+     */
+    public function isIndexLeadColumn(string $column): bool
+    {
+        $resolvedColumn = $this->columnForField($column);
+        if ($resolvedColumn === null) {
+            return false;
+        }
+        $objectClass = static::OBJECT_CLASS;
+        $entityClass = $objectClass::ENTITY_CLASS;
+
+        /** @var array<string, array<string, mixed>> $indexes */
+        $indexes = defined("{$entityClass}::" . Entity::META_INDEXES)
+            ? constant("{$entityClass}::" . Entity::META_INDEXES)
+            : [];
+        foreach ($indexes as $index) {
+            $columns = $index[Entity::INDEX_COLUMNS] ?? [];
+            if (is_array($columns) && ($columns[0] ?? null) === $resolvedColumn) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Resolves a declared field name to the entity column it names.
+     *
+     * The two vocabularies are genuinely different: a browser source declares `userId`, the
+     * object layer's own name for the field, while the table has `user_id`. The correspondence
+     * is the one {@see ColumnFilter} already builds SQL by, and the entity's own column list is
+     * what decides — a name that resolves to nothing is refused rather than quoted into a query.
+     *
+     * A collection with no object class behind it names no column at all, which is the honest
+     * answer for a base collection nobody configured rather than a reason to fail on its emptiness.
+     *
+     * @param string $field Entity column name or the object field name standing for it
+     * @return ?string Entity column name, or null when the entity has no such column
+     */
+    private function columnForField(string $field): ?string
+    {
+        $objectClass = static::OBJECT_CLASS;
+        if ($objectClass === '') {
+            return null;
+        }
+        $entityClass = $objectClass::ENTITY_CLASS;
+        if (in_array($field, $entityClass::_columns, true)) {
+            return $field;
+        }
+
+        $column = strtolower((string) preg_replace('/([a-z0-9])([A-Z])/', '$1_$2', $field));
+
+        return in_array($column, $entityClass::_columns, true) ? $column : null;
+    }
+
+    /**
      * Returns entity column names eligible for full-text search.
      * Override in subclasses to restrict searchable columns.
      * Default: all columns from the entity.
@@ -332,16 +468,50 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * @return list<int|string> Object keys
      * @throws LogicException When entity collection class is not configured
      * @throws DatabaseException When loading the full object collection from the database fails
+     * @throws CollectionNotFullyLoadedException When the collection is walked as a set it does not hold
      */
     public function keys(): array
     {
-        if ($this->_allowLazyLoading &&
-            $this->_lazyStrategy === self::LAZY_STRATEGY_BATCH &&
-            !$this->_allLoaded) {
-            $this->preloadAll();
-        }
+        $this->settleSetForWalk();
 
         return array_keys($this->objects);
+    }
+
+    /**
+     * Brings a collection to a state in which a walk answers for the whole set, or refuses.
+     *
+     * The answer is one per strategy rather than one bit, and reading {@see self::isAllLoaded()}
+     * alone gets it wrong: the batch strategy becomes complete BY being walked, and it is what
+     * {@see self::initDB()} gives out by default, so a naive gate refuses most of the
+     * repository. So the batch strategy is loaded here rather than refused, and what is refused
+     * is the narrow case the other two name - a lazy collection that loads nothing on a walk
+     * being walked anyway.
+     *
+     * Every caller past this point therefore holds either a collection that is not lazy or one
+     * that is fully loaded, which is what lets a walk read memory without asking again.
+     *
+     * @throws LogicException When entity collection class is not configured
+     * @throws DatabaseException When loading the full object collection from the database fails
+     * @throws CollectionNotFullyLoadedException When the collection declares no completeness
+     */
+    private function settleSetForWalk(): void
+    {
+        if (!$this->_allowLazyLoading || $this->_allLoaded) {
+            return;
+        }
+        if ($this->_lazyStrategy === self::LAZY_STRATEGY_BATCH) {
+            $this->preloadAll();
+
+            return;
+        }
+        if ($this->_lazyStrategy !== self::LAZY_STRATEGY_KEY &&
+            $this->_lazyStrategy !== self::LAZY_STRATEGY_FULL_ON_ACCESS) {
+            return;
+        }
+
+        throw new CollectionNotFullyLoadedException(
+            "database collection '" . $this->getCollectionKey() . "' is walked as a set but declared no completeness"
+        );
     }
 
     /**
@@ -354,6 +524,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * @return Generator<int|string, T> Object key => Object_
      * @throws LogicException When entity collection class is not configured
      * @throws DatabaseException When loading the full object collection from the database fails
+     * @throws CollectionNotFullyLoadedException When the collection is walked as a set it does not hold
      */
     public function getIterator(): Generator
     {
@@ -701,14 +872,21 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     /**
      * Filter collection by filter criteria
      * Uses truth source to avoid loading from DB if keys are already in memory
-     * Currently works for LAZY_STRATEGY_NONE (when all objects are already loaded)
+     *
+     * Filtering is a walk with a predicate, so it answers for the same completeness a walk does -
+     * on every branch, the truth-source ones included. Those used to filter memory unguarded,
+     * which made the refusal a property of how the collection happened to be registered rather
+     * than of whether it holds the set.
      *
      * @param FilterInterface $filter Filter criteria
      * @return FilteredCollection Filtered collection
-     * @throws LogicException When filtering a lazy-loaded collection that is not fully loaded (unsupported)
+     * @throws LogicException When entity collection class is not configured
+     * @throws DatabaseException When loading the full object collection from the database fails
+     * @throws CollectionNotFullyLoadedException When the collection is filtered as a set it does not hold
      */
     public function filter(FilterInterface $filter): FilteredCollection
     {
+        $this->settleSetForWalk();
         $collectionKey = $this->getCollectionKey();
         $truthSourceKeys = TruthSourceRegistry::getTruthSourceKeys($collectionKey);
 
@@ -733,17 +911,11 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
                 }
             }
         } else {
-            // No truth source
-            // For LAZY_STRATEGY_NONE or when all loaded - filter from memory
-            if (!$this->_allowLazyLoading || $this->_allLoaded) {
-                foreach ($this->objects as $key => $object) {
-                    if ($filter->matches($object)) {
-                        $filteredObjects[$key] = $object;
-                    }
+            // No truth source: the set is settled by now, so memory is all of it
+            foreach ($this->objects as $key => $object) {
+                if ($filter->matches($object)) {
+                    $filteredObjects[$key] = $object;
                 }
-            } else {
-                throw new LogicException('Filtering for lazy-loaded collections not yet implemented.'
-                    . ' Use LAZY_STRATEGY_NONE or ensure all objects are loaded.');
             }
         }
 

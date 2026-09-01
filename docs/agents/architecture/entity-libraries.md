@@ -16,9 +16,10 @@ contents (epic HIL-626; the rule itself is HIL-632's document). A library exists
 because a read must not raise owners: an admin list of ten thousand users cannot
 start ten thousand agents to draw a table.
 
-**This document is an approach, not a description of code.** Nothing in it is
-implemented; the names below are given so that everything built against it is
-built against the same words. What each named leaf owns is in *Open
+**This document is an approach, not a description of code.** Almost nothing in it
+is implemented - the exception is the refusal to walk an incomplete set, which
+HIL-781 landed and which its own section describes as landed; the names below are
+given so that everything built against it is built against the same words. What each named leaf owns is in *Open
 Preconditions* and *What This Approach Does Not Decide*.
 
 ## Core Rule
@@ -167,28 +168,27 @@ source of its collection (`AbstractAgent::registerDbTruthSource()`) and calls
 other process stays lazy. `Objects::isAllLoaded()` is the bit that records the
 declaration.
 
-**Iterating a collection that has not declared completeness must refuse.** Today
-it does not, and the caller cannot tell the two answers apart:
-`Objects::valid()` returns false for a `LAZY_STRATEGY_KEY` collection whose
-iterator has run past the loaded rows — the same false that means "no more rows".
-`DbCollection::filter()` shows the second half of the same gap: it preloads for
-`LAZY_STRATEGY_BATCH` and then iterates whatever is in memory for
-`LAZY_STRATEGY_KEY`. HIL-410 (an OAuth-linked identity missing from a profile
-list) is one visible outcome of a general mechanism, not a defect of its own.
+**Iterating a collection that has not declared completeness refuses** (HIL-781).
+Before it did, the caller could not tell the two answers apart: a walk over a
+`LAZY_STRATEGY_KEY` collection ended where the loaded rows ended, which is the
+same ending that means "no more rows". HIL-410 (an OAuth-linked identity missing
+from a profile list) was one visible outcome of that general mechanism, not a
+defect of its own; HIL-781 was another, on the same list.
 
 The named refusal is
 `Hilos\Database\Exception\CollectionNotFullyLoadedException extends HilosException`,
 beside `framework/backend/Database/Exception/CollectionNotManualException.php`,
 and its message names the collection. Naming the collection is the point: the
-caller sees which set was incomplete, not that something somewhere was lazy.
+caller sees which set was incomplete, not that something somewhere was lazy. It
+is raised by `Objects::keys()`, which is where every walk begins, and by
+`Objects::filter()`, which is a walk with a predicate.
 
-Precedent for the shape exists in the same class. `Objects::filter()` already
-refuses on this condition — but with a `LogicException` reading "Filtering for
-lazy-loaded collections not yet implemented", which reads as a TODO rather than
-as a contract, and only on its no-truth-source branch: the truth-source branches
-above it filter memory unguarded. The approach turns that into the named
-exception, extends it from filtering to iteration, and does not inherit the
-branch that skips it.
+Precedent for the shape existed in the same class: `Objects::filter()` already
+refused on this condition — but with a `LogicException` reading "Filtering for
+lazy-loaded collections not yet implemented", which read as a TODO rather than as
+a contract, and only on its no-truth-source branch, while the truth-source
+branches above it filtered memory unguarded. That is now the named exception, it
+covers iteration as well as filtering, and the branch that skipped it does not.
 
 **"Complete" is one answer per lazy strategy, not one bit**, and an implementing
 leaf that reads `isAllLoaded()` alone will refuse collections that are perfectly
@@ -212,8 +212,12 @@ repository is built with `FULL_ON_ACCESS` today, which is precisely why its row
 has to be written down rather than discovered by the leaf that first uses it.
 
 This refusal is what makes the read rule enforced by machinery rather than by
-prose, and it will surface existing iterations. That is the intended effect; the
-leaf that reaches such a call site fixes it there.
+prose, and it surfaces existing iterations. That is the intended effect; the leaf
+that reaches such a call site fixes it there. The one call site the repository
+had was the browser join (`BrowserContext::sourceItemsForRow()`), and it now asks
+the table for the rows of a foreign key instead of walking for them —
+`DbCollection::whereColumnIs()` / `whereColumnIn()`, over
+`Objects::loadByColumn()`.
 
 ## Writing Without The Owner
 

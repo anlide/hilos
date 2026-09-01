@@ -26,6 +26,7 @@ use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Core\Browser\Config\BrowserRefKey;
 use Hilos\Core\Browser\Config\BrowserRefType;
+use Hilos\Core\Browser\Config\BrowserSourceConfig;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceKind;
 use Hilos\Core\Browser\Config\BrowserSourceType;
@@ -166,11 +167,13 @@ final class TopologyValidator
     {
         $errors = [];
         $declarations = [];
+        $joins = [];
         foreach ([self::SECTION_BROWSER_TABLES, self::SECTION_BROWSER_LISTS, self::SECTION_BROWSER_DATA] as $registry) {
             $this->collectBrowserSourceReferences(
                 $this->constantArray($hilosClass, $registry, $errors),
                 $registry,
                 $declarations,
+                $joins,
             );
         }
 
@@ -197,8 +200,39 @@ final class TopologyValidator
             }
         }
 
+        $this->validateBrowserJoinColumns($joins, $errors);
+
         if ($errors !== []) {
             throw InvalidTopologyException::forErrors($hilosClass, $errors);
+        }
+    }
+
+    /**
+     * Holds every declared database join against the child table's own keys and indexes.
+     *
+     * A join is read by asking the table for one column's value, so a column the table cannot be
+     * searched by turns the row's silence into a full scan of it - the same defect at a different
+     * price. Judged here rather than in {@see self::validate()} because the answer lives on the
+     * mounted collection's entity, and nothing is mounted that early.
+     *
+     * @param list<array{registry: string, browserKey: string, sourceKey: string, column: string}> $joins
+     *     Declared database joins, in declaration order
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateBrowserJoinColumns(array $joins, array &$errors): void
+    {
+        foreach ($joins as $join) {
+            $collection = Hilos::$db?->getObjectCollection($join['sourceKey']);
+            if ($collection === null) {
+                // An unmounted collection is already reported above, and by its own name.
+                continue;
+            }
+            if ($collection->isKeyColumn($join['column']) || $collection->isIndexLeadColumn($join['column'])) {
+                continue;
+            }
+
+            $errors[] = "{$join['registry']}[{$join['browserKey']}]: join column '{$join['column']}'"
+                . " of source '{$join['sourceKey']}' is neither the primary key nor the leftmost column of an index";
         }
     }
 
@@ -208,11 +242,14 @@ final class TopologyValidator
      * @param array $browserSources Browser source registry (tables, lists, or data)
      * @param string $registry Registry constant name for error messages
      * @param array<string, string> $declarations Identity-to-path accumulator
+     * @param list<array{registry: string, browserKey: string, sourceKey: string, column: string}> $joins
+     *     Declared database joins accumulator
      */
     private function collectBrowserSourceReferences(
         array $browserSources,
         string $registry,
         array &$declarations,
+        array &$joins,
     ): void {
         foreach ($browserSources as $key => $sourceClass) {
             if (!is_string($key) || !is_string($sourceClass) || !class_exists($sourceClass)) {
@@ -236,12 +273,50 @@ final class TopologyValidator
 
             $path = "{$registry}[{$key}] class {$sourceClass}::BROWSER";
             foreach ($rows as $index => $row) {
-                if (is_array($row)) {
-                    $source = $row[BrowserFieldKey::SOURCE] ?? null;
-                    $this->rememberBrowserSourceReference($source, "{$path} {$rowsKey}[{$index}]", $declarations);
+                if (!is_array($row)) {
+                    continue;
                 }
+
+                $source = $row[BrowserFieldKey::SOURCE] ?? null;
+                $this->rememberBrowserSourceReference($source, "{$path} {$rowsKey}[{$index}]", $declarations);
+                $this->rememberBrowserJoinColumn($source, $row, $registry, $key, $joins);
             }
         }
+    }
+
+    /**
+     * Remembers the column one database row config joins by, for the index rule to hold it to.
+     *
+     * @param mixed $source Declared source entry
+     * @param array<string, mixed> $rowConfig Browser row source config
+     * @param string $registry Registry constant name for error messages
+     * @param string $browserKey Browser source key for error messages
+     * @param list<array{registry: string, browserKey: string, sourceKey: string, column: string}> $joins
+     *     Declared database joins accumulator
+     */
+    private function rememberBrowserJoinColumn(
+        mixed $source,
+        array $rowConfig,
+        string $registry,
+        string $browserKey,
+        array &$joins,
+    ): void {
+        if (!is_array($source) || ($source[BrowserSourceKey::TYPE] ?? null) !== BrowserSourceType::DB) {
+            return;
+        }
+
+        $sourceKey = $source[BrowserSourceKey::KEY] ?? null;
+        [$column] = BrowserSourceConfig::joinBy($rowConfig);
+        if (!is_string($sourceKey) || $column === null) {
+            return;
+        }
+
+        $joins[] = [
+            'registry' => $registry,
+            'browserKey' => $browserKey,
+            'sourceKey' => $sourceKey,
+            'column' => $column,
+        ];
     }
 
     /**

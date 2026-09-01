@@ -458,6 +458,81 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
     }
 
     /**
+     * Tells whether a column is the one this collection keys its items by.
+     *
+     * A manual collection keys by whatever was added to it and answers false, which is the
+     * honest answer for a set that is nobody's table.
+     *
+     * @param string $column Entity column name, or the object field name standing for it
+     * @return bool True when the column is the primary key of the backing entity
+     */
+    public function isKeyColumn(string $column): bool
+    {
+        return $this->getObjectCollection()?->isKeyColumn($column) ?? false;
+    }
+
+    /**
+     * Returns the items whose column holds one value, as a collection of the same class.
+     *
+     * The set is read out of the database rather than out of what this process happens to hold,
+     * which is the whole point: a collection keyed by its own primary key knows nothing about
+     * the rows of somebody else's key until it asks. No match is an empty collection, never
+     * null, so a caller reads a set either way.
+     *
+     * @param string $column Entity column to match, or the object field name standing for it
+     * @param int|string|null $value Value to match, or null for an empty result
+     * @return static Items holding that value
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When the column names no field of this entity, or an object type does not match
+     * @throws DatabaseException When the lookup query fails
+     * @throws ObjectGetIdStringNotImplementedException If a matched item's Object does not implement
+     *     getIdString() (thrown by add() while keying items by ID)
+     * @throws CollectionNotManualException When add() rejects an item on a non-manual collection
+     */
+    public function whereColumnIs(string $column, int|string|null $value): static
+    {
+        if ($value === null) {
+            return static::initEmpty();
+        }
+
+        return $this->whereColumnIn($column, $value);
+    }
+
+    /**
+     * Returns the items whose column holds one of several values, as a collection of the same class.
+     *
+     * The batch form exists so that a caller with many keys in hand asks once: reading a join for
+     * a whole list one key at a time is the same query repeated per row.
+     *
+     * @param string $column Entity column to match, or the object field name standing for it
+     * @param int|string ...$values Values to match; no values means an empty result and no query
+     * @return static Items holding one of those values
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When the column names no field of this entity, or an object type does not match
+     * @throws DatabaseException When the lookup query fails
+     * @throws ObjectGetIdStringNotImplementedException If a matched item's Object does not implement
+     *     getIdString() (thrown by add() while keying items by ID)
+     * @throws CollectionNotManualException When add() rejects an item on a non-manual collection
+     */
+    public function whereColumnIn(string $column, int|string ...$values): static
+    {
+        $matched = static::initEmpty();
+        $objectCollection = $this->getObjectCollection();
+        if ($objectCollection === null || $values === []) {
+            return $matched;
+        }
+
+        foreach ($objectCollection->loadByColumn($column, ...$values) as $key) {
+            $item = $this->getItemForKey($key);
+            if ($item !== null) {
+                $matched->add($item);
+            }
+        }
+
+        return $matched;
+    }
+
+    /**
      * Query a page of items from DB via the Object layer.
      * Objects are stored in the common collection; DbItems pass through View-layer
      * transformations (toFrontend filtering, calculated fields, etc.).

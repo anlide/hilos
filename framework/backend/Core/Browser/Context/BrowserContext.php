@@ -32,6 +32,7 @@ use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Daemon\Worker\WorkerTickUnit;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageForbiddenException;
@@ -63,6 +64,8 @@ use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
@@ -229,6 +232,9 @@ abstract class BrowserContext
      * @param PageRouteParams $params Route params for this page subscription
      * @throws PageInternalErrorException When a page or source declaration is malformed
      * @throws InvalidArgumentException When the page-response signal cannot be named
+     * @throws DatabaseException When reading a joined database source fails
+     * @throws LogicException When a database collection is not configured with its class constants
+     * @throws CollectionNotManualException When the collection built for a join refuses its own items
      */
     public function subscribeSnapshot(string $page, string $acceptKey, PageRouteParams $params): void
     {
@@ -644,6 +650,9 @@ abstract class BrowserContext
      * @param array<string, mixed> $subscription Page subscription mirror entry
      * @throws PageInternalErrorException When a page or source declaration is malformed
      * @throws TableRowKeyMissingException When a mutated row is a placeholder and carries no key
+     * @throws DatabaseException When reading a joined database source fails
+     * @throws LogicException When a database collection is not configured with its class constants
+     * @throws CollectionNotManualException When the collection built for a join refuses its own items
      */
     private function addBrowserChange(
         array &$signalTables,
@@ -703,6 +712,7 @@ abstract class BrowserContext
                 acceptKey: $acceptKey,
                 pageParams: $pageParams,
                 browserParams: $browserParams,
+                joinedItems: [],
             );
 
             if ($row === null) {
@@ -1156,8 +1166,14 @@ abstract class BrowserContext
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
      * @param array<string, mixed> $browserParams Resolved table params
+     * @param array<string, array<string, array<string, list<mixed>>>> $joinedItems Joined db items
+     *     already read for the whole snapshot, by source key, join column and join value; empty
+     *     when the row is built alone
      * @return ?array{rowKey: int|string, sources: array<string, mixed>} Browser row payload, or null when row is absent
      * @throws PageInternalErrorException When a page or source declaration is malformed
+     * @throws DatabaseException When reading a joined database source fails
+     * @throws LogicException When a database collection is not configured with its class constants
+     * @throws CollectionNotManualException When the collection built for a join refuses its own items
      */
     private function buildBrowserRow(
         string $browserKey,
@@ -1166,6 +1182,7 @@ abstract class BrowserContext
         string $acceptKey,
         array $pageParams,
         array $browserParams,
+        array $joinedItems,
     ): ?array {
         $sources = [];
         $anchorChecked = false;
@@ -1187,7 +1204,16 @@ abstract class BrowserContext
                 $anchorChecked = true;
             }
 
-            $items = $this->sourceItemsForRow($rowConfig, $rowKey, $acceptKey, $pageParams, $browserParams, $sources);
+            $items = $this->sourceItemsForRow(
+                rowConfig: $rowConfig,
+                rowKey: $rowKey,
+                acceptKey: $acceptKey,
+                pageParams: $pageParams,
+                browserParams: $browserParams,
+                sources: $sources,
+                browserKey: $browserKey,
+                joinedItems: $joinedItems,
+            );
             if ($isMany) {
                 $sources[$sourceKey] = array_map(
                     fn(mixed $item): array => $this->projectSourceItem(
@@ -1248,6 +1274,9 @@ abstract class BrowserContext
      * @param array<string, mixed> $browserParams Resolved table params for this page subscription
      * @return list<array{rowKey: int|string, sources: array<string, mixed>}> Current browser rows
      * @throws PageInternalErrorException When a page or source declaration is malformed
+     * @throws DatabaseException When reading a joined database source fails
+     * @throws LogicException When a database collection is not configured with its class constants
+     * @throws CollectionNotManualException When the collection built for a join refuses its own items
      */
     private function buildBrowserSnapshotRows(
         string $browserKey,
@@ -1257,7 +1286,9 @@ abstract class BrowserContext
         array $browserParams,
     ): array {
         $rows = [];
-        foreach ($this->snapshotRowKeys($browserConfig, $acceptKey, $pageParams, $browserParams) as $rowKey) {
+        $rowKeys = $this->snapshotRowKeys($browserConfig, $acceptKey, $pageParams, $browserParams);
+        $joinedItems = $this->joinedItemsForSnapshot($browserConfig, $rowKeys);
+        foreach ($rowKeys as $rowKey) {
             $row = $this->buildBrowserRow(
                 browserKey: $browserKey,
                 browserConfig: $browserConfig,
@@ -1265,6 +1296,7 @@ abstract class BrowserContext
                 acceptKey: $acceptKey,
                 pageParams: $pageParams,
                 browserParams: $browserParams,
+                joinedItems: $joinedItems,
             );
             if ($row !== null) {
                 $rows[] = $row;
@@ -1727,8 +1759,15 @@ abstract class BrowserContext
      * @param array<string, string> $pageParams Current page subscription params
      * @param array<string, mixed> $browserParams Resolved table params
      * @param array<string, mixed> $sources Source fragments already built for the row
+     * @param string $browserKey Browser table key, named when a declaration is refused
+     * @param array<string, array<string, array<string, list<mixed>>>> $joinedItems Joined db items
+     *     already read for the whole snapshot, by source key, join column and join value; empty
+     *     on the reactive path
      * @return list<mixed> Current source items matching this row source
      * @throws PageInternalErrorException When a page or source declaration is malformed
+     * @throws DatabaseException When reading a joined database source fails
+     * @throws LogicException When a database collection is not configured with its class constants
+     * @throws CollectionNotManualException When the collection built for a join refuses its own items
      */
     private function sourceItemsForRow(
         array $rowConfig,
@@ -1737,6 +1776,8 @@ abstract class BrowserContext
         array $pageParams,
         array $browserParams,
         array $sources,
+        string $browserKey,
+        array $joinedItems,
     ): array {
         $source = $rowConfig[BrowserFieldKey::SOURCE] ?? [];
         if (!is_array($source)) {
@@ -1744,6 +1785,9 @@ abstract class BrowserContext
         }
 
         $collection = $this->sourceCollection($source);
+        if ($collection instanceof DbCollection && $this->sourceType($source) === BrowserSourceType::DB) {
+            $collection = $this->dbSourceItemsForRow($rowConfig, $source, $collection, $rowKey, $sources, $browserKey, $joinedItems);
+        }
         if (!is_iterable($collection)) {
             return [];
         }
@@ -1764,6 +1808,146 @@ abstract class BrowserContext
         }
 
         return $items;
+    }
+
+    /**
+     * Narrows a database source to the rows that can belong to one browser row.
+     *
+     * Walking the collection instead would answer with whatever this process already holds: a
+     * key-lazy collection loads by key and nothing else, so a set owned by somebody else's key
+     * is invisible to a walk and the row arrives silently short. Three declarations, three
+     * readings — the join column is the child's own key and is read by key; it is a foreign key
+     * and the table is asked for it; it is neither, and the declaration is refused out loud
+     * rather than answered with a plausible empty list.
+     *
+     * @param array<string, mixed> $rowConfig Browser row source config
+     * @param array<string, mixed> $source Browser source declaration
+     * @param DbCollection $collection Database collection the source names
+     * @param int|string $rowKey Logical row key
+     * @param array<string, mixed> $sources Source fragments already built for the row
+     * @param string $browserKey Browser table key, named when the declaration is refused
+     * @param array<string, array<string, array<string, list<mixed>>>> $joinedItems Joined db items
+     *     already read for the whole snapshot, by source key, join column and join value
+     * @return iterable<mixed> Rows that can belong to this browser row
+     * @throws PageInternalErrorException When the declaration names no column to join by
+     * @throws DatabaseException When the lookup query fails
+     * @throws LogicException When a database collection is not configured with its class constants
+     * @throws CollectionNotManualException When the collection built for a join refuses its own items
+     */
+    private function dbSourceItemsForRow(
+        array $rowConfig,
+        array $source,
+        DbCollection $collection,
+        int|string $rowKey,
+        array $sources,
+        string $browserKey,
+        array $joinedItems,
+    ): iterable {
+        $sourceKey = $this->sourceKey($source);
+        if ($sourceKey === null) {
+            throw new PageInternalErrorException('Invalid browser source config: source names no key');
+        }
+
+        [$joinColumn, $joinValue] = $this->rowConfigJoin($rowConfig, $rowKey, $sources);
+        if ($joinColumn === null) {
+            throw new PageInternalErrorException(
+                "Browser join cannot be read by key: table={$browserKey}, source={$sourceKey} names no join column"
+            );
+        }
+        if ($joinValue === null) {
+            return [];
+        }
+
+        if ($collection->isKeyColumn($joinColumn)) {
+            $item = $this->sourceItemById($source, (string) $joinValue);
+
+            return $item === null ? [] : [$item];
+        }
+
+        if (isset($joinedItems[$sourceKey][$joinColumn])) {
+            return $joinedItems[$sourceKey][$joinColumn][(string) $joinValue] ?? [];
+        }
+
+        return $collection->whereColumnIs($joinColumn, $joinValue);
+    }
+
+    /**
+     * Reads the column a row config joins its source by, and the value that column must hold.
+     *
+     * Which column that is, is {@see BrowserSourceConfig::joinBy()}'s answer, shared with the
+     * topology validator so the join a declaration is judged on is the join it is read by. What
+     * belongs here is only the value: a VIA join takes it from the anchor fragment of this row,
+     * and a row-key join is the row key.
+     *
+     * @param array<string, mixed> $rowConfig Browser row source config
+     * @param int|string $rowKey Logical row key
+     * @param array<string, mixed> $sources Source fragments already built for the row
+     * @return array{0: ?string, 1: int|string|null} Join column and the value it must hold
+     */
+    private function rowConfigJoin(array $rowConfig, int|string $rowKey, array $sources): array
+    {
+        [$joinColumn, $anchorField] = BrowserSourceConfig::joinBy($rowConfig);
+        if ($joinColumn === null) {
+            return [null, null];
+        }
+        if ($anchorField === null) {
+            return [$joinColumn, $rowKey];
+        }
+
+        return [$joinColumn, $this->normalizeKey($this->sourceFragmentValue($sources, $anchorField))];
+    }
+
+    /**
+     * Reads every joined database source of a snapshot once, in one query each.
+     *
+     * {@see self::buildBrowserRow()} runs per row, so a join read there is a query per row —
+     * on the chat main list, one per conversation. The keys of a snapshot are known before its
+     * rows are built, so a join that reads by the row key is asked for all of them at once and
+     * handed out from memory. A join whose value comes from VIA is not here: that value is a
+     * field of the anchor fragment, which does not exist until the row is built.
+     *
+     * @param BrowserSourceConfig $browserConfig Browser source config
+     * @param list<int|string> $rowKeys Logical row keys of the snapshot
+     * @return array<string, array<string, array<string, list<mixed>>>> Joined items by source key,
+     *     join column and join value - by column as well as by source, because one source can be
+     *     joined twice by different columns and one basket cannot answer both
+     * @throws PageInternalErrorException When a page or source declaration is malformed
+     * @throws DatabaseException When a lookup query fails
+     * @throws LogicException When a database collection is not configured with its class constants
+     * @throws CollectionNotManualException When the collection built for a join refuses its own items
+     */
+    private function joinedItemsForSnapshot(BrowserSourceConfig $browserConfig, array $rowKeys): array
+    {
+        if ($rowKeys === []) {
+            return [];
+        }
+
+        $joinedItems = [];
+        foreach ($this->rowConfigs($browserConfig) as $rowConfig) {
+            $source = $rowConfig[BrowserFieldKey::SOURCE] ?? [];
+            $sourceKey = is_array($source) ? $this->sourceKey($source) : null;
+            if ($sourceKey === null || $this->sourceType($source) !== BrowserSourceType::DB) {
+                continue;
+            }
+
+            [$joinColumn, $anchorField] = BrowserSourceConfig::joinBy($rowConfig);
+            if ($joinColumn === null || $anchorField !== null) {
+                continue;
+            }
+
+            $collection = $this->sourceCollection($source);
+            if (!$collection instanceof DbCollection || $collection->isKeyColumn($joinColumn)) {
+                continue;
+            }
+
+            $byJoinValue = [];
+            foreach ($collection->whereColumnIn($joinColumn, ...$rowKeys) as $item) {
+                $byJoinValue[(string) $this->fieldValue($item, $joinColumn)][] = $item;
+            }
+            $joinedItems[$sourceKey][$joinColumn] = $byJoinValue;
+        }
+
+        return $joinedItems;
     }
 
     /**

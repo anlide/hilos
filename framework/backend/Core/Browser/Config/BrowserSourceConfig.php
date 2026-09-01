@@ -57,4 +57,33 @@ final class BrowserSourceConfig
     {
         return $this->rowConfigs;
     }
+
+    /**
+     * Reads the column a row config joins its source by, and where that column's value comes from.
+     *
+     * One rule with two readers, which is why it lives on the config rather than in either of
+     * them: the browser reads a join by this column, and the topology validator holds the same
+     * column against the child table's indexes. VIA answers first when it is declared, naming the
+     * child's column explicitly and taking its value from a field of the anchor fragment;
+     * otherwise the row key declaration is the join, and its value is the row key itself.
+     *
+     * @param array<string, mixed> $rowConfig Browser row source config
+     * @return array{0: ?string, 1: ?string} Join column, and the anchor field it reads its value
+     *     from - null there means the row key is the value
+     */
+    public static function joinBy(array $rowConfig): array
+    {
+        $via = $rowConfig[BrowserFieldKey::VIA] ?? [];
+        if (is_array($via)) {
+            foreach ($via as $sourceField => $rowField) {
+                if (is_string($sourceField) && $sourceField !== '' && is_string($rowField)) {
+                    return [$sourceField, $rowField];
+                }
+            }
+        }
+
+        $rowKey = $rowConfig[BrowserListFieldKey::ITEM_KEY] ?? $rowConfig[BrowserTableFieldKey::ROW_KEY] ?? null;
+
+        return is_string($rowKey) && $rowKey !== '' ? [$rowKey, null] : [null, null];
+    }
 }

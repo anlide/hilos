@@ -42,6 +42,8 @@ use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
+use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Hilos as HilosFacade;
@@ -948,6 +950,40 @@ final class TopologyValidatorTest extends TestCase
         $this->assertTrue($runtime->hasSource('presences'));
 
         TopologyBrowserMountedHilos::validateTopologyReferences();
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testABrowserJoinByAnUnindexedColumnIsRefused(): void
+    {
+        $db = new TopologyMountedDbContext();
+        $db->configure();
+        HilosFacade::$db = $db;
+        $runtime = new TopologyMountedRtContext();
+        $runtime->configure();
+        HilosFacade::$rt = $runtime;
+
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyBrowserUnindexedJoinHilos::validateTopologyReferences();
+            },
+            [
+                "BROWSER_TABLES[browser_unindexed_join_table]: join column 'nickname' of source 'owners'"
+                . ' is neither the primary key nor the leftmost column of an index',
+            ],
+        );
+    }
+
+    public function testABrowserJoinByTheLeftmostColumnOfAnIndexIsAccepted(): void
+    {
+        $db = new TopologyMountedDbContext();
+        $db->configure();
+        HilosFacade::$db = $db;
+        $runtime = new TopologyMountedRtContext();
+        $runtime->configure();
+        HilosFacade::$rt = $runtime;
+
+        TopologyBrowserIndexedJoinHilos::validateTopologyReferences();
 
         $this->addToAssertionCount(1);
     }
@@ -2974,8 +3010,33 @@ final class TopologyBrowserBrokenBindingHilos extends HilosFacade
     }
 }
 
+/**
+ * Minimal entity fixture behind the mounted collections, so the join rule has a table to hold a
+ * declared column against.
+ */
+final class TopologyTestEntity extends Entity
+{
+    public const string _table = 'topology_test';
+    public const string _primary = 'id';
+    public const array _columns = ['id', 'owner_id'];
+    public const array _types = ['id' => 'integer', 'owner_id' => 'integer'];
+    public const array _indexes = ['idx_topology_test_owner' => [Entity::INDEX_COLUMNS => ['owner_id']]];
+
+    public ?int $id = null;
+    public ?int $owner_id = null;
+}
+
+/**
+ * Minimal object fixture wrapping the topology entity.
+ */
+final class TopologyTestObject extends Object_
+{
+    public const string ENTITY_CLASS = TopologyTestEntity::class;
+}
+
 final class TopologyTestObjects extends Objects
 {
+    public const string OBJECT_CLASS = TopologyTestObject::class;
 }
 
 final class TopologyMountedDbContext extends DbContext
@@ -3105,6 +3166,96 @@ final class TopologyBrowserUnmountedHilos extends HilosFacade
     protected static function createDb(): DbContext
     {
         return new TopologyTestDbContext();
+    }
+}
+
+/**
+ * Browser table joining a mounted collection by a column the child table has no index for: the
+ * declaration the rule exists to refuse, because such a join reads by a full scan.
+ */
+final class TopologyBrowserUnindexedJoinTable
+{
+    public const string TABLE = 'browser_unindexed_join_table';
+
+    public const array BROWSER = [
+        BrowserTableConfigKey::SOURCES => [
+            [
+                BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                BrowserSourceKey::KEY => 'owners',
+            ],
+        ],
+        BrowserTableConfigKey::ROWS => [
+            [
+                BrowserTableFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                    BrowserSourceKey::KEY => 'owners',
+                ],
+                BrowserTableFieldKey::ROW_KEY => 'nickname',
+            ],
+        ],
+    ];
+}
+
+final class TopologyBrowserUnindexedJoinHilos extends HilosFacade
+{
+    public const array BROWSER_TABLES = [
+        TopologyBrowserUnindexedJoinTable::TABLE => TopologyBrowserUnindexedJoinTable::class,
+    ];
+
+    /**
+     * Creates a DB context mounting the collections the fixtures name.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyMountedDbContext();
+    }
+}
+
+/**
+ * The same join spelled by VIA, on the column an index of the child table begins with.
+ */
+final class TopologyBrowserIndexedJoinTable
+{
+    public const string TABLE = 'browser_indexed_join_table';
+
+    public const array BROWSER = [
+        BrowserTableConfigKey::SOURCES => [
+            [
+                BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                BrowserSourceKey::KEY => 'owners',
+            ],
+        ],
+        BrowserTableConfigKey::ROWS => [
+            [
+                BrowserTableFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                    BrowserSourceKey::KEY => 'owners',
+                ],
+                BrowserTableFieldKey::ROW_KEY => 'id',
+                BrowserTableFieldKey::VIA => [
+                    'ownerId' => 'id',
+                ],
+            ],
+        ],
+    ];
+}
+
+final class TopologyBrowserIndexedJoinHilos extends HilosFacade
+{
+    public const array BROWSER_TABLES = [
+        TopologyBrowserIndexedJoinTable::TABLE => TopologyBrowserIndexedJoinTable::class,
+    ];
+
+    /**
+     * Creates a DB context mounting the collections the fixtures name.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyMountedDbContext();
     }
 }
 
