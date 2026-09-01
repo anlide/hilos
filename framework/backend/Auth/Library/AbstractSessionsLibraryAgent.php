@@ -566,6 +566,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * socket that replaces the one a login rotated away is the same browser mid-flow, not a
      * reload, and it inherits what its predecessor had not shown yet.
      *
+     * A socket with no ticket is owed whatever its SESSION still owes (HIL-649). The other
+     * tabs a login drops carry no ticket - only the initiator trades one - so until now they
+     * came back on the new cookie owing nothing, and the sentence the flow had earned was
+     * lost one frame before anyone could read it. The ticket is asked FIRST and the session
+     * second because the initiator's replacement arrives when its session owes nothing yet:
+     * its own row died with the rotation and no sibling was ever marked, so only the ticket
+     * can answer for it.
+     *
      * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
@@ -590,7 +598,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             sessionToken: $session->token,
             userId: $session->userId,
             acceptKeys: [$data->acceptKey],
-            pendingAck: $data->inheritedAck,
+            pendingAck: $data->inheritedAck ?? $this->sessionPendingAck($session->token),
             pendingAuthStep: $this->pendingAuthStepFor($session),
         ));
     }
@@ -620,10 +628,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * Asked of the sockets because that is where the mark lives, and answered with the
      * first one found because the mark is written per SESSION: everything that raises or
-     * clears one walks every socket of the session in one pass. The one way they diverge is
-     * a socket that inherited an ack through a rotation while another tab reconnected
-     * without one, and the frame that restates the session's identity carries the
-     * announcement rather than dropping it.
+     * clears one walks every socket of the session in one pass. They diverge on the ordinary
+     * path and not by accident (HIL-649): a login marks the initiator alone and drops the
+     * session's other tabs, which reconnect owing nothing until this very read hands them
+     * what the session still owes. So the question is what the SESSION owes, and any live
+     * socket of it is an equally good witness.
      *
      * @param string $sessionToken Session cookie token whose sockets are read
      * @return ?string Ack the session owes (a {@see SessionAck} value), or null for none
@@ -1567,10 +1576,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * account it has no claim to. That subscription, made to whoever happened to be
      * parked, was the second door of the same capture the reservation key closed.
      *
-     * A waiter whose connection is ALREADY signed in is moved but not re-bound: somebody
-     * else's registration must never swap the account a person is sitting in. The
-     * confirming connection is skipped entirely - its caller signed it in on the ordinary
-     * path and answered it with the action reply.
+     * NOBODY is signed in here, and the winner's own tabs are no exception (HIL-649). They
+     * are moved to the done step and nothing more: the rotation the confirmation ran is what
+     * puts them back into the session, and the sentence it earned reaches them on their own
+     * handshake. Signing them in from here was tried and never once ran - the call was handed
+     * the pre-rotation token and returned at its first line from HIL-582 onward - and it
+     * could not be repaired by passing the live one either, since that would have rotated the
+     * token once per neighbouring tab. The confirming connection is skipped entirely: its
+     * caller signed it in on the ordinary path and answered it with the action reply.
      *
      * The losing SESSIONS are named as well as parked ones, because a browser can hold an
      * identifier without ever having been parked on it: a magic-link ask writes a hold and
@@ -1588,7 +1601,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param string $winnerSessionToken Session cookie token of the browser whose registration this was
      * @param list<string> $losingSessionTokens Session tokens whose hold on the identifier was dropped
      * @throws HilosException On runtime, database, or session failure
-     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
      */
     private function convergeRegistration(
         string $identifier,
@@ -1626,14 +1638,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 );
 
                 continue;
-            }
-
-            if (Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey)?->userId === null) {
-                // Marked before the session goes up, so the identity and the news that
-                // there is an account arrive in one frame (HIL-422). This tab did not
-                // type the code — another tab of the same browser did — which is exactly
-                // why it is owed the sentence rather than a screen that changed under it.
-                $this->authenticateSession($sessionToken, $userId, $acceptKey, ack: SessionAck::REGISTERED);
             }
 
             $this->sendToUser(

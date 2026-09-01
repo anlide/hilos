@@ -560,6 +560,72 @@ test('opens a fresh tab on the new-password step once the code is accepted', asy
   await expect(second.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 })
 
+test('tells the tab that did not save the password that the flow succeeded', async ({
+  page,
+  context,
+}) => {
+  // HIL-649. The recovery leg's own e2e is HIL-426; this case is here because the
+  // defect is here, and because the case above already stages the two tabs it needs.
+  // Saving the password signs the session in, and a sign-in rotates the token and
+  // drops every OTHER socket of that session (HIL-582). Tab A therefore came back on
+  // the new cookie carrying nothing, the gate saw a session that was up and closed the
+  // surface — so the screen the flow had just earned was taken away before it could be
+  // read. The flow ended in that tab, and never said it had succeeded.
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await register(page, email)
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await logout(page)
+
+  // Tab A gets as far as the password screen, exactly as the case above does.
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await typeInto(page.getByTestId('auth-identifier'), email)
+  await expect(page.getByTestId('auth-password')).toBeVisible()
+  await page.getByTestId('auth-recovery').click()
+  await expect(page.getByTestId('auth-code')).toBeVisible()
+  await typeInto(page.getByTestId('auth-code'), await readResetCode(email))
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await expect(page.getByTestId('auth-new-password')).toBeVisible()
+
+  // Tab B of the same browser is the one that saves it, and so the one that acts.
+  const second = await context.newPage()
+  await gotoPage(second, '/')
+  await expect(second.getByTestId('conn-state')).toHaveText('connected')
+  await second.getByTestId('message-signin').click()
+  await expect(second.getByTestId('auth-new-password')).toBeVisible()
+  await typeInto(second.getByTestId('auth-new-password'), RECOVERED_PASSWORD)
+  await clickSubmit(second.getByTestId('auth-submit'))
+  await expect(second.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+
+  // The case: tab A typed nothing and is told what happened anyway, rather than
+  // being emptied. Nothing is clicked in it to get there.
+  //
+  // Waited for with toPass rather than a plain expect, for the same reason
+  // session-rotation.spec.ts waits on the rotated cookie that way: what has to
+  // happen first is a whole round trip of the browser's own - this tab's socket is
+  // dropped by the sign-in, the tab reconnects, trades nothing, and only its new 101
+  // carries the sentence. One expect timeout covers that on an idle box and does not
+  // when the run shares the machine with a second demo lane.
+  await expect(async () => {
+    await expect(page.getByTestId('auth-heading')).toHaveText('Password changed')
+  }).toPass()
+  await expect(page.getByTestId('auth-continue')).toHaveText('Continue')
+
+  // And read once is read everywhere: Continue pressed in the tab that did NOT act
+  // takes the panel off the one that did.
+  // Pressing Continue in the tab that DID act is not asserted here to also close
+  // this one, though the seam promises it (clearSessionAck). It does clear the mark
+  // on both rows - a reload of this tab comes back to no panel - but no live surface
+  // watches the mark GO: authAckToFlowPatch answers null for a cleared ack and every
+  // view applies a patch only when it is non-null, so the copy stays on screen until
+  // something unmounts it. That is a defect of its own and not this one's to fix.
+  await continueFromDone(second)
+  await expect(second.getByTestId('auth-surface')).toHaveCount(0)
+})
+
 test('offers a countdown instead of a resend while the cooldown holds', async ({
   page,
 }) => {

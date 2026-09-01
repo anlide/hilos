@@ -52,10 +52,12 @@ use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
  * nothing, because the mark lives on the connection, which is the whole of how it
  * stays ephemeral without anything having to expire it.
  *
- * That last answer has exactly one exception, and it is here too (HIL-423): the socket a
- * login's own token rotation replaces inherits what its predecessor owed, because it is
- * the same browser still inside the flow rather than somebody coming back later. It is
- * told so by the rotation ticket it traded, and by nothing else.
+ * That last answer has two exceptions, and both are here. The socket a login's own token
+ * rotation replaces inherits what its predecessor owed (HIL-423), told so by the rotation
+ * ticket it traded. And a socket with no ticket inherits what its SESSION still owes
+ * (HIL-649) - which is how the tabs that login DROPPED are answered, since a rotation
+ * hands the ticket to the initiator alone. Both are the same browser still inside the
+ * flow; what a reload is, and what stays uncovered, is a session nothing owes any more.
  *
  * Confirmation codes are only mailed, so the cases seed a known-code challenge the
  * same way the register and reset suites do.
@@ -72,20 +74,20 @@ final class SessionAckTest extends IntegrationTestCase
     private const int TTL_SECONDS = 900;
 
     /**
-     * A confirmed registration marks the socket that earned it, hands the mark to the
-     * rotation that is about to end that socket, and tells nobody else.
+     * A confirmed registration marks the socket that earned it and no other session's.
      *
      * The mark used to be written to every live socket of the session before the sign-in
      * went out, and to the initiator a second time with it. Since HIL-710 the two are one
-     * frame, which names the socket that logged in and no other - and nothing is lost by it,
-     * because the session's other tabs are exactly the ones the rotation is dropping
-     * (HIL-582). What carries the sentence across that gap is the rotation row, not their
-     * rows: they come back on the new token owing nothing, and the browser is told by the
-     * socket that replaces the initiator's.
+     * frame, which names the socket that logged in and no other, and the session's own tabs
+     * are exactly the ones the rotation is dropping (HIL-582). Where they get the sentence
+     * from is a separate question with its own cases below - the row of the rotation for the
+     * socket that replaces this one, the session itself for the tabs that were dropped
+     * (HIL-649). What this case pins is the near edge: the initiator carries it, the
+     * rotation carries it onward, and a browser of somebody else's session hears nothing.
      *
      * @throws HilosException When setup or registration handling fails
      */
-    public function testConfirmingARegistrationMarksTheSocketThatEarnedItAndNoOther(): void
+    public function testConfirmingARegistrationMarksTheInitiatorAndHandsItToTheRotation(): void
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
@@ -109,7 +111,7 @@ final class SessionAckTest extends IntegrationTestCase
             $this->assertContains(
                 'ack-tab-b',
                 $rotation->acceptKeysToDrop,
-                'The other tab of the same browser is dropped by the rotation, not marked',
+                'The other tab of the same browser is dropped by the rotation, to come back on the new token',
             );
 
             $this->assertNull($this->ackOf('ack-stranger'), 'Nobody else hears about it');
@@ -120,6 +122,12 @@ final class SessionAckTest extends IntegrationTestCase
 
     /**
      * A socket opened after the fact owes nothing — the mark does not survive a reload.
+     *
+     * A reload is the death of the last socket that owed the sentence, and the case has to
+     * be that literally since HIL-649: what a new socket inherits is what its SESSION still
+     * owes, so leaving the old one alive here would be a second tab standing next to the
+     * first, which is the neighbouring case below and the opposite answer. Closing it is not
+     * scaffolding for the assertion - it IS the reload.
      *
      * @throws HilosException When setup or registration handling fails
      */
@@ -135,10 +143,11 @@ final class SessionAckTest extends IntegrationTestCase
             $this->confirm($agent, 'ack-reload-old', $email, self::CODE);
             $this->assertSame(SessionAck::REGISTERED, $this->ackOf('ack-reload-old'));
 
-            // The reload: the same durable session comes back on a new socket. The
-            // person is still signed in, and that is the point - the sentence was for
-            // the moment, the account is forever.
+            // The reload: the same durable session comes back on a new socket, and the tab
+            // that owed the sentence is gone. The person is still signed in, and that is the
+            // point - the sentence was for the moment, the account is forever.
             $liveToken = (string)Hilos::$rt->connections['ack-reload-old']?->sessionToken;
+            Hilos::$rt->connections['ack-reload-old']?->actions->unregister();
             $this->openSession($agent, 'ack-reload-new', $liveToken);
 
             $this->assertNull($this->ackOf('ack-reload-new'));
@@ -188,6 +197,92 @@ final class SessionAckTest extends IntegrationTestCase
             $this->assertSame(
                 SessionAck::REGISTERED,
                 $this->drainHandshakeResponses()['ack-rotate-new']?->pendingAck,
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * A tab the sign-in dropped is owed the sentence when it comes back (HIL-649).
+     *
+     * The defect this case was written for, in its registration half. Tab A types the code;
+     * the rotation that signs the browser in drops tab B, which reconnects on the cookie the
+     * initiator's trade installed and holding no ticket of its own - only the initiator ever
+     * gets one. Until now the frame that met it carried nothing, so the surface tab B had
+     * drawn was wiped by the session coming up: the flow ended in it, and never said it had
+     * succeeded. What answers it now is the session, which still owes the sentence as long as
+     * any live socket of it does.
+     *
+     * @throws HilosException When setup or registration handling fails
+     */
+    public function testATabDroppedByARegistrationIsOwedTheSentenceWhenItComesBack(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $token = $this->openSession($agent, 'ack-back-a');
+        $this->openSession($agent, 'ack-back-b', $token);
+
+        try {
+            $this->register($agent, 'ack-back-a', $email);
+            $this->seedRegisterCode($email);
+            $this->confirm($agent, 'ack-back-a', $email, self::CODE);
+
+            // What the master does with the sockets the rotation named, and what the browser
+            // does next: tab B is dropped and reopens on the token the session now answers to.
+            $liveToken = (string)Hilos::$rt->connections['ack-back-a']?->sessionToken;
+            Hilos::$rt->connections['ack-back-b']?->actions->unregister();
+            $this->drainHandshakeResponses();
+            $this->openSession($agent, 'ack-back-b-again', $liveToken);
+
+            $this->assertSame(SessionAck::REGISTERED, $this->ackOf('ack-back-b-again'));
+            $this->assertNotNull(
+                Hilos::$rt->connections['ack-back-b-again']?->userId,
+                'It comes back into the account too, which is what made the empty screen so blank',
+            );
+            $this->assertSame(
+                SessionAck::REGISTERED,
+                $this->drainHandshakeResponses()['ack-back-b-again']?->pendingAck,
+                'Stated in the frame the surface draws from, not only written on the row',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * The same for a saved password: the other tab of that browser is owed it too (HIL-649).
+     *
+     * The half of the defect it was first seen on. Recovery reaches the neighbouring tab by
+     * two roads and they are not the same road: the converge frame moves a tab that is still
+     * alive, and the mark answers the one the rotation dropped when it comes back. Only the
+     * second survives the sign-in, which is why the case ends the tab rather than leaving it.
+     *
+     * @throws HilosException When setup or reset handling fails
+     */
+    public function testATabDroppedByAPasswordResetIsOwedTheSentenceWhenItComesBack(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedUserWithPassword($email);
+        $token = $this->openSession($agent, 'ack-pw-back-a');
+        $this->openSession($agent, 'ack-pw-back-b', $token);
+
+        try {
+            $this->requestReset($agent, 'ack-pw-back-a', $email);
+            $this->seedResetCode($email);
+            $this->confirmReset($agent, 'ack-pw-back-a', $email, self::CODE);
+            $this->complete($agent, 'ack-pw-back-a', self::NEW_PASSWORD);
+
+            $liveToken = (string)Hilos::$rt->connections['ack-pw-back-a']?->sessionToken;
+            Hilos::$rt->connections['ack-pw-back-b']?->actions->unregister();
+            $this->drainHandshakeResponses();
+            $this->openSession($agent, 'ack-pw-back-b-again', $liveToken);
+
+            $this->assertSame(SessionAck::PASSWORD_CHANGED, $this->ackOf('ack-pw-back-b-again'));
+            $this->assertSame(
+                SessionAck::PASSWORD_CHANGED,
+                $this->drainHandshakeResponses()['ack-pw-back-b-again']?->pendingAck,
             );
         } finally {
             $this->cleanUp();
