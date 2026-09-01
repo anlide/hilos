@@ -11,12 +11,12 @@ use Hilos\API\Exception\AsyncHttpMalformedResponseException;
 use Hilos\API\Exception\AsyncHttpResultUnavailableException;
 use Hilos\API\Exception\AsyncHttpStatusException;
 use Hilos\API\Exception\AsyncHttpTimeoutException;
+use Hilos\API\Exception\AsyncHttpTlsHandshakeException;
 use Hilos\Constants\ApiEndpoint;
 use Hilos\Constants\HttpConstants;
 use Hilos\Socket\Exception\SocketConnectException;
 use Hilos\Socket\Exception\SocketReadException;
 use Hilos\Socket\Exception\SocketSelectException;
-use Hilos\Socket\Exception\SocketSetNonBlockException;
 use Hilos\Socket\Exception\SocketWriteException;
 use Hilos\Socket\SocketException;
 
@@ -62,6 +62,12 @@ class AsyncHttpClient
 
     /** @var ?resource Stream socket */
     private $socket = null;
+
+    /** @var int Errno of the last failed socket creation */
+    private int $connectErrno = 0;
+
+    /** @var string Reason of the last failed socket creation */
+    private string $connectError = '';
 
     /** @var string HTTP response buffer */
     private string $responseBuffer = '';
@@ -130,20 +136,24 @@ class AsyncHttpClient
      * Advances the async HTTP state machine.
      *
      * @param float $currentTimeMs Current time in milliseconds
-     * @throws AsyncHttpException When the HTTP request times out or response parsing fails
+     * @throws AsyncHttpException When the request times out, the TLS handshake fails, or parsing fails
      * @throws SocketException When an underlying stream socket operation fails
      */
     public function tick(float $currentTimeMs): void
     {
         if ($this->state !== AsyncHttpState::DONE && $this->startTime > 0) {
             if (($currentTimeMs - $this->startTime) >= $this->timeout) {
-                $this->failRequest(new AsyncHttpTimeoutException($this->timeout));
+                $this->failRequest(new AsyncHttpTimeoutException($this->timeout, $this->state));
             }
         }
 
         switch ($this->state) {
             case AsyncHttpState::CONNECTING:
                 $this->processConnecting();
+                break;
+
+            case AsyncHttpState::HANDSHAKING:
+                $this->processHandshake();
                 break;
 
             case AsyncHttpState::SENDING:
@@ -230,6 +240,110 @@ class AsyncHttpClient
     }
 
     /**
+     * Opens the non-blocking stream socket to the target host.
+     *
+     * A failure records its reason in connectErrno and connectError before returning: the caller
+     * only learns that no socket came back, and without the reason every failure reads the same.
+     *
+     * @return resource|false Connected non-blocking socket, or false on failure
+     */
+    protected function establishSocket()
+    {
+        $errno = 0;
+        $errstr = '';
+        $warning = null;
+        $address = "tcp://{$this->host}:{$this->port}";
+        $context = $this->createStreamContext();
+
+        $socket = $this->runStreamOperation(
+            static function () use ($address, $context, &$errno, &$errstr) {
+                return stream_socket_client(
+                    $address,
+                    $errno,
+                    $errstr,
+                    0,
+                    STREAM_CLIENT_CONNECT | STREAM_CLIENT_ASYNC_CONNECT,
+                    $context,
+                );
+            },
+            $warning,
+        );
+
+        if (!is_resource($socket)) {
+            $this->connectErrno = $errno;
+            $this->connectError = $errstr !== '' ? $errstr : ($warning ?? 'stream_socket_client returned no socket');
+
+            return false;
+        }
+
+        $nonBlocking = $this->runStreamOperation(
+            static fn(): bool => stream_set_blocking($socket, false),
+            $warning,
+        );
+
+        if ($nonBlocking !== true) {
+            // Without the close the descriptor would leak: the caller only learns that no socket
+            // came back, so nobody else is left holding this one.
+            fclose($socket);
+            $this->connectErrno = 0;
+            $this->connectError = $warning ?? 'stream_set_blocking returned false';
+
+            return false;
+        }
+
+        return $socket;
+    }
+
+    /**
+     * Returns the TLS options the request context is built from.
+     *
+     * The seam is the option set and not the built context: a test overrides one key - its own
+     * cafile - and still exercises the production assembly the peer name and verification live in.
+     *
+     * @return array<string, array<string, mixed>> Stream context options
+     */
+    protected function streamContextOptions(): array
+    {
+        return [
+            'ssl' => [
+                'peer_name' => $this->host,
+                'verify_peer' => true,
+                'verify_peer_name' => true,
+            ],
+        ];
+    }
+
+    /**
+     * Drives the TLS handshake on the open socket one non-blocking step.
+     *
+     * The crypto seam: tests override it to script the handshake without a real TLS peer.
+     *
+     * @param ?string $warning First captured warning message, carrying the failure reason
+     * @return int|bool True once secured, 0 while the handshake needs more steps, false on failure
+     */
+    protected function enableCrypto(?string &$warning): int|bool
+    {
+        return $this->runStreamOperation(
+            fn(): int|bool => stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT),
+            $warning,
+        );
+    }
+
+    /**
+     * Builds the stream context of the next request.
+     *
+     * @return ?resource Stream context for a TLS request, or null when the request is plain HTTP
+     */
+    private function createStreamContext()
+    {
+        if (!$this->useTls) {
+            return null;
+        }
+
+        return stream_context_create($this->streamContextOptions());
+    }
+
+    /**
      * Starts the HTTP stream socket request.
      *
      * @param float $currentTimeMs Current time in milliseconds
@@ -241,39 +355,10 @@ class AsyncHttpClient
         $this->hasNewResult = false;
         $this->lastResponse = null;
 
-        $scheme = $this->useTls ? 'ssl' : 'tcp';
-        $errno = 0;
-        $errstr = '';
-        $warning = null;
-        $address = "{$scheme}://{$this->host}:{$this->port}";
-
-        $socket = $this->runStreamOperation(
-            static function () use ($address, &$errno, &$errstr) {
-                return stream_socket_client(
-                    $address,
-                    $errno,
-                    $errstr,
-                    0,
-                    STREAM_CLIENT_CONNECT | STREAM_CLIENT_ASYNC_CONNECT,
-                );
-            },
-            $warning,
-        );
+        $socket = $this->establishSocket();
 
         if (!is_resource($socket)) {
-            $this->failRequest(new SocketConnectException(
-                $errno,
-                $errstr !== '' ? $errstr : ($warning ?? 'stream_socket_client returned no socket'),
-            ));
-        }
-
-        $nonBlocking = $this->runStreamOperation(
-            static fn(): bool => stream_set_blocking($socket, false),
-            $warning,
-        );
-
-        if ($nonBlocking !== true) {
-            $this->failRequest(new SocketSetNonBlockException(0, $warning ?? 'stream_set_blocking returned false'));
+            $this->failRequest(new SocketConnectException($this->connectErrno, $this->connectError));
         }
 
         $this->socket = $socket;
@@ -309,8 +394,36 @@ class AsyncHttpClient
         }
 
         if ($result > 0 && $write !== []) {
-            $this->state = AsyncHttpState::SENDING;
+            $this->state = $this->useTls ? AsyncHttpState::HANDSHAKING : AsyncHttpState::SENDING;
         }
+    }
+
+    /**
+     * Advances the TLS handshake; the first request byte leaves only once crypto is up.
+     *
+     * @throws AsyncHttpTlsHandshakeException When the TLS handshake fails
+     * @throws SocketException When the socket is gone while handshaking
+     */
+    private function processHandshake(): void
+    {
+        if ($this->socket === null || !is_resource($this->socket)) {
+            $this->failRequest(new SocketConnectException(0, 'Socket is not available while handshaking'));
+        }
+
+        $warning = null;
+        $enabled = $this->enableCrypto($warning);
+
+        if ($enabled === 0) {
+            return;
+        }
+
+        if ($enabled !== true) {
+            $this->failRequest(new AsyncHttpTlsHandshakeException(
+                $warning ?? 'stream_socket_enable_crypto returned false',
+            ));
+        }
+
+        $this->state = AsyncHttpState::SENDING;
     }
 
     /**
@@ -415,11 +528,10 @@ class AsyncHttpClient
                 $this->failRequest(new SocketReadException(0, $warning ?? 'fread returned false'));
             }
 
-            if ($chunk === '') {
-                $this->parseResponse();
-                return;
-            }
-
+            // An empty read on a non-blocking socket means "no data yet", never "the peer is
+            // done": on TLS the socket is announced readable as soon as protocol bytes arrive,
+            // while the decrypted application bytes are not there yet. The end of the response is
+            // declared by feof() below, and by nothing else.
             $this->responseBuffer .= $chunk;
         }
 
@@ -616,14 +728,16 @@ class AsyncHttpClient
      * Executes a stream operation while capturing PHP warnings as text.
      *
      * @param callable $operation Stream operation
-     * @param ?string $warning Captured warning message
+     * @param ?string $warning First captured warning message
      * @return mixed Operation result
      */
     private function runStreamOperation(callable $operation, ?string &$warning): mixed
     {
         $warning = null;
         set_error_handler(static function (int $severity, string $message) use (&$warning): bool {
-            $warning = $message;
+            // The first warning holds the reason: PHP reports a refused TLS handshake three times
+            // over, and the last of them is the useless "Unable to connect ... (Unknown error)".
+            $warning ??= $message;
             return true;
         });
 

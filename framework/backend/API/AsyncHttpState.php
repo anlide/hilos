@@ -8,12 +8,15 @@ namespace Hilos\API;
  * AsyncHttpState - Async HTTP request state enumeration.
  *
  * Represents possible states of async HTTP request in AsyncHttpClient.
- * State flow: CONNECTING → SENDING → RECEIVING → DONE
+ * State flow: CONNECTING → HANDSHAKING → SENDING → RECEIVING → DONE
  */
 enum AsyncHttpState: string
 {
     /** @var string Socket connection in progress */
     case CONNECTING = 'connecting';
+
+    /** @var string TLS handshake in progress */
+    case HANDSHAKING = 'handshaking';
 
     /** @var string Sending request body */
     case SENDING = 'sending';
