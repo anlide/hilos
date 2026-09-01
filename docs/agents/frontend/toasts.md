@@ -13,8 +13,9 @@ and failures, and the frontend decides which of them deserve a toast
 only copy of that information — a toast that expires is gone.
 
 Rules that the code does not implement yet end with a literal marker
-`(not in the code yet — HIL-<n>)` naming the leaf that will land them; when
-that leaf lands, its markers are removed by one grep for the key.
+`(not in the code yet — HIL-<n>)` naming the leaf that will land them. The leaf
+that lands the behavior clears its markers, in the same commit — see
+[rule-authoring.md](../rule-authoring.md).
 
 ## Who a toast is addressed to
 

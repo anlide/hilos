@@ -40,6 +40,9 @@ skill wrappers. Start with `agents.md`, then read
 10. When a rule touches DB entity shape, RT item shape, signal DTO payloads, or
     routes, preserve the contract approval gate and stop before implementation
     changes to those surfaces.
+11. When a change lands behavior a doc marks `(not in the code yet — HIL-<n>)`,
+    grep `docs/` for that key and clear the markers in the same commit; see
+    "A Rule Written Ahead Of Its Code" in `docs/agents/rule-authoring.md`.
 
 ## Hard Rules
 
@@ -47,3 +50,5 @@ skill wrappers. Start with `agents.md`, then read
 - Do not duplicate detailed canonical rules in Cursor or Claude adapters.
 - Do not bury actionable constraints inside long rationale-only prose.
 - Do not use `Never` unless the rule has no local exception.
+- Do not hand a marker removal to another leaf: the leaf that lands the behavior
+  clears it, in the same commit.

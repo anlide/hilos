@@ -138,6 +138,56 @@ last line of defence. See
 [code-style/automated-checks.md](code-style/automated-checks.md) for what is
 checked today and how to add a rule to the guard.
 
+## A Rule Written Ahead Of Its Code
+
+A rule may be written before the code that implements it — the specification
+is graduated ahead of the code, and a doc that waited for the code would be
+silent exactly while the code is being designed. Such a rule ends with a
+literal marker naming the leaf that will land it:
+`(not in the code yet — HIL-<n>)`. The doc's author sets the marker and knows
+that clearing it is not theirs to do.
+
+**The leaf that lands the behavior clears the marker, in the same commit.** At
+the moment of that commit its executor is the only one who knows which lines of
+the doc just became true; a commit that leaves the marker standing ships a doc
+that lies about its own code. HIL-765 is the case this rule is written from:
+the earlier wording named no owner, and the marker in
+`frontend/accessibility.md` outlived the landing by two days.
+
+1. **The trigger is "I landed behavior", not "I am editing a doc".** The
+   marker is cleared by the leaf whose code made the sentence true, whether or
+   not that leaf ever opened the doc — HIL-765 was missed exactly because at
+   commit time nobody had the doc open.
+2. **Search by key, over the whole `docs/` tree:** `grep -rn "HIL-<n>" docs/`.
+   Not by the marker's text — a marker wrapped across two lines
+   (`frontend/rules-and-violations.md` carries one reading `not in the code` /
+   `yet — HIL-769`) is invisible to a phrase grep. Not within the file you are
+   editing — markers of one key live in several files (HIL-769 in three,
+   HIL-766 in four). Each of those two shortcuts has already lost a marker once.
+3. **The grep yields candidates, not a removal list.** Clear only an
+   occurrence in the marker's form. A plain mention of the key stays: the docs
+   are full of history ("The Lock Does Not Travel With The Name (HIL-771)"),
+   and a delegating reference without the marker form ("its shape and
+   mechanics are HIL-736's") is a pointer, not a promise.
+4. **Landed all of what the sentence describes — drop the marker, keep the
+   text. Landed part of it — re-aim the marker, do not drop it:** split the
+   sentence so that the landed part reads as fact and the remainder keeps a
+   marker naming the leaf that will close it. Commit `95f39556` is the shape:
+   five markers cleared, two re-aimed at HIL-766 / HIL-767.
+5. **A leaf that absorbed another leaf greps for the absorbed keys too.**
+   Otherwise the marker outlives the key it names and points at a leaf that
+   will never land on its own.
+6. **In the same commit that landed the behavior; in a multi-slice leaf, in
+   that slice.** Not "before Ready": the squash merge folds the history, and
+   no single commit's diff is left to check it in.
+7. **Do not hand the clearing to another leaf.** "Not this leaf's to remove"
+   is the exact sentence that made HIL-765's marker nobody's — the leaf it
+   named was already merged.
+
+A leaf closed without landing its behavior leaves its marker orphaned; that
+case is not decided here. No such marker exists today, and the cure belongs to
+the ticket-closing procedure of the line, not to the repository.
+
 ## Codex Skill Wrapper Shape
 
 A Hilos skill wrapper should stay small:
