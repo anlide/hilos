@@ -297,6 +297,11 @@ services:
       # back needs nothing here — an SMS and a Telegram code arrive as mail, so
       # both are read over MAILPIT_URL above.
       STAND_GATEWAY_URL: http://stand-gateway-test:18000
+      # How far the run wants every Playwright cap stretched. Set by
+      # scripts/run-test-suite.php from the lane count it resolved; the default is
+      # deliberately EMPTY rather than "1", because empty means "no override" to
+      # the scale and leaves a hand-raised stand on the host heuristic (HIL-853).
+      HILOS_E2E_TIMEOUT_SCALE: ${HILOS_E2E_TIMEOUT_SCALE:-}
     profiles:
       - e2e
     networks:

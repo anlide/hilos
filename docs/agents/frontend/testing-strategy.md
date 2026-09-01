@@ -126,27 +126,45 @@ comes before, waiting on the **subscription** reply the result itself depends on
 (e.g. the profile snapshot that fills the card): settle the action first, then
 assert the data.
 
-## Timeouts scale with how starved the host is
+## Timeouts scale with the lanes the run uses
 
 Every Playwright cap — the test timeout, the `expect` timeout, and the action and
 navigation timeouts — is the base value multiplied by a factor of 1.0–4.0 that
-`framework/frontend/scripts/timeout-scale.mjs` derives from the host's
-load-per-CPU and its `MemAvailable`. All three demo configs import the one module;
-none of them carries its own numbers. The factor and the readings behind it are
-printed as the run starts, so a slow step stays explainable from its log.
+`framework/frontend/scripts/timeout-scale.mjs` resolves. All three demo configs
+import the one module; none of them carries its own numbers. The factor and the
+readings behind it are printed as the run starts, so a slow step stays
+explainable from its log.
+
+The factor comes from **how many lanes the run uses**, not from what the box says
+about itself. `scripts/run-test-suite.php` exports `HILOS_E2E_TIMEOUT_SCALE` from
+the lane count it resolved — once per run, before the first step — and the three
+demo compose files forward it into the e2e runner. One lane is 1.0, two are 2.0.
+
+That variable is a **floor**, not the finished factor: available memory may raise
+it further (2.0 under 2 GiB, 3.0 under 1 GiB), because a box about to swap costs
+far more than its load average admits. The load-per-CPU term does not run at all
+while the variable is set — in the three runs this rule was rewritten for it read
+`scale 1` every time, including a two-lane run that took 17m59s, because the
+pressure was disk and docker while that term measures CPU (HIL-853).
+
+With no variable set the whole heuristic runs as it always did, load term
+included. That is Playwright started outside the runner, and its only remaining
+consumer. An unmeasurable host still resolves to 1.0, a runaway one is still
+capped at 4.0 so a genuine hang ends, and a value below 1 is raised to 1: the
+knob can lengthen a timeout and never shorten one.
 
 This exists because the full run puts **two demo lanes on the box at once**
-(`../testing.md`): a starved host must make the suite slower, not red. An
-unmeasurable host resolves to 1.0 — today's behavior — and a runaway one is capped
-at 4.0 so a genuine hang still ends. `HILOS_E2E_TIMEOUT_SCALE` pins the factor
-explicitly; it can only raise, never shorten.
+(`../testing.md`): a starved host must make the suite slower, not red.
 
 The heuristic is a port of `resolve_timeout_scale()` in
 `demo/cluster/docker/cluster_e2e.py`, and the port is **deliberately half**: that
 suite also retries a scenario that failed purely on a convergence timeout and
 never one that violated an invariant. Playwright gives no cheap way to tell the
 two apart at retry time, so retrying on timeout only cannot be expressed — retries
-stay at 2 in CI, and only the caps move.
+stay at 2 in CI, and only the caps move. The cluster scale now reads
+`CLUSTER_E2E_TIMEOUT_SCALE` under the same rule as this one: the runner exports it
+from the same lane count, memory may raise it above that, and the loadavg term
+steps aside whenever it is set.
 
 ## Source vs build
 

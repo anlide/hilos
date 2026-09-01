@@ -84,9 +84,12 @@ the timing-sensitive scenarios (failover, hot-join, quorum-loss) can flake on a
 pure "timed out after Ns" while the cluster logic is correct. The driver keeps
 the run honest without falsely passing:
 
-- Every cap is multiplied by an adaptive `TIMEOUT_SCALE` (>= 1.0), auto-derived
-  from the host's load-per-cpu and free memory (capped at 4.0). Override it with
-  `CLUSTER_E2E_TIMEOUT_SCALE=<float>`; a provisioned host resolves to 1.0.
+- Every cap is multiplied by a `TIMEOUT_SCALE` (>= 1.0, capped at 4.0). The test
+  runner exports `CLUSTER_E2E_TIMEOUT_SCALE` from the lane count it resolved, and
+  that value is a **floor**: free memory may raise the factor above it, while the
+  load-per-cpu term steps aside. Set the variable by hand to pin a factor; with
+  it unset the factor is derived from load and memory as before, and a
+  provisioned host resolves to 1.0.
 - A scenario that fails *purely* on a convergence timeout is retried a bounded
   number of times (`CLUSTER_E2E_RETRIES`, default 1) after re-converging the
   mesh. A hard invariant assertion (wrong leader, bad placement) never retries

@@ -1,5 +1,7 @@
 import { expect } from '@playwright/test'
 
+import { mailWaitTimeout } from '../../../../../framework/frontend/scripts/timeout-scale.mjs'
+
 // The stand's mail interceptor (mailpit-test in docker-compose.test.yml). The
 // daemon sends over SMTP to it, so anything the product mails — a verification
 // code, a notification delivery — lands in a mailbox the runner can read over
@@ -11,6 +13,18 @@ import { expect } from '@playwright/test'
 // SMTP path — the one a real deployment runs on — was executed by no browser test
 // at all, and the artifacts landed in the work tree owned by the container's user.
 const MAILPIT_URL = process.env.MAILPIT_URL ?? 'http://mailpit-test:8025'
+
+/**
+ * How long a wait on a letter may run on this host, in milliseconds.
+ *
+ * A letter is the longest chain a spec waits on — mail agent, SMTP, interceptor —
+ * and without a limit of its own every poll below inherited `expect`, the
+ * shortest cap the config declares (HIL-853).
+ *
+ * Derived once per module load, not per call: the factor is read off /proc, and
+ * a wait that re-derived it would read the host once per poll attempt.
+ */
+const MAIL_WAIT_TIMEOUT = mailWaitTimeout()
 
 // The mailbox is shared by every spec on the stand, so a message is never
 // identified by "the newest one": a read names the recipient, and every spec
@@ -76,6 +90,7 @@ export async function waitForMailTo(
   await expect
     .poll(async () => (await matchingIds(address, subject)).length, {
       message: `no mail to ${address} subject "${subject}" reached the interceptor`,
+      timeout: MAIL_WAIT_TIMEOUT,
     })
     .toBeGreaterThan(0)
 
@@ -107,6 +122,7 @@ export async function waitForAnyMailTo(
   await expect
     .poll(async () => (await entriesTo(address)).length, {
       message: `no mail to ${address} reached the interceptor`,
+      timeout: MAIL_WAIT_TIMEOUT,
     })
     .toBeGreaterThan(0)
 

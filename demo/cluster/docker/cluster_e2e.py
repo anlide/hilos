@@ -17,9 +17,11 @@ the grace-driven detection windows (keepalive-timeout + failover-grace, HIL-183)
 run longer than the fixed caps and the matrix flakes on pure "timed out after Ns"
 without the cluster logic being wrong. Two guards keep the run honest without
 falsely passing:
-  * the caps are multiplied by an adaptive TIMEOUT_SCALE (>= 1.0) — set
-    CLUSTER_E2E_TIMEOUT_SCALE to override, otherwise it is auto-derived from the
-    host's load-per-cpu and free memory. A provisioned host stays at 1.0.
+  * the caps are multiplied by a TIMEOUT_SCALE (>= 1.0) — the runner exports
+    CLUSTER_E2E_TIMEOUT_SCALE from the lane count it resolved, and that value is
+    a FLOOR which little free memory may raise further; with the variable unset
+    the factor is derived from the host's load-per-cpu and free memory instead.
+    A provisioned host on one lane stays at 1.0.
   * a scenario that fails PURELY on a convergence timeout is retried a bounded
     number of times (CLUSTER_E2E_RETRIES, default 1) after re-converging; a hard
     invariant assertion never retries and fails immediately.
@@ -115,27 +117,42 @@ def _free_gib():
 def resolve_timeout_scale():
     """Factor (>= 1.0) that stretches every convergence cap for a loaded/slow host.
 
-    An explicit CLUSTER_E2E_TIMEOUT_SCALE wins; otherwise it is derived from the
-    host's load-per-cpu and free memory. Capped at 4.0 so a runaway host still
-    fails in bounded time. A well-provisioned host resolves to 1.0 (no change).
+    CLUSTER_E2E_TIMEOUT_SCALE is a FLOOR rather than the finished factor: the
+    runner sets it from the lane count it resolved, and a box short enough on
+    memory to swap may still raise it further. What the override does silence is
+    the load term — the half of this heuristic that measured nothing in the runs
+    it was rewritten for (HIL-853). Capped at 4.0 so a runaway host still fails in
+    bounded time. A well-provisioned host with no override resolves to 1.0 (no
+    change).
     """
+    scale = 1.0
+    overridden = False
     override = os.environ.get("CLUSTER_E2E_TIMEOUT_SCALE")
     if override:
         try:
-            return max(1.0, float(override))
+            scale = max(1.0, float(override))
+            overridden = True
         except ValueError:
             print(f"  (ignoring non-numeric CLUSTER_E2E_TIMEOUT_SCALE={override!r})")
 
-    scale = 1.0
-    lpc = _load_per_cpu()
-    if lpc and lpc > 0.75:
-        scale = max(scale, 1.0 + (lpc - 0.75))
+    if not overridden:
+        lpc = _load_per_cpu()
+        if lpc and lpc > 0.75:
+            scale = max(scale, 1.0 + (lpc - 0.75))
     free = _free_gib()
     if free is not None:
+        floor = 1.0
         if free < 1.0:
-            scale = max(scale, 3.0)
+            floor = 3.0
         elif free < 2.0:
-            scale = max(scale, 2.0)
+            floor = 2.0
+        if floor > scale:
+            if overridden:
+                print(
+                    f"  (CLUSTER_E2E_TIMEOUT_SCALE={override} raised to {floor}"
+                    f" by {round(free, 2)} GiB free)"
+                )
+            scale = floor
     return round(min(scale, 4.0), 2)
 
 

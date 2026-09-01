@@ -100,3 +100,30 @@ it('treats a blank override as no override', () => {
 
   expect(deriveTimeoutScale(blank)).toMatchObject({ factor: 2.5 })
 })
+
+it('raises an override to the memory floor', () => {
+  const swapping = { ...IDLE, override: '2', availableGib: 0.5 }
+
+  expect(deriveTimeoutScale(swapping)).toMatchObject({ factor: 3.0 })
+})
+
+it('keeps an override that already beats the memory floor', () => {
+  const roomy = { ...IDLE, override: '3', availableGib: 1.5 }
+
+  expect(deriveTimeoutScale(roomy)).toMatchObject({ factor: 3.0 })
+})
+
+it('ignores load once an override is given', () => {
+  const busy = { ...IDLE, override: '2', loadPerCpu: 10 }
+
+  expect(deriveTimeoutScale(busy)).toMatchObject({ factor: 2.0 })
+})
+
+it('names both the override and the memory that raised it', () => {
+  const swapping = { ...IDLE, override: '2', availableGib: 0.5 }
+
+  const { reason } = deriveTimeoutScale(swapping)
+
+  expect(reason).toContain('HILOS_E2E_TIMEOUT_SCALE=2')
+  expect(reason).toContain('GiB')
+})

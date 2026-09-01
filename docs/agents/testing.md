@@ -186,6 +186,14 @@ limit defaults to 2 on a machine with at least 8 cores and about 4 GB available 
 to **1 everywhere else**, so a small CI runner degrades to the old serial run
 instead of thrashing; `HILOS_TEST_LANES` or `--lanes=N` overrides it.
 
+That lane count leaves the runner as a **timeout multiplier** as well: before the
+first step it exports `HILOS_E2E_TIMEOUT_SCALE` and `CLUSTER_E2E_TIMEOUT_SCALE`,
+so a two-lane run gives every suite twice its usual patience instead of each
+suite guessing from a load average it sampled for itself. A value already in the
+environment is kept as it is. What each suite then does with the number — and why
+memory can still raise it — is in
+[frontend/testing-strategy.md](frontend/testing-strategy.md).
+
 The graph is where the safety lives, and two kinds of constraint carry it:
 
 - **an edge** — the frontend steps of a demo (`<demo>-check`, `<demo>-e2e`) depend

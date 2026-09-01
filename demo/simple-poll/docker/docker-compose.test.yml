@@ -302,6 +302,11 @@ services:
       COMMAND_PORT: "8094"
       CI: "1"
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      # How far the run wants every Playwright cap stretched. Set by
+      # scripts/run-test-suite.php from the lane count it resolved; the default is
+      # deliberately EMPTY rather than "1", because empty means "no override" to
+      # the scale and leaves a hand-raised stand on the host heuristic (HIL-853).
+      HILOS_E2E_TIMEOUT_SCALE: ${HILOS_E2E_TIMEOUT_SCALE:-}
     profiles:
       - e2e
     networks:

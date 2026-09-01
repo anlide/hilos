@@ -46,6 +46,16 @@ const BASE_TIMEOUTS = {
 }
 
 /**
+ * Unscaled cap for a wait on an intercepted letter, in milliseconds.
+ *
+ * Deliberately outside BASE_TIMEOUTS: that object goes to the Playwright config
+ * whole, and the config has no cap named `mail`. It is also the longest chain a
+ * suite waits on — mail agent, SMTP, interceptor — which is why it gets a limit
+ * of its own instead of inheriting `expect`, the shortest cap there is.
+ */
+const BASE_MAIL_WAIT = 15_000
+
+/**
  * What the host is currently under. Either field is null when this platform does
  * not report it — /proc/meminfo is Linux-only, and a load average needs a kernel
  * that keeps one.
@@ -89,11 +99,19 @@ function readAvailableGib() {
 /**
  * The factor every timeout is multiplied by, and the sentence explaining it.
  *
+ * The override is a FLOOR, not the finished factor: the runner sets it from the
+ * lane count it resolved, and a box short enough on memory to swap may still
+ * raise it further. What the override does silence is the load term — that is
+ * the half of the heuristic which measured nothing in the runs this rule was
+ * rewritten for (HIL-853).
+ *
  * @param {object} pressure
  * @param {string | undefined} pressure.override Raw value of the override
  *   variable; a non-numeric one is named in `reason` and ignored rather than
  *   fatal, so a typo in CI slows nothing down and breaks nothing — but still says
  *   so in the log, instead of leaving someone to wonder why the knob did nothing.
+ *   Ignored means ignored: the load term runs as if the variable were absent,
+ *   rather than a typo quietly disabling it.
  * @param {number | null} pressure.loadPerCpu 1-minute load average per CPU.
  * @param {number | null} pressure.availableGib Available memory in GiB.
  * @returns {{ factor: number, reason: string }} `reason` names what decided the
@@ -101,30 +119,34 @@ function readAvailableGib() {
  */
 export function deriveTimeoutScale({ override, loadPerCpu, availableGib }) {
   let ignored = ''
+  let factor = 1.0
+  let reason = 'host is not contended'
+  let overridden = false
   if (override !== undefined && override.trim() !== '') {
     const parsed = Number(override)
     if (Number.isFinite(parsed)) {
-      return {
-        factor: round(Math.min(Math.max(parsed, 1.0), MAX_SCALE)),
-        reason: `${OVERRIDE_VAR}=${override}`,
-      }
+      factor = Math.max(parsed, 1.0)
+      reason = `${OVERRIDE_VAR}=${override}`
+      overridden = true
+    } else {
+      ignored = `ignoring non-numeric ${OVERRIDE_VAR}=${override}; `
     }
-    ignored = `ignoring non-numeric ${OVERRIDE_VAR}=${override}; `
   }
 
-  let factor = 1.0
-  let reason = 'host is not contended'
-  if (loadPerCpu !== null && loadPerCpu > LOAD_HEADROOM) {
+  if (!overridden && loadPerCpu !== null && loadPerCpu > LOAD_HEADROOM) {
     factor = 1.0 + (loadPerCpu - LOAD_HEADROOM)
     reason = `load per cpu ${round(loadPerCpu)}`
   }
   // Memory is a floor rather than a term: a box this short on memory is about to
   // swap, and swapping costs far more than its load average admits at the moment
-  // the config is read.
+  // the config is read. It outranks the override for the same reason — the lane
+  // count says how much work was asked for, not how much the box has left.
   const memoryFloor = availableGib === null ? 1.0 : memoryFloorFor(availableGib)
   if (memoryFloor > factor) {
+    reason = overridden
+      ? `${reason} raised to ${round(memoryFloor)} by ${round(availableGib)} GiB available`
+      : `${round(availableGib)} GiB available`
     factor = memoryFloor
-    reason = `${round(availableGib)} GiB available`
   }
 
   const capped = Math.min(factor, MAX_SCALE)
@@ -183,6 +205,25 @@ export function scaledTimeouts() {
     action: BASE_TIMEOUTS.action * factor,
     navigation: BASE_TIMEOUTS.navigation * factor,
   }
+}
+
+/**
+ * The cap a wait on an intercepted letter gets on this host, in milliseconds.
+ *
+ * Silent, unlike scaledTimeouts: the factor is already printed at the top of the
+ * step's log by the Playwright config, and a helper that re-announced it once per
+ * spec file would bury that line rather than repeat it usefully. This is also why
+ * the two are separate exports rather than one — the config wants the print, a
+ * test helper wants only the number.
+ *
+ * @returns {number}
+ */
+export function mailWaitTimeout() {
+  const { factor } = deriveTimeoutScale({
+    override: process.env[OVERRIDE_VAR],
+    ...readHostPressure(),
+  })
+  return BASE_MAIL_WAIT * factor
 }
 
 /**

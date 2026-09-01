@@ -56,6 +56,12 @@ const PARALLEL_LANES = 2;
 /** Environment variable overriding the adaptive lane count. */
 const LANES_VAR = 'HILOS_TEST_LANES';
 
+/** Environment variable the Playwright suites read their timeout factor from. */
+const PLAYWRIGHT_SCALE_VAR = 'HILOS_E2E_TIMEOUT_SCALE';
+
+/** Environment variable the cluster suite reads its own timeout factor from. */
+const CLUSTER_SCALE_VAR = 'CLUSTER_E2E_TIMEOUT_SCALE';
+
 /** Permissions for a log directory the runner has to create. */
 const LOG_DIR_MODE = 0o755;
 
@@ -354,6 +360,39 @@ function readProcFile(string $path): ?string
 // -------------------------------------------------------------------- running
 
 /**
+ * Tell every suite how far to stretch its timeouts, once for the whole run.
+ *
+ * The factor is the lane count, because that is the one number that actually says how much work
+ * this box was asked to carry. Each suite used to infer it from a load average sampled at whatever
+ * second its own config happened to be read — and in the three runs this was written for it read
+ * `scale 1` every time, including the one that took 17m59s on two lanes (HIL-853). A suite is free
+ * to go HIGHER than this from its own reading; what it no longer does is guess the whole number.
+ *
+ * A value already in the environment is left alone, up or down: it is either someone debugging a
+ * step or CI pinning a factor, and both know something the lane count does not.
+ *
+ * Exported with `putenv` rather than handed to each step: {@see launch()} calls `proc_open` with no
+ * explicit environment, so a step inherits the runner's own and one export covers the whole graph.
+ *
+ * @param int $lanes Steps the run keeps in flight at a time.
+ */
+function exportTimeoutScale(int $lanes): void
+{
+    $announced = [];
+    foreach ([PLAYWRIGHT_SCALE_VAR, CLUSTER_SCALE_VAR] as $variable) {
+        $existing = getenv($variable);
+        if (is_string($existing) && $existing !== '') {
+            $announced[] = $variable . '=' . $existing . ' (kept from the environment)';
+            continue;
+        }
+        putenv($variable . '=' . $lanes);
+        $announced[] = sprintf('%s=%d (from %d lane(s))', $variable, $lanes, $lanes);
+    }
+
+    fwrite(STDOUT, 'timeout scale: ' . implode(', ', $announced) . "\n");
+}
+
+/**
  * Run the plan and report. Returns the process exit code: zero only when every
  * planned step ran and every one of them was green.
  *
@@ -397,6 +436,7 @@ function runPlan(
     }
     $rc = openLedger($rcFile);
     $startedAt = microtime(true);
+    exportTimeoutScale($lanes);
     fwrite(STDOUT, sprintf("=== SUITE START %s — %d steps, %d lane(s) ===\n", now(), count($plan), $lanes));
 
     /** @var array<int, string> $pending Ids not started yet, longest first. */
