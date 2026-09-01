@@ -104,6 +104,12 @@ $steps = [
         'group' => null,
         'tags' => ['cluster', 'backend'],
         'seconds' => 178,
+        // The one step that takes its stand down with it, at any outcome. Its fleet of five node
+        // daemons keeps eating cores for the rest of the run otherwise, which is what turned
+        // chat-e2e into 16m10s against 9m36s and produced fourteen failures that were only the
+        // neighbour (HIL-752). Declared here rather than appended to the composer chain because
+        // that chain breaks at the first red, and the runner is the one that holds the outcome.
+        'downAfter' => 'cluster',
     ],
 ];
 

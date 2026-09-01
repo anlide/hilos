@@ -32,6 +32,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 demo="$(cd "$here/.." && pwd)"
+root="$(cd "$demo/../.." && pwd)"
 compose_file="$here/docker-compose.cluster.yml"
 net="hilos-cluster-net"
 
@@ -59,6 +60,12 @@ cmd_up() {
   ensure_env
   echo "cluster: building images..."
   dc build
+  # Clear any freeze the last run left on a node, from INSIDE a container: data/logs/<node> is
+  # owned by root (the daemons run as root in their containers) and unlink asks permission of the
+  # DIRECTORY, so an rm from the host cannot reach it. On the up rather than on the teardown for
+  # the same reason as the three demos (HOTFIX d5f0ad75): a run killed hard never reaches its own
+  # teardown, but it always reaches the next up.
+  dc --profile cli run --rm cluster-cli sh -c 'rm -f /app/data/logs/*/protected-mode.state.json*'
   echo "cluster: starting mysql..."
   dc up -d cluster-mysql
   echo "cluster: migrating the shared schema..."
@@ -73,9 +80,15 @@ cmd_up() {
 }
 
 cmd_down() {
-  local extra=()
-  [[ "${1:-}" == "--volumes" ]] && extra=(-v)
-  dc --profile "*" down "${extra[@]}"
+  # `--volumes` stays with compose: the shared teardown deliberately leaves volumes alone, and
+  # this branch exists precisely to wipe the mysql data volume between scenario matrices
+  # (HIL-712). Everything else goes through the repository-wide teardown, which also picks up
+  # the one-off containers and the project network that `down` leaves standing.
+  if [[ "${1:-}" == "--volumes" ]]; then
+    dc --profile "*" down -v
+    return
+  fi
+  php "$root/scripts/down-stands.php" cluster
 }
 
 cmd_inspect() {

@@ -69,7 +69,7 @@
             "rm -f data/logs-test/protected-mode.state.json*",
             "docker compose -f docker/docker-compose.test.yml up -d poll-mysql-test"
         ],
-        "test:down": "docker compose -f docker/docker-compose.test.yml --profile \"*\" down",
+        "test:down": "@php ../../scripts/down-stands.php simple-poll",
         "test:down-volumes": "docker compose -f docker/docker-compose.test.yml --profile \"*\" down -v",
         "test:db-reset": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm poll-cli-test php backend/Bootstrap/cli.php db:test:reset",
         "test:db-wait": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm poll-cli-test php backend/Bootstrap/cli.php db:wait",

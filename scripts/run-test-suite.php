@@ -79,6 +79,7 @@ enum StepOutcome: string
 $root = dirname(__DIR__);
 require_once $root . '/scripts/unstable-line.php';
 require_once $root . '/scripts/step-artifacts.php';
+require_once $root . '/scripts/stand-teardown.php';
 $options = parseArguments(array_slice($argv, 1));
 $manifest = indexById(require $root . '/scripts/test-suite.php');
 $plan = planFor($manifest, $options['targets']);
@@ -98,6 +99,7 @@ exit(runPlan(
     $logDir,
     $options['rcFile'] ?? $logDir . '/rc',
     $options['artifactDir'] ?? $logDir . '/artifacts',
+    $options['targets'] === [],
 ));
 
 // ------------------------------------------------------------------ arguments
@@ -367,6 +369,9 @@ function readProcFile(string $path): ?string
  * @param string $logDir Directory for the per-step logs.
  * @param string $rcFile Path of the `<id> rc=<n>` ledger.
  * @param string $artifactDir Directory the per-step snapshots of the stand go under.
+ * @param bool $sweepFirst Whether to take every known stand down before the first step. True
+ *     for a full run and false for a re-run of one step, which follows a full run onto a box
+ *     that is already clean.
  * @return int
  */
 function runPlan(
@@ -377,9 +382,19 @@ function runPlan(
     string $logDir,
     string $rcFile,
     string $artifactDir,
+    bool $sweepFirst,
 ): int {
     $logs = prepareLogDir($logDir, $plan);
     prepareArtifactDir($artifactDir, $plan);
+    if ($sweepFirst) {
+        $survived = sweepStands($root);
+        if ($survived !== []) {
+            fwrite(STDERR, 'stands: run not started, these stands would not go down: '
+                . implode(', ', $survived) . "\n");
+
+            return 1;
+        }
+    }
     $rc = openLedger($rcFile);
     $startedAt = microtime(true);
     fwrite(STDOUT, sprintf("=== SUITE START %s — %d steps, %d lane(s) ===\n", now(), count($plan), $lanes));
@@ -424,6 +439,7 @@ function runPlan(
             unset($running[$id]);
             $done[$id] = $finished;
             $artifacts[$id] = collectStepArtifacts($root, $id, $manifest[$id], $finished, $context, $artifactDir);
+            dropStandAfterStep($root, $manifest[$id]);
             reportFinish($id, $finished, $logs[$id], $rc, $artifacts[$id], $manifest[$id]['cwd']);
         }
     }
@@ -432,6 +448,62 @@ function runPlan(
     fclose($rc);
 
     return summarize($plan, $done, $artifacts, $lanes, microtime(true) - $startedAt, $logDir);
+}
+
+/**
+ * Take every known stand down before a full run touches anything.
+ *
+ * Unconditional on purpose: it asks nothing, spares nothing, and a stand somebody raised by hand
+ * goes down with the rest. The trade was made deliberately — a person is at the keyboard and can
+ * raise theirs again, while a run that starts on a dirty box gets a false red sixteen minutes
+ * later, which is then read as a defect in whatever ticket happened to be under it.
+ *
+ * @param string $root Repository root.
+ * @return array<int, string> The ids of the stands something survived on; empty when the box came
+ *     out clean.
+ */
+function sweepStands(string $root): array
+{
+    $survived = [];
+    foreach (tearDownStands($root, require $root . '/scripts/test-stands.php') as $result) {
+        fwrite(STDOUT, describeTeardown($result) . "\n");
+        if ($result['residue']['containers'] !== [] || $result['residue']['networks'] !== []) {
+            $survived[] = $result['id'];
+        }
+    }
+
+    return $survived;
+}
+
+/**
+ * Drop the stand a step declared it takes down with it, if it declared one.
+ *
+ * Only the cluster step does. Its fleet is five PHP daemons, a database and a cli container, and
+ * leaving it standing for the rest of the run cost 16m10s against 9m36s on chat-e2e plus fourteen
+ * failures that were nothing but the neighbour (HIL-752). The demo stands cost nothing like that
+ * and deliberately stay up: a red one gets climbed over by hand afterwards.
+ *
+ * The caller places this AFTER the step's snapshot was collected. Taking the stand down first
+ * would leave the snapshot of a red step empty, which is the one case it exists for.
+ *
+ * @param string $root Repository root.
+ * @param array{id: string, downAfter?: string} $step The manifest entry of the step that ended.
+ */
+function dropStandAfterStep(string $root, array $step): void
+{
+    $wanted = $step['downAfter'] ?? null;
+    if ($wanted === null) {
+        return;
+    }
+
+    foreach (require $root . '/scripts/test-stands.php' as $stand) {
+        if ($stand['id'] === $wanted) {
+            fwrite(STDOUT, describeTeardown(tearDownStand($root, $stand)) . "\n");
+
+            return;
+        }
+    }
+    fwrite(STDERR, 'stands: step ' . $step['id'] . ' names an unknown stand ' . $wanted . "\n");
 }
 
 /**
