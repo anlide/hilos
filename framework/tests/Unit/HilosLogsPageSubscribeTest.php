@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -42,6 +43,12 @@ use PHPUnit\Framework\TestCase;
  * than from a walk of this node's own directory, so the cases move the mirror instead of writing
  * files - and one of them asks what the page answers when no picture has arrived at all, which is
  * a third state the payload gained with the same leaf.
+ *
+ * HIL-390 added the rest of what the overview screen draws - the day's growth, the batches awaiting
+ * takeout, and a row per named node - so the cases below also hold down which of those are figures
+ * and which are the absence of one, and that a change confined to a single node's row still wakes
+ * the broadcast. That last case is the one nothing else would catch: a fingerprint blind to the
+ * node rows leaves the screen holding a stale picture while still looking alive.
  */
 final class HilosLogsPageSubscribeTest extends TestCase
 {
@@ -54,6 +61,15 @@ final class HilosLogsPageSubscribeTest extends TestCase
 
     /** Any fixed instant, so a timestamp in a fixture means something to read. */
     private const int T0 = 1_800_000_000;
+
+    /**
+     * Retention is judged against the clock, so a batch that has to look old has to be old for
+     * real - {@see self::T0} is a fixed instant and says nothing about how long ago it was.
+     */
+    private const int A_DAY_IN_SECONDS = 86_400;
+
+    /** The short end of the same scale: a retention threshold every fixture batch is past. */
+    private const int AN_HOUR_IN_SECONDS = 3_600;
 
     /** How many bytes the fixture node's one key holds; each move of it moves the fingerprint */
     private int $keyBytes = 0;
@@ -78,6 +94,15 @@ final class HilosLogsPageSubscribeTest extends TestCase
         AbstractHilosLogsPage::removeSubscriber(self::ACCEPT_KEY);
         AbstractHilosLogsPage::removeSubscriber(self::REFUSED_ACCEPT_KEY);
         $this->emptyTheMirror();
+
+        // The retention thresholds are the process environment's, and a case that set them would
+        // otherwise decide the takeout verdict of every case that runs after it.
+        foreach ([
+            EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES,
+            EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS,
+        ] as $key) {
+            putenv($key->name);
+        }
 
         Hilos::$sr = null;
         Hilos::$browser = null;
@@ -140,6 +165,175 @@ final class HilosLogsPageSubscribeTest extends TestCase
         $this->assertNull($overview->totalRotationsAllTime);
         $this->assertNull($overview->logKeysPerAgent);
         $this->assertNull($overview->totalWeightWorkerKeysBytes);
+    }
+
+    /**
+     * The day's growth is the cluster's sum, and the streams that have not been watched for a day
+     * yet are counted apart instead of contributing a zero to it.
+     */
+    public function testTheGrowthTileGetsBothTheSumAndTheStreamsStillBeingMeasured(): void
+    {
+        $this->fileThePicture(self::nodeSlot('node-1', growthBytesPerDay: ['agent-a.log' => 400, 'worker-0.log' => null]));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertSame(400, $overview->growthBytesPerDay);
+        $this->assertSame(1, $overview->keysWithoutGrowthWindow);
+    }
+
+    /**
+     * With no stream watched for a whole day yet, the growth is null and NOT zero: zero is the
+     * claim that nothing was written, and the truth is that nobody has measured long enough.
+     */
+    public function testGrowthNobodyHasMeasuredYetIsNullRatherThanZero(): void
+    {
+        $this->fileThePicture(self::nodeSlot('node-1', growthBytesPerDay: ['agent-a.log' => null]));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertNull($overview->growthBytesPerDay);
+        $this->assertSame(1, $overview->keysWithoutGrowthWindow);
+    }
+
+    /**
+     * The takeout verdict is reached over each node's own archive and only then added up: archives
+     * do not travel, so a batch ages out where it lies. Judging the pile as one would protect the
+     * newest batch of the CLUSTER and evict a node's only batch behind its back.
+     */
+    public function testBatchesDueForTakeoutAreJudgedNodeByNodeAndThenSummed(): void
+    {
+        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name . '=1');
+        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name . '=' . self::AN_HOUR_IN_SECONDS);
+        $old = time() - 10 * self::A_DAY_IN_SECONDS;
+        $this->fileThePicture(
+            self::nodeSlot('node-1', batches: [self::batch($old), self::batch($old + 60), self::batch($old + 120)]),
+            self::nodeSlot('node-2', batches: [self::batch($old)]),
+        );
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        // node-1 keeps its newest of three and gives up two; node-2's only batch is its newest.
+        $overview = $this->overview();
+        $this->assertSame(2, $overview->batchesDueForTakeout);
+        $this->assertSame(2, $overview->nodes[0][HilosLogsOverviewSignalData::batchesDueForTakeout]);
+        $this->assertSame(0, $overview->nodes[1][HilosLogsOverviewSignalData::batchesDueForTakeout]);
+    }
+
+    /**
+     * Only a node with a name of its own gets a row. The installation that runs on one node
+     * reports under no name, and the table it would head is a table of one row about "here".
+     */
+    public function testOnlyNamedNodesGetARow(): void
+    {
+        $this->fileThePicture(self::nodeSlot('node-1'), self::nodeSlot(null));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertCount(1, $overview->nodes);
+        $this->assertSame('node-1', $overview->nodes[0][HilosLogsOverviewSignalData::nodeId]);
+    }
+
+    /**
+     * A single-node installation sends no rows at all, and that empty list is what tells the
+     * screen to drop the per-node table rather than draw one row saying "this machine".
+     */
+    public function testASingleNodeInstallationSendsNoRows(): void
+    {
+        $this->fileThePicture(self::nodeSlot(null));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertTrue($overview->available, 'The node answered for itself, it just has no name');
+        $this->assertSame([], $overview->nodes);
+    }
+
+    /**
+     * A node whose store could not be read keeps its row and carries null in every figure. Zeros
+     * there would be measurements nobody took, and dropping the row would read as a node that
+     * never reported - while the nodes beside it go on answering for themselves.
+     */
+    public function testANodeThatCouldNotBeReadCarriesNullInEveryFigure(): void
+    {
+        $this->fileThePicture(
+            self::nodeSlot('node-1', keys: [new LogKeySummary('agent-a.log', LogKeySummary::CLASS_AGENT, true, [], 100)]),
+            self::nodeSlot('node-2', available: false),
+        );
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertTrue($overview->available, 'One unreadable node does not make the cluster unreadable');
+        $this->assertSame(
+            [
+                HilosLogsOverviewSignalData::nodeId => 'node-2',
+                HilosLogsOverviewSignalData::available => false,
+                HilosLogsOverviewSignalData::lastRotationAt => null,
+                HilosLogsOverviewSignalData::liveBytes => null,
+                HilosLogsOverviewSignalData::archiveBytes => null,
+                HilosLogsOverviewSignalData::growthBytesPerDay => null,
+                HilosLogsOverviewSignalData::batchesDueForTakeout => null,
+            ],
+            $overview->nodes[1],
+        );
+    }
+
+    /**
+     * Nothing measures the live weight, so the row derives it: a key's weight already holds the
+     * live file AND every batch that key occurs in, which makes the live weight that sum with the
+     * archive taken back out.
+     */
+    public function testTheLiveWeightIsTheKeysWithTheArchiveTakenBackOut(): void
+    {
+        $this->fileThePicture(self::nodeSlot(
+            'node-1',
+            batches: [self::batch(time() - self::AN_HOUR_IN_SECONDS, 300, 100, 50, 50)],
+            keys: [new LogKeySummary('agent-a.log', LogKeySummary::CLASS_AGENT, true, [], 1_000)],
+        ));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $row = $this->overview()->nodes[0];
+        $this->assertSame(500, $row[HilosLogsOverviewSignalData::archiveBytes], 'All four classes of the batch');
+        $this->assertSame(500, $row[HilosLogsOverviewSignalData::liveBytes]);
+    }
+
+    /**
+     * The one case nothing else would catch. A picture in which ONLY a node's own weight moved
+     * leaves all seven of the older scalars where they were, so a fingerprint that does not reach
+     * into the rows would call the picture unchanged - and the table would sit there stale while
+     * the screen went on looking alive, with nothing failing anywhere.
+     */
+    public function testATickPushesWhenOnlyANumberInsideANodeRowChanged(): void
+    {
+        $keys = [new LogKeySummary('agent-a.log', LogKeySummary::CLASS_AGENT, true, [], 1_000)];
+        $batchAt = time() - self::AN_HOUR_IN_SECONDS;
+        $this->fileThePicture(self::nodeSlot('node-1', batches: [self::batch($batchAt, 300)], keys: $keys));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $before = $this->overview();
+        $this->drainTheQueue();
+
+        $this->fileThePicture(self::nodeSlot('node-1', batches: [self::batch($batchAt, 700)], keys: $keys));
+        usleep(self::PAST_THE_TICK_THROTTLE_MICROSECONDS);
+        AbstractHilosLogsPage::onAgentTick(new LogsPageSubscribeTestAgent());
+
+        $after = $this->overview();
+        $this->assertSame($before->totalRotationsAllTime, $after->totalRotationsAllTime);
+        $this->assertSame($before->totalWeightAgentKeysBytes, $after->totalWeightAgentKeysBytes);
+        $this->assertSame($before->logKeysPerAgent, $after->logKeysPerAgent);
+        $this->assertSame(300, $before->nodes[0][HilosLogsOverviewSignalData::archiveBytes]);
+        $this->assertSame(700, $after->nodes[0][HilosLogsOverviewSignalData::archiveBytes]);
     }
 
     /**
@@ -305,6 +499,81 @@ final class HilosLogsPageSubscribeTest extends TestCase
             ],
             true,
         ));
+    }
+
+    /**
+     * Replaces the cluster picture with exactly the nodes a case cares about.
+     *
+     * A snapshot rather than a portion, so what was filed a moment ago is gone rather than laid
+     * under it - a case that meant to describe two nodes would otherwise be describing three.
+     *
+     * @param ClusterLogNodeSlot ...$slots Nodes the picture is to hold
+     */
+    private function fileThePicture(ClusterLogNodeSlot ...$slots): void
+    {
+        ClusterLogIndexMirror::applyPortion(ClusterLogIndexPortionSignalData::ofSlots(array_values($slots), true));
+    }
+
+    /**
+     * One node's slot, with everything a case does not name left empty.
+     *
+     * @param ?string $nodeId Node name, null for the installation that runs on one node
+     * @param bool $available Whether that node could read its log store
+     * @param list<LogBatchSummary> $batches Rotation batches the node holds
+     * @param list<LogKeySummary> $keys Streams the node holds, live and archived together
+     * @param array<string, ?int> $growthBytesPerDay Stream → bytes over the last day, null until its window fills
+     * @return ClusterLogNodeSlot Slot as the aggregator would hold it
+     */
+    private static function nodeSlot(
+        ?string $nodeId,
+        bool $available = true,
+        array $batches = [],
+        array $keys = [],
+        array $growthBytesPerDay = [],
+    ): ClusterLogNodeSlot {
+        return new ClusterLogNodeSlot(
+            nodeId: $nodeId,
+            index: new NodeLogIndex(
+                nodeId: $nodeId,
+                available: $available,
+                sampledAt: self::T0,
+                batches: $batches,
+                keys: $keys,
+                workers: [],
+                growthBytesPerDay: $growthBytesPerDay,
+            ),
+            receivedAt: self::T0,
+        );
+    }
+
+    /**
+     * One rotation batch, weighed class by class.
+     *
+     * @param int $timestamp When the batch was rotated, in Unix seconds
+     * @param int $agentBytes What the agent files in it weigh
+     * @param int $workerBytes What the worker files in it weigh
+     * @param int $workerMonopolisticBytes What the monopolistic worker files in it weigh
+     * @param int $daemonBytes What the daemon's own files in it weigh
+     * @return LogBatchSummary Batch as the node reported it
+     */
+    private static function batch(
+        int $timestamp,
+        int $agentBytes = 0,
+        int $workerBytes = 0,
+        int $workerMonopolisticBytes = 0,
+        int $daemonBytes = 0,
+    ): LogBatchSummary {
+        return new LogBatchSummary($timestamp, 1, $agentBytes, 1, $workerBytes, 1, $workerMonopolisticBytes, 1, $daemonBytes);
+    }
+
+    /**
+     * Throws away whatever is queued, so what a case reads next is what a case caused.
+     */
+    private function drainTheQueue(): void
+    {
+        while (Hilos::$sr?->getNextQueuedSignal() !== null) {
+            continue;
+        }
     }
 
     /**

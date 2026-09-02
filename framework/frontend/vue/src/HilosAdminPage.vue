@@ -6,8 +6,13 @@ parent from the framework admin tree (HILOS_ADMIN_PAGES). It is page-agnostic â€
 it renders whichever key it is given, never choosing the page itself (that is the
 app shell's pageâ†’view map). The default body is the section's sub-navigation
 cards, or a stub empty-state for a leaf; a real page overrides the default slot
-with its own content while keeping the shell. Bootstrap classes only
-(styling-rules.md). -->
+with its own content while keeping the shell.
+
+A section ROOT that has content of its own puts it in the named `body` slot
+instead, which is drawn after the default one: it needs both, the cards to its
+children and its own figures beneath them, and overriding the default slot would
+cost it the cards. A leaf page goes on overriding the default slot as before.
+Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   HILOS_ADMIN_PAGES,
@@ -83,5 +88,6 @@ const children = computed(() => hilosAdminChildren(props.page, params.value))
         </p>
       </div>
     </slot>
+    <slot name="body" />
   </section>
 </template>

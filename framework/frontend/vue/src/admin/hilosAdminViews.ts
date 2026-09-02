@@ -57,7 +57,6 @@ import HilosDaemonAgentsPage from './daemon/HilosDaemonAgentsPage.vue'
 import HilosDaemonCronPage from './daemon/HilosDaemonCronPage.vue'
 import HilosDaemonWebsocketsPage from './daemon/HilosDaemonWebsocketsPage.vue'
 import HilosDaemonHttpServerPage from './daemon/HilosDaemonHttpServerPage.vue'
-import HilosLogsPage from './logs/HilosLogsPage.vue'
 import HilosChangeLogPage from './changeLog/HilosChangeLogPage.vue'
 import HilosChangeLogTablesPage from './changeLog/HilosChangeLogTablesPage.vue'
 import HilosChangeLogTablePage from './changeLog/HilosChangeLogTablePage.vue'
@@ -120,13 +119,14 @@ export function hilosAdminViews(): Record<string, Component> {
     [HilosPages.DAEMON_CRON]: HilosDaemonCronPage,
     [HilosPages.DAEMON_WEBSOCKETS]: HilosDaemonWebsocketsPage,
     [HilosPages.DAEMON_HTTP_SERVER]: HilosDaemonHttpServerPage,
-    [HilosPages.LOGS]: HilosLogsPage,
-    // LOGS_KEYS, LOGS_WORKERS, LOGS_ROTATIONS and LOGS_VIEW are absent for the same
-    // reason as the deliveries journal: the stream lists and the rotation history
-    // each read a live connection for their table and their header, and the viewer
-    // reads one for its catalog and one action for its lines, so a project mounts
-    // HilosLogsKeysPage, HilosLogsWorkersPage, HilosLogsRotationsPage and
-    // HilosLogsViewPage directly with its own context.
+    // LOGS, LOGS_KEYS, LOGS_WORKERS, LOGS_ROTATIONS and LOGS_VIEW are absent for the
+    // same reason as the deliveries journal: the stream lists and the rotation
+    // history each read a live connection for their table and their header, the
+    // viewer reads one for its catalog and one action for its lines, and the section
+    // root reads one for the overview frame its tiles and its per-node table are
+    // drawn from. So a project mounts HilosLogsPage, HilosLogsKeysPage,
+    // HilosLogsWorkersPage, HilosLogsRotationsPage and HilosLogsViewPage directly
+    // with its own context.
     [HilosPages.CHANGE_LOG]: HilosChangeLogPage,
     [HilosPages.CHANGE_LOG_TABLES]: HilosChangeLogTablesPage,
     [HilosPages.CHANGE_LOG_TABLE]: HilosChangeLogTablePage,

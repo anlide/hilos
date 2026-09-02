@@ -1,17 +1,21 @@
-// The chat's contexts for the four framework Hilos log pages that read live data:
-// the stream list (@hilos/vue HilosLogsKeysPage), the worker streams
-// (HilosLogsWorkersPage), the rotation history (HilosLogsRotationsPage) and the log
-// viewer (HilosLogsViewPage). The framework owns the tables, the view-models, the
-// catalog and the wording; the project supplies only where the data lives — and, on
-// its backend, the registration of the hilosLogKeys, hilosLogWorkers and
-// hilosLogRotations tables against their pages.
+// The chat's contexts for the five framework Hilos log pages that read live data:
+// the section overview (@hilos/vue HilosLogsPage), the stream list
+// (HilosLogsKeysPage), the worker streams (HilosLogsWorkersPage), the rotation
+// history (HilosLogsRotationsPage) and the log viewer (HilosLogsViewPage). The
+// framework owns the tables, the view-models, the catalog and the wording; the
+// project supplies only where the data lives — and, on its backend, the registration
+// of the hilosLogKeys, hilosLogWorkers and hilosLogRotations tables against their
+// pages.
 //
 // Separate contexts and not one, because the screens need different things: the
-// windowed tables read the scope stores, while the viewer reads one file through a
-// tracked action and therefore the action lifecycle.
+// windowed tables read the scope stores, the viewer reads one file through a tracked
+// action and therefore the action lifecycle, and the overview needs neither — it has
+// no table window at all, so the connection its one frame arrives on is the whole of
+// its context.
 // Deciding what to do with a batch the rule recommends carrying off is HIL-483.
 import {
   type HilosLogKeysContext,
+  type HilosLogsOverviewContext,
   type HilosLogRotationsContext,
   type HilosLogWorkersContext,
   type HilosLogViewerContext,
@@ -19,6 +23,11 @@ import {
 
 import { actions, connection } from '../../../bootstrap/connection'
 import { scopes } from '../../../bootstrap/session'
+
+/** This project's context for the framework section overview. */
+export const hilosLogsOverviewContext: HilosLogsOverviewContext = {
+  connection,
+}
 
 /** This project's context for the framework by-key page. */
 export const hilosLogKeysContext: HilosLogKeysContext = {
