@@ -181,6 +181,7 @@ use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -437,6 +438,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosNotificationDeliveries => HilosNotificationDeliveriesTable::class,
         ChatTableContext::hilosLogKeys => HilosLogKeysTable::class,
         ChatTableContext::hilosLogRotations => HilosLogRotationsTable::class,
+        ChatTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -540,6 +542,9 @@ final class Hilos extends HilosFacade
         ],
         LogsRotationsPage::PAGE => [
             ChatTableContext::hilosLogRotations => [],
+        ],
+        LogsWorkersPage::PAGE => [
+            ChatTableContext::hilosLogWorkers => [],
         ],
         GuardianPage::PAGE => [
             GuardianAgentStatusesBrowserTable::TABLE => [],

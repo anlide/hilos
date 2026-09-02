@@ -23,6 +23,7 @@ use Hilos\Pages\Logs\AbstractHilosLogsPage;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
 use Hilos\Pages\Logs\AbstractHilosLogsSettingsPage;
 use Hilos\Pages\Logs\AbstractHilosLogsViewPage;
+use Hilos\Pages\Logs\AbstractHilosLogsWorkersPage;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 
@@ -118,6 +119,7 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
         AbstractHilosLogsKeysPage::onAgentTick($this);
         AbstractHilosLogsViewPage::onAgentTick($this);
         AbstractHilosLogsSettingsPage::onAgentTick($this);
+        AbstractHilosLogsWorkersPage::onAgentTick($this);
     }
 
     /**
@@ -180,6 +182,7 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
         AbstractHilosLogsKeysPage::removeSubscriber($data->acceptKey);
         AbstractHilosLogsViewPage::removeSubscriber($data->acceptKey);
         AbstractHilosLogsSettingsPage::removeSubscriber($data->acceptKey);
+        AbstractHilosLogsWorkersPage::removeSubscriber($data->acceptKey);
     }
 
     /**

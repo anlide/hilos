@@ -62,4 +62,5 @@ export { default as HilosCommunicationsDeliveriesPage } from './admin/communicat
 export { default as HilosLogsKeysPage } from './admin/logs/HilosLogsKeysPage.vue'
 export { default as HilosLogsRotationsPage } from './admin/logs/HilosLogsRotationsPage.vue'
 export { default as HilosLogsViewPage } from './admin/logs/HilosLogsViewPage.vue'
+export { default as HilosLogsWorkersPage } from './admin/logs/HilosLogsWorkersPage.vue'
 export { default as HilosDashboardPage } from './admin/dashboard/HilosDashboardPage.vue'

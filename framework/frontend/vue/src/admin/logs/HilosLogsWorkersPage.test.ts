@@ -5,22 +5,22 @@ import {
   HilosPages,
   ScopeManager,
   createSignal,
-  KEYS_HEADER_SIGNAL,
+  WORKERS_HEADER_SIGNAL,
 } from '@hilos/core'
 import type {
   HilosConnection,
-  HilosLogKeysHeader,
+  HilosLogWorkersHeader,
   HilosRouter,
   PageRouteMatch,
 } from '@hilos/core'
 
-import HilosLogsKeysPage from './HilosLogsKeysPage.vue'
+import HilosLogsWorkersPage from './HilosLogsWorkersPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 /** A header as the page answers a subscription with it. */
 function header(
-  overrides: Partial<HilosLogKeysHeader> = {},
-): HilosLogKeysHeader {
+  overrides: Partial<HilosLogWorkersHeader> = {},
+): HilosLogWorkersHeader {
   return {
     available: true,
     nodes: [],
@@ -31,7 +31,7 @@ function header(
 function router(): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
-      page: HilosPages.LOGS_KEYS,
+      page: HilosPages.LOGS_WORKERS,
       params: {},
       admin: true,
     }),
@@ -57,7 +57,7 @@ function router(): HilosRouter {
  */
 function makeConnection(): {
   connection: HilosConnection
-  pushHeader: (frame: HilosLogKeysHeader) => void
+  pushHeader: (frame: HilosLogWorkersHeader) => void
   pushEmptyWindow: () => void
   pushWindow: (rows: Record<string, unknown>[]) => void
   filters: Record<string, unknown>[]
@@ -99,8 +99,8 @@ function makeConnection(): {
     for (const listener of windowListeners) {
       listener({
         data: {
-          page: HilosPages.LOGS_KEYS,
-          tableKey: 'hilosLogKeys',
+          page: HilosPages.LOGS_WORKERS,
+          tableKey: 'hilosLogWorkers',
           rows: rows.map((slot) => ({
             rowKey: String(slot.rowKey),
             slots: { stream: slot },
@@ -113,9 +113,9 @@ function makeConnection(): {
 
   return {
     connection,
-    pushHeader(frame: HilosLogKeysHeader): void {
+    pushHeader(frame: HilosLogWorkersHeader): void {
       for (const listener of projectListeners) {
-        listener({ type: KEYS_HEADER_SIGNAL, data: frame })
+        listener({ type: WORKERS_HEADER_SIGNAL, data: frame })
       }
     },
     pushEmptyWindow: () => pushWindow([]),
@@ -124,7 +124,7 @@ function makeConnection(): {
   }
 }
 
-/** One stream as the backend puts it on the wire. */
+/** One worker stream as the backend puts it on the wire. */
 function stream(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
@@ -132,13 +132,11 @@ function stream(
     rowKey: '-:worker-0.log',
     key: 'worker-0.log',
     node: null,
-    class: 'worker',
+    type: 'regular',
     live: true,
     batchCount: 12,
     lastBatchAt: 1800000000,
     bytes: 1536 * 1024 * 1024,
-    growthPerDay: 2 * 1024 * 1024,
-    growthSort: 2 * 1024 * 1024,
     ...overrides,
   }
 }
@@ -146,19 +144,19 @@ function stream(
 /** A real page scope, because a window of rows is normalized into one. */
 function makeScopes(): ScopeManager {
   const scopes = new ScopeManager()
-  scopes.openPage(HilosPages.LOGS_KEYS)
+  scopes.openPage(HilosPages.LOGS_WORKERS)
 
   return scopes
 }
 
 function mountPage(connection: HilosConnection) {
-  return mount(HilosLogsKeysPage, {
+  return mount(HilosLogsWorkersPage, {
     props: { context: { connection, scopes: makeScopes() } },
     global: { provide: { [hilosRouterKey as symbol]: router() } },
   })
 }
 
-describe('HilosLogsKeysPage', () => {
+describe('HilosLogsWorkersPage', () => {
   it('waits rather than reporting a fault before any picture arrives', async () => {
     const { connection, pushEmptyWindow } = makeConnection()
     const wrapper = mountPage(connection)
@@ -167,7 +165,7 @@ describe('HilosLogsKeysPage', () => {
     await nextTick()
 
     expect(
-      wrapper.find('[data-id="hilos-log-key-empty-unknown"]').exists(),
+      wrapper.find('[data-id="hilos-log-worker-empty-unknown"]').exists(),
     ).toBe(true)
   })
 
@@ -180,7 +178,7 @@ describe('HilosLogsKeysPage', () => {
     await nextTick()
 
     expect(
-      wrapper.find('[data-id="hilos-log-key-empty-unreadable"]').exists(),
+      wrapper.find('[data-id="hilos-log-worker-empty-unreadable"]').exists(),
     ).toBe(true)
   })
 
@@ -192,9 +190,9 @@ describe('HilosLogsKeysPage', () => {
     pushEmptyWindow()
     await nextTick()
 
-    expect(wrapper.find('[data-id="hilos-log-key-empty-never"]').exists()).toBe(
-      true,
-    )
+    expect(
+      wrapper.find('[data-id="hilos-log-worker-empty-never"]').exists(),
+    ).toBe(true)
   })
 
   it('tells a search that matched nothing from a store that is empty', async () => {
@@ -206,10 +204,10 @@ describe('HilosLogsKeysPage', () => {
     await wrapper.find('[data-id="hilos-table-search"]').setValue('nothing')
 
     expect(
-      wrapper.find('[data-id="hilos-log-key-empty-nomatch"]').exists(),
+      wrapper.find('[data-id="hilos-log-worker-empty-nomatch"]').exists(),
     ).toBe(true)
     expect(
-      wrapper.find('[data-id="hilos-log-key-clear-filters"]').exists(),
+      wrapper.find('[data-id="hilos-log-worker-clear-filters"]').exists(),
     ).toBe(true)
   })
 
@@ -220,7 +218,9 @@ describe('HilosLogsKeysPage', () => {
     pushHeader(header({ nodes: [] }))
     await nextTick()
 
-    expect(wrapper.find('[data-id="hilos-log-key-node"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-log-worker-node"]').exists()).toBe(
+      false,
+    )
     expect(wrapper.find('[data-id="hilos-table-sort-node"]').exists()).toBe(
       false,
     )
@@ -233,7 +233,7 @@ describe('HilosLogsKeysPage', () => {
     pushHeader(header({ nodes: ['node-1', 'node-2'] }))
     await nextTick()
 
-    const select = wrapper.find('[data-id="hilos-log-key-node"]')
+    const select = wrapper.find('[data-id="hilos-log-worker-node"]')
     expect(select.exists()).toBe(true)
     expect(select.text()).toContain('node-2')
     expect(wrapper.find('[data-id="hilos-table-sort-node"]').exists()).toBe(
@@ -241,24 +241,58 @@ describe('HilosLogsKeysPage', () => {
     )
   })
 
-  it('sends the class switch to the server as a filter, never narrowing locally', async () => {
+  it('sends the type switch to the server as a filter, never narrowing locally', async () => {
     const { connection, filters } = makeConnection()
     const wrapper = mountPage(connection)
 
     await wrapper
-      .find('[data-id="hilos-log-key-class-worker"]')
+      .find('[data-id="hilos-log-worker-type-monopolistic"]')
       .trigger('click')
 
-    expect(filters.at(-1)).toEqual({ class: 'worker' })
+    expect(filters.at(-1)).toEqual({ type: 'monopolistic' })
+  })
+
+  it('offers two type buttons and no third, because the panel asks two questions', () => {
+    const { connection } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    expect(wrapper.findAll('[data-id^="hilos-log-worker-type-"]')).toHaveLength(
+      2,
+    )
+    expect(
+      wrapper.find('[data-id="hilos-log-worker-type-regular"]').exists(),
+    ).toBe(false)
+  })
+
+  it('tells the monopolistic worker from an ordinary one by its badge', async () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([
+      stream(),
+      stream({
+        rowKey: '-:worker-monopolistic-truth.log',
+        key: 'worker-monopolistic-truth.log',
+        type: 'monopolistic',
+      }),
+    ])
+    await nextTick()
+
+    const badges = wrapper.findAll('[data-id^="hilos-table-row-"] .badge')
+    expect(badges[0].text()).toBe('Ordinary')
+    expect(badges[0].classes()).toContain('text-bg-light')
+    const monopolistic = badges.find((badge) => badge.text() === 'Monopolistic')
+    expect(monopolistic?.classes()).toContain('text-bg-info-subtle')
   })
 
   /**
-   * Below `lg` the node, weight and growth columns are hidden and their values move
-   * into a sub-line under the key. The single-node installation is the case worth
-   * holding: only two of the three are hidden there, and a sub-line drawn for
-   * clusters alone would leave a narrow screen with no figures at all.
+   * Below `lg` the node and weight columns are hidden and their values move into a
+   * sub-line under the key. The single-node installation is the case worth holding:
+   * only one of the two is hidden there, and a sub-line drawn for clusters alone
+   * would leave a narrow screen with no figures at all.
    */
-  it('carries the hidden weight and growth into the sub-line with no node names', async () => {
+  it('carries the hidden weight into the sub-line with no node names', async () => {
     const { connection, pushHeader, pushWindow } = makeConnection()
     const wrapper = mountPage(connection)
 
@@ -268,7 +302,7 @@ describe('HilosLogsKeysPage', () => {
 
     const subLine = wrapper.find('[data-id^="hilos-table-row-"] .d-lg-none')
     expect(subLine.exists()).toBe(true)
-    expect(subLine.text()).toBe('1.5 GB · 2.0 MB')
+    expect(subLine.text()).toBe('1.5 GB')
   })
 
   it('carries the node into that sub-line as well where nodes have names', async () => {
@@ -281,7 +315,7 @@ describe('HilosLogsKeysPage', () => {
 
     expect(
       wrapper.find('[data-id^="hilos-table-row-"] .d-lg-none').text(),
-    ).toBe('node-1 · 1.5 GB · 2.0 MB')
+    ).toBe('node-1 · 1.5 GB')
   })
 
   it('sends a live stream to the live file and an archived one to its last batch', async () => {
@@ -303,40 +337,31 @@ describe('HilosLogsKeysPage', () => {
 
     expect(
       wrapper
-        .find('[data-id="hilos-log-key-open-node-1:worker-0.log"]')
+        .find('[data-id="hilos-log-worker-open-node-1:worker-0.log"]')
         .attributes('href'),
     ).toBe('/hilos/logs/view/node-1/live/worker-0.log')
     expect(
       wrapper
-        .find('[data-id="hilos-log-key-open-node-1:worker-1.log"]')
+        .find('[data-id="hilos-log-worker-open-node-1:worker-1.log"]')
         .attributes('href'),
     ).toBe('/hilos/logs/view/node-1/1799999000/worker-1.log')
   })
 
-  it('draws an unmeasured day as a dash rather than as a standstill', async () => {
-    const { connection, pushHeader, pushWindow } = makeConnection()
-    const wrapper = mountPage(connection)
-
-    pushHeader(header())
-    pushWindow([stream({ growthPerDay: null, growthSort: -1 })])
-    await nextTick()
-
-    expect(
-      wrapper.find('[data-id^="hilos-table-row-"] .d-lg-none').text(),
-    ).toBe('1.5 GB · —')
-  })
-
   /**
-   * The footnote says the split is shown by the workers page, and it is a way there
-   * rather than a mention of one: HIL-385 left the phrase as plain text only because
-   * that page was still a stub.
+   * The footnote is the one place the screen explains itself, and the explanation is
+   * not the same one in the two installations: in a cluster the node column is part
+   * of the answer, and in a single-node installation there is no node to point at.
    */
-  it('takes the reader to the workers page from the phrase that names it', () => {
-    const { connection } = makeConnection()
+  it('explains itself by the cluster wording only where nodes have names', async () => {
+    const { connection, pushHeader } = makeConnection()
     const wrapper = mountPage(connection)
 
-    expect(
-      wrapper.find('[data-id="hilos-log-key-workers-link"]').attributes('href'),
-    ).toBe('/hilos/logs/workers')
+    pushHeader(header({ nodes: [] }))
+    await nextTick()
+    expect(wrapper.find('.alert').text()).toContain('two hands')
+
+    pushHeader(header({ nodes: ['node-1'] }))
+    await nextTick()
+    expect(wrapper.find('.alert').text()).toContain('different machines')
   })
 })

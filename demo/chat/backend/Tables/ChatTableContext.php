@@ -16,6 +16,7 @@ use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -35,6 +36,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosNotificationDeliveriesTable $hilosNotificationDeliveries
  * @property-read HilosLogKeysTable $hilosLogKeys
  * @property-read HilosLogRotationsTable $hilosLogRotations
+ * @property-read HilosLogWorkersTable $hilosLogWorkers
  */
 final class ChatTableContext extends TableContext
 {
@@ -49,6 +51,7 @@ final class ChatTableContext extends TableContext
     public const string hilosNotificationDeliveries = HilosNotificationDeliveriesTable::TABLE;
     public const string hilosLogKeys = HilosLogKeysTable::TABLE;
     public const string hilosLogRotations = HilosLogRotationsTable::TABLE;
+    public const string hilosLogWorkers = HilosLogWorkersTable::TABLE;
 
     /**
      * Registers chat table definitions from the project topology registry.

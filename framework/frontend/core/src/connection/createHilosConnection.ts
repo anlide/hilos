@@ -6,6 +6,7 @@ import { BACKUP_SIGNAL_SCHEMAS } from '../admin/backup/hilosBackups.js'
 import { LOGS_KEYS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogKeys.js'
 import { LOGS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogRotations.js'
 import { LOGS_VIEWER_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogViewer.js'
+import { LOGS_WORKERS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogWorkers.js'
 import { NOTIFICATION_SIGNAL_SCHEMAS } from '../notifications/notificationCenter.js'
 import { NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS } from '../notifications/notificationPreferences.js'
 import { type ProjectSignalSchemas } from '../protocol/parseSignal.js'
@@ -115,6 +116,7 @@ export function createHilosConnection(
       ...LOGS_SIGNAL_SCHEMAS,
       ...LOGS_KEYS_SIGNAL_SCHEMAS,
       ...LOGS_VIEWER_SIGNAL_SCHEMAS,
+      ...LOGS_WORKERS_SIGNAL_SCHEMAS,
       ...NOTIFICATION_SIGNAL_SCHEMAS,
       ...NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS,
       ...options.projectSchemas,

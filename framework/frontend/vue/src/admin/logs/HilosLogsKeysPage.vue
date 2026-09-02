@@ -24,6 +24,7 @@ import {
   logKeyViewerPath,
   logKeysEmptyState,
   HILOS_LOG_CLASS_OPTIONS,
+  HILOS_PAGE_ROUTES,
   HilosPages,
   KEY_BATCH_COUNT_FIELD,
   KEY_BYTES_FIELD,
@@ -156,6 +157,10 @@ function clearFilters(): void {
   setNode('')
   setClass('')
 }
+
+// Where the split this page folds away is actually shown. HIL-385 left the phrase
+// as plain text because the by-worker page was still a stub; it is a screen now.
+const workersPath = HILOS_PAGE_ROUTES[HilosPages.LOGS_WORKERS]
 </script>
 
 <template>
@@ -305,8 +310,10 @@ function clearFilters(): void {
       The weight answers "how much is taken", the growth answers "when the room
       runs out"; a stream that is no longer written has no growth. Monopolistic
       workers are folded in with the ordinary ones here — the split is shown by
-      the workers page. Search and sorting go to the server: while it counts,
-      the table is busy rather than showing the old order as the new one.
+      <HilosLink :to="workersPath" data-id="hilos-log-key-workers-link">
+        the workers page </HilosLink
+      >. Search and sorting go to the server: while it counts, the table is busy
+      rather than showing the old order as the new one.
     </p>
   </HilosAdminPage>
 </template>
