@@ -3,6 +3,7 @@
 // attached, and the stale-build welcome wired to a reload. Lifted from every
 // project's connection bootstrap (docs/agents/frontend/bootstrap-structure.md).
 import { BACKUP_SIGNAL_SCHEMAS } from '../admin/backup/hilosBackups.js'
+import { LOGS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogRotations.js'
 import { NOTIFICATION_SIGNAL_SCHEMAS } from '../notifications/notificationCenter.js'
 import { NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS } from '../notifications/notificationPreferences.js'
 import { type ProjectSignalSchemas } from '../protocol/parseSignal.js'
@@ -109,6 +110,7 @@ export function createHilosConnection(
       ...PAGE_SIGNAL_SCHEMAS,
       ...GROUP_SIGNAL_SCHEMAS,
       ...BACKUP_SIGNAL_SCHEMAS,
+      ...LOGS_SIGNAL_SCHEMAS,
       ...NOTIFICATION_SIGNAL_SCHEMAS,
       ...NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS,
       ...options.projectSchemas,

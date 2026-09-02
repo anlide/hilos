@@ -10,6 +10,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
@@ -17,6 +18,7 @@ use Hilos\Log\DTO\LogsIndexWatchSignalData;
 use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Pages\Logs\AbstractHilosLogsPage;
+use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 
@@ -94,18 +96,20 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
     private bool $pictureComplained = false;
 
     /**
-     * Claims the section's interest when it is due, then lets the overview page have its tick.
+     * Claims the section's interest when it is due, then lets each page of the section have its tick.
      *
-     * In that order, because the claim is what keeps the frames coming that the page draws from: a
+     * In that order, because the claim is what keeps the frames coming that the pages draw from: a
      * tick spent refreshing a picture whose subscription has quietly lapsed would show stale
      * figures for as long as it took anybody to notice.
      *
-     * @throws InvalidArgumentException When the claim or the overview signal cannot be named
+     * @throws InvalidArgumentException When the claim or a page's signal cannot be named
+     * @throws TableRowKeyMissingException When a row of a re-served window is a placeholder and carries no key
      */
     public function onTick(): void
     {
         $this->watchIfDue(microtime(true));
         AbstractHilosLogsPage::onAgentTick($this);
+        AbstractHilosLogsRotationsPage::onAgentTick($this);
     }
 
     /**
@@ -151,7 +155,11 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
     }
 
     /**
-     * Drops the closed connection from the logs overview subscriber set.
+     * Drops the closed connection from the subscriber sets of the section's pages.
+     *
+     * Every page of the section, and not the overview alone: each keeps its own set, and a
+     * connection left in any of them would go on being counted as a viewer of the section — which
+     * is what keeps the aggregator sending frames for a page nobody has open.
      *
      * @param WebSocketCloseSignalDTO $data Close signal payload (carries the acceptKey)
      * @param string $source Signal source
@@ -160,6 +168,7 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
         AbstractHilosLogsPage::removeSubscriber($data->acceptKey);
+        AbstractHilosLogsRotationsPage::removeSubscriber($data->acceptKey);
     }
 
     /**

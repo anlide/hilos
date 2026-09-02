@@ -178,6 +178,7 @@ use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
+use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -431,6 +432,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
         ChatTableContext::hilosCommunicationsChannelFields => HilosCommunicationsChannelFieldsTable::class,
         ChatTableContext::hilosNotificationDeliveries => HilosNotificationDeliveriesTable::class,
+        ChatTableContext::hilosLogRotations => HilosLogRotationsTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -528,6 +530,9 @@ final class Hilos extends HilosFacade
         ],
         CommunicationsDeliveriesPage::PAGE => [
             ChatTableContext::hilosNotificationDeliveries => [],
+        ],
+        LogsRotationsPage::PAGE => [
+            ChatTableContext::hilosLogRotations => [],
         ],
         GuardianPage::PAGE => [
             GuardianAgentStatusesBrowserTable::TABLE => [],
