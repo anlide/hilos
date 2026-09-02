@@ -96,6 +96,10 @@ export {
   type HilosPushDeviceToggleProps,
 } from './HilosPushDeviceToggle.js'
 export { HilosModal, type HilosModalProps } from './HilosModal.js'
+export {
+  HilosActionError,
+  type HilosActionErrorProps,
+} from './HilosActionError.js'
 export { HilosToastHost, type HilosToastHostProps } from './HilosToastHost.js'
 export {
   HilosViewportTable,

@@ -9,6 +9,7 @@ submit dispatches a tracked action and the dialog closes on its `::success` repl
 failure surfaces in the dialog. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
+  HilosActionError,
   HilosModal,
   HilosViewportTable,
   LoadingButton,
@@ -63,22 +64,24 @@ const fStyle = ref('')
 const fTopics = ref('')
 const fPersonality = ref('')
 const fActive = ref(true)
+const formAction = useTrackedAction()
 const {
   loading: formLoading,
   busy: formBusy,
   run: runFormAction,
   clearError: clearFormError,
-} = useTrackedAction()
+} = formAction
 
 // Delete dialog.
 const deleteOpen = ref(false)
 const deleteRow = ref<BotRow | null>(null)
+const deleteAction = useTrackedAction()
 const {
   loading: deleteLoading,
   busy: deleteBusy,
   run: runDeleteAction,
   clearError: clearDeleteError,
-} = useTrackedAction()
+} = deleteAction
 
 /** The form's current fields as a bot input, trimmed and null-normalized. */
 function currentInput(): BotInput {
@@ -302,6 +305,7 @@ async function submitDelete(): Promise<void> {
       :confirm-on-close="formDirty"
       @cancel="closeForm"
     >
+      <HilosActionError :action="formAction" />
       <form @submit.prevent="submitForm">
         <div class="mb-3">
           <label class="form-label" for="admin-bots-name">Name</label>
@@ -397,6 +401,7 @@ async function submitDelete(): Promise<void> {
       :close-on-esc="!deleteBusy"
       @cancel="closeDelete"
     >
+      <HilosActionError :action="deleteAction" />
       <p class="mb-0 text-body-secondary">
         This permanently removes the bot and stops its agent.
       </p>

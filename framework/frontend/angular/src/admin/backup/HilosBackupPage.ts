@@ -73,6 +73,7 @@ import type {
   HilosTableColumnOf,
 } from '@hilos/core'
 
+import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -107,7 +108,13 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
 @Component({
   selector: 'hilos-backup-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosViewportTable, HilosModal, LoadingButton],
+  imports: [
+    HilosAdminPage,
+    HilosViewportTable,
+    HilosModal,
+    HilosActionError,
+    LoadingButton,
+  ],
   template: `
     <hilos-admin-page [page]="page">
       <div class="d-flex flex-wrap align-items-end gap-2 mb-3">
@@ -369,6 +376,7 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
         [closeOnBackdrop]="!del.busy()"
         [closeOnEsc]="!del.busy()"
       >
+        <hilos-action-error [action]="del" />
         <p class="mb-0 text-body-secondary">
           This permanently deletes the backup archive and its metadata. A pinned
           backup is deleted too — the pin only protects it from rotation.
@@ -429,6 +437,7 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
         [closeOnBackdrop]="!restore.busy()"
         [closeOnEsc]="!restore.busy()"
       >
+        <hilos-action-error [action]="restore" />
         <p class="mb-2">
           This overwrites every database of this installation with the contents
           of the archive. Everyone else is shown a maintenance screen until it

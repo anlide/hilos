@@ -588,6 +588,30 @@ abstract class AbstractPage implements ActionHostInterface
     }
 
     /**
+     * Sends the framework action-failure reply a raised exception is turned into.
+     *
+     * The tracked path the dispatcher takes when onAction() throws: unlike
+     * {@see AbstractPage::sendActionFail()}, whose reason a handler wrote itself, everything
+     * here is read off the exception behind the one gate on what a client may see.
+     *
+     * @param string $acceptKey WebSocket accept key of the initiating client
+     * @param string $action Action name that failed
+     * @param string $requestId Client-minted request id to echo back for correlation
+     * @param Throwable $e Failure the reply is built from
+     * @param bool $detailAllowed Whether the caller is proven to be an administrator
+     * @throws InvalidArgumentException When the action-error signal cannot be named
+     */
+    public function sendActionFailure(
+        string $acceptKey,
+        string $action,
+        string $requestId,
+        Throwable $e,
+        bool $detailAllowed,
+    ): void {
+        $this->actionReply()->sendFailure($acceptKey, $action, $requestId, $e, $detailAllowed);
+    }
+
+    /**
      * Handles a routed binary frame signal.
      *
      * Default intentionally ignores the signal. Override when the page owns

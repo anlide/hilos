@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Log;
 
-use Hilos\Database\Settings\Exception\SettingInvalidValueException;
+use Hilos\Database\Settings\Exception\SettingValueRefusedException;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\Settings\Validation\SettingValueRules;
@@ -74,7 +74,7 @@ final class LogIndexPushIntervalRuleTest extends TestCase
 
     public function testTheWritePathRefusesATooSmallIntervalWithTheTextOfTheRule(): void
     {
-        $this->expectException(SettingInvalidValueException::class);
+        $this->expectException(SettingValueRefusedException::class);
         $this->expectExceptionMessage((string)LogIndexPushIntervalRule::validate(99));
 
         SettingValueRules::assertValid(LogSettingsCatalog::INDEX_PUSH_INTERVAL_MS, 99);

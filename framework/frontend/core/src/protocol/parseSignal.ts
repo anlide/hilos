@@ -89,6 +89,8 @@ export type ParsedSignal =
       action: string
       reason: string
       errorCode: string | undefined
+      errorType: string | undefined
+      errorDetail: string | undefined
       requestId: string | undefined
       envelope: SignalEnvelope
     }
@@ -351,6 +353,8 @@ export function parseSignal(
           action: data.data.action,
           reason: data.data.reason,
           errorCode: data.data.errorCode,
+          errorType: data.data.errorType,
+          errorDetail: data.data.errorDetail,
           requestId: envelope.data.requestId,
           envelope: envelope.data,
         },

@@ -148,8 +148,13 @@ final class PageSignalRouterThrottlePoolTest extends TestCase
         );
 
         $this->assertFalse($page->handled);
-        $this->assertSame(ActionRateLimitedException::ERROR_CODE, $page->failErrorCode);
-        $this->assertSame(self::RETRY_AFTER, $page->failRetryAfter);
+        $this->assertInstanceOf(ActionRateLimitedException::class, $page->trackedFailure);
+        $this->assertSame(ActionRateLimitedException::ERROR_CODE, $page->trackedFailure->errorCode);
+        $this->assertSame(self::RETRY_AFTER, $page->trackedFailure->retryAfter);
+        // The fixture page keeps the PUBLIC access level of AbstractPage, so the dispatcher
+        // withholds the admin-only detail - the gate that decides it lives right here, at
+        // the call, and nothing else in the suite reaches it (HIL-779).
+        $this->assertFalse($page->trackedDetailAllowed);
     }
 
     public function testAVerdictThatNeverArrivesRunsTheActionRatherThanStrandingIt(): void
@@ -318,9 +323,9 @@ final class ThrottlePoolTestPage extends AbstractPage
 
     public ?Throwable $actionException = null;
 
-    public ?string $failErrorCode = null;
+    public ?Throwable $trackedFailure = null;
 
-    public ?int $failRetryAfter = null;
+    public ?bool $trackedDetailAllowed = null;
 
     /** Router that dispatched into this page, so a test can drive its pool. */
     public ?PageSignalRouter $router = null;
@@ -359,20 +364,18 @@ final class ThrottlePoolTestPage extends AbstractPage
      * @param string $acceptKey WebSocket accept key (unused)
      * @param string $action Action name (unused)
      * @param string $requestId Client-minted request id (unused)
-     * @param string $reason Human-readable error message (unused)
-     * @param ?string $errorCode Machine-readable error code
-     * @param ?int $retryAfter Seconds the caller should wait before retrying
+     * @param Throwable $e Failure the ack would have been built from
+     * @param bool $detailAllowed Whether the dispatcher proved the caller is an administrator
      */
-    public function sendActionFail(
+    public function sendActionFailure(
         string $acceptKey,
         string $action,
         string $requestId,
-        string $reason,
-        ?string $errorCode = null,
-        ?int $retryAfter = null,
+        Throwable $e,
+        bool $detailAllowed,
     ): void {
-        $this->failErrorCode = $errorCode;
-        $this->failRetryAfter = $retryAfter;
+        $this->trackedFailure = $e;
+        $this->trackedDetailAllowed = $detailAllowed;
     }
 }
 

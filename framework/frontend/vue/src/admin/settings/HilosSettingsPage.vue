@@ -25,6 +25,7 @@ import {
 } from '@hilos/core'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
+import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
@@ -74,12 +75,13 @@ const editOpen = ref(false)
 const editRow = ref<HilosSettingRow | null>(null)
 const editValue = ref('')
 const editUseCustom = ref(false)
+const editAction = useTrackedAction()
 const {
   loading: editLoading,
   busy: editBusy,
   run: runEditAction,
   clearError: clearEditError,
-} = useTrackedAction()
+} = editAction
 const editInputType = computed(() => inputType(editRow.value?.type))
 const editStep = computed(() => inputStep(editRow.value?.type))
 const editValueBool = computed({
@@ -101,12 +103,13 @@ const editDirty = computed(
 // Delete dialog: orphan keys only (not in the catalog).
 const deleteOpen = ref(false)
 const deleteRow = ref<HilosSettingRow | null>(null)
+const deleteAction = useTrackedAction()
 const {
   loading: deleteLoading,
   busy: deleteBusy,
   run: runDeleteAction,
   clearError: clearDeleteError,
-} = useTrackedAction()
+} = deleteAction
 
 function openEdit(row: HilosSettingRow): void {
   // Flush pending so the dialog edits the latest committed row; a row removed by
@@ -237,6 +240,7 @@ async function submitDelete(): Promise<void> {
       :confirm-on-close="editDirty"
       @cancel="closeEdit"
     >
+      <HilosActionError :action="editAction" />
       <form v-if="editRow" @submit.prevent="submitEdit">
         <div v-if="!isOrphanSetting(editRow)" class="mb-3">
           <span class="form-label d-block">Catalog default</span>
@@ -318,6 +322,7 @@ async function submitDelete(): Promise<void> {
       :close-on-esc="!deleteBusy"
       @cancel="closeDelete"
     >
+      <HilosActionError :action="deleteAction" />
       <p class="mb-0 text-body-secondary">
         This removes the orphan row from the database. Orphan keys are not in
         the catalog.

@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\Exception\SettingInvalidValueException;
+use Hilos\Database\Settings\Exception\SettingValueRefusedException;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\Settings\Validation\CronExpressionRule;
@@ -110,7 +111,7 @@ final class SettingValueRulesTest extends TestCase
 
     public function testGuardRefusesWithTheTextOfTheRule(): void
     {
-        $this->expectException(SettingInvalidValueException::class);
+        $this->expectException(SettingValueRefusedException::class);
         $this->expectExceptionMessage((string)NonNegativeIntegerRule::validate(-1));
 
         SettingValueRules::assertValid(self::INTEGER_KEY, -1);
@@ -118,7 +119,7 @@ final class SettingValueRulesTest extends TestCase
 
     public function testGuardRefusesACronExpressionWithTheTextOfItsOwnRule(): void
     {
-        $this->expectException(SettingInvalidValueException::class);
+        $this->expectException(SettingValueRefusedException::class);
         $this->expectExceptionMessage((string)CronExpressionRule::validate('0 3 * * abc'));
 
         SettingValueRules::assertValid(self::CRON_KEY, '0 3 * * abc');

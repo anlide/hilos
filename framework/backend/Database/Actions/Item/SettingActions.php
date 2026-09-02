@@ -12,6 +12,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\Exception\SettingInvalidValueException;
+use Hilos\Database\Settings\Exception\SettingValueRefusedException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\Settings\Validation\SettingValueRules;
 use Hilos\Database\View\Item\Setting;
@@ -33,7 +34,8 @@ final class SettingActions extends DbActions
      *
      * @param mixed $value New value (null = use catalog default when reading)
      * @throws ItemNotFoundForUpdateException When setting object has no persisted id
-     * @throws SettingInvalidValueException When the key declares a catalog rule the value fails
+     * @throws SettingValueRefusedException When the key declares a catalog rule the value fails
+     * @throws SettingInvalidValueException When the catalog names a rule that is not one
      * @throws DatabaseException When collection loading or setting persistence fails
      * @throws ObjectCollectionNullException When the setting action is detached from its object collection
      * @throws ObjectGetIdStringNotImplementedException When the setting primary key is null during the per-item write check

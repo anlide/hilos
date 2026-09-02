@@ -160,10 +160,11 @@ the earlier wording named no owner, and the marker in
    commit time nobody had the doc open.
 2. **Search by key, over the whole `docs/` tree:** `grep -rn "HIL-<n>" docs/`.
    Not by the marker's text — a marker wrapped across two lines
-   (`frontend/rules-and-violations.md` carries one reading `not in the code` /
-   `yet — HIL-769`) is invisible to a phrase grep. Not within the file you are
-   editing — markers of one key live in several files (HIL-769 in three,
-   HIL-766 in four). Each of those two shortcuts has already lost a marker once.
+   (`frontend/rules-and-violations.md` carried one reading `not in the code` /
+   `yet — HIL-769` until that leaf landed) is invisible to a phrase grep. Not
+   within the file you are editing — markers of one key live in several files
+   (HIL-769 was in three, HIL-766 in four). Each of those two shortcuts has
+   already lost a marker once.
 3. **The grep yields candidates, not a removal list.** Clear only an
    occurrence in the marker's form. A plain mention of the key stays: the docs
    are full of history ("The Lock Does Not Travel With The Name (HIL-771)"),

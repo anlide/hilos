@@ -64,6 +64,7 @@ import type {
   HilosTableColumnOf,
 } from '@hilos/core'
 
+import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -625,6 +626,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           </>
         )}
       >
+        <HilosActionError action={del} />
         <p className="mb-0 text-body-secondary">
           This permanently deletes the backup archive and its metadata. A pinned
           backup is deleted too — the pin only protects it from rotation.
@@ -690,6 +692,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           </>
         )}
       >
+        <HilosActionError action={restore} />
         <p className="mb-2">
           This overwrites every database of this installation with the contents
           of the archive. Everyone else is shown a maintenance screen until it

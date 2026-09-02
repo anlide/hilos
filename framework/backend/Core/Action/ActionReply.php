@@ -10,6 +10,8 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
+use Hilos\Core\Page\Exception\ActionForbiddenException;
+use Hilos\Core\Page\Exception\ActionRateLimitedException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\SignalDataInterface;
@@ -172,6 +174,8 @@ final class ActionReply
      * @param string $reason Human-readable message exposed to the client
      * @param ?string $errorCode Machine-readable error code, or null when unclassified
      * @param ?int $retryAfter Seconds the caller should wait before retrying, or null
+     * @param ?string $errorType Class name of the failure the reason stands for, or null for anyone but an admin
+     * @param ?string $errorDetail Original message of that failure, or null for anyone but an admin
      * @throws InvalidArgumentException When the action-error signal cannot be named
      */
     public function sendFail(
@@ -181,18 +185,67 @@ final class ActionReply
         string $reason,
         ?string $errorCode = null,
         ?int $retryAfter = null,
+        ?string $errorType = null,
+        ?string $errorDetail = null,
     ): void {
         // A failed action carries no success text; drop any the handler set before throwing.
         $this->pendingSuccessMessage = null;
         $this->send(
             SignalConstants::ACTION_ERROR,
             $acceptKey,
-            new PageActionErrorSignalData($action, $reason, $requestId, $errorCode, $retryAfter),
+            new PageActionErrorSignalData($action, $reason, $requestId, $errorCode, $retryAfter, $errorType, $errorDetail),
+        );
+    }
+
+    /**
+     * Sends the failure ack a raised exception is turned into, gate included.
+     *
+     * The whole frame is read off the exception here - the sentence through
+     * {@see ActionFailureReason::forClient()}, the code and the retry hint off the three
+     * failures that classify themselves - so no caller has to know which part of a failure
+     * a client may see. The original text and the class name ride along only for a caller
+     * already proven to be an administrator; for anyone else the frame is byte for byte
+     * what it was before the detail existed.
+     *
+     * @param string $acceptKey Accept key of the initiating connection
+     * @param string $action Action name that failed
+     * @param string $requestId Client-minted request id echoed back for correlation
+     * @param Throwable $e Failure the ack is built from
+     * @param bool $detailAllowed Whether the caller is proven to be an administrator
+     * @throws InvalidArgumentException When the action-error signal cannot be named
+     */
+    public function sendFailure(
+        string $acceptKey,
+        string $action,
+        string $requestId,
+        Throwable $e,
+        bool $detailAllowed,
+    ): void {
+        // A refusal written for the person who asked is already shown in full, so a detail
+        // beside it would only repeat it; the detail marks what the framework held back.
+        $detailWithheld = $detailAllowed && !ActionFailureReason::isPersonFacing($e);
+        $this->sendFail(
+            $acceptKey,
+            $action,
+            $requestId,
+            ActionFailureReason::forClient($e),
+            match (true) {
+                $e instanceof ActionRateLimitedException => $e->errorCode,
+                $e instanceof ActionUnauthorizedException => $e->errorCode,
+                $e instanceof ActionForbiddenException => $e->errorCode,
+                default => null,
+            },
+            $e instanceof ActionRateLimitedException ? $e->retryAfter : null,
+            $detailWithheld ? ActionFailureReason::typeOf($e) : null,
+            $detailWithheld ? $e->getMessage() : null,
         );
     }
 
     /**
      * Sends the error frame of an untracked action, which has no request id to correlate.
+     *
+     * Carries no detail ever: the detail is read in the modal the action was sent from, and
+     * an untracked action has no correlation to find its way back to one.
      *
      * @param string $acceptKey Accept key of the initiating connection
      * @param string $action Action name that failed
@@ -206,7 +259,7 @@ final class ActionReply
             $acceptKey,
             new PageActionErrorSignalData(
                 $action,
-                $e->getMessage(),
+                ActionFailureReason::forClient($e),
                 errorCode: $e instanceof ActionUnauthorizedException ? $e->errorCode : null,
             ),
         );

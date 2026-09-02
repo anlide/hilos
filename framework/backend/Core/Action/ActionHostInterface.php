@@ -127,6 +127,29 @@ interface ActionHostInterface
     ): void;
 
     /**
+     * Sends the action-failure reply a raised exception is turned into, gate included.
+     *
+     * The counterpart of {@see sendActionFail()} for the case the reason has no human
+     * author: here the sentence, the error code and the retry hint are all read off the
+     * exception by {@see ActionFailureReason}, so the one check on what a client may read
+     * cannot be skipped by taking another path to the wire.
+     *
+     * @param string $acceptKey Accept key of the initiating connection
+     * @param string $action Action name that failed
+     * @param string $requestId Client-minted request id echoed back for correlation
+     * @param Throwable $e Failure the reply is built from
+     * @param bool $detailAllowed Whether the caller is proven to be an administrator, who alone sees the original text
+     * @throws InvalidArgumentException When the reply frame cannot be named
+     */
+    public function sendActionFailure(
+        string $acceptKey,
+        string $action,
+        string $requestId,
+        Throwable $e,
+        bool $detailAllowed,
+    ): void;
+
+    /**
      * Reports an untracked action's failure, which has no request id to correlate a reply to.
      *
      * @param string $acceptKey Accept key of the initiating connection

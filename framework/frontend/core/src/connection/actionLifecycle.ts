@@ -36,12 +36,22 @@ export type ActionFailureOutcome =
   | 'disconnected'
   | 'invalid-reply'
 
-/** A failure of a dispatched action: the action name, the outcome, and the reason. */
+/**
+ * A failure of a dispatched action: the action name, the outcome, and the reason.
+ *
+ * `errorType` and `errorDetail` are the two fields only an admin surface is sent
+ * (see `actionErrorSignalDataSchema`): the class name of the failure the generic
+ * `message` stands for, and that failure's own text. Both are undefined on every
+ * other surface, and on an admin surface too whenever the backend held nothing
+ * back — so having them is exactly the sign that it did.
+ */
 export class ActionError extends Error {
   constructor(
     readonly action: string,
     readonly outcome: ActionFailureOutcome,
     reason: string,
+    readonly errorType?: string,
+    readonly errorDetail?: string,
   ) {
     super(reason)
     this.name = 'ActionError'
@@ -177,7 +187,15 @@ export class ActionLifecycle {
       ),
     )
     source.on('actionError', (signal) =>
-      this.onReply(signal.requestId, signal.action, 'fail', signal.reason),
+      this.onReply(
+        signal.requestId,
+        signal.action,
+        'fail',
+        signal.reason,
+        undefined,
+        signal.errorType,
+        signal.errorDetail,
+      ),
     )
     source.on('state', (state) => {
       if (state === 'reconnecting' || state === 'disconnected') {
@@ -242,6 +260,8 @@ export class ActionLifecycle {
    * @param outcome Whether the reply was a success or a failure.
    * @param detail The success message on a success reply, or the failure reason on a fail reply; undefined when absent.
    * @param reply The domain reply on a success reply, or undefined; parsed against the pending action's schema when one was set.
+   * @param errorType The failure's class name on an admin surface, or undefined.
+   * @param errorDetail The failure's own message on an admin surface, or undefined.
    */
   private onReply(
     requestId: string | undefined,
@@ -249,6 +269,8 @@ export class ActionLifecycle {
     outcome: 'success' | 'fail',
     detail?: string,
     reply?: unknown,
+    errorType?: string,
+    errorDetail?: string,
   ): void {
     if (requestId === undefined) {
       return
@@ -264,7 +286,13 @@ export class ActionLifecycle {
     this.settle(requestId, pending)
     if (outcome !== 'success') {
       pending.reject(
-        new ActionError(action, 'fail', detail ?? 'The action failed.'),
+        new ActionError(
+          action,
+          'fail',
+          detail ?? 'The action failed.',
+          errorType,
+          errorDetail,
+        ),
       )
 
       return

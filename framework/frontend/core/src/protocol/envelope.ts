@@ -68,12 +68,22 @@ export type SessionRotateSignalData = z.infer<
  * consumes the echoed requestId, and the auth gate reads `errorCode` to open the
  * sign-in surface on an action-level 401. A `rate_limited` failure additionally
  * carries `retryAfter` (seconds to wait before retrying).
+ *
+ * An admin surface receives two more optional fields, `errorType` and
+ * `errorDetail`: the class name of the failure the generic `reason` stands for,
+ * and that failure's own message. The backend fills them only when the page
+ * owning the action declares admin access and the failure was NOT written for a
+ * person to read — so their presence is itself the sign that something was held
+ * back. Any other caller receives the frame exactly as it was before they
+ * existed (docs/agents/frontend/wire-protocol.md).
  */
 export const actionErrorSignalDataSchema = z.looseObject({
   action: z.string(),
   reason: z.string(),
   errorCode: z.string().optional(),
   retryAfter: z.number().int().optional(),
+  errorType: z.string().optional(),
+  errorDetail: z.string().optional(),
 })
 
 export type ActionErrorSignalData = z.infer<typeof actionErrorSignalDataSchema>

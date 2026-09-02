@@ -8,6 +8,7 @@ step 7.4); a failure surfaces in the dialog. Bootstrap classes only
 (styling-rules.md). -->
 <script setup lang="ts">
 import {
+  HilosActionError,
   HilosModal,
   HilosViewportTable,
   LoadingButton,
@@ -50,12 +51,13 @@ const columns: HilosTableColumn[] = [
 const editOpen = ref(false)
 const editRow = ref<HilosUserRow | null>(null)
 const editName = ref('')
+const editAction = useTrackedAction()
 const {
   loading: editLoading,
   busy: editBusy,
   run: runEditAction,
   clearError: clearEditError,
-} = useTrackedAction()
+} = editAction
 
 const editDirty = computed(() => {
   const name = editName.value.trim()
@@ -104,12 +106,13 @@ async function submitEdit(): Promise<void> {
 const currentUid = useSignal(currentUserId)
 const impersonateOpen = ref(false)
 const impersonateRow = ref<HilosUserRow | null>(null)
+const impersonateAction = useTrackedAction()
 const {
   loading: impersonateLoading,
   busy: impersonateBusy,
   run: runImpersonateAction,
   clearError: clearImpersonateError,
-} = useTrackedAction()
+} = impersonateAction
 
 function openImpersonate(row: HilosUserRow): void {
   clearImpersonateError()
@@ -201,6 +204,7 @@ async function submitImpersonate(): Promise<void> {
       :confirm-on-close="editDirty"
       @cancel="closeEdit"
     >
+      <HilosActionError :action="editAction" />
       <form v-if="editRow" @submit.prevent="submitEdit">
         <div class="mb-3">
           <label class="form-label" for="admin-users-name">Name</label>
@@ -250,6 +254,7 @@ async function submitImpersonate(): Promise<void> {
       "
       @cancel="closeImpersonate"
     >
+      <HilosActionError :action="impersonateAction" />
       <p v-if="impersonateRow" class="mb-0">
         Become <strong>{{ impersonateRow.name }}</strong> and see the app as they
         do? You can stop from the banner at any time.

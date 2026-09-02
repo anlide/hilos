@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Log;
 
-use Hilos\Database\Settings\Exception\SettingInvalidValueException;
+use Hilos\Database\Settings\Exception\SettingValueRefusedException;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\Settings\Validation\SettingValueRules;
@@ -86,7 +86,7 @@ final class LogWriteLevelRuleTest extends TestCase
 
     public function testTheWritePathRefusesAnUnknownNameWithTheTextOfTheRule(): void
     {
-        $this->expectException(SettingInvalidValueException::class);
+        $this->expectException(SettingValueRefusedException::class);
         $this->expectExceptionMessage((string)LogWriteLevelRule::validate('TRACE'));
 
         SettingValueRules::assertValid(LogSettingsCatalog::WRITE_LEVEL, 'TRACE');

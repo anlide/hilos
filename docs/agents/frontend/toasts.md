@@ -121,10 +121,14 @@ does it — by default, with no flag (`useTrackedAction()` in Vue and React,
   `AbstractPage::setActionSuccessMessage()`), and the domain sentence lives on
   the backend because Hilos i18n does. The generic client "Done." is a
   transitional stub on its way out (not in the code yet — HIL-770).
-- **A failure of my own action does not fly to the corner.** The modal in
-  which the action was refused shows the refusal itself, in the place reserved
-  for it (not in the code yet — HIL-769). The corner keeps only the failures
-  nobody was standing in front of.
+- **A failure of my own action is shown where the person acted.** The modal in
+  which the action was refused shows the refusal itself, with `HilosActionError`
+  in the place reserved for it — and on an admin surface with the type badge and
+  detail panel beside it (HIL-779). The corner still carries it as well: the
+  toast is what reaches a person who has already looked away.
+- **Failure text is backend-authored too.** The driver prints what the reply
+  carried; its own phrasing is left for the outcomes no backend sentence exists
+  for — the timeout, the dropped connection, the unreadable reply.
 
 Opting out is `toast: false`, with the reason written at the call site. The
 three reasons that qualify:
@@ -134,6 +138,9 @@ three reasons that qualify:
   user just typed, on a form they are already looking at;
 - **the result is visible by itself** — the row disappeared, the switch
   flipped; the screen has already said it.
+
+Drawing the refusal in the dialog is **not** one of them: `HilosActionError`
+sits beside the toast, it does not replace it.
 
 Prefer pushing from the **core headless** rather than from each view — one
 call covers Vue, React and Angular at once:

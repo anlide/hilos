@@ -1189,6 +1189,30 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     }
 
     /**
+     * Sends the framework action-failure reply a raised exception is turned into.
+     *
+     * Unlike {@see AbstractAgent::sendActionFail()}, whose reason a handler wrote itself,
+     * everything here is read off the exception behind the one gate on what a client may
+     * see. An agent never proves the caller is an administrator, so it passes false.
+     *
+     * @param string $acceptKey Accept key of the initiating connection
+     * @param string $action Action name that failed
+     * @param string $requestId Client-minted request id echoed back for correlation
+     * @param Throwable $e Failure the reply is built from
+     * @param bool $detailAllowed Whether the caller is proven to be an administrator
+     * @throws InvalidArgumentException When the action-error signal cannot be named
+     */
+    public function sendActionFailure(
+        string $acceptKey,
+        string $action,
+        string $requestId,
+        Throwable $e,
+        bool $detailAllowed,
+    ): void {
+        $this->actionReply()->sendFailure($acceptKey, $action, $requestId, $e, $detailAllowed);
+    }
+
+    /**
      * Reports an untracked action's failure to the connection that sent it.
      *
      * Override only when the agent has a more specific user-facing error contract; a

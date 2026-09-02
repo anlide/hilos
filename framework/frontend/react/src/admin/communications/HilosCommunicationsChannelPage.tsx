@@ -13,7 +13,6 @@
 // Bootstrap classes only (styling-rules.md).
 import { useContext, useEffect, useMemo, useState } from 'react'
 import {
-  ActionError,
   HilosPages,
   computedSignal,
   createHilosChannelFields,
@@ -24,6 +23,7 @@ import type {
   HilosCommunicationsContext,
 } from '@hilos/core'
 
+import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
@@ -125,16 +125,11 @@ export function HilosCommunicationsChannelPage({
     return () => fields.dispose()
   }, [fields])
 
-  // Surface the backend's domain phrase on a rejected write (invalid port, no
-  // address for the channel, …); keep generic phrasing for timeout / disconnect.
-  const describeError = (error: unknown): string =>
-    error instanceof ActionError && error.outcome === 'fail'
-      ? error.message
-      : 'The action could not be completed. Please try again.'
-
-  const test = useTrackedAction({ describeError })
-  const reset = useTrackedAction({ describeError })
-  const edit = useTrackedAction({ describeError })
+  // Showing the backend's own phrase on a rejected write is the driver's default
+  // since HIL-779; this page used to be the one screen that asked for it.
+  const test = useTrackedAction()
+  const reset = useTrackedAction()
+  const edit = useTrackedAction()
 
   function sendTest(): void {
     void test.run(actions.sendChannelTest(channel))
@@ -305,6 +300,7 @@ export function HilosCommunicationsChannelPage({
           </>
         )}
       >
+        <HilosActionError action={edit} />
         {editRow ? (
           <form
             onSubmit={(event) => {

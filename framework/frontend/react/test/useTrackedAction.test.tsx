@@ -102,12 +102,21 @@ describe('useTrackedAction', () => {
     expect(toastStack()).toEqual([])
   })
 
-  it('resolves false and surfaces a generic error on failure', async () => {
+  it('resolves false and surfaces the backend phrase on failure', async () => {
+    // The refusal the backend sent is what the person reads. Until HIL-779 this
+    // case asserted the opposite - the driver replaced it with its own sentence,
+    // and this test held that behaviour in place.
     let result: boolean | undefined
     render(
       <Probe
         make={() =>
-          Promise.reject(new ActionError('setting_update', 'fail', 'nope'))
+          Promise.reject(
+            new ActionError(
+              'setting_update',
+              'fail',
+              'Value must be an integer of 0 or more',
+            ),
+          )
         }
         onResult={(ok) => (result = ok)}
       />,
@@ -116,9 +125,27 @@ describe('useTrackedAction', () => {
       fireEvent.click(screen.getByTestId('go'))
     })
     expect(result).toBe(false)
-    expect(screen.getByTestId('error').textContent).toContain(
-      'could not be completed',
+    expect(screen.getByTestId('error').textContent).toBe(
+      'Value must be an integer of 0 or more',
     )
     expect(screen.getByTestId('busy').textContent).toBe('false')
+  })
+
+  it('keeps its own phrasing when no backend answer arrived', async () => {
+    // A timeout has no backend sentence to print: nothing came back at all.
+    render(
+      <Probe
+        make={() =>
+          Promise.reject(
+            new ActionError('setting_update', 'timeout', 'Timed out.'),
+          )
+        }
+        onResult={() => {}}
+      />,
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('go'))
+    })
+    expect(screen.getByTestId('error').textContent).toContain('timed out')
   })
 })

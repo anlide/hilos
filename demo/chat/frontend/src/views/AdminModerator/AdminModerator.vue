@@ -10,6 +10,7 @@ action and the dialog closes on its `::success` reply (useTrackedAction, step
 dialog. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
+  HilosActionError,
   HilosModal,
   HilosViewportTable,
   LoadingButton,
@@ -63,22 +64,24 @@ const formMode = ref<'create' | 'edit'>('create')
 const formId = ref<number | null>(null)
 const fSection = ref<ModeratorSection>('message_rule')
 const fPromptPiece = ref('')
+const formAction = useTrackedAction()
 const {
   loading: formLoading,
   busy: formBusy,
   run: runFormAction,
   clearError: clearFormError,
-} = useTrackedAction()
+} = formAction
 
 // Delete dialog.
 const deleteOpen = ref(false)
 const deleteRow = ref<ModeratorPieceRow | null>(null)
+const deleteAction = useTrackedAction()
 const {
   loading: deleteLoading,
   busy: deleteBusy,
   run: runDeleteAction,
   clearError: clearDeleteError,
-} = useTrackedAction()
+} = deleteAction
 
 /** The form's current fields as a piece input, prompt trimmed. */
 function currentInput(): ModeratorPieceInput {
@@ -259,6 +262,7 @@ async function submitDelete(): Promise<void> {
       :confirm-on-close="formDirty"
       @cancel="closeForm"
     >
+      <HilosActionError :action="formAction" />
       <form @submit.prevent="submitForm">
         <div class="mb-3">
           <label class="form-label" for="admin-moderator-section"
@@ -316,6 +320,7 @@ async function submitDelete(): Promise<void> {
       :close-on-esc="!deleteBusy"
       @cancel="closeDelete"
     >
+      <HilosActionError :action="deleteAction" />
       <p class="mb-0 text-body-secondary">
         This permanently removes the prompt piece from the moderation rules.
       </p>

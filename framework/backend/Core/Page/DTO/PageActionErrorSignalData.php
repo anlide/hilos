@@ -26,12 +26,20 @@ class PageActionErrorSignalData extends BaseDTO implements SignalDataInterface, 
     /** Wire key for the throttle retry-after hint in seconds (rate_limited failures only). */
     public const string retryAfter = 'retryAfter';
 
+    /** Wire key for the failure's class name, sent to an admin surface only. */
+    public const string errorType = 'errorType';
+
+    /** Wire key for the failure's own message, sent to an admin surface only. */
+    public const string errorDetail = 'errorDetail';
+
     /**
      * @param string $action Action name that failed
      * @param string $reason Human-readable error message
      * @param ?string $requestId Client-minted request id to correlate the reply, or null for a legacy untracked error
      * @param ?string $errorCode Machine-readable error code (e.g. 'unauthorized'), or null for an unclassified failure
      * @param ?int $retryAfter Seconds to wait before retrying (rate_limited failures), or null when not throttled
+     * @param ?string $errorType Class name of the failure the placeholder stands for, or null for anyone but an admin
+     * @param ?string $errorDetail Original message of that failure, or null for anyone but an admin
      */
     public function __construct(
         public readonly string $action,
@@ -39,6 +47,8 @@ class PageActionErrorSignalData extends BaseDTO implements SignalDataInterface, 
         public readonly ?string $requestId = null,
         public readonly ?string $errorCode = null,
         public readonly ?int $retryAfter = null,
+        public readonly ?string $errorType = null,
+        public readonly ?string $errorDetail = null,
     ) {
     }
 
@@ -64,11 +74,19 @@ class PageActionErrorSignalData extends BaseDTO implements SignalDataInterface, 
             $result[self::retryAfter] = $this->retryAfter;
         }
 
+        if ($this->errorType !== null) {
+            $result[self::errorType] = $this->errorType;
+        }
+
+        if ($this->errorDetail !== null) {
+            $result[self::errorDetail] = $this->errorDetail;
+        }
+
         return $result;
     }
 
     /**
-     * The three optional fields are the ones {@see self::toArray()} omits when
+     * The five optional fields are the ones {@see self::toArray()} omits when
      * they are null; the two the failure is described by are not optional, and a
      * frame without them is refused rather than turned into an error that names
      * no action and gives no reason.
@@ -84,6 +102,8 @@ class PageActionErrorSignalData extends BaseDTO implements SignalDataInterface, 
             requestId: self::optionalString($data, SignalPayloadConstants::FIELD_REQUEST_ID),
             errorCode: self::optionalString($data, self::errorCode),
             retryAfter: self::optionalInt($data, self::retryAfter),
+            errorType: self::optionalString($data, self::errorType),
+            errorDetail: self::optionalString($data, self::errorDetail),
         );
     }
 

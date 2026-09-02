@@ -42,9 +42,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
-use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
-use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -710,21 +708,17 @@ class PageSignalRouter
             ],
         );
 
-        $errorCode = match (true) {
-            $e instanceof ActionRateLimitedException => $e->errorCode,
-            $e instanceof ActionUnauthorizedException => $e->errorCode,
-            $e instanceof ActionForbiddenException => $e->errorCode,
-            default => null,
-        };
-        $retryAfter = $e instanceof ActionRateLimitedException ? $e->retryAfter : null;
         if ($requestId !== null) {
-            $host->sendActionFail(
+            // An admin page proved the acting user's privilege before the handler ran
+            // (assertPageAccessLevel above), so the failure's own text may go back to them
+            // and to nobody else. An agent host proves nothing of the kind: the level guard
+            // judges a subscription to a page, and an agent has no page to be asked about.
+            $host->sendActionFailure(
                 $acceptKey,
                 $action,
                 $requestId,
-                self::clientReason($e),
-                $errorCode,
-                $retryAfter,
+                $e,
+                $host instanceof AbstractPage && $host::ACCESS_LEVEL === PageAccessLevel::ADMIN,
             );
             return;
         }
@@ -1098,27 +1092,6 @@ class PageSignalRouter
                 );
             }
         });
-    }
-
-    /**
-     * Reduces an action failure to what may cross the wire.
-     *
-     * A domain failure (validation, authorization, a business rule) describes
-     * itself in terms the caller asked about, so its message travels. Anything
-     * infrastructural — a driver error carrying SQL text, index names, paths, or
-     * an unexpected engine fault — stays on the server: the full detail is in the
-     * log written above. See docs/agents/frontend/wire-protocol.md.
-     *
-     * @param Throwable $e Failure raised by the action handler
-     * @return string Message safe to deliver to a client
-     */
-    private static function clientReason(Throwable $e): string
-    {
-        if ($e instanceof DatabaseException || !$e instanceof HilosException) {
-            return SignalConstants::ACTION_FAILED_REASON;
-        }
-
-        return $e->getMessage();
     }
 
     /**

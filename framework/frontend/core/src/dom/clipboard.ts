@@ -5,6 +5,19 @@
 // the text reached the buffer.
 
 /**
+ * Whether a clipboard is there to write to at all.
+ *
+ * Asked by a surface that would rather not draw its Copy button than draw one
+ * that does nothing: over plain http, and anywhere else the API is absent, a
+ * click on it would fail silently and the person would keep clicking.
+ *
+ * @returns Whether `navigator.clipboard` exists in this document.
+ */
+export function isClipboardAvailable(): boolean {
+  return typeof navigator !== 'undefined' && navigator.clipboard !== undefined
+}
+
+/**
  * Copy text to the clipboard.
  *
  * @param text The text to copy.

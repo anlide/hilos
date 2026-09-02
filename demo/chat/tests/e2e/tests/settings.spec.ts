@@ -254,3 +254,46 @@ test('deletes an orphan setting through the confirm modal', async ({ page }) => 
   await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
   await expect(page.getByTestId(`hilos-settings-delete-${orphanKey}`)).toHaveCount(0)
 })
+
+test('refuses a bad value in the words of the rule that refused it', async ({
+  page,
+}) => {
+  // The regression this suite exists to hold (HIL-779): a catalog rule refuses
+  // the value, and the sentence it wrote reaches the person who typed it. It
+  // used to be replaced by "The action could not be completed" on the last step
+  // of the journey, in the frontend driver.
+  const key = 'logs.archive_retention.keep_batches'
+
+  await signUpAdmin(page)
+  await openSettings(page)
+  await isolate(page, key)
+
+  await page.getByTestId(`hilos-settings-edit-${key}`).click()
+  await page.getByTestId('hilos-settings-edit-custom').check()
+  const value = page.getByTestId('hilos-settings-edit-value')
+  await value.fill('')
+  await value.pressSequentially('-1', { delay: 10 })
+
+  const save = page.getByTestId('hilos-settings-edit-save')
+  await expect(save).toBeEnabled()
+  await save.click()
+
+  // The dialog stays open with the refusal above the field, and the value the
+  // person typed is still there for them to correct.
+  const refusal = page.getByTestId('hilos-action-error')
+  await expect(refusal).toBeVisible()
+  await expect(refusal).toContainText('Value must be an integer of 0 or more')
+  await expect(value).toHaveValue('-1')
+
+  // No detail badge: a sentence written for a person is shown in full, so there
+  // is nothing the framework held back to reveal.
+  await expect(page.getByTestId('hilos-action-error-type')).toHaveCount(0)
+
+  // Nothing was written: the row still reads as the catalog default. Closing
+  // goes through the discard guard, because the draft is dirty by construction.
+  await page.getByTestId('modal-close').click()
+  await page.getByTestId('modal-confirm-discard').click()
+  await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
+  const row = page.getByTestId(`hilos-table-row-${key}`)
+  await expect(row).toContainText('default')
+})

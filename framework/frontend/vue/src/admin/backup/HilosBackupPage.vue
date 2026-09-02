@@ -61,6 +61,7 @@ import {
 } from '@hilos/core'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
+import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
@@ -228,12 +229,13 @@ async function toggleKeep(row: HilosBackupRow): Promise<void> {
 // Delete dialog: a completed backup only (never the in-progress row).
 const deleteOpen = ref(false)
 const deleteRow = ref<HilosBackupRow | null>(null)
+const deleteAction = useTrackedAction()
 const {
   loading: deleteLoading,
   busy: deleteBusy,
   run: runDeleteAction,
   clearError: clearDeleteError,
-} = useTrackedAction()
+} = deleteAction
 
 function openDelete(row: HilosBackupRow): void {
   clearDeleteError()
@@ -273,12 +275,13 @@ async function submitDelete(): Promise<void> {
 const restoreOpen = ref(false)
 const restoreRow = ref<HilosBackupRow | null>(null)
 const restoreTyped = ref('')
+const restoreAction = useTrackedAction()
 const {
   loading: restoreLoading,
   busy: restoreBusy,
   run: runRestoreAction,
   clearError: clearRestoreError,
-} = useTrackedAction()
+} = restoreAction
 const restoreConfirmed = computed(
   () => restoreRow.value !== null && restoreTyped.value === restoreRow.value.id,
 )
@@ -607,6 +610,7 @@ function openOutcome(row: HilosBackupRow): void {
       :close-on-esc="!deleteBusy"
       @cancel="closeDelete"
     >
+      <HilosActionError :action="deleteAction" />
       <p class="mb-0 text-body-secondary">
         This permanently deletes the backup archive and its metadata. A pinned
         backup is deleted too — the pin only protects it from rotation.
@@ -663,6 +667,7 @@ function openOutcome(row: HilosBackupRow): void {
       :close-on-esc="!restoreBusy"
       @cancel="closeRestore"
     >
+      <HilosActionError :action="restoreAction" />
       <p class="mb-2">
         This overwrites every database of this installation with the contents of
         the archive. Everyone else is shown a maintenance screen until it ends,

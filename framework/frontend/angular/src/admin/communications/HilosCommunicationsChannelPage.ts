@@ -21,7 +21,6 @@ import {
   signal,
 } from '@angular/core'
 import {
-  ActionError,
   HilosPages,
   computedSignal,
   createHilosChannelFields,
@@ -33,6 +32,7 @@ import type {
   HilosCommunicationsContext,
 } from '@hilos/core'
 
+import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -64,7 +64,13 @@ const SOURCE_LABEL: Record<string, string> = {
 @Component({
   selector: 'hilos-communications-channel-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosViewportTable, HilosModal, LoadingButton],
+  imports: [
+    HilosAdminPage,
+    HilosViewportTable,
+    HilosModal,
+    HilosActionError,
+    LoadingButton,
+  ],
   template: `
     <hilos-admin-page [page]="page">
       <div class="d-flex justify-content-between align-items-center mb-3">
@@ -171,6 +177,7 @@ const SOURCE_LABEL: Record<string, string> = {
         (openChange)="editOpen.set($event)"
         [title]="editTitle()"
       >
+        <hilos-action-error [action]="edit" />
         @if (editRow(); as row) {
           <form (submit)="submitEdit($event)">
             @if (editInputType() === 'checkbox') {
@@ -265,15 +272,11 @@ export class HilosCommunicationsChannelPage {
   // into an Angular signal so the template re-renders on every snapshot delta.
   protected readonly rows = signal<readonly HilosChannelFieldRow[]>([])
 
-  protected readonly test = createHilosTrackedAction({
-    describeError: this.describeError,
-  })
-  protected readonly reset = createHilosTrackedAction({
-    describeError: this.describeError,
-  })
-  protected readonly edit = createHilosTrackedAction({
-    describeError: this.describeError,
-  })
+  // Showing the backend's own phrase on a rejected write is the driver's default
+  // since HIL-779; this page used to be the one screen that asked for it.
+  protected readonly test = createHilosTrackedAction()
+  protected readonly reset = createHilosTrackedAction()
+  protected readonly edit = createHilosTrackedAction()
 
   // Edit dialog: one field's override value.
   protected readonly editOpen = signal(false)
@@ -375,13 +378,5 @@ export class HilosCommunicationsChannelPage {
     }
 
     return this.editValue()
-  }
-
-  // Surface the backend's domain phrase on a rejected write (invalid port, no
-  // address for the channel, …); keep generic phrasing for timeout / disconnect.
-  private describeError(error: unknown): string {
-    return error instanceof ActionError && error.outcome === 'fail'
-      ? error.message
-      : 'The action could not be completed. Please try again.'
   }
 }

@@ -178,9 +178,8 @@ handled gracefully: release the UI, but keep the orphaned action recorded so a
 late reply can reconcile — never silently dropped. A late reply that finally
 arrives surfaces as a toast (recommended; ultimately the project's discretion).
 An action toasts its outcome only when the result is not visible on screen,
-and a refusal of the user's own action answers in the modal it came from, not
-in the corner (not in the code yet — HIL-769) — the surface rule is
-[toasts.md](toasts.md).
+and a refusal of the user's own action is answered in the modal it came from as
+well as in the corner — the surface rule is [toasts.md](toasts.md).
 
 A state-changing action is **always tracked**: the initiator dispatches it
 through this lifecycle and shows loading until it settles — it is **not**
@@ -205,16 +204,37 @@ names a table, a column set and an index to anyone holding a socket, and tells
 the user nothing they can act on. It is a leak whether or not the frontend
 renders it.
 
-The framework enforces this at the edge: `PageSignalRouter` logs the exception in
-full — class, message, file, line, trace — and sends the client a domain message,
-substituting a generic one for any infrastructural failure (a `DatabaseException`,
-or any non-`HilosException` fault). A handler that wants the user to read
-something specific raises a domain exception whose message is written for them.
+The framework enforces this at one edge, and the rule reads as a single line:
+**an exception's own message crosses the wire only when the exception is a
+`ValidationException`.** Everything else is replaced by
+`SignalConstants::ACTION_FAILED_REASON` and stays in the log, which
+`PageSignalRouter` writes in full — class, message, file, line, trace. A handler
+that wants the person to read something specific raises an exception in that
+family, and `TableActionException` — the one most table and page handlers already
+throw — is in it.
 
-**Admin surfaces are the exception, and only behind the admin guard.** An
-operator debugging a failing job may be shown the detail — an error column, an
-expandable row, a log page. That is a deliberate, guarded feature, not the
-default reply path: the same detail must never reach an end-user surface.
+The check lives in `ActionFailureReason`, and every path that turns an exception
+into client text goes through it: the tracked failure ack, the untracked
+`ActionReply::sendException()`, and an agent answering its own action. A reason a
+handler wrote *by hand* and passed to `sendActionFail()` does not pass the gate
+and does not need to: its author is already a person writing for a person. The
+gate stands on the conversion of an exception into a sentence, not on the field.
+
+**Admin surfaces are the exception, and only behind the admin guard.** When the
+owner of the action is an `AbstractPage` whose `ACCESS_LEVEL` is
+`PageAccessLevel::ADMIN` — which the router has already proved before the handler
+ran — the `action_error` frame carries two more optional fields beside the
+generic reason: `errorType`, the failure's class name without its namespace, and
+`errorDetail`, its original message. The SDK's `HilosActionError` draws them as a
+badge and a copyable detail panel, so an operator can carry the real text into a
+ticket. Three limits are part of the rule:
+
+- they ride **only** on that admin frame; for any other caller the frame is byte
+  for byte what it was before they existed;
+- they are **absent for a `ValidationException`**, whose message is already shown
+  in full — so their presence means the framework held something back;
+- an action owned by an **agent** never carries them: the access-level guard
+  judges a subscription to a page, and an agent has no page to be asked about.
 
 ### When the work outlives the reply
 

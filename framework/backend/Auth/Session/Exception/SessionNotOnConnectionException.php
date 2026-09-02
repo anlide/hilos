@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace Hilos\Auth\Session\Exception;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Core\Action\ActionFailureReason;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
 use Hilos\Core\Page\PageSignalRouter;
-use Hilos\HilosException;
 
 /**
  * Thrown when a control of the sign-in surface is asked of a connection that holds no session
@@ -26,8 +27,14 @@ use Hilos\HilosException;
  * who is not signed in - answering it with a login form would replace one lie with another.
  * Without an error code the frame is an ordinary action failure, which is what this is.
  *
+ * A {@see ValidationException} for the sentence above to survive the wire gate: the text is
+ * addressed to the person holding the tab and tells them what to do about it, and
+ * {@see ActionFailureReason} would otherwise replace it with the placeholder, which is exactly
+ * the silence this exception was written to end (HIL-779). It still carries no error code, so
+ * the sign-in window stays shut.
+ *
  * @see AbstractSessionsLibraryAgent::onAgentAction() Where the four controls refuse
  */
-class SessionNotOnConnectionException extends HilosException
+class SessionNotOnConnectionException extends ValidationException
 {
 }

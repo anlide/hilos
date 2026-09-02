@@ -34,6 +34,7 @@ import type {
   HilosTableColumnOf,
 } from '@hilos/core'
 
+import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -71,6 +72,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
     HilosAdminPage,
     HilosViewportTable,
     HilosModal,
+    HilosActionError,
     LoadingButton,
     HilosSettingValueCell,
   ],
@@ -136,6 +138,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
         [title]="editTitle()"
         [confirmOnClose]="editDirty()"
       >
+        <hilos-action-error [action]="edit" />
         @if (editRow(); as row) {
           <form (submit)="submitEdit($event)">
             @if (!isOrphan(row)) {
@@ -231,6 +234,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
         [closeOnBackdrop]="!del.busy()"
         [closeOnEsc]="!del.busy()"
       >
+        <hilos-action-error [action]="del" />
         <p class="mb-0 text-body-secondary">
           This removes the orphan row from the database. Orphan keys are not in
           the catalog.

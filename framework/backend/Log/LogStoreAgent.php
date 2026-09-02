@@ -384,7 +384,7 @@ final class LogStoreAgent extends AbstractAgent
             );
         } catch (Throwable $e) {
             $this->logAgentError('Log read failed: ' . $e->getMessage());
-            $this->sendActionFail($request->acceptKey, $request->action, $request->requestId, $e->getMessage());
+            $this->sendActionFailure($request->acceptKey, $request->action, $request->requestId, $e, detailAllowed: false);
         }
     }
 
@@ -460,7 +460,7 @@ final class LogStoreAgent extends AbstractAgent
         } catch (Throwable $e) {
             unset($this->followers[$request->acceptKey]);
             $this->logAgentError('Log follow failed to start: ' . $e->getMessage());
-            $this->sendActionFail($request->acceptKey, $request->action, $request->requestId, $e->getMessage());
+            $this->sendActionFailure($request->acceptKey, $request->action, $request->requestId, $e, detailAllowed: false);
         }
     }
 

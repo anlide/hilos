@@ -27,6 +27,7 @@ import type {
   HilosTableColumnOf,
 } from '@hilos/core'
 
+import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -249,6 +250,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
           </>
         )}
       >
+        <HilosActionError action={edit} />
         {editRow ? (
           <form
             onSubmit={(event) => {
@@ -358,6 +360,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
           </>
         )}
       >
+        <HilosActionError action={del} />
         <p className="mb-0 text-body-secondary">
           This removes the orphan row from the database. Orphan keys are not in
           the catalog.

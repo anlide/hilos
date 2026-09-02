@@ -52,6 +52,7 @@ export { HilosNotificationBell } from './HilosNotificationBell.js'
 export { HilosNotificationPreferences } from './HilosNotificationPreferences.js'
 export { HilosPushDeviceToggle } from './HilosPushDeviceToggle.js'
 export { HilosModal, type ModalActionsContext } from './HilosModal.js'
+export { HilosActionError } from './HilosActionError.js'
 export { HilosToastHost } from './HilosToastHost.js'
 export {
   HilosViewportTable,

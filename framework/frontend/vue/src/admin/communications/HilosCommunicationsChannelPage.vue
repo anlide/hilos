@@ -13,7 +13,6 @@ happens in a modal — inline forms are forbidden (rules-and-violations.md secti
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
-  ActionError,
   computedSignal,
   createHilosChannelFields,
   createHilosCommunicationsActions,
@@ -23,6 +22,7 @@ import {
 } from '@hilos/core'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
+import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosModal from '../../HilosModal.vue'
 import LoadingButton from '../../LoadingButton.vue'
@@ -58,16 +58,10 @@ const { sendChannelSet, sendChannelReset, sendChannelTest } =
 onMounted(() => fields.start())
 onUnmounted(() => fields.dispose())
 
-// Surface the backend's domain phrase on a rejected write (invalid port, no
-// address for the channel, …); keep generic phrasing for timeout / disconnect.
-function describeChannelError(error: unknown): string {
-  return error instanceof ActionError && error.outcome === 'fail'
-    ? error.message
-    : 'The action could not be completed. Please try again.'
-}
-
-const testAction = useTrackedAction({ describeError: describeChannelError })
-const resetAction = useTrackedAction({ describeError: describeChannelError })
+// Showing the backend's own phrase on a rejected write is the driver's default
+// since HIL-779; this page used to be the one screen that asked for it.
+const testAction = useTrackedAction()
+const resetAction = useTrackedAction()
 
 function sendTest(): void {
   void testAction.run(sendChannelTest(channel.value))
@@ -109,12 +103,13 @@ const SOURCE_LABEL: Record<string, string> = {
 const editOpen = ref(false)
 const editRow = ref<HilosChannelFieldRow | null>(null)
 const editValue = ref('')
+const editAction = useTrackedAction()
 const {
   loading: editLoading,
   busy: editBusy,
   run: runEditAction,
   clearError: clearEditError,
-} = useTrackedAction({ describeError: describeChannelError })
+} = editAction
 const editInputType = computed(() => inputType(editRow.value?.type))
 const editStep = computed(() =>
   editRow.value?.type === 'float' ? 'any' : undefined,
@@ -266,6 +261,7 @@ async function submitEdit(): Promise<void> {
       :title="editRow ? `Edit · ${editRow.label}` : 'Edit field'"
       @cancel="closeEdit"
     >
+      <HilosActionError :action="editAction" />
       <form v-if="editRow" @submit.prevent="submitEdit">
         <div v-if="editInputType === 'checkbox'" class="form-check form-switch">
           <input

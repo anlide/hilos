@@ -18,8 +18,8 @@ import {
 /** How a tracked action reports a failure. */
 export interface TrackedActionOptions {
   /**
-   * Map a caught failure to a user-facing message; defaults to a generic
-   * phrasing that keeps the backend reason off-screen.
+   * Map a caught failure to a user-facing message; defaults to printing what
+   * the backend sent, which is already gated to what a client may read.
    */
   describeError?: (error: unknown) => string
   /**
@@ -41,13 +41,20 @@ export interface TrackedAction {
   /** The latest failure message, or null when clear. */
   readonly error: Readonly<Ref<string | null>>
   /**
+   * The latest failure itself, or null when clear or when what was thrown was
+   * not an action failure. Carries what {@link TrackedAction.error} cannot: the
+   * outcome, and on an admin surface the type and detail of what the backend
+   * held back — which is what `HilosActionError` draws.
+   */
+  readonly failure: Readonly<Ref<ActionError | null>>
+  /**
    * Await a dispatched action: resolves true on `::success`, false on a failure
    * (with `error` set). Returns false immediately while already busy.
    *
    * @param handle The handle returned by `actions.dispatch(...)`.
    */
   run(handle: ActionHandle): Promise<boolean>
-  /** Clear the error — e.g. when opening or re-arming a form. */
+  /** Clear the error and the failure behind it — e.g. when opening or re-arming a form. */
   clearError(): void
 }
 
@@ -63,6 +70,7 @@ export function useTrackedAction(
   const loading = ref(false)
   const busy = ref(false)
   const error = ref<string | null>(null)
+  const failure = ref<ActionError | null>(null)
 
   async function run(handle: ActionHandle): Promise<boolean> {
     if (busy.value) {
@@ -70,6 +78,7 @@ export function useTrackedAction(
     }
     busy.value = true
     error.value = null
+    failure.value = null
     const stopLoading = subscribeSignal(handle.loading, (next) => {
       loading.value = next
     })
@@ -85,6 +94,7 @@ export function useTrackedAction(
     } catch (caught) {
       const message = describeError(caught)
       error.value = message
+      failure.value = caught instanceof ActionError ? caught : null
       if (options.toast !== false) {
         hilosToasts.push(message, { severity: 'error' })
       }
@@ -101,9 +111,11 @@ export function useTrackedAction(
     loading,
     busy,
     error,
+    failure,
     run,
     clearError: () => {
       error.value = null
+      failure.value = null
     },
   }
 }
@@ -112,12 +124,29 @@ export function useTrackedAction(
 const DEFAULT_SUCCESS_MESSAGE = 'Done.'
 
 /**
- * The default failure message: generic, and never leaks the backend reason.
+ * The default failure message: the backend's own words on a refusal, and the
+ * driver's phrasing only where the backend never answered at all.
+ *
+ * A refusal that reached us has already passed the one gate on what a client may
+ * read (PHP `ActionFailureReason`), so repeating it is not a leak — while
+ * replacing it was, for years, the last step that threw a rule's own sentence
+ * away (HIL-779). The three outcomes below are the ones no backend sentence
+ * exists for.
  *
  * @param error The caught failure from a tracked action.
  */
 function defaultDescribeError(error: unknown): string {
-  return error instanceof ActionError && error.outcome === 'timeout'
-    ? 'The action timed out. Please try again.'
-    : 'The action could not be completed. Please try again.'
+  if (!(error instanceof ActionError)) {
+    return 'The action failed. Please try again.'
+  }
+  switch (error.outcome) {
+    case 'timeout':
+      return 'The action timed out. Please try again.'
+    case 'disconnected':
+      return 'The connection dropped before the action completed. Please try again.'
+    case 'invalid-reply':
+      return 'The server answered in a form this page could not read. Please try again.'
+    default:
+      return error.message
+  }
 }

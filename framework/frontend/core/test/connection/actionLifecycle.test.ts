@@ -63,6 +63,8 @@ class FakeSource implements ActionLifecycleSource {
     requestId: string | undefined,
     reason: string,
     errorCode?: string,
+    errorType?: string,
+    errorDetail?: string,
   ): void {
     for (const listener of this.listeners.actionError) {
       listener({
@@ -70,6 +72,8 @@ class FakeSource implements ActionLifecycleSource {
         action,
         reason,
         errorCode,
+        errorType,
+        errorDetail,
         requestId,
         envelope: { type: 'action_error', data: {} },
       })
@@ -195,6 +199,33 @@ describe('ActionLifecycle', () => {
     await expect(handle.done).rejects.toMatchObject({
       outcome: 'fail',
       message: 'Name already taken',
+      errorType: undefined,
+      errorDetail: undefined,
+    })
+  })
+
+  it('carries the admin-only type and detail onto the failure', async () => {
+    const source = new FakeSource()
+    const lifecycle = new ActionLifecycle(source)
+
+    const handle = lifecycle.dispatch('a', {})
+    source.fail(
+      'a',
+      handle.requestId,
+      'The action could not be completed.',
+      undefined,
+      'DatabaseException',
+      'SQLSTATE[42S02]: Base table or view not found',
+    )
+
+    // The generic sentence is what is shown; the two fields beside it are what an
+    // admin surface opens to read (HIL-779), and they arrive only when the backend
+    // held something back.
+    await expect(handle.done).rejects.toMatchObject({
+      outcome: 'fail',
+      message: 'The action could not be completed.',
+      errorType: 'DatabaseException',
+      errorDetail: 'SQLSTATE[42S02]: Base table or view not found',
     })
   })
 

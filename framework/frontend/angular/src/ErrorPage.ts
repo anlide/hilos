@@ -20,7 +20,14 @@ const ERROR_TEXT: Record<number, { title: string; description: string }> = {
     description: 'The request could not be understood.',
   },
   401: { title: 'Unauthorized', description: 'Authentication is required.' },
-  403: { title: 'Forbidden', description: 'Access denied for guests.' },
+  // Says that access was refused and nothing about who was refused: this table
+  // answers EVERY 403, and the one it used to name - a guest - is the case it is
+  // least often shown for. An administrator whose privilege was revoked while the
+  // page was open read that they were a guest, which they were not (HIL-779).
+  403: {
+    title: 'Forbidden',
+    description: 'You do not have access to this page.',
+  },
   404: {
     title: 'Page Not Found',
     description: 'The page you are looking for does not exist.',
