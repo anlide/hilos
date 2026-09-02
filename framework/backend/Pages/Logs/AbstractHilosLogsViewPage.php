@@ -6,21 +6,30 @@ namespace Hilos\Pages\Logs;
 
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageReach;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Hilos;
+use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
 use Hilos\Log\DTO\LogsFollowStopSignalData;
 use Hilos\Log\DTO\LogsReadLinesSignalData;
 use Hilos\Log\LogStoreAgent;
+use Hilos\Pages\Logs\DTO\HilosLogsViewCatalogSignalData;
 use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
 use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
@@ -41,6 +50,12 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
  * itself. All the page keeps of it is which node each connection is following, because that is the
  * one thing the owner cannot be asked for later - a viewer that switches nodes, or leaves without
  * a word, must release the reader it left behind.
+ *
+ * What the page DOES answer for is the catalog of readable sources (HIL-388): which nodes, batches
+ * and streams exist to choose between. It is a projection of {@see ClusterLogIndexMirror}, sent on
+ * subscribe and again on the agent's tick whenever it changes, and every connection that subscribes
+ * is also counted as a viewer of the SECTION - without that the aggregator sends nothing, the
+ * mirror stays empty, and the three selects would be empty forever rather than merely new.
  */
 abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
 {
@@ -58,6 +73,9 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
         HilosSignalConstants::LOGS_FOLLOW_STOP => LogsFollowStopActionDTO::class,
     ];
 
+    /** Seconds between two tick refreshes, so a busy agent does not rebuild the catalog per loop pass. */
+    private const float REFRESH_THROTTLE_SECONDS = 0.1;
+
     /**
      * @var array<string, string> Accept key → id of the node whose owner is following for it
      *
@@ -68,6 +86,72 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
      * to any one dispatch of the page.
      */
     private static array $followNodeByAcceptKey = [];
+
+    /** @var array<string, true> WebSocket accept keys currently subscribed to this page */
+    private static array $subscribers = [];
+
+    /** @var ?float Wall clock ({@see microtime()}) of the last tick refresh, null before the first */
+    private static ?float $lastRefreshAt = null;
+
+    /** @var string Fingerprint of the catalog last sent, so an unchanged one is not re-sent */
+    private static string $lastCatalogFingerprint = '';
+
+    /**
+     * Removes a connection from the subscriber set and stops counting it as a viewer.
+     *
+     * Called from {@see AbstractHilosLogsAgent::onSignalConnectionClose()}, which is the path a
+     * connection that went without a word arrives by - so the section's viewer count is dropped
+     * here too, and not only on the orderly unsubscribe. Left counted, such a viewer would keep the
+     * aggregator sending frames for a page nobody has open.
+     *
+     * The follow is NOT released here: that removal is addressed to another node and travels as a
+     * frame, which {@see self::onUnsubscribe()} is the place for. This one only forgets.
+     *
+     * @param string $acceptKey Target connection accept key
+     */
+    public static function removeSubscriber(string $acceptKey): void
+    {
+        unset(self::$subscribers[$acceptKey]);
+        ClusterLogIndexMirror::removeViewer($acceptKey);
+    }
+
+    /**
+     * Worker tick hook for the Hilos logs agent: throttled change check, then a push on change.
+     *
+     * The catalog is re-sent whole rather than patched. It is projected from the mirror, which is
+     * neither the database nor runtime state and raises no change event, so there is nothing a
+     * delta could be built from; and it is small - names, timestamps and flags - where the lines it
+     * describes are not.
+     *
+     * @param PageAgentInterface $agent Hilos logs agent, for {@see PageAgentInterface::getAgentSignalSource()}
+     * @throws InvalidArgumentException When the catalog signal cannot be named
+     */
+    public static function onAgentTick(PageAgentInterface $agent): void
+    {
+        if (self::$subscribers === []) {
+            return;
+        }
+
+        $now = microtime(true);
+        if (self::$lastRefreshAt !== null && ($now - self::$lastRefreshAt) < self::REFRESH_THROTTLE_SECONDS) {
+            return;
+        }
+        self::$lastRefreshAt = $now;
+
+        $catalog = self::buildCatalog();
+        // Serialized rather than JSON-encoded: the value is only ever compared with the previous
+        // one, and serializing an array of scalars cannot fail - so the tick keeps the exception
+        // contract its caller has ({@see AbstractHilosLogsAgent::onTick()}, HilosException only).
+        $fingerprint = serialize($catalog->toArray());
+        if ($fingerprint === self::$lastCatalogFingerprint) {
+            return;
+        }
+
+        self::$lastCatalogFingerprint = $fingerprint;
+        foreach (array_keys(self::$subscribers) as $acceptKey) {
+            self::queueCatalogToUser($agent, $acceptKey, $catalog);
+        }
+    }
 
     /**
      * Forwards one read or one follow to the node that owns the file.
@@ -119,7 +203,8 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
     }
 
     /**
-     * Releases the follow of a connection that left the page or lost its socket.
+     * Releases the follow of a connection that left the page or lost its socket, and drops it from
+     * the subscriber set.
      *
      * The framework delivers this on an explicit unsubscribe AND on the socket closing
      * ({@see WorkerManager::dispatchPageUnsubscribeIfTrackedOnConnectionClose()}), so a closed tab
@@ -132,6 +217,78 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
     public function onUnsubscribe(string $acceptKey): void
     {
         $this->stopFollow($acceptKey);
+        self::removeSubscriber($acceptKey);
+    }
+
+    /**
+     * Sends the catalog of readable sources over the WebSocket, ahead of the page_response frame.
+     *
+     * The catalog rides a signal of its own and must reach the client before the frame that
+     * releases the page, because that frame means the subscription is answered in full.
+     *
+     * The fingerprint is deliberately NOT moved here. It says what the last BROADCAST carried, and
+     * it is one value for the whole process: a newcomer marking the current catalog as already sent
+     * would cancel the push the throttled tick still owes everybody who was here before them.
+     *
+     * @param string $acceptKey Target connection accept key
+     * @param PageRouteParams $params Route parameters; what to read is named by the action, not by
+     *     the address, so the page ignores them
+     * @throws InvalidArgumentException When the catalog signal cannot be named
+     */
+    protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
+    {
+        $this->sendToUser(
+            HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_VIEW,
+            $acceptKey,
+            self::buildCatalog(),
+        );
+    }
+
+    /**
+     * Registers the connection for the live pushes, and counts it as a viewer of the section.
+     *
+     * Both run after the answer so a subscription that was refused leaves neither a subscriber nor
+     * a viewer behind: a viewer counted for a page nobody was given would keep the aggregator
+     * sending frames for as long as that socket lived.
+     *
+     * @param string $acceptKey Target connection accept key
+     * @param PageRouteParams $params Route parameters (unused for this page)
+     */
+    protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
+    {
+        self::$subscribers[$acceptKey] = true;
+        ClusterLogIndexMirror::addViewer($acceptKey);
+    }
+
+    /**
+     * Builds the catalog out of the cluster picture the mirror holds.
+     *
+     * @return HilosLogsViewCatalogSignalData Catalog payload
+     */
+    private static function buildCatalog(): HilosLogsViewCatalogSignalData
+    {
+        return HilosLogsViewCatalogSignalData::fromIndex(ClusterLogIndexMirror::index());
+    }
+
+    /**
+     * Queues a user-targeted WebSocket signal carrying the catalog.
+     *
+     * @param PageAgentInterface $agent Logs agent providing {@see PageAgentInterface::getAgentSignalSource()}
+     * @param string $acceptKey Connection accept key
+     * @param HilosLogsViewCatalogSignalData $catalog Payload
+     * @throws InvalidArgumentException When the catalog signal cannot be named
+     */
+    private static function queueCatalogToUser(
+        PageAgentInterface $agent,
+        string $acceptKey,
+        HilosLogsViewCatalogSignalData $catalog,
+    ): void {
+        Hilos::$sr?->queueSignal(
+            signalSource: $agent->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_VIEW),
+            signalData: new WebSocketSignalData(data: $catalog, targetAcceptKey: $acceptKey),
+        );
     }
 
     /**

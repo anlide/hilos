@@ -5,12 +5,12 @@
 // its own content. A project spreads this map into its app page map, then
 // overrides only the keys it implements itself.
 //
-// The users / user / settings / backup, communications hub / channel and log
-// rotations pages are intentionally absent: they are real framework pages
-// (HilosUsersPage / HilosUserPage / HilosSettingsPage / HilosBackupPage /
+// The users / user / settings / backup, communications hub / channel and the two
+// log pages that read live data are intentionally absent: they are real framework
+// pages (HilosUsersPage / HilosUserPage / HilosSettingsPage / HilosBackupPage /
 // HilosCommunicationsPage / HilosCommunicationsChannelPage /
-// HilosLogsRotationsPage) that require a project-supplied context, so a project
-// mounts them directly rather than through this default map.
+// HilosLogsRotationsPage / HilosLogsViewPage) that require a project-supplied
+// context, so a project mounts them directly rather than through this default map.
 //
 // This is the sanctioned registry form, not a God-map (page-module-structure.md):
 // every page is its own module file, the catalog of identity stays in @hilos/core
@@ -60,7 +60,6 @@ import HilosDaemonHttpServerPage from './daemon/HilosDaemonHttpServerPage.vue'
 import HilosLogsPage from './logs/HilosLogsPage.vue'
 import HilosLogsKeysPage from './logs/HilosLogsKeysPage.vue'
 import HilosLogsWorkersPage from './logs/HilosLogsWorkersPage.vue'
-import HilosLogsViewPage from './logs/HilosLogsViewPage.vue'
 import HilosChangeLogPage from './changeLog/HilosChangeLogPage.vue'
 import HilosChangeLogTablesPage from './changeLog/HilosChangeLogTablesPage.vue'
 import HilosChangeLogTablePage from './changeLog/HilosChangeLogTablePage.vue'
@@ -126,10 +125,11 @@ export function hilosAdminViews(): Record<string, Component> {
     [HilosPages.LOGS]: HilosLogsPage,
     [HilosPages.LOGS_KEYS]: HilosLogsKeysPage,
     [HilosPages.LOGS_WORKERS]: HilosLogsWorkersPage,
-    // LOGS_ROTATIONS is absent for the same reason as the deliveries journal: the
-    // rotation history reads a live connection for its table and its header, so a
-    // project mounts HilosLogsRotationsPage directly with its own context.
-    [HilosPages.LOGS_VIEW]: HilosLogsViewPage,
+    // LOGS_ROTATIONS and LOGS_VIEW are absent for the same reason as the
+    // deliveries journal: the rotation history reads a live connection for its
+    // table and its header, and the viewer reads one for its catalog and one
+    // action for its lines, so a project mounts HilosLogsRotationsPage and
+    // HilosLogsViewPage directly with its own context.
     [HilosPages.CHANGE_LOG]: HilosChangeLogPage,
     [HilosPages.CHANGE_LOG_TABLES]: HilosChangeLogTablesPage,
     [HilosPages.CHANGE_LOG_TABLE]: HilosChangeLogTablePage,

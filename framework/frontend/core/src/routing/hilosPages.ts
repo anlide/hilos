@@ -186,7 +186,10 @@ export const HILOS_ROUTE_DECLARATIONS: Record<string, HilosRouteDeclaration> = {
   [HilosPages.LOGS_KEYS]: { path: '/hilos/logs/keys', admin: true },
   [HilosPages.LOGS_WORKERS]: { path: '/hilos/logs/workers', admin: true },
   [HilosPages.LOGS_ROTATIONS]: { path: '/hilos/logs/rotations', admin: true },
-  [HilosPages.LOGS_VIEW]: { path: '/hilos/logs/view', admin: true },
+  [HilosPages.LOGS_VIEW]: {
+    path: '/hilos/logs/view/{nodeId?}/{source?}/{stream?}',
+    admin: true,
+  },
   [HilosPages.USERS]: { path: '/hilos/users', admin: true },
   [HilosPages.USER]: { path: '/hilos/user/{userId}', admin: true },
   [HilosPages.MCP_SKILLS]: { path: '/hilos/mcp-skills', admin: true },

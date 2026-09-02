@@ -29,17 +29,32 @@ export interface HilosAdminChild extends HilosCrumb {
   lead: string
 }
 
-/** The `{param}` tokens a route template captures, in order of appearance. */
-function routeParamNames(page: string): string[] {
+/** A route-template slot: `{name}` required, `{name?}` one the path may omit. */
+const ROUTE_SLOT_PATTERN = /\{(\w+)(\??)}/g
+
+/** An optional `{name?}` slot together with the slash that precedes it. */
+const OPTIONAL_ROUTE_SLOT_PATTERN = /\/\{(\w+)\?}/g
+
+/**
+ * The required `{param}` tokens a route template captures, in order of
+ * appearance. An optional `{param?}` token is not one of them: the path is a
+ * valid address without it.
+ */
+function requiredRouteParamNames(page: string): string[] {
   const template = HILOS_PAGE_ROUTES[page] ?? ''
-  return [...template.matchAll(/\{(\w+)}/g)].map((match) => match[1])
+  return [...template.matchAll(ROUTE_SLOT_PATTERN)]
+    .filter((match) => match[2] === '')
+    .map((match) => match[1])
 }
 
 /**
  * Resolve a Hilos page's cold-load path, substituting each `{param}` from the
- * given route params. A token with no matching param resolves to the empty
- * string; callers that build links (the breadcrumb, the children) only do so for
- * pages whose params are fully covered, so a half-filled path is never emitted.
+ * given route params. An unfilled `{param?}` token is cut together with the
+ * slash in front of it, so a page entered with none of its optional tail
+ * resolves to the bare path rather than to one with empty segments. A required
+ * token with no matching param resolves to the empty string; callers that build
+ * links (the breadcrumb, the children) only do so for pages whose required
+ * params are covered, so a half-filled path is never emitted.
  *
  * @param page The Hilos page key to resolve.
  * @param params The route params to substitute, defaulting to none.
@@ -50,15 +65,21 @@ export function resolveHilosPath(
 ): string {
   const template =
     HILOS_PAGE_ROUTES[page] ?? HILOS_PAGE_ROUTES[HilosPages.DASHBOARD]
-  return template.replace(
-    /\{(\w+)}/g,
-    (_match, name: string) => params[name] ?? '',
-  )
+  return template
+    .replace(OPTIONAL_ROUTE_SLOT_PATTERN, (_match, name: string) => {
+      const value = params[name]
+      return value === undefined ? '' : `/${value}`
+    })
+    .replace(ROUTE_SLOT_PATTERN, (_match, name: string) => params[name] ?? '')
 }
 
-/** Whether every `{param}` a page's route needs is present in `params`. */
+/**
+ * Whether every `{param}` a page's route needs is present in `params`. An
+ * optional `{param?}` slot counts as covered always — a page reachable without
+ * it belongs in the section tree even when nothing has been chosen yet.
+ */
 function isResolvable(page: string, params: Record<string, string>): boolean {
-  return routeParamNames(page).every((name) => name in params)
+  return requiredRouteParamNames(page).every((name) => name in params)
 }
 
 /**

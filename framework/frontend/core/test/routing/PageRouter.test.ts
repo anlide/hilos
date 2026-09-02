@@ -51,6 +51,92 @@ describe('createPageRouter', () => {
     })
   })
 
+  it('matches an optional tail both empty and full', () => {
+    const router = createPageRouter(
+      {
+        viewer: {
+          path: '/hilos/logs/view/{nodeId?}/{source?}/{stream?}',
+          admin: true,
+        },
+      },
+      { fallback: 'main' },
+    )
+    expect(router.match('/hilos/logs/view')).toEqual({
+      page: 'viewer',
+      params: {},
+      admin: true,
+    })
+    expect(router.match('/hilos/logs/view/node-2/live/worker-0.log')).toEqual({
+      page: 'viewer',
+      params: { nodeId: 'node-2', source: 'live', stream: 'worker-0.log' },
+      admin: true,
+    })
+  })
+
+  it('leaves an unfilled optional slot out of params entirely', () => {
+    const router = createPageRouter(
+      {
+        viewer: {
+          path: '/hilos/logs/view/{nodeId?}/{source?}/{stream?}',
+          admin: true,
+        },
+      },
+      { fallback: 'main' },
+    )
+    const { params } = router.match('/hilos/logs/view/node-2')
+
+    // Absent, not present and empty: the page reads a slot nobody chose as
+    // unchosen, and the backend's route params see it missing.
+    expect(params).toEqual({ nodeId: 'node-2' })
+    expect('source' in params).toBe(false)
+  })
+
+  it('does not let an optional tail leave a trailing slash matchable', () => {
+    const router = createPageRouter(
+      {
+        viewer: {
+          path: '/hilos/logs/view/{nodeId?}/{source?}/{stream?}',
+          admin: true,
+        },
+      },
+      { fallback: 'main' },
+    )
+    expect(router.match('/hilos/logs/view/')).toEqual({
+      page: 'main',
+      params: {},
+      admin: false,
+    })
+    expect(router.match('/hilos/logs/view/a/b/c/d')).toEqual({
+      page: 'main',
+      params: {},
+      admin: false,
+    })
+  })
+
+  it('keeps a required slot required alongside an optional one', () => {
+    const router = createPageRouter(
+      {
+        item: { path: '/shelf/{shelfId}/item/{itemId?}', admin: false },
+      },
+      { fallback: 'main' },
+    )
+    expect(router.match('/shelf/7/item')).toEqual({
+      page: 'item',
+      params: { shelfId: '7' },
+      admin: false,
+    })
+    expect(router.match('/shelf/7/item/19')).toEqual({
+      page: 'item',
+      params: { shelfId: '7', itemId: '19' },
+      admin: false,
+    })
+    expect(router.match('/shelf/item/19')).toEqual({
+      page: 'main',
+      params: {},
+      admin: false,
+    })
+  })
+
   it('falls back when no template matches', () => {
     const router = createPageRouter(
       { user: { path: '/user/{id}', admin: false } },

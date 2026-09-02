@@ -18,16 +18,38 @@ const router = createPageRouter(
   { fallback: 'main' },
 )
 
+// A router carrying a page whose own route params name what it shows — the
+// shape replacePath exists for.
+const viewerRouter = createPageRouter(
+  {
+    main: { path: '/', admin: false },
+    dash: { path: '/hilos', admin: true },
+    viewer: {
+      path: '/hilos/logs/view/{nodeId?}/{source?}/{stream?}',
+      admin: true,
+    },
+  },
+  { fallback: 'main' },
+)
+
 // A fake browser binding: an in-memory pathname plus a single popstate
-// listener, so the navigator is exercised with no DOM.
+// listener, so the navigator is exercised with no DOM. Pushes and replaces are
+// counted apart, because rewriting the address must not grow the history.
 function fakeEnvironment(initial: string) {
   let pathname = initial
   let popListener: (() => void) | null = null
+  let pushed = 0
+  let replaced = 0
 
   const env: NavigationEnvironment = {
     pathname: () => pathname,
     pushState: (next) => {
       pathname = next
+      pushed += 1
+    },
+    replaceState: (next) => {
+      pathname = next
+      replaced += 1
     },
     onPopState: (listener) => {
       popListener = listener
@@ -46,6 +68,8 @@ function fakeEnvironment(initial: string) {
       popListener?.()
     },
     isPopAttached: () => popListener !== null,
+    pushCount: () => pushed,
+    replaceCount: () => replaced,
   }
 }
 
@@ -147,6 +171,45 @@ describe('createHilosRouter', () => {
       admin: false,
     })
     expect(calls.at(-1)).toEqual({ page: 'user', params: { id: '42' } })
+  })
+
+  it('rewrites the address without re-subscribing the page', () => {
+    const { env, replaceCount, pushCount } = fakeEnvironment('/hilos')
+    const { pages, calls } = fakePages()
+    const navigator = createHilosRouter(viewerRouter, pages, env)
+    navigator.start()
+    const subscribesBefore = calls.length
+
+    navigator.replacePath('/hilos/logs/view/node-2/live/worker-0.log')
+
+    expect(env.pathname()).toBe('/hilos/logs/view/node-2/live/worker-0.log')
+    expect(navigator.currentPath.get()).toBe(
+      '/hilos/logs/view/node-2/live/worker-0.log',
+    )
+    expect(navigator.currentRoute.get()).toEqual({
+      page: 'viewer',
+      params: { nodeId: 'node-2', source: 'live', stream: 'worker-0.log' },
+      admin: true,
+    })
+    // Another file of the same page is not another page: the subscription that
+    // delivered the catalog stays, and the history does not grow an entry per
+    // select.
+    expect(calls.length).toBe(subscribesBefore)
+    expect(replaceCount()).toBe(1)
+    expect(pushCount()).toBe(0)
+  })
+
+  it('keeps navigate pushing history and re-subscribing', () => {
+    const { env, replaceCount, pushCount } = fakeEnvironment('/hilos')
+    const { pages, calls } = fakePages()
+    const navigator = createHilosRouter(viewerRouter, pages, env)
+    navigator.start()
+
+    navigator.navigate('/hilos/logs/view')
+
+    expect(calls.at(-1)).toEqual({ page: 'viewer', params: {} })
+    expect(pushCount()).toBe(1)
+    expect(replaceCount()).toBe(0)
   })
 
   it('re-applies the route on back/forward navigation', () => {

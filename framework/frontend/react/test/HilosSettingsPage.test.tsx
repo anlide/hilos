@@ -25,6 +25,7 @@ function router(): HilosRouter {
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
     navigate: () => {},
+    replacePath: () => {},
     start: () => {},
     stop: () => {},
   }

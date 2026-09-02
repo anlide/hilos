@@ -1,19 +1,30 @@
-// The chat's HilosLogRotationsContext: binds the framework Hilos rotation-history
-// page (@hilos/vue HilosLogsRotationsPage) to this project's connection and scope
-// stores. The framework owns the history table, its view-model, the header and the
-// wording; the project supplies only where the data lives — and, on its backend,
-// the registration of the hilosLogRotations table against the rotations page.
+// The chat's contexts for the two framework Hilos log pages that read live data:
+// the rotation history (@hilos/vue HilosLogsRotationsPage) and the log viewer
+// (HilosLogsViewPage). The framework owns the tables, the view-models, the
+// catalog and the wording; the project supplies only where the data lives — and,
+// on its backend, the registration of the hilosLogRotations table against the
+// rotations page.
 //
-// No action lifecycle here, unlike the communications context: this screen has no
-// action at all. Deciding what to do with a batch the rule recommends carrying off
-// is HIL-483.
-import { type HilosLogRotationsContext } from '@hilos/core'
+// Two contexts and not one, because the two screens need different things: the
+// history reads a windowed table and therefore the scope stores, while the viewer
+// reads one file through a tracked action and therefore the action lifecycle.
+// Deciding what to do with a batch the rule recommends carrying off is HIL-483.
+import {
+  type HilosLogRotationsContext,
+  type HilosLogViewerContext,
+} from '@hilos/core'
 
-import { connection } from '../../../bootstrap/connection'
+import { actions, connection } from '../../../bootstrap/connection'
 import { scopes } from '../../../bootstrap/session'
 
-/** This project's context for the framework log pages. */
+/** This project's context for the framework rotation-history page. */
 export const hilosLogsContext: HilosLogRotationsContext = {
   connection,
   scopes,
+}
+
+/** This project's context for the framework log viewer. */
+export const hilosLogViewerContext: HilosLogViewerContext = {
+  connection,
+  actions,
 }

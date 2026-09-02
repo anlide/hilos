@@ -57,6 +57,7 @@ function routerWith(pageError: PageSubscriptionError | null): HilosRouter {
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
     navigate: () => {},
+    replacePath: () => {},
     start: () => {},
     stop: () => {},
   }

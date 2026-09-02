@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import {
+  hilosAdminBreadcrumb,
+  hilosAdminChildren,
+  resolveHilosPath,
+} from '../../src/routing/hilosAdmin.js'
 import { createPageRouter } from '../../src/routing/PageRouter.js'
 import {
   HilosPages,
@@ -83,5 +88,67 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       params: { providerId: 'stripe' },
       admin: true,
     })
+  })
+})
+
+describe('the log viewer route', () => {
+  it('resolves to the bare path when nothing is chosen yet', () => {
+    // Entered from the section tree, the viewer names no file: the unfilled
+    // tail is cut together with its slashes rather than left as empty segments.
+    expect(resolveHilosPath(HilosPages.LOGS_VIEW)).toBe('/hilos/logs/view')
+  })
+
+  it('resolves to the file it is showing once one is chosen', () => {
+    expect(
+      resolveHilosPath(HilosPages.LOGS_VIEW, {
+        nodeId: '-',
+        source: 'live',
+        stream: 'worker-0.log',
+      }),
+    ).toBe('/hilos/logs/view/-/live/worker-0.log')
+  })
+
+  it('keeps the address whole when only part of the tail is known', () => {
+    // A half-filled address would open the wrong file: the slots are
+    // positional, and a skipped node would slide the source into its place.
+    expect(resolveHilosPath(HilosPages.LOGS_VIEW, { source: 'live' })).toBe(
+      '/hilos/logs/view/live',
+    )
+  })
+
+  it('stays in the section tree and in the breadcrumb with no file chosen', () => {
+    const children = hilosAdminChildren(HilosPages.LOGS)
+
+    expect(children.map((child) => child.page)).toContain(HilosPages.LOGS_VIEW)
+    expect(
+      children.find((child) => child.page === HilosPages.LOGS_VIEW)?.to,
+    ).toBe('/hilos/logs/view')
+    expect(hilosAdminBreadcrumb(HilosPages.LOGS_VIEW).at(-1)?.to).toBe(
+      '/hilos/logs/view',
+    )
+  })
+
+  it('routes both its bare and its full address to the viewer page', () => {
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
+      fallback: HilosPages.DASHBOARD,
+    })
+    expect(router.match('/hilos/logs/view')).toEqual({
+      page: HilosPages.LOGS_VIEW,
+      params: {},
+      admin: true,
+    })
+    expect(router.match('/hilos/logs/view/-/1756166400/worker-0.log')).toEqual({
+      page: HilosPages.LOGS_VIEW,
+      params: {
+        nodeId: '-',
+        source: '1756166400',
+        stream: 'worker-0.log',
+      },
+      admin: true,
+    })
+    // The neighbouring log pages are static rows and keep winning their paths.
+    expect(router.match('/hilos/logs/rotations').page).toBe(
+      HilosPages.LOGS_ROTATIONS,
+    )
   })
 })

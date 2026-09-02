@@ -48,6 +48,11 @@ export interface NavigationEnvironment {
   /** Push a history entry for `pathname` without reloading the document. */
   pushState(pathname: string): void
   /**
+   * Replace the current history entry with `pathname`, without reloading the
+   * document and without adding an entry to go back through.
+   */
+  replaceState(pathname: string): void
+  /**
    * Subscribe to back/forward navigations (the popstate event).
    *
    * @param listener Called when the user moves through history.
@@ -116,6 +121,18 @@ export interface HilosRouter {
    * @param pathname The target location pathname.
    */
   navigate(pathname: string): void
+  /**
+   * Rewrite the current address to `pathname` — replace the history entry and
+   * swap the route and path signals — WITHOUT re-subscribing the page. It is
+   * for a page whose own route params name what it is showing (the log viewer's
+   * node, source and stream): choosing another file is a different address of
+   * the same page, and re-subscribing would drop everything the subscription
+   * had already delivered. Use {@link HilosRouter.navigate} to go to another
+   * page.
+   *
+   * @param pathname The address to rewrite the current one to.
+   */
+  replacePath(pathname: string): void
   /** Apply the current location and begin tracking history. */
   start(): void
   /** Stop tracking history. */
@@ -153,12 +170,19 @@ export function createHilosRouter(
   )
   let detachPopState: Unsubscribe | null = null
 
-  // Resolve a pathname, publish it as the current route and path, and
-  // re-subscribe its page — shared by start, navigate, and the popstate listener.
-  const apply = (pathname: string): void => {
+  // Resolve a pathname and publish it as the current route and path, leaving the
+  // page subscription alone — shared by apply and replacePath.
+  const publish = (pathname: string): PageRouteMatch => {
     const match = router.match(pathname)
     currentRoute.set(match)
     currentPath.set(pathname)
+    return match
+  }
+
+  // Publish a pathname and re-subscribe its page — shared by start, navigate,
+  // and the popstate listener.
+  const apply = (pathname: string): void => {
+    const match = publish(pathname)
     pages.subscribe(match.page, match.params)
   }
 
@@ -175,6 +199,10 @@ export function createHilosRouter(
       env.pushState(pathname)
       apply(pathname)
     },
+    replacePath: (pathname) => {
+      env.replaceState(pathname)
+      publish(pathname)
+    },
     start: () => {
       apply(env.pathname())
       detachPopState = env.onPopState(() => apply(env.pathname()))
@@ -188,14 +216,18 @@ export function createHilosRouter(
 
 /**
  * The default {@link NavigationEnvironment}, bound to the browser `window`:
- * `history.pushState` for in-place navigation and the `popstate` event for
- * back/forward. A project passes this when creating the navigator.
+ * `history.pushState` for in-place navigation, `history.replaceState` for
+ * rewriting the current address, and the `popstate` event for back/forward. A
+ * project passes this when creating the navigator.
  */
 export function browserNavigationEnvironment(): NavigationEnvironment {
   return {
     pathname: () => window.location.pathname,
     pushState: (pathname) => {
       window.history.pushState(null, '', pathname)
+    },
+    replaceState: (pathname) => {
+      window.history.replaceState(null, '', pathname)
     },
     onPopState: (listener) => {
       window.addEventListener('popstate', listener)

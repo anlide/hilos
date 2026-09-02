@@ -54,6 +54,7 @@ function fakeNavigation(pathname: string): NavigationEnvironment {
   return {
     pathname: () => pathname,
     pushState: () => {},
+    replaceState: () => {},
     onPopState: () => () => {},
   }
 }

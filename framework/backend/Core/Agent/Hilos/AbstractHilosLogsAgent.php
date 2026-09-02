@@ -19,6 +19,7 @@ use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Pages\Logs\AbstractHilosLogsPage;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
+use Hilos\Pages\Logs\AbstractHilosLogsViewPage;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 
@@ -110,6 +111,7 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
         $this->watchIfDue(microtime(true));
         AbstractHilosLogsPage::onAgentTick($this);
         AbstractHilosLogsRotationsPage::onAgentTick($this);
+        AbstractHilosLogsViewPage::onAgentTick($this);
     }
 
     /**
@@ -169,6 +171,7 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
     {
         AbstractHilosLogsPage::removeSubscriber($data->acceptKey);
         AbstractHilosLogsRotationsPage::removeSubscriber($data->acceptKey);
+        AbstractHilosLogsViewPage::removeSubscriber($data->acceptKey);
     }
 
     /**

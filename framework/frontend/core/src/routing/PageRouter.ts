@@ -12,7 +12,10 @@
  * defect that hides rather than shows itself.
  */
 export interface HilosRouteDeclaration {
-  /** URL path template; `{name}` marks a route param captured at match time. */
+  /**
+   * URL path template; `{name}` marks a route param captured at match time, and
+   * `{name?}` marks one the path may end without.
+   */
   path: string
   /**
    * Whether the route names an administrative surface. It states the surface
@@ -37,8 +40,10 @@ export interface PageRouter {
   /**
    * Resolve the page key, route params, and surface type a pathname names. A
    * static template matches whole; a templated one captures its `{name}`
-   * segments into params. An unmatched path resolves to the configured fallback
-   * page with no params, carrying that page's own declared surface type.
+   * segments into params, and leaves a `{name?}` segment the path stopped short
+   * of out of params entirely. An unmatched path resolves to the configured
+   * fallback page with no params, carrying that page's own declared surface
+   * type.
    *
    * @param pathname The location pathname to resolve.
    */
@@ -65,6 +70,9 @@ interface CompiledRoute {
   paramNames: string[]
 }
 
+/** A template segment that is a route param: `{name}`, or `{name?}` optional. */
+const SEGMENT_PARAM_PATTERN = /^\{(\w+)(\??)}$/
+
 /** Escape a literal path segment so its characters carry no regex meaning. */
 function escapeSegment(segment: string): string {
   return segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -78,7 +86,8 @@ function escapeSegment(segment: string): string {
  * same depth. The declared `admin` flag is carried onto the match, never
  * interpreted here — the engine routes, the surface decides what the type means.
  *
- * @param routes Page key to its route declaration; `{name}` marks a route param.
+ * @param routes Page key to its route declaration; `{name}` marks a route param
+ *   and `{name?}` one the path may end without.
  * @param options Router options, including the fallback page for no match.
  */
 export function createPageRouter(
@@ -95,17 +104,21 @@ export function createPageRouter(
       continue
     }
     const paramNames: string[] = []
-    const pattern = path
-      .split('/')
-      .map((segment) => {
-        const param = segment.match(/^\{([^}]+)}$/)
-        if (param !== null) {
-          paramNames.push(param[1])
-          return '([^/]+)'
-        }
-        return escapeSegment(segment)
-      })
-      .join('/')
+    // The separator is emitted per segment rather than by joining, because an
+    // optional slot has to swallow the slash in front of it: the whole `/value`
+    // is what the path may end without, and a slash left outside the group
+    // would demand a trailing one.
+    let pattern = ''
+    path.split('/').forEach((segment, index) => {
+      const separator = index === 0 ? '' : '/'
+      const param = segment.match(SEGMENT_PARAM_PATTERN)
+      if (param === null) {
+        pattern += separator + escapeSegment(segment)
+        return
+      }
+      paramNames.push(param[1])
+      pattern += param[2] === '?' ? '(?:/([^/]+))?' : `${separator}([^/]+)`
+    })
     paramRoutes.push({
       page,
       admin,
@@ -131,7 +144,13 @@ export function createPageRouter(
         }
         const params: Record<string, string> = {}
         route.paramNames.forEach((name, index) => {
-          params[name] = captured[index + 1]
+          // An optional slot the path stopped short of captures nothing, and is
+          // left out of params entirely rather than added as an empty string —
+          // the page reads it as absent, not as present and blank.
+          const value = captured[index + 1]
+          if (value !== undefined) {
+            params[name] = value
+          }
         })
         return { page: route.page, params, admin: route.admin }
       }

@@ -66,6 +66,7 @@ import HilosCommunications from './views/Hilos/Communications/Communications.vue
 import HilosCommunicationsChannel from './views/Hilos/Communications/Channel.vue'
 import HilosCommunicationsDeliveries from './views/Hilos/Communications/Deliveries.vue'
 import HilosLogsRotations from './views/Hilos/Logs/Rotations.vue'
+import HilosLogsView from './views/Hilos/Logs/View.vue'
 
 // The auth gate is created in bootstrap (it needs the navigator, the current
 // user, and the connection) and passed in as a root prop; App wires it and the
@@ -100,6 +101,7 @@ const pages: Record<string, Component> = {
   [HilosPages.COMMUNICATIONS_CHANNEL]: HilosCommunicationsChannel,
   [HilosPages.COMMUNICATIONS_DELIVERIES]: HilosCommunicationsDeliveries,
   [HilosPages.LOGS_ROTATIONS]: HilosLogsRotations,
+  [HilosPages.LOGS_VIEW]: HilosLogsView,
 }
 
 // The magic-link confirm route (HIL-283) and the OAuth callback route (HIL-281).
