@@ -199,7 +199,7 @@ container to avoid the env_file chicken-and-egg), `install-deps`,
 `db:seed:apply`, `db:schema:status`, `pma`, `frontend:*`, and the test lane:
 `test:up/down/down-volumes/db-wait/db-reset/unit/phpunit/install-deps`,
 `test:check`, `test:e2e-build/install/check/up/(run)/down/full`.
-`test:e2e-up` = mysql up → `db:wait` → `db:test:reset` → daemon + nginx up.
+`test:e2e-up` = mysql up → `db:wait` → `test:db:reset` → daemon + nginx up.
 Always `docker compose` (not the legacy `docker-compose`), and
 `config.process-timeout: 0` (image pulls outlive composer's 300s default).
 

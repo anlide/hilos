@@ -7,13 +7,13 @@ namespace Hilos\Tests\Unit\Notification;
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
-use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -52,16 +52,17 @@ final class NotificationTestEmitCommandRouteTest extends TestCase
 
     /**
      * The environment refusal itself moved to the socket (HIL-566), so what has to be pinned
-     * here is the DECLARATION that puts it there: drop the flag and the emit becomes reachable
-     * on a production node, and no test of this handler would notice, because the handler is
-     * exactly where the check stopped being written.
+     * here is the DECLARATION that puts it there: rename the emit without the prefix and it
+     * becomes reachable on a production node, and no test of this handler would notice, because
+     * the handler is exactly where the check stopped being written.
      */
     public function testTheEmitRouteDeclaresItselfTestOnly(): void
     {
-        self::assertSame(
-            [AgentCommandConfigKey::TEST_ONLY => true],
-            AbstractNotificationsLibraryAgent::AGENT_COMMANDS[CliCommands::NOTIFICATION_TEST_EMIT] ?? null,
+        self::assertContains(
+            CliCommands::NOTIFICATION_TEST_EMIT,
+            AbstractNotificationsLibraryAgent::AGENT_COMMANDS,
         );
+        self::assertTrue(TestOnlyCommandRegistry::isTestOnly(CliCommands::NOTIFICATION_TEST_EMIT));
     }
 
     public function testAnswersAnUnownedCommandWithAnError(): void

@@ -98,6 +98,19 @@ any more, so there is nothing project-side left to watch. An exception that outl
 plan silently is the one failure mode a written-down reason exists to prevent, so the
 naming rule stays for the next temporary one.
 
+`TestOnlyNameContractTest` (framework) stands beside it and reads the same registry through
+`CliManager::commandClasses()`, for the other rule a command declares about itself: a
+command is test-only when it is named `test:*`, and that name has to agree with what the
+class does (HIL-742). It fails in both directions — a `test:*` name whose class does not
+refuse on a production-like environment, and a class that refuses under a name without the
+prefix. Before it there were two half guards, one over agent-owned commands and one over
+the channel family, and neither ever looked at `cli-offline-write`; both commands that lived
+in that gap were misnamed, which is how the gap was found.
+
+What neither guard covers is a wire name no registry holds — `backup:restore-request` and
+`backup:restore-status` have no terminal half at all. Those are refused where they go on the
+wire, by the latch in `AbstractCommandChannelTestCommand::sendCommand()`.
+
 ## Today's departures
 
 **`cli-read`** — `help` (the registry is already in this process), `db:wait` (polls a
@@ -107,7 +120,7 @@ the answer is wanted), `backup:verify` (hashing gigabytes must not run inside th
 monopolistic backup agent's loop).
 
 **`cli-offline-write`** — `db:migration:up` / `:down` / `:retry`, `db:seed:apply`,
-`db:test:reset`, `test:user:seed`, `verification:test:expire`, `test:session:expire`,
+`test:db:reset`, `test:user:seed`, `test:verification:expire`, `test:session:expire`,
 `test:orphan:create` / `:delete` and `test:orphan-setting:create` / `:delete`. All of them
 prepare the schema and the fixtures the daemon later boots on, from the container
 entrypoint and from `composer test:db-prepare`.

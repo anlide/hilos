@@ -6,7 +6,6 @@ namespace Hilos;
 
 use Hilos\Auth\CodeChannel\CodeChannelRegistry;
 use Hilos\Cluster\ClusterContext;
-use Hilos\Constants\CommandConstants;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Catalog\CatalogProviderInterface;
@@ -63,7 +62,6 @@ use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\View\Context\RtContext;
-use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use Hilos\Users\AdminAudience;
 
 /**
@@ -695,21 +693,6 @@ abstract class Hilos
     public static function getCommandDtoRoutes(): array
     {
         return AgentCommandRouteRegistry::dtoRoutes(static::AGENTS);
-    }
-
-    /**
-     * Returns the agent-owned commands this project declares test-only.
-     *
-     * Half of what {@see TestOnlyCommandRegistry} asks; the master's own three come from
-     * {@see CommandConstants::MASTER_TEST_ONLY_COMMANDS}. Like its neighbours it answers off
-     * `static::AGENTS`, so a bare `Hilos::` call-site reads the base facade's empty registry -
-     * framework callers resolve the project subclass through {@see appClass()} first.
-     *
-     * @return list<string> Command names flagged test-only by a registered agent
-     */
-    public static function getTestOnlyCommands(): array
-    {
-        return AgentCommandRouteRegistry::testOnlyCommands(static::AGENTS);
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Exception\CommandException;
@@ -29,7 +30,7 @@ class ConnectionTestDropCommand extends AbstractCommandChannelTestCommand
      */
     public function getName(): string
     {
-        return CommandConstants::COMMAND_CONNECTION_DROP;
+        return CliCommands::CONNECTION_TEST_DROP;
     }
 
     /**
@@ -86,7 +87,7 @@ HELP;
 
         try {
             $result = $this->sendCommand(
-                CommandConstants::COMMAND_CONNECTION_DROP,
+                CliCommands::CONNECTION_TEST_DROP,
                 [CommandConstants::FIELD_ACCEPT_KEY => $acceptKey],
             );
         } catch (EnvException $e) {
@@ -95,7 +96,7 @@ HELP;
         }
 
         if ($result->reply === null) {
-            return $this->printChannelFailure($result, CommandConstants::COMMAND_CONNECTION_DROP);
+            return $this->printChannelFailure($result, CliCommands::CONNECTION_TEST_DROP);
         }
 
         $reply = $result->reply;

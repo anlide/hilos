@@ -30,7 +30,7 @@ use Throwable;
  * One gate shapes the database connect, and the command owns it: the manager is built
  * before any connection, then answers whether the named command needs one. A command
  * marked {@see DatabaseFreeCommand} runs with the database untouched — that is what lets
- * db:wait poll a MySQL that is still down, db:test:reset create a database that does not
+ * db:wait poll a MySQL that is still down, test:db:reset create a database that does not
  * exist yet, and the cluster demo inspect a network-partitioned node that cannot reach
  * MySQL either. An unregistered name skips the connect too, so a typo answers "unknown
  * command" instead of a connection failure.

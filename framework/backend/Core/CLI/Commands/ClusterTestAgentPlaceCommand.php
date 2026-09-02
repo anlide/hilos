@@ -92,7 +92,7 @@ HELP;
         }
 
         try {
-            $result = $this->sendCommand(CommandConstants::COMMAND_CLUSTER_AGENT_PLACE, [
+            $result = $this->sendCommand(CliCommands::CLUSTER_TEST_AGENT_PLACE, [
                 CommandConstants::FIELD_AGENT_TYPE => $agentType,
                 CommandConstants::FIELD_AGENT_INDEX => $agentIndex,
             ]);
@@ -102,7 +102,7 @@ HELP;
         }
 
         if ($result->reply === null) {
-            return $this->printChannelFailure($result, CommandConstants::COMMAND_CLUSTER_AGENT_PLACE);
+            return $this->printChannelFailure($result, CliCommands::CLUSTER_TEST_AGENT_PLACE);
         }
 
         $reply = $result->reply;

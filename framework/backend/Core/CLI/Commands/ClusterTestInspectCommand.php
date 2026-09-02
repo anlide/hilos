@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
-use Hilos\Constants\CommandConstants;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Environment\Exception\EnvException;
@@ -33,7 +33,7 @@ class ClusterTestInspectCommand extends AbstractCommandChannelTestCommand implem
      */
     public function getName(): string
     {
-        return CommandConstants::COMMAND_CLUSTER_INSPECT;
+        return CliCommands::CLUSTER_TEST_INSPECT;
     }
 
     /**
@@ -80,14 +80,14 @@ HELP;
     protected function run(array $options, array $args): int
     {
         try {
-            $result = $this->sendCommand(CommandConstants::COMMAND_CLUSTER_INSPECT, []);
+            $result = $this->sendCommand(CliCommands::CLUSTER_TEST_INSPECT, []);
         } catch (EnvException $e) {
             echo "Error: {$e->getMessage()}\n";
             return ExitCode::CONFIG_ERROR;
         }
 
         if ($result->reply === null) {
-            return $this->printChannelFailure($result, CommandConstants::COMMAND_CLUSTER_INSPECT);
+            return $this->printChannelFailure($result, CliCommands::CLUSTER_TEST_INSPECT);
         }
 
         $reply = $result->reply;

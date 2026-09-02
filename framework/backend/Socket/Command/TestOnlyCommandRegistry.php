@@ -5,41 +5,31 @@ declare(strict_types=1);
 namespace Hilos\Socket\Command;
 
 use Hilos\Constants\CommandConstants;
-use Hilos\Core\Agent\Config\AgentCommandConfigKey;
+use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Environment\NonProductionGate;
-use Hilos\Hilos;
 
 /**
  * The one place that answers whether a command-channel name is test-only.
  *
- * The flag itself is declared where the command is declared, and that is deliberately two
- * places rather than one flat list: an agent-owned command carries
- * {@see AgentCommandConfigKey::TEST_ONLY} in the same AGENT_COMMANDS entry that carries its
- * route, so the two cannot drift apart, while the commands the master answers itself appear
- * in no agent registry at all and are named by
- * {@see CommandConstants::MASTER_TEST_ONLY_COMMANDS}. This class is what makes that split
- * invisible to the asker: the socket gate ({@see NonProductionGate}) has exactly one
- * question and exactly one place to ask it.
+ * The answer is the name itself: a command is test-only when it is named with the
+ * {@see CommandConstants::TEST_ONLY_PREFIX} prefix, and that is the whole declaration
+ * (HIL-742). It used to be three declarations - a flag in the owning agent's
+ * AGENT_COMMANDS entry, a list of the names the master answers itself, and the prefix -
+ * with validation sewing them together; two commands still slipped through unprefixed,
+ * because the roles nobody's stitch covered were exactly the ones nobody looked at.
  *
- * The project half is resolved through {@see Hilos::appClass()} rather than a bare
- * `Hilos::` read, which would bind to the base facade and answer with its empty registry
- * however the project declared itself.
+ * The prefix was kept and the other two dropped for the reason both holes were found the
+ * hard way: a flag is invisible to whoever reads a command name in a log line, a compose
+ * file, or a review diff, and a name is not.
+ *
+ * The class stays even though its body is now one call, because the question has to have
+ * exactly one door: the socket gate ({@see NonProductionGate}) asks here, and nobody
+ * spreads str_starts_with across the guards. Two other places answer a related question
+ * about themselves rather than about a name - {@see TestOnlyCommand} refuses in the CLI
+ * process, and the channel family's latch refuses a wire name the registry never sees.
  */
 final class TestOnlyCommandRegistry
 {
-    /**
-     * Returns every command name this installation treats as test-only.
-     *
-     * @return list<string> Command names, agent-owned first, then the master's own
-     */
-    public static function commands(): array
-    {
-        return array_values(array_unique([
-            ...Hilos::appClass()::getTestOnlyCommands(),
-            ...CommandConstants::MASTER_TEST_ONLY_COMMANDS,
-        ]));
-    }
-
     /**
      * Tells whether one command name is test-only.
      *
@@ -48,6 +38,6 @@ final class TestOnlyCommandRegistry
      */
     public static function isTestOnly(string $command): bool
     {
-        return in_array($command, self::commands(), true);
+        return str_starts_with($command, CommandConstants::TEST_ONLY_PREFIX);
     }
 }

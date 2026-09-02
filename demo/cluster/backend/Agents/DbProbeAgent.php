@@ -9,7 +9,6 @@ use Demo\Cluster\Hilos;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Core\Agent\AbstractAgent;
-use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Context\HilosDbContext;
@@ -45,17 +44,17 @@ final class DbProbeAgent extends AbstractAgent
     /**
      * The write half and the read half of the drill, both test-only.
      *
-     * Neither carries an inner DTO: the payload is two strings, and the config entry exists
-     * to hold {@see AgentCommandConfigKey::TEST_ONLY}, which is what keeps the socket from
-     * ever parking either of them on a production-like node.
+     * Neither carries an inner DTO: the payload is two strings, so both are entered under
+     * the bare name. The `test:` prefix on that name is what keeps the socket from ever
+     * parking either of them on a production-like node.
      *
      * The master answers neither, and nothing had to be done to arrange that: it has no
      * branch for a name it does not know, so both are parked and routed here - which is
      * exactly the shape wanted, because the master must not touch a database.
      */
     public const array AGENT_COMMANDS = [
-        CliCommands::CLUSTER_TEST_DB_WRITE => [AgentCommandConfigKey::TEST_ONLY => true],
-        CliCommands::CLUSTER_TEST_DB_READ => [AgentCommandConfigKey::TEST_ONLY => true],
+        CliCommands::CLUSTER_TEST_DB_WRITE,
+        CliCommands::CLUSTER_TEST_DB_READ,
     ];
 
     /**

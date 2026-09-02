@@ -89,7 +89,7 @@ HELP;
         }
 
         try {
-            $result = $this->sendCommand(CommandConstants::COMMAND_CLUSTER_CLIENT_SEND, [
+            $result = $this->sendCommand(CliCommands::CLUSTER_TEST_CLIENT_SEND, [
                 CommandConstants::FIELD_ACCEPT_KEY => $acceptKey,
                 CommandConstants::FIELD_TEXT => $text,
             ]);
@@ -99,7 +99,7 @@ HELP;
         }
 
         if ($result->reply === null) {
-            return $this->printChannelFailure($result, CommandConstants::COMMAND_CLUSTER_CLIENT_SEND);
+            return $this->printChannelFailure($result, CliCommands::CLUSTER_TEST_CLIENT_SEND);
         }
 
         $reply = $result->reply;

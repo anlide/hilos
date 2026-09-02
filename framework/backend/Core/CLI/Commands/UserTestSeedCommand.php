@@ -28,7 +28,7 @@ use Hilos\Hilos;
  * bring-up (no daemon), so it registers itself as the identities truth source (the CLI
  * has no agent), mirroring {@see OrphanTestCreateCommand}. Strictly not idempotent: a
  * pre-existing identity for a generated email surfaces as a non-zero exit rather than a
- * silent skip, so a stale database (db:test:reset did not run) is caught, not masked.
+ * silent skip, so a stale database (test:db:reset did not run) is caught, not masked.
  */
 final class UserTestSeedCommand extends TestOnlyCommand
 {
@@ -80,7 +80,7 @@ Seeds <count> fixture users, each with an unverified password identity, for e2e
 fixtures on volume. Users are named <prefix>-<index><domain> with a 1-based,
 zero-padded index, so a test knows the emails without reading stdout. The password is
 hashed once and shared by all seeded users. Strictly not idempotent: a collision on a
-generated identifier fails with a non-zero exit (a signal that db:test:reset did not
+generated identifier fails with a non-zero exit (a signal that test:db:reset did not
 run). A project that does not implement the fixture-user seam is reported with a config
 error, not a fatal.
 

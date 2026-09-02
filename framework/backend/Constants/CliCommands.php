@@ -86,10 +86,10 @@ final class CliCommands
     public const string DB_WAIT = 'db:wait';
 
     /** @var string Command: Reset test database (DROP, migrate, seed) */
-    public const string DB_TEST_RESET = 'db:test:reset';
+    public const string DB_TEST_RESET = 'test:db:reset';
 
     /** @var string Command: Expire an active auth verification challenge (test-only) */
-    public const string VERIFICATION_TEST_EXPIRE = 'verification:test:expire';
+    public const string VERIFICATION_TEST_EXPIRE = 'test:verification:expire';
 
     /** @var string Command: Age a live session's expiry into the past by its cookie token (test-only) */
     public const string SESSION_TEST_EXPIRE = 'test:session:expire';

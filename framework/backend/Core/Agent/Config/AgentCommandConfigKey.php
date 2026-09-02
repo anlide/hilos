@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Config;
 
-use Hilos\Socket\Command\TestOnlyCommandRegistry;
+use Hilos\Core\Router\SignalDataInterface;
 
 /**
  * Config keys for per-command entries in AbstractAgent::AGENT_COMMANDS.
  *
  * Unlike agent signals, commands route to an agent type (not a specific
- * multi-instance agent), so there is no index-field key. A command entry may
- * optionally declare the inner payload DTO the framework hydrates at dispatch,
- * and whether the command is test-only:
+ * multi-instance agent), so there is no index-field key. What a command entry may
+ * declare beyond its route is the inner payload DTO the framework hydrates at
+ * dispatch:
  *
  * ```php
  * public const array AGENT_COMMANDS = [
@@ -20,26 +20,21 @@ use Hilos\Socket\Command\TestOnlyCommandRegistry;
  *     MyCommand::TYPED_COMMAND => MyCommandRequestData::class,
  *     MyCommand::CONFIG_COMMAND => [
  *         AgentCommandConfigKey::DTO => MyCommandRequestData::class,
- *         AgentCommandConfigKey::TEST_ONLY => true,
  *     ],
  * ];
  * ```
+ *
+ * The class carries one key today and stays a class rather than collapsing into the
+ * shape above it, because the two forms are not two ways of saying one thing: the
+ * middle line and the config array are alternatives, and only the second can grow a
+ * second key. Its own sibling {@see AgentSignalConfigKey} carries three.
  */
 final class AgentCommandConfigKey
 {
     /**
      * Inner payload DTO class for topology-driven parsing at dispatch time.
+     *
+     * @var string Config key naming the {@see SignalDataInterface} class hydrated at dispatch
      */
     public const string DTO = 'dto';
-
-    /**
-     * Whether the command may only run outside a production-like environment.
-     *
-     * The machine-readable half of the test-only contract: the command socket reads
-     * this flag through {@see TestOnlyCommandRegistry} and refuses the command before
-     * it is parked for its agent. The human-readable half is the `test:` prefix the
-     * command name carries on the wire; topology validation sews the two together, so
-     * a flag here without the prefix (or the prefix without the flag) fails the start.
-     */
-    public const string TEST_ONLY = 'testOnly';
 }

@@ -97,7 +97,7 @@ HELP;
         }
 
         try {
-            $result = $this->sendCommand(CommandConstants::COMMAND_CLUSTER_DB_ANNOUNCE, [
+            $result = $this->sendCommand(CliCommands::CLUSTER_TEST_DB_ANNOUNCE, [
                 CommandConstants::FIELD_COLLECTION => $collection,
                 CommandConstants::FIELD_ROW_ID => $rowId,
             ]);
@@ -107,7 +107,7 @@ HELP;
         }
 
         if ($result->reply === null) {
-            return $this->printChannelFailure($result, CommandConstants::COMMAND_CLUSTER_DB_ANNOUNCE);
+            return $this->printChannelFailure($result, CliCommands::CLUSTER_TEST_DB_ANNOUNCE);
         }
 
         $reply = $result->reply;

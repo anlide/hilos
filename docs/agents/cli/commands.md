@@ -33,7 +33,7 @@ reason in its `execution()` declaration. See
 
 | Command | Site | Description |
 |---|---|---|
-| `db:test:reset` | `cli-offline-write` | DROP all tables → migrate → seed (test env only) — runs before the database exists, but needs the server up |
+| `test:db:reset` | `cli-offline-write` | DROP all tables → migrate → seed (test env only) — runs before the database exists, but needs the server up |
 | `db:wait` | `cli-read` | Wait until MySQL is accepting connections — runs while the server is still down |
 
 ## System commands
@@ -93,14 +93,28 @@ connection stays open: the gate judges the command, not the caller. Why it authe
 nobody, and why nothing will be built to change that, is settled in
 [../architecture/command-server.md](../architecture/command-server.md#who-may-call-a-command--nobody-is-asked).
 
-**Declaring a test-only command means saying so twice, in two different languages.** The
-machine-readable half is `AgentCommandConfigKey::TEST_ONLY` in the same `AGENT_COMMANDS`
-entry that declares the route (the commands the master answers itself have no agent entry
-and are listed in `CommandConstants::MASTER_TEST_ONLY_COMMANDS` instead). The
-human-readable half is the `test:` prefix on the wire name. Topology validation fails the
-daemon's start if either half is missing, because a flag alone is invisible on review and a
-prefix alone is a promise nothing keeps. `TestOnlyCommandRegistry` joins both halves, and it
-is the only thing the gate asks.
+**Declaring a test-only command is naming it `test:` — that is the whole declaration**
+(HIL-742). `TestOnlyCommandRegistry::isTestOnly()` reads the prefix, and it is still the only
+thing the gate asks; there is simply nothing behind it to join any more.
+
+It used to be three declarations: the prefix, an `AgentCommandConfigKey::TEST_ONLY` flag in
+the agent's `AGENT_COMMANDS` entry, and a `CommandConstants::MASTER_TEST_ONLY_COMMANDS` list
+for the commands the master answers itself — sewn together by two guards that between them
+never looked at the `cli-offline-write` role. Both commands living in that gap were named
+without the prefix and nothing said so. The prefix is the one kept because a flag is
+invisible to whoever reads a name in a log line, a compose file, or a review diff, which is
+exactly where both holes were eventually found.
+
+Dropping the flag also made the answer installation-independent: under it, a name was
+test-only only where an agent declaring it was registered, so the same name could be gated in
+one project and open in another.
+
+What still has to be checked is the other direction — a class that refuses on production must
+be named `test:`, and a name saying `test:` must have a class that refuses. That is one unit
+guard over the command registry, `framework/tests/Unit/Core/CLI/TestOnlyNameContractTest.php`,
+reading `CliManager::commandClasses()`. A wire name the registry never sees — the restore pair
+has no terminal half — is held where it goes on the wire, by the latch in
+`AbstractCommandChannelTestCommand::sendCommand()`.
 
 A project registers its own commands by subclassing `CliManager` and overriding
 `registerProjectCommands()`, calling `addCommand()` for each; the project's `cli.php` then
@@ -147,7 +161,7 @@ unregistered command name skips it too, so a typo answers `Unknown command` inst
 connection failure.
 
 Marked today: `db:wait` (its poll *is* the connect, and it has to run before the server
-answers), `db:test:reset` (opens its own server-level connection, because it drops and
+answers), `test:db:reset` (opens its own server-level connection, because it drops and
 recreates the database `DB_DATABASE` names), `help` (prints the registry it was handed),
 `test:cluster:inspect` (talks only to the local command socket, so the multi-node harness
 can inspect a network-partitioned node that cannot reach MySQL either), the cluster client
@@ -176,7 +190,7 @@ must not touch the database or Hilos state. Do that work in `execute()`.
 php cli.php db:migration:up
 
 # Reset test database:
-php cli.php db:test:reset
+php cli.php test:db:reset
 ```
 
 ## Declaring a new command
@@ -187,5 +201,5 @@ Three declarations, all made by the command about itself, all read by the spine:
    reason ([command-execution.md](command-execution.md));
 2. **the database** — implement `DatabaseFreeCommand` when the bootstrap must not connect
    (above);
-3. **test-only** — extend `TestOnlyCommand`, plus the `test:` prefix and the
-   `AgentCommandConfigKey::TEST_ONLY` flag when it reaches an agent (above).
+3. **test-only** — extend `TestOnlyCommand` and name the command `test:*` (above); the
+   prefix is the declaration, and the guard fails if the two disagree either way.

@@ -7,7 +7,6 @@ namespace Hilos\Tests\Unit;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Core\Agent\AbstractAgent;
-use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Core\Router\SignalRouter;
@@ -70,9 +69,9 @@ final class CommandClientTestOnlyGateTest extends TestCase
     public static function masterTestOnlyCommands(): array
     {
         return [
-            [CommandConstants::COMMAND_CLUSTER_INSPECT],
+            [CliCommands::CLUSTER_TEST_INSPECT],
             [CliCommands::PROTECTED_MODE_TEST_INSPECT],
-            [CommandConstants::COMMAND_CONNECTION_DROP],
+            [CliCommands::CONNECTION_TEST_DROP],
         ];
     }
 
@@ -125,7 +124,7 @@ final class CommandClientTestOnlyGateTest extends TestCase
 
         $client->feed([
             CommandConstants::FIELD_CORRELATION_ID => 'corr-3',
-            CommandConstants::FIELD_COMMAND => CommandConstants::COMMAND_CLUSTER_INSPECT,
+            CommandConstants::FIELD_COMMAND => CliCommands::CLUSTER_TEST_INSPECT,
             CommandConstants::FIELD_PAYLOAD => [],
         ]);
 
@@ -142,12 +141,12 @@ final class CommandClientTestOnlyGateTest extends TestCase
 
         $client->feed([
             CommandConstants::FIELD_CORRELATION_ID => 'corr-4',
-            CommandConstants::FIELD_COMMAND => CommandConstants::COMMAND_CONNECTION_DROP,
+            CommandConstants::FIELD_COMMAND => CliCommands::CONNECTION_TEST_DROP,
             CommandConstants::FIELD_PAYLOAD => [],
         ]);
 
         $this->assertSame(
-            TestOnlyCommandOnProductionException::message(CommandConstants::COMMAND_CONNECTION_DROP),
+            TestOnlyCommandOnProductionException::message(CliCommands::CONNECTION_TEST_DROP),
             $client->lastReply()[CommandConstants::FIELD_PAYLOAD][CommandConstants::FIELD_MESSAGE] ?? null,
         );
     }
@@ -162,7 +161,7 @@ final class CommandClientTestOnlyGateTest extends TestCase
 
         $client->feed([
             CommandConstants::FIELD_CORRELATION_ID => 'corr-5',
-            CommandConstants::FIELD_COMMAND => CommandConstants::COMMAND_CLUSTER_INSPECT,
+            CommandConstants::FIELD_COMMAND => CliCommands::CLUSTER_TEST_INSPECT,
             CommandConstants::FIELD_PAYLOAD => [],
         ]);
 
@@ -179,7 +178,7 @@ final class CommandClientTestOnlyGateTest extends TestCase
 
         $client->feed([
             CommandConstants::FIELD_CORRELATION_ID => 'corr-6',
-            CommandConstants::FIELD_COMMAND => CommandConstants::COMMAND_CLUSTER_INSPECT,
+            CommandConstants::FIELD_COMMAND => CliCommands::CLUSTER_TEST_INSPECT,
             CommandConstants::FIELD_PAYLOAD => [],
         ]);
 
@@ -187,10 +186,10 @@ final class CommandClientTestOnlyGateTest extends TestCase
     }
 
     /**
-     * The half the master does not answer itself: a command declared test-only by an AGENT is
-     * refused at the same point, before it is ever parked and routed. This is what the two
-     * agent-side copies of the verdict used to do (HIL-566 removed them), and it only holds
-     * because the gate sits above the split between master branches and parked commands.
+     * The half the master does not answer itself: an AGENT-owned test-only command is refused
+     * at the same point, before it is ever parked and routed. This is what the two agent-side
+     * copies of the verdict used to do (HIL-566 removed them), and it only holds because the
+     * gate sits above the split between master branches and parked commands.
      */
     public function testAnAgentOwnedTestOnlyCommandIsRefusedBeforeItIsParked(): void
     {
@@ -199,12 +198,12 @@ final class CommandClientTestOnlyGateTest extends TestCase
 
         $client->feed([
             CommandConstants::FIELD_CORRELATION_ID => 'corr-10',
-            CommandConstants::FIELD_COMMAND => 'gate_fixture_test_only',
+            CommandConstants::FIELD_COMMAND => 'test:gate:fixture',
             CommandConstants::FIELD_PAYLOAD => [],
         ]);
 
         $this->assertSame(
-            TestOnlyCommandOnProductionException::message('gate_fixture_test_only'),
+            TestOnlyCommandOnProductionException::message('test:gate:fixture'),
             $client->lastReply()[CommandConstants::FIELD_PAYLOAD][CommandConstants::FIELD_MESSAGE] ?? null,
         );
     }
@@ -217,7 +216,7 @@ final class CommandClientTestOnlyGateTest extends TestCase
 
         $client->feed([
             CommandConstants::FIELD_CORRELATION_ID => 'corr-11',
-            CommandConstants::FIELD_COMMAND => 'gate_fixture_test_only',
+            CommandConstants::FIELD_COMMAND => 'test:gate:fixture',
             CommandConstants::FIELD_PAYLOAD => [],
         ]);
 
@@ -256,7 +255,7 @@ final class CommandClientTestOnlyGateTest extends TestCase
 
         $client->feed([
             CommandConstants::FIELD_CORRELATION_ID => 'corr-9',
-            CommandConstants::FIELD_COMMAND => CommandConstants::COMMAND_CLUSTER_INSPECT,
+            CommandConstants::FIELD_COMMAND => CliCommands::CLUSTER_TEST_INSPECT,
             CommandConstants::FIELD_PAYLOAD => [],
         ]);
         $this->assertSame(CommandConstants::STATUS_ERROR, $client->lastReply()[CommandConstants::FIELD_STATUS] ?? null);
@@ -317,7 +316,7 @@ final class GateFixtureAgent extends AbstractAgent
     public const string AGENT_TYPE = 'gate_fixture_agent';
 
     public const array AGENT_COMMANDS = [
-        'gate_fixture_test_only' => [AgentCommandConfigKey::TEST_ONLY => true],
+        'test:gate:fixture',
     ];
 
     public function onStop(): void

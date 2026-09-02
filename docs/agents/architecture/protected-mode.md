@@ -105,7 +105,7 @@ and since HIL-566 there is no need for one: the socket itself refuses a
 test-only command before it parks anything, so every test-only name is gated on
 the path e2e actually takes — directly over TCP, since the Playwright runner has no
 PHP. What the socket still does not do is authenticate its caller, which is why
-`admin:grant` and the other unflagged commands remain reachable to anyone who can
+`admin:grant` and the other commands not named `test:*` remain reachable to anyone who can
 open `COMMAND_PORT`; that is an existing property of the channel, recorded here
 so it is not mistaken for something this gate closed.
 

@@ -13,7 +13,6 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
-use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
@@ -69,6 +68,7 @@ use Hilos\Push\DTO\PushUnsubscribeActionDTO;
 use Hilos\Push\PushSubscriptionAction;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use Throwable;
 
 /**
@@ -166,11 +166,12 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * reply are unchanged, including the id: the caller is answered by the agent that wrote
      * the row, so it can still report which one it wrote.
      *
-     * {@see AgentCommandConfigKey::TEST_ONLY} travels with it: the command socket
-     * authenticates nobody, so the flag is what keeps the emit off a production node.
+     * What keeps the emit off a production node is its `test:` prefix, which the command
+     * socket reads through {@see TestOnlyCommandRegistry}: the socket authenticates nobody,
+     * so the name has to say what the command may do.
      */
     public const array AGENT_COMMANDS = [
-        CliCommands::NOTIFICATION_TEST_EMIT => [AgentCommandConfigKey::TEST_ONLY => true],
+        CliCommands::NOTIFICATION_TEST_EMIT,
     ];
 
     /** Cron expression for the daily delivery-log prune (03:20). */

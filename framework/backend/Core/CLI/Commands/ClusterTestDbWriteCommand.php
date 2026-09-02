@@ -96,7 +96,7 @@ HELP;
         }
 
         try {
-            $result = $this->sendCommand(CommandConstants::COMMAND_CLUSTER_DB_WRITE, [
+            $result = $this->sendCommand(CliCommands::CLUSTER_TEST_DB_WRITE, [
                 CommandConstants::FIELD_SETTING_KEY => $key,
                 CommandConstants::FIELD_SETTING_VALUE => $value,
             ]);
@@ -106,7 +106,7 @@ HELP;
         }
 
         if ($result->reply === null) {
-            return $this->printChannelFailure($result, CommandConstants::COMMAND_CLUSTER_DB_WRITE);
+            return $this->printChannelFailure($result, CliCommands::CLUSTER_TEST_DB_WRITE);
         }
 
         $reply = $result->reply;

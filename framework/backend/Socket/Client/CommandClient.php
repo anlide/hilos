@@ -143,7 +143,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
-            if ($request->command === CommandConstants::COMMAND_CLUSTER_NODES) {
+            if ($request->command === CliCommands::CLUSTER_NODES) {
                 // A misconfigured cluster must reply an error, not throw inside the master loop.
                 try {
                     $reply = CommandReplyDTO::ok($request->correlationId, Hilos::$cluster?->snapshot() ?? []);
@@ -154,7 +154,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
-            if ($request->command === CommandConstants::COMMAND_CLUSTER_RELOAD) {
+            if ($request->command === CliCommands::CLUSTER_RELOAD) {
                 // Rare operator action: re-read config and re-announce on the master.
                 // A bad config or disabled cluster must reply an error, not throw here.
                 try {
@@ -169,7 +169,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
-            if ($request->command === CommandConstants::COMMAND_CLUSTER_INSPECT) {
+            if ($request->command === CliCommands::CLUSTER_TEST_INSPECT) {
                 // Test-only read of the master's cluster/consensus/placement view.
                 // A misconfigured cluster must reply an error, not throw inside the master loop.
                 try {
@@ -181,8 +181,8 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
-            if ($request->command === CommandConstants::COMMAND_CLUSTER_CLIENT_ATTACH
-                || $request->command === CommandConstants::COMMAND_CLUSTER_CLIENT_DETACH
+            if ($request->command === CliCommands::CLUSTER_TEST_CLIENT_ATTACH
+                || $request->command === CliCommands::CLUSTER_TEST_CLIENT_DETACH
             ) {
                 // Test-only: put an accept key in this node's own set, or take it back out,
                 // with no socket behind it (HIL-668). The cluster demo runs headless, so this
@@ -193,8 +193,8 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
-            if ($request->command === CommandConstants::COMMAND_CLUSTER_CLIENT_SEND
-                || $request->command === CommandConstants::COMMAND_CLUSTER_CLIENT_FANOUT
+            if ($request->command === CliCommands::CLUSTER_TEST_CLIENT_SEND
+                || $request->command === CliCommands::CLUSTER_TEST_CLIENT_FANOUT
             ) {
                 // Test-only: raise the signal an agent would raise for a browser - addressed at
                 // one, or fanned out to all - and let the ordinary routing pass decide which
@@ -205,7 +205,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
-            if ($request->command === CommandConstants::COMMAND_CLUSTER_DB_ANNOUNCE) {
+            if ($request->command === CliCommands::CLUSTER_TEST_DB_ANNOUNCE) {
                 // Test-only: raise the DB sync fact a worker raises after writing a row, and let
                 // the dispatch pass carry it to the mesh (HIL-670). Answered here for the same
                 // reason the client signals above are - what is being exercised is the master's
@@ -215,7 +215,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
-            if ($request->command === CommandConstants::COMMAND_CLUSTER_AGENT_PLACE) {
+            if ($request->command === CliCommands::CLUSTER_TEST_AGENT_PLACE) {
                 // Test-only: raise the placement request an addressed frame raises for an agent
                 // nobody has placed yet (HIL-696), and let the on-demand path pick the node.
                 // Answered here rather than parked for the plainest of reasons: the agent it asks
@@ -239,7 +239,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
-            if ($request->command === CommandConstants::COMMAND_CONNECTION_DROP) {
+            if ($request->command === CliCommands::CONNECTION_TEST_DROP) {
                 // Test-only: the master force-closes the live WebSocket connection with the
                 // given acceptKey (simulating an unplanned drop). A socket-close failure must
                 // reply an error, not throw inside the master loop.
@@ -296,7 +296,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 return CommandReplyDTO::error($request->correlationId, 'No cluster connection index on this node');
             }
 
-            if ($request->command === CommandConstants::COMMAND_CLUSTER_CLIENT_ATTACH) {
+            if ($request->command === CliCommands::CLUSTER_TEST_CLIENT_ATTACH) {
                 $connections->attachLocal($acceptKey);
             } else {
                 $connections->detachLocal($acceptKey);
@@ -321,7 +321,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
      */
     private function answerClientSignal(CommandRequestDTO $request): CommandReplyDTO
     {
-        $addressed = $request->command === CommandConstants::COMMAND_CLUSTER_CLIENT_SEND;
+        $addressed = $request->command === CliCommands::CLUSTER_TEST_CLIENT_SEND;
         // external-boundary: a test harness's command line, checked on the very next lines
         $acceptKey = $request->payload[CommandConstants::FIELD_ACCEPT_KEY] ?? null;
         if ($addressed && (!is_string($acceptKey) || $acceptKey === '')) {

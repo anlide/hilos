@@ -84,7 +84,7 @@ HELP;
 
         try {
             $result = $this->sendCommand(
-                CommandConstants::COMMAND_CLUSTER_CLIENT_DETACH,
+                CliCommands::CLUSTER_TEST_CLIENT_DETACH,
                 [CommandConstants::FIELD_ACCEPT_KEY => $acceptKey],
             );
         } catch (EnvException $e) {
@@ -93,7 +93,7 @@ HELP;
         }
 
         if ($result->reply === null) {
-            return $this->printChannelFailure($result, CommandConstants::COMMAND_CLUSTER_CLIENT_DETACH);
+            return $this->printChannelFailure($result, CliCommands::CLUSTER_TEST_CLIENT_DETACH);
         }
 
         $reply = $result->reply;

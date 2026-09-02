@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Cluster\ClusterCommandConstants;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Environment\Exception\EnvException;
@@ -81,14 +82,14 @@ HELP;
     public function execute(array $options, array $args): int
     {
         try {
-            $result = $this->sendCommand(CommandConstants::COMMAND_CLUSTER_NODES, []);
+            $result = $this->sendCommand(CliCommands::CLUSTER_NODES, []);
         } catch (EnvException $e) {
             echo "Error: {$e->getMessage()}\n";
             return ExitCode::CONFIG_ERROR;
         }
 
         if ($result->reply === null) {
-            return $this->printChannelFailure($result, CommandConstants::COMMAND_CLUSTER_NODES);
+            return $this->printChannelFailure($result, CliCommands::CLUSTER_NODES);
         }
 
         $reply = $result->reply;

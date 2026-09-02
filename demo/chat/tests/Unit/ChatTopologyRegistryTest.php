@@ -64,7 +64,6 @@ use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Backup\BackupConstants;
 use Hilos\Constants\CliCommands;
-use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
@@ -120,7 +119,6 @@ use Hilos\Core\Router\SignalSourceInterface;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use Closure;
-use Hilos\Socket\Command\TestOnlyCommandRegistry;
 
 /**
  * Guards the project-level chat topology registry.
@@ -446,45 +444,6 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::THROTTLE_TEST_RESET => AgentType::HILOS_AUTH_THROTTLE,
         ], Hilos::getCommandAgentRoutes());
         $this->assertSame([], Hilos::getCommandDtoRoutes());
-    }
-
-    /**
-     * The whole test-only registry as one installation sees it (HIL-566).
-     *
-     * Chat is where this is worth pinning: it is the only demo that mounts every framework agent
-     * owning a test-only command, so its list is the full set. What the list guards is a name
-     * silently LEAVING the registry - an agent entry rewritten back to its bare list shape drops
-     * the flag without touching a route, and the route assertion above would still pass.
-     *
-     * The list is spelled out rather than read from the constants it pins, which is the whole
-     * point of a snapshot: a name added to the framework has to be added here by hand, and a
-     * name that quietly leaves has nowhere to hide.
-     */
-    public function testTheTestOnlyRegistryHoldsEveryFlaggedCommandAndTheMastersOwn(): void
-    {
-        $this->assertSame([
-            CliCommands::NOTIFICATION_TEST_EMIT,
-            CliCommands::COMMAND_TEST_ECHO,
-            CliCommands::PROTECTED_MODE_TEST_ENTER,
-            CliCommands::PROTECTED_MODE_TEST_LEAVE,
-            CliCommands::PROTECTED_MODE_TEST_OPEN,
-            CliCommands::PROTECTED_MODE_TEST_PASS,
-            CliCommands::PROTECTED_MODE_TEST_CLOSE,
-            CliCommands::BACKUP_TEST_AGE,
-            BackupConstants::PRUNE_COMMAND,
-            BackupConstants::SHIP_COMMAND,
-            BackupConstants::RUN_SCHEDULE_COMMAND,
-            CliCommands::THROTTLE_TEST_RESET,
-            CommandConstants::COMMAND_CLUSTER_INSPECT,
-            CliCommands::PROTECTED_MODE_TEST_INSPECT,
-            CommandConstants::COMMAND_CONNECTION_DROP,
-            CommandConstants::COMMAND_CLUSTER_CLIENT_ATTACH,
-            CommandConstants::COMMAND_CLUSTER_CLIENT_DETACH,
-            CommandConstants::COMMAND_CLUSTER_CLIENT_SEND,
-            CommandConstants::COMMAND_CLUSTER_CLIENT_FANOUT,
-            CommandConstants::COMMAND_CLUSTER_DB_ANNOUNCE,
-            CommandConstants::COMMAND_CLUSTER_AGENT_PLACE,
-        ], TestOnlyCommandRegistry::commands());
     }
 
     public function testComputedAgentSignalIndexFieldsMatchBotAgentDeclaration(): void

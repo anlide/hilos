@@ -14,7 +14,6 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
-use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Feature\HilosFeature;
@@ -76,12 +75,12 @@ final class AuthThrottleAgent extends AbstractAgent
      * The one thing this agent accepts from outside a running page: the test-only reset,
      * which empties both halves of the state. It travels the command channel rather than
      * being done in the CLI process because the counters are this agent's runtime
-     * collection, which no other process holds. No inner DTO - the config entry exists only
-     * to carry {@see AgentCommandConfigKey::TEST_ONLY}, which is what stops the socket from
-     * ever parking the command on a production-like node.
+     * collection, which no other process holds. No inner DTO, so the entry is the bare name -
+     * and the name is also what stops the socket from ever parking the command on a
+     * production-like node, since its `test:` prefix is the whole test-only declaration.
      */
     public const array AGENT_COMMANDS = [
-        CliCommands::THROTTLE_TEST_RESET => [AgentCommandConfigKey::TEST_ONLY => true],
+        CliCommands::THROTTLE_TEST_RESET,
     ];
 
     /** @var float Minimum seconds between counter sweeps, so onTick stays cheap */

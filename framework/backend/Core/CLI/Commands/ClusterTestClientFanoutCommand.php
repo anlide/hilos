@@ -85,7 +85,7 @@ HELP;
 
         try {
             $result = $this->sendCommand(
-                CommandConstants::COMMAND_CLUSTER_CLIENT_FANOUT,
+                CliCommands::CLUSTER_TEST_CLIENT_FANOUT,
                 [CommandConstants::FIELD_TEXT => $text],
             );
         } catch (EnvException $e) {
@@ -94,7 +94,7 @@ HELP;
         }
 
         if ($result->reply === null) {
-            return $this->printChannelFailure($result, CommandConstants::COMMAND_CLUSTER_CLIENT_FANOUT);
+            return $this->printChannelFailure($result, CliCommands::CLUSTER_TEST_CLIENT_FANOUT);
         }
 
         $reply = $result->reply;

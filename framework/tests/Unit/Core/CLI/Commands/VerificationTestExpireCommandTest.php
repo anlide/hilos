@@ -13,7 +13,7 @@ use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the verification:test:expire CLI argument-validation branches.
+ * Unit tests for the test:verification:expire CLI argument-validation branches.
  *
  * Covers only the branches that return before any database access (bad args, missing
  * collection); the actual expiry behavior is exercised by the HIL-167 e2e. Runs under

@@ -94,7 +94,7 @@ HELP;
         }
 
         try {
-            $result = $this->sendCommand(CommandConstants::COMMAND_CLUSTER_DB_READ, [
+            $result = $this->sendCommand(CliCommands::CLUSTER_TEST_DB_READ, [
                 CommandConstants::FIELD_SETTING_KEY => $key,
             ]);
         } catch (EnvException $e) {
@@ -103,7 +103,7 @@ HELP;
         }
 
         if ($result->reply === null) {
-            return $this->printChannelFailure($result, CommandConstants::COMMAND_CLUSTER_DB_READ);
+            return $this->printChannelFailure($result, CliCommands::CLUSTER_TEST_DB_READ);
         }
 
         $reply = $result->reply;

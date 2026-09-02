@@ -7,7 +7,6 @@ namespace Hilos\Core\Agent\Hilos;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
-use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -65,12 +64,12 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * {@see AbstractSessionsLibraryAgent} answers it now.
      */
     public const array AGENT_COMMANDS = [
-        CliCommands::COMMAND_TEST_ECHO => [AgentCommandConfigKey::TEST_ONLY => true],
-        CliCommands::PROTECTED_MODE_TEST_ENTER => [AgentCommandConfigKey::TEST_ONLY => true],
-        CliCommands::PROTECTED_MODE_TEST_LEAVE => [AgentCommandConfigKey::TEST_ONLY => true],
-        CliCommands::PROTECTED_MODE_TEST_OPEN => [AgentCommandConfigKey::TEST_ONLY => true],
-        CliCommands::PROTECTED_MODE_TEST_PASS => [AgentCommandConfigKey::TEST_ONLY => true],
-        CliCommands::PROTECTED_MODE_TEST_CLOSE => [AgentCommandConfigKey::TEST_ONLY => true],
+        CliCommands::COMMAND_TEST_ECHO,
+        CliCommands::PROTECTED_MODE_TEST_ENTER,
+        CliCommands::PROTECTED_MODE_TEST_LEAVE,
+        CliCommands::PROTECTED_MODE_TEST_OPEN,
+        CliCommands::PROTECTED_MODE_TEST_PASS,
+        CliCommands::PROTECTED_MODE_TEST_CLOSE,
     ];
 
     /**

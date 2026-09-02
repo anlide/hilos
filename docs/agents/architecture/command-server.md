@@ -46,12 +46,13 @@ more.
 fail-closed, and on this socket `CommandClient`
 (`framework/backend/Socket/Client/CommandClient.php`) asks it above every branch of the
 parse, so a stray caller meets it as surely as the CLI process does. What it reaches,
-though, is only the commands that declared themselves test-only:
-`framework/backend/Core/CLI/Commands/AbstractSetAdminCommand.php` and
+though, is only the names that say `test:` — which is the whole test-only declaration
+(HIL-742). `admin:grant`, `admin:revoke` and `admin:create` do not say it, and their classes
+match: `framework/backend/Core/CLI/Commands/AbstractSetAdminCommand.php` and
 `framework/backend/Core/CLI/Commands/AdminCreateCommand.php` are both declared
-`implements CommandInterface, DatabaseFreeCommand`, neither extends `TestOnlyCommand`, and
-so `admin:grant`, `admin:revoke` and `admin:create` pass the gate on any node at all. The
-bound port is what stands between them and a stranger.
+`implements CommandInterface, DatabaseFreeCommand` and neither extends `TestOnlyCommand`, so
+all three pass the gate on any node at all. The bound port is what stands between them and a
+stranger.
 
 **The project owns the perimeter, not an authorization layer.** Whoever needs to know the
 caller puts that in front of the door: a port that is not published, a network policy, a

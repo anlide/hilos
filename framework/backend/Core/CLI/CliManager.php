@@ -6,6 +6,7 @@ namespace Hilos\Core\CLI;
 
 use Hilos\Backup\BackupConstants;
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\AccountMergeCommand;
 use Hilos\Core\CLI\Commands\AdminCreateCommand;
@@ -252,6 +253,32 @@ class CliManager
         }
 
         return $executions;
+    }
+
+    /**
+     * Hands out which class answers each registered command name.
+     *
+     * The registry answers for itself here too, and for the same reason {@see executions()}
+     * does: framework and project commands alike are registered by instance, so nothing
+     * outside can list them without walking the class tree with Reflection, which this
+     * project forbids (HIL-538).
+     *
+     * The map is what the test-only name guard needs and nothing else asks for: it holds the
+     * direction the wire cannot check - a class that refuses on a production-like environment
+     * must be named with the {@see CommandConstants::TEST_ONLY_PREFIX} prefix - and answering
+     * it means putting a class beside its name. The judgement stays with the guard: this
+     * hands over classes, not verdicts.
+     *
+     * @return array<string, class-string<CommandInterface>> Answering class per registered command name
+     */
+    public function commandClasses(): array
+    {
+        $classes = [];
+        foreach ($this->commands as $name => $command) {
+            $classes[$name] = $command::class;
+        }
+
+        return $classes;
     }
 
     /**

@@ -291,7 +291,7 @@ final class UserVerifications extends Objects
     /**
      * Ages the newest active challenge for a (type, identifier) into the past.
      *
-     * Test-only support for the `verification:test:expire` CLI (HIL-317): resolves
+     * Test-only support for the `test:verification:expire` CLI (HIL-317): resolves
      * the single active challenge (attempts ignored, so an exhausted-but-unexpired
      * challenge still resets) and expires it via
      * {@see ObjectUserVerification::expire()}, so the next verify reads an expired

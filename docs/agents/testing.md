@@ -45,7 +45,7 @@ Composer scripts live in `demo/chat/composer.json`. Run from `demo/chat/`:
 |---|---|
 | `composer run test:up` | Start `mysql-test`. |
 | `composer run test:db-wait` | Wait until the test DB is reachable. |
-| `composer run test:db-reset` | Drop + recreate the test schema (`cli.php db:test:reset`). |
+| `composer run test:db-reset` | Drop + recreate the test schema (`cli.php test:db:reset`). |
 | `composer run test:unit` | Run unit tests (`tests/Unit`). No DB needed. |
 | `composer run test:integration` | Run integration tests (`tests/Integration`). Requires DB. |
 | `composer run test:phpunit` | Run both PHPUnit suites. |

@@ -58,5 +58,5 @@ php cli.php db:seed:apply 001
 ## Test reset
 
 ```bash
-php cli.php db:test:reset  # DROP → migrate → seed (test env only)
+php cli.php test:db:reset  # DROP → migrate → seed (test env only)
 ```

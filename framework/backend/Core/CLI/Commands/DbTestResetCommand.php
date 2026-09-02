@@ -43,7 +43,7 @@ class DbTestResetCommand extends TestOnlyCommand implements DatabaseFreeCommand
     /**
      * Returns command name for CLI routing.
      *
-     * @return string Command name (e.g. db:test:reset)
+     * @return string Command name (e.g. test:db:reset)
      */
     public function getName(): string
     {
@@ -80,17 +80,17 @@ class DbTestResetCommand extends TestOnlyCommand implements DatabaseFreeCommand
     public function getHelp(): string
     {
         return <<<HELP
-Command: db:test:reset
+Command: test:db:reset
 
 Description:
   Drops the database, recreates it, runs migrations, and applies all seeds.
   Intended for test environments. Seeds are blocked when APP_ENV is PROD or STAGING.
 
 Usage:
-  php cli.php db:test:reset
+  php cli.php test:db:reset
 
 Examples:
-  php cli.php db:test:reset
+  php cli.php test:db:reset
   composer run test:db-reset
 HELP;
     }

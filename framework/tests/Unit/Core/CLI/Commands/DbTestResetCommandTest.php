@@ -13,7 +13,7 @@ use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Tests that db:test:reset refuses before it touches anything (HIL-566).
+ * Tests that test:db:reset refuses before it touches anything (HIL-566).
  *
  * The command drops a database and recreates it, and until this ticket it was the one
  * destructive CLI command with no environment guard at all: APP_ENV reached it only at the

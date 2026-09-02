@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Topology;
 
-use Hilos\Constants\CommandConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentRegistry;
@@ -1917,7 +1916,6 @@ final class TopologyValidator
                     }
 
                     $this->recordDeclaredCommandRoute($value, $agentType, $declaredRoutes, $errors);
-                    $this->validateTestOnlyContract($value, false, $agentType, $agentClass, $errors);
                     continue;
                 }
 
@@ -1939,7 +1937,6 @@ final class TopologyValidator
                     }
 
                     $this->recordDeclaredCommandRoute($key, $agentType, $declaredRoutes, $errors);
-                    $this->validateTestOnlyContract($key, false, $agentType, $agentClass, $errors);
                     continue;
                 }
 
@@ -1950,19 +1947,10 @@ final class TopologyValidator
                     continue;
                 }
 
-                $unknownKeys = array_diff(
-                    array_keys($value),
-                    [AgentCommandConfigKey::DTO, AgentCommandConfigKey::TEST_ONLY],
-                );
+                $unknownKeys = array_diff(array_keys($value), [AgentCommandConfigKey::DTO]);
                 if ($unknownKeys !== []) {
                     $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$key}] contains"
                         . ' unknown config keys: ' . implode(', ', $unknownKeys);
-                }
-
-                $testOnly = $value[AgentCommandConfigKey::TEST_ONLY] ?? null;
-                if ($testOnly !== null && !is_bool($testOnly)) {
-                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$key}]["
-                        . AgentCommandConfigKey::TEST_ONLY . '] must be a bool';
                 }
 
                 $dtoClass = $value[AgentCommandConfigKey::DTO] ?? null;
@@ -1979,7 +1967,6 @@ final class TopologyValidator
                 }
 
                 $this->recordDeclaredCommandRoute($key, $agentType, $declaredRoutes, $errors);
-                $this->validateTestOnlyContract($key, $testOnly === true, $agentType, $agentClass, $errors);
             }
         }
 
@@ -1987,43 +1974,6 @@ final class TopologyValidator
             if (($commandAgentRoutes[$command] ?? null) !== $agentType) {
                 $errors[] = "Agent command route {$command} is missing from computed command routes";
             }
-        }
-    }
-
-    /**
-     * Sews the two halves of the test-only contract together, in both directions.
-     *
-     * The flag is what the socket gate reads; the `test:` prefix is what a person reads. Either
-     * one alone is a hole, and a different one each way: a prefixed name without the flag looks
-     * guarded to every reviewer and is wide open on a production node, while a flagged name
-     * without the prefix is refused by a gate nobody reading the name would expect. Review
-     * discipline has already failed this once - before HIL-566 six of the twelve test-only names
-     * carried no prefix at all - which is why it is checked by the daemon's start instead.
-     *
-     * @param string $command Declared command name
-     * @param bool $testOnly Whether the entry declares the test-only flag
-     * @param string $agentType Declaring agent type
-     * @param class-string<AbstractAgent> $agentClass Declaring agent class
-     * @param list<string> $errors Validation error accumulator
-     */
-    private function validateTestOnlyContract(
-        string $command,
-        bool $testOnly,
-        string $agentType,
-        string $agentClass,
-        array &$errors,
-    ): void {
-        $prefixed = str_starts_with($command, CommandConstants::TEST_ONLY_PREFIX);
-        if ($prefixed && !$testOnly) {
-            $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$command}] is named with the "
-                . CommandConstants::TEST_ONLY_PREFIX . ' prefix but does not declare '
-                . AgentCommandConfigKey::TEST_ONLY;
-        }
-
-        if (!$prefixed && $testOnly) {
-            $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$command}] declares "
-                . AgentCommandConfigKey::TEST_ONLY . ' but is not named with the '
-                . CommandConstants::TEST_ONLY_PREFIX . ' prefix';
         }
     }
 

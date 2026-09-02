@@ -90,7 +90,7 @@ HELP;
 
         try {
             $result = $this->sendCommand(
-                CommandConstants::COMMAND_CLUSTER_CLIENT_ATTACH,
+                CliCommands::CLUSTER_TEST_CLIENT_ATTACH,
                 [CommandConstants::FIELD_ACCEPT_KEY => $acceptKey],
             );
         } catch (EnvException $e) {
@@ -99,7 +99,7 @@ HELP;
         }
 
         if ($result->reply === null) {
-            return $this->printChannelFailure($result, CommandConstants::COMMAND_CLUSTER_CLIENT_ATTACH);
+            return $this->printChannelFailure($result, CliCommands::CLUSTER_TEST_CLIENT_ATTACH);
         }
 
         $reply = $result->reply;

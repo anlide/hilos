@@ -44,10 +44,10 @@ canonical rule before writing or moving command code.
 6. A `cli-offline-write` command must be reachable in the environments that run it: the CLI
    container needs `HILOS_DAEMON_HOST` and `COMMAND_PORT`, because the gate in front of it
    is fail-closed and refuses when it cannot check.
-7. For a test-only command, declare it test-only too — `extends TestOnlyCommand`, the
-   `test:` prefix on the wire name, and `AgentCommandConfigKey::TEST_ONLY` in the agent
-   entry. Extending `AbstractCommandChannelTestCommand` gives the round-trip, the prefix
-   latch, and the `daemon` site in one.
+7. For a test-only command, name it `test:*` — the prefix is the whole declaration, and
+   `extends TestOnlyCommand` is what has to match it. `TestOnlyNameContractTest` fails
+   either way round. Extending `AbstractCommandChannelTestCommand` gives the round-trip, the
+   prefix latch, and the `daemon` site in one.
 
 ## Hard Rules
 

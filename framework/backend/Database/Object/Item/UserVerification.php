@@ -323,7 +323,7 @@ final class UserVerification extends Object_
     /**
      * Ages this challenge into the past so {@see isActive()} reads it as expired.
      *
-     * Test-only expiry primitive backing the `verification:test:expire` CLI
+     * Test-only expiry primitive backing the `test:verification:expire` CLI
      * (HIL-317): rewrites `expires_at` to just before now with a targeted UPDATE
      * and mirrors it on the loaded entity, so an e2e can drive the "invalid or
      * expired code" verify path without waiting out the TTL. Symmetric with

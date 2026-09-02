@@ -31,7 +31,7 @@ class VerificationTestExpireCommand extends TestOnlyCommand
     /**
      * Returns command name for CLI routing.
      *
-     * @return string Command name (verification:test:expire)
+     * @return string Command name (test:verification:expire)
      */
     public function getName(): string
     {
@@ -68,7 +68,7 @@ class VerificationTestExpireCommand extends TestOnlyCommand
     public function getHelp(): string
     {
         return <<<HELP
-Command: verification:test:expire <type> <identifier>
+Command: test:verification:expire <type> <identifier>
 
 Description:
   Age the newest active verification challenge for <type> and <identifier> into the
@@ -80,7 +80,7 @@ Arguments:
   <identifier>  Normalized identifier (lowercased email, or E.164 phone for sms_login)
 
 Usage:
-  php cli.php verification:test:expire password_reset user@example.com
+  php cli.php test:verification:expire password_reset user@example.com
 HELP;
     }
 
@@ -99,7 +99,7 @@ HELP;
         // external-boundary: the operator's command line, both checked on the very next line
         $identifier = $args[1] ?? '';
         if (!VerificationType::isValid($type) || $identifier === '') {
-            echo "Usage: verification:test:expire <type> <identifier>\n";
+            echo "Usage: test:verification:expire <type> <identifier>\n";
             return ExitCode::INVALID_ARGUMENT;
         }
 

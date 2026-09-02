@@ -9,13 +9,13 @@ use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupScope;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
-use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\CLI\Commands\BackupTestAgeCommand;
 use Hilos\Core\CLI\Commands\CommandChannelResult;
 use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -53,10 +53,8 @@ final class BackupTestAgeCommandTest extends TestCase
 
     public function testTheAgentDeclaresTheWireNameTheCliSendsUnder(): void
     {
-        self::assertArrayHasKey(CliCommands::BACKUP_TEST_AGE, BackupAgent::AGENT_COMMANDS);
-        self::assertTrue(
-            BackupAgent::AGENT_COMMANDS[CliCommands::BACKUP_TEST_AGE][AgentCommandConfigKey::TEST_ONLY],
-        );
+        self::assertContains(CliCommands::BACKUP_TEST_AGE, BackupAgent::AGENT_COMMANDS);
+        self::assertTrue(TestOnlyCommandRegistry::isTestOnly(CliCommands::BACKUP_TEST_AGE));
     }
 
     public function testDaysBecomeTheAgeDaysPayloadBesideTheBackupId(): void

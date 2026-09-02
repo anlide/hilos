@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Command\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
@@ -23,7 +24,7 @@ class CommandRequestDTO extends BaseDTO implements SignalDataInterface
      * Creates a command request.
      *
      * @param string $correlationId Correlation id echoed back on the reply
-     * @param string $command Command name (e.g. CommandConstants::COMMAND_PING)
+     * @param string $command Command name as it goes on the wire (e.g. CliCommands::CLUSTER_NODES)
      * @param array<string, mixed> $payload Command arguments
      * @param ?SignalDataInterface $parsedPayload Topology-hydrated inner payload DTO, set by
      *     SignalRouter::createCommandPayloadDTO when the command declares a DTO; transient
