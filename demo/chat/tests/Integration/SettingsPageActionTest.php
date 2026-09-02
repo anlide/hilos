@@ -17,6 +17,7 @@ use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Tables\Settings\DTO\HilosSettingAddActionDTO;
 use Hilos\Tables\Settings\DTO\HilosSettingDeleteActionDTO;
+use Hilos\Tables\Settings\DTO\HilosSettingResetActionDTO;
 use Hilos\Tables\Settings\DTO\HilosSettingUpdateActionDTO;
 use Hilos\Utils\Helpers\RandomHelper;
 
@@ -145,6 +146,64 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 new HilosSettingDeleteActionDTO(self::CATALOG_KEY),
             );
         }, [self::CATALOG_KEY]);
+    }
+
+    public function testResetActionRemovesTheCatalogKeyRow(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(self::CATALOG_KEY);
+            $this->settingsPage()->onAction(
+                'reset-ok-ak',
+                HilosSignalConstants::SETTING_ADD,
+                new HilosSettingAddActionDTO(self::CATALOG_KEY, 'to-reset'),
+            );
+            $this->assertNotNull(Hilos::$db->settings[self::CATALOG_KEY]);
+
+            $this->settingsPage()->onAction(
+                'reset-ok-ak',
+                HilosSignalConstants::SETTING_RESET,
+                new HilosSettingResetActionDTO(self::CATALOG_KEY),
+            );
+
+            // The row is gone, so the key reads as being on its catalog default again,
+            // and the table row it leaves behind is the catalog placeholder (no id).
+            $this->assertNull(Hilos::$db->settings[self::CATALOG_KEY]);
+            $this->assertNull(Hilos::$table->settings->rowForKey(self::CATALOG_KEY)?->id);
+        }, [self::CATALOG_KEY]);
+    }
+
+    public function testResetActionOnAKeyWithoutARowSucceeds(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(self::UNSEEDED_CATALOG_KEY);
+
+            // Idempotent on purpose: a second admin may have reset first, and the race
+            // must not turn into an error on this one's screen.
+            $this->settingsPage()->onAction(
+                'reset-absent-ak',
+                HilosSignalConstants::SETTING_RESET,
+                new HilosSettingResetActionDTO(self::UNSEEDED_CATALOG_KEY),
+            );
+
+            $this->assertNull(Hilos::$db->settings[self::UNSEEDED_CATALOG_KEY]);
+        }, [self::UNSEEDED_CATALOG_KEY]);
+    }
+
+    public function testResetActionRejectsOrphan(): void
+    {
+        $orphanKey = 'page_action_reset_orphan_' . RandomHelper::hex(8);
+        $this->withSettingsWriter(function () use ($orphanKey): void {
+            $this->createOrphanSetting($orphanKey, 'not-resettable');
+
+            // An orphan has no catalog default to return to. The screen never sends
+            // this, but hiding a gesture is not securing it.
+            $this->expectException(TableActionException::class);
+            $this->settingsPage()->onAction(
+                'reset-orphan-ak',
+                HilosSignalConstants::SETTING_RESET,
+                new HilosSettingResetActionDTO($orphanKey),
+            );
+        }, [$orphanKey]);
     }
 
     public function testAddActionRejectsEmptyKey(): void

@@ -14,9 +14,9 @@ toast and leaves the dialog open with the entered value (toasts.md). Bootstrap c
 import {
   createHilosSettingsActions,
   createHilosSettingsTable,
+  hasCustomValue,
   HilosPages,
   isOrphanSetting,
-  isPersistedSetting,
   SETTING_KEY_FIELD,
   SETTING_VALUE_FIELD,
   type HilosSettingRow,
@@ -40,8 +40,12 @@ const props = defineProps<{
 
 const settings = createHilosSettingsTable(props.context)
 const settingsTable = settings.controller
-const { sendSettingAdd, sendSettingUpdate, sendSettingDelete } =
-  createHilosSettingsActions(props.context)
+const {
+  sendSettingAdd,
+  sendSettingUpdate,
+  sendSettingDelete,
+  sendSettingReset,
+} = createHilosSettingsActions(props.context)
 
 // Bind the server-windowed table to the connection on mount, request the first
 // window, and unbind on unmount.
@@ -120,7 +124,10 @@ function openEdit(row: HilosSettingRow): void {
   }
   clearEditError()
   editRow.value = fresh
-  editUseCustom.value = isPersistedSetting(fresh)
+  // An orphan has no catalog default behind it and no switch in the dialog, so its
+  // value is always its own; a cataloged key opens with the switch on only when it
+  // carries a value of its own.
+  editUseCustom.value = isOrphanSetting(fresh) || hasCustomValue(fresh)
   editValue.value = fresh.overrideValue ?? fresh.value ?? ''
   editOpen.value = true
 }
@@ -142,10 +149,17 @@ async function submitEdit(): Promise<void> {
 
     return
   }
-  // A persisted row updates in place; an on-default catalog key adds a custom value.
-  const handle = isPersistedSetting(row)
-    ? sendSettingUpdate(row.key, next)
-    : sendSettingAdd(row.key, next ?? '')
+  // The switch turned off means "back to the catalog default", which resets the key
+  // by dropping its row. With a value, an orphan updates in place and a cataloged
+  // key adds by key (the add is idempotent, so the row need not exist yet).
+  let handle
+  if (next === null) {
+    handle = sendSettingReset(row.key)
+  } else {
+    handle = isOrphanSetting(row)
+      ? sendSettingUpdate(row.key, next)
+      : sendSettingAdd(row.key, next)
+  }
   if (await runEditAction(handle)) {
     closeEdit()
   }
@@ -204,16 +218,24 @@ async function submitDelete(): Promise<void> {
             <button
               type="button"
               class="btn btn-sm btn-outline-primary"
-              :title="isPersistedSetting(row) ? 'Edit' : 'Set custom value'"
+              :title="
+                hasCustomValue(row) || isOrphanSetting(row)
+                  ? 'Edit'
+                  : 'Set custom value'
+              "
               :aria-label="
-                isPersistedSetting(row) ? 'Edit' : 'Set custom value'
+                hasCustomValue(row) || isOrphanSetting(row)
+                  ? 'Edit'
+                  : 'Set custom value'
               "
               :data-id="`hilos-settings-edit-${row.key}`"
               @click="openEdit(row)"
             >
               <i
                 :class="
-                  isPersistedSetting(row) ? 'bi bi-pencil' : 'bi bi-plus-lg'
+                  hasCustomValue(row) || isOrphanSetting(row)
+                    ? 'bi bi-pencil'
+                    : 'bi bi-plus-lg'
                 "
                 aria-hidden="true"
               ></i>

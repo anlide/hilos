@@ -169,6 +169,45 @@ describe('HilosSettingsPage', () => {
     ).toBeNull()
   })
 
+  it('offers "set custom value" for a cataloged key on its default', () => {
+    // The row a reset leaves behind: on its catalog default, no value of its own.
+    // The screen asks the override, not whether a row is stored, so the button is
+    // the plus that offers a custom value — not the pencil that edits one.
+    const { container } = renderPage(
+      seededContext([
+        slot({ key: 'site_name', valueSource: 'default', value: 'd' }),
+      ]),
+    )
+    const button = container.querySelector(
+      '[data-id="hilos-settings-edit-site_name"]',
+    ) as Element
+
+    expect(button.getAttribute('aria-label')).toBe('Set custom value')
+    expect(button.querySelector('.bi-plus-lg')).not.toBeNull()
+  })
+
+  it('opens a key on its default with the custom-value switch off', () => {
+    const { container } = renderPage(
+      seededContext([
+        slot({ key: 'site_name', valueSource: 'default', value: 'd' }),
+      ]),
+    )
+    fireEvent.click(
+      container.querySelector(
+        '[data-id="hilos-settings-edit-site_name"]',
+      ) as Element,
+    )
+
+    const custom = document.querySelector(
+      '[data-id="hilos-settings-edit-custom"]',
+    ) as HTMLInputElement
+
+    expect(custom.checked).toBe(false)
+    expect(
+      document.querySelector('[data-id="hilos-settings-edit-value"]'),
+    ).toBeNull()
+  })
+
   it('opens the edit dialog from a row action', () => {
     const { container } = renderPage(
       seededContext([

@@ -98,23 +98,18 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
             $this->assertSame('browser custom', $created[HilosSettingTableRow::overrideValue]);
             $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_OVERRIDE, $created[HilosSettingTableRow::valueSource]);
 
-            Hilos::$table->settings[$catalogKey]->actions->updateValue(null);
-            $updated = $this->settingsSource($this->findSettingsBrowserRow(
+            // Resetting a catalog key removes its row and reverts the window row to the
+            // default placeholder; the key stays in the window rather than being removed,
+            // and the placeholder carries no id because no row backs it any more.
+            Hilos::$table->settings->actions->reset($catalogKey);
+            $this->assertNull(Hilos::$db->settings[$catalogKey]);
+            $afterReset = $this->settingsSource($this->findSettingsBrowserRow(
                 $this->sendSettingsWindow('settings-mutation-ak'),
                 $catalogKey,
             ));
-            $this->assertNull($updated[HilosSettingTableRow::overrideValue]);
-            $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_DEFAULT, $updated[HilosSettingTableRow::valueSource]);
-
-            // Deleting the override of a catalog key reverts the row to its default
-            // placeholder; it stays in the window rather than being removed.
-            Hilos::$db->settings[$catalogKey]?->actions->delete();
-            $afterDelete = $this->settingsSource($this->findSettingsBrowserRow(
-                $this->sendSettingsWindow('settings-mutation-ak'),
-                $catalogKey,
-            ));
-            $this->assertArrayNotHasKey(HilosSettingTableRow::id, $afterDelete);
-            $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_DEFAULT, $afterDelete[HilosSettingTableRow::valueSource]);
+            $this->assertArrayNotHasKey(HilosSettingTableRow::id, $afterReset);
+            $this->assertNull($afterReset[HilosSettingTableRow::overrideValue]);
+            $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_DEFAULT, $afterReset[HilosSettingTableRow::valueSource]);
 
             // Deleting an orphan (uncataloged) key removes it from the window entirely.
             Hilos::$table->settings[$orphanKey]->actions->delete();
@@ -126,7 +121,9 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
             Hilos::$rt->connections->actions->clear();
             RtTruthSourceRegistry::unregisterAgent(self::TEST_SETTINGS_AGENT_ID);
             $this->deleteSettingIfExists($catalogKey);
-            if ($originalExists) {
+            // A row without a value no longer exists, so a baseline that had none is
+            // restored by leaving the key without a row at all.
+            if ($originalExists && $originalValue !== null) {
                 Hilos::$db->settings->actions->add($catalogKey, $originalValue, SettingsCatalog::getCatalog());
             }
             $this->deleteSettingIfExists($orphanKey);

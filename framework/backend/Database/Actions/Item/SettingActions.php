@@ -33,10 +33,10 @@ final class SettingActions extends DbActions
     /**
      * Updates setting value.
      *
-     * @param mixed $value New value (null = use catalog default when reading)
+     * @param mixed $value New value to store (a setting row without a value does not exist)
      * @throws ItemNotFoundForUpdateException When setting object has no persisted id
      * @throws SettingValueRefusedException When the key declares a catalog rule the value fails
-     * @throws SettingInvalidValueException When the catalog names a rule that is not one
+     * @throws SettingInvalidValueException When the value is null, or the catalog names a rule that is not one
      * @throws DatabaseException When collection loading or setting persistence fails
      * @throws ObjectCollectionNullException When the setting action is detached from its object collection
      * @throws ObjectGetIdStringNotImplementedException When the setting primary key is null during the per-item write check
@@ -52,12 +52,16 @@ final class SettingActions extends DbActions
             throw new ItemNotFoundForUpdateException('Setting not found for update (id is null)');
         }
 
-        // Clearing the value is a reset to the catalog default, not a value of its own: nothing to check.
-        if ($value !== null) {
-            SettingValueRules::assertValid($this->object->key, $value);
+        // A row without a value does not exist: resetting a cataloged key to its default
+        // is delete(), so an update always carries a value to check like any other.
+        if ($value === null) {
+            throw new SettingInvalidValueException(
+                "Setting '{$this->object->key}' cannot be stored without a value; delete the row to reset it",
+            );
         }
+        SettingValueRules::assertValid($this->object->key, $value);
 
-        $this->object->value = $value !== null ? $this->serializeValue($value, $this->object->type) : null;
+        $this->object->value = $this->serializeValue($value, $this->object->type);
 
         $this->object->sync();
     }

@@ -49,23 +49,18 @@ export interface HilosSettingRow {
   readonly defaultReferenceKey: string | null
   /** Where the effective value comes from. */
   readonly valueSource: SettingValueSource
-  /**
-   * Whether a DB row backs this key. `valueSource` cannot answer it: a stored
-   * NULL (no override, inherit the default) and a catalog key with no row at all
-   * both read as `default` / `reference`.
-   */
-  readonly persisted: boolean
 }
 
 // Wire keys: the framework settings table and its single inline `settings` slot
-// (the catalog-merged fields) and the add / update / delete action names. A
-// project binds its backend to these keys.
+// (the catalog-merged fields) and the add / update / delete / reset action names.
+// A project binds its backend to these keys.
 const SETTINGS_TABLE = 'settings'
 const SETTINGS_SLOT = 'settings'
 const SETTINGS_PAGE_SIZE = 10
 const SETTING_ADD_ACTION = 'setting_add'
 const SETTING_UPDATE_ACTION = 'setting_update'
 const SETTING_DELETE_ACTION = 'setting_delete'
+const SETTING_RESET_ACTION = 'setting_reset'
 
 // Row payload keys of the settings slot. They are declared here because this
 // module owns the view-model they resolve into, and exported where a view also
@@ -93,9 +88,6 @@ const SETTING_DEFAULT_REFERENCE_KEY_FIELD = 'defaultReferenceKey'
 /** Row payload key of the effective value's origin. */
 const SETTING_VALUE_SOURCE_FIELD = 'valueSource'
 
-/** Row payload key of the backing-row flag. */
-const SETTING_PERSISTED_FIELD = 'persisted'
-
 /**
  * The project-supplied context the settings admin reads from: the scope-partitioned
  * stores that own the page-scoped settings table, and the action lifecycle the
@@ -107,7 +99,7 @@ export interface HilosSettingsContext {
   readonly connection: HilosConnection
   /** The scope manager owning the page scope the table window normalizes into. */
   readonly scopes: ScopeManager
-  /** The action lifecycle the add / update / delete tracked actions dispatch over. */
+  /** The action lifecycle the add / update / delete / reset tracked actions dispatch over. */
   readonly actions: ActionLifecycle
 }
 
@@ -121,19 +113,25 @@ export interface HilosSettingsActions {
    */
   sendSettingAdd(key: string, value: string): ActionHandle
   /**
-   * Update a persisted setting's value, as a tracked action. A null value resets
-   * it to the catalog default.
+   * Update a persisted setting's value, as a tracked action.
    *
    * @param key The setting key.
-   * @param value The new value, or null to reset to the catalog default.
+   * @param value The new value.
    */
-  sendSettingUpdate(key: string, value: string | null): ActionHandle
+  sendSettingUpdate(key: string, value: string): ActionHandle
   /**
    * Delete an orphan setting (a key not in the catalog), as a tracked action.
    *
    * @param key The setting key.
    */
   sendSettingDelete(key: string): ActionHandle
+  /**
+   * Reset a catalog setting back to its catalog default, as a tracked action.
+   * The stored row is removed, so the key reads as being on its default again.
+   *
+   * @param key The setting key.
+   */
+  sendSettingReset(key: string): ActionHandle
 }
 
 /** Read a row slot as an inline record, or undefined when it is not one. */
@@ -171,7 +169,6 @@ export function resolveHilosSettingRow(row: TableRow): HilosSettingRow {
       SETTING_DEFAULT_REFERENCE_KEY_FIELD,
     ),
     valueSource: toValueSource(slot[SETTING_VALUE_SOURCE_FIELD]),
-    persisted: slot[SETTING_PERSISTED_FIELD] === true,
   }
 }
 
@@ -181,14 +178,15 @@ export function isOrphanSetting(row: HilosSettingRow): boolean {
 }
 
 /**
- * A setting backed by a persisted DB row — edit it, do not insert it again.
+ * A setting carrying a value of its own rather than sitting on its catalog
+ * default — the question the screen actually asks, both to label the row's
+ * button and to arm the edit dialog's custom-value switch.
  *
- * Read from the row's own flag rather than inferred from `valueSource`: a row
- * storing NULL inherits its value and still exists, so treating it as absent
- * sends an add for a key that is already there.
+ * Not "is a row stored": a setting row without a value does not exist, so the
+ * two questions have the same answer and only one of them is on the wire.
  */
-export function isPersistedSetting(row: HilosSettingRow): boolean {
-  return row.persisted
+export function hasCustomValue(row: HilosSettingRow): boolean {
+  return row.overrideValue !== null
 }
 
 /** The settings table handle a settings view drives: the controller plus its mount lifecycle. */
@@ -257,8 +255,8 @@ export function createHilosSettingsTable(
 }
 
 /**
- * The settings mutation surface: the add / update / delete submits as tracked
- * actions over the lifecycle. Each returns an ActionHandle whose `done` resolves
+ * The settings mutation surface: the add / update / delete / reset submits as
+ * tracked actions over the lifecycle. Each returns an ActionHandle whose `done` resolves
  * on the backend's `::success` ack and rejects on `::fail` — the view closes the
  * dialog on success and surfaces the failure (authoritative-backend). The
  * committed row returns separately over the live settings table; own-change is
@@ -285,6 +283,9 @@ export function createHilosSettingsActions(
     },
     sendSettingDelete(key) {
       return context.actions.dispatch(SETTING_DELETE_ACTION, { key })
+    },
+    sendSettingReset(key) {
+      return context.actions.dispatch(SETTING_RESET_ACTION, { key })
     },
   }
 }

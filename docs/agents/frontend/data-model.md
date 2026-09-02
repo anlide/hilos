@@ -238,12 +238,17 @@ Because the key set is fixed, the table has **no "create a new record"
 operation**, and a cataloged-table page offers exactly three mutations:
 
 - **add by key** — give a key on its default a custom value
-  (`default` / `reference` → `override`); the row already exists, so this sets an
-  override, it does not mint a key. It lives **on the row**, not behind a separate
-  "Add" button.
+  (`default` / `reference` → `override`); this sets an override, it does not mint
+  a key, and it is idempotent by key. It lives **on the row**, not behind a
+  separate "Add" button.
 - **edit by key** — change an override, or reset it back to the catalog default.
-- **edit / delete an orphan** — the orphan is the only deletable kind; a cataloged
-  key cannot be deleted (it would re-appear on its default).
+  The reset is its own action (`setting_reset`), and it **removes the row**: a
+  setting row without a value does not exist, so "no row" is what "no override"
+  looks like.
+- **edit / delete an orphan** — the orphan is the only deletable kind. What is
+  forbidden is the *gesture* "delete a cataloged key": there would be nothing to
+  delete, since the key re-appears on its default. Dropping its row as the
+  implementation of a reset is not that gesture and is the normal path.
 
 **Do not** add a free "create / add row" control that mints an arbitrary key: it
 models a create the domain does not have, and a free-typed key could only become

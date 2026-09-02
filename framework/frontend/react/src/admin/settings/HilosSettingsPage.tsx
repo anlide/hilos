@@ -18,8 +18,8 @@ import {
   SETTING_VALUE_FIELD,
   createHilosSettingsActions,
   createHilosSettingsTable,
+  hasCustomValue,
   isOrphanSetting,
-  isPersistedSetting,
 } from '@hilos/core'
 import type {
   HilosSettingRow,
@@ -110,7 +110,10 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
     }
     edit.clearError()
     setEditRow(fresh)
-    setEditUseCustom(isPersistedSetting(fresh))
+    // An orphan has no catalog default behind it and no switch in the dialog, so its
+    // value is always its own; a cataloged key opens with the switch on only when it
+    // carries a value of its own.
+    setEditUseCustom(isOrphanSetting(fresh) || hasCustomValue(fresh))
     setEditValue(fresh.overrideValue ?? fresh.value ?? '')
     setEditOpen(true)
   }
@@ -131,10 +134,17 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
 
       return
     }
-    // A persisted row updates in place; an on-default catalog key adds a custom value.
-    const handle = isPersistedSetting(editRow)
-      ? actions.sendSettingUpdate(editRow.key, next)
-      : actions.sendSettingAdd(editRow.key, next ?? '')
+    // The switch turned off means "back to the catalog default", which resets the key
+    // by dropping its row. With a value, an orphan updates in place and a cataloged
+    // key adds by key (the add is idempotent, so the row need not exist yet).
+    let handle
+    if (next === null) {
+      handle = actions.sendSettingReset(editRow.key)
+    } else {
+      handle = isOrphanSetting(editRow)
+        ? actions.sendSettingUpdate(editRow.key, next)
+        : actions.sendSettingAdd(editRow.key, next)
+    }
     if (await edit.run(handle)) {
       closeEdit()
     }
@@ -191,16 +201,24 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-primary"
-                  title={isPersistedSetting(row) ? 'Edit' : 'Set custom value'}
+                  title={
+                    hasCustomValue(row) || isOrphanSetting(row)
+                      ? 'Edit'
+                      : 'Set custom value'
+                  }
                   aria-label={
-                    isPersistedSetting(row) ? 'Edit' : 'Set custom value'
+                    hasCustomValue(row) || isOrphanSetting(row)
+                      ? 'Edit'
+                      : 'Set custom value'
                   }
                   data-id={`hilos-settings-edit-${row.key}`}
                   onClick={() => openEdit(row)}
                 >
                   <i
                     className={
-                      isPersistedSetting(row) ? 'bi bi-pencil' : 'bi bi-plus-lg'
+                      hasCustomValue(row) || isOrphanSetting(row)
+                        ? 'bi bi-pencil'
+                        : 'bi bi-plus-lg'
                     }
                     aria-hidden="true"
                   />

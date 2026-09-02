@@ -33,7 +33,8 @@ use Hilos\HilosException;
  * Settings Actions - write operations for Settings collection.
  *
  * Collection-level operations: add (catalog key), and the orphan pair
- * addOrphan/deleteOrphan (non-catalog key) used by test fixtures.
+ * addOrphan/deleteOrphan (non-catalog key) used by test fixtures. Neither writer
+ * stores a row without a value: dropping an override is a delete, not a write.
  *
  * @extends DbActions<Setting, ObjectSettings>
  * @property-read DbCollectionSettings $collection
@@ -45,12 +46,12 @@ final class SettingsActions extends DbActions
      * Adds a new setting. Key must exist in catalog.
      *
      * @param string $key Setting key (must be in catalog)
-     * @param mixed $value Value (null = use catalog default when reading)
+     * @param mixed $value Value to store (a setting row without a value does not exist)
      * @param array<string, array<string, mixed>> $catalog Catalog: key => [type, default_value]
      * @return Setting Created setting Db item
      * @throws SettingNotInCatalogException When key is not declared in the settings catalog
      * @throws SettingValueRefusedException When the key declares a catalog rule the value fails
-     * @throws SettingInvalidValueException When the catalog names a rule that is not one
+     * @throws SettingInvalidValueException When the value is null, or the catalog names a rule that is not one
      * @throws CallbackNotSetException When the collection cannot wrap the created object as a DB item
      * @throws DatabaseException When collection loading or setting persistence fails
      * @throws DuplicateIdException When the created setting id already exists in the collection
@@ -68,11 +69,11 @@ final class SettingsActions extends DbActions
         if (!array_key_exists($key, $catalog)) {
             throw new SettingNotInCatalogException("Setting key '{$key}' is not in catalog");
         }
-
-        // Storing null is a row without an override, so it carries no value for a rule to judge.
-        if ($value !== null) {
-            SettingValueRules::assertValid($key, $value);
+        // A row without a value does not exist: dropping the override is a delete, not a write.
+        if ($value === null) {
+            throw new SettingInvalidValueException("Setting key '{$key}' cannot be stored without a value");
         }
+        SettingValueRules::assertValid($key, $value);
 
         $entry = $catalog[$key];
         $type = $entry[SettingsCatalogConstants::CATALOG_ENTRY_TYPE] ?? SettingsCatalogConstants::TYPE_STRING;
@@ -80,7 +81,7 @@ final class SettingsActions extends DbActions
         $setting = ObjectSetting::create();
         $setting->key = $key;
         $setting->type = $type;
-        $setting->value = $value !== null ? $this->serializeValue($value, $type) : null;
+        $setting->value = $this->serializeValue($value, $type);
         $setting->sync();
 
         $this->addObjectToCollection($setting);
@@ -98,9 +99,10 @@ final class SettingsActions extends DbActions
      *
      * @param string $key Setting key (must NOT be in catalog)
      * @param string $type Value type (string, integer, float, boolean)
-     * @param mixed $value Value (null = stored as null)
+     * @param mixed $value Value to store (a setting row without a value does not exist)
      * @param array<string, array<string, mixed>> $catalog Catalog: key => [type, default_value]
      * @return Setting Created orphan setting Db item
+     * @throws SettingInvalidValueException When the value is null
      * @throws SettingKeyInCatalogException When the key is in the catalog (use add() for catalog keys)
      * @throws SettingTypeMismatchException When the type is not a supported setting type
      * @throws DuplicateValueException When a setting row for the key already exists
@@ -121,6 +123,11 @@ final class SettingsActions extends DbActions
         if (array_key_exists($key, $catalog)) {
             throw new SettingKeyInCatalogException("Setting key '{$key}' is in catalog; orphan write refused");
         }
+        // Orphans obey the same invariant: an orphan with nothing in it is a row to delete,
+        // not a row to create — and there is no default behind it to inherit.
+        if ($value === null) {
+            throw new SettingInvalidValueException("Setting key '{$key}' cannot be stored without a value");
+        }
         $this->ensureSupportedType($type);
         if (isset($this->collection[$key])) {
             throw new DuplicateValueException("Orphan setting for key '{$key}' already exists");
@@ -129,7 +136,7 @@ final class SettingsActions extends DbActions
         $setting = ObjectSetting::create();
         $setting->key = $key;
         $setting->type = $type;
-        $setting->value = $value !== null ? $this->serializeValue($value, $type) : null;
+        $setting->value = $this->serializeValue($value, $type);
         $setting->sync();
 
         $this->addObjectToCollection($setting);

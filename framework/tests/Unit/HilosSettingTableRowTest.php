@@ -29,7 +29,6 @@ final class HilosSettingTableRowTest extends TestCase
                 HilosSettingTableRow::defaultValue => 'llama3',
                 HilosSettingTableRow::defaultReferenceKey => 'default_bot_model',
                 HilosSettingTableRow::valueSource => HilosSettingTableRow::VALUE_SOURCE_OVERRIDE,
-                HilosSettingTableRow::persisted => true,
             ],
             $this->overrideRow()->toArray(),
         );
@@ -50,7 +49,6 @@ final class HilosSettingTableRowTest extends TestCase
         $this->assertSame('orphan_key', $row->key);
         $this->assertNull($row->overrideValue);
         $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_ORPHAN, $row->valueSource);
-        $this->assertFalse($row->persisted);
     }
 
     /**
@@ -69,7 +67,6 @@ final class HilosSettingTableRowTest extends TestCase
             defaultValue: 'llama3',
             defaultReferenceKey: 'default_bot_model',
             valueSource: HilosSettingTableRow::VALUE_SOURCE_OVERRIDE,
-            persisted: true,
         );
     }
 }

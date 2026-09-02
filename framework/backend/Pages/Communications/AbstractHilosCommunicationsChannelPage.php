@@ -165,10 +165,10 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
     }
 
     /**
-     * Resets one channel field to its env/default value by clearing the override.
+     * Resets one channel field to its env/default value by dropping the override row.
      *
-     * A cataloged settings key cannot be row-deleted, so the override is nulled out; a
-     * null value means "no override, inherit", which the resolver reads as env/default.
+     * The settings row for the field is removed, which the resolver reads as env/default:
+     * a cataloged key with no row of its own is on its catalog default.
      *
      * @param HilosChannelSettingResetActionDTO $dto Reset action payload
      * @throws TableActionException When the channel/field is unknown or secret
@@ -184,9 +184,8 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
             throw new TableActionException("Field '{$field->key}' is a secret and has no settings override");
         }
 
-        $this->settingsTable()->actions->add(
+        $this->settingsTable()->actions->reset(
             DeliveryChannelSettings::fieldKey($descriptor->name(), $field->key),
-            null,
         );
     }
 

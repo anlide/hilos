@@ -11,19 +11,17 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Database\Entity\Item\Setting;
 
 /**
- * DTO for the setting_update action payload.
+ * DTO for the setting_reset action payload.
  */
-final class HilosSettingUpdateActionDTO extends ActionPayloadDTO
+final class HilosSettingResetActionDTO extends ActionPayloadDTO
 {
     /**
-     * Creates setting update action DTO.
+     * Creates setting reset action DTO.
      *
-     * @param string $key Setting key to update
-     * @param mixed $value New value to store (never null: a row without a value does not exist)
+     * @param string $key Setting key to reset (cataloged only)
      */
     public function __construct(
         public readonly string $key,
-        public readonly mixed $value,
     ) {
     }
 
@@ -34,7 +32,7 @@ final class HilosSettingUpdateActionDTO extends ActionPayloadDTO
      */
     public function getAction(): string
     {
-        return HilosSignalConstants::SETTING_UPDATE;
+        return HilosSignalConstants::SETTING_RESET;
     }
 
     /**
@@ -42,7 +40,7 @@ final class HilosSettingUpdateActionDTO extends ActionPayloadDTO
      *
      * @param array<string, mixed> $data Raw payload (may contain FIELD_DATA wrapper)
      * @return static Instance
-     * @throws InvalidFormatException When a field the action needs is absent, null, or not a string
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
@@ -55,30 +53,18 @@ final class HilosSettingUpdateActionDTO extends ActionPayloadDTO
             $inner = $inner[SignalPayloadConstants::FIELD_DATA];
         }
 
-        // An absent or null value used to mean "no override, inherit the default"; that
-        // state no longer exists, so the payload that carries it is malformed rather than
-        // a reset in disguise — the reset has its own action.
-        $value = $inner[Setting::value] ?? null;
-        if ($value === null) {
-            throw new InvalidFormatException('Payload carries no value under key ' . Setting::value);
-        }
-
         return new static(
             key: trim(self::requireString($inner, Setting::key)),
-            value: $value,
         );
     }
 
     /**
      * Serializes to array.
      *
-     * @return array<string, mixed> Data with key and value
+     * @return array<string, mixed> Data with key
      */
     public function toArray(): array
     {
-        return [
-            Setting::key => $this->key,
-            Setting::value => $this->value,
-        ];
+        return [Setting::key => $this->key];
     }
 }

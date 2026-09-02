@@ -21,14 +21,15 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Tables\Settings\DTO\HilosSettingAddActionDTO;
 use Hilos\Tables\Settings\DTO\HilosSettingDeleteActionDTO;
+use Hilos\Tables\Settings\DTO\HilosSettingResetActionDTO;
 use Hilos\Tables\Settings\DTO\HilosSettingUpdateActionDTO;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
  * Base class for the framework Hilos settings page.
  *
- * Owns the settings subscribe signal and the add/update/delete action lifecycle
- * over the framework settings table. A project activates the feature by
+ * Owns the settings subscribe signal and the add/update/delete/reset action
+ * lifecycle over the framework settings table. A project activates the feature by
  * extending this page with a `SUBSCRIPTION_AGENT_TYPE` and registering it; the
  * catalog binds to the settings facade (Hilos::$setting), not to the page.
  */
@@ -42,6 +43,7 @@ abstract class AbstractHilosSettingsPage extends AbstractHilosPage
         HilosSignalConstants::SETTING_ADD => HilosSettingAddActionDTO::class,
         HilosSignalConstants::SETTING_UPDATE => HilosSettingUpdateActionDTO::class,
         HilosSignalConstants::SETTING_DELETE => HilosSettingDeleteActionDTO::class,
+        HilosSignalConstants::SETTING_RESET => HilosSettingResetActionDTO::class,
     ];
 
     public const array BROWSER = [
@@ -49,7 +51,7 @@ abstract class AbstractHilosSettingsPage extends AbstractHilosPage
     ];
 
     /**
-     * Routes setting add, update, and delete actions to typed handlers.
+     * Routes setting add, update, delete, and reset actions to typed handlers.
      *
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name from the WebSocket envelope
@@ -83,6 +85,14 @@ abstract class AbstractHilosSettingsPage extends AbstractHilosPage
                     throw new InvalidActionPayloadException($action, HilosSettingDeleteActionDTO::class, $dto);
                 }
                 $this->handleDelete($dto);
+
+                break;
+
+            case HilosSignalConstants::SETTING_RESET:
+                if (!$dto instanceof HilosSettingResetActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosSettingResetActionDTO::class, $dto);
+                }
+                $this->handleReset($dto);
 
                 break;
 
@@ -143,6 +153,25 @@ abstract class AbstractHilosSettingsPage extends AbstractHilosPage
         }
 
         $this->settingsTable()[$dto->key]->actions->delete();
+    }
+
+    /**
+     * Resets a cataloged setting back to its catalog default through the settings table action.
+     *
+     * @param HilosSettingResetActionDTO $dto Reset action payload
+     * @throws TableActionException When the setting key is empty, the table is not registered, or the key is an orphan
+     * @throws DatabaseException When the active database context is not a HilosDbContext
+     * @throws SettingAccessorUnavailableException When the settings accessor is not initialized
+     * @throws SettingException When catalog default metadata cannot rebuild the placeholder row
+     * @throws HilosException When the write guard or settings persistence fails
+     */
+    private function handleReset(HilosSettingResetActionDTO $dto): void
+    {
+        if ($dto->key === '') {
+            throw new TableActionException('Setting key is required');
+        }
+
+        $this->settingsTable()->actions->reset($dto->key);
     }
 
     /**

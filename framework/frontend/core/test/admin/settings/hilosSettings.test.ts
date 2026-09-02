@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  createHilosSettingsActions,
+  hasCustomValue,
   isOrphanSetting,
-  isPersistedSetting,
   resolveHilosSettingRow,
   type HilosSettingRow,
+  type HilosSettingsContext,
   type SettingValueSource,
 } from '../../../src/admin/settings/hilosSettings.js'
+import { type ActionHandle } from '../../../src/connection/actionLifecycle.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
 /** Build a settings table row whose inline `settings` slot carries the given fields. */
@@ -17,20 +20,19 @@ function settingsRow(
   return { rowKey, slots: slot === undefined ? {} : { settings: slot } }
 }
 
-/** Build a resolved settings view-model with the given value source and backing. */
+/** Build a resolved settings view-model with the given value source and override. */
 function rowWithSource(
   valueSource: SettingValueSource,
-  persisted = false,
+  overrideValue: string | null = null,
 ): HilosSettingRow {
   return {
     key: 'k',
     type: 'string',
     value: 'v',
-    overrideValue: null,
+    overrideValue,
     defaultValue: null,
     defaultReferenceKey: null,
     valueSource,
-    persisted,
   }
 }
 
@@ -45,7 +47,6 @@ describe('resolveHilosSettingRow', () => {
         defaultValue: '1.0',
         defaultReferenceKey: 'default_bot_timeout_sec',
         valueSource: 'reference',
-        persisted: true,
       }),
     )
 
@@ -57,7 +58,6 @@ describe('resolveHilosSettingRow', () => {
       defaultValue: '1.0',
       defaultReferenceKey: 'default_bot_timeout_sec',
       valueSource: 'reference',
-      persisted: true,
     })
   })
 
@@ -71,7 +71,6 @@ describe('resolveHilosSettingRow', () => {
     expect(row.defaultValue).toBeNull()
     expect(row.defaultReferenceKey).toBeNull()
     expect(row.valueSource).toBe('orphan')
-    expect(row.persisted).toBe(false)
   })
 
   it('narrows an unknown valueSource to orphan', () => {
@@ -92,18 +91,52 @@ describe('isOrphanSetting', () => {
   })
 })
 
-describe('isPersistedSetting', () => {
-  it('reads the row flag, not the value source', () => {
-    expect(isPersistedSetting(rowWithSource('override', true))).toBe(true)
-    expect(isPersistedSetting(rowWithSource('orphan', true))).toBe(true)
-    expect(isPersistedSetting(rowWithSource('default', false))).toBe(false)
-    expect(isPersistedSetting(rowWithSource('reference', false))).toBe(false)
+describe('hasCustomValue', () => {
+  it('reads the override value, not the value source', () => {
+    expect(hasCustomValue(rowWithSource('override', 'mine'))).toBe(true)
+    expect(hasCustomValue(rowWithSource('orphan', 'mine'))).toBe(true)
+    expect(hasCustomValue(rowWithSource('default'))).toBe(false)
+    expect(hasCustomValue(rowWithSource('reference'))).toBe(false)
   })
+})
 
-  it('is true for a stored row that inherits its value', () => {
-    // A row storing NULL resolves to default/reference and still exists: editing
-    // it must update, not insert a duplicate.
-    expect(isPersistedSetting(rowWithSource('reference', true))).toBe(true)
-    expect(isPersistedSetting(rowWithSource('default', true))).toBe(true)
+describe('createHilosSettingsActions', () => {
+  /** A context whose action lifecycle records every dispatch. */
+  function recordingContext(): {
+    context: HilosSettingsContext
+    calls: Array<{ action: string; payload: Record<string, unknown> }>
+  } {
+    const calls: Array<{
+      action: string
+      payload: Record<string, unknown>
+    }> = []
+    const context = {
+      connection: {},
+      scopes: {},
+      actions: {
+        dispatch(
+          action: string,
+          payload: Record<string, unknown>,
+        ): ActionHandle {
+          calls.push({ action, payload })
+
+          return {} as ActionHandle
+        },
+      },
+    } as unknown as HilosSettingsContext
+
+    return { context, calls }
+  }
+
+  it('dispatches reset with the key only', () => {
+    const { context, calls } = recordingContext()
+    createHilosSettingsActions(context).sendSettingReset('example_string')
+
+    expect(calls).toEqual([
+      {
+        action: 'setting_reset',
+        payload: { key: 'example_string' },
+      },
+    ])
   })
 })

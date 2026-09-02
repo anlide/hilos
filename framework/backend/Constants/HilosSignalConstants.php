@@ -287,6 +287,9 @@ final class HilosSignalConstants
     /** Client → server: delete an orphan setting on the HILOS_SETTINGS page. */
     public const string SETTING_DELETE = 'setting_delete';
 
+    /** Client → server: reset a cataloged setting back to its catalog default on the HILOS_SETTINGS page. */
+    public const string SETTING_RESET = 'setting_reset';
+
     // ── Hilos backup admin: list-page actions (client → server) ──
     /** Client → server: start a backup with a chosen scope on the HILOS_BACKUP page. */
     public const string BACKUP_CREATE = 'backup_create';

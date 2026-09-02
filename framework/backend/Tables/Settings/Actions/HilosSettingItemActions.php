@@ -29,14 +29,18 @@ final class HilosSettingItemActions extends TableItemActions
     /**
      * Updates setting value and returns mutation for broadcasting.
      *
-     * @param mixed $value New setting value (null = use catalog default when reading)
+     * @param mixed $value New setting value (a setting row without a value does not exist)
      * @return TableRowMutationDTO Row mutation DTO for broadcast
-     * @throws TableActionException When the setting key is missing from persisted settings
+     * @throws TableActionException When the value is null or the setting key is missing from persisted settings
      * @throws DatabaseException When settings persistence or row reload fails
      * @throws SettingException When catalog default metadata cannot rebuild the row
      */
     public function updateValue(mixed $value): TableRowMutationDTO
     {
+        if ($value === null) {
+            throw new TableActionException('Use setting_reset to return a cataloged key to its default');
+        }
+
         $dbSetting = $this->settingsCollection()[(string) $this->rowKey]
             ?? throw new TableActionException("Setting '{$this->rowKey}' not found");
         $dbSetting->actions->updateValue($value);

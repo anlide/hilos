@@ -25,8 +25,8 @@ import {
   SETTING_VALUE_FIELD,
   createHilosSettingsActions,
   createHilosSettingsTable,
+  hasCustomValue,
   isOrphanSetting,
-  isPersistedSetting,
 } from '@hilos/core'
 import type {
   HilosSettingRow,
@@ -103,15 +103,21 @@ function inputStep(type: string | undefined): 'any' | undefined {
               <button
                 type="button"
                 class="btn btn-sm btn-outline-primary"
-                [title]="isPersisted(row) ? 'Edit' : 'Set custom value'"
+                [title]="
+                  hasCustom(row) || isOrphan(row) ? 'Edit' : 'Set custom value'
+                "
                 [attr.aria-label]="
-                  isPersisted(row) ? 'Edit' : 'Set custom value'
+                  hasCustom(row) || isOrphan(row) ? 'Edit' : 'Set custom value'
                 "
                 [attr.data-id]="'hilos-settings-edit-' + row.key"
                 (click)="openEdit(row)"
               >
                 <i
-                  [class]="isPersisted(row) ? 'bi bi-pencil' : 'bi bi-plus-lg'"
+                  [class]="
+                    hasCustom(row) || isOrphan(row)
+                      ? 'bi bi-pencil'
+                      : 'bi bi-plus-lg'
+                  "
                   aria-hidden="true"
                 ></i>
               </button>
@@ -273,7 +279,7 @@ export class HilosSettingsPage {
 
   protected readonly page = HilosPages.SETTINGS
   protected readonly columns = COLUMNS
-  protected readonly isPersisted = isPersistedSetting
+  protected readonly hasCustom = hasCustomValue
   protected readonly isOrphan = isOrphanSetting
 
   protected readonly settings = computed(() =>
@@ -340,7 +346,10 @@ export class HilosSettingsPage {
     }
     this.edit.clearError()
     this.editRow.set(fresh)
-    this.editUseCustom.set(isPersistedSetting(fresh))
+    // An orphan has no catalog default behind it and no switch in the dialog, so its
+    // value is always its own; a cataloged key opens with the switch on only when it
+    // carries a value of its own.
+    this.editUseCustom.set(isOrphanSetting(fresh) || hasCustomValue(fresh))
     this.editValue.set(fresh.overrideValue ?? fresh.value ?? '')
     this.editOpen.set(true)
   }
@@ -359,10 +368,17 @@ export class HilosSettingsPage {
 
       return
     }
-    // A persisted row updates in place; an on-default catalog key adds a custom value.
-    const handle = isPersistedSetting(row)
-      ? this.actions().sendSettingUpdate(row.key, next)
-      : this.actions().sendSettingAdd(row.key, next ?? '')
+    // The switch turned off means "back to the catalog default", which resets the key
+    // by dropping its row. With a value, an orphan updates in place and a cataloged
+    // key adds by key (the add is idempotent, so the row need not exist yet).
+    let handle
+    if (next === null) {
+      handle = this.actions().sendSettingReset(row.key)
+    } else {
+      handle = isOrphanSetting(row)
+        ? this.actions().sendSettingUpdate(row.key, next)
+        : this.actions().sendSettingAdd(row.key, next)
+    }
     if (await this.edit.run(handle)) {
       this.editOpen.set(false)
     }

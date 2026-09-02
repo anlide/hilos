@@ -150,6 +150,20 @@ test('a tab applies its own edit at once, with no pending gate', async ({
   await expect(row).toContainText('default')
   await expect(row).not.toContainText('custom')
 
+  // The reset took the row away, so the key is back to offering a custom value
+  // rather than pretending there is one to edit — this is what the stored row
+  // with no value used to hide.
+  await expect(
+    page.getByTestId('hilos-settings-edit-example_integer'),
+  ).toHaveAttribute('aria-label', 'Set custom value')
+
+  // And re-opening the dialog arms the switch from the value, not from the row:
+  // off, with no value field behind it.
+  await page.getByTestId('hilos-settings-edit-example_integer').click()
+  await expect(page.getByTestId('hilos-settings-edit-custom')).not.toBeChecked()
+  await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
+  await page.getByTestId('modal-close').click()
+
   // All of it happened over the live socket — no document reload.
   expect(fullLoads).toBe(loadsAfterColdLoad)
 })

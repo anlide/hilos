@@ -500,7 +500,7 @@ export {
 export {
   resolveHilosSettingRow,
   isOrphanSetting,
-  isPersistedSetting,
+  hasCustomValue,
   createHilosSettingsTable,
   createHilosSettingsActions,
   SETTING_KEY_FIELD,
