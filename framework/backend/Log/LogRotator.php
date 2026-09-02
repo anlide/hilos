@@ -10,7 +10,6 @@ use Hilos\Constants\LogRotationConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Utils\Exception\LogRotationException;
-use Hilos\Utils\Logger;
 
 /**
  * Moves live daemon logs into the timestamped archive (HIL-379).
@@ -18,10 +17,16 @@ use Hilos\Utils\Logger;
  * The reusable rotation mechanics extracted from {@see DockerManager}: it
  * globs the `*.log` files under the log root, creates
  * `{@see LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME}/{@see LogRotationConstants::TIMESTAMP_FORMAT}/`,
- * and renames each live file there. Both the daemon bootstrap start path and the runtime
- * per-node {@see LogRotationAgent} call it, so rotation behaves identically whichever triggers
- * it. Bound to a log directory (from the daemon log path via {@see fromEnv()}, or an explicit
- * directory for tests) so it carries no global state.
+ * and renames each live file there. Both the daemon bootstrap start path and the runtime log store
+ * owner call it, so rotation behaves identically whichever triggers it. Bound to a log directory
+ * (from the daemon log path via the two factories, or an explicit directory for tests) so it
+ * carries no global state.
+ *
+ * Rotation is a rename and nothing else, which is why the two callers do not share one factory
+ * (HIL-480): the daemon's raw stdout and stderr are open descriptors on their inodes while the
+ * node runs, so renaming those two files would send every fatal and warning into a closed batch.
+ * The start path has no such files to spare — it runs before `proc_open`, when the previous daemon
+ * is dead — so it takes everything, and only the runtime path keeps the raw pair.
  */
 final class LogRotator
 {
@@ -30,13 +35,19 @@ final class LogRotator
 
     /**
      * @param string $logDirectory Directory holding the live *.log files and the archive subtree
+     * @param list<string> $keptBasenames Basenames rotation leaves live instead of moving
      */
-    public function __construct(private readonly string $logDirectory)
-    {
+    public function __construct(
+        private readonly string $logDirectory,
+        private readonly array $keptBasenames = [],
+    ) {
     }
 
     /**
-     * Builds a rotator over the daemon log root (the directory of DAEMON_LOG_FILE).
+     * Rotator for the daemon start path, which moves every live log it finds.
+     *
+     * Nothing is kept back: this runs before the daemon is started, so no descriptor is open on
+     * any of these files and the raw pair is replaced along with its holder.
      *
      * Unlike the two policies beside it (HIL-682) this read is not contained: the log path has no
      * axis to switch off, and a node that cannot name its log directory has nothing to rotate. It
@@ -46,63 +57,85 @@ final class LogRotator
      * @return self Rotator bound to the configured log directory
      * @throws EnvException When the daemon log path is missing, outside the catalog, or not a string
      */
-    public static function fromEnv(): self
+    public static function forStartup(): self
     {
         return new self(dirname(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]));
     }
 
     /**
-     * Summed size in bytes of the live *.log files, the input to the size trigger.
+     * Rotator for the running node, which leaves the daemon's raw stdout and stderr live.
      *
-     * Measures only the live files (not the archive), so it stays cheap enough for an onTick
-     * check. Returns 0 when the directory is missing or holds no logs.
-     *
-     * @return int Total size in bytes of the live *.log files
+     * @return self Rotator bound to the configured log directory, keeping the raw pair
+     * @throws EnvException When either daemon log path is missing, outside the catalog, or not a string
      */
-    public function liveLogBytes(): int
+    public static function forRuntime(): self
     {
-        if (!is_dir($this->logDirectory)) {
-            return 0;
-        }
+        $daemonLogFile = Hilos::$env[EnvConstants::DAEMON_LOG_FILE];
 
-        $logFiles = glob($this->logDirectory . '/*.log');
-        if ($logFiles === false || $logFiles === []) {
-            return 0;
-        }
+        return new self(dirname($daemonLogFile), [
+            basename(DaemonRawStream::pathFor($daemonLogFile)),
+            basename(DaemonRawStream::pathFor(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE])),
+        ]);
+    }
 
-        $total = 0;
-        foreach ($logFiles as $logFile) {
-            $size = filesize($logFile);
-            if ($size !== false) {
-                $total += $size;
-            }
-        }
+    /**
+     * @return string Directory holding the live *.log files this rotator moves
+     */
+    public function logDirectory(): string
+    {
+        return $this->logDirectory;
+    }
 
-        return $total;
+    /**
+     * @return string Archive subtree under the log root, whether or not it exists yet
+     */
+    public function archiveDirectory(): string
+    {
+        return $this->logDirectory . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
+    }
+
+    /**
+     * Names this rotator leaves live, so a caller weighing the directory can leave them out too.
+     *
+     * @return list<string> Basenames rotation does not move
+     */
+    public function keptBasenames(): array
+    {
+        return $this->keptBasenames;
     }
 
     /**
      * Rotates the live logs into a fresh timestamped archive batch.
      *
      * Creates `archive/{timestamp}/` under the log root and renames each live `*.log` file into
-     * it. A no-op returning 0 when the directory is missing or holds no logs. Individual move
-     * failures are logged and skipped; only directory-creation failures raise.
+     * it, apart from the kept basenames. The batch directory is created only once there is
+     * something to put in it, so a run with nothing to move leaves no empty folder for the archive
+     * cleanup to carry around. Individual move failures are collected and skipped; only
+     * directory-creation failures raise.
      *
-     * @return int Number of log files moved into the archive
+     * @return LogRotationReport What was moved, where, and what stayed behind
      * @throws LogRotationException If the archive or timestamp directory cannot be created
      */
-    public function rotate(): int
+    public function rotate(): LogRotationReport
     {
         if (!is_dir($this->logDirectory)) {
-            return 0;
+            return LogRotationReport::nothingToRotate();
         }
 
         $logFiles = glob($this->logDirectory . '/*.log');
-        if ($logFiles === false || $logFiles === []) {
-            return 0;
+        if ($logFiles === false) {
+            return LogRotationReport::nothingToRotate();
         }
 
-        $archiveDir = $this->logDirectory . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
+        $logFiles = array_values(array_filter(
+            $logFiles,
+            fn(string $logFile): bool => !in_array(basename($logFile), $this->keptBasenames, true),
+        ));
+        if ($logFiles === []) {
+            return LogRotationReport::nothingToRotate();
+        }
+
+        $archiveDir = $this->archiveDirectory();
         if (!is_dir($archiveDir)) {
             if (!mkdir($archiveDir, self::ARCHIVE_DIR_PERMISSIONS, true)) {
                 throw new LogRotationException("Cannot create archive directory: $archiveDir");
@@ -116,22 +149,18 @@ final class LogRotator
         }
 
         $movedCount = 0;
+        $failedFiles = [];
         foreach ($logFiles as $logFile) {
             $targetPath = $timestampDir . DIRECTORY_SEPARATOR . basename($logFile);
 
             if (!rename($logFile, $targetPath)) {
-                Logger::errorLog("Failed to move log file: $logFile to $targetPath");
+                $failedFiles[] = $logFile;
                 continue;
             }
 
             $movedCount++;
         }
 
-        if ($movedCount > 0) {
-            $archiveName = LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
-            Logger::info("Log rotation: moved $movedCount log file(s) to {$archiveName}/$timestamp/");
-        }
-
-        return $movedCount;
+        return new LogRotationReport($movedCount, $timestamp, $failedFiles);
     }
 }

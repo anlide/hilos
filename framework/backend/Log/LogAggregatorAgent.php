@@ -23,11 +23,11 @@ use Hilos\Runtime\State\Item\HilosClusterNode;
 /**
  * Cluster-wide owner of the merged log index across nodes (HIL-754).
  *
- * A concrete framework agent, the way {@see LogRotationAgent} and {@see LogStoreAgent} are:
- * merging what the nodes report looks the same in every project, so a project registers the pair
- * in Hilos::AGENTS under {@see HilosAgentType::HILOS_LOG_AGGREGATOR} and is done. One instance for
- * the whole cluster — the default agent scope — placed by policy rather than pinned to the leader,
- * so it survives a re-election instead of dying with the term.
+ * A concrete framework agent, the way {@see LogStoreAgent} is: merging what the nodes report
+ * looks the same in every project, so a project registers the pair in Hilos::AGENTS under
+ * {@see HilosAgentType::HILOS_LOG_AGGREGATOR} and is done. One instance for the whole cluster —
+ * the default agent scope — placed by policy rather than pinned to the leader, so it survives a
+ * re-election instead of dying with the term.
  *
  * It is a separate agent from `hilos_logs`, the overview page's agent, on purpose: the page agent
  * is a surface a project implements, and where the picture COMES FROM must not be the same object

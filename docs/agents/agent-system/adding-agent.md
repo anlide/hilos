@@ -66,9 +66,9 @@ public const array AGENTS = [
         AgentRegistryKey::DAEMON => BotAgentDaemon::class,
         AgentRegistryKey::INDEXED => true,
     ],
-    LogRotationAgent::AGENT_TYPE => [
-        AgentRegistryKey::WORKER => LogRotationAgent::class,
-        AgentRegistryKey::DAEMON => LogRotationAgentDaemon::class,
+    LogStoreAgent::AGENT_TYPE => [
+        AgentRegistryKey::WORKER => LogStoreAgent::class,
+        AgentRegistryKey::DAEMON => LogStoreAgentDaemon::class,
         AgentRegistryKey::SCOPE => AgentScope::NODE,
     ],
     LibraryAgent::AGENT_TYPE => [

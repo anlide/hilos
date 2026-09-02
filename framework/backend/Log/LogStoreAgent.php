@@ -13,6 +13,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Database\Context\HilosDbContext;
@@ -30,12 +31,13 @@ use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesReplyDTO;
 use Hilos\Runtime\ConnectionRosterReconciler;
+use Hilos\Utils\Exception\LogRotationException;
 use Throwable;
 
 /**
  * Node-local monopolistic agent owning the log directory (HIL-753).
  *
- * A concrete framework agent, the way {@see LogRotationAgent} is: owning a directory of files
+ * A concrete framework agent, the way {@see LogAggregatorAgent} is: owning a directory of files
  * looks the same in every project, so there is nothing for a project to redefine — it registers
  * the pair in Hilos::AGENTS under {@see HilosAgentType::HILOS_LOG_STORE} and is done. One replica
  * per node, in a monopolistic worker, because the work is blocking file I/O and a node needs
@@ -113,6 +115,16 @@ final class LogStoreAgent extends AbstractAgent
     /** @var int Smallest interval a written setting is obeyed at, in milliseconds */
     private const int MIN_PUSH_INTERVAL_MS = 100;
 
+    /** @var int Bytes in one mebibyte, the unit the raw-output complaint is worded in */
+    private const int BYTES_PER_MEBIBYTE = 1024 * 1024;
+
+    /**
+     * @var int Size past which a daemon raw stream is worth a line. A constant and not a setting:
+     *     in a healthy node that file is empty, so any size at all is already an anomaly rather
+     *     than a matter of taste.
+     */
+    private const int RAW_STREAM_COMPLAINT_BYTES = 16 * self::BYTES_PER_MEBIBYTE;
+
     private LogStoreReader $reader;
 
     /** @var LogStoreSnapshot Result of the last full walk, the archive half of every live resample */
@@ -155,8 +167,36 @@ final class LogStoreAgent extends AbstractAgent
      */
     private bool $indexChangedSincePush = false;
 
+    private LogSettingsResolver $resolver;
+
+    /** @var ?LogRotator Rotator for the running node, or null when the env cannot name the log directory */
+    private ?LogRotator $rotator = null;
+
+    /** @var LogRotationTriggerPolicy Trigger axes as the settings last answered them */
+    private LogRotationTriggerPolicy $policy;
+
+    /** @var ?CronRule Schedule axis; null when no valid expression is configured */
+    private ?CronRule $cronRule = null;
+
+    /** @var ?string Expression the current schedule axis was built from, so it is rebuilt only on a change */
+    private ?string $cronExpression = null;
+
+    /** @var float Timestamp of the last rotation ATTEMPT, the age-axis baseline */
+    private float $lastRotationAt = 0.0;
+
     /**
-     * Builds the reader, learns which node this is, and takes the first full walk as the baseline.
+     * @var bool Last verdict of the device gate, so only a crossing is reported. Seeded open the
+     *     way the index is seeded readable: a start is not a crossing, and a live directory whose
+     *     archive sits somewhere else is news.
+     */
+    private bool $sameDeviceVerdict = true;
+
+    /** @var array<string, true> Raw stream basename → its size has already been complained about */
+    private array $rawStreamComplained = [];
+
+    /**
+     * Builds the reader and the rotator, learns which node this is, and takes the first full walk
+     * as the baseline.
      *
      * @throws EnvException When the cluster-enabled flag or a cluster environment value cannot be read
      * @throws ClusterConfigurationException When cluster mode is on but the local node config is missing or invalid
@@ -165,6 +205,19 @@ final class LogStoreAgent extends AbstractAgent
     public function onStart(): void
     {
         $this->reader = LogStoreReader::fromEnv();
+        try {
+            $this->rotator = LogRotator::forRuntime();
+        } catch (EnvException) {
+            // The same degrade the reader makes one line above: an environment that cannot name the
+            // log directory leaves the owner running and reporting an unavailable store, with
+            // nothing to read and nothing to rotate — rather than leaving the node without an owner.
+            $this->rotator = null;
+        }
+        $this->resolver = new LogSettingsResolver();
+        $this->refreshPolicy();
+        // The daemon rotated the live logs on its way up a moment ago, so the age axis counts from
+        // now; anything else would fire once on every start of every node.
+        $this->lastRotationAt = microtime(true);
         $cluster = Hilos::$cluster;
         $clustered = $cluster !== null && $cluster->isEnabled();
         $this->nodeId = $clustered ? $cluster->identity()->nodeId : null;
@@ -190,13 +243,19 @@ final class LogStoreAgent extends AbstractAgent
      * instead of it, so a minute-old rotation cannot be reported by one half and denied by the
      * other; the report runs last of all, on what the walk of this same tick has just published.
      *
+     * The rotation trigger has no clock of its own: it rides the walk that just measured the live
+     * files, so the size axis reads a weight already in hand instead of globbing the directory a
+     * second time (HIL-480).
+     *
      * @throws InvalidArgumentException When a frame to a following viewer or to the aggregator cannot be named
      * @throws DatabaseException When the written push interval cannot be read
      */
     public function onTick(): void
     {
         $now = microtime(true);
-        $this->walkWhicheverIsDue($now);
+        if ($this->walkWhicheverIsDue($now)) {
+            $this->rotateIfDue($now);
+        }
         if ($this->followers !== [] && $now - $this->lastFollowPushAt >= self::FOLLOW_TICK_INTERVAL_SECONDS) {
             $this->lastFollowPushAt = $now;
             $this->pushAppendedLines();
@@ -209,22 +268,261 @@ final class LogStoreAgent extends AbstractAgent
      * Runs the live or the full walk when its interval has come round, and neither otherwise.
      *
      * @param float $now Monotonic-enough wall clock of this tick
+     * @return bool True when a walk ran, which is what the rotation trigger hangs on
      */
-    private function walkWhicheverIsDue(float $now): void
+    private function walkWhicheverIsDue(float $now): bool
     {
         if ($now - $this->lastFullScanAt >= self::FULL_SCAN_INTERVAL_SECONDS) {
             $this->lastFullScanAt = $now;
             $this->lastLiveScanAt = $now;
             $this->walkStore((int)$now);
 
-            return;
+            return true;
         }
         if ($now - $this->lastLiveScanAt < self::LIVE_SCAN_INTERVAL_SECONDS) {
-            return;
+            return false;
         }
         $this->lastLiveScanAt = $now;
 
         $this->walkLiveFiles((int)$now);
+
+        return true;
+    }
+
+    /**
+     * Rotates the live logs when an axis of the policy calls for it, and says so.
+     *
+     * The trigger moved here from a worker agent of its own (HIL-480): the owner of the directory
+     * already walks it every few seconds, so the size axis costs nothing here, and the moment a
+     * batch appears becomes known exactly instead of being inferred from a live key that shrank.
+     *
+     * Every attempt resets the age baseline, including one that moved nothing: an empty directory
+     * would otherwise stay past its age forever and call for a rotation on every walk.
+     *
+     * The clock is a parameter rather than a reading, the way the walks take theirs: this method
+     * is the whole of the trigger, and the tick is only what schedules it.
+     *
+     * @param float $now Monotonic-enough wall clock of the walk this check rides
+     * @throws InvalidArgumentException When the frame announcing the new batch cannot be named
+     */
+    public function rotateIfDue(float $now): void
+    {
+        // An index nobody can read is no ground to move files on: the store is unreachable or
+        // unconfigured, and a rename decided from a stale picture is a guess.
+        $rotator = $this->rotator;
+        if ($rotator === null || !$this->index->available) {
+            return;
+        }
+
+        $this->refreshPolicy();
+        if (!$this->policy->isActive() || !$this->shouldRotate($now, $rotator)) {
+            return;
+        }
+        if (!$this->deviceGateOpen($rotator)) {
+            return;
+        }
+
+        $this->lastRotationAt = $now;
+        try {
+            $report = $rotator->rotate();
+        } catch (LogRotationException $exception) {
+            // Best-effort: a failed rotation must never crash the owner; the next walk tries again.
+            $this->logAgentError('Log rotation failed: ' . $exception->getMessage());
+
+            return;
+        }
+
+        foreach ($report->failedFiles as $failedFile) {
+            $this->logAgentError("Log rotation could not move {$failedFile}");
+        }
+        if ($report->batchDirName === null) {
+            return;
+        }
+
+        $this->logAgentInfo("Log rotation: moved {$report->movedCount} live log file(s)");
+        // Out of turn, both of them: a batch appeared this instant, and the screen would otherwise
+        // learn of it a full walk and a push interval later.
+        $this->lastFullScanAt = $now;
+        $this->lastLiveScanAt = $now;
+        $this->walkStore((int)$now);
+        $this->pushIndex();
+    }
+
+    /**
+     * Re-reads the policy from the settings and re-arms the schedule axis when it changed.
+     *
+     * Whatever the resolver had to complain about goes to the journal here, and it only speaks when
+     * the outcome changed, so a value that stays wrong does not fill the log it configures.
+     *
+     * The policy is rebuilt on every check (HIL-760) so an edited threshold is obeyed within
+     * seconds. The schedule is the one exception: its {@see CronRule} remembers when it last ran,
+     * so it is rebuilt only when the expression itself changes — rebuilding it every check would
+     * restart that memory and the schedule would never fire.
+     */
+    private function refreshPolicy(): void
+    {
+        $this->policy = $this->resolver->rotationPolicy();
+
+        while (($complaint = $this->resolver->takeComplaint()) !== null) {
+            $this->logAgentError($complaint);
+        }
+
+        // Compared by expression and not by "is there a rule": an expression that yields no rule is
+        // refused once, and re-deciding it every check would report the same refusal every check.
+        $expression = $this->policy->cronExpression;
+        if ($expression === $this->cronExpression) {
+            return;
+        }
+
+        $this->cronExpression = $expression;
+        $this->cronRule = $this->policy->createCronRule();
+        if ($this->cronRule === null && $expression !== null && trim($expression) !== '') {
+            $this->logAgentError("Log rotation: ignoring invalid cron expression '{$expression}'");
+        }
+    }
+
+    /**
+     * Evaluates the axes in cheapest-first order.
+     *
+     * @param float $now Current wall clock, the age-axis reference
+     * @param LogRotator $rotator Rotator whose kept names the size axis leaves out
+     * @return bool True when any axis calls for a rotation now
+     */
+    private function shouldRotate(float $now, LogRotator $rotator): bool
+    {
+        if ($this->cronRule?->shouldRun() ?? false) {
+            return true;
+        }
+        if ($this->policy->ageExceeded($now - $this->lastRotationAt)) {
+            return true;
+        }
+
+        return $this->policy->sizeExceeded($this->rotatableLiveBytes($rotator));
+    }
+
+    /**
+     * Weight of the live files rotation could actually move.
+     *
+     * The daemon's raw streams are left out, and not merely because they stay behind: counted in,
+     * a raw file grown past the threshold would hold it exceeded for good, and every walk would
+     * call for a rotation that cannot bring the number down.
+     *
+     * The figure comes from the walk that just ran rather than from a directory listing of its
+     * own — that is the whole reason this check rides the walk.
+     *
+     * @param LogRotator $rotator Rotator naming what it would leave behind
+     * @return int Summed size in bytes of the live files rotation would move
+     */
+    private function rotatableLiveBytes(LogRotator $rotator): int
+    {
+        $keptBasenames = $rotator->keptBasenames();
+
+        $total = 0;
+        foreach ($this->liveKeyBytes as $name => $bytes) {
+            if (in_array($name, $keptBasenames, true)) {
+                continue;
+            }
+            $total += $bytes;
+        }
+
+        return $total;
+    }
+
+    /**
+     * Whether rotation may run, saying one line whenever the answer changes.
+     *
+     * @param LogRotator $rotator Rotator naming the live and archive directories
+     * @return bool True when the archive is on the device of the live logs
+     */
+    private function deviceGateOpen(LogRotator $rotator): bool
+    {
+        $open = $this->archiveOnSameDevice($rotator);
+        if ($open === $this->sameDeviceVerdict) {
+            return $open;
+        }
+
+        $this->sameDeviceVerdict = $open;
+        if ($open) {
+            $this->logAgentInfo('Log rotation is on again: the archive directory is back on the device of the live logs');
+        } else {
+            $this->logAgentError(
+                'Log rotation is off: the archive directory is on a different device than the live logs, '
+                . 'so a batch could only be moved by copying every byte',
+            );
+        }
+
+        return $open;
+    }
+
+    /**
+     * Whether the archive directory sits on the device holding the live logs.
+     *
+     * Asked before every rotation and not once at start: a mount point can be put under a running
+     * node. Across a device boundary a rename is no longer a rename — the kernel refuses it, and
+     * doing it anyway would mean copying every byte, which is the cost this whole design exists to
+     * avoid. An archive that does not exist yet passes: rotation creates it inside the live
+     * directory, which is the same device by construction.
+     *
+     * A directory neither of them can be measured leaves the gate OPEN rather than shut: the
+     * rename that follows reports its own failure, and refusing on a reading that never arrived
+     * would stop rotation for a reason nobody could name.
+     *
+     * Kept a method of its own on purpose: two devices cannot be arranged inside a unit test, so
+     * the refusing half is exercised by hand on a stand with a bind mount over `archive/`.
+     *
+     * @param LogRotator $rotator Rotator naming the live and archive directories
+     * @return bool True when a batch can be made by renaming
+     */
+    private function archiveOnSameDevice(LogRotator $rotator): bool
+    {
+        $archiveDirectory = $rotator->archiveDirectory();
+        if (!is_dir($archiveDirectory)) {
+            return true;
+        }
+
+        // warning-suppressed: an unstattable directory leaves the gate open, see the docblock
+        $live = @stat($rotator->logDirectory());
+        // warning-suppressed: same degrade as the line above
+        $archive = @stat($archiveDirectory);
+        if ($live === false || $archive === false) {
+            return true;
+        }
+
+        return $live['dev'] === $archive['dev'];
+    }
+
+    /**
+     * Says one line about a daemon raw stream that has grown, and nothing while it stays grown.
+     *
+     * That file is the one thing runtime rotation may not touch, so it is also the one that can
+     * grow without bound. In a healthy node it is empty and this never speaks; a node printing
+     * warnings past the Logger between restarts gets told once, and hears nothing more until the
+     * restart that replaces the file brings it back under the threshold.
+     */
+    private function complainAboutRawStreams(): void
+    {
+        if ($this->rotator === null) {
+            return;
+        }
+
+        foreach ($this->rotator->keptBasenames() as $basename) {
+            $bytes = $this->liveKeyBytes[$basename] ?? 0;
+            if ($bytes < self::RAW_STREAM_COMPLAINT_BYTES) {
+                unset($this->rawStreamComplained[$basename]);
+
+                continue;
+            }
+            if (isset($this->rawStreamComplained[$basename])) {
+                continue;
+            }
+
+            $this->rawStreamComplained[$basename] = true;
+            $mebibytes = intdiv($bytes, self::BYTES_PER_MEBIBYTE);
+            $this->logAgentWarning(
+                "The daemon raw output {$basename} has grown to {$mebibytes} MiB "
+                . 'and is only rotated when the daemon restarts',
+            );
+        }
     }
 
     /**
@@ -323,6 +621,7 @@ final class LogStoreAgent extends AbstractAgent
     {
         $this->snapshot = $this->reader->read();
         $this->publish($this->snapshot, $now, true);
+        $this->complainAboutRawStreams();
     }
 
     /**

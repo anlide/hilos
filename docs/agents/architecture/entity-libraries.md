@@ -75,10 +75,10 @@ files that had to agree by convention. `AgentDaemonInterface::requiresClusterLea
 was the **gate** on the daemon; `AgentRegistryKey::PER_NODE` in the registry was
 the every-node start **pass**. The pass did not open the gate: an agent flagged
 `PER_NODE` whose daemon still returned true was started on every node and then
-refused on every follower, silently. `LogRotationAgent` kept the two in step by
-hand. Both are gone now — the method is deleted from the interface, the base and
-all seven overrides, `PER_NODE` is removed with no alias, and the gate in
-`WorkerServer::startAgent()` reads the axes instead.
+refused on every follower, silently. The per-node rotation agent of the day
+kept the two in step by hand. Both are gone now — the method is deleted from the
+interface, the base and all seven overrides, `PER_NODE` is removed with no alias,
+and the gate in `WorkerServer::startAgent()` reads the axes instead.
 
 **A library declares `SCOPE = CLUSTER` and `PLACEMENT = POLICY`.** One holder
 cluster-wide, on the node the placement policy picks — the owner's decision of

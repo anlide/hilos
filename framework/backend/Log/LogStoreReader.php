@@ -27,7 +27,7 @@ use Hilos\Utils\Helpers\FileSystemHelper;
  */
 final class LogStoreReader
 {
-    /** Index key for the two daemon streams, matched by exact basename rather than by prefix. */
+    /** Index key for the daemon's own streams, matched by exact basename rather than by prefix. */
     public const string CLASS_DAEMON = 'daemon';
 
     /** Index key for `agent-*.log` streams. */
@@ -50,7 +50,7 @@ final class LogStoreReader
 
     /**
      * @param ?string $logDirectory Log root holding the live `*.log` files and the archive subtree, or null when it could not be resolved
-     * @param list<string> $daemonBasenames Exact basenames of the two daemon logs, classified as {@see self::CLASS_DAEMON}
+     * @param list<string> $daemonBasenames Exact basenames of the daemon's own logs, classified as {@see self::CLASS_DAEMON}
      */
     public function __construct(
         private readonly ?string $logDirectory,
@@ -61,7 +61,7 @@ final class LogStoreReader
     /**
      * Build a reader over the daemon log root (the directory of `DAEMON_LOG_FILE`).
      *
-     * The same env values also name the two daemon streams: they carry no classifying prefix, so
+     * The same env values also name the daemon's own streams: they carry no classifying prefix, so
      * the reader recognizes them by exact basename (HIL-753). A missing env value yields a reader
      * whose {@see read()} returns an unavailable snapshot, mirroring the overview page's former
      * unavailable state rather than raising.
@@ -82,22 +82,33 @@ final class LogStoreReader
     /**
      * Basenames of the daemon's own streams, which carry no classifying prefix of their own.
      *
+     * Each env value names two files, not one: what the Logger writes, and the raw stream beside
+     * it that carries whatever PHP prints past the Logger (HIL-480). Both belong to the same
+     * process and get the same {@see self::CLASS_DAEMON} — a class of their own would split one
+     * daemon's output in two on every screen that reads this index.
+     *
      * Each env value is read on its own: a store that resolves through `DAEMON_LOG_FILE` alone
      * stays readable, and an env missing the error stream loses that one class rather than the
      * whole walk.
      *
      * @param string $daemonLogFile Value of `DAEMON_LOG_FILE`, already resolved by the caller
      *
-     * @return list<string> One basename per daemon stream the env names
+     * @return list<string> Two basenames per daemon stream the env names
      */
     private static function daemonBasenamesFromEnv(string $daemonLogFile): array
     {
-        $basenames = [basename($daemonLogFile)];
+        $basenames = [
+            basename($daemonLogFile),
+            basename(DaemonRawStream::pathFor($daemonLogFile)),
+        ];
         try {
-            $basenames[] = basename(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]);
+            $errorLogFile = Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE];
         } catch (EnvException) {
             return $basenames;
         }
+
+        $basenames[] = basename($errorLogFile);
+        $basenames[] = basename(DaemonRawStream::pathFor($errorLogFile));
 
         return $basenames;
     }
@@ -191,7 +202,7 @@ final class LogStoreReader
     /**
      * Scan one directory for `*.log` files and classify them.
      *
-     * Order matters twice over. The two daemon basenames are tested first, by exact match: they
+     * Order matters twice over. The daemon basenames are tested first, by exact match: they
      * carry no prefix of their own, are configurable, and a catch-all "any other `*.log` is the
      * daemon" rule would swallow every stray file in the directory. The prefixes follow, with
      * `worker-monopolistic-` before `worker-` before `agent-` so they do not overlap incorrectly.

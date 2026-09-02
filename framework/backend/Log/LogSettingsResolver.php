@@ -14,8 +14,8 @@ use Throwable;
 /**
  * Builds the log policies and intervals from the settings, with the environment beneath them (HIL-760).
  *
- * The reader behind {@see LogRotationAgent}: it is asked for a policy on every throttled check, so
- * an administrator's edit takes effect within seconds instead of at the next restart of the node.
+ * The reader behind {@see LogStoreAgent}: it is asked for a policy on every throttled check, so an
+ * administrator's edit takes effect within seconds instead of at the next restart of the node.
  * {@see LogAggregatorAgent} asks it the same way for the push interval (HIL-754).
  *
  * Two ways down to the environment, and they are not the same thing. A project that never folded

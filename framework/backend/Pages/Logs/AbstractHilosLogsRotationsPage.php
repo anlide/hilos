@@ -23,7 +23,7 @@ use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndex;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\LogBatchSummary;
-use Hilos\Log\LogRotationAgent;
+use Hilos\Log\LogStoreAgent;
 use Hilos\Log\LogSettingsResolver;
 use Hilos\Pages\Logs\DTO\HilosLogsRotationsSignalData;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
@@ -83,7 +83,7 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
     /**
      * @var ?LogSettingsResolver The reader the rules in the header come from, one per process
      *
-     * Kept between ticks the way {@see LogRotationAgent} keeps its own: the resolver
+     * Kept between ticks the way {@see LogStoreAgent} keeps its own: the resolver
      * remembers the last outcome so an unchanged fault stops repeating itself into the journal.
      */
     private static ?LogSettingsResolver $settingsResolver = null;

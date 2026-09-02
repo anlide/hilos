@@ -20,7 +20,7 @@ use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\LogArchiveRetentionPolicy;
 use Hilos\Log\LogBatchSummary;
-use Hilos\Log\LogRotationAgent;
+use Hilos\Log\LogStoreAgent;
 use Hilos\Log\LogSettingsResolver;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
 
@@ -81,7 +81,7 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
     /**
      * @var ?LogSettingsResolver The reader the retention policy is asked for, one per process
      *
-     * Static and kept, the way {@see LogRotationAgent} keeps its own: the resolver
+     * Static and kept, the way {@see LogStoreAgent} keeps its own: the resolver
      * remembers the last outcome so an unchanged fault stops repeating itself into the journal,
      * and a fresh instance per window would forget that with every keystroke in the search box.
      */

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\LogRotationConstants;
 use Hilos\Core\Daemon\Exception\InvalidScriptPathException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Exception\Process\CouldNotStartException;
@@ -18,8 +19,9 @@ use Hilos\Core\Exception\Process\FailedToWriteStdInException;
 use Hilos\Core\Process;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
-use Hilos\Log\LogRotationAgent;
+use Hilos\Log\DaemonRawStream;
 use Hilos\Log\LogRotator;
+use Hilos\Log\LogStoreAgent;
 use Hilos\Utils\Exception\LogRotationException;
 use Hilos\Utils\Logger;
 use Throwable;
@@ -301,19 +303,23 @@ class DockerManager extends BaseManager
     }
 
     /**
-     * Reads the tail of the daemon error log for the escalation record.
+     * Reads the tail of the daemon's raw stderr for the escalation record.
      *
-     * The daemon's stderr is redirected straight to that file rather than to a pipe,
+     * The daemon's stderr is redirected straight to a file rather than to a pipe,
      * so the watchdog cannot read it from the process: {@see Process::getStdErr()} only
      * returns what a pipe descriptor buffered. Reading the file is what actually puts
      * the reason in front of whoever sees the escalation.
      *
-     * @return string Tail of the error log, or a note when it cannot be read
+     * It is the raw stream and not the Logger's own error log: a fatal is printed by PHP past
+     * the Logger, so that is where it lands, and reading the other file would leave the
+     * escalation quoting an empty tail.
+     *
+     * @return string Tail of the raw error stream, or a note when it cannot be read
      * @throws EnvException If the daemon error log env value is missing or invalid
      */
     private function readErrorLogTail(): string
     {
-        $path = Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE];
+        $path = DaemonRawStream::pathFor(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]);
         // warning-suppressed: the error log may not exist yet, the escalation says it is not readable
         $size = @filesize($path);
         if ($size === false) {
@@ -334,9 +340,15 @@ class DockerManager extends BaseManager
      * Start daemon process
      *
      * The daemon's stdout and stderr are opened as {@see Process::DESCRIPTOR_FILE} straight
-     * into DAEMON_LOG_FILE and DAEMON_ERROR_LOG_FILE, so `proc_open` creates no pipes 1 and 2
-     * and the watchdog never sees the daemon's output: the daemon writes its own logs. Only
-     * stdin stays a pipe, and it is the one the watchdog actually uses.
+     * into the raw pair beside DAEMON_LOG_FILE and DAEMON_ERROR_LOG_FILE, so `proc_open` creates
+     * no pipes 1 and 2 and the watchdog never sees the daemon's output: the daemon writes its own
+     * logs. Only stdin stays a pipe, and it is the one the watchdog actually uses.
+     *
+     * The files are the raw pair rather than the two the Logger writes because these descriptors
+     * stay open for the life of the daemon: rotation renames a file away, the descriptor follows
+     * the inode, and everything printed past the Logger would keep going into the closed batch
+     * (HIL-480). The raw pair is the one runtime rotation leaves alone, so it is replaced here,
+     * by the start rotation that runs a few lines before this one.
      *
      * @param string $script Path to daemon script
      * @throws CouldNotStartException If daemon process cannot be started
@@ -369,8 +381,18 @@ class DockerManager extends BaseManager
             [$script],
             getcwd(),
             [Process::DESCRIPTOR_PIPE, Process::PIPE_READ], // stdin
-            [Process::DESCRIPTOR_FILE, Hilos::$env[EnvConstants::DAEMON_LOG_FILE], Process::PIPE_APPEND], // stdout - to log file
-            [Process::DESCRIPTOR_FILE, Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE], Process::PIPE_APPEND], // stderr - to error log file
+            // stdout - to the raw output file
+            [
+                Process::DESCRIPTOR_FILE,
+                DaemonRawStream::pathFor(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]),
+                Process::PIPE_APPEND,
+            ],
+            // stderr - to the raw error file
+            [
+                Process::DESCRIPTOR_FILE,
+                DaemonRawStream::pathFor(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]),
+                Process::PIPE_APPEND,
+            ],
         );
 
         // Log startup time
@@ -507,14 +529,30 @@ class DockerManager extends BaseManager
      *
      * Delegates to {@see LogRotator}, which creates the timestamped archive batch and moves each
      * live `*.log` file there. Invoked before starting processes so the live log directory is
-     * clean; the same rotator serves the runtime {@see LogRotationAgent}.
+     * clean; the same rotator serves the runtime {@see LogStoreAgent}.
+     *
+     * This is the start-path rotator, which spares nothing: the previous daemon is dead, so the
+     * raw output pair the runtime rotator keeps live is here just another archived file, and the
+     * next {@see startDaemon()} opens it anew. The line about the batch is written here rather
+     * than inside the rotator, which reports what it did and lets each caller speak in its own
+     * journal.
      *
      * @throws EnvException If the daemon log path env value is missing or invalid
      * @throws LogRotationException If log directory operations fail
      */
     private function rotateLogs(): void
     {
-        LogRotator::fromEnv()->rotate();
+        $report = LogRotator::forStartup()->rotate();
+
+        $batchDirName = $report->batchDirName;
+        if ($batchDirName !== null && $report->movedCount > 0) {
+            $archiveName = LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
+            Logger::info("Log rotation: moved {$report->movedCount} log file(s) to {$archiveName}/{$batchDirName}/");
+        }
+
+        foreach ($report->failedFiles as $failedFile) {
+            Logger::errorLog("Log rotation could not move {$failedFile}");
+        }
     }
 
     /**

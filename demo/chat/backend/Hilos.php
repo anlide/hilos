@@ -164,8 +164,6 @@ use Hilos\Hilos as HilosFacade;
 use Hilos\HilosException;
 use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogAggregatorAgentDaemon;
-use Hilos\Log\LogRotationAgent;
-use Hilos\Log\LogRotationAgentDaemon;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Log\LogStoreAgentDaemon;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
@@ -398,11 +396,6 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::DAEMON => PushDeliveryChannelAgentDaemon::class,
             AgentRegistryKey::INDEXED => true,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
-        ],
-        LogRotationAgent::AGENT_TYPE => [
-            AgentRegistryKey::WORKER => LogRotationAgent::class,
-            AgentRegistryKey::DAEMON => LogRotationAgentDaemon::class,
-            AgentRegistryKey::SCOPE => AgentScope::NODE,
         ],
         LogStoreAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => LogStoreAgent::class,

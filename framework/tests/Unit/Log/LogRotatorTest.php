@@ -12,8 +12,8 @@ use PHPUnit\Framework\TestCase;
  * Unit tests for the log rotator's file moves over a fixture directory (HIL-379).
  *
  * Exercises the mechanics extracted from DockerManager::rotateLogs() against a throwaway temp
- * directory: measuring the live size, moving the live *.log files into a timestamped archive
- * batch, and no-op behavior when there is nothing to rotate.
+ * directory: moving the live *.log files into a timestamped archive batch, keeping back the
+ * basenames the runtime rotator must not move, and no-op behavior when there is nothing to rotate.
  */
 final class LogRotatorTest extends TestCase
 {
@@ -32,29 +32,15 @@ final class LogRotatorTest extends TestCase
         $this->removeTree($this->dir);
     }
 
-    public function testLiveLogBytesSumsOnlyLiveLogFiles(): void
-    {
-        file_put_contents($this->dir . '/daemon.log', str_repeat('a', 100));
-        file_put_contents($this->dir . '/worker.log', str_repeat('b', 50));
-        // A non-log file and an archive tree must not count toward the live size.
-        file_put_contents($this->dir . '/notes.txt', str_repeat('c', 999));
-        mkdir($this->dir . '/' . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME, 0755, true);
-        file_put_contents(
-            $this->dir . '/' . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME . '/old.log',
-            str_repeat('d', 777),
-        );
-
-        $this->assertSame(150, new LogRotator($this->dir)->liveLogBytes());
-    }
-
     public function testRotateMovesLiveLogsIntoTimestampedArchiveBatch(): void
     {
         file_put_contents($this->dir . '/daemon.log', 'one');
         file_put_contents($this->dir . '/worker.log', 'two');
 
-        $moved = new LogRotator($this->dir)->rotate();
+        $report = new LogRotator($this->dir)->rotate();
 
-        $this->assertSame(2, $moved);
+        $this->assertSame(2, $report->movedCount);
+        $this->assertSame([], $report->failedFiles);
         // The live files are gone.
         $this->assertSame([], glob($this->dir . '/*.log'));
 
@@ -66,24 +52,56 @@ final class LogRotatorTest extends TestCase
             LogRotationConstants::TIMESTAMP_DIR_NAME_PATTERN,
             basename($batches[0]),
         );
+        // The report names that batch, so the caller can say where the files went.
+        $this->assertSame(basename($batches[0]), $report->batchDirName);
         $this->assertSame('one', file_get_contents($batches[0] . '/daemon.log'));
         $this->assertSame('two', file_get_contents($batches[0] . '/worker.log'));
     }
 
+    public function testRotateLeavesTheKeptBasenamesLive(): void
+    {
+        file_put_contents($this->dir . '/daemon.log', 'logger');
+        file_put_contents($this->dir . '/daemon-raw.log', 'raw');
+        file_put_contents($this->dir . '/worker.log', 'worker');
+
+        $report = new LogRotator($this->dir, ['daemon-raw.log'])->rotate();
+
+        $this->assertSame(2, $report->movedCount);
+        $this->assertSame([$this->dir . '/daemon-raw.log'], glob($this->dir . '/*.log'));
+        $this->assertSame('raw', file_get_contents($this->dir . '/daemon-raw.log'));
+
+        $batches = glob($this->dir . '/' . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME . '/*', GLOB_ONLYDIR);
+        $this->assertCount(1, $batches);
+        $this->assertSame([], glob($batches[0] . '/daemon-raw.log'));
+    }
+
+    public function testRotateCreatesNoBatchWhenOnlyKeptFilesAreLive(): void
+    {
+        file_put_contents($this->dir . '/daemon-raw.log', 'raw');
+
+        $report = new LogRotator($this->dir, ['daemon-raw.log'])->rotate();
+
+        $this->assertSame(0, $report->movedCount);
+        // No batch directory: an empty folder in the archive is carried around by every later walk.
+        $this->assertNull($report->batchDirName);
+        $this->assertFalse(is_dir($this->dir . '/' . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME));
+    }
+
     public function testRotateIsNoOpWhenNoLiveLogs(): void
     {
-        $rotator = new LogRotator($this->dir);
+        $report = new LogRotator($this->dir)->rotate();
 
-        $this->assertSame(0, $rotator->rotate());
+        $this->assertSame(0, $report->movedCount);
+        $this->assertNull($report->batchDirName);
         $this->assertFalse(is_dir($this->dir . '/' . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME));
     }
 
     public function testRotateIsNoOpWhenDirectoryMissing(): void
     {
-        $rotator = new LogRotator($this->dir . '/does-not-exist');
+        $report = new LogRotator($this->dir . '/does-not-exist')->rotate();
 
-        $this->assertSame(0, $rotator->rotate());
-        $this->assertSame(0, $rotator->liveLogBytes());
+        $this->assertSame(0, $report->movedCount);
+        $this->assertNull($report->batchDirName);
     }
 
     /**

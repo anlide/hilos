@@ -210,10 +210,9 @@ final class ChatTopologyRegistryTest extends TestCase
             }
         }
 
-        // Node-local state, so one replica per node: the log rotation trigger, the log directory
-        // itself, throttle counters, the code pool.
+        // Node-local state, so one replica per node: the log directory itself, throttle counters,
+        // the code pool.
         $this->assertSame([
-            HilosAgentType::HILOS_LOG_ROTATION,
             HilosAgentType::HILOS_LOG_STORE,
             AgentType::HILOS_AUTH_THROTTLE,
             AgentType::HILOS_AUTH_CODE,

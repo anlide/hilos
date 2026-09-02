@@ -22,7 +22,6 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\View\Collection\AuthBlocks;
 use Hilos\Database\View\Item\AuthBlock;
 use Hilos\Hilos;
-use Hilos\Log\LogRotationAgent;
 use Hilos\Runtime\State\Item\AuthAttempt as StateAuthAttempt;
 use Hilos\Runtime\View\Collection\AuthAttempts;
 use Hilos\Runtime\View\Item\AuthAttempt as ViewAuthAttempt;
@@ -36,8 +35,7 @@ use Throwable;
  * The single truth source of the `hilosAuthAttempts` collection, which is what makes it an
  * agent at all: a worker may read its replica of the counters but not write it, so counting
  * has to happen in one process and be handed to the rest over runtime sync. It is per-node
- * and not monopolistic ({@see AuthThrottleAgentDaemon}), the same placement
- * {@see LogRotationAgent} has.
+ * and not monopolistic ({@see AuthThrottleAgentDaemon}).
  *
  * It answers one question, over one signal: a worker that could not settle an attempt from
  * its own replica asks {@see HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK}, and the
