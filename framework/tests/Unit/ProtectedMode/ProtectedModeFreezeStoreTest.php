@@ -215,7 +215,7 @@ final class ProtectedModeFreezeStoreTest extends TestCase
             StateProtectedModeRuntime::initiatorAgentType => self::INITIATOR_TYPE,
             StateProtectedModeRuntime::startedAt => self::STARTED_AT,
             StateProtectedModeRuntime::passHashes => ['hash-of-a-pass'],
-            StateProtectedModeRuntime::admittedAcceptKeys => ['accept-9'],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-9'],
         ]));
 
         $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, $view->phase);
@@ -223,9 +223,9 @@ final class ProtectedModeFreezeStoreTest extends TestCase
         $this->assertSame(self::STARTED_AT, $view->startedAt);
         $this->assertNull($view->initiatorAcceptKey);
         $this->assertSame([], $view->passHashes);
-        $this->assertSame([], $view->admittedAcceptKeys);
+        $this->assertSame([], $view->admittedSessionTokenHashes);
         $this->assertTrue($view->locksOut('accept-7', null));
-        $this->assertTrue($view->locksOut('accept-9', null));
+        $this->assertTrue($view->locksOut('accept-9', 'session-hash-9'));
     }
 
     /**
@@ -246,7 +246,7 @@ final class ProtectedModeFreezeStoreTest extends TestCase
             StateProtectedModeRuntime::startedAt => self::STARTED_AT,
             StateProtectedModeRuntime::activatedAt => self::STARTED_AT + 1,
             StateProtectedModeRuntime::passHashes => [],
-            StateProtectedModeRuntime::admittedAcceptKeys => [],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
         ])->toArray();
     }
 

@@ -1059,7 +1059,11 @@ class SignalRouter
                 $destination instanceof WebSocketDestination =>
                     [WebSocketDestination::class, $destination->acceptKey],
                 $destination instanceof AllClientsDestination =>
-                    [AllClientsDestination::class, $destination->excludeAcceptKey],
+                    [
+                        AllClientsDestination::class,
+                        $destination->excludeAcceptKey,
+                        $destination->excludeSessionTokenHash,
+                    ],
                 $destination instanceof SessionClientsDestination =>
                     [SessionClientsDestination::class, $destination->sessionTokenHash],
                 default => [(string) spl_object_id($destination)],
@@ -1448,6 +1452,7 @@ class SignalRouter
      * For ws_session: returns a single session fan-out marker carrying targetSessionTokenHash
      * For ws_all: returns all page-subscribed clients, excluding excludeAcceptKey
      * For ws_all_connected: returns a single all-clients broadcast marker, excluding excludeAcceptKey
+     * and every connection of excludeSessionTokenHash
      * For ws_group: returns clients subscribed to targetGroup, excluding excludeAcceptKey
      *
      * @param SignalDTO $signal Signal DTO
@@ -1463,12 +1468,14 @@ class SignalRouter
         $targetSessionTokenHash = null;
         $targetGroup = null;
         $excludeAcceptKey = null;
+        $excludeSessionTokenHash = null;
 
         if ($signalData instanceof WebSocketSignalData) {
             $targetAcceptKey = $signalData->targetAcceptKey;
             $targetSessionTokenHash = $signalData->targetSessionTokenHash;
             $targetGroup = $signalData->targetGroup;
             $excludeAcceptKey = $signalData->excludeAcceptKey;
+            $excludeSessionTokenHash = $signalData->excludeSessionTokenHash;
         }
 
         $destinations = [];
@@ -1500,7 +1507,7 @@ class SignalRouter
 
             case SignalTypeConstants::WS_ALL_CONNECTED:
                 // Single broadcast marker; daemon fans out to all connected clients
-                $destinations[] = new AllClientsDestination($excludeAcceptKey);
+                $destinations[] = new AllClientsDestination($excludeAcceptKey, $excludeSessionTokenHash);
                 break;
 
             case SignalTypeConstants::WS_GROUP:

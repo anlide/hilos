@@ -101,7 +101,9 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
 
         // Tell the connections that were already open: the lockdown is binary from this phase on,
         // so this is the earliest honest moment, and on a follower the phase never gets past it.
-        // The initiator's own connection is left out - it must keep seeing the real app.
+        // The initiator's own browser is left out, and by the session rather than by the one
+        // socket: the operator watching a restore usually has other tabs open, and they were being
+        // raised to a stub describing the operation their owner is running.
         $copy = ProtectedModeStubCopy::forOperation($freeze->operation);
         Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState(
             new ProtectedModeStateSignalData(
@@ -111,6 +113,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
                 message: $copy->message,
             ),
             $initiatorAcceptKey,
+            $initiatorSessionTokenHash,
         );
     }
 
@@ -164,6 +167,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
                 passIssued: false,
             ),
             $view->initiatorAcceptKey,
+            $view->initiatorSessionTokenHash,
         );
     }
 
@@ -193,6 +197,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
                 passIssued: true,
             ),
             $view->initiatorAcceptKey,
+            $view->initiatorSessionTokenHash,
         );
     }
 
@@ -238,6 +243,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
                 passIssued: false,
             ),
             $view->initiatorAcceptKey,
+            $view->initiatorSessionTokenHash,
         );
     }
 
@@ -278,9 +284,10 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         // freeze has lifted; the freezer replays exactly the set it stopped on this node.
         Hilos::$cluster?->protectedModeAgentFreezer()?->resumeAgentsForProtectedMode();
 
-        // Tell everyone the mode lifted, the initiator included: after a restore its data is as
-        // stale as anybody else's, and the frame means "reload". It carries no copy, because
-        // nothing renders words on the way out.
+        // Tell everyone the mode lifted, the initiator included - both halves of it, the socket
+        // that asked and the browser behind it: after a restore its data is as stale as anybody
+        // else's, and the frame means "reload". It carries no copy, because nothing renders words
+        // on the way out.
         //
         // Unless a restore left logins here that are not back in the database yet: "reload" then
         // means "sign in again" for everyone holding one, so the announcer keeps the frame until
@@ -292,7 +299,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
             return;
         }
 
-        Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState($lifted, null);
+        Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState($lifted, null, null);
     }
 
     public function notifyInitiatorReady(): void

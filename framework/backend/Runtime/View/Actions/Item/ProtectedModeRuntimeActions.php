@@ -31,15 +31,14 @@ final class ProtectedModeRuntimeActions extends RtActions
      * database whose restore never finished. It runs during startup, before any server binds, so
      * the first handshake after the restart is already locked out.
      *
-     * **Everything a connection was recognized by is dropped rather than carried.** The passes and
-     * the keys they admitted belong to browsers that died with the daemon, and so does the
-     * initiator's own key: an accept key is minted on the 101 and cannot outlive the process that
-     * minted it. The initiator's session hash goes the same way, and that one is a decision rather
-     * than a consequence - the cookie behind it does outlive the daemon, so keeping it would hand
-     * one browser the run of a node whose operation nobody is driving any more. What is left behind
-     * instead is a row that locks out everybody - the honest state of a node whose operation is
-     * gone - and the operator lifts it by the ladder ({@see enterInactive()}) once they have looked
-     * at the data.
+     * **Everything a connection was recognized by is dropped rather than carried.** The initiator's
+     * own key goes first: an accept key is minted on the 101 and cannot outlive the process that
+     * minted it. The passes, the sessions they admitted and the initiator's session hash go the
+     * same way, and those three are a decision rather than a consequence - the cookies behind them
+     * do outlive the daemon, so keeping them would hand those browsers the run of a node whose
+     * operation nobody is driving any more. What is left behind instead is a row that locks out
+     * everybody - the honest state of a node whose operation is gone - and the operator lifts it
+     * by the ladder ({@see enterInactive()}) once they have looked at the data.
      *
      * @param StateProtectedModeRuntime $row Freeze row as it was left on disk
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
@@ -60,7 +59,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->activatedAt = $row->activatedAt;
         $this->state->progressAt = $row->progressAt;
         $this->state->passHashes = [];
-        $this->state->admittedAcceptKeys = [];
+        $this->state->admittedSessionTokenHashes = [];
         $this->sync();
     }
 
@@ -77,7 +76,7 @@ final class ProtectedModeRuntimeActions extends RtActions
      * construction, and one path can arrive here holding an abandoned window's hashes - a
      * demoted leader still on verifying, quiesced again by whoever took leadership. Every other
      * way in passes through a clear already, so this costs two assignments and closes the one
-     * hole where a voided key could admit its holder to the next operation.
+     * hole where a voided pass could admit its holder to the next operation.
      *
      * @param ProtectedModeQuiesceData $freeze Operation and initiator identity the freeze protects
      * @param ?string $initiatorAcceptKey Accept key let through here; null on a follower node
@@ -105,7 +104,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->activatedAt = null;
         $this->state->progressAt = null;
         $this->state->passHashes = [];
-        $this->state->admittedAcceptKeys = [];
+        $this->state->admittedSessionTokenHashes = [];
         $this->sync();
     }
 
@@ -113,7 +112,7 @@ final class ProtectedModeRuntimeActions extends RtActions
      * Marks the freeze fully established: every node has quiesced.
      *
      * Coming back from {@see enterVerifying()} this is also the operator closing the system
-     * again, so the passes and the admissions they earned are voided here: a key that outlived
+     * again, so the passes and the admissions they earned are voided here: a pass that outlived
      * the verification it was minted for would let its holder in during the next operation.
      * On the ordinary activating -> active path both lists are empty already and the clear
      * costs nothing.
@@ -128,7 +127,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->phase = StateProtectedModeRuntime::PHASE_ACTIVE;
         $this->state->activatedAt = time();
         $this->state->passHashes = [];
-        $this->state->admittedAcceptKeys = [];
+        $this->state->admittedSessionTokenHashes = [];
         $this->sync();
     }
 
@@ -194,23 +193,35 @@ final class ProtectedModeRuntimeActions extends RtActions
     }
 
     /**
-     * Records a connection that presented a valid pass as let in.
+     * Records a browser session that presented a valid pass as let in.
      *
-     * One entry per admitted connection, and a verifier that reconnects makes another: the accept
-     * key is minted fresh on each 101, so the same browser coming back is a different key and there
-     * is nothing here to deduplicate. What bounds the list is the window rather than the count -
-     * both ways out of it ({@see enterActive()}, {@see enterInactive()}) clear the lists, and it is
-     * open for as long as an operator is looking at the system.
+     * One entry per admitted session, and presenting the same pass again from a second tab of the
+     * same browser adds nothing: the row is keyed by the session behind the connection, so one
+     * browser is one entry however many sockets it opens. Without the guard the list would grow
+     * by one on every reconnect of every tab of a verifier who is already inside. What bounds it
+     * beyond that is the window rather than the count - both ways out of it ({@see enterActive()},
+     * {@see enterInactive()}) clear the lists, and it is open for as long as an operator is
+     * looking at the system.
      *
-     * @param string $acceptKey Accept key of the admitted connection
+     * Membership is tested with {@see hash_equals()} rather than {@see in_array()} for the reason
+     * {@see StateProtectedModeRuntime::admits()} compares that way: both sides are derived from a
+     * secret.
+     *
+     * @param string $sessionTokenHash Hash of the admitted browser's session token
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
-    public function admitConnection(string $acceptKey): void
+    public function admitSession(string $sessionTokenHash): void
     {
         $this->ensureCanWrite();
 
-        $this->state->admittedAcceptKeys[] = $acceptKey;
+        foreach ($this->state->admittedSessionTokenHashes as $admittedSessionTokenHash) {
+            if (hash_equals($admittedSessionTokenHash, $sessionTokenHash)) {
+                return;
+            }
+        }
+
+        $this->state->admittedSessionTokenHashes[] = $sessionTokenHash;
         $this->sync();
     }
 
@@ -234,7 +245,7 @@ final class ProtectedModeRuntimeActions extends RtActions
      * The whole identity is cleared with the phase: a stale accept key left on the row would hand
      * one connection a privilege after the operation that earned it is over, and a stale session
      * hash would hand it to a whole browser, for as long as its cookie lives. The passes and the
-     * admissions they earned go the same way and for the same reason.
+     * sessions they admitted go the same way and for the same reason.
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -254,7 +265,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->activatedAt = null;
         $this->state->progressAt = null;
         $this->state->passHashes = [];
-        $this->state->admittedAcceptKeys = [];
+        $this->state->admittedSessionTokenHashes = [];
         $this->sync();
     }
 }

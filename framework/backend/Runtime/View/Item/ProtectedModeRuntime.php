@@ -31,7 +31,7 @@ use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
  * @property-read ?int $activatedAt Epoch seconds the freeze reached active; null before it does
  * @property-read ?int $progressAt Epoch seconds of the last progress mark behind the freeze; null when none
  * @property-read list<string> $passHashes Hashes of the passes minted for the verification; empty otherwise
- * @property-read list<string> $admittedAcceptKeys Accept keys let in by a pass; empty otherwise
+ * @property-read list<string> $admittedSessionTokenHashes Session token hashes let in by a pass; empty otherwise
  * @property-read ProtectedModeRuntimeActions $actions Write operations for the runtime singleton
  */
 final class ProtectedModeRuntime extends RtItem
@@ -64,7 +64,7 @@ final class ProtectedModeRuntime extends RtItem
             StateProtectedModeRuntime::activatedAt => $this->_state->activatedAt,
             StateProtectedModeRuntime::progressAt => $this->_state->progressAt,
             StateProtectedModeRuntime::passHashes => $this->_state->passHashes,
-            StateProtectedModeRuntime::admittedAcceptKeys => $this->_state->admittedAcceptKeys,
+            StateProtectedModeRuntime::admittedSessionTokenHashes => $this->_state->admittedSessionTokenHashes,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };
@@ -87,18 +87,18 @@ final class ProtectedModeRuntime extends RtItem
     }
 
     /**
-     * Whether this connection presented a valid pass and was let in for the verification.
+     * Whether this browser session presented a valid pass and was let in for the verification.
      *
      * The rule lives on the state row ({@see StateProtectedModeRuntime::admits()}); this
-     * delegate is what lets the admission path ask whether a key is already recorded
+     * delegate is what lets the admission path ask whether a session is already recorded
      * without holding the backing row.
      *
-     * @param ?string $acceptKey Connection accept key to test, or null when none is known
-     * @return bool Whether the connection holds a pass admitted right now
+     * @param ?string $sessionTokenHash Hash of the connection's session token, or null when it carries no session
+     * @return bool Whether the session behind this connection holds a pass admitted right now
      */
-    public function admits(?string $acceptKey): bool
+    public function admits(?string $sessionTokenHash): bool
     {
-        return $this->_state->admits($acceptKey);
+        return $this->_state->admits($sessionTokenHash);
     }
 
     /**

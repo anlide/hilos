@@ -271,9 +271,13 @@ export class HilosConnection {
   /**
    * The verifier's pass presented on this browser tab, or undefined when none is.
    *
-   * Mirrored in `sessionStorage` so a reload or a socket blip does not throw the
-   * verifier back out onto the maintenance screen — and only there: a cookie is
-   * domain-wide and would outlive the window this admission must die with.
+   * Not what the admission is held by — the server holds that against the browser
+   * session, so other tabs get in without ever seeing the key. This is the
+   * insurance against the session token changing underneath the window: a sign-in
+   * rotates it, and the tab that still remembers the key presents it on the
+   * reconnect and wins the admission back for the whole browser. Mirrored in
+   * `sessionStorage` and only there: a cookie is domain-wide and would outlive
+   * the window this admission must die with.
    */
   private presentedPass: string | undefined
 

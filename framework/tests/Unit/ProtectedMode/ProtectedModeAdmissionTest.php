@@ -32,6 +32,9 @@ final class ProtectedModeAdmissionTest extends TestCase
     /** Session cookie of the browser that asked for the operation, in the minted token form. */
     private const string INITIATOR_SESSION_TOKEN = '0123456789abcdef0123456789abcdef';
 
+    /** Session cookie of the browser the code was read out to, same form and a third value. */
+    private const string VERIFIER_SESSION_TOKEN = '89abcdef0123456789abcdef01234567';
+
     /** Session cookie of any other browser, same form and a different value. */
     private const string STRANGER_SESSION_TOKEN = 'fedcba9876543210fedcba9876543210';
 
@@ -60,13 +63,62 @@ final class ProtectedModeAdmissionTest extends TestCase
         parent::tearDown();
     }
 
-    public function testAMatchingPassAdmitsTheConnection(): void
+    public function testAMatchingPassAdmitsTheBrowserSessionRatherThanTheSocket(): void
     {
         $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, [hash('sha256', self::PASS)]);
 
-        $probe = $this->handshake(self::PASS);
+        $this->handshake(self::PASS, sessionToken: self::VERIFIER_SESSION_TOKEN);
 
-        $this->assertSame([$probe->acceptKey], $this->recorder->admitted);
+        $this->assertSame(
+            [StateProtectedModeRuntime::hashSessionToken(self::VERIFIER_SESSION_TOKEN)],
+            $this->recorder->admitted,
+        );
+    }
+
+    public function testTheSecondTabOfAnAdmittedBrowserIsLetInWithoutPresentingTheCode(): void
+    {
+        // The whole leaf in one case: the verifier types the code in one tab and opens another,
+        // which carries the same cookie, a brand new accept key and no code at all.
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, [hash('sha256', self::PASS)]);
+        $this->handshake(self::PASS, admitOnTheRow: true, sessionToken: self::VERIFIER_SESSION_TOKEN);
+
+        $block = $this->protectedModeBlock($this->handshake(null, sessionToken: self::VERIFIER_SESSION_TOKEN));
+
+        $this->assertFalse($block['active']);
+    }
+
+    public function testASecondBrowserPresentingTheSameCodeIsAdmittedOnItsOwnAccount(): void
+    {
+        // The code is reusable on purpose, so a second verifier reading it over the phone is a
+        // second session: neither entry stands in for the other.
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, [hash('sha256', self::PASS)]);
+
+        $this->handshake(self::PASS, admitOnTheRow: true, sessionToken: self::VERIFIER_SESSION_TOKEN);
+        $this->handshake(self::PASS, admitOnTheRow: true, sessionToken: self::STRANGER_SESSION_TOKEN);
+
+        $this->assertSame(
+            [
+                StateProtectedModeRuntime::hashSessionToken(self::VERIFIER_SESSION_TOKEN),
+                StateProtectedModeRuntime::hashSessionToken(self::STRANGER_SESSION_TOKEN),
+            ],
+            Hilos::$rt?->hilosProtectedModeRuntime?->admittedSessionTokenHashes,
+        );
+    }
+
+    public function testTheSameBrowserPresentingTheCodeTwiceLeavesOneEntry(): void
+    {
+        // Two tabs of one browser both remember the code and both present it on their handshake.
+        // The seam is asked twice - it records a decision, not a transition - and the row keeps one.
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, [hash('sha256', self::PASS)]);
+
+        $this->handshake(self::PASS, admitOnTheRow: true, sessionToken: self::VERIFIER_SESSION_TOKEN);
+        $this->handshake(self::PASS, admitOnTheRow: true, sessionToken: self::VERIFIER_SESSION_TOKEN);
+
+        $this->assertCount(2, $this->recorder->admitted);
+        $this->assertSame(
+            [StateProtectedModeRuntime::hashSessionToken(self::VERIFIER_SESSION_TOKEN)],
+            Hilos::$rt?->hilosProtectedModeRuntime?->admittedSessionTokenHashes,
+        );
     }
 
     public function testAWrongPassAdmitsNobody(): void
@@ -202,7 +254,7 @@ final class ProtectedModeAdmissionTest extends TestCase
                 : StateProtectedModeRuntime::hashSessionToken($initiatorSessionToken),
             StateProtectedModeRuntime::initiatorAgentType => 'backup',
             StateProtectedModeRuntime::passHashes => $passHashes,
-            StateProtectedModeRuntime::admittedAcceptKeys => [],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]));
     }
 
@@ -282,7 +334,11 @@ final class AdmissionTestRtContext extends RtContext
 }
 
 /**
- * Recording fake of the master admission seam: captures each admitted key.
+ * Recording fake of the master admission seam: captures each session it was asked to admit.
+ *
+ * Every call is captured, including the ones the row then deduplicates: the seam records a
+ * decision rather than a transition, and a test that wants to see the guard needs to watch the
+ * two counts part company.
  *
  * It can also write the admission through to the row, which is what the real
  * {@see DaemonManager} does - a test that needs the welcome to see an admitted connection has
@@ -290,22 +346,22 @@ final class AdmissionTestRtContext extends RtContext
  */
 final class RecordingAdmissionRecorder implements ProtectedModeAdmissionRecorder
 {
-    /** @var list<string> Accept keys the master was asked to admit, in order */
+    /** @var list<string> Session token hashes the master was asked to admit, in order */
     public array $admitted = [];
 
     /** @var bool Whether to record the admission on the freeze row as well */
     public bool $writeThrough = false;
 
-    public function admitProtectedModeConnection(string $acceptKey): void
+    public function admitProtectedModeSession(string $sessionTokenHash): void
     {
-        $this->admitted[] = $acceptKey;
+        $this->admitted[] = $sessionTokenHash;
         if (!$this->writeThrough) {
             return;
         }
 
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         try {
-            Hilos::$rt?->hilosProtectedModeRuntime?->actions->admitConnection($acceptKey);
+            Hilos::$rt?->hilosProtectedModeRuntime?->actions->admitSession($sessionTokenHash);
         } finally {
             RtTruthSourceRegistry::unregisterDaemon(StateProtectedModeRuntime::RT_ITEM);
         }

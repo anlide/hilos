@@ -402,7 +402,7 @@ final class ProtectedModeWatchdogTest extends TestCase
             StateProtectedModeRuntime::activatedAt => $activatedAt,
             StateProtectedModeRuntime::progressAt => $progressAt,
             StateProtectedModeRuntime::passHashes => [],
-            StateProtectedModeRuntime::admittedAcceptKeys => [],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]));
     }
 

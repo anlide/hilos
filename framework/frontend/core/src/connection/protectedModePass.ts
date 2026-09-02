@@ -1,9 +1,16 @@
 // Where a verifier's protected-mode pass is kept between sockets, and why it is
-// kept there at all: the key has to survive a reload and a reconnect (a blip must
-// not throw the verifier back onto the maintenance screen), and must not survive
-// the window it admits into. sessionStorage is exactly that lifetime — one tab,
-// gone when it closes — whereas a cookie is domain-wide and would outlive the
-// freeze it belongs to.
+// kept there at all. The admission itself is no longer this tab's: the server
+// records the browser session behind the connection, so a second tab and a
+// reloaded one are let in on the cookie alone. What the stored key is for is the
+// moment that cookie changes — signing in under the verification window rotates
+// the session token, drops every connection of the browser and voids the
+// admission with the hash it was written under. A tab that still remembers the
+// key presents it on the reconnect and buys the admission back for the whole
+// browser, because the admission is a browser's now.
+//
+// sessionStorage rather than a cookie for the lifetime: one tab, gone when it
+// closes, whereas a cookie is domain-wide and would outlive the freeze it
+// belongs to.
 
 /** sessionStorage key the presented pass is mirrored under. */
 export const PROTECTED_MODE_PASS_STORAGE_KEY = 'hilos.protectedMode.pass'

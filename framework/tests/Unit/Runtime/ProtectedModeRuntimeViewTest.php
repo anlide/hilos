@@ -177,7 +177,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $this->assertTrue($view->locksOut('accept-1', null));
     }
 
-    public function testAPassAdmitsTheConnectionThatPresentedIt(): void
+    public function testAPassAdmitsTheSessionThatPresentedIt(): void
     {
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
@@ -188,16 +188,16 @@ final class ProtectedModeRuntimeViewTest extends TestCase
 
         $view->actions->issuePass('hash-a');
         $view->actions->issuePass('hash-b');
-        $view->actions->admitConnection('accept-1');
+        $view->actions->admitSession('session-hash-1');
 
         $this->assertSame(['hash-a', 'hash-b'], $view->passHashes);
-        $this->assertSame(['accept-1'], $view->admittedAcceptKeys);
-        $this->assertTrue($view->admits('accept-1'));
-        $this->assertFalse($view->locksOut('accept-1', null));
-        $this->assertTrue($view->locksOut('accept-2', null));
+        $this->assertSame(['session-hash-1'], $view->admittedSessionTokenHashes);
+        $this->assertTrue($view->admits('session-hash-1'));
+        $this->assertFalse($view->locksOut('accept-1', 'session-hash-1'));
+        $this->assertTrue($view->locksOut('accept-2', 'session-hash-2'));
     }
 
-    public function testAVerifierThatReconnectsIsAdmittedUnderItsNewAcceptKey(): void
+    public function testTheSameSessionPresentingThePassAgainAddsNoSecondEntry(): void
     {
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
@@ -206,13 +206,32 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $view->actions->enterActive();
         $view->actions->enterVerifying();
 
-        // The same browser presenting the same pass again: a 101 mints a new accept key, so the
-        // row records a second admission and the first one keeps admitting nothing.
-        $view->actions->admitConnection('accept-1');
-        $view->actions->admitConnection('accept-2');
+        // A verifier reconnecting, or opening a second tab that still remembers the code, arrives
+        // with a brand new accept key and the same cookie. Without the guard the list would grow
+        // by one on every one of those.
+        $view->actions->admitSession('session-hash-1');
+        $view->actions->admitSession('session-hash-1');
 
-        $this->assertSame(['accept-1', 'accept-2'], $view->admittedAcceptKeys);
-        $this->assertTrue($view->admits('accept-2'));
+        $this->assertSame(['session-hash-1'], $view->admittedSessionTokenHashes);
+    }
+
+    public function testASecondBrowserWithTheSamePassIsAdmittedAsItsOwnEntry(): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $state = StateProtectedModeRuntime::create();
+        $view = $this->viewWithActions($state);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
+        $view->actions->enterActive();
+        $view->actions->enterVerifying();
+
+        // The code is deliberately reusable, so a second verifier reading it over the phone is a
+        // second session and a second entry - the circle is a list, not a single holder.
+        $view->actions->admitSession('session-hash-1');
+        $view->actions->admitSession('session-hash-2');
+
+        $this->assertSame(['session-hash-1', 'session-hash-2'], $view->admittedSessionTokenHashes);
+        $this->assertTrue($view->admits('session-hash-1'));
+        $this->assertTrue($view->admits('session-hash-2'));
     }
 
     public function testClosingBackToActiveVoidsEveryPass(): void
@@ -224,15 +243,15 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $view->actions->enterActive();
         $view->actions->enterVerifying();
         $view->actions->issuePass('hash-a');
-        $view->actions->admitConnection('accept-1');
+        $view->actions->admitSession('session-hash-1');
 
         $view->actions->enterActive();
 
         $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVE, $view->phase);
         $this->assertSame([], $view->passHashes);
-        $this->assertSame([], $view->admittedAcceptKeys);
-        // The verifier is back on the stub with everyone else, and its key buys nothing.
-        $this->assertTrue($view->locksOut('accept-1', null));
+        $this->assertSame([], $view->admittedSessionTokenHashes);
+        // The verifier is back on the stub with everyone else, and its session buys nothing.
+        $this->assertTrue($view->locksOut('accept-1', 'session-hash-1'));
     }
 
     public function testANewFreezeStartsWithNoPassesWhateverTheRowHeld(): void
@@ -247,13 +266,13 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $view->actions->enterActive();
         $view->actions->enterVerifying();
         $view->actions->issuePass('hash-a');
-        $view->actions->admitConnection('accept-1');
+        $view->actions->admitSession('session-hash-1');
 
         $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
 
         $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVATING, $view->phase);
         $this->assertSame([], $view->passHashes);
-        $this->assertSame([], $view->admittedAcceptKeys);
+        $this->assertSame([], $view->admittedSessionTokenHashes);
     }
 
     public function testLiftingTheModeVoidsEveryPass(): void
@@ -265,13 +284,13 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $view->actions->enterActive();
         $view->actions->enterVerifying();
         $view->actions->issuePass('hash-a');
-        $view->actions->admitConnection('accept-1');
+        $view->actions->admitSession('session-hash-1');
         $view->actions->enterDeactivating();
 
         $view->actions->enterInactive();
 
         $this->assertSame([], $view->passHashes);
-        $this->assertSame([], $view->admittedAcceptKeys);
+        $this->assertSame([], $view->admittedSessionTokenHashes);
     }
 
     public function testAWriterThatIsNotTheTruthSourceIsRefused(): void
@@ -295,7 +314,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
             StateProtectedModeRuntime::initiatorAcceptKey => self::INITIATOR_KEY,
             StateProtectedModeRuntime::initiatorSessionTokenHash => $initiatorSessionTokenHash,
             StateProtectedModeRuntime::passHashes => [],
-            StateProtectedModeRuntime::admittedAcceptKeys => [],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]);
 
         return new ProtectedModeRuntime($state);

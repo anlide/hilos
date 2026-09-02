@@ -306,7 +306,7 @@ final class ProtectedModeTestDriverTest extends TestCase
             StateProtectedModeRuntime::initiatorAgentType => $initiatorType,
             StateProtectedModeRuntime::initiatorAgentIndex => $initiatorIndex,
             StateProtectedModeRuntime::passHashes => [],
-            StateProtectedModeRuntime::admittedAcceptKeys => [],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]));
     }
 

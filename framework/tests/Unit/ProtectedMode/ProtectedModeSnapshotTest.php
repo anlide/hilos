@@ -188,7 +188,7 @@ final class ProtectedModeSnapshotTest extends TestCase
             StateProtectedModeRuntime::activatedAt => 1005,
             StateProtectedModeRuntime::progressAt => 1042,
             StateProtectedModeRuntime::passHashes => [],
-            StateProtectedModeRuntime::admittedAcceptKeys => [],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]));
     }
 

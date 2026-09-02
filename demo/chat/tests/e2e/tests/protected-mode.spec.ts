@@ -204,6 +204,7 @@ test('a wrong code leaves the connection frozen and says so', async ({
 
 test('the minted code admits the verifier while everyone else keeps the stub', async ({
   page,
+  browser,
 }) => {
   await enterProtectedMode(OPERATION)
   expect(await leaveProtectedMode()).toBe('verifying')
@@ -218,10 +219,103 @@ test('the minted code admits the verifier while everyone else keeps the stub', a
   await expect(page.getByTestId('maintenance')).toBeHidden()
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
-  const bystander = await page.context().newPage()
+  // A browser of its own, and it has to be one: since HIL-666 the admission is held
+  // against the session, so a second tab of the browser that typed the code is inside
+  // with it. "Everybody else" begins at the next cookie.
+  const bystanderContext = await browser.newContext()
+  const bystander = await bystanderContext.newPage()
   await gotoMaintenance(bystander, ADMIN_URL)
   await expect(bystander.getByTestId('maintenance-pass-form')).toBeVisible()
-  await bystander.close()
+  await bystanderContext.close()
+})
+
+test('the code lets the whole browser in, and the tab that was waiting comes out on its own', async ({
+  page,
+  browser,
+}) => {
+  // HIL-666 acceptance. The verifier is a person: they read the code out once and
+  // then reload, open a second tab, follow a link. Admitting the socket that spelled
+  // the code admitted exactly one of those and left the rest of the browser standing
+  // on the stub holding a key the node had already accepted.
+  await enterProtectedMode(OPERATION)
+  expect(await leaveProtectedMode()).toBe('verifying')
+  const pass = await mintProtectedModePass()
+
+  // The tab that will do the typing, and one that is already standing on the stub
+  // when it happens — the ordinary case, since the operator reads the code out to
+  // somebody who is already looking at the maintenance screen.
+  await gotoMaintenance(page, ADMIN_URL)
+  const waiting = await page.context().newPage()
+  await gotoMaintenance(waiting, ADMIN_URL)
+
+  await presentCode(page, pass)
+  await expect(page.getByTestId('maintenance')).toBeHidden()
+
+  // Pushed, and that is the whole point of asserting it on a live tab: nothing here
+  // navigates or reloads, and no connection was torn down when the mode turned on,
+  // so a tab left out of this frame would stand on the stub for the rest of the
+  // window.
+  await expect(waiting.getByTestId('maintenance')).toBeHidden()
+
+  // And a tab opened afterwards is inside without ever being shown the field: it
+  // arrives with the same cookie and an accept key the row has never seen.
+  const later = await page.context().newPage()
+  await gotoAdmitted(later, ADMIN_URL)
+  await expect(later.getByTestId('maintenance')).toBeHidden()
+
+  // The admission belongs to one browser and not to everybody: another one keeps
+  // the stub, and the field, for the whole window.
+  const strangerContext = await browser.newContext()
+  const stranger = await strangerContext.newPage()
+  await gotoMaintenance(stranger, ADMIN_URL)
+  await expect(stranger.getByTestId('maintenance-pass-form')).toBeVisible()
+  await strangerContext.close()
+
+  await later.close()
+  await waiting.close()
+})
+
+test('the tabs the operator already had open are never raised to the stub', async ({
+  page,
+  context,
+  browser,
+}) => {
+  // The HIL-748 criterion, closed by this leaf: the frame announcing the freeze used
+  // to spare one socket, so the operator's other tabs went to a maintenance screen
+  // describing the operation their owner was running, and only an F5 took them back.
+  await gotoPage(page, '/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  const sessionToken = await sessionTokenOf(context)
+  expect(sessionToken).not.toBe('')
+
+  const otherTab = await context.newPage()
+  await gotoPage(otherTab, '/')
+  await expect(otherTab.getByTestId('maintenance')).toBeHidden()
+
+  expect(await enterProtectedMode(OPERATION, '', sessionToken)).toBe('active')
+
+  // A stranger's browser is the barrier before every negative assertion below: it
+  // proves the frame has actually gone out on this node, so "still no stub here"
+  // means the frame passed this browser by rather than that it has not arrived yet.
+  // It stands on the admin url because the second barrier needs it to: the sentence
+  // that stands in for the code field is an administrative surface's, and a public
+  // one shows neither of the two (HIL-615).
+  const strangerContext = await browser.newContext()
+  const stranger = await strangerContext.newPage()
+  await gotoMaintenance(stranger, ADMIN_URL)
+
+  await expect(page.getByTestId('maintenance')).toBeHidden()
+  await expect(otherTab.getByTestId('maintenance')).toBeHidden()
+
+  // The window frame is a second broadcast, and it spares the same browser.
+  expect(await leaveProtectedMode()).toBe('verifying')
+  await expect(stranger.getByTestId('maintenance-pass-pending')).toBeVisible()
+  await expect(page.getByTestId('maintenance')).toBeHidden()
+  await expect(otherTab.getByTestId('maintenance')).toBeHidden()
+  await strangerContext.close()
+
+  expect(await openProtectedMode()).toBe('inactive')
+  await otherTab.close()
 })
 
 test('leaving the window takes the field and the sentence away together', async ({
@@ -331,6 +425,13 @@ test('closing the window puts the admitted verifier back behind the stub', async
   await presentCode(page, pass)
   await expect(page.getByTestId('maintenance')).toBeHidden()
 
+  // The second tab, in on the same admission and never asked for a code, goes back
+  // with the first one: the close voids the admission itself, not one socket's copy
+  // of it.
+  const secondTab = await page.context().newPage()
+  await gotoAdmitted(secondTab, ADMIN_URL)
+  await expect(secondTab.getByTestId('maintenance')).toBeHidden()
+
   expect(await closeProtectedMode()).toBe('active')
 
   // Back behind the stub with everybody else, and without the field or the
@@ -339,6 +440,8 @@ test('closing the window puts the admitted verifier back behind the stub', async
   await expect(page.getByTestId('maintenance')).toBeVisible()
   await expect(page.getByTestId('maintenance-pass-form')).toBeHidden()
   await expect(page.getByTestId('maintenance-pass-pending')).toBeHidden()
+  await expect(secondTab.getByTestId('maintenance')).toBeVisible()
+  await secondTab.close()
 })
 
 test('a code from a closed window opens no later one', async ({

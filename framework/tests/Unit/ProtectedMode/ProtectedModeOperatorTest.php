@@ -362,7 +362,7 @@ final class ProtectedModeOperatorTest extends TestCase
             StateProtectedModeRuntime::initiatorAgentType => $initiatorType,
             StateProtectedModeRuntime::initiatorAgentIndex => $initiatorIndex,
             StateProtectedModeRuntime::passHashes => $passHashes,
-            StateProtectedModeRuntime::admittedAcceptKeys => [],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]));
     }
 

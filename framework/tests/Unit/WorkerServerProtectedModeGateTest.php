@@ -256,7 +256,7 @@ final class WorkerServerProtectedModeGateTest extends TestCase
             StateProtectedModeRuntime::initiatorAgentType => $initiatorType,
             StateProtectedModeRuntime::initiatorAgentIndex => $initiatorIndex,
             StateProtectedModeRuntime::passHashes => [],
-            StateProtectedModeRuntime::admittedAcceptKeys => [],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]));
     }
 

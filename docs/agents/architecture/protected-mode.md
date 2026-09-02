@@ -315,7 +315,10 @@ automatically, the human path out has to actually work.
   with the reason named — reading a damaged freeze as "no freeze" opens the node
   on the strength of a parse failure. A missing file is the ordinary startup.
   Every accept key is dropped on restore, the initiator's own included: each was
-  minted on a 101 that died with the daemon.
+  minted on a 101 that died with the daemon. The session hashes go too — the
+  initiator's and every admitted verifier's — and that one is a decision rather
+  than a consequence: those cookies do outlive the daemon, and keeping them would
+  hand their browsers the run of a node whose operation nobody is driving.
 - **Leader change.** `ClusterProtectedMode::onBecameLeader()` rebuilds the
   leader-side freeze from the row this node carries. Without it `onDisable()`
   from a live and healthy initiator is dropped (`leadsFreezeFor()` on
@@ -348,9 +351,27 @@ connection out only when four things hold at once: the phase is not
 `PHASE_INACTIVE`, **and** the connection's accept key is not
 `initiatorAcceptKey`, **and** the connection does not belong to the initiator's
 browser session (`initiatorSessionTokenHash`, matched by
-`belongsToInitiator()`), **and** it presented no pass admitted right now. Any
-one of them failing serves that connection the real application. There is no
-fifth way in.
+`belongsToInitiator()`), **and** the browser session behind it holds no admitted
+pass (`admittedSessionTokenHashes`, matched by `admits()`). Any one of them
+failing serves that connection the real application. There is no fifth way in.
+
+**Both halves of the rule are keyed by the browser, and for the same reason
+(HIL-666).** The verifier reads a code out once and then behaves like a person:
+reloads, opens a second tab, follows a link. Each of those arrives with a
+brand-new accept key and the same cookie, so an admission written against the
+socket admitted exactly one tab and left the rest of that browser on the stub
+holding a code the node had already accepted. What is stored is the hash of the
+session token, through the same one door the initiator half uses
+(`hashSessionToken()`), and it is compared with `hash_equals()` in a loop rather
+than `in_array()`, because both sides are derived from a secret. The list is a
+list because several people may verify at once; the code stays reusable, and who
+exactly walked in is a different question (HIL-643).
+
+**The record is idempotent, and the frame is not.** `admitSession()` refuses to
+add a hash it already carries, so a browser is one entry however many of its tabs
+present the code. Whether this presentation was a *crossing* is asked separately,
+by the caller, before the write: `DaemonManager::admitProtectedModeSession()`
+reads `admits()` first, and only a false there earns the announcement below.
 
 **The initiator is recognized by two halves because one of them does not survive
 a reload.** The accept key names the socket that asked for the freeze and dies
@@ -377,14 +398,38 @@ welcome frame; `BrowserContext::protectedModeLocksOut()` answers a
 `page_subscribe`, taking the session token from the runtime connection roster
 and hashing to null for a connection the roster does not carry.
 
-**The welcome is personalized; the pushed frame is not.** Every connection is
-answered with a welcome computed for itself, which is why a reload and a new tab
-need no further state to be let back in. The push that announces the mode goes
-through `ProtectedModeClientNotifier::notifyProtectedModeState()`, whose
-`excludeAcceptKey` parameter keeps exactly one accept key — one socket — out of
-the broadcast. A second tab of the initiator's own browser is therefore raised
-to the stub with everyone else, and comes back only on a reload, over a fresh
-welcome.
+**Both ways in therefore need the session stage of that roster**, and since
+HIL-666 the verifier's way in needs it as much as the initiator's: a project that
+mounts connections at the presence stage answers null from
+`sessionConnectionsSource()`, so the worker asks the row about a null hash and
+refuses the subscription with `PageServiceUnavailableException` — while the
+welcome, which derives the hash on the master and needs no roster at all, has
+already told that browser it is inside. The two verdicts part company only
+there, and only for a project standing on the presence stage.
+
+**The welcome is personalized; the broadcast is addressed by browser.** Every
+connection is answered with a welcome computed for itself, which is why a reload
+and a new tab need no further state to be let back in. The push that announces
+the mode goes through `ProtectedModeClientNotifier::notifyProtectedModeState()`,
+which is told two exclusions and not one: `excludeAcceptKey` keeps the socket
+that asked out of the broadcast, and `excludeSessionTokenHash` keeps every other
+tab of that same browser out with it (HIL-666, absorbing HIL-748). They stay two
+arguments rather than one because an initiator with no browser behind it — a CLI
+trigger, a scheduled run — leaves the hash null and must go on being served
+exactly as before. The exclusion rides the wire on `WebSocketSignalData` and
+reaches the sockets through `AllClientsDestination`, so a fan-out forwarded from
+another node spares the same browser this one does.
+
+**A verifier is pushed to as well, and by session (HIL-666).** Nothing tears a
+connection down when the mode turns on (`ConnectionDropper` is called only by a
+session rotation and by `test:connection:drop`), so a tab that was standing on
+the stub when its owner typed the code in another tab would stand there for the
+rest of the window. On the crossing the master therefore sends every connection
+of the admitted session a frame of its own, over the `WS_SESSION` delivery built
+for the initiator in HIL-655: `active: false` with `acceptsPass: true`. The
+second bit is load-bearing — the client calls the mode over only when both are
+false, and a frame without it would reload the tab out of the window instead of
+into it.
 
 **On the way out the frame goes to everybody, the initiator included.**
 `DaemonProtectedModeExecutor::enterInactive()` passes no exclusion at all, and

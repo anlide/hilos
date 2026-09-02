@@ -265,8 +265,18 @@ final class LiftWaitClientNotifier implements ProtectedModeClientNotifier
     /** @var list<ProtectedModeStateSignalData> Frames announced, in the order they went out */
     public array $frames = [];
 
-    public function notifyProtectedModeState(ProtectedModeStateSignalData $state, ?string $excludeAcceptKey): void
-    {
+    public function notifyProtectedModeState(
+        ProtectedModeStateSignalData $state,
+        ?string $excludeAcceptKey,
+        ?string $excludeSessionTokenHash,
+    ): void {
+        $this->frames[] = $state;
+    }
+
+    public function notifyProtectedModeSessionState(
+        ProtectedModeStateSignalData $state,
+        string $sessionTokenHash,
+    ): void {
         $this->frames[] = $state;
     }
 }

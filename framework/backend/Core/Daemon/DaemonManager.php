@@ -1285,25 +1285,67 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Records the connection holding this accept key as admitted for the verification in flight.
+     * Records the browser session behind this connection as admitted for the verification in flight.
      *
      * The master half of the admission: {@see WebSocketClient} has already matched the presented
      * pass against the row, and this writes the verdict where the workers can read it. A process
      * holding no runtime row records nothing - there is no freeze there to be let into.
      *
+     * On the crossing - and only on it - the whole session is told, because the tab that typed the
+     * code is rarely the only one open and nothing tears the others down: they would stand on the
+     * stub for the rest of the window waiting for a reload nobody asked them for.
+     *
      * A refused write is logged and swallowed rather than raised, because the caller is the
      * connection-accept path: an exception there tears down a handshake that was otherwise fine,
      * and the failure it would report has a safe reading already - the verifier stays on the
-     * maintenance stub and can present the code again.
+     * maintenance stub and can present the code again. A frame that cannot be queued is swallowed
+     * for the same reason and leaves the same way out: this connection's own welcome still says it
+     * is inside, so the tab that typed the code works, and a reload brings the others in.
      *
-     * @param string $acceptKey Daemon-minted identifier of the admitted connection
+     * @param string $sessionTokenHash Hash of the session token of the admitted browser
      */
-    public function admitProtectedModeConnection(string $acceptKey): void
+    public function admitProtectedModeSession(string $sessionTokenHash): void
     {
+        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($freeze === null) {
+            return;
+        }
+
+        // Asked before the write, because after it the answer is yes whatever happened. The frame
+        // below announces the crossing rather than the state, and a verifier presenting its code
+        // from a third tab has crossed nothing: the tabs already inside would be told what they
+        // are looking at.
+        $wasAdmitted = $freeze->admits($sessionTokenHash);
+
         try {
-            Hilos::$rt?->hilosProtectedModeRuntime?->actions->admitConnection($acceptKey);
+            $freeze->actions->admitSession($sessionTokenHash);
         } catch (RtBaseException $exception) {
             Logger::error('Protected mode: failed to admit a verifier: ' . $exception->getMessage());
+
+            return;
+        }
+
+        if ($wasAdmitted) {
+            return;
+        }
+
+        // `active: false` is the personalized verdict, the same one the welcome hands a connection
+        // that presented the code; `acceptsPass: true` is the row's own bit and is what keeps the
+        // client from reading this as a lift - it calls the mode over only when both are false, and
+        // would reload the tab out of the window instead of into it. The copy stays null because an
+        // admitted browser renders no stub, and `passIssued` is true by the fact that got us here.
+        try {
+            $this->notifyProtectedModeSessionState(
+                new ProtectedModeStateSignalData(
+                    active: false,
+                    operation: $freeze->operation,
+                    acceptsPass: true,
+                    passIssued: true,
+                ),
+                $sessionTokenHash,
+            );
+        } catch (InvalidArgumentException $exception) {
+            Logger::error('Protected mode: failed to tell an admitted verifier: ' . $exception->getMessage());
         }
     }
 
@@ -1313,20 +1355,54 @@ abstract class DaemonManager extends BaseManager implements
      * Queues the state as a broadcast signal rather than writing to the sockets here: the
      * WS_ALL_CONNECTED type resolves to {@see AllClientsDestination} and the routing pass
      * of the same loop fans it out through {@see sendToAllClients()}, so the freeze frame
-     * leaves the daemon by the one path every other broadcast uses. The excluded accept key
-     * is the initiator's — it drives the operation and must keep seeing the real app.
+     * leaves the daemon by the one path every other broadcast uses. Both exclusions are the
+     * initiator's — it drives the operation and must keep seeing the real app, in the tab it
+     * started from and in the ones it already had open.
      *
      * @param ProtectedModeStateSignalData $state State to announce, with the copy already resolved
      * @param ?string $excludeAcceptKey Accept key kept out of the broadcast, or null to tell everyone
+     * @param ?string $excludeSessionTokenHash Hash of the initiator browser's session token, kept out
+     *                                         with all its tabs, or null when no browser asked
      * @throws InvalidArgumentException When the protected-mode signal cannot be named
      */
-    public function notifyProtectedModeState(ProtectedModeStateSignalData $state, ?string $excludeAcceptKey): void
-    {
+    public function notifyProtectedModeState(
+        ProtectedModeStateSignalData $state,
+        ?string $excludeAcceptKey,
+        ?string $excludeSessionTokenHash,
+    ): void {
         Hilos::$sr?->queueSignal(
             new SignalSource(SignalSource::DAEMON),
             new SignalType(SignalTypeConstants::WS_ALL_CONNECTED),
             new SignalName(SignalTypeConstants::PROTECTED_MODE),
-            new WebSocketSignalData(data: $state, excludeAcceptKey: $excludeAcceptKey),
+            new WebSocketSignalData(
+                data: $state,
+                excludeAcceptKey: $excludeAcceptKey,
+                excludeSessionTokenHash: $excludeSessionTokenHash,
+            ),
+        );
+    }
+
+    /**
+     * Tells every connection of one browser session on this node what the mode holds for it.
+     *
+     * The same frame and the same queue as the broadcast above, addressed by WS_SESSION instead:
+     * the routing pass resolves it to {@see SessionClientsDestination} and the fan-out walks the
+     * connections carrying that session hash. Nothing of that delivery is written here - it was
+     * built for the initiator's own tabs (HIL-655) and this is its second caller.
+     *
+     * @param ProtectedModeStateSignalData $state State to announce, with the copy already resolved
+     * @param string $sessionTokenHash Hash of the session token whose connections receive the frame
+     * @throws InvalidArgumentException When the protected-mode signal cannot be named
+     */
+    public function notifyProtectedModeSessionState(
+        ProtectedModeStateSignalData $state,
+        string $sessionTokenHash,
+    ): void {
+        Hilos::$sr?->queueSignal(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::WS_SESSION),
+            new SignalName(SignalTypeConstants::PROTECTED_MODE),
+            new WebSocketSignalData(data: $state, targetSessionTokenHash: $sessionTokenHash),
         );
     }
 
@@ -1929,6 +2005,7 @@ abstract class DaemonManager extends BaseManager implements
                         $webSocketServer,
                         $broadcastFrame,
                         $destination->excludeAcceptKey,
+                        $destination->excludeSessionTokenHash,
                     );
                 } elseif ($destination instanceof SessionClientsDestination) {
                     // Deliver to every connection of one browser session held by this node
@@ -3340,7 +3417,12 @@ abstract class DaemonManager extends BaseManager implements
                     continue;
                 }
 
-                $this->sendToAllClients($webSocketServer, $broadcastFrame, $destination->excludeAcceptKey);
+                $this->sendToAllClients(
+                    $webSocketServer,
+                    $broadcastFrame,
+                    $destination->excludeAcceptKey,
+                    $destination->excludeSessionTokenHash,
+                );
             } elseif ($destination instanceof SessionClientsDestination) {
                 $sessionFrame = $this->encodeSignalFrame($signal);
                 if ($sessionFrame === null) {
@@ -3766,26 +3848,48 @@ abstract class DaemonManager extends BaseManager implements
 
     /**
      * Broadcast a pre-serialized frame to every connected WebSocket client in a
-     * single pass, skipping excludeAcceptKey. Per-client send failures are logged
-     * by accept key and do not stop the broadcast.
+     * single pass, skipping excludeAcceptKey and every connection of
+     * excludeSessionTokenHash. Per-client send failures are logged by accept key
+     * and do not stop the broadcast.
+     *
+     * The two exclusions are asked separately because they are different questions. The accept key
+     * names the socket that asked; the session names the browser it asked from, and a broadcast
+     * about somebody's own operation must not raise the rest of their tabs to a stub. A connection
+     * carrying no session is never excluded by the second - a null on both sides would keep every
+     * cookieless visitor out of a frame meant for them - and the compare is {@see hash_equals()}
+     * because both sides are derived from a session token.
      *
      * @param WebSocketServer $server WebSocket server
      * @param string $message Message JSON
      * @param ?string $excludeAcceptKey Accept key to exclude, or null to send to all
+     * @param ?string $excludeSessionTokenHash Hash of the session whose connections are excluded, or
+     *                                         null to leave no browser out
      */
-    private function sendToAllClients(WebSocketServer $server, string $message, ?string $excludeAcceptKey = null): void
-    {
+    private function sendToAllClients(
+        WebSocketServer $server,
+        string $message,
+        ?string $excludeAcceptKey = null,
+        ?string $excludeSessionTokenHash = null,
+    ): void {
         foreach ($server->getClients() as $client) {
-            if ($client instanceof WebSocketClient) {
-                if ($excludeAcceptKey !== null && $client->acceptKey === $excludeAcceptKey) {
-                    continue;
-                }
+            if (!$client instanceof WebSocketClient) {
+                continue;
+            }
+            if ($excludeAcceptKey !== null && $client->acceptKey === $excludeAcceptKey) {
+                continue;
+            }
+            if (
+                $excludeSessionTokenHash !== null
+                && $client->sessionTokenHash !== null
+                && hash_equals($excludeSessionTokenHash, $client->sessionTokenHash)
+            ) {
+                continue;
+            }
 
-                try {
-                    $client->sendFrame($message);
-                } catch (Throwable $e) {
-                    Logger::error("Failed to send message to acceptKey {$client->acceptKey}: " . $e->getMessage());
-                }
+            try {
+                $client->sendFrame($message);
+            } catch (Throwable $e) {
+                Logger::error("Failed to send message to acceptKey {$client->acceptKey}: " . $e->getMessage());
             }
         }
     }

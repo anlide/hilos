@@ -463,7 +463,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $this->handshakeCompleted = true;
         // Before the welcome, never after: the welcome tells this connection whether the mode
         // locks it out, and a verifier that presented a valid pass no longer is locked out.
-        $this->admitProtectedModePass($acceptKey, $queryParams);
+        $this->admitProtectedModePass($queryParams);
         $this->sendHandshakeWelcome($acceptKey, $sessionCookieName);
 
         if ($rotation !== null) {
@@ -839,13 +839,19 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * a secret and an attacker-supplied value, which is the one place a timing difference is
      * worth removing even though the search space is a 256-bit hash.
      *
-     * @param string $acceptKey This connection's accept key, recorded when the pass matches
+     * What the match admits is the browser session rather than this socket: the verifier reads
+     * the code once and then opens tabs, and each of those arrives with the same cookie and a
+     * brand new accept key. A connection carrying no session is refused for the reason the
+     * initiator's null hash is refused - letting two nulls meet would open the node to every
+     * cookieless visitor - and it is barely reachable anyway, since a token is minted on every
+     * handshake.
+     *
      * @param RequestQueryParams $queryParams Query parameters of the upgrade request
      */
-    private function admitProtectedModePass(string $acceptKey, RequestQueryParams $queryParams): void
+    private function admitProtectedModePass(RequestQueryParams $queryParams): void
     {
         $pass = $queryParams->getString(ProtectedModeAdmissionConstants::HILOS_PASS_QUERY_PARAM);
-        if ($pass === null || $pass === '') {
+        if ($pass === null || $pass === '' || $this->sessionTokenHash === null) {
             return;
         }
 
@@ -857,7 +863,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $presented = hash(ProtectedModeAdmissionConstants::PASS_HASH_ALGO, $pass);
         foreach ($freeze->passHashes as $minted) {
             if (hash_equals($minted, $presented)) {
-                $this->protectedModeAdmissionRecorder?->admitProtectedModeConnection($acceptKey);
+                $this->protectedModeAdmissionRecorder?->admitProtectedModeSession($this->sessionTokenHash);
                 return;
             }
         }

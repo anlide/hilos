@@ -25,17 +25,18 @@ use Hilos\Socket\Server\WebSocketServer;
 interface ProtectedModeAdmissionRecorder
 {
     /**
-     * Records the connection holding this accept key as admitted for the verification in flight.
+     * Records the browser session behind this connection as admitted for the verification in flight.
      *
-     * Writes {@see ProtectedModeRuntime::$admittedAcceptKeys} through the daemon's runtime actions,
-     * which is an in-memory write plus the RT sync that carries it to this node's workers - no
-     * database, no file and no socket I/O, because it runs on the master's connection-accept path.
-     * A key already recorded is ignored, so a verifier that reconnects costs nothing.
+     * Writes {@see ProtectedModeRuntime::$admittedSessionTokenHashes} through the daemon's runtime
+     * actions, which is an in-memory write plus the RT sync that carries it to this node's workers -
+     * no database, no file and no socket I/O, because it runs on the master's connection-accept
+     * path. A session already recorded is ignored, so a verifier that reconnects or opens a second
+     * tab costs nothing.
      *
      * The caller has already checked the pass ({@see WebSocketClient}); this seam records a
      * decision, it does not make one.
      *
-     * @param string $acceptKey Daemon-minted identifier of the admitted connection
+     * @param string $sessionTokenHash Hash of the session token of the admitted browser
      */
-    public function admitProtectedModeConnection(string $acceptKey): void;
+    public function admitProtectedModeSession(string $sessionTokenHash): void;
 }

@@ -175,7 +175,7 @@ final class ProtectedModeLiftAnnouncer
         }
 
         try {
-            Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState($state, null);
+            Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState($state, null, null);
         } catch (Throwable $e) {
             Logger::logAgentError(
                 self::LOG_AGENT_ID,

@@ -46,6 +46,32 @@ final class SignalRouterWebSocketDestinationRoutingTest extends TestCase
         );
     }
 
+    public function testABroadcastCarriesTheExcludedSessionToTheMarkerToo(): void
+    {
+        // The initiator is spared by both halves of its identity: the socket that asked and the
+        // browser behind it, whose other tabs the freeze frame would otherwise raise to a stub.
+        $this->assertEquals(
+            [
+                new AllClientsDestination('sender-key', 'session-hash-sender'),
+            ],
+            new SignalRouter()->getDestinations(
+                $this->broadcastSignal('sender-key', 'session-hash-sender'),
+            ),
+        );
+    }
+
+    public function testABroadcastExcludingOnlyASessionKeepsTheAcceptKeyNull(): void
+    {
+        // What a node reached by a signal it did not originate sees: it knows the browser, because
+        // the hash travelled, and knows no accept key of its own to spare.
+        $this->assertEquals(
+            [
+                new AllClientsDestination(null, 'session-hash-sender'),
+            ],
+            new SignalRouter()->getDestinations($this->broadcastSignal(null, 'session-hash-sender')),
+        );
+    }
+
     public function testASessionSignalResolvesToOneSessionFanoutMarker(): void
     {
         $this->assertEquals(
@@ -71,12 +97,14 @@ final class SignalRouterWebSocketDestinationRoutingTest extends TestCase
             targetSessionTokenHash: '',
             targetGroup: '',
             excludeAcceptKey: '',
+            excludeSessionTokenHash: '',
         );
 
         $this->assertNull($data->targetAcceptKey);
         $this->assertNull($data->targetSessionTokenHash);
         $this->assertNull($data->targetGroup);
         $this->assertNull($data->excludeAcceptKey);
+        $this->assertNull($data->excludeSessionTokenHash);
     }
 
     public function testAnEmptyTargetAcceptKeyAddressesNobodyRatherThanEveryone(): void
@@ -106,15 +134,22 @@ final class SignalRouterWebSocketDestinationRoutingTest extends TestCase
      * Builds a ws_all_connected broadcast signal as emitted by sendToAllConnected().
      *
      * @param ?string $excludeAcceptKey Accept key to exclude, or null to send to all
+     * @param ?string $excludeSessionTokenHash Session hash to exclude, or null to leave no browser out
      * @return SignalDTO Broadcast signal
      */
-    private function broadcastSignal(?string $excludeAcceptKey): SignalDTO
-    {
+    private function broadcastSignal(
+        ?string $excludeAcceptKey,
+        ?string $excludeSessionTokenHash = null,
+    ): SignalDTO {
         return new SignalDTO(
             new SignalSource(SignalSource::AGENT),
             new SignalType(SignalTypeConstants::WS_ALL_CONNECTED),
             new SignalName('broadcast_signal'),
-            new WebSocketSignalData(data: new SignalData(), excludeAcceptKey: $excludeAcceptKey),
+            new WebSocketSignalData(
+                data: new SignalData(),
+                excludeAcceptKey: $excludeAcceptKey,
+                excludeSessionTokenHash: $excludeSessionTokenHash,
+            ),
         );
     }
 

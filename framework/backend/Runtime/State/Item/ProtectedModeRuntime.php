@@ -56,7 +56,7 @@ final class ProtectedModeRuntime extends RtState
     public const string activatedAt = 'activatedAt';
     public const string progressAt = 'progressAt';
     public const string passHashes = 'passHashes';
-    public const string admittedAcceptKeys = 'admittedAcceptKeys';
+    public const string admittedSessionTokenHashes = 'admittedSessionTokenHashes';
 
     /** Hash algorithm the initiator's session token is stored and compared under. */
     private const string SESSION_TOKEN_HASH_ALGO = 'sha256';
@@ -121,11 +121,11 @@ final class ProtectedModeRuntime extends RtState
     public array $passHashes = [];
 
     /**
-     * Accept keys of the connections that presented a valid pass; empty on every other phase.
+     * Session token hashes of the browsers that presented a valid pass; empty on every other phase.
      *
      * @var list<string>
      */
-    public array $admittedAcceptKeys = [];
+    public array $admittedSessionTokenHashes = [];
 
     /**
      * Creates the inactive singleton runtime row.
@@ -159,7 +159,7 @@ final class ProtectedModeRuntime extends RtState
         $instance->activatedAt = self::optionalInt($row, self::activatedAt);
         $instance->progressAt = self::optionalInt($row, self::progressAt);
         $instance->passHashes = self::requireStringList($row, self::passHashes);
-        $instance->admittedAcceptKeys = self::requireStringList($row, self::admittedAcceptKeys);
+        $instance->admittedSessionTokenHashes = self::requireStringList($row, self::admittedSessionTokenHashes);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -187,7 +187,7 @@ final class ProtectedModeRuntime extends RtState
         $this->activatedAt = self::patchOptionalInt($diff, self::activatedAt, $this->activatedAt);
         $this->progressAt = self::patchOptionalInt($diff, self::progressAt, $this->progressAt);
         $this->passHashes = self::patchStringList($diff, self::passHashes, $this->passHashes);
-        $this->admittedAcceptKeys = self::patchStringList($diff, self::admittedAcceptKeys, $this->admittedAcceptKeys);
+        $this->admittedSessionTokenHashes = self::patchStringList($diff, self::admittedSessionTokenHashes, $this->admittedSessionTokenHashes);
     }
 
     /**
@@ -238,7 +238,7 @@ final class ProtectedModeRuntime extends RtState
         return $this->phase !== self::PHASE_INACTIVE
             && $acceptKey !== $this->initiatorAcceptKey
             && !$this->belongsToInitiator($sessionTokenHash)
-            && !$this->admits($acceptKey);
+            && !$this->admits($sessionTokenHash);
     }
 
     /**
@@ -278,20 +278,35 @@ final class ProtectedModeRuntime extends RtState
     }
 
     /**
-     * Whether this connection presented a valid pass and was let in for the verification.
+     * Whether this browser session presented a valid pass and was let in for the verification.
      *
      * Only {@see self::PHASE_VERIFYING} consults the admitted list at all. The frozen phases
      * do carry an empty list — the actions clear it on the way in and on the way out — but an
      * emptiness that is enforced by the phase beats one that is merely assumed of the row.
      *
-     * @param ?string $acceptKey Connection accept key to test, or null when none is known
-     * @return bool Whether the connection holds a pass admitted right now
+     * The pass is held by the browser rather than by the socket that spelled the code: a second
+     * tab arrives with the same cookie and a brand new accept key, and the verifier who opens one
+     * would otherwise stand behind the placeholder holding a code the node already accepted.
+     *
+     * The comparison is {@see hash_equals()} in a loop rather than {@see in_array()} for the
+     * reason {@see belongsToInitiator()} compares that way: both sides are derived from a secret.
+     *
+     * @param ?string $sessionTokenHash Hash of the connection's session token, or null when it carries no session
+     * @return bool Whether the session behind this connection holds a pass admitted right now
      */
-    public function admits(?string $acceptKey): bool
+    public function admits(?string $sessionTokenHash): bool
     {
-        return $this->phase === self::PHASE_VERIFYING
-            && $acceptKey !== null
-            && in_array($acceptKey, $this->admittedAcceptKeys, true);
+        if ($this->phase !== self::PHASE_VERIFYING || $sessionTokenHash === null) {
+            return false;
+        }
+
+        foreach ($this->admittedSessionTokenHashes as $admittedSessionTokenHash) {
+            if (hash_equals($admittedSessionTokenHash, $sessionTokenHash)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -311,7 +326,7 @@ final class ProtectedModeRuntime extends RtState
             self::activatedAt => $this->activatedAt,
             self::progressAt => $this->progressAt,
             self::passHashes => $this->passHashes,
-            self::admittedAcceptKeys => $this->admittedAcceptKeys,
+            self::admittedSessionTokenHashes => $this->admittedSessionTokenHashes,
         ];
     }
 }

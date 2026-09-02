@@ -33,7 +33,7 @@ final class ProtectedModeContractTest extends TestCase
         $this->assertNull($runtime->initiatorAgentIndex);
         $this->assertNull($runtime->startedAt);
         $this->assertSame([], $runtime->passHashes);
-        $this->assertSame([], $runtime->admittedAcceptKeys);
+        $this->assertSame([], $runtime->admittedSessionTokenHashes);
         $this->assertSame(ProtectedModeRuntime::RT_ITEM, ProtectedModeRuntime::getRtCollectionKey());
     }
 
@@ -51,7 +51,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::activatedAt => 1_700_000_005,
             ProtectedModeRuntime::progressAt => null,
             ProtectedModeRuntime::passHashes => [],
-            ProtectedModeRuntime::admittedAcceptKeys => [],
+            ProtectedModeRuntime::admittedSessionTokenHashes => [],
         ];
 
         $runtime = ProtectedModeRuntime::fromRow($row);
@@ -75,7 +75,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::activatedAt => 1_700_000_005,
             ProtectedModeRuntime::progressAt => 1_700_000_030,
             ProtectedModeRuntime::passHashes => ['hash-a', 'hash-b'],
-            ProtectedModeRuntime::admittedAcceptKeys => ['accept-verifier'],
+            ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-verifier'],
         ];
 
         $runtime = ProtectedModeRuntime::fromRow($row);
@@ -100,27 +100,27 @@ final class ProtectedModeContractTest extends TestCase
         $runtime = ProtectedModeRuntime::fromRow([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
             ProtectedModeRuntime::passHashes => [],
-            ProtectedModeRuntime::admittedAcceptKeys => [],
+            ProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]);
 
         $runtime->applyDiff([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
             ProtectedModeRuntime::passHashes => ['hash-a'],
-            ProtectedModeRuntime::admittedAcceptKeys => ['accept-verifier'],
+            ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-verifier'],
         ]);
 
         $this->assertSame(ProtectedModeRuntime::PHASE_VERIFYING, $runtime->phase);
         $this->assertSame(['hash-a'], $runtime->passHashes);
-        $this->assertSame(['accept-verifier'], $runtime->admittedAcceptKeys);
+        $this->assertSame(['session-hash-verifier'], $runtime->admittedSessionTokenHashes);
 
         $runtime->applyDiff([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_DEACTIVATING,
             ProtectedModeRuntime::passHashes => [],
-            ProtectedModeRuntime::admittedAcceptKeys => [],
+            ProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]);
 
         $this->assertSame([], $runtime->passHashes);
-        $this->assertSame([], $runtime->admittedAcceptKeys);
+        $this->assertSame([], $runtime->admittedSessionTokenHashes);
     }
 
     public function testRuntimeApplyDiffOverwritesOnlyPresentFields(): void
@@ -130,7 +130,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::operation => 'restore',
             ProtectedModeRuntime::startedAt => 1_700_000_000,
             ProtectedModeRuntime::passHashes => [],
-            ProtectedModeRuntime::admittedAcceptKeys => [],
+            ProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]);
 
         $runtime->applyDiff([
@@ -151,7 +151,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::operation => 'restore',
             ProtectedModeRuntime::initiatorAgentIndex => 2,
             ProtectedModeRuntime::passHashes => [],
-            ProtectedModeRuntime::admittedAcceptKeys => [],
+            ProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]);
 
         $runtime->applyDiff([
@@ -177,7 +177,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
             ProtectedModeRuntime::passHashes => [],
-            ProtectedModeRuntime::admittedAcceptKeys => [],
+            ProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]);
 
         $this->assertFalse($runtime->locksOut('accept-initiator', null));
@@ -194,7 +194,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVATING,
             ProtectedModeRuntime::initiatorAcceptKey => null,
             ProtectedModeRuntime::passHashes => [],
-            ProtectedModeRuntime::admittedAcceptKeys => [],
+            ProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]);
 
         $this->assertTrue($runtime->locksOut('accept-9', null));
@@ -207,7 +207,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_DEACTIVATING,
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
             ProtectedModeRuntime::passHashes => [],
-            ProtectedModeRuntime::admittedAcceptKeys => [],
+            ProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]);
 
         $this->assertFalse($runtime->locksOut('accept-initiator', null));
@@ -220,13 +220,28 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
             ProtectedModeRuntime::passHashes => [],
-            ProtectedModeRuntime::admittedAcceptKeys => ['accept-verifier'],
+            ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-verifier'],
         ]);
 
         $this->assertFalse($runtime->locksOut('accept-initiator', null));
-        $this->assertFalse($runtime->locksOut('accept-verifier', null));
-        $this->assertTrue($runtime->locksOut('accept-stranger', null));
+        $this->assertFalse($runtime->locksOut('accept-verifier', 'session-hash-verifier'));
+        $this->assertTrue($runtime->locksOut('accept-stranger', 'session-hash-stranger'));
         $this->assertTrue($runtime->locksOut(null, null));
+    }
+
+    public function testASecondTabOfTheAdmittedBrowserIsLetThroughWithoutItsOwnPass(): void
+    {
+        // The whole point of admitting a session rather than a socket: the verifier reads the
+        // code once, and every tab it opens afterwards arrives with the same cookie and an
+        // accept key the row has never seen.
+        $runtime = ProtectedModeRuntime::fromRow([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
+            ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
+            ProtectedModeRuntime::passHashes => [],
+            ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-verifier'],
+        ]);
+
+        $this->assertFalse($runtime->locksOut('accept-second-tab', 'session-hash-verifier'));
     }
 
     public function testAdmitsAnswersOnlyForTheVerifyingPhase(): void
@@ -234,22 +249,37 @@ final class ProtectedModeContractTest extends TestCase
         $runtime = ProtectedModeRuntime::fromRow([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
             ProtectedModeRuntime::passHashes => [],
-            ProtectedModeRuntime::admittedAcceptKeys => ['accept-verifier'],
+            ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-verifier'],
         ]);
 
-        $this->assertTrue($runtime->admits('accept-verifier'));
-        $this->assertFalse($runtime->admits('accept-stranger'));
+        $this->assertTrue($runtime->admits('session-hash-verifier'));
+        $this->assertFalse($runtime->admits('session-hash-stranger'));
         $this->assertFalse($runtime->admits(null));
 
         $runtime->applyDiff([ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_DEACTIVATING]);
 
-        $this->assertFalse($runtime->admits('accept-verifier'));
+        $this->assertFalse($runtime->admits('session-hash-verifier'));
     }
 
-    public function testFrozenPhasesIgnoreAnAdmittedKeyEvenWhenTheRowStillCarriesIt(): void
+    public function testAdmitsAnswersForEverySessionOnTheList(): void
+    {
+        // Several verifiers hold the same code at once, and the list is what the design keeps
+        // it for: the second one entered must not be shadowed by the first.
+        $runtime = ProtectedModeRuntime::fromRow([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
+            ProtectedModeRuntime::passHashes => [],
+            ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-a', 'session-hash-b'],
+        ]);
+
+        $this->assertTrue($runtime->admits('session-hash-a'));
+        $this->assertTrue($runtime->admits('session-hash-b'));
+        $this->assertFalse($runtime->admits('session-hash-c'));
+    }
+
+    public function testFrozenPhasesIgnoreAnAdmittedSessionEvenWhenTheRowStillCarriesIt(): void
     {
         // The actions clear both lists on the way out of the verification, so a frozen phase
-        // holding an admitted key is a row that should not exist. It is asserted anyway: the
+        // holding an admitted session is a row that should not exist. It is asserted anyway: the
         // lockdown must be safe against a stale list, not merely against a tidy one.
         foreach (
             [
@@ -262,11 +292,11 @@ final class ProtectedModeContractTest extends TestCase
                 ProtectedModeRuntime::phase => $phase,
                 ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
                 ProtectedModeRuntime::passHashes => [],
-                ProtectedModeRuntime::admittedAcceptKeys => ['accept-verifier'],
+                ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-verifier'],
             ]);
 
-            $this->assertTrue($runtime->locksOut('accept-verifier', null), $phase);
-            $this->assertFalse($runtime->admits('accept-verifier'), $phase);
+            $this->assertTrue($runtime->locksOut('accept-verifier', 'session-hash-verifier'), $phase);
+            $this->assertFalse($runtime->admits('session-hash-verifier'), $phase);
         }
     }
 
@@ -408,7 +438,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
             ProtectedModeRuntime::progressAt => 1_700_000_030,
             ProtectedModeRuntime::passHashes => [],
-            ProtectedModeRuntime::admittedAcceptKeys => [],
+            ProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]);
 
         $this->assertSame(1_700_000_030, $runtime->progressAt);
@@ -427,7 +457,7 @@ final class ProtectedModeContractTest extends TestCase
         $runtime = ProtectedModeRuntime::fromRow([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
             ProtectedModeRuntime::passHashes => [],
-            ProtectedModeRuntime::admittedAcceptKeys => [],
+            ProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]);
 
         $this->assertNull($runtime->progressAt);

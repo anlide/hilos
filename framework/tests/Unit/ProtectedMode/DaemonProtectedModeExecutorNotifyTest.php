@@ -81,24 +81,40 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
 
     public function testEnteringAnnouncesTheModeWithCopyAndExcludesTheInitiator(): void
     {
-        $this->executor->enterActivating($this->freeze(), 'accept-7', null);
+        $this->executor->enterActivating($this->freeze(), 'accept-7', 'session-hash-7');
 
         $this->assertCount(1, $this->notifier->frames);
-        [$state, $excluded] = $this->notifier->frames[0];
+        [$state, $excludedKey, $excludedSession] = $this->notifier->frames[0];
         $this->assertTrue($state->active);
         $this->assertSame('restore', $state->operation);
         $this->assertNotNull($state->title);
         $this->assertNotNull($state->message);
-        $this->assertSame('accept-7', $excluded);
+        $this->assertSame('accept-7', $excludedKey);
+        // The half that spares the operator's other tabs: the socket that asked was already safe,
+        // and every other tab of the same browser was being raised to a stub about the operation
+        // its owner is running.
+        $this->assertSame('session-hash-7', $excludedSession);
+    }
+
+    public function testAnInitiatorWithNoBrowserBehindItExcludesNoSession(): void
+    {
+        // A restore started from the CLI or by a schedule names no session, and the broadcast has
+        // to go on sparing only what it was actually told about.
+        $this->executor->enterActivating($this->freeze(), 'accept-7', null);
+
+        $this->assertSame('accept-7', $this->notifier->frames[0][1]);
+        $this->assertNull($this->notifier->frames[0][2]);
     }
 
     public function testOnAFollowerNobodyIsExcluded(): void
     {
         // The initiator's connection lives on the initiator's node, so a follower has no accept
         // key to spare - and must not invent one, or it would quietly leave a browser unfrozen.
+        // Its session hash is withheld for the same reason and by the same caller.
         $this->executor->enterActivating($this->freeze(), null, null);
 
         $this->assertNull($this->notifier->frames[0][1]);
+        $this->assertNull($this->notifier->frames[0][2]);
     }
 
     public function testTheMiddlePhasesSayNothing(): void
@@ -121,12 +137,15 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->executor->enterInactive();
 
         $this->assertCount(1, $this->notifier->frames);
-        [$state, $excluded] = $this->notifier->frames[0];
+        [$state, $excludedKey, $excludedSession] = $this->notifier->frames[0];
         $this->assertFalse($state->active);
         $this->assertNull($state->operation);
         $this->assertNull($state->title);
         $this->assertNull($state->message);
-        $this->assertNull($excluded);
+        // Neither half is spared on the way out: after a restore the initiator's data is as stale
+        // as anybody else's, and this frame means reload.
+        $this->assertNull($excludedKey);
+        $this->assertNull($excludedSession);
     }
 
     public function testTheVerificationWindowKeepsTheStubUpAndOffersACodeField(): void
@@ -199,7 +218,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->executor->enterActive();
         $this->executor->enterVerifying();
         Hilos::$rt?->hilosProtectedModeRuntime?->actions->issuePass('hash-a');
-        Hilos::$rt?->hilosProtectedModeRuntime?->actions->admitConnection('accept-1');
+        Hilos::$rt?->hilosProtectedModeRuntime?->actions->admitSession('session-hash-1');
         $this->notifier->frames = [];
 
         $this->executor->reenterActive();
@@ -210,8 +229,8 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         );
         // Every pass is void, so the verifier that was inside is back on the stub with everyone.
         $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
-        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->admittedAcceptKeys);
-        $this->assertTrue(Hilos::$rt?->hilosProtectedModeRuntime?->locksOut('accept-1', null));
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->admittedSessionTokenHashes);
+        $this->assertTrue(Hilos::$rt?->hilosProtectedModeRuntime?->locksOut('accept-1', 'session-hash-1'));
 
         $this->assertCount(1, $this->notifier->frames);
         [$state, $excluded] = $this->notifier->frames[0];
@@ -230,7 +249,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         Hilos::$rt?->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::fromRow([
             StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_VERIFYING,
             StateProtectedModeRuntime::passHashes => [],
-            StateProtectedModeRuntime::admittedAcceptKeys => [],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]));
 
         $this->executor->reenterActive();
@@ -279,11 +298,27 @@ final class ExecutorNotifyTestRtContext extends RtContext
  */
 final class RecordingClientNotifier implements ProtectedModeClientNotifier
 {
-    /** @var list<array{0: ProtectedModeStateSignalData, 1: ?string}> Frames announced, with the excluded accept key */
+    /**
+     * @var list<array{0: ProtectedModeStateSignalData, 1: ?string, 2: ?string}> Frames announced, each
+     *      with the accept key and the session hash it left out
+     */
     public array $frames = [];
 
-    public function notifyProtectedModeState(ProtectedModeStateSignalData $state, ?string $excludeAcceptKey): void
-    {
-        $this->frames[] = [$state, $excludeAcceptKey];
+    /** @var list<array{0: ProtectedModeStateSignalData, 1: string}> Session frames, with the session addressed */
+    public array $sessionFrames = [];
+
+    public function notifyProtectedModeState(
+        ProtectedModeStateSignalData $state,
+        ?string $excludeAcceptKey,
+        ?string $excludeSessionTokenHash,
+    ): void {
+        $this->frames[] = [$state, $excludeAcceptKey, $excludeSessionTokenHash];
+    }
+
+    public function notifyProtectedModeSessionState(
+        ProtectedModeStateSignalData $state,
+        string $sessionTokenHash,
+    ): void {
+        $this->sessionFrames[] = [$state, $sessionTokenHash];
     }
 }
