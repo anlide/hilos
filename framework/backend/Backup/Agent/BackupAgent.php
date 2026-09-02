@@ -19,6 +19,7 @@ use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreProgressSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
+use Hilos\Backup\BackupCeilingSpare;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupEstimator;
@@ -3162,7 +3163,9 @@ final class BackupAgent extends AbstractAgent
      * The ceiling is soft: when everything deletable is gone and the store is still over, the pass
      * says so in the agent log and stops. It never takes a pin or a scope's last backup to reach
      * the number; the overflow is met by the free-space gate refusing the next run, which an
-     * operator can read on an error row.
+     * operator can read on an error row. Being soft, it also accounts for itself: both its lines
+     * name the backups they are about - the ids it took, and the guards that held the rest with
+     * their rows and bytes - because these are restore points the retention policy meant to keep.
      *
      * @return int Number of backups pruned this pass, both steps counted (0 when nothing was
      *     rotated or on failure)
@@ -3206,11 +3209,12 @@ final class BackupAgent extends AbstractAgent
             ));
             // A destination that is configured but unparsable reads as "not configured" here, and
             // honestly so: there is nowhere to ship to. The shipper itself is not asked - it logs.
-            $overflow = $pruner->selectForCeiling(
+            $plan = $pruner->selectForCeiling(
                 $survivors,
                 $policy->maxTotalBytes,
                 BackupShipTarget::fromEnv() !== null,
             );
+            $overflow = $plan->doomed;
             $freed = $pruner->occupiedBytes($overflow);
             $stored = $pruner->occupiedBytes($survivors) - $freed;
             $evicted = [];
@@ -3221,20 +3225,16 @@ final class BackupAgent extends AbstractAgent
             }
             if ($evicted !== []) {
                 $this->logAgentInfo(sprintf(
-                    'Backup ceiling pruned %d entries (freed %d bytes, store %d of %d)',
+                    'Backup ceiling pruned %d entries (freed %d bytes, store %d of %d): %s',
                     count($evicted),
                     $freed,
                     $stored,
                     $policy->maxTotalBytes,
+                    implode(', ', array_keys($evicted)),
                 ));
             }
             if ($policy->maxTotalBytes > 0 && $stored > $policy->maxTotalBytes) {
-                $this->logAgentError(sprintf(
-                    'Backup store still exceeds the ceiling: %d bytes stored, ceiling %d, nothing '
-                    . 'further is deletable (pins and the newest backup of each scope are kept)',
-                    $stored,
-                    $policy->maxTotalBytes,
-                ));
+                $this->logAgentError($this->ceilingOverflowLine($stored, $policy->maxTotalBytes, $plan->spared));
             }
 
             if ($pruned !== [] || $evicted !== []) {
@@ -3250,6 +3250,38 @@ final class BackupAgent extends AbstractAgent
 
             return 0;
         }
+    }
+
+    /**
+     * Builds the line the agent logs when the store is still over its ceiling.
+     *
+     * The line names what holds the disk RIGHT NOW rather than the guards that might apply, so an
+     * operator reading it is sent at the cause instead of at the pins. An empty tally - the store
+     * is over, yet nothing was spared - ends the line after "deletable": a colon into nothing
+     * would read as a truncated log.
+     *
+     * @param int $stored Bytes the store occupies after the pass
+     * @param int $ceilingBytes Total byte ceiling
+     * @param list<BackupCeilingSpare> $spared What held the rest, heaviest first
+     * @return string Line for the agent error log
+     */
+    private function ceilingOverflowLine(int $stored, int $ceilingBytes, array $spared): string
+    {
+        $head = sprintf(
+            'Backup store still exceeds the ceiling: %d bytes stored, ceiling %d, nothing further is deletable',
+            $stored,
+            $ceilingBytes,
+        );
+        if ($spared === []) {
+            return $head;
+        }
+
+        $parts = [];
+        foreach ($spared as $spare) {
+            $parts[] = sprintf('%s ×%d (%d bytes)', $spare->guard->logLabel(), $spare->count, $spare->bytes);
+        }
+
+        return $head . ': ' . implode(', ', $parts);
     }
 
     /**

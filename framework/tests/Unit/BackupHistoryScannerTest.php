@@ -16,6 +16,8 @@ use PHPUnit\Framework\TestCase;
  */
 final class BackupHistoryScannerTest extends TestCase
 {
+    private const string ARCHIVE_BODY = 'archive';
+
     private string $root = '';
 
     protected function setUp(): void
@@ -82,10 +84,61 @@ final class BackupHistoryScannerTest extends TestCase
         $this->assertSame(1, $anomalies[BackupScanAnomalyType::BROKEN_SIDECAR->value] ?? 0);
     }
 
+    public function testSidecarWithoutASizeIsIndexedWithTheArchiveMeasured(): void
+    {
+        $this->writeSidecar(
+            BackupScope::FULL,
+            'legacy1',
+            $this->metadataArray('legacy1', BackupScope::FULL, BackupStatus::SUCCESS, 0),
+        );
+        $this->writeArchive(BackupScope::FULL, 'legacy1');
+
+        $result = new BackupHistoryScanner()->scan($this->root);
+
+        $this->assertCount(1, $result->metadatas);
+        $this->assertSame(strlen(self::ARCHIVE_BODY), $result->metadatas[0]->sizeBytes);
+    }
+
+    public function testSidecarNamingASizeKeepsItEvenWhenTheArchiveIsAnotherLength(): void
+    {
+        // The size the sidecar names is what BackupVerifier::verify() compares the file against,
+        // so measuring over it would make that comparison unreachable.
+        $this->writeSidecar(
+            BackupScope::FULL,
+            'sized1',
+            $this->metadataArray('sized1', BackupScope::FULL, BackupStatus::SUCCESS, 4096),
+        );
+        $this->writeArchive(BackupScope::FULL, 'sized1');
+
+        $result = new BackupHistoryScanner()->scan($this->root);
+
+        $this->assertCount(1, $result->metadatas);
+        $this->assertSame(4096, $result->metadatas[0]->sizeBytes);
+    }
+
+    public function testErrorRecordWithoutASizeStaysAtZero(): void
+    {
+        // An error record is indexed before the archive is looked for; it has none to measure.
+        $this->writeSidecar(
+            BackupScope::FULL,
+            'fail0',
+            $this->metadataArray('fail0', BackupScope::FULL, BackupStatus::ERROR, 0),
+        );
+
+        $result = new BackupHistoryScanner()->scan($this->root);
+
+        $this->assertCount(1, $result->metadatas);
+        $this->assertSame(0, $result->metadatas[0]->sizeBytes);
+    }
+
     /**
+     * @param string $id Backup id
+     * @param BackupScope $scope What the backup captures
+     * @param BackupStatus $status Terminal outcome
+     * @param int $sizeBytes Size the sidecar names; 0 is the legacy sidecar the scan measures itself
      * @return array<string, mixed> Minimal sidecar payload
      */
-    private function metadataArray(string $id, BackupScope $scope, BackupStatus $status): array
+    private function metadataArray(string $id, BackupScope $scope, BackupStatus $status, int $sizeBytes = 1): array
     {
         return [
             BackupMetadata::id => $id,
@@ -93,7 +146,7 @@ final class BackupHistoryScannerTest extends TestCase
             BackupMetadata::env => 'test',
             BackupMetadata::scope => $scope->value,
             BackupMetadata::connections => [],
-            BackupMetadata::sizeBytes => 1,
+            BackupMetadata::sizeBytes => $sizeBytes,
             BackupMetadata::durationSeconds => 1,
             BackupMetadata::keep => false,
             BackupMetadata::status => $status->value,
@@ -113,7 +166,7 @@ final class BackupHistoryScannerTest extends TestCase
 
     private function writeArchive(BackupScope $scope, string $id): void
     {
-        file_put_contents($this->scopePath($scope, $id . BackupHistoryScanner::ARCHIVE_EXTENSION), 'archive');
+        file_put_contents($this->scopePath($scope, $id . BackupHistoryScanner::ARCHIVE_EXTENSION), self::ARCHIVE_BODY);
     }
 
     private function scopePath(BackupScope $scope, string $file): string

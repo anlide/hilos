@@ -335,6 +335,44 @@ final class BackupMetadataTest extends TestCase
         $this->assertSame(BackupScope::SCHEMA_SEED, $verified->scope);
     }
 
+    public function testWithSizeBytesReplacesTheSizeAndPreservesEveryOtherField(): void
+    {
+        $original = new BackupMetadata(
+            id: 'z1',
+            createdAt: '2026-08-20T00:00:00+00:00',
+            env: 'prod',
+            scope: BackupScope::FULL,
+            connections: [new BackupConnectionMeta(0, 'db', 4)],
+            sizeBytes: 0,
+            durationSeconds: 9,
+            keep: true,
+            status: BackupStatus::SUCCESS,
+            warnings: ['note'],
+            failureReason: null,
+            dumpBytes: 262144,
+            sha256: str_repeat('ef', 32),
+            verifiedAt: '2026-08-20T05:00:00+00:00',
+            verifyOutcome: BackupVerifyOutcome::OK,
+        );
+
+        $measured = $original->withSizeBytes(4096);
+
+        $this->assertSame(4096, $measured->sizeBytes);
+        $this->assertSame($original->id, $measured->id);
+        $this->assertSame($original->createdAt, $measured->createdAt);
+        $this->assertSame($original->env, $measured->env);
+        $this->assertSame($original->scope, $measured->scope);
+        $this->assertSame($original->connections, $measured->connections);
+        $this->assertSame($original->durationSeconds, $measured->durationSeconds);
+        $this->assertSame($original->keep, $measured->keep);
+        $this->assertSame($original->status, $measured->status);
+        $this->assertSame($original->warnings, $measured->warnings);
+        $this->assertSame($original->dumpBytes, $measured->dumpBytes);
+        $this->assertSame($original->sha256, $measured->sha256);
+        $this->assertSame($original->verifiedAt, $measured->verifiedAt);
+        $this->assertSame($original->verifyOutcome, $measured->verifyOutcome);
+    }
+
     public function testLegacyConnectionRecordsNoMigrationLevelWhileAnExplicitZeroSurvives(): void
     {
         // The distinction the restore gate stands on: a sidecar written before the field

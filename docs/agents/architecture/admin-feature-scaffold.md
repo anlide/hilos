@@ -178,8 +178,10 @@ also registers those. Generate, in any order:
    than `BACKUP_RETENTION_DAILY` days is never thinned), and
    `BACKUP_ERROR_RETENTION_COUNT`, and `BACKUP_MAX_TOTAL_BYTES` (the total byte
    ceiling for the store, default 0 = unbounded, thinning oldest-first past the
-   ladder while never removing a pin, the newest backup of each scope, or an
-   archive that has not been shipped yet), and the free-space gate
+   ladder while never removing an error record, the newest backup of each scope, a
+   row whose scope or timestamp does not read, a pin, or an archive that has not
+   been shipped yet — six guards, and the agent log names the ones that held the
+   store whenever it stays over the ceiling), and the free-space gate
    (`BACKUP_SPACE_MARGIN` — the multiplier on the estimated uncompressed peak,
    default 1.5; `BACKUP_MIN_FREE_BYTES` — an absolute free-space floor checked on
    every run, default 1 GiB; `BACKUP_REFUSE_WITHOUT_ESTIMATE` — whether to refuse a

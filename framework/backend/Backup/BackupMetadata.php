@@ -125,6 +125,41 @@ final class BackupMetadata extends BaseDTO
     }
 
     /**
+     * Returns a copy carrying a measured archive size.
+     *
+     * The sidecar keeps naming the size it was written with; this copy exists for the read path,
+     * where a sidecar that named none is measured off the archive it stands next to.
+     *
+     * @param int $sizeBytes Archive size in bytes
+     * @return self Copy with the size applied
+     */
+    public function withSizeBytes(int $sizeBytes): self
+    {
+        return new self(
+            $this->id,
+            $this->createdAt,
+            $this->env,
+            $this->scope,
+            $this->connections,
+            $sizeBytes,
+            $this->durationSeconds,
+            $this->keep,
+            $this->status,
+            $this->warnings,
+            $this->failureReason,
+            $this->dumpBytes,
+            $this->sha256,
+            $this->verifiedAt,
+            $this->verifyOutcome,
+            $this->restoredAt,
+            $this->restoreDurationSeconds,
+            $this->shippedAt,
+            $this->shipOutcome,
+            $this->shipError,
+        );
+    }
+
+    /**
      * Returns a copy carrying the result of a verification run.
      *
      * @param ?string $verifiedAt ISO-8601 instant the archive was verified

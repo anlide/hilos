@@ -41,7 +41,9 @@ use Throwable;
  * ladder kept: when the store occupies more than {@see BackupRetentionPolicy::$maxTotalBytes} it
  * thins the oldest deletable rows until the store fits. The ladder stays the primary policy and
  * describes the shape of the history; the ceiling only tops it up when the disk says so, and it
- * is soft - it stops at the last deletable row rather than touching a protected one.
+ * is soft - it stops at the last deletable row rather than touching a protected one. Being soft,
+ * it also accounts for itself: the plan it returns names what held every row it could not take,
+ * so the caller reports why the store still does not fit instead of guessing at the reason.
  *
  * {@see deleteStored()} is the shared physical-delete path (archive + sidecar) reused by manual
  * delete (HIL-333); the agent owns removing the matching runtime index row.
@@ -191,45 +193,55 @@ final class BackupPruner
     }
 
     /**
-     * Plans the ceiling pass: returns the rows to delete so the store fits its byte ceiling.
+     * Plans the ceiling pass: the rows to delete so the store fits its byte ceiling, and what
+     * held the rest.
      *
      * Pure, like {@see selectForDeletion()} - no I/O and no clock read. It runs over the ladder's
      * SURVIVORS, thinning further than age alone would, oldest first, and stops the moment the
      * store fits: never a row further, because everything it deletes is history an operator could
      * otherwise have restored from.
      *
-     * A row is a candidate only when deleting it is both safe and useful. It must be a successful
-     * backup (an error row carries no archive, so removing one frees nothing), unpinned, dated by
-     * a timestamp that parses, of a scope that resolves (an unrecognized one has no archive path
-     * to unlink, so it frees nothing either), and not the newest successful backup of its own
-     * scope - a ceiling smaller than one archive must not thin the store down to zero restore
-     * points. When shipping is configured, an archive whose last copy attempt did not succeed is
-     * also spared: it is still the only copy there is.
+     * A row is a candidate only when deleting it is both safe and useful; six guards spare one,
+     * and {@see spareReason()} names the first that applies. It must be a successful backup (an
+     * error row carries no archive, so removing one frees nothing), not the newest successful
+     * backup of its own scope - a ceiling smaller than one archive must not thin the store down
+     * to zero restore points - of a scope that resolves (an unrecognized one has no archive path
+     * to unlink, so it frees nothing either), dated by a timestamp that parses, and unpinned.
+     * When shipping is configured, an archive whose last copy attempt did not succeed is also
+     * spared: it is still the only copy there is.
      *
-     * The ceiling is soft by construction: when the candidates run out the return is simply
-     * everything deletable, and the caller is the one that reports the remaining overflow. Nothing
-     * protected is ever taken to reach the number.
+     * The ceiling is soft by construction: when the candidates run out the plan simply names
+     * everything deletable, and the caller is the one that reports the remaining overflow with the
+     * spare tally behind it. Nothing protected is ever taken to reach the number.
+     *
+     * The plan is empty on both halves when the ceiling never came into play - no ceiling at all,
+     * or a store that already fits: nothing was spared where nothing was weighed.
      *
      * @param list<BackupHistory> $rows Rows the ladder kept
      * @param int $ceilingBytes Total byte ceiling; zero or less means no ceiling
      * @param bool $shippingConfigured Whether a shipping destination is configured
-     * @return list<BackupHistory> Rows to prune, oldest first (empty when the store already fits)
+     * @return BackupCeilingPlan Rows to prune, oldest first, and what held the rest, heaviest first
      */
-    public function selectForCeiling(array $rows, int $ceilingBytes, bool $shippingConfigured): array
+    public function selectForCeiling(array $rows, int $ceilingBytes, bool $shippingConfigured): BackupCeilingPlan
     {
         $occupied = $this->occupiedBytes($rows);
         if ($ceilingBytes <= 0 || $occupied <= $ceilingBytes) {
-            return [];
+            return new BackupCeilingPlan([], []);
         }
 
         $times = $this->indexTimes($rows, new DateTimeZone(self::CEILING_TIMEZONE));
         $newest = $this->newestPerScope($rows, $times);
 
         $candidates = [];
+        $spares = [];
         foreach ($rows as $row) {
-            if ($this->isCeilingCandidate($row, $times, $newest, $shippingConfigured)) {
+            $guard = $this->spareReason($row, $times, $newest, $shippingConfigured);
+            if ($guard === null) {
                 $candidates[] = $row;
+                continue;
             }
+
+            $this->tallySpare($guard, $row, $spares);
         }
         usort(
             $candidates,
@@ -247,14 +259,57 @@ final class BackupPruner
             $occupied -= $row->sizeBytes;
         }
 
-        return $doomed;
+        return new BackupCeilingPlan($doomed, $this->sortSpares($spares));
+    }
+
+    /**
+     * Adds one spared row to the tally of the guard that held it.
+     *
+     * @param BackupCeilingGuard $guard Guard that held the row
+     * @param BackupHistory $row Row it held
+     * @param array<string, BackupCeilingSpare> $spares Tally keyed by guard value, extended in place
+     */
+    private function tallySpare(BackupCeilingGuard $guard, BackupHistory $row, array &$spares): void
+    {
+        $held = $spares[$guard->value] ?? null;
+        $spares[$guard->value] = new BackupCeilingSpare(
+            $guard,
+            ($held?->count ?? 0) + 1,
+            ($held?->bytes ?? 0) + $row->sizeBytes,
+        );
+    }
+
+    /**
+     * Orders the spare tally so the biggest holder of the disk comes first.
+     *
+     * Bytes decide, then row count, then the guard's declaration order - a total order, so two
+     * tallies of the same store are never printed in two different sequences.
+     *
+     * @param array<string, BackupCeilingSpare> $spares Tally keyed by guard value
+     * @return list<BackupCeilingSpare> The same tally, heaviest first
+     */
+    private function sortSpares(array $spares): array
+    {
+        $positions = [];
+        foreach (BackupCeilingGuard::cases() as $position => $guard) {
+            $positions[$guard->value] = $position;
+        }
+
+        $sorted = array_values($spares);
+        usort($sorted, static function (BackupCeilingSpare $a, BackupCeilingSpare $b) use ($positions): int {
+            $byWeight = [$b->bytes, $b->count] <=> [$a->bytes, $a->count];
+
+            return $byWeight !== 0 ? $byWeight : $positions[$a->guard->value] <=> $positions[$b->guard->value];
+        });
+
+        return $sorted;
     }
 
     /**
      * Collects the ids of the newest successful backup of each scope, which the ceiling spares.
      *
      * Rows whose scope or timestamp cannot be read take part in neither role: they protect
-     * nothing and, by {@see isCeilingCandidate()}, are never deleted either.
+     * nothing and, by {@see spareReason()}, are never deleted either.
      *
      * @param list<BackupHistory> $rows Rows the ceiling plans over
      * @param array<string, DateTimeImmutable> $times Parsed timestamps keyed by backup id
@@ -289,34 +344,49 @@ final class BackupPruner
     }
 
     /**
-     * Reports whether one row may be deleted to bring the store under its ceiling.
+     * Names what spares one row from the ceiling pass, or nothing when it may be deleted.
+     *
+     * The guards are asked in {@see BackupCeilingGuard} declaration order - least removable
+     * first - so a row held by two is reported under the one that is harder to lift.
      *
      * @param BackupHistory $row Row being considered
      * @param array<string, DateTimeImmutable> $times Parsed timestamps keyed by backup id
      * @param array<string, true> $newest Ids of the newest successful backup of each scope
      * @param bool $shippingConfigured Whether a shipping destination is configured
-     * @return bool True when the row is deletable for the ceiling
+     * @return ?BackupCeilingGuard What holds the row; null when it is deletable for the ceiling
      */
-    private function isCeilingCandidate(
+    private function spareReason(
         BackupHistory $row,
         array $times,
         array $newest,
         bool $shippingConfigured,
-    ): bool {
+    ): ?BackupCeilingGuard {
         $id = $row->getId();
-        if ($row->keep || !isset($times[$id]) || isset($newest[$id])) {
-            return false;
+        if (BackupStatus::fromString($row->status) !== BackupStatus::SUCCESS) {
+            return BackupCeilingGuard::ERROR_RECORD;
         }
 
-        if (BackupStatus::fromString($row->status) !== BackupStatus::SUCCESS) {
-            return false;
+        if (isset($newest[$id])) {
+            return BackupCeilingGuard::NEWEST_OF_SCOPE;
         }
 
         if (BackupScope::fromString($row->scope) === null) {
-            return false;
+            return BackupCeilingGuard::UNKNOWN_SCOPE;
         }
 
-        return !$shippingConfigured || BackupShipOutcome::fromString($row->shipOutcome) === BackupShipOutcome::OK;
+        if (!isset($times[$id])) {
+            return BackupCeilingGuard::UNDATED;
+        }
+
+        if ($row->keep) {
+            return BackupCeilingGuard::PINNED;
+        }
+
+        if ($shippingConfigured && BackupShipOutcome::fromString($row->shipOutcome) !== BackupShipOutcome::OK) {
+            return BackupCeilingGuard::AWAITING_SHIPMENT;
+        }
+
+        return null;
     }
 
     /**

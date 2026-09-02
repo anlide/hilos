@@ -6,6 +6,8 @@ namespace Hilos\Tests\Unit;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Hilos\Backup\BackupCeilingGuard;
+use Hilos\Backup\BackupCeilingSpare;
 use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupPruner;
 use Hilos\Backup\BackupRetentionPolicy;
@@ -325,6 +327,155 @@ final class BackupPrunerTest extends TestCase
         $this->assertSame(125, $pruner->occupiedBytes($rows));
     }
 
+    public function testAStoreThatFitsIsWeighedByNoGuardAtAll(): void
+    {
+        $rows = [
+            $this->row('old', '2026-07-01T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+            $this->row('new', '2026-07-10T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+        ];
+
+        // Both halves empty: nothing was spared where nothing was weighed.
+        $this->assertCeilingDoomed([], $rows, 200);
+        $this->assertCeilingSpared([], $rows, 200);
+    }
+
+    public function testEveryGuardIsReportedOnceWithItsRowsAndBytesHeaviestFirst(): void
+    {
+        // A ceiling of one against a store where every row is held by a different guard: nothing
+        // is deletable, and the tally is what the operator gets instead.
+        $this->assertCeilingDoomed([], $this->guardRows(), 1, shippingConfigured: true);
+        $this->assertCeilingSpared(
+            [
+                [BackupCeilingGuard::NEWEST_OF_SCOPE, 1, 60],
+                [BackupCeilingGuard::AWAITING_SHIPMENT, 1, 50],
+                [BackupCeilingGuard::PINNED, 1, 40],
+                [BackupCeilingGuard::UNDATED, 1, 30],
+                [BackupCeilingGuard::UNKNOWN_SCOPE, 1, 20],
+                [BackupCeilingGuard::ERROR_RECORD, 1, 10],
+            ],
+            $this->guardRows(),
+            1,
+            shippingConfigured: true,
+        );
+    }
+
+    public function testARowHeldByTwoGuardsIsCountedOnceUnderTheLessRemovableOne(): void
+    {
+        $rows = [
+            $this->row(
+                'pin',
+                '2026-07-01T10:00:00+00:00',
+                BackupScope::FULL,
+                keep: true,
+                sizeBytes: 100,
+                shipOutcome: BackupShipOutcome::FAILED,
+            ),
+            $this->row(
+                'anchor',
+                '2026-07-10T10:00:00+00:00',
+                BackupScope::FULL,
+                sizeBytes: 60,
+                shipOutcome: BackupShipOutcome::OK,
+            ),
+        ];
+
+        // A pin that never shipped is reported as a pin: repairing the channel would not free it,
+        // and naming the guard that would still hold it is the whole point of the line.
+        $this->assertCeilingSpared(
+            [
+                [BackupCeilingGuard::PINNED, 1, 100],
+                [BackupCeilingGuard::NEWEST_OF_SCOPE, 1, 60],
+            ],
+            $rows,
+            1,
+            shippingConfigured: true,
+        );
+    }
+
+    public function testUnshippedArchivesAreTalliedOnlyWhereShippingIsConfigured(): void
+    {
+        $this->assertCeilingSpared(
+            [
+                [BackupCeilingGuard::AWAITING_SHIPMENT, 2, 200],
+                [BackupCeilingGuard::NEWEST_OF_SCOPE, 1, 100],
+            ],
+            $this->shippingRows(),
+            350,
+            shippingConfigured: true,
+        );
+
+        // No destination to ship to: the same two rows are plain candidates, and a candidate the
+        // pass simply did not need is not something that held the disk.
+        $this->assertCeilingSpared(
+            [[BackupCeilingGuard::NEWEST_OF_SCOPE, 1, 100]],
+            $this->shippingRows(),
+            350,
+        );
+    }
+
+    /**
+     * Builds a store in which each of the six guards holds exactly one row, of its own size.
+     *
+     * @return list<BackupHistory> Index rows totalling 210 bytes
+     */
+    private function guardRows(): array
+    {
+        return [
+            $this->row('err', '2026-07-01T10:00:00+00:00', BackupScope::FULL, BackupStatus::ERROR, sizeBytes: 10),
+            $this->unknownScopeRow('unknown', '2026-07-02T10:00:00+00:00', 20),
+            $this->row('undated', '', BackupScope::FULL, sizeBytes: 30),
+            $this->row(
+                'pinned',
+                '2026-07-03T10:00:00+00:00',
+                BackupScope::FULL,
+                keep: true,
+                sizeBytes: 40,
+                shipOutcome: BackupShipOutcome::OK,
+            ),
+            $this->row(
+                'awaiting',
+                '2026-07-04T10:00:00+00:00',
+                BackupScope::FULL,
+                sizeBytes: 50,
+                shipOutcome: BackupShipOutcome::FAILED,
+            ),
+            $this->row(
+                'newest',
+                '2026-07-05T10:00:00+00:00',
+                BackupScope::FULL,
+                sizeBytes: 60,
+                shipOutcome: BackupShipOutcome::OK,
+            ),
+        ];
+    }
+
+    /**
+     * Builds a row whose scope no longer resolves, the way a sidecar written by an older
+     * installation reads today.
+     *
+     * @param string $id Backup id
+     * @param string $createdAt ISO-8601 creation timestamp
+     * @param int $sizeBytes Archive size in bytes
+     * @return BackupHistory Index row with an unrecognized scope
+     */
+    private function unknownScopeRow(string $id, string $createdAt, int $sizeBytes): BackupHistory
+    {
+        $state = StateBackupHistory::fromMetadata(new BackupMetadata(
+            $id,
+            $createdAt,
+            'test',
+            BackupScope::FULL,
+            [],
+            $sizeBytes,
+            0,
+            false,
+            BackupStatus::SUCCESS,
+        ));
+        $state->scope = 'retired-scope';
+
+        return new BackupHistory($state);
+    }
+
     /**
      * Builds the fixture both shipping cases read: two archives that never reached a receiver
      * and one that did, all older than the scope's newest backup.
@@ -376,11 +527,39 @@ final class BackupPrunerTest extends TestCase
         int $ceilingBytes,
         bool $shippingConfigured = false,
     ): void {
-        $doomed = new BackupPruner()->selectForCeiling($rows, $ceilingBytes, $shippingConfigured);
+        $plan = new BackupPruner()->selectForCeiling($rows, $ceilingBytes, $shippingConfigured);
 
         $this->assertSame(
             $expected,
-            array_map(static fn(BackupHistory $row): string => $row->getId(), $doomed),
+            array_map(static fn(BackupHistory $row): string => $row->getId(), $plan->doomed),
+        );
+    }
+
+    /**
+     * Asserts the ceiling pass reports exactly these guards, in that order.
+     *
+     * The order is part of the contract too - heaviest first - because the log line built from it
+     * is read top down by an operator asking what holds the disk.
+     *
+     * @param list<array{BackupCeilingGuard, int, int}> $expected Guard, row count and bytes, heaviest first
+     * @param list<BackupHistory> $rows Rows the ladder kept
+     * @param int $ceilingBytes Total byte ceiling under test
+     * @param bool $shippingConfigured Whether a shipping destination is configured
+     */
+    private function assertCeilingSpared(
+        array $expected,
+        array $rows,
+        int $ceilingBytes,
+        bool $shippingConfigured = false,
+    ): void {
+        $plan = new BackupPruner()->selectForCeiling($rows, $ceilingBytes, $shippingConfigured);
+
+        $this->assertSame(
+            $expected,
+            array_map(
+                static fn(BackupCeilingSpare $spare): array => [$spare->guard, $spare->count, $spare->bytes],
+                $plan->spared,
+            ),
         );
     }
 

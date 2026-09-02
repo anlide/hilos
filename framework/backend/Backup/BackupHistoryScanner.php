@@ -11,7 +11,9 @@ use Hilos\Backup\Exception\BackupMetadataIncompleteException;
  *
  * Walks `<root>/<scope>/` for each {@see BackupScope} and pairs each `*.json`
  * sidecar with its `*.tar.gz` archive. The sidecar is the source of truth: the
- * index is built from sidecars, archives are only checked for existence.
+ * index is built from sidecars, and the archive is only measured for a size the
+ * sidecar failed to name - a zero left by a sidecar written before the field
+ * existed is filled in from the file, in memory, without rewriting the sidecar.
  *
  * Pairing rules:
  * - unreadable/unparseable sidecar, or one that names no backup → {@see BackupScanAnomalyType::BROKEN_SIDECAR}, skipped;
@@ -87,9 +89,18 @@ final class BackupHistoryScanner
                 continue;
             }
 
-            if (!is_file($scopeDir . '/' . $id . self::ARCHIVE_EXTENSION)) {
+            $archivePath = $scopeDir . '/' . $id . self::ARCHIVE_EXTENSION;
+            if (!is_file($archivePath)) {
                 $anomalies[] = new BackupScanAnomaly(BackupScanAnomalyType::SIDECAR_WITHOUT_TAR, $sidecarPath);
                 continue;
+            }
+
+            if ($metadata->sizeBytes === 0) {
+                // warning-suppressed: an archive that cannot be sized keeps the sidecar's zero, the scan never throws
+                $size = @filesize($archivePath);
+                if ($size !== false) {
+                    $metadata = $metadata->withSizeBytes($size);
+                }
             }
 
             $metadatas[] = $metadata;
