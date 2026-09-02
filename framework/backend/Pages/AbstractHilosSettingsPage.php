@@ -119,6 +119,7 @@ abstract class AbstractHilosSettingsPage extends AbstractHilosPage
         }
 
         $this->settingsTable()->actions->add($dto->key, $dto->value);
+        $this->setActionSuccessMessage("Setting \"{$dto->key}\" saved.");
     }
 
     /**
@@ -136,6 +137,7 @@ abstract class AbstractHilosSettingsPage extends AbstractHilosPage
         }
 
         $this->settingsTable()[$dto->key]->actions->updateValue($dto->value);
+        $this->setActionSuccessMessage("Setting \"{$dto->key}\" saved.");
     }
 
     /**
@@ -172,6 +174,7 @@ abstract class AbstractHilosSettingsPage extends AbstractHilosPage
         }
 
         $this->settingsTable()->actions->reset($dto->key);
+        $this->setActionSuccessMessage("Setting \"{$dto->key}\" is back to its default.");
     }
 
     /**

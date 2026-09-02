@@ -80,12 +80,12 @@ describe('useTrackedAction', () => {
     expect(toastStack()).toEqual([{ severity: 'success', message: 'Saved.' }])
   })
 
-  it('toasts a generic fallback when the backend sent no message', async () => {
+  it('stays silent when the backend sent no message', async () => {
     render(<Probe make={() => Promise.resolve({})} onResult={() => {}} />)
     await act(async () => {
       fireEvent.click(screen.getByTestId('go'))
     })
-    expect(toastStack()).toEqual([{ severity: 'success', message: 'Done.' }])
+    expect(toastStack()).toEqual([])
   })
 
   it('suppresses the success toast when toast is false', async () => {

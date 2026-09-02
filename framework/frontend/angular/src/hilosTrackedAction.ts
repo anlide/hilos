@@ -23,10 +23,10 @@ export interface HilosTrackedActionOptions {
   describeError?: (error: unknown) => string
   /**
    * Whether the outcome surfaces as a toast — success and failure alike. A
-   * submit toasts success by default (the backend's message, or a generic
-   * fallback) and toasts failure by default; pass false only where the outcome
-   * belongs next to the control that raised it (field validation, a sign-in
-   * form). `error` is still set on failure either way (toasts.md).
+   * success toasts the backend's own sentence when it sent one and stays silent
+   * when it did not; a failure toasts by default. Pass false only where the
+   * outcome belongs next to the control that raised it (field validation, a
+   * sign-in form). `error` is still set on failure either way (toasts.md).
    */
   toast?: boolean
 }
@@ -85,10 +85,8 @@ export function createHilosTrackedAction(
     )
     try {
       const result = await handle.done
-      if (options.toast !== false) {
-        hilosToasts.push(result.message ?? DEFAULT_SUCCESS_MESSAGE, {
-          severity: 'success',
-        })
+      if (options.toast !== false && result.message !== undefined) {
+        hilosToasts.push(result.message, { severity: 'success' })
       }
 
       return true
@@ -120,9 +118,6 @@ export function createHilosTrackedAction(
     },
   }
 }
-
-/** The generic success text shown when the backend supplied no message. */
-const DEFAULT_SUCCESS_MESSAGE = 'Done.'
 
 /**
  * The default failure message: the backend's own words on a refusal, and the

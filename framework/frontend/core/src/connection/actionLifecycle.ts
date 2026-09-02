@@ -65,7 +65,7 @@ export class ActionError extends Error {
  * `unknown` reply value. Either field is absent when the action did not carry it.
  */
 export interface ActionResult<T = unknown> {
-  /** Backend-authored success sentence for a toast, or undefined for the generic fallback. */
+  /** Backend-authored success sentence for a toast, or undefined when the action stays silent. */
   readonly message?: string
   /** Domain reply the action returned, or undefined when it answered with nothing. */
   readonly reply?: T

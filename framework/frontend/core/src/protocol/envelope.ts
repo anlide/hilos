@@ -92,8 +92,8 @@ export type ActionErrorSignalData = z.infer<typeof actionErrorSignalDataSchema>
  * Payload of the framework action-success reply (`type: 'action_success'`, PHP
  * `PageActionSuccessSignalData`): the committed action's name and an optional
  * backend-authored `message` — the outcome sentence the frontend surfaces as a
- * success toast (present only when the handler set one; the driver falls back to
- * a generic string otherwise). It may also carry an optional domain `reply` — the
+ * success toast (present only when the handler set one; the driver shows no
+ * success toast otherwise). It may also carry an optional domain `reply` — the
  * array form of the reply DTO the handler returned — which the action lifecycle
  * validates against the caller's optional schema and resolves the request with;
  * absent entirely when the handler answered with nothing. The real state arrives

@@ -120,6 +120,7 @@ final class AdminModeratorPage extends AbstractPage
     private function handleCreate(string $acceptKey, ModeratorPieceCreateActionDTO $dto): void
     {
         Hilos::$table->moderatorPromptPieces->actions->create($dto);
+        $this->setActionSuccessMessage("Moderation prompt for \"{$dto->section}\" created.");
     }
 
     /**
@@ -141,6 +142,12 @@ final class AdminModeratorPage extends AbstractPage
         }
 
         Hilos::$table->moderatorPromptPieces[$dto->id]->actions->update($dto);
+
+        // The section is read back from the row: the payload carries it only when it changed.
+        $this->setActionSuccessMessage(sprintf(
+            'Moderation prompt for "%s" saved.',
+            Hilos::$db->moderatorPromptPieces[$dto->id]->section,
+        ));
     }
 
     /**

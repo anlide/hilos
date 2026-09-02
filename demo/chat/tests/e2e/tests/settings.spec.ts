@@ -136,6 +136,12 @@ test('a tab applies its own edit at once, with no pending gate', async ({
   await page.getByTestId('hilos-settings-edit-value').fill('42')
   await page.getByTestId('hilos-settings-edit-save').click()
 
+  // The success sentence is the backend's own, naming the key it saved: the
+  // driver has none of its own to fall back on (HIL-770).
+  await expect(page.getByTestId('hilos-toast-success')).toContainText(
+    'Setting "example_integer" saved.',
+  )
+
   // The editing tab picks up its own change at once: the row updates and no
   // pending Apply control ever appears.
   await expect(row).toContainText('42')

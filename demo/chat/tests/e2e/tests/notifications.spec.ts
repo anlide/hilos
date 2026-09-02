@@ -147,9 +147,13 @@ async function enableEmailChannel(page: Page): Promise<void> {
 
   await toggle.check()
   // The switch redraws from the table's own snapshot, which looks the same before
-  // and after the write; the tracked action's success toast is the server
-  // answering, so it is what the next step waits on.
-  await expect(page.getByTestId('hilos-toast-success')).toBeVisible()
+  // and after the write, and the enablement action answers with no sentence of
+  // its own (the switch flipping is the answer, HIL-770) — so what says the write
+  // landed is the hub re-read from the server reporting the channel on.
+  await expect(async () => {
+    await gotoPage(page, '/hilos/communications')
+    await expect(page.getByTestId('hilos-channel-enabled-email')).toBeChecked()
+  }).toPass()
 }
 
 /**

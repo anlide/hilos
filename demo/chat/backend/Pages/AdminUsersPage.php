@@ -193,8 +193,8 @@ final class AdminUsersPage extends AbstractPage
      *
      * A tracked submit is correlated by its request id and answered on it; an untracked one has
      * nothing to correlate, so its refusal rides the same table-action error frame this page's
-     * exception hook sends. A success needs no sentence either way - the renamed row returns
-     * over the live table, exactly as before the move.
+     * exception hook sends. Only the tracked one gets the success sentence: the untracked path
+     * has no ack to carry it, and the renamed row returns over the live table either way.
      *
      * @param AdminRenameDoneSignalData $done Whom to answer, and why the rename was refused
      * @throws InvalidArgumentException When the ack cannot be named
@@ -203,6 +203,9 @@ final class AdminUsersPage extends AbstractPage
     {
         if ($done->requestId !== null) {
             if ($done->error === null) {
+                // Set right before the send: the slot is consumed by sendSuccess() on the spot,
+                // because a deferred reply leaves after the action dispatch has already ended.
+                $this->setActionSuccessMessage('User renamed.');
                 $this->sendActionSuccess($done->acceptKey, ChatSignalConstants::USER_UPDATE, $done->requestId);
 
                 return;

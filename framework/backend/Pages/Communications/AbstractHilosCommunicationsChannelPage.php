@@ -140,6 +140,7 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
         $descriptor = $this->requireChannel($dto->channel);
 
         if ($dto->field === DeliveryChannelSettings::ENABLED_FIELD) {
+            // No success sentence here: the toggle answers for itself by switching on screen.
             $this->settingsTable()->actions->add($descriptor->enabledSettingKey(), (bool) $dto->value);
 
             return;
@@ -162,6 +163,7 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
             DeliveryChannelSettings::fieldKey($descriptor->name(), $field->key),
             $value,
         );
+        $this->setActionSuccessMessage("{$descriptor->label()} setting \"{$field->label}\" saved.");
     }
 
     /**
@@ -187,6 +189,7 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
         $this->settingsTable()->actions->reset(
             DeliveryChannelSettings::fieldKey($descriptor->name(), $field->key),
         );
+        $this->setActionSuccessMessage("{$descriptor->label()} setting \"{$field->label}\" is back to its default.");
     }
 
     /**
@@ -224,6 +227,7 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
             title: 'Test notification: ' . $descriptor->label(),
             channels: [$descriptor->name()],
         ));
+        $this->setActionSuccessMessage("Test notification queued to {$address}.");
     }
 
     /**

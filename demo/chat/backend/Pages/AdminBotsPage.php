@@ -127,6 +127,8 @@ final class AdminBotsPage extends AbstractPage
                 new BotAgentSignalData(botId: (int) $mutation->rowKey),
             );
         }
+
+        $this->setActionSuccessMessage("Bot \"{$dto->name}\" created.");
     }
 
     /**
@@ -158,6 +160,9 @@ final class AdminBotsPage extends AbstractPage
             );
         }
         // active true->false: BotAgent learns via DB_SYNC_UPDATED and calls selfStop()
+
+        // The name is read back from the row: the payload carries it only when it changed.
+        $this->setActionSuccessMessage(sprintf('Bot "%s" saved.', Hilos::$db->bots[$dto->id]->name));
     }
 
     /**

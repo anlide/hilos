@@ -201,6 +201,13 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
             throw new TableActionException('Backups are not configured: ' . implode(', ', $missing));
         }
 
+        if ($this->isBusy()) {
+            // A busy agent parks the request in its pending slot, so nothing at all appears on
+            // screen until the running job ends. A free agent needs no sentence: the row with
+            // the progress shows up by itself.
+            $this->setActionSuccessMessage('Backup queued; it starts when the running one finishes.');
+        }
+
         $this->agent->sendToAgent(
             HilosSignalConstants::BACKUP_AGENT_CREATE,
             new BackupCreateSignalData($scope->value, $acceptKey),

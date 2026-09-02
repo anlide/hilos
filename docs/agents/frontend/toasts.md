@@ -119,8 +119,14 @@ does it — by default, with no flag (`useTrackedAction()` in Vue and React,
 - **Success** text is backend-authored: the `action_success` reply carries an
   optional `message` (set from `onAction()` via
   `AbstractPage::setActionSuccessMessage()`), and the domain sentence lives on
-  the backend because Hilos i18n does. The generic client "Done." is a
-  transitional stub on its way out (not in the code yet — HIL-770).
+  the backend because Hilos i18n does. A reply that carries no `message` shows
+  no success toast at all — the driver has no sentence of its own, and silence
+  is what the backend asked for.
+  So a new tracked action decides one of two things, and never a third: it
+  names its outcome in a sentence, or it stays silent because the screen
+  answers for itself (the row disappeared, the switch flipped). There is no
+  guard on this: silence is a legitimate outcome, and no check can tell it
+  apart from a forgotten one.
 - **A failure of my own action is shown where the person acted.** The modal in
   which the action was refused shows the refusal itself, with `HilosActionError`
   in the place reserved for it — and on an admin surface with the type badge and
@@ -130,14 +136,14 @@ does it — by default, with no flag (`useTrackedAction()` in Vue and React,
   carried; its own phrasing is left for the outcomes no backend sentence exists
   for — the timeout, the dropped connection, the unreadable reply.
 
-Opting out is `toast: false`, with the reason written at the call site. The
-three reasons that qualify:
+Opting out is `toast: false`, with the reason written at the call site. It
+covers the refusal, which is the only outcome the option still has to suppress —
+a success it has nothing to say about, because the backend already decides that
+one by authoring a sentence or staying silent. The two reasons that qualify:
 
 - **field validation** — the message belongs against the field it describes;
 - **sign-in and verification forms** — "wrong password" answers the value the
-  user just typed, on a form they are already looking at;
-- **the result is visible by itself** — the row disappeared, the switch
-  flipped; the screen has already said it.
+  user just typed, on a form they are already looking at.
 
 Drawing the refusal in the dialog is **not** one of them: `HilosActionError`
 sits beside the toast, it does not replace it.

@@ -457,7 +457,8 @@ abstract class AbstractPage implements ActionHostInterface
      * the frontend surfaces as a success toast; the domain sentence lives on the
      * backend because Hilos i18n does. The message is consumed by the tracked
      * success reply that immediately follows onAction() and does not carry over to
-     * a later action. Leave unset for the frontend's generic fallback.
+     * a later action. Leave unset where the screen answers for itself: with no
+     * sentence the frontend shows no success toast at all.
      *
      * @param string $message Backend-authored, already-localized success sentence
      */
