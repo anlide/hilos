@@ -6,6 +6,7 @@ namespace Hilos\Runtime\View\Actions\Collection;
 
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
@@ -53,7 +54,7 @@ final class RegistrationWaitersActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      */
     public function park(string $acceptKey, string $identifier, string $sessionToken): void
     {
@@ -122,7 +123,7 @@ final class RegistrationWaitersActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      */
     public function release(string $acceptKey): void
     {

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Actions\Collection;
 
 use Hilos\Constants\TimeConstants;
-use Hilos\HilosException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
@@ -40,7 +40,7 @@ final class HilosSessionRotationsActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      */
     public function register(
         string $ticket,
@@ -68,7 +68,7 @@ final class HilosSessionRotationsActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      */
     public function forget(string $ticket): void
     {
@@ -93,7 +93,7 @@ final class HilosSessionRotationsActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      */
     public function forgetExpired(): int
     {

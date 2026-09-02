@@ -6,6 +6,7 @@ use ArrayAccess;
 use Countable;
 use Generator;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -547,7 +548,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      *
      * @param mixed $offset Array key (int or string), or null to append under the next one
      * @param T $value Object instance to set
-     * @throws HilosException Whatever a subscriber to the announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
      */
     public function offsetSet($offset, $value): void
     {
@@ -615,7 +616,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * cannot fetch it from the database first.
      *
      * @param mixed $offset Array key to unset, or null for no-op
-     * @throws HilosException Whatever a subscriber to the announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
      */
     public function offsetUnset($offset): void
     {

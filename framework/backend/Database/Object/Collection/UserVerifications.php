@@ -8,7 +8,9 @@ use Hilos\Auth\Verification\VerificationRejectReason;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -20,7 +22,6 @@ use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Database\Verification\VerificationSendStats;
-use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -215,7 +216,8 @@ final class UserVerifications extends Objects
      * @return ObjectUserVerification The created challenge object
      * @throws EmptyValueException When identifier or code is empty
      * @throws DatabaseException If the insert or code hash write query fails
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function createChallenge(
         string $type,

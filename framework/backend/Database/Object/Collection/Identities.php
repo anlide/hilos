@@ -12,7 +12,10 @@ use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -25,7 +28,6 @@ use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
-use Hilos\HilosException;
 use Hilos\Utils\Logger;
 
 /**
@@ -96,7 +98,8 @@ final class Identities extends Objects
      * @throws DuplicateValueException When the address is taken, or the account already has a password
      * @throws DatabaseException If the insert or secret write query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function createPasswordIdentity(int $userId, string $identifier, string $plainSecret): ObjectIdentity
     {
@@ -138,7 +141,8 @@ final class Identities extends Objects
      * @throws DuplicateValueException When the address is taken, or the account already has a password
      * @throws DatabaseException If the insert or secret write query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function createPasswordIdentityWithHash(int $userId, string $identifier, string $passwordHash): ObjectIdentity
     {
@@ -198,7 +202,7 @@ final class Identities extends Objects
      * @throws DuplicateValueException When an identity already exists for (sms, identifier)
      * @throws DatabaseException If the insert query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function createSmsIdentity(int $userId, string $identifier): ObjectIdentity
     {
@@ -246,7 +250,7 @@ final class Identities extends Objects
      * @throws DuplicateValueException When an identity already exists for (oauth, identifier)
      * @throws DatabaseException If the insert query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function createOauthIdentity(int $userId, string $provider, string $subject): ObjectIdentity
     {
@@ -297,7 +301,7 @@ final class Identities extends Objects
      * @throws DuplicateValueException When an identity already exists for (passkey, identifier)
      * @throws DatabaseException If the insert query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function createPasskeyIdentity(int $userId, string $credentialId): ObjectIdentity
     {
@@ -345,7 +349,7 @@ final class Identities extends Objects
      * @throws DuplicateValueException When an identity already exists for (magic_link, identifier)
      * @throws DatabaseException If the insert query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function createMagicLinkIdentity(int $userId, string $email): ObjectIdentity
     {
@@ -392,7 +396,7 @@ final class Identities extends Objects
      * @throws ValidationException When the identity is not owned by the user, or is their last one
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function deleteIdentity(int $userId, int $identityId): void
     {
@@ -445,7 +449,9 @@ final class Identities extends Objects
      * @throws LogicException When both accounts hold a password and no fate was named
      * @throws DatabaseException If a lookup, move, demote, or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function rePointToUser(int $fromUserId, int $toUserId, ?PasswordFate $passwordFate): int
     {
@@ -559,7 +565,9 @@ final class Identities extends Objects
      * @param ObjectIdentity $identity Password identity that did not survive the merge
      * @throws DatabaseException If a lookup, erase, delete, or update query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function demotePasswordToMagicLink(ObjectIdentity $identity): void
     {
@@ -592,7 +600,7 @@ final class Identities extends Objects
      * @throws LogicException When both accounts hold a password and no fate was named
      * @throws DatabaseException If a lookup, erase, delete, or update query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     private function settlePasswords(int $fromUserId, int $toUserId, ?PasswordFate $passwordFate): void
     {

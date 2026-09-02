@@ -7,6 +7,7 @@ namespace Demo\Tasks\Database\Actions\Collection;
 use Demo\Tasks\Database\Object\Collection\Guests as ObjectGuests;
 use Demo\Tasks\Database\View\Collection\Guests as DbCollectionGuests;
 use Demo\Tasks\Database\View\Item\Guest;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
@@ -53,6 +54,7 @@ final class GuestsActions extends DbActions
      * @param string $sessionToken Session cookie token of the visiting browser
      * @return Guest Guest of this session
      * @throws HilosException On database error
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function ensureForSession(string $sessionToken): Guest
     {
@@ -74,6 +76,7 @@ final class GuestsActions extends DbActions
      *
      * @param string $sessionToken Session cookie token whose guest row goes
      * @throws HilosException On database error
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function deleteForSession(string $sessionToken): void
     {

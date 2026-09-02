@@ -11,6 +11,7 @@ use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValueTooLongException;
 use Hilos\Core\Exception\ValueTooShortException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Item\DbActions;
 use Hilos\HilosException;
@@ -94,6 +95,7 @@ final class BotActions extends DbActions
      * @throws ItemNotFoundForDeleteException If bot id is null (not persisted)
      * @throws ObjectCollectionNullException If object collection is null
      * @throws HilosException On database error
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function delete(): void
     {

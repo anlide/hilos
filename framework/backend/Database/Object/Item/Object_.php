@@ -5,6 +5,7 @@ namespace Hilos\Database\Object\Item;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
@@ -109,7 +110,7 @@ abstract class Object_
      * no name to announce the change under.
      *
      * @param array<string, mixed> $row Column name => value (diff)
-     * @throws HilosException Whatever a subscriber to the announcement raises
+     * @throws HilosException Whatever the applied write of the update raises
      * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
      */
     public function applyDbSyncEntityUpdate(array $row): void
@@ -149,7 +150,7 @@ abstract class Object_
      * Saves only changed columns by comparing entity with entitySync.
      *
      * @throws DatabaseException If database operation fails
-     * @throws HilosException Whatever a subscriber to the update announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
@@ -320,7 +321,7 @@ abstract class Object_
      *
      * @param bool $isCreate True if this was a create (new row)
      * @param array<string, mixed> $result Full row for create, diff for update
-     * @throws HilosException Whatever a subscriber to the announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
      * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
      */
     private function broadcastDbSyncAfterSync(bool $isCreate, array $result): void

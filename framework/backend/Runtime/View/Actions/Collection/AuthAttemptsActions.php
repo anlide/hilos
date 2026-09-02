@@ -6,7 +6,7 @@ namespace Hilos\Runtime\View\Actions\Collection;
 
 use Hilos\Auth\Throttle\ThrottleScope;
 use Hilos\Constants\CliCommands;
-use Hilos\HilosException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
@@ -46,7 +46,7 @@ final class AuthAttemptsActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      */
     public function open(string $scope, string $identity, string $action): void
     {

@@ -6,9 +6,9 @@ use ArrayAccess;
 use Countable;
 use Generator;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
-use Hilos\HilosException;
 use Hilos\Runtime\Exception\State\RtStatesCloneException;
 use Hilos\Runtime\Exception\State\RtStatesUnserializeException;
 use Hilos\Runtime\State\Item\RtState;
@@ -119,7 +119,7 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
      * that too: what every dependent view has to hear is that the id now holds a different row.
      *
      * @param T $state State instance to add
-     * @throws HilosException Whatever a subscriber to the announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
      */
     public function add(RtState $state): void
     {
@@ -143,7 +143,7 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
      * broadcast that removal too and a receiver that has the row must lose it.
      *
      * @param string $id State ID
-     * @throws HilosException Whatever a subscriber to the announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
      */
     public function remove(string $id): void
     {
@@ -284,7 +284,7 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
      *
      * @param mixed $offset Ignored, the state is stored under its own ID
      * @param T $value RtState instance to set
-     * @throws HilosException Whatever a subscriber to the announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
      */
     public function offsetSet(mixed $offset, mixed $value): void
     {
@@ -299,7 +299,7 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
      * Routed through {@see self::remove()} for the same single announcement point.
      *
      * @param mixed $offset State ID to remove, or null for no-op
-     * @throws HilosException Whatever a subscriber to the announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
      */
     public function offsetUnset(mixed $offset): void
     {

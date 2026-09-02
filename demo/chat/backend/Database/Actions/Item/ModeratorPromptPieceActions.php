@@ -8,6 +8,7 @@ use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPrompt
 use Demo\Chat\Database\View\Item\ModeratorPromptPiece;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Item\DbActions;
 use Hilos\HilosException;
@@ -52,6 +53,7 @@ final class ModeratorPromptPieceActions extends DbActions
      * @throws HilosException On error (database error, etc.)
      * @throws ItemNotFoundForDeleteException When piece not found for delete (id is null)
      * @throws ObjectCollectionNullException When object collection is null
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function delete(): void
     {

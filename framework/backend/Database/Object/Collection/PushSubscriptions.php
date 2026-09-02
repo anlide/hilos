@@ -6,6 +6,7 @@ namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\PushSubscriptions as EntityPushSubscriptions;
@@ -13,7 +14,6 @@ use Hilos\Database\Entity\Item\PushSubscription as EntityPushSubscription;
 use Hilos\Database\Object\Item\PushSubscription as ObjectPushSubscription;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\Schema;
-use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -56,7 +56,7 @@ final class PushSubscriptions extends Objects
      * @throws EmptyValueException When the endpoint is empty
      * @throws DatabaseException When the lookup or write query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function subscribe(int $userId, string $endpoint, string $p256dh, string $auth, ?string $userAgent): void
     {
@@ -94,7 +94,7 @@ final class PushSubscriptions extends Objects
      * @param string $endpoint Browser push endpoint URL
      * @throws DatabaseException When the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function unsubscribe(string $endpoint): void
     {
@@ -160,7 +160,7 @@ final class PushSubscriptions extends Objects
      * @param int $userId Recipient user id
      * @throws DatabaseException When a delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function deleteForUser(int $userId): void
     {

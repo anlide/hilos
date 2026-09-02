@@ -6,6 +6,7 @@ namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Context\HilosDbContext;
@@ -17,7 +18,6 @@ use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDeliver
 use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\SqlSortDirection;
-use Hilos\HilosException;
 use Hilos\Notification\Delivery\DeliveryStatus;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -62,7 +62,7 @@ final class NotificationDeliveries extends Objects
      * @throws EmptyValueException When the channel name is empty
      * @throws TableNotActivatedException When the project has not activated the delivery table
      * @throws DatabaseException If the insert query fails
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function createPending(int $notificationId, string $channel): ObjectNotificationDelivery
     {
@@ -141,7 +141,7 @@ final class NotificationDeliveries extends Objects
      *
      * @param ObjectNotificationDelivery $delivery Loaded delivery row
      * @throws DatabaseException If the update query fails
-     * @throws HilosException Whatever a subscriber to the update announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
      * @throws WriteNotAllowedException When no truth source in this process may write that row
@@ -158,7 +158,7 @@ final class NotificationDeliveries extends Objects
      *
      * @param ObjectNotificationDelivery $delivery Loaded delivery row
      * @throws DatabaseException If the update query fails
-     * @throws HilosException Whatever a subscriber to the update announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
      * @throws WriteNotAllowedException When no truth source in this process may write that row
@@ -211,7 +211,7 @@ final class NotificationDeliveries extends Objects
      *
      * @param ObjectNotificationDelivery $delivery Loaded failed delivery row
      * @throws DatabaseException If the update query fails
-     * @throws HilosException Whatever a subscriber to the update announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
      * @throws WriteNotAllowedException When no truth source in this process may write that row
@@ -237,7 +237,7 @@ final class NotificationDeliveries extends Objects
      * @param string $error Failure detail (truncated to the column width)
      * @param int $maxAttempts Attempt ceiling after which the row fails terminally
      * @throws DatabaseException If the update query fails
-     * @throws HilosException Whatever a subscriber to the update announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
      * @throws WriteNotAllowedException When no truth source in this process may write that row

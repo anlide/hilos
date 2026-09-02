@@ -8,8 +8,8 @@ use Demo\Cluster\Runtime\State\Collection\WorkerStatuses as StateWorkerStatuses;
 use Demo\Cluster\Runtime\State\Item\WorkerStatus as StateWorkerStatus;
 use Demo\Cluster\Runtime\View\Collection\WorkerStatuses;
 use Demo\Cluster\Runtime\View\Item\WorkerStatus as ViewWorkerStatus;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
@@ -38,7 +38,7 @@ final class WorkerStatusesActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtActionsItemClassException When the runtime item class is missing or invalid
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source of this row
-     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      */
     public function report(string $workerIndex, int $jobsDone, int $rowsSeen): void
     {

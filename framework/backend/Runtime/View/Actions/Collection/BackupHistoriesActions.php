@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Actions\Collection;
 
 use Hilos\Backup\BackupMetadata;
-use Hilos\HilosException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
@@ -45,7 +45,7 @@ final class BackupHistoriesActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtItemParentCollectionNullException When a dropped row is not attached to the collection
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
      */
     public function syncToScan(array $metadatas): int

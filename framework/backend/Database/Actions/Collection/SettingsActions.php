@@ -7,6 +7,7 @@ namespace Hilos\Database\Actions\Collection;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
@@ -151,6 +152,7 @@ final class SettingsActions extends DbActions
      * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
      * @throws LogicException When the settings object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the setting delete
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function deleteOrphan(string $key, array $catalog): void
     {

@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Core\Source;
 
 use Closure;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\HilosException;
 use Hilos\Runtime\RtSyncApplicator;
+use Throwable;
 
 /**
  * The one place a collection announces that its membership changed.
@@ -44,15 +46,24 @@ final class SourceChangeBus
      * Announces one collection mutation to every subscriber.
      *
      * A subscriber that raises is not silenced: a swallowed error here is a sync that vanished
-     * without a trace, which costs more than the write it interrupts.
+     * without a trace, which costs more than the write it interrupts. The failure is wrapped so
+     * callers of the write can name what may reach them; an already wrapped one is rethrown as
+     * it is, because a publish made from inside a reaction would otherwise bury the original one
+     * floor deeper.
      *
      * @param SourceChange $change Fact describing what happened to the source
-     * @throws HilosException Whatever a subscriber's reaction raises
+     * @throws SourceChangeSubscriberException When a subscriber's reaction fails
      */
     public static function publish(SourceChange $change): void
     {
         foreach (self::$subscribers as $subscriber) {
-            $subscriber->onSourceChange($change, self::$provenance);
+            try {
+                $subscriber->onSourceChange($change, self::$provenance);
+            } catch (SourceChangeSubscriberException $wrapped) {
+                throw $wrapped;
+            } catch (Throwable $failure) {
+                throw new SourceChangeSubscriberException($subscriber::class, $change, $failure);
+            }
         }
     }
 

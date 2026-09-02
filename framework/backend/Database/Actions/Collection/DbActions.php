@@ -7,6 +7,7 @@ namespace Hilos\Database\Actions\Collection;
 use Exception;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
@@ -266,6 +267,7 @@ abstract class DbActions
      * @throws LogicException When a represented collection entity class is not configured (re-hydrate reload)
      * @throws DatabaseException If reloading an eager collection from the fresh DB fails (re-hydrate)
      * @throws HilosException When a collection refuses to be re-read from the replaced database
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     protected function addObjectToCollection(Object_ $object): void
     {

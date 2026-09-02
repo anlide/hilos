@@ -9,7 +9,9 @@ use Hilos\Auth\Registration\RegistrationReservationSweeper;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -21,7 +23,6 @@ use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationRese
 use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
-use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -85,7 +86,8 @@ final class RegistrationReservations extends Objects
      * @throws DuplicateValueException When another socket of this session inserted a hold meanwhile
      * @throws DatabaseException If the insert or secret write query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function createReservation(
         string $type,
@@ -190,7 +192,8 @@ final class RegistrationReservations extends Objects
      * @param string $sessionToken Session cookie token of the browser whose hold is over
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function consume(string $sessionToken): void
     {
@@ -221,7 +224,8 @@ final class RegistrationReservations extends Objects
      * @return list<string> Session tokens whose hold this call removed (empty when there were none)
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function releaseOthers(string $identifier, string $winnerSessionToken): array
     {
@@ -253,7 +257,8 @@ final class RegistrationReservations extends Objects
      * @return list<array{sessionToken: string, identifier: string}> Session/identifier pairs this sweep freed
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function deleteExpired(): array
     {
@@ -394,7 +399,7 @@ final class RegistrationReservations extends Objects
      *
      * @param ObjectRegistrationReservation $reservation Reservation to delete
      * @throws DatabaseException If the delete query fails
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     private function release(ObjectRegistrationReservation $reservation): void
     {

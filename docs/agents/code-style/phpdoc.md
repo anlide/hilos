@@ -124,6 +124,18 @@ documenting non-obvious error contracts.
   `Hilos::$rt->connections`. Treat the property read as the declared
   `@property-read` type, then audit only explicit method calls or array access
   performed on that value.
+- An interface that cannot know its implementations must name the root of the
+  hierarchy in its own `@throws`, and that root then gets copied down every
+  caller of it. Cure the width where the implementation is *called*, not by
+  carrying the root along: let the calling machinery catch `Throwable` around the
+  call and rethrow one named type of its own, then declare that type. The
+  interface keeps the honest wide tag — it describes the implementation, and a
+  narrow one there would be the contract lying about what an implementer may
+  raise — while everything above the call site names something a caller can act
+  on. `SourceChangeBus::publish()` is the worked example: it wraps a subscriber's
+  failure in `SourceChangeSubscriberException`, and the eighty-odd tags that used
+  to repeat `HilosException` down the write paths now say what actually reaches
+  them.
 - For private helpers, prefer no `@throws` unless the helper has a meaningful
   local contract that callers inside the class need to see. Do not propagate
   incidental infrastructure risks through every private helper. Document broad

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\OutboundRtSyncSubscriber;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
@@ -551,7 +552,7 @@ final class PointMutationObjects extends Objects
      * Drops one row the way a subclass of the store drops one - through the door, from inside.
      *
      * @param string $key Key whose row goes
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function forget(string $key): void
     {

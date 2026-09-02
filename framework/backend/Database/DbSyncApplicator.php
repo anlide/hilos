@@ -45,7 +45,7 @@ final class DbSyncApplicator
      * @param DbSyncCreatedSignalData $data Full created row payload from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
      * @param ?string $originNodeId Node the write happened on, or null when it was this one
-     * @throws HilosException Whatever a subscriber to the mirror's announcement raises
+     * @throws HilosException Whatever the applied write raises
      */
     public static function applyCreated(
         DbSyncCreatedSignalData $data,
@@ -107,7 +107,7 @@ final class DbSyncApplicator
      * @param DbSyncUpdatedSignalData $data Diff payload from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
      * @param ?string $originNodeId Node the write happened on, or null when it was this one
-     * @throws HilosException Whatever a subscriber to the mirror's announcement raises
+     * @throws HilosException Whatever the applied write raises
      * @throws ObjectGetIdStringNotImplementedException When the updated row's primary key is null
      */
     public static function applyUpdated(
@@ -150,7 +150,7 @@ final class DbSyncApplicator
      * @param DbSyncDeletedSignalData $data Deleted row identity from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
      * @param ?string $originNodeId Node the write happened on, or null when it was this one
-     * @throws HilosException Whatever a subscriber to the mirror's announcement raises
+     * @throws HilosException Whatever the applied write raises
      */
     public static function applyDeleted(
         DbSyncDeletedSignalData $data,

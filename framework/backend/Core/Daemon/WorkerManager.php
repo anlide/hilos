@@ -817,7 +817,7 @@ abstract class WorkerManager extends BaseManager
      * is never coming.
      *
      * @param WorkerRtSnapshotMessageDTO $data Snapshot of one RT collection, as the master holds it
-     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     * @throws HilosException Whatever the applied write of the snapshot raises
      */
     private function handleRtSnapshotMessage(WorkerRtSnapshotMessageDTO $data): void
     {
@@ -1126,7 +1126,7 @@ abstract class WorkerManager extends BaseManager
      * are notified last.
      *
      * @param WorkerRtSyncMessageInterface $data Worker-level RT sync message (create, update or delete)
-     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     * @throws HilosException Whatever the applied write raises
      */
     private function handleRtSyncMessage(WorkerRtSyncMessageInterface $data): void
     {
@@ -1325,7 +1325,7 @@ abstract class WorkerManager extends BaseManager
      * @throws PageSignalRouterNotFoundException When page routing is requested for an unsupported agent
      * @throws TableRowKeyMissingException When a windowed table row is a placeholder and carries no key
      * @throws InvalidArgumentException When a command handler cannot name its reply
-     * @throws HilosException Whatever a subscriber to a dropped collection's announcement raises
+     * @throws HilosException Whatever the applied write emptying a dropped collection raises
      */
     private function handleAgentMessage(DaemonAgentMessageDTO $data): void
     {
@@ -1755,7 +1755,7 @@ abstract class WorkerManager extends BaseManager
      * @param WebSocketPageSubscribeSignalDTO $dto Incoming subscribe payload
      * @param string $name Signal name used as page id when the DTO page is empty
      * @param string $source Signal source identifier
-     * @throws HilosException Whatever a subscriber to a dropped collection's announcement raises
+     * @throws HilosException Whatever the applied write emptying a dropped collection raises
      */
     private function dispatchPreviousPageUnsubscribeIfReplaced(
         string $agentId,
@@ -2335,7 +2335,7 @@ abstract class WorkerManager extends BaseManager
      * nothing recorded, instead of waiting the one round trip a fresh snapshot costs.
      *
      * @param string $consumerId Consumer that ended, named by {@see SourceConsumer}
-     * @throws HilosException Whatever a subscriber to a dropped collection's announcement raises
+     * @throws HilosException Whatever the applied write emptying a dropped collection raises
      */
     private function releaseSourceInterest(string $consumerId): void
     {

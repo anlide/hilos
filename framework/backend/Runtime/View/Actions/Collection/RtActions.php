@@ -6,6 +6,7 @@ namespace Hilos\Runtime\View\Actions\Collection;
 
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -190,7 +191,7 @@ abstract class RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      */
     protected function addStateToCollection(RtState $state): void
     {
@@ -228,7 +229,7 @@ abstract class RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      */
     protected function removeStateFromCollection(string $id): void
     {

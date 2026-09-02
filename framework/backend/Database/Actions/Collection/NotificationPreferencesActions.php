@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Actions\Collection;
 
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
 use Hilos\Database\View\Collection\NotificationPreferences as DbCollectionNotificationPreferences;
@@ -32,6 +33,7 @@ final class NotificationPreferencesActions extends DbActions
      * @param bool $enabled True to allow the channel, false to mute it
      * @throws EmptyValueException When the channel name is empty
      * @throws DatabaseException When the write query fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function setChannel(int $userId, string $channel, bool $enabled): void
     {
@@ -43,6 +45,7 @@ final class NotificationPreferencesActions extends DbActions
      *
      * @param int $userId Recipient user id
      * @throws DatabaseException When a delete query fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function deleteForUser(int $userId): void
     {

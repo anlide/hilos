@@ -10,6 +10,7 @@ use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
@@ -220,6 +221,7 @@ final class Identities extends DbCollection
      * @throws DatabaseException On database error while creating the identity
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function createPasswordIdentity(int $userId, string $identifier, string $plainSecret): Identity
     {
@@ -260,6 +262,7 @@ final class Identities extends DbCollection
      * @throws DatabaseException On database error while creating the identity
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function createPasswordIdentityWithHash(int $userId, string $identifier, string $passwordHash): Identity
     {
@@ -298,6 +301,7 @@ final class Identities extends DbCollection
      * @throws DatabaseException On database error while creating the identity
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function createOauthIdentity(int $userId, string $provider, string $subject): Identity
     {
@@ -335,6 +339,7 @@ final class Identities extends DbCollection
      * @throws DatabaseException On database error while creating the identity
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function createSmsIdentity(int $userId, string $identifier): Identity
     {
@@ -373,6 +378,7 @@ final class Identities extends DbCollection
      * @throws DatabaseException On database error while creating the identity
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function createMagicLinkIdentity(int $userId, string $email): Identity
     {
@@ -411,6 +417,7 @@ final class Identities extends DbCollection
      * @throws DatabaseException On database error while creating the identity
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function createPasskeyIdentity(int $userId, string $credentialId): Identity
     {
@@ -441,6 +448,7 @@ final class Identities extends DbCollection
      * @param int $identityId Identity id to unlink
      * @throws ValidationException When the identity is not owned by the user, or is their last one
      * @throws DatabaseException On database error while deleting the identity
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function deleteIdentity(int $userId, int $identityId): void
     {
@@ -465,6 +473,7 @@ final class Identities extends DbCollection
      * @return int Number of identities re-pointed to the survivor
      * @throws LogicException When both accounts hold a password and no fate was named
      * @throws DatabaseException On database error while re-pointing the identities
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function rePointToUser(int $fromUserId, int $toUserId, ?PasswordFate $passwordFate): int
     {

@@ -45,7 +45,7 @@ final class RtSyncApplicator
      *
      * @param RtSyncCreatedSignalData $data Full created state payload from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
-     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     * @throws HilosException Whatever the applied write raises
      */
     public static function applyCreated(RtSyncCreatedSignalData $data, bool $skipSelfBroadcastCheck = true): void
     {
@@ -135,7 +135,7 @@ final class RtSyncApplicator
      *
      * @param RtSyncDeletedSignalData $data Deleted state identity from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
-     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     * @throws HilosException Whatever the applied write raises
      */
     public static function applyDeleted(RtSyncDeletedSignalData $data, bool $skipSelfBroadcastCheck = true): void
     {

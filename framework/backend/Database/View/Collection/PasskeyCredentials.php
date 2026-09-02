@@ -7,6 +7,7 @@ namespace Hilos\Database\View\Collection;
 use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\PasskeyCredentials as ObjectPasskeyCredentials;
 use Hilos\Database\Object\Item\PasskeyCredential as ObjectPasskeyCredential;
@@ -55,6 +56,7 @@ final class PasskeyCredentials extends DbCollection
      * @throws EmptyValueException When credential id, public key or user handle is empty
      * @throws DuplicateValueException When a credential already exists for this credential id
      * @throws DatabaseException If the insert query fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function createFromRegistration(
         int $identityId,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Actions\Item;
 
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
@@ -71,6 +72,7 @@ final class SettingActions extends DbActions
      * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
      * @throws LogicException When the settings object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the setting delete
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function delete(): void
     {

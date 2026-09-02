@@ -96,7 +96,7 @@ final class RtSnapshot
      *
      * @param string $collectionKey RT collection to replace
      * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
-     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     * @throws HilosException Whatever the applied write of the snapshot rows raises
      */
     public static function replace(string $collectionKey, array $rows): void
     {
@@ -161,7 +161,7 @@ final class RtSnapshot
      * @param string $collectionKey RT collection to replace within
      * @param list<string> $scopeKeys Rows this snapshot speaks for
      * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
-     * @throws HilosException Whatever a subscriber to the collection's announcement raises
+     * @throws HilosException Whatever the applied write of the snapshot rows raises
      */
     public static function replaceScope(string $collectionKey, array $scopeKeys, array $rows): void
     {

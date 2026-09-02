@@ -12,6 +12,8 @@ use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
@@ -19,7 +21,6 @@ use Hilos\Database\Object\Item\UserVerification as ObjectUserVerification;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
-use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use Random\RandomException;
@@ -75,7 +76,8 @@ class VerificationService
      *   outside the catalog, or of the wrong type
      * @throws ValidationException When the code was issued for a target the transport refuses
      * @throws InvalidArgumentException When the transport's send signal cannot be named or queued
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function issue(string $type, string $identifier, ?int $userId): VerificationSendOutcome
     {
@@ -142,7 +144,7 @@ class VerificationService
      * @throws EnvException When a send-gate or challenge env key is missing, outside the catalog,
      *   or of the wrong type
      * @throws InvalidArgumentException When a verification query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function issueForChannel(
         string $type,
@@ -755,7 +757,7 @@ class VerificationService
      * @throws EnvException When a challenge env key is missing, outside the catalog,
      *   or of the wrong type
      * @throws InvalidArgumentException When a verification query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     private function mintMagicLinkCode(
         ObjectUserVerifications $collection,

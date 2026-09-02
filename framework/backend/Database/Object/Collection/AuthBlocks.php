@@ -7,13 +7,13 @@ namespace Hilos\Database\Object\Collection;
 use Hilos\Constants\CliCommands;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\AuthBlocks as EntityAuthBlocks;
 use Hilos\Database\Entity\Item\AuthBlock as EntityAuthBlock;
 use Hilos\Database\Object\Item\AuthBlock as ObjectAuthBlock;
 use Hilos\Database\Object\Objects;
-use Hilos\HilosException;
 
 /**
  * AuthBlocks object collection.
@@ -122,7 +122,7 @@ final class AuthBlocks extends Objects
      * @throws EmptyValueException When scope, identity or action is empty
      * @throws DatabaseException If the insert or update query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function recordBlock(string $scope, string $identity, string $action, int $level, ?string $blockedUntil): ObjectAuthBlock
     {
@@ -163,7 +163,7 @@ final class AuthBlocks extends Objects
      * @return int Number of blocks deleted
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function clearServed(string $before): int
     {
@@ -192,7 +192,7 @@ final class AuthBlocks extends Objects
      * @return int Number of blocks deleted
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function clearIdentity(string $scope, string $identity): int
     {
@@ -224,7 +224,7 @@ final class AuthBlocks extends Objects
      * @return int Number of blocks deleted
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function clearAll(): int
     {
@@ -242,7 +242,7 @@ final class AuthBlocks extends Objects
      *
      * @param EntityAuthBlock $entityAuthBlock Row to delete
      * @throws DatabaseException If the delete query fails
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     private function forget(EntityAuthBlock $entityAuthBlock): void
     {
@@ -268,7 +268,7 @@ final class AuthBlocks extends Objects
      * @param string $action Throttled action name
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function clearBlock(string $scope, string $identity, string $action): void
     {

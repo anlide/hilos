@@ -3,6 +3,7 @@
 namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Database\Object\Item\Object_;
 use ArrayAccess;
 use Countable;
@@ -36,6 +37,7 @@ class ObjectCollection implements ArrayAccess, Countable, IteratorAggregate
      *
      * @param array<int|string, Object_> $objects Objects keyed by int or string
      * @return self Collection instance
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public static function fromArray(array $objects): self
     {
@@ -158,6 +160,7 @@ class ObjectCollection implements ArrayAccess, Countable, IteratorAggregate
      *
      * @param callable $callback Filter predicate (receives Object_, returns bool)
      * @return self New filtered collection
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function filter(callable $callback): self
     {

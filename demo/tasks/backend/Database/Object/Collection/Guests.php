@@ -9,10 +9,10 @@ use Demo\Tasks\Database\Entity\Item\Guest as EntityGuest;
 use Demo\Tasks\Database\Object\Item\Guest as ObjectGuest;
 use Demo\Tasks\Database\TasksDbContext;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Object\Objects;
-use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -77,7 +77,7 @@ final class Guests extends Objects
      * @return ObjectGuest Guest object of this session
      * @throws DatabaseException If the lookup or insert query fails, or the insert assigns no id
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function ensureForSession(string $sessionToken, string $name): ObjectGuest
     {
@@ -121,7 +121,7 @@ final class Guests extends Objects
      * @param string $sessionToken Session cookie token whose guest row goes
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function deleteBySessionToken(string $sessionToken): void
     {

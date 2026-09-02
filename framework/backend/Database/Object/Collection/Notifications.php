@@ -6,6 +6,7 @@ namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Context\HilosDbContext;
@@ -20,7 +21,6 @@ use Hilos\Database\Schema\Schema;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Database\SqlSortDirection;
-use Hilos\HilosException;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -67,7 +67,7 @@ final class Notifications extends Objects
      * @throws EmptyValueException When type or title is empty
      * @throws TableNotActivatedException When the project has not activated the notification table
      * @throws DatabaseException If the insert query fails
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function createFor(
         int $userId,

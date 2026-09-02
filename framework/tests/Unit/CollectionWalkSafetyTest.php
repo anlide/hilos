@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Database\Context\DbContext;
@@ -248,7 +249,7 @@ abstract class WalkSubject
      * Puts one row under the given key.
      *
      * @param string $key Row key
-     * @throws HilosException Whatever a subscriber to the announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
      */
     abstract public function put(string $key): void;
 
@@ -256,7 +257,7 @@ abstract class WalkSubject
      * Drops the row under the given key.
      *
      * @param string $key Row key
-     * @throws HilosException Whatever a subscriber to the announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
      */
     abstract public function drop(string $key): void;
 

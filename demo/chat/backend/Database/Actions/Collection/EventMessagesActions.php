@@ -11,6 +11,7 @@ use Demo\Chat\Database\Object\Collection\EventMessages as ObjectEventMessages;
 use Demo\Chat\Database\Object\Item\EventMessage as ObjectEventMessage;
 use Demo\Chat\Database\View\Collection\EventMessages as DbCollectionEventMessages;
 use Demo\Chat\Database\View\Item\EventMessage as DbEventMessage;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\Object\Collection\Identities;
@@ -93,6 +94,7 @@ final class EventMessagesActions extends DbActions
      * @param int $toUserId Survivor user id that receives the messages
      * @return int Number of messages re-pointed to the survivor
      * @throws HilosException On database or truth-source failure
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function rePointAuthor(int $fromUserId, int $toUserId): int
     {

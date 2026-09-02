@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\SourceChangeProvenance;
@@ -24,6 +25,9 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\RtItem;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
+use Throwable;
+use TypeError;
 
 /**
  * The one channel a collection announces its membership changes on (HIL-603).
@@ -176,6 +180,99 @@ final class SourceChangeBusTest extends TestCase
         SourceChangeBus::publish(SourceChange::rtCreated(BusRtContext::COLLECTION, 'a', []));
 
         $this->assertSame(['a-echo', 'a'], $seen);
+    }
+
+    /**
+     * The write a reaction interrupts hears one named type instead of whatever that reaction
+     * happened to raise: the interface cannot know its implementations, so the promise callers of
+     * a store write can be given is made here, where the reaction is called.
+     */
+    public function testAFailingReactionArrivesAsTheBusTypeKeepingTheOriginal(): void
+    {
+        $failure = new RuntimeException('the view could not be repaired');
+        SourceChangeBus::subscribe(new BusFailingSubscriber($failure));
+
+        try {
+            SourceChangeBus::publish(SourceChange::rtCreated(BusRtContext::COLLECTION, 'a', []));
+            $this->fail('A reaction that raises must interrupt the write it was called from');
+        } catch (SourceChangeSubscriberException $wrapped) {
+            $this->assertSame($failure, $wrapped->getPrevious());
+        }
+    }
+
+    /**
+     * An Error is wrapped like an exception, which is the whole reason Throwable is caught here:
+     * a subscriber raising a TypeError was covered by no contract at all before.
+     */
+    public function testAnErrorIsWrappedLikeAnException(): void
+    {
+        $failure = new TypeError('the reaction was handed the wrong type');
+        SourceChangeBus::subscribe(new BusFailingSubscriber($failure));
+
+        try {
+            SourceChangeBus::publish(SourceChange::rtCreated(BusRtContext::COLLECTION, 'a', []));
+            $this->fail('A reaction that raises an Error must interrupt the write too');
+        } catch (SourceChangeSubscriberException $wrapped) {
+            $this->assertSame($failure, $wrapped->getPrevious());
+        }
+    }
+
+    /**
+     * A reaction may announce a change of its own, and a failure of that inner announcement is
+     * already wrapped when it reaches the outer loop. Wrapping it once more would name the
+     * echoing subscriber as the one that failed and push the real cause a floor deeper.
+     */
+    public function testAFailureRaisedInsideAnAnnouncementIsNotWrappedTwice(): void
+    {
+        $failure = new RuntimeException('the echoed announcement could not be served');
+        SourceChangeBus::subscribe(new BusEchoingSubscriber());
+        SourceChangeBus::subscribe(new BusFailingSubscriber($failure));
+
+        try {
+            SourceChangeBus::publish(SourceChange::rtCreated(BusRtContext::COLLECTION, 'a', []));
+            $this->fail('A reaction failing inside an echoed announcement must interrupt the write');
+        } catch (SourceChangeSubscriberException $wrapped) {
+            $this->assertSame($failure, $wrapped->getPrevious());
+            $this->assertStringContainsString('a-echo', $wrapped->getMessage());
+        }
+    }
+
+    /**
+     * The first failure ends the announcement: what ran before it stays done, and what stands
+     * after it is not called at all. Named because three subscribers make the partial effect
+     * visible, and it is today's behavior rather than a gap this change left.
+     */
+    public function testSubscribersStandingAfterTheFailingOneAreNotCalled(): void
+    {
+        $seen = [];
+        SourceChangeBus::subscribe(new BusLabelSubscriber($seen, 'before'));
+        SourceChangeBus::subscribe(new BusFailingSubscriber(new RuntimeException('stop here')));
+        SourceChangeBus::subscribe(new BusLabelSubscriber($seen, 'after'));
+
+        try {
+            SourceChangeBus::publish(SourceChange::rtCreated(BusRtContext::COLLECTION, 'a', []));
+            $this->fail('A reaction that raises must interrupt the write it was called from');
+        } catch (SourceChangeSubscriberException) {
+            $this->assertSame(['before'], $seen);
+        }
+    }
+
+    /**
+     * Three subscribers stand on this bus, so "a reaction failed" names none of them, and a
+     * failure without the address of the row is not worth reading in a log.
+     */
+    public function testTheMessageNamesTheFailedSubscriberAndTheRow(): void
+    {
+        SourceChangeBus::subscribe(new BusFailingSubscriber(new RuntimeException('no room left')));
+
+        try {
+            SourceChangeBus::publish(SourceChange::rtDeleted(BusRtContext::COLLECTION, 'a', []));
+            $this->fail('A reaction that raises must interrupt the write it was called from');
+        } catch (SourceChangeSubscriberException $wrapped) {
+            $this->assertStringContainsString(BusFailingSubscriber::class, $wrapped->getMessage());
+            $this->assertStringContainsString('rt delete of ' . BusRtContext::COLLECTION . '[a]', $wrapped->getMessage());
+            $this->assertStringContainsString('no room left', $wrapped->getMessage());
+        }
     }
 
     /**
@@ -350,7 +447,7 @@ final class BusEchoingSubscriber implements SourceChangeSubscriberInterface
     /**
      * @param SourceChange $change Announced change the echo is derived from
      * @param SourceChangeProvenance $provenance Announced provenance, not read here
-     * @throws HilosException Whatever a subscriber to the echoed announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the echoed announcement raises
      */
     public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
     {
@@ -361,6 +458,30 @@ final class BusEchoingSubscriber implements SourceChangeSubscriberInterface
         SourceChangeBus::publish(
             SourceChange::rtCreated($change->sourceKey, $change->sourceId . '-echo', []),
         );
+    }
+}
+
+/**
+ * Raises the failure it was built with on every announcement, standing in for a reaction that
+ * cannot do its work.
+ */
+final class BusFailingSubscriber implements SourceChangeSubscriberInterface
+{
+    /**
+     * @param Throwable $failure Failure raised on every announcement
+     */
+    public function __construct(private readonly Throwable $failure)
+    {
+    }
+
+    /**
+     * @param SourceChange $change Announced change, not read here
+     * @param SourceChangeProvenance $provenance Announced provenance, not read here
+     * @throws Throwable The failure this subscriber stands for
+     */
+    public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
+    {
+        throw $this->failure;
     }
 }
 

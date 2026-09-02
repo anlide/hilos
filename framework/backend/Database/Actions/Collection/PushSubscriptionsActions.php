@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Actions\Collection;
 
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
 use Hilos\Database\View\Collection\PushSubscriptions as DbCollectionPushSubscriptions;
@@ -34,6 +35,7 @@ final class PushSubscriptionsActions extends DbActions
      * @param ?string $userAgent Subscribing device user agent, or null
      * @throws EmptyValueException When the endpoint is empty
      * @throws DatabaseException When the write query fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function subscribe(int $userId, string $endpoint, string $p256dh, string $auth, ?string $userAgent): void
     {
@@ -45,6 +47,7 @@ final class PushSubscriptionsActions extends DbActions
      *
      * @param string $endpoint Browser push endpoint URL
      * @throws DatabaseException When the delete query fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function unsubscribe(string $endpoint): void
     {
@@ -56,6 +59,7 @@ final class PushSubscriptionsActions extends DbActions
      *
      * @param int $userId Recipient user id
      * @throws DatabaseException When a delete query fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function deleteForUser(int $userId): void
     {

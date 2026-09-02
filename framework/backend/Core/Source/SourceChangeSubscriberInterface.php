@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Source;
 
-use Hilos\HilosException;
+use Throwable;
 
 /**
  * Receiver of one collection mutation, called synchronously at the point of mutation.
@@ -14,6 +14,10 @@ use Hilos\HilosException;
  * queueing the outgoing sync. Anything a later moment can serve stays where it is: browser
  * tables and project agents are notified at the end of the tick, and moving them here would
  * let a subscriber mutate a collection from inside its own announcement.
+ *
+ * A reaction that fails is wrapped by {@see SourceChangeBus::publish()}, which is why this
+ * contract names Throwable rather than the framework root: the implementer owes the bus no
+ * exception discipline, and the caller of the write is told one narrow type instead.
  */
 interface SourceChangeSubscriberInterface
 {
@@ -22,7 +26,7 @@ interface SourceChangeSubscriberInterface
      *
      * @param SourceChange $change Fact describing what happened to the source
      * @param SourceChangeProvenance $provenance Whether this process authored the write
-     * @throws HilosException Whatever this subscriber's own reaction raises
+     * @throws Throwable Whatever this subscriber's own reaction raises - the bus wraps it, so no discipline is required of the implementer
      */
     public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void;
 }

@@ -9,6 +9,7 @@ use Demo\SimplePoll\Database\Object\Item\User as ObjectUser;
 use Demo\SimplePoll\Database\View\Collection\Users as DbCollectionUsers;
 use Demo\SimplePoll\Database\View\Item\User;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
@@ -48,6 +49,7 @@ final class UsersActions extends DbActions
      *
      * @return User Registered administrator
      * @throws HilosException On database error
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function registerAdmin(): User
     {

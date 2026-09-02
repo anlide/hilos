@@ -8,13 +8,13 @@ use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\PasskeyCredentials as EntityPasskeyCredentials;
 use Hilos\Database\Entity\Item\PasskeyCredential as EntityPasskeyCredential;
 use Hilos\Database\Object\Item\PasskeyCredential as ObjectPasskeyCredential;
 use Hilos\Database\Object\Objects;
-use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -67,7 +67,7 @@ final class PasskeyCredentials extends Objects
      * @throws DuplicateValueException When a credential already exists for this credential id
      * @throws DatabaseException If the insert query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws HilosException Whatever a subscriber to the store announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function createFromRegistration(
         int $identityId,

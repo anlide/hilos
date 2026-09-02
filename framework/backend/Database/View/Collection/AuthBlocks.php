@@ -7,6 +7,7 @@ namespace Hilos\Database\View\Collection;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\AuthBlocks as ObjectAuthBlocks;
 use Hilos\Database\Object\Item\AuthBlock as ObjectAuthBlock;
@@ -68,6 +69,7 @@ final class AuthBlocks extends DbCollection
      * @throws DatabaseException On database error while recording the block
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function recordBlock(string $scope, string $identity, string $action, int $level, ?string $blockedUntil): AuthBlock
     {
@@ -116,6 +118,7 @@ final class AuthBlocks extends DbCollection
      *
      * @return int Number of blocks deleted
      * @throws DatabaseException On database error while deleting the blocks
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function clearAll(): int
     {
@@ -128,6 +131,7 @@ final class AuthBlocks extends DbCollection
      * @param string $before Datetime a block must have lifted before to be deleted
      * @return int Number of blocks deleted
      * @throws DatabaseException On database error while deleting the blocks
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function clearServed(string $before): int
     {
@@ -141,6 +145,7 @@ final class AuthBlocks extends DbCollection
      * @param string $identity Throttle identity (IP or session-token hash)
      * @return int Number of blocks deleted
      * @throws DatabaseException On database error while deleting the blocks
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function clearIdentity(string $scope, string $identity): int
     {
@@ -158,6 +163,7 @@ final class AuthBlocks extends DbCollection
      * @param string $identity Throttle identity (IP or session-token hash)
      * @param string $action Throttled action name
      * @throws DatabaseException On database error while clearing the block
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function clearBlock(string $scope, string $identity, string $action): void
     {
