@@ -35,6 +35,7 @@ import { computed, inject, watch } from 'vue'
 import HilosLink from './HilosLink.vue'
 import HilosMaintenance from './HilosMaintenance.vue'
 import HilosToastHost from './HilosToastHost.vue'
+import type { HilosToastCorner } from './hilosToastCorner.js'
 import HilosOAuthWaitModal from './auth/HilosOAuthWaitModal.vue'
 import { hilosRouterKey } from './hilosRouterKey.js'
 import { useConnectionState } from './useConnectionState.js'
@@ -51,6 +52,13 @@ const props = defineProps<{
    * identity (the default) shows no way into a surface the gate would refuse.
    */
   isAdmin?: boolean
+  /**
+   * Which corner the toast stack sits in; the bottom end by default. A project
+   * chooses it once here and never per notice: different corners in different
+   * sections of one product is a reliable way to make the notices stop being
+   * noticed (toasts.md).
+   */
+  toastCorner?: HilosToastCorner
 }>()
 
 const connectionState = useConnectionState(props.connection)
@@ -259,7 +267,7 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
     </footer>
     <!-- Transient notices float over the shell, so every page inside it can report
     an outcome without owning a notification surface of its own. -->
-    <HilosToastHost />
+    <HilosToastHost :corner="props.toastCorner" />
     <!-- An OAuth trip runs in another window over whatever page started it, so the
     wait belongs to the shell too: the page underneath stays subscribed and alive,
     and no project mounts anything (HIL-633). -->

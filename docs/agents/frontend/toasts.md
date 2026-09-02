@@ -186,14 +186,14 @@ A project may render its own stack by creating an independent store
   (not in the code yet — HIL-777).
 - **A repeat does not multiply cards.** A push whose text *and* severity
   exactly match a visible card bumps a ×N counter on that card and restarts
-  its countdown; the merge itself is in the store, while the ×N badge on the
-  card is not drawn yet (not in the code yet — HIL-766). Full-match dedup is
-  deliberate: if the text carries an object's name, the texts differ anyway.
+  its countdown; the merge itself is in the store, the ×N badge on the card in
+  the hosts. Full-match dedup is deliberate: if the text carries an object's
+  name, the texts differ anyway.
   Remember the merge treats a symptom — twenty identical failures are almost
   always one dead server that twenty actions crashed against; ×20 makes it
   bearable, the fix happens where the errors are born.
 - **Text is clipped at three lines.** The details live in the record, not in
-  the corner (not in the code yet — HIL-766 / HIL-767).
+  the corner (not in the code yet — HIL-767).
 - **Tabs of one session.** Each tab runs its own countdown — the cursor
   hovers in one tab and not in another, and that is two tabs, not a desync.
   Closing is the person's answer, and the person is one per session:
@@ -209,7 +209,7 @@ right — the bottom of a phone is occupied by the form's buttons, and the
 keyboard rises from there. A project may move the corner **once, at build
 time**, never per call: different corners in different sections of one product
 is a reliable way to make the notices stop being noticed
-(not in the code yet — HIL-766 / HIL-767). The stack sits above a modal and is
+(not in the code yet — HIL-767). The stack sits above a modal and is
 not covered by its backdrop.
 
 ## Accessibility
@@ -217,7 +217,7 @@ not covered by its backdrop.
 The live region is declared **in advance, on the stack itself** —
 `role="status" aria-live="polite"` — not on the card that just appeared: a
 role attached to a freshly inserted element leaves part of the screen readers
-silent (not in the code yet — HIL-766 / HIL-767). An error is the only notice
+silent (not in the code yet — HIL-767). An error is the only notice
 allowed to interrupt: `role="alert" aria-live="assertive"`.
 
 The lifetime rules above are how the timing criterion (2.2.1 Timing

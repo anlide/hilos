@@ -105,7 +105,7 @@ The rules to apply when building a view or an SDK component:
   the toast stack lives 20 seconds — an error does not expire until dismissed —
   and freezes its countdown while it is under the cursor or holds keyboard
   focus, continuing from what is left. The live region is declared in advance,
-  on the stack itself, not on the appearing card (not in the code yet — HIL-766).
+  on the stack itself, not on the appearing card.
   That is the success criterion being met, not a nicety; a new timed surface
   owes the same ([toasts.md](toasts.md)).
 

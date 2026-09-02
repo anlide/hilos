@@ -12,3 +12,106 @@
 .min-h-0 {
   min-height: 0;
 }
+
+// WHY: Bootstrap ships no min-width:0 utility either, and a flex child keeps
+// the intrinsic width of its content without one — so a long word or an
+// unbroken line grows the row instead of being clipped, and any text clamp
+// inside it never engages at all.
+// WHAT: applied to the flex children of a toast card whose text must clip.
+.min-w-0 {
+  min-width: 0;
+}
+
+// WHY: Bootstrap has no letter-spacing utility and no font-size step this
+// small, and the signature needs both to read as a label above the message
+// rather than as a first line of it.
+// WHAT: the toast card's source — who sent a notice the reader did not ask for.
+.hilos-toast-source {
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+// WHY: stock .text-truncate clips at one line; Bootstrap has no multi-line
+// clamp utility at all.
+// WHAT: the toast card's message, three lines at most — the rest of the story
+// belongs to the record the card points at, not to the corner of the screen.
+.hilos-toast-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+// WHY: the countdown is the store's, and a bar that draws it has to be an
+// animation — no Bootstrap utility animates a width or a scale, and expressing
+// the duration any other way would mean an inline style, which is forbidden.
+// The 20000ms is a copy of TOAST_TTL_MS (core/src/state/toasts.ts): a CSS file
+// cannot read a TypeScript constant, and the only way to hand it over would be
+// that same inline style, so the duplication is named out loud instead of
+// hidden. Move one and move the other.
+// WHAT: the toast card's life bar — the one visible sign of the time left.
+.hilos-toast-life {
+  height: 2px;
+  background: currentColor;
+  opacity: 0.4;
+  transform-origin: left center;
+  animation: hilos-toast-life-burn 20000ms linear forwards;
+}
+
+@keyframes hilos-toast-life-burn {
+  from {
+    transform: scaleX(1);
+  }
+
+  to {
+    transform: scaleX(0);
+  }
+}
+
+// WHY: the pause is a play state and not a new duration — substituting a number
+// restarts the animation from the beginning, and the bar would jump backwards
+// where the countdown merely stood still.
+// WHAT: the life bar of a card whose countdown the host is holding.
+.hilos-toast-life-paused {
+  animation-play-state: paused;
+}
+
+// WHY: this is the app's own animation, so nobody else guards it: Bootstrap
+// covers only its own components, and a blanket reduced-motion reset is banned
+// (accessibility.md). The bar stands dimmed instead of moving — the COUNTDOWN
+// still runs, because that is a rule about time and not about motion.
+// WHAT: the life bar for a reader who asked for less movement.
+@media (prefers-reduced-motion: reduce) {
+  .hilos-toast-life {
+    animation: none;
+    opacity: 0.25;
+  }
+}
+
+// WHY: the stock .bottom-0 and .top-0 utilities carry !important, so a media
+// query in this layer cannot outrank them without a second one — and the
+// vertical edge of the toast stack has to flip on a narrow screen.
+// WHAT: the bottom corner of the stack, forced to the top on a phone, where the
+// bottom of the screen belongs to the form's buttons and to the keyboard rising
+// from there. The horizontal edge needs none of this and stays a stock utility.
+.hilos-toast-stack-bottom {
+  bottom: 0;
+
+  // 767.98px is Bootstrap's `md` breakpoint less a hair, written out as a
+  // number because the SDK loads Bootstrap compiled (index.ts) and its Sass
+  // variables are not in scope; a full re-compile stays deferred
+  // (styling-rules.md), and this comment is what to find when it happens.
+  @media (max-width: 767.98px) {
+    bottom: auto;
+    top: 0;
+  }
+}
+
+// WHY: same reason as the bottom corner — the stock utility's !important would
+// leave nothing for the narrow screen to override.
+// WHAT: the top corner of the stack, where a narrow screen puts it anyway.
+.hilos-toast-stack-top {
+  top: 0;
+}
