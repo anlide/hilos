@@ -28,7 +28,7 @@ use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
 /**
- * Where a restore ends now that it no longer ends with its SQL (HIL-436).
+ * Where a restore ends now that it no longer ends with its SQL (HIL-436, HIL-694).
  *
  * The child exiting used to be the whole story: the supervisor wrote the outcome and moved the
  * node on to the verification window. But every process on the node still held caches of the
@@ -44,6 +44,11 @@ use RuntimeException;
  * The spawn-and-poll half stays at e2e, where a live child belongs. What a test reaches directly
  * is the moment the poller finds that child gone, because everything under test here happens
  * after it and has no other door.
+ *
+ * The wait itself has no clock of its own any more (HIL-694). It used to, on top of the daemon's,
+ * and the two together are what let a verdict belonging to a finished restore close the wait of
+ * the one after it. So what is pinned about the wait now is that only an answer or a shutdown
+ * ends it - a tick never does.
  */
 final class BackupAgentRestoreBarrierTest extends TestCase
 {
@@ -203,20 +208,42 @@ final class BackupAgentRestoreBarrierTest extends TestCase
         $this->assertSame(BackupStatus::SUCCESS->value, $this->restoreRow()->outcome);
     }
 
-    public function testTheAgentsOwnDeadlineEndsAWaitTheDaemonNeverAnswered(): void
+    public function testAVerdictArrivingAfterTheAgentStoppedIsDroppedToo(): void
     {
-        // Waiting forever is the one outcome that must not happen: the subsystem would refuse
-        // every later backup and restore until the agent was restarted.
+        // The other way the wait ends, and since HIL-694 the only other way: this agent no longer
+        // gives up on its own clock, so a wait it is still holding is ended by a verdict or by its
+        // own shutdown. A verdict landing after that shutdown must not re-finish the run.
+        $agent = $this->admittedRestore();
+        $this->endRestoreChild($agent, ExitCode::SUCCESS);
+        $agent->onStop();
+        $this->queuedSignalTypes();
+
+        $agent->onDbReHydrateComplete(new DbReHydrateOutcome(true, []));
+
+        $this->assertNotContains(SignalTypeConstants::PROTECTED_MODE_VERIFY, $this->queuedSignalTypes());
+        $this->assertSame(BackupStatus::ERROR->value, $this->restoreRow()->outcome);
+        $this->assertFalse($this->restoreRow()->rehydrateComplete);
+    }
+
+    public function testAWaitTheDaemonHasNotAnsweredYetSurvivesAnyNumberOfTicks(): void
+    {
+        // The agent used to hold a second deadline over the same barrier, and two timers over one
+        // barrier is what let a verdict of a finished restore close the wait of the next one. The
+        // daemon's round always answers - on a verdict, on its own deadline, or on being
+        // superseded - so the wait here simply lasts until it does.
         $agent = $this->admittedRestore();
         $this->endRestoreChild($agent, ExitCode::SUCCESS);
         $this->queuedSignalTypes();
 
-        $this->ageRehydrateWait($agent);
+        $agent->onTick();
         $agent->onTick();
 
+        $this->assertSame(
+            RestorePhase::REHYDRATING->value,
+            $this->restoreRow()->phase,
+            'Ticking is not an answer, and nothing else here decides the barrier',
+        );
         $this->assertNotContains(SignalTypeConstants::PROTECTED_MODE_VERIFY, $this->queuedSignalTypes());
-        $this->assertSame(BackupStatus::ERROR->value, $this->restoreRow()->outcome);
-        $this->assertSame(['daemon: timeout'], $this->restoreRow()->rehydrateProblems);
     }
 
     public function testAnAgentStoppingMidRestoreLeavesTheNodeShut(): void
@@ -397,24 +424,6 @@ final class BackupAgentRestoreBarrierTest extends TestCase
         );
 
         $end($agent, $exitCode);
-    }
-
-    /**
-     * Backdates the barrier wait so the next tick sees it as never answered.
-     *
-     * @param BackupAgent $agent Agent waiting on a barrier
-     */
-    private function ageRehydrateWait(BackupAgent $agent): void
-    {
-        $age = Closure::bind(
-            static function (BackupAgent $agent): void {
-                $agent->rehydrateDeadline = microtime(true) - 1.0;
-            },
-            null,
-            BackupAgent::class,
-        );
-
-        $age($agent);
     }
 
     /**

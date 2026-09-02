@@ -31,6 +31,12 @@ use Hilos\ProtectedMode\ClusterProtectedMode;
  * A negative answer settles the round without completing it, on purpose: a process that failed to
  * re-read holds caches of a database that no longer exists, and letting a verifier in to read those
  * would confirm a fiction. Fail-closed is the same choice the freeze entry already makes.
+ *
+ * Every round carries a number, because its participants do not carry anything else (HIL-694).
+ * A label - 'daemon', 'worker #2', a node id - names the same process in every round there ever
+ * is, so an answer that arrives late is indistinguishable from the answer the current round is
+ * waiting for, and crediting it would close a barrier nobody actually passed. The number is what
+ * {@see ack()} checks first: an answer to a round that is over changes nothing.
  */
 final class ReHydrateRound
 {
@@ -45,6 +51,9 @@ final class ReHydrateRound
 
     /** Prefix of a worker's label; the index behind it is what the operator sees in the logs. */
     private const string PARTICIPANT_WORKER_PREFIX = 'worker #';
+
+    /** Number this round answers under, as its owner issued it; 0 until {@see start()} is called. */
+    private int $round = 0;
 
     /** @var array<string, true> Participants that still owe an answer, keyed by label */
     private array $pending = [];
@@ -91,14 +100,24 @@ final class ReHydrateRound
      * The roster is a snapshot by design: a participant that appears afterwards is reading the
      * database that is already in place, so it has nothing to confirm.
      *
+     * @param int $round Number this round answers under, issued by whoever owns the barrier
      * @param list<string> $participants Human-readable participant labels ('daemon', 'worker #2', 'node-b')
      * @param float $deadline Wall-clock deadline on the {@see microtime()} scale
      */
-    public function start(array $participants, float $deadline): void
+    public function start(int $round, array $participants, float $deadline): void
     {
+        $this->round = $round;
         $this->pending = array_fill_keys($participants, true);
         $this->problems = [];
         $this->deadline = $deadline;
+    }
+
+    /**
+     * @return int Number this round answers under, 0 before it was started
+     */
+    public function round(): int
+    {
+        return $this->round;
     }
 
     /**
@@ -108,26 +127,41 @@ final class ReHydrateRound
      * duplicate would otherwise re-open a settled round or add a second problem line for a
      * participant that was already written off by {@see expire()}.
      *
+     * An answer carrying another round's number is refused before anything is read off it, and
+     * that is the one case the caller is told about: the label it names does belong to this
+     * round's roster - the same processes answer every round - so silence here would credit the
+     * previous restore's answer to the current one (HIL-694). The refusal is not a failure to
+     * report, which is why nothing is recorded as a problem; it is what the owner of the round
+     * turns into its one log line.
+     *
+     * @param int $round Number the answering participant echoed back, 0 when the frame carried none
      * @param string $participant Participant label, as passed to {@see start()}
      * @param bool $ok Whether that participant re-read its collections successfully
      * @param ?string $error Failure text when it did not, null when there is none to quote
+     * @return bool True when the answer belongs to this round, false when it belongs to another one
      */
-    public function ack(string $participant, bool $ok, ?string $error): void
+    public function ack(int $round, string $participant, bool $ok, ?string $error): bool
     {
+        if ($round !== $this->round) {
+            return false;
+        }
+
         if (!isset($this->pending[$participant])) {
-            return;
+            return true;
         }
 
         unset($this->pending[$participant]);
 
         if ($ok) {
-            return;
+            return true;
         }
 
         $reason = $error === null || $error === ''
             ? self::REASON_READ_FAILED
             : self::REASON_READ_FAILED . ': ' . $error;
         $this->problems[] = "{$participant}: {$reason}";
+
+        return true;
     }
 
     /**

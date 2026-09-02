@@ -30,12 +30,14 @@ use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
 use Hilos\Socket\Worker\WorkerDTO;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
 /**
- * The barrier the daemon holds over a database swap (HIL-436).
+ * The barrier the daemon holds over a database swap (HIL-436, HIL-694).
  *
  * Announcing that the database was replaced used to be a shout: the daemon passed the fact on to
  * its workers and moved on, so the node could be opened to verifiers while some process still
@@ -47,11 +49,19 @@ use RuntimeException;
  * The verdict is fail-closed on every unhappy path. That is deliberate and not a cost-free
  * default: a node that stays shut costs an operator one command, while a node opened over a
  * process holding stale caches costs whatever was concluded from what it served.
+ *
+ * Counting answers is only worth something while the answers belong to the round doing the
+ * counting. Every round is opened over the same labels - 'daemon', 'worker #1' - so a restore
+ * started while a previous round is still out would otherwise be closed by that round's
+ * stragglers, which is what the round number is here to prevent.
  */
 final class DaemonManagerDbReHydrateBarrierTest extends TestCase
 {
     /** @var string Agent that announced the swap in these cases */
     private const string INITIATOR = 'hilos_backup';
+
+    /** Round another node was already waiting under when it told this one about a swap. */
+    private const int ANNOUNCER_ROUND = 11;
 
     /** @var ?EnvAccessor Env accessor to restore after the test */
     private ?EnvAccessor $previousEnv = null;
@@ -198,8 +208,140 @@ final class DaemonManagerDbReHydrateBarrierTest extends TestCase
         // the teller. Sending it to a worker here would report somebody else's node as answered.
         $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
 
-        $daemon->announceFromNode('node-a');
+        $daemon->announceFromNode('node-a', self::ANNOUNCER_ROUND);
         $daemon->workerAnswers(1, ok: true);
+        $daemon->tickBarrier();
+
+        $this->assertSame([], $daemon->workerServer->verdicts);
+    }
+
+    public function testTheAnnouncementCarriesTheNumberOfTheRoundItOpened(): void
+    {
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+
+        $daemon->announce(self::INITIATOR);
+
+        $this->assertSame(
+            [$daemon->currentRound()],
+            $daemon->workerServer->announcedRounds(),
+            'A worker answers under the number it was asked under, so it has to be told it',
+        );
+    }
+
+    public function testConsecutiveRestoresAreAnnouncedUnderDifferentNumbers(): void
+    {
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+
+        $daemon->announce(self::INITIATOR);
+        $first = $daemon->currentRound();
+        $daemon->announce(self::INITIATOR);
+
+        $this->assertNotSame($first, $daemon->currentRound(), 'A round opened over a live one is a new round');
+        $this->assertSame([$first, $daemon->currentRound()], $daemon->workerServer->announcedRounds());
+    }
+
+    public function testAnAnswerLeftOverFromTheRoundBeforeDoesNotCloseThisOne(): void
+    {
+        // The scenario the number exists for: round #1 was still out when the operator started a
+        // second restore, and its straggler names the very worker round #2 is waiting for. Left
+        // uncounted it is nothing; credited, it opens the node over a worker that never re-read
+        // the database now on disk.
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+        $daemon->announce(self::INITIATOR);
+        $abandoned = $daemon->currentRound();
+
+        $daemon->announce(self::INITIATOR);
+        // One verdict is already out - the abandoned round's own refusal - and everything below
+        // counts from there.
+        $daemon->workerAnswers(1, ok: true, round: $abandoned);
+        $daemon->tickBarrier();
+
+        $this->assertCount(1, $daemon->workerServer->verdicts, 'The current round is still waiting for worker #1');
+
+        $daemon->workerAnswers(1, ok: true);
+        $daemon->tickBarrier();
+
+        $this->assertCount(2, $daemon->workerServer->verdicts);
+        $this->assertTrue($daemon->workerServer->verdicts[1]->complete);
+    }
+
+    public function testARoundSupersededByANewerAnnouncementAnswersItsOwnInitiator(): void
+    {
+        // The abandoned round used to be left to the initiator's own deadline, and that deadline
+        // is gone (HIL-694): nothing else would ever end its wait, so the round leaves loudly.
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+        $daemon->announce(self::INITIATOR);
+        $abandoned = $daemon->currentRound();
+
+        $daemon->announce(self::INITIATOR);
+
+        $verdict = $daemon->singleVerdict();
+        $this->assertSame(self::INITIATOR, $verdict->agentId);
+        $this->assertFalse($verdict->complete, 'A round nobody finished did not close');
+        $this->assertSame(
+            ["round #{$abandoned}: superseded by a newer re-hydrate announcement"],
+            $verdict->problems,
+            'The operator reads which round was dropped and why',
+        );
+    }
+
+    public function testTheSupersessionNamesBothRoundsAndWhoWasRefused(): void
+    {
+        // Two overlapping restores is what an operator reading this line is looking at, and the
+        // line has to say which one displaced which; the verdict's own error names neither.
+        $logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-rehydrate-supersede');
+        Logger::setLogFile($logFile);
+
+        try {
+            $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+            $daemon->announce(self::INITIATOR);
+            $abandoned = $daemon->currentRound();
+
+            $daemon->announce(self::INITIATOR);
+
+            $written = (string)file_get_contents($logFile);
+            $this->assertStringContainsString('superseded by a newer announcement', $written);
+            $this->assertStringContainsString("\"superseded\":{$abandoned}", $written);
+            $this->assertStringContainsString("\"opened\":{$daemon->currentRound()}", $written);
+            $this->assertStringContainsString(self::INITIATOR, $written, 'And who the refusal went to');
+        } finally {
+            Logger::resetLogFile();
+            if (is_file($logFile)) {
+                unlink($logFile);
+            }
+        }
+    }
+
+    public function testTheRoundThatSupersededTheOldOneIsStillOpenAfterwards(): void
+    {
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+        $daemon->announce(self::INITIATOR);
+
+        $daemon->announce(self::INITIATOR);
+        $daemon->workerAnswers(1, ok: true);
+        $daemon->tickBarrier();
+
+        $this->assertCount(2, $daemon->workerServer->verdicts, 'One verdict for the abandoned round, one for this');
+        $this->assertTrue($daemon->workerServer->verdicts[1]->complete);
+    }
+
+    public function testNothingIsSupersededWhenNoRoundWasOpen(): void
+    {
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+
+        $daemon->announce(self::INITIATOR);
+
+        $this->assertSame([], $daemon->workerServer->verdicts, 'A first announcement abandons nobody');
+    }
+
+    public function testAnAnswerWithNoNumberOnItIsNotCounted(): void
+    {
+        // The tolerant reading of the worker link: a frame that lost its number reads as round 0,
+        // and 0 is no round, so the answer is dropped rather than credited to whatever is open.
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+        $daemon->announce(self::INITIATOR);
+
+        $daemon->workerAnswers(1, ok: true, round: 0);
         $daemon->tickBarrier();
 
         $this->assertSame([], $daemon->workerServer->verdicts);
@@ -209,7 +351,7 @@ final class DaemonManagerDbReHydrateBarrierTest extends TestCase
     {
         $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
 
-        $daemon->announceFromNode('node-a');
+        $daemon->announceFromNode('node-a', self::ANNOUNCER_ROUND);
 
         $this->assertSame(
             [null],
@@ -277,36 +419,56 @@ final class DaemonManagerDbReHydrateBarrierTestManager extends DaemonManager
      */
     public function openRoundAcrossNodes(string $agentId, string $nodeId): void
     {
-        $this->agentManagerDaemon->openReHydrateRound(
+        $round = $this->agentManagerDaemon->openReHydrateRound(
             $agentId,
+            null,
             null,
             [ReHydrateRound::daemonParticipant(), ReHydrateRound::nodeParticipant($nodeId)],
             microtime(true) + self::BARRIER_TEST_DEADLINE_SECONDS,
         );
-        $this->agentManagerDaemon->ackReHydrateParticipant(ReHydrateRound::daemonParticipant(), true, null);
+        $this->agentManagerDaemon->ackReHydrateParticipant($round, ReHydrateRound::daemonParticipant(), true, null);
     }
 
     /**
      * Announces a swap this node was told about over the mesh.
      *
+     * The number is the announcing node's own, carried the way its announcement carries it: this
+     * node keeps it as an opaque token and returns it with the answer it sends back.
+     *
      * @param string $announcerNodeId Node that replaced the database and awaits this node's answer
+     * @param int $replyToRound Round that node opened its own round under
      * @throws AgentException When routing the announcement fails
      */
-    public function announceFromNode(string $announcerNodeId): void
+    public function announceFromNode(string $announcerNodeId, int $replyToRound): void
     {
-        $this->queueAnnouncement(null, $announcerNodeId);
+        $this->queueAnnouncement(null, $announcerNodeId, $replyToRound);
     }
 
     /**
      * Delivers one worker's answer, the way its own link would.
      *
+     * The round defaults to the one currently open, which is what a worker answering the frame it
+     * was just sent echoes back; a case about a straggler names the older number itself.
+     *
      * @param int $workerIndex Index of the answering worker
      * @param bool $ok Whether that worker re-read its collections
      * @param ?string $error Failure text when it did not
+     * @param ?int $round Round the answer names, or null for the one open now
      */
-    public function workerAnswers(int $workerIndex, bool $ok, ?string $error = null): void
+    public function workerAnswers(int $workerIndex, bool $ok, ?string $error = null, ?int $round = null): void
     {
-        $this->agentManagerDaemon->handleWorkerDbReHydrated($workerIndex, new WorkerDbReHydratedDTO($ok, $error));
+        $this->agentManagerDaemon->handleWorkerDbReHydrated(
+            $workerIndex,
+            new WorkerDbReHydratedDTO($round ?? $this->currentRound(), $ok, $error),
+        );
+    }
+
+    /**
+     * @return int Number of the round open on this daemon right now, 0 when none is
+     */
+    public function currentRound(): int
+    {
+        return $this->agentManagerDaemon->currentReHydrateRound();
     }
 
     /**
@@ -376,15 +538,16 @@ final class DaemonManagerDbReHydrateBarrierTestManager extends DaemonManager
      *
      * @param ?string $agentId Agent awaiting the verdict, null when another node announced the swap
      * @param ?string $replyToNodeId Node that announced the swap to this one, null when this node did
+     * @param ?int $replyToRound Round that node is waiting under, null when this node announced the swap
      * @throws AgentException When routing the announcement fails
      */
-    private function queueAnnouncement(?string $agentId, ?string $replyToNodeId): void
+    private function queueAnnouncement(?string $agentId, ?string $replyToNodeId, ?int $replyToRound = null): void
     {
         Hilos::$sr->queueSignal(
             signalSource: new SignalSource(SignalSource::DB),
             signalType: new SignalType(SignalTypeConstants::DB_REHYDRATE),
             signalName: new SignalName(SignalConstants::DB_REHYDRATE),
-            signalData: new DbReHydrateSignalData($agentId, $replyToNodeId),
+            signalData: new DbReHydrateSignalData($agentId, $replyToNodeId, $replyToRound),
         );
 
         $drain = Closure::bind(
@@ -444,6 +607,21 @@ final class DaemonManagerDbReHydrateBarrierTestWorkerServer extends WorkerServer
     }
 
     /**
+     * @return list<int> Round number each announcement carried, one entry per frame sent to a worker
+     */
+    public function announcedRounds(): array
+    {
+        $rounds = [];
+        foreach ($this->clients as $client) {
+            if ($client instanceof DaemonManagerDbReHydrateBarrierTestWorkerClient) {
+                $rounds = [...$rounds, ...$client->announcedRounds()];
+            }
+        }
+
+        return $rounds;
+    }
+
+    /**
      * @param DbReHydrateCompleteDTO $dto Verdict addressed to the agent that announced the swap
      */
     public function deliverDbReHydrateComplete(DbReHydrateCompleteDTO $dto): void
@@ -492,16 +670,42 @@ final class DaemonManagerDbReHydrateBarrierTestWorkerClient extends WorkerClient
     public function announcedAgentIds(): array
     {
         $named = [];
+        foreach ($this->announcements() as $decoded) {
+            $agentId = $decoded[AgentConstants::FIELD_AGENT_ID] ?? null;
+            $named[] = $agentId === null ? null : (string)$agentId;
+        }
+
+        return $named;
+    }
+
+    /**
+     * @return list<int> Round number each re-hydrate announcement on this link carried
+     */
+    public function announcedRounds(): array
+    {
+        $rounds = [];
+        foreach ($this->announcements() as $decoded) {
+            $rounds[] = (int)($decoded[WorkerDbReHydrateMessageDTO::FIELD_ROUND] ?? 0);
+        }
+
+        return $rounds;
+    }
+
+    /**
+     * @return list<array<string, mixed>> Every re-hydrate announcement written to this link, decoded
+     */
+    private function announcements(): array
+    {
+        $announcements = [];
         foreach ($this->written as $frame) {
             $decoded = json_decode($frame, true);
             if (!is_array($decoded) || ($decoded[WorkerDTO::TYPE] ?? null) !== WorkerConstants::MESSAGE_DB_REHYDRATE) {
                 continue;
             }
 
-            $agentId = $decoded[AgentConstants::FIELD_AGENT_ID] ?? null;
-            $named[] = $agentId === null ? null : (string)$agentId;
+            $announcements[] = $decoded;
         }
 
-        return $named;
+        return $announcements;
     }
 }

@@ -53,10 +53,12 @@ final class DbReHydrateTriggerTest extends TestCase
             [
                 AgentConstants::FIELD_AGENT_ID => 'db-swapper',
                 DbReHydrateSignalData::FIELD_REPLY_TO_NODE_ID => null,
+                DbReHydrateSignalData::FIELD_REPLY_TO_ROUND => null,
             ],
             $signal->data->toArray(),
             'The swap names its announcer and nothing else - no collection and no row; an agent'
-            . ' announcing here answers to nobody else, so there is no node to reply to',
+            . ' announcing here answers to nobody else, so there is neither a node to reply to nor'
+            . ' a round of its own to answer under',
         );
         $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'Exactly one signal is queued');
     }

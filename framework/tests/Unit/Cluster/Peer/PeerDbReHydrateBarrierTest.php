@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Cluster\Peer;
 
 use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydratedDTO;
@@ -23,7 +24,7 @@ use PHPUnit\Framework\TestCase;
 use Socket;
 
 /**
- * The mesh half of the re-hydrate barrier (HIL-436).
+ * The mesh half of the re-hydrate barrier (HIL-436, HIL-694).
  *
  * The nodes of a cluster share one database, so a restore run on the leader leaves the others
  * answering out of caches of a database that no longer exists. The announcement therefore crosses
@@ -34,9 +35,18 @@ use Socket;
  * re-read" over a node that did not - which is exactly the fiction the barrier was built to
  * prevent. So the sender is the link, not the payload, the way every other frame on this mesh is
  * identified.
+ *
+ * What the payload does carry is the announcing node's round number, and it travels as an opaque
+ * token: the follower keeps it beside the node to answer and hands it back untouched, so an answer
+ * to a restore the leader has since superseded is refused there. Both mesh frames are strict about
+ * it - an announcement nobody can answer, or an answer that names no question, is refused on
+ * arrival, which is how this transport already treats a frame with no node on it.
  */
 final class PeerDbReHydrateBarrierTest extends TestCase
 {
+    /** Round the leader announced under in these cases. */
+    private const int ROUND = 5;
+
     /** @var ?EnvAccessor Previous env accessor to restore after the test */
     private ?EnvAccessor $previousEnv = null;
 
@@ -94,9 +104,12 @@ final class PeerDbReHydrateBarrierTest extends TestCase
         $barrier = new PeerDbReHydrateBarrierTestSink();
         $server->registerReHydrateBarrier($barrier);
 
-        $server->onDbReHydratedReceived($this->handshakedLink($server, 'node-b'), new PeerDbReHydratedDTO('node-b', true, []));
+        $server->onDbReHydratedReceived(
+            $this->handshakedLink($server, 'node-b'),
+            new PeerDbReHydratedDTO('node-b', self::ROUND, true, []),
+        );
 
-        $this->assertSame([['node-b', true, null]], $barrier->acks);
+        $this->assertSame([[self::ROUND, 'node-b', true, null]], $barrier->acks);
     }
 
     public function testANodeCannotAnswerForAnotherNode(): void
@@ -107,7 +120,10 @@ final class PeerDbReHydrateBarrierTest extends TestCase
         $barrier = new PeerDbReHydrateBarrierTestSink();
         $server->registerReHydrateBarrier($barrier);
 
-        $server->onDbReHydratedReceived($this->handshakedLink($server, 'node-b'), new PeerDbReHydratedDTO('node-c', true, []));
+        $server->onDbReHydratedReceived(
+            $this->handshakedLink($server, 'node-b'),
+            new PeerDbReHydratedDTO('node-c', self::ROUND, true, []),
+        );
 
         $this->assertSame([], $barrier->acks);
     }
@@ -122,11 +138,16 @@ final class PeerDbReHydrateBarrierTest extends TestCase
 
         $server->onDbReHydratedReceived(
             $this->handshakedLink($server, 'node-b'),
-            new PeerDbReHydratedDTO('node-b', false, ['worker #1: read failed: gone', 'worker #2: timeout']),
+            new PeerDbReHydratedDTO(
+                'node-b',
+                self::ROUND,
+                false,
+                ['worker #1: read failed: gone', 'worker #2: timeout'],
+            ),
         );
 
         $this->assertSame(
-            [['node-b', false, 'worker #1: read failed: gone; worker #2: timeout']],
+            [[self::ROUND, 'node-b', false, 'worker #1: read failed: gone; worker #2: timeout']],
             $barrier->acks,
         );
     }
@@ -135,7 +156,10 @@ final class PeerDbReHydrateBarrierTest extends TestCase
     {
         $server = $this->makeServer();
 
-        $server->onDbReHydrateReceived($this->handshakedLink($server, 'node-b'), new PeerDbReHydrateDTO());
+        $server->onDbReHydrateReceived(
+            $this->handshakedLink($server, 'node-b'),
+            new PeerDbReHydrateDTO(self::ROUND),
+        );
 
         $signal = Hilos::$sr->getNextQueuedSignal();
         $this->assertNotNull($signal, 'The announcement enters this node the way a local one does');
@@ -147,6 +171,36 @@ final class PeerDbReHydrateBarrierTest extends TestCase
             $signal->data->replyToNodeId,
             'This node answers for itself to whoever told it, not to an agent of its own',
         );
+        $this->assertSame(
+            self::ROUND,
+            $signal->data->replyToRound,
+            'The announcing node is waiting under this number, and only it knows what the number means',
+        );
+    }
+
+    public function testTheRoundNumberSurvivesTheRoundTripOnBothMeshFrames(): void
+    {
+        $announcement = PeerDbReHydrateDTO::fromArray(new PeerDbReHydrateDTO(self::ROUND)->toArray());
+        $this->assertSame(self::ROUND, $announcement->round);
+
+        $answer = PeerDbReHydratedDTO::fromArray(new PeerDbReHydratedDTO('node-b', self::ROUND, true, [])->toArray());
+        $this->assertSame(self::ROUND, $answer->round);
+    }
+
+    public function testAnAnnouncementWithNoRoundOnItIsRefused(): void
+    {
+        // Strict where the worker link is tolerant: an announcement whose number was lost would
+        // open a round on this node whose answer has nowhere to return to.
+        $this->expectException(PeerTransportException::class);
+
+        PeerDbReHydrateDTO::fromArray([]);
+    }
+
+    public function testAnAnswerWithNoRoundOnItIsRefused(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerDbReHydratedDTO::fromArray([PeerDbReHydratedDTO::FIELD_NODE_ID => 'node-b']);
     }
 
     /**
@@ -194,20 +248,21 @@ final class PeerDbReHydrateBarrierTest extends TestCase
  */
 final class PeerDbReHydrateBarrierTestSink implements ReHydrateBarrierSink
 {
-    /** @var list<array{0: string, 1: bool, 2: ?string}> Participant, outcome and failure text of each ack */
+    /** @var list<array{0: int, 1: string, 2: bool, 3: ?string}> Round, participant, outcome and text of each ack */
     public array $acks = [];
 
     /** @var list<string> Participants taken off the count */
     public array $drops = [];
 
     /**
+     * @param int $round Round the answering participant named
      * @param string $participant Participant label
      * @param bool $ok Whether that participant re-read its collections successfully
      * @param ?string $error Failure text when it did not
      */
-    public function ackReHydrateParticipant(string $participant, bool $ok, ?string $error): void
+    public function ackReHydrateParticipant(int $round, string $participant, bool $ok, ?string $error): void
     {
-        $this->acks[] = [$participant, $ok, $error];
+        $this->acks[] = [$round, $participant, $ok, $error];
     }
 
     /**

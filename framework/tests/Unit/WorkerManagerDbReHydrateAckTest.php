@@ -19,11 +19,12 @@ use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
 /**
- * The worker's half of the re-hydrate barrier (HIL-436).
+ * The worker's half of the re-hydrate barrier (HIL-436, HIL-694).
  *
  * A worker told that the database underneath it was replaced re-reads its collections and now
  * answers - on both outcomes. The failure branch is the whole point of the frame: it used to end
@@ -33,21 +34,38 @@ use RuntimeException;
  *
  * The other direction is the return leg: the aggregated verdict arrives addressed to the agent
  * that announced the swap, and this worker hands it to that agent and to nobody else.
+ *
+ * Every answer echoes the round it was asked under, and echoing is all the worker does with the
+ * number: it answers the frame in front of it, so two announcements in a row leave two answers
+ * carrying two numbers, and which of them still counts is the daemon's question, not this one's.
  */
 final class WorkerManagerDbReHydrateAckTest extends TestCase
 {
+    /** Round the announcements in these cases are made under. */
+    private const int ROUND = 3;
+
     /** @var ?DbContext Database context to restore after the test */
     private ?DbContext $previousDb = null;
+
+    /** Temporary main log file the undelivered-verdict case reads its line back from */
+    private string $logFile = '';
 
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->previousDb = Hilos::$db;
+        $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-db-rehydrate-ack');
+        Logger::setLogFile($this->logFile);
     }
 
     protected function tearDown(): void
     {
+        Logger::resetLogFile();
+        if (is_file($this->logFile)) {
+            unlink($this->logFile);
+        }
+
         Hilos::$db = $this->previousDb;
         Hilos::$sr = null;
 
@@ -59,9 +77,10 @@ final class WorkerManagerDbReHydrateAckTest extends TestCase
         Hilos::$db = new WorkerManagerDbReHydrateAckTestDbContext();
         $manager = new WorkerManagerDbReHydrateAckTestManager();
 
-        $manager->handleDaemonMessage(new WorkerDbReHydrateMessageDTO('backup'));
+        $manager->handleDaemonMessage(new WorkerDbReHydrateMessageDTO('backup', self::ROUND));
 
         $answer = $manager->singleAnswer();
+        $this->assertSame(self::ROUND, $answer->round, 'The answer names the announcement it answers');
         $this->assertTrue($answer->ok);
         $this->assertNull($answer->error, 'A worker that came back whole has nothing to report');
     }
@@ -75,9 +94,10 @@ final class WorkerManagerDbReHydrateAckTest extends TestCase
         );
         $manager = new WorkerManagerDbReHydrateAckTestManager();
 
-        $manager->handleDaemonMessage(new WorkerDbReHydrateMessageDTO('backup'));
+        $manager->handleDaemonMessage(new WorkerDbReHydrateMessageDTO('backup', self::ROUND));
 
         $answer = $manager->singleAnswer();
+        $this->assertSame(self::ROUND, $answer->round, 'A failure answers the same announcement a success does');
         $this->assertFalse($answer->ok);
         $this->assertSame(
             'table hilos_users is missing',
@@ -93,7 +113,7 @@ final class WorkerManagerDbReHydrateAckTest extends TestCase
         Hilos::$db = new WorkerManagerDbReHydrateAckTestDbContext(new DatabaseException('gone'));
         $manager = new WorkerManagerDbReHydrateAckTestManager();
 
-        $manager->handleDaemonMessage(new WorkerDbReHydrateMessageDTO('backup'));
+        $manager->handleDaemonMessage(new WorkerDbReHydrateMessageDTO('backup', self::ROUND));
 
         $this->assertFalse($manager->singleAnswer()->ok);
     }
@@ -114,16 +134,23 @@ final class WorkerManagerDbReHydrateAckTest extends TestCase
         $this->assertSame(['worker #2: timeout'], $agent->outcome->problems);
     }
 
-    public function testAVerdictForAnAgentThisWorkerDoesNotHostIsDropped(): void
+    public function testAVerdictForAnAgentThisWorkerDoesNotHostIsDroppedAndSaidSo(): void
     {
         // Agents move between workers, and a verdict that arrives after its initiator has gone
-        // must not be handed to whoever happens to answer to a similar id here.
+        // must not be handed to whoever happens to answer to a similar id here. It is not dropped
+        // in silence any more (HIL-694): the announcing agent has no deadline of its own left, so
+        // a verdict that stops here stops a restore, and this line is the only trace of where.
         $manager = new WorkerManagerDbReHydrateAckTestManager();
         $agent = $manager->hostAgent();
 
         $manager->handleDaemonMessage(new DbReHydrateCompleteDTO('somebody-else', true, []));
 
         $this->assertNull($agent->outcome);
+        $this->assertStringContainsString(
+            'somebody-else',
+            $this->written(),
+            'The line names the agent the verdict could not reach',
+        );
     }
 
     public function testAnUnaddressedVerdictIsDropped(): void
@@ -134,6 +161,16 @@ final class WorkerManagerDbReHydrateAckTest extends TestCase
         $manager->handleDaemonMessage(new DbReHydrateCompleteDTO(null, true, []));
 
         $this->assertNull($agent->outcome);
+    }
+
+    /**
+     * Reads back whatever the worker wrote to the temporary log.
+     *
+     * @return string Log contents, empty when the worker stayed silent
+     */
+    private function written(): string
+    {
+        return (string)file_get_contents($this->logFile);
     }
 }
 

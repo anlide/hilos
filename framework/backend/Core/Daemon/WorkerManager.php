@@ -579,7 +579,7 @@ abstract class WorkerManager extends BaseManager
                     Logger::error("handleDbReHydrateMessage - unexpected type: " . get_class($data));
                     break;
                 }
-                $this->handleDbReHydrateMessage();
+                $this->handleDbReHydrateMessage($data);
                 break;
 
             case WorkerConstants::MESSAGE_DB_RE_READ:
@@ -987,15 +987,24 @@ abstract class WorkerManager extends BaseManager
      * where nobody restoring a database would ever see it; now it also travels back as a negative
      * answer, and it is what keeps the node closed to the verifiers who would otherwise read this
      * worker's stale caches.
+     *
+     * The answer echoes the announcement's round number back and nothing more (HIL-694): the
+     * worker neither stores it nor reads any meaning into it, because it is answering the frame
+     * in front of it. Two announcements in a row therefore get two answers, each carrying its
+     * own number, and it is the daemon that decides which of them still counts.
+     *
+     * @param WorkerDbReHydrateMessageDTO $dto Announcement carrying the round to answer under
      */
-    private function handleDbReHydrateMessage(): void
+    private function handleDbReHydrateMessage(WorkerDbReHydrateMessageDTO $dto): void
     {
         try {
             DbSyncApplicator::applyReHydrate();
-            $this->daemonClient->send(new WorkerDbReHydratedDTO(ok: true));
+            $this->daemonClient->send(new WorkerDbReHydratedDTO(round: $dto->round, ok: true));
         } catch (DatabaseException | LogicException $e) {
             Logger::error('handleDbReHydrateMessage - could not re-read the database: ' . $e->getMessage());
-            $this->daemonClient->send(new WorkerDbReHydratedDTO(ok: false, error: $e->getMessage()));
+            $this->daemonClient->send(
+                new WorkerDbReHydratedDTO(round: $dto->round, ok: false, error: $e->getMessage()),
+            );
         }
     }
 
@@ -1022,7 +1031,10 @@ abstract class WorkerManager extends BaseManager
      * Relays the aggregated re-hydrate verdict to the agent that announced the swap (HIL-436).
      *
      * A no-op when the agent is not (or no longer) hosted here, mirroring
-     * {@see handleProtectedModeReady()}.
+     * {@see handleProtectedModeReady()} - but a loud one, the last of the four steps of the
+     * delivery that used to end in silence (HIL-694). The announcing agent has no deadline of its
+     * own any more, so a verdict that stops here stops a restore, and this line is what says
+     * where it stopped.
      *
      * @param DbReHydrateCompleteDTO $data Verdict naming the announcing agent
      */
@@ -1034,6 +1046,8 @@ abstract class WorkerManager extends BaseManager
 
         $agent = $this->agentManager->getAgent($data->agentId);
         if ($agent === null) {
+            Logger::error("handleDbReHydrateComplete - agent '{$data->agentId}' is not hosted on this worker");
+
             return;
         }
 

@@ -1203,7 +1203,11 @@ final class PeerServer extends AbstractServer implements
             signalSource: new SignalSource(SignalSource::DB),
             signalType: new SignalType(SignalTypeConstants::DB_REHYDRATE),
             signalName: new SignalName(SignalConstants::DB_REHYDRATE),
-            signalData: new DbReHydrateSignalData(agentId: null, replyToNodeId: $from),
+            signalData: new DbReHydrateSignalData(
+                agentId: null,
+                replyToNodeId: $from,
+                replyToRound: $frame->round,
+            ),
         );
     }
 
@@ -1231,6 +1235,7 @@ final class PeerServer extends AbstractServer implements
         }
 
         $this->reHydrateBarrier?->ackReHydrateParticipant(
+            $frame->round,
             ReHydrateRound::nodeParticipant($from),
             $frame->ok,
             $frame->problems === [] ? null : implode('; ', $frame->problems),
@@ -1400,22 +1405,32 @@ final class PeerServer extends AbstractServer implements
      * Sent by the node whose agent replaced the database, which for the monopolistic agent that
      * runs restores is the leader. Nothing addresses a leader here on purpose: every master holds
      * the same database and each answers for itself, so the announcement needs no relay.
+     *
+     * The number is this node's own and travels as an opaque token: the receivers do not order
+     * themselves by it and never compare it with a number of their own, they only return it, so
+     * that an answer to a superseded announcement is not credited here (HIL-694).
+     *
+     * @param int $round Number this node opened its own round under
      */
-    public function broadcastDbReHydrate(): void
+    public function broadcastDbReHydrate(int $round): void
     {
-        $this->broadcastToMasters(new PeerDbReHydrateDTO());
+        $this->broadcastToMasters(new PeerDbReHydrateDTO($round));
     }
 
     /**
      * Reports this node's whole re-hydrate verdict back to the node that announced the swap.
      *
      * @param string $announcerNodeId Node that sent the announcement
+     * @param int $round Number that node is waiting under, as its announcement carried it
      * @param bool $ok Whether every process on this node re-read successfully
      * @param list<string> $problems This node's own problem lines, empty when it came back whole
      */
-    public function sendDbReHydrated(string $announcerNodeId, bool $ok, array $problems): void
+    public function sendDbReHydrated(string $announcerNodeId, int $round, bool $ok, array $problems): void
     {
-        $this->sendToMaster($announcerNodeId, new PeerDbReHydratedDTO($this->localIdentity->nodeId, $ok, $problems));
+        $this->sendToMaster(
+            $announcerNodeId,
+            new PeerDbReHydratedDTO($this->localIdentity->nodeId, $round, $ok, $problems),
+        );
     }
 
     /**

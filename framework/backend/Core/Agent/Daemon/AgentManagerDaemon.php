@@ -59,6 +59,9 @@ use Throwable;
  */
 abstract class AgentManagerDaemon implements ReHydrateBarrierSink
 {
+    /** Problem line of a round abandoned because a newer announcement opened one over it; takes its number. */
+    private const string REHYDRATE_SUPERSEDED_PROBLEM = 'round #%d: superseded by a newer re-hydrate announcement';
+
     /** @var array<string, AgentDaemonInterface> Active agent daemons indexed by agent ID */
     protected array $agentDaemons = [];
 
@@ -83,6 +86,19 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
 
     /** @var ?string Node that announced the swap to this one; null when this node announced it itself */
     private ?string $reHydrateReplyToNodeId = null;
+
+    /** @var ?int Round number of the node that announced the swap to this one; null when this node did */
+    private ?int $reHydrateReplyToRound = null;
+
+    /**
+     * @var int Number the next round opened here will answer under.
+     *
+     * Monotonic within this process and starting at 1, which leaves 0 meaning "no round at all"
+     * - the reading a frame that carries no number falls back to. Nothing wider is needed: an
+     * answer travels back over the very link it was announced on, and no link outlives the
+     * process that holds it, so a number from a previous master cannot arrive here (HIL-694).
+     */
+    private int $reHydrateNextRound = 1;
 
     /**
      * @var ?RtNodeSourceMap What RT collections this node owns, built lazily on first use.
@@ -587,26 +603,83 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      *
      * An announcement arriving while a round is still open replaces it: the older round is about
      * a database that has since been replaced again, so its answers no longer say anything about
-     * what is on disk now. The initiator of the abandoned round stops hearing back and falls
-     * through to its own deadline, which is the same fail-closed path a lost verdict already takes.
+     * what is on disk now. The number the new round gets is what keeps those two apart afterwards
+     * - the roster of both is spelled with the same labels, so an answer left over from the
+     * abandoned round would otherwise be credited here (HIL-694).
      *
      * @param ?string $agentId Agent that announced the swap here, null when another node announced it
      * @param ?string $replyToNodeId Node that announced the swap to this one, null when this node did
+     * @param ?int $replyToRound Round number that node opened its own round under, null when this node did
      * @param list<string> $participants Participant labels, from {@see ReHydrateRound}'s factories
      * @param float $deadline Wall-clock deadline on the {@see microtime()} scale
+     * @return int Number the round just opened answers under
      */
     public function openReHydrateRound(
         ?string $agentId,
         ?string $replyToNodeId,
+        ?int $replyToRound,
         array $participants,
         float $deadline,
-    ): void {
+    ): int {
+        $number = $this->reHydrateNextRound++;
+
         $round = new ReHydrateRound();
-        $round->start($participants, $deadline);
+        $round->start($number, $participants, $deadline);
 
         $this->reHydrateRound = $round;
         $this->reHydrateInitiator = $agentId;
         $this->reHydrateReplyToNodeId = $replyToNodeId;
+        $this->reHydrateReplyToRound = $replyToRound;
+
+        return $number;
+    }
+
+    /**
+     * Takes the open round away as superseded and hands back the verdict its initiator is owed.
+     *
+     * Called before a new round is opened over a live one. The old round is about a database that
+     * has since been replaced again, so its answers say nothing about what is on disk now - but
+     * whoever opened it is still waiting, and with the agent's own deadline gone (HIL-694) nothing
+     * else would ever end that wait. So the round leaves loudly: one problem line naming its
+     * number, addressed exactly the way an ordinary verdict is.
+     *
+     * @return ?ReHydrateVerdict Verdict of the abandoned round and who is waiting for it, or null when none was open
+     */
+    public function supersedeReHydrateRound(): ?ReHydrateVerdict
+    {
+        $round = $this->reHydrateRound;
+        if ($round === null) {
+            return null;
+        }
+
+        $verdict = new ReHydrateVerdict(
+            $this->reHydrateInitiator,
+            $this->reHydrateReplyToNodeId,
+            false,
+            [sprintf(self::REHYDRATE_SUPERSEDED_PROBLEM, $round->round())],
+            $this->reHydrateReplyToRound,
+        );
+
+        $this->reHydrateRound = null;
+        $this->reHydrateInitiator = null;
+        $this->reHydrateReplyToNodeId = null;
+        $this->reHydrateReplyToRound = null;
+
+        return $verdict;
+    }
+
+    /**
+     * The number the round open here answers under, for a participant on this very node.
+     *
+     * The master re-reads its own collections like everybody else, and its answer takes no wire
+     * at all - so it has nowhere to echo a number back from and reads it here instead. Everyone
+     * else gets the number in the announcement and returns that (HIL-694).
+     *
+     * @return int Number of the open round, 0 when no round is open
+     */
+    public function currentReHydrateRound(): int
+    {
+        return $this->reHydrateRound?->round() ?? 0;
     }
 
     /**
@@ -615,13 +688,31 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * A no-op when no round is open: an answer with no question is a late duplicate, and the
      * round itself drops those too.
      *
+     * An answer that names another round is the one refusal worth a log line (HIL-694): the
+     * participant is on this round's roster too, so nothing downstream would ever notice that a
+     * previous restore's answer was quietly dropped here, and the operator reading a barrier that
+     * timed out needs to see that its participant did reply - to the wrong question.
+     *
+     * @param int $round Number the answering participant echoed back, 0 when the frame carried none
      * @param string $participant Participant label, from {@see ReHydrateRound}'s factories
      * @param bool $ok Whether that participant re-read its collections successfully
      * @param ?string $error Failure text when it did not
      */
-    public function ackReHydrateParticipant(string $participant, bool $ok, ?string $error): void
+    public function ackReHydrateParticipant(int $round, string $participant, bool $ok, ?string $error): void
     {
-        $this->reHydrateRound?->ack($participant, $ok, $error);
+        $openRound = $this->reHydrateRound;
+        if ($openRound === null || $openRound->ack($round, $participant, $ok, $error)) {
+            return;
+        }
+
+        Logger::warning(
+            'DB re-hydrate answer from another round dropped',
+            [
+                'participant' => $participant,
+                'answered' => $round,
+                'open' => $openRound->round(),
+            ],
+        );
     }
 
     /**
@@ -645,7 +736,12 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      */
     public function handleWorkerDbReHydrated(int $workerIndex, WorkerDbReHydratedDTO $dto): void
     {
-        $this->ackReHydrateParticipant(ReHydrateRound::workerParticipant($workerIndex), $dto->ok, $dto->error);
+        $this->ackReHydrateParticipant(
+            $dto->round,
+            ReHydrateRound::workerParticipant($workerIndex),
+            $dto->ok,
+            $dto->error,
+        );
     }
 
     /**
@@ -671,11 +767,19 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
 
         $agentId = $this->reHydrateInitiator;
         $replyToNodeId = $this->reHydrateReplyToNodeId;
+        $replyToRound = $this->reHydrateReplyToRound;
         $this->reHydrateRound = null;
         $this->reHydrateInitiator = null;
         $this->reHydrateReplyToNodeId = null;
+        $this->reHydrateReplyToRound = null;
 
-        return new ReHydrateVerdict($agentId, $replyToNodeId, $round->isComplete(), $round->problems());
+        return new ReHydrateVerdict(
+            $agentId,
+            $replyToNodeId,
+            $round->isComplete(),
+            $round->problems(),
+            $replyToRound,
+        );
     }
 
     /**

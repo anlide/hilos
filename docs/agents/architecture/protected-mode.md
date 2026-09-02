@@ -215,6 +215,14 @@ Four properties generalize to whatever destructive operation comes next:
   deadline (`HILOS_DB_REHYDRATE_TIMEOUT`), and takes a participant that
   disappeared off the count rather than waiting for it. A negative answer settles
   the round without completing it — fail-closed, like entry.
+- **One barrier, one number, one clock.** Every round carries a number the
+  participants echo back, because the roster is spelled with labels — `daemon`,
+  `worker #2`, a node id — that name the same processes in every round, so a
+  straggler from the previous one would otherwise close this one. That number is
+  also what let the announcing agent drop its own deadline (HIL-694): the round
+  always answers — on a verdict, on its deadline, or on being superseded by a
+  newer announcement — and every step of the delivery that used to return in
+  silence now names the agent it could not reach.
 - **Repair work never holds the freeze.** A snapshot that could not be taken or a
   session that could not be written is logged and the run proceeds. The people
   affected see a login screen; the alternative is a node left frozen over a

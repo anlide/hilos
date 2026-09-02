@@ -109,6 +109,7 @@ use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DbSyncApplicator;
+use Hilos\Database\DTO\ReHydrateVerdict;
 use Hilos\Database\ReHydrateRound;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
@@ -1829,10 +1830,11 @@ abstract class DaemonManager extends BaseManager implements
                 // set of processes actually told to re-read and no early answer arrives at a
                 // round that does not exist yet (HIL-436). Answers are read from sockets in a
                 // later phase of the loop, so nothing can slip in between the two calls below.
+                $reHydrateRound = 0;
                 if ($signal->signalType->getType() === SignalTypeConstants::DB_REHYDRATE) {
-                    $this->openReHydrateRound($workerServer, $peerServer, $signal);
+                    $reHydrateRound = $this->openReHydrateRound($workerServer, $peerServer, $signal);
                 }
-                $this->sendSyncToWorkers($workerServer, $signal);
+                $this->sendSyncToWorkers($workerServer, $signal, reHydrateRound: $reHydrateRound);
                 $this->handleDaemonSignal($signal);
                 $this->broadcastRtSyncToPeers($peerServer, $signal);
                 $this->broadcastDbSyncToPeers($peerServer, $signal);
@@ -2076,11 +2078,14 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param WorkerServer $workerServer Worker server instance
      * @param SignalDTO $signal Signal DTO to send
+     * @param ?string $originNodeId Node the write happened on, or null when it was this one
+     * @param int $reHydrateRound Round the workers are to answer under; read by the re-hydrate arm alone
      */
     private function sendSyncToWorkers(
         WorkerServer $workerServer,
         SignalDTO $signal,
         ?string $originNodeId = null,
+        int $reHydrateRound = 0,
     ): void {
         $signalName = $signal->signalName->getName();
 
@@ -2103,9 +2108,12 @@ abstract class DaemonManager extends BaseManager implements
             ),
             // The one sync-family frame with no collection to unwrap: the database was replaced
             // (HIL-479), and all the signal names is the agent waiting to hear that everybody
-            // re-read it (HIL-436).
+            // re-read it (HIL-436). The round number is the caller's rather than the signal's:
+            // it is minted when the barrier opens, which happens one step above this call, and
+            // it is what tells this announcement's answers from the previous one's (HIL-694).
             SignalConstants::DB_REHYDRATE => new WorkerDbReHydrateMessageDTO(
                 self::syncSignalData($signal->data, DbReHydrateSignalData::class)->agentId,
+                $reHydrateRound,
             ),
             SignalConstants::RT_SYNC_CREATED => new WorkerRtSyncCreatedMessageDTO(
                 self::syncSignalData($signal->data, RtSyncCreatedSignalData::class),
@@ -3470,12 +3478,20 @@ abstract class DaemonManager extends BaseManager implements
      */
     private function applyReHydrateContained(): void
     {
+        $round = $this->agentManagerDaemon->currentReHydrateRound();
+
         try {
             DbSyncApplicator::applyReHydrate();
-            $this->agentManagerDaemon->ackReHydrateParticipant(ReHydrateRound::daemonParticipant(), true, null);
+            $this->agentManagerDaemon->ackReHydrateParticipant(
+                $round,
+                ReHydrateRound::daemonParticipant(),
+                true,
+                null,
+            );
         } catch (DatabaseException | LogicException $e) {
             Logger::error('DB re-hydrate apply could not re-read the database', ['error' => $e->getMessage()]);
             $this->agentManagerDaemon->ackReHydrateParticipant(
+                $round,
                 ReHydrateRound::daemonParticipant(),
                 false,
                 $e->getMessage(),
@@ -3497,11 +3513,21 @@ abstract class DaemonManager extends BaseManager implements
      * an announcement that arrived over the mesh is answered, never re-broadcast, or the mesh would
      * echo it back and forth forever.
      *
+     * The round is numbered, and the number is what the answers come back under: the roster is
+     * spelled with labels that name the same processes in every round there ever is, so a restore
+     * announced while a previous round is still open would otherwise be closed by that round's
+     * leftovers (HIL-694). The number is minted here and travels out with the announcement.
+     *
+     * A round opened over a live one no longer abandons it in silence, either: the old round is
+     * answered as unclosed before the new one starts, because its initiator has no deadline of its
+     * own to fall through to any more.
+     *
      * @param WorkerServer $workerServer Worker server holding this node's worker links
      * @param ?PeerServer $peerServer Peer server holding this node's mesh links, or null outside a cluster
      * @param SignalDTO $signal Re-hydrate announcement naming whoever awaits the verdict
+     * @return int Number the round just opened answers under
      */
-    private function openReHydrateRound(WorkerServer $workerServer, ?PeerServer $peerServer, SignalDTO $signal): void
+    private function openReHydrateRound(WorkerServer $workerServer, ?PeerServer $peerServer, SignalDTO $signal): int
     {
         $announcement = self::syncSignalData($signal->data, DbReHydrateSignalData::class);
 
@@ -3519,16 +3545,40 @@ abstract class DaemonManager extends BaseManager implements
             }
         }
 
-        $this->agentManagerDaemon->openReHydrateRound(
+        // The round already open, if there is one, is taken away first and answered: its initiator
+        // is still waiting, and since HIL-694 nothing on its side times out any more. Its number
+        // is read before it goes, because that is the only place it is still legible.
+        $abandonedRound = $this->agentManagerDaemon->currentReHydrateRound();
+        $superseded = $this->agentManagerDaemon->supersedeReHydrateRound();
+
+        $round = $this->agentManagerDaemon->openReHydrateRound(
             $announcement->agentId,
             $announcement->replyToNodeId,
+            $announcement->replyToRound,
             $participants,
             microtime(true) + $this->reHydrateTimeoutSeconds(),
         );
 
-        if ($announcedHere) {
-            $peerServer?->broadcastDbReHydrate();
+        // Written after the new number exists, because the line is only worth reading with both
+        // on it: one restore displaced another, and the refusal below went to whoever asked for
+        // the first. The generic "did not close" error that follows names neither.
+        if ($superseded !== null) {
+            Logger::warning(
+                'DB re-hydrate round superseded by a newer announcement',
+                [
+                    'superseded' => $abandonedRound,
+                    'opened' => $round,
+                    'refused' => $superseded->agentId ?? $superseded->replyToNodeId,
+                ],
+            );
+            $this->deliverReHydrateVerdict($superseded);
         }
+
+        if ($announcedHere) {
+            $peerServer?->broadcastDbReHydrate($round);
+        }
+
+        return $round;
     }
 
     /**
@@ -3544,6 +3594,22 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
+        $this->deliverReHydrateVerdict($verdict);
+    }
+
+    /**
+     * Routes one settled re-hydrate verdict to whoever is waiting for it.
+     *
+     * Split out of {@see tickReHydrateRound()} so the round abandoned by a newer announcement
+     * leaves by the very same road an ordinary one does (HIL-694) - to the agent on the node that
+     * announced the swap, back over the mesh on a node that was told about it. Two roads would be
+     * two places to get the addressing wrong, and the abandoned round is the one whose initiator
+     * has nothing else left to end its wait.
+     *
+     * @param ReHydrateVerdict $verdict Settled verdict and the one address waiting for it
+     */
+    private function deliverReHydrateVerdict(ReHydrateVerdict $verdict): void
+    {
         if (!$verdict->complete) {
             Logger::error(
                 'DB re-hydrate barrier did not close',
@@ -3551,9 +3617,14 @@ abstract class DaemonManager extends BaseManager implements
             );
         }
 
-        if ($verdict->replyToNodeId !== null) {
+        // Both halves of the mesh address or neither: a verdict that names the node but not the
+        // round has no question to answer, and falling through reports it where a lost verdict is
+        // already reported rather than sending an answer nobody asked for.
+        $replyToRound = $verdict->replyToRound;
+        if ($verdict->replyToNodeId !== null && $replyToRound !== null) {
             $this->findPeerServer()?->sendDbReHydrated(
                 $verdict->replyToNodeId,
+                $replyToRound,
                 $verdict->complete,
                 $verdict->problems,
             );

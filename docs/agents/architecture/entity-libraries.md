@@ -349,9 +349,12 @@ An agent action has no ADMIN level, and we are not adding one (owner's decision,
 `DEFAULT_TIMEOUT_MS = 30000`, refusal `The action timed out.` — so a silent
 writer never hangs the person; it gives them a generic sentence instead of a
 clear one. A server-side deadline (the shape is
-`BackupAgent::REHYDRATE_WAIT_SECONDS`) is therefore not part of the form: it is
-written for the case where the owner may be silent for long, and its job is to
-tell the person "the owner did not answer" rather than "it expired".
+`BackupAgent::RESTORE_FREEZE_WAIT_SECONDS`) is therefore not part of the form: it
+is written for the case where the owner may be silent for long, and its job is to
+tell the person "the owner did not answer" rather than "it expired". Where the
+owner does always answer, a second deadline is worse than none: the re-hydrate
+wait carried one on top of the daemon's until HIL-694, and the two together let a
+verdict of a finished restore close the wait of the next one.
 
 **Worked example** —
 `framework/backend/Pages/Communications/AbstractHilosCommunicationsDeliveriesPage.php`.

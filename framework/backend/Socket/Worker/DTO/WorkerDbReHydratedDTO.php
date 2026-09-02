@@ -23,6 +23,9 @@ use Hilos\Socket\Worker\WorkerDTO;
  */
 class WorkerDbReHydratedDTO extends WorkerDTO
 {
+    /** @var string Number of the round this answer belongs to, echoed back from the announcement */
+    public const string FIELD_ROUND = 'round';
+
     /** @var string Whether the worker re-read its collections successfully */
     public const string FIELD_OK = 'ok';
 
@@ -33,10 +36,15 @@ class WorkerDbReHydratedDTO extends WorkerDTO
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_DB_REHYDRATED;
 
     /**
+     * The number is echoed and not remembered: a worker answers the frame in front of it, so two
+     * announcements in a row get two answers, each under its own number (HIL-694).
+     *
+     * @param int $round Number of the announcement being answered, as it arrived
      * @param bool $ok Whether this worker re-read every DB-backed collection
      * @param ?string $error Failure text when it did not, null on success
      */
     public function __construct(
+        public readonly int $round,
         public readonly bool $ok,
         public readonly ?string $error = null,
     ) {
@@ -61,6 +69,7 @@ class WorkerDbReHydratedDTO extends WorkerDTO
     {
         return [
             self::TYPE => self::MESSAGE_TYPE,
+            self::FIELD_ROUND => $this->round,
             self::FIELD_OK => $this->ok,
             self::FIELD_ERROR => $this->error,
         ];
@@ -72,7 +81,10 @@ class WorkerDbReHydratedDTO extends WorkerDTO
      * A frame whose verdict did not survive the wire is read as a failure rather than a success:
      * the round it feeds is fail-closed, and the missing field is itself a problem worth naming.
      *
-     * @param array<string, mixed> $data Source data (ok, error)
+     * A frame with no number is read the same tolerant way, and it needs no refusal of its own:
+     * rounds are numbered from 1, so 0 matches none of them and the answer is simply not credited.
+     *
+     * @param array<string, mixed> $data Source data (round, ok, error)
      * @return static DTO instance
      */
     public static function fromArray(array $data): static
@@ -80,6 +92,8 @@ class WorkerDbReHydratedDTO extends WorkerDTO
         $error = $data[self::FIELD_ERROR] ?? null;
 
         return new static(
+            // external-boundary: an answer with no number belongs to no round, which is the reading we want
+            round: (int)($data[self::FIELD_ROUND] ?? 0),
             ok: (bool)($data[self::FIELD_OK] ?? false),
             error: $error === null ? null : (string)$error,
         );

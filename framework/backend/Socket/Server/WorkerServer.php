@@ -1415,20 +1415,32 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      *
      * Resolves that agent's worker exactly like {@see deliverProtectedModeReady()}, from an id
      * that is already composed - it travelled on the announcement - so nothing is rebuilt here.
-     * A no-op when the agent is not (or no longer) hosted on this node: an agent that died with
-     * its restore unfinished has no verdict to receive, and the run it left behind is the
+     * Still a no-op when the agent is not (or no longer) hosted on this node: an agent that died
+     * with its restore unfinished has no verdict to receive, and the run it left behind is the
      * supervisor's problem, not this relay's.
+     *
+     * Each of the three ways that happens now says so (HIL-694). They used to be silent returns,
+     * which was affordable while the announcing agent kept a deadline of its own: an undelivered
+     * verdict simply ran that timer out. It has none any more, so an undelivered verdict is a
+     * restore that never finishes, and the only trace of why is written here. The three are told
+     * apart on purpose - a verdict addressed to nobody, an agent nothing placed anywhere, and an
+     * agent on a worker whose link is gone are three different faults with three different places
+     * to look.
      *
      * @param DbReHydrateCompleteDTO $dto Verdict addressed to the agent that announced the swap
      */
     public function deliverDbReHydrateComplete(DbReHydrateCompleteDTO $dto): void
     {
         if ($dto->agentId === null) {
+            Logger::error('DB re-hydrate verdict names no agent to deliver it to');
+
             return;
         }
 
         $workerInfo = $this->agentManager->getAgentWorkerInfo($dto->agentId);
         if ($workerInfo === null) {
+            Logger::error("DB re-hydrate verdict undelivered: agent '{$dto->agentId}' is placed on no worker");
+
             return;
         }
 
@@ -1437,6 +1449,8 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
             $workerInfo->isMonopolistic,
         ));
         if ($workerClient === null) {
+            Logger::error("DB re-hydrate verdict undelivered: the worker hosting '{$dto->agentId}' has no live link");
+
             return;
         }
 

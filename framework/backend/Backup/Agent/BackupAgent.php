@@ -195,16 +195,6 @@ final class BackupAgent extends AbstractAgent
      */
     private const int RESTORE_FREEZE_WAIT_SECONDS = 60;
 
-    /**
-     * Seconds this agent waits for the re-hydrate barrier before finishing the run without it.
-     *
-     * Not the daemon's timeout under another name: the daemon bounds how long it waits for the
-     * processes, this bounds how long the agent waits for the daemon, and it is deliberately the
-     * looser of the two so the daemon's own verdict - which names who is missing - normally
-     * arrives first. Reaching this one means no answer came at all.
-     */
-    private const int REHYDRATE_WAIT_SECONDS = 120;
-
     /** The in-flight backup child, or null when idle (the single-flight lock). */
     private ?Process $childProcess = null;
 
@@ -315,15 +305,22 @@ final class BackupAgent extends AbstractAgent
     private ?array $pendingCarryover = null;
 
     /**
-     * Deadline (microtime) by which the re-hydrate barrier must answer; 0.0 when none is open.
+     * Whether a re-hydrate barrier this agent opened is still unanswered.
      *
      * The wait outlives a tick, so the run's finalization is split around it: the child is over,
      * but the restore is not, and nothing may be let back in until every process has re-read the
-     * database that was just put underneath them (HIL-436). The deadline is this agent's own
-     * insurance - the daemon has one too, and this one covers the case where the daemon does not
-     * answer at all.
+     * database that was just put underneath them (HIL-436).
+     *
+     * A flag and not a deadline of its own (HIL-694). There used to be a second timer here, on
+     * top of the daemon's, and two timers over one barrier is what let a verdict belonging to a
+     * finished restore land on the one after it: this agent gave up first, started the next
+     * restore, and the late verdict closed that one's wait. The daemon's round bounds the wait
+     * and always answers - on a verdict, on its own deadline, or on the announcement that
+     * supersedes the round - so the second timer only ever bounded the case where the answer was
+     * lost on the way. That case is now loud instead: every step of the delivery that used to
+     * return in silence writes an error naming the agent it could not reach.
      */
-    private float $rehydrateDeadline = 0.0;
+    private bool $awaitingRehydrate = false;
 
     /** Whether the restore child of the pending barrier exited cleanly; meaningless when none is open. */
     private bool $rehydrateChildSucceeded = false;
@@ -447,7 +444,6 @@ final class BackupAgent extends AbstractAgent
             $this->logAgentError('Backup shipping pass failed: ' . $e->getMessage());
         }
 
-        $this->expireStaleRehydrate();
         $this->tickProtectedModeOperator();
         if ($this->directoryRescanDue()) {
             $this->refreshHistory();
@@ -2294,7 +2290,7 @@ final class BackupAgent extends AbstractAgent
      */
     private function awaitingRehydrate(): bool
     {
-        return $this->rehydrateDeadline > 0.0;
+        return $this->awaitingRehydrate;
     }
 
     /**
@@ -2350,7 +2346,7 @@ final class BackupAgent extends AbstractAgent
         }
 
         $this->rehydrateChildSucceeded = $success;
-        $this->rehydrateDeadline = microtime(true) + self::REHYDRATE_WAIT_SECONDS;
+        $this->awaitingRehydrate = true;
 
         $view = $this->restoreView();
         $view?->actions->markDatabaseTouched($databaseTouched);
@@ -2392,7 +2388,7 @@ final class BackupAgent extends AbstractAgent
      */
     private function completeRestore(bool $complete, array $problems): void
     {
-        $this->rehydrateDeadline = 0.0;
+        $this->awaitingRehydrate = false;
 
         $id = $this->currentBackupId;
         if ($id === null) {
@@ -2580,29 +2576,11 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
-     * Settles a re-hydrate barrier the daemon never answered.
-     *
-     * The daemon bounds the wait itself and answers on its own deadline, so reaching this one means
-     * the answer never arrived at all - a lost frame, or a daemon that stopped ticking. Waiting
-     * forever is the one outcome that must not happen: the run would stay unfinished, the monitor
-     * would poll a re-hydrating row that never moves, and the subsystem would refuse every later
-     * backup and restore until the agent was restarted.
-     */
-    private function expireStaleRehydrate(): void
-    {
-        if (!$this->awaitingRehydrate() || microtime(true) < $this->rehydrateDeadline) {
-            return;
-        }
-
-        $this->completeRestore(false, ['daemon: timeout']);
-    }
-
-    /**
      * Receives the aggregated verdict of the re-hydrate barrier this agent opened (HIL-436).
      *
-     * A verdict arriving with no barrier open is dropped: the wait has already been settled by
-     * {@see expireStaleRehydrate()}, and re-finishing a run that is over would report an outcome
-     * twice and drain the pending create slot into a second child.
+     * A verdict arriving with no barrier open is dropped: the wait was already closed - by an
+     * earlier verdict, or by {@see onStop()} - and re-finishing a run that is over would report an
+     * outcome twice and drain the pending create slot into a second child.
      *
      * @param DbReHydrateOutcome $outcome Whether every process re-read, and who did not
      * @throws EnvException When a backup env value is missing or cannot be read as its type
@@ -2981,7 +2959,7 @@ final class BackupAgent extends AbstractAgent
         $this->pendingRestoreInitiatorSessionTokenHash = null;
         $this->pendingRestoreInitiatorIdentities = null;
         $this->pendingCarryover = null;
-        $this->rehydrateDeadline = 0.0;
+        $this->awaitingRehydrate = false;
         $this->rehydrateChildSucceeded = false;
         $this->rehydrateFailureDetail = null;
     }
