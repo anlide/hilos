@@ -123,6 +123,8 @@ final class PageConstants
 
     public const string HILOS_LOGS_VIEW = HilosPageConstants::HILOS_LOGS_VIEW;
 
+    public const string HILOS_LOGS_SETTINGS = HilosPageConstants::HILOS_LOGS_SETTINGS;
+
     public const string HILOS_OPERATIONS = HilosPageConstants::HILOS_OPERATIONS;
 
     public const string HILOS_USERS = HilosPageConstants::HILOS_USERS;

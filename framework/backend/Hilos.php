@@ -43,6 +43,7 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Database\Pages\PageCatalogStub;
+use Hilos\Database\Settings\Preset\SettingPresetChangeSubscriber;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogStub;
 use Hilos\Environment\EnvAccessor;
@@ -910,6 +911,7 @@ abstract class Hilos
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
         SourceChangeBus::subscribe(new OutboundRtSyncSubscriber());
         SourceChangeBus::subscribe(new LogWriteLevelSubscriber());
+        SourceChangeBus::subscribe(new SettingPresetChangeSubscriber());
 
         static::validateTopologyReferences();
     }

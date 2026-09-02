@@ -170,6 +170,9 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos logs viewer page. */
     public const string SUBSCRIPTION_PAGE_HILOS_LOGS_VIEW = 'subscription_page_hilos_logs_view';
 
+    /** Subscription signal for Hilos logging modes page. */
+    public const string SUBSCRIPTION_PAGE_HILOS_LOGS_SETTINGS = 'subscription_page_hilos_logs_settings';
+
     /** Subscription signal for Hilos operations page. */
     public const string SUBSCRIPTION_PAGE_HILOS_OPERATIONS = 'subscription_page_hilos_operations';
 
@@ -290,6 +293,9 @@ final class HilosSignalConstants
 
     /** Client → server: reset a cataloged setting back to its catalog default on the HILOS_SETTINGS page. */
     public const string SETTING_RESET = 'setting_reset';
+
+    /** Client → server: apply a named setting preset of the page's group. */
+    public const string SETTING_PRESET_APPLY = 'setting_preset_apply';
 
     // ── Hilos backup admin: list-page actions (client → server) ──
     /** Client → server: start a backup with a chosen scope on the HILOS_BACKUP page. */

@@ -21,12 +21,16 @@ use ReflectionClass;
 final class HilosPageCatalogTest extends TestCase
 {
     /**
-     * Number of entries carried over from the frontend catalog when the identity moved to the
-     * backend (HIL-624). Seven of the 67 routed keys carry no entry on purpose - four public
-     * footer pages, the profile, and the guardian pair HIL-345 answers - so this number is the
-     * transfer itself, not a count of pages.
+     * Number of entries in the catalog. Sixty of them came over from the frontend when the
+     * identity moved to the backend (HIL-624) - seven of the 67 routed keys carry no entry on
+     * purpose, four public footer pages, the profile, and the guardian pair HIL-345 answers - and
+     * every page declared since is one more, the logging modes of HIL-762 being the first.
+     *
+     * It is a deliberate-addition guard rather than a count worth knowing: a page that reaches the
+     * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
+     * it down here as well.
      */
-    private const int TRANSFERRED_ENTRIES = 60;
+    private const int CATALOG_ENTRIES = 61;
 
     /** Number of dashboard sections carried over in the same transfer. */
     private const int TRANSFERRED_SECTIONS = 5;
@@ -90,7 +94,7 @@ final class HilosPageCatalogTest extends TestCase
 
     public function testTheTransferIsComplete(): void
     {
-        self::assertCount(self::TRANSFERRED_ENTRIES, HilosPageCatalog::CATALOG);
+        self::assertCount(self::CATALOG_ENTRIES, HilosPageCatalog::CATALOG);
         self::assertCount(self::TRANSFERRED_SECTIONS, HilosPageCatalog::DASHBOARD_SECTIONS);
     }
 }

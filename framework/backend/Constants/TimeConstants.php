@@ -34,4 +34,7 @@ final class TimeConstants
 
     /** @var int Seconds in one hour */
     public const int SECONDS_PER_HOUR = 3600;
+
+    /** @var int Seconds in one day, the unit a retention period is usually stated in */
+    public const int SECONDS_PER_DAY = 24 * self::SECONDS_PER_HOUR;
 }

@@ -107,6 +107,7 @@ use Demo\Chat\Pages\Hilos\LicensePage;
 use Demo\Chat\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsRotationsPage;
+use Demo\Chat\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsDashboardPage;
@@ -280,6 +281,7 @@ final class Hilos extends HilosFacade
         LogsWorkersPage::PAGE => LogsWorkersPage::class,
         LogsRotationsPage::PAGE => LogsRotationsPage::class,
         LogsViewPage::PAGE => LogsViewPage::class,
+        LogsSettingsPage::PAGE => LogsSettingsPage::class,
         OperationsPage::PAGE => OperationsPage::class,
         HilosUsersPage::PAGE => HilosUsersPage::class,
         HilosUserPage::PAGE => HilosUserPage::class,

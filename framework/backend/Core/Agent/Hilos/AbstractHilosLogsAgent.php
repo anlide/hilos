@@ -12,6 +12,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsIndexWatchSignalData;
@@ -20,6 +21,7 @@ use Hilos\Log\LogStoreAgent;
 use Hilos\Pages\Logs\AbstractHilosLogsKeysPage;
 use Hilos\Pages\Logs\AbstractHilosLogsPage;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
+use Hilos\Pages\Logs\AbstractHilosLogsSettingsPage;
 use Hilos\Pages\Logs\AbstractHilosLogsViewPage;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
@@ -106,6 +108,7 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
      *
      * @throws InvalidArgumentException When the claim or a page's signal cannot be named
      * @throws TableRowKeyMissingException When a row of a re-served window is a placeholder and carries no key
+     * @throws HilosException When a page's declaration is unusable or the settings behind it cannot be read
      */
     public function onTick(): void
     {
@@ -114,6 +117,7 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
         AbstractHilosLogsRotationsPage::onAgentTick($this);
         AbstractHilosLogsKeysPage::onAgentTick($this);
         AbstractHilosLogsViewPage::onAgentTick($this);
+        AbstractHilosLogsSettingsPage::onAgentTick($this);
     }
 
     /**
@@ -175,6 +179,7 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
         AbstractHilosLogsRotationsPage::removeSubscriber($data->acceptKey);
         AbstractHilosLogsKeysPage::removeSubscriber($data->acceptKey);
         AbstractHilosLogsViewPage::removeSubscriber($data->acceptKey);
+        AbstractHilosLogsSettingsPage::removeSubscriber($data->acceptKey);
     }
 
     /**
