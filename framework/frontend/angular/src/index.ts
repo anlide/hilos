@@ -54,6 +54,7 @@ export { HilosPushDeviceToggle } from './HilosPushDeviceToggle.js'
 export { HilosModal, type ModalActionsContext } from './HilosModal.js'
 export { HilosActionError } from './HilosActionError.js'
 export { HilosToastHost } from './HilosToastHost.js'
+export type { HilosToastCorner } from './hilosToastCorner.js'
 export {
   HilosViewportTable,
   type ViewportTableRowContext,

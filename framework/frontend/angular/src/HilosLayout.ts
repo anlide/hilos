@@ -48,6 +48,7 @@ import {
 import { HilosLink } from './HilosLink.js'
 import { HilosMaintenance } from './HilosMaintenance.js'
 import { HilosToastHost } from './HilosToastHost.js'
+import type { HilosToastCorner } from './hilosToastCorner.js'
 import { HilosOAuthWaitModal } from './auth/HilosOAuthWaitModal.js'
 import { HILOS_ROUTER } from './hilosRouterToken.js'
 import { hilosSignal } from './hilosSignal.js'
@@ -181,7 +182,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
         }
         <!-- Transient notices float over the shell, so every page inside it can
         report an outcome without owning a notification surface of its own. -->
-        <hilos-toast-host />
+        <hilos-toast-host [corner]="toastCorner()" />
         <!-- An OAuth trip runs in another window over whatever page started it, so
         the wait belongs to the shell too: the page underneath stays subscribed and
         alive, and no project mounts anything (HIL-633). -->
@@ -199,6 +200,13 @@ export class HilosLayout {
    * identity (the default) shows no way into a surface the gate would refuse.
    */
   readonly isAdmin = input(false)
+  /**
+   * Which corner the toast stack sits in; the bottom end by default. A project
+   * chooses it once here and never per notice: different corners in different
+   * sections of one product is a reliable way to make the notices stop being
+   * noticed (toasts.md).
+   */
+  readonly toastCorner = input<HilosToastCorner>('bottom-end')
 
   // The gear targets the framework's own dashboard page; its URL is owned by
   // the framework page catalog, not restated here as a literal.

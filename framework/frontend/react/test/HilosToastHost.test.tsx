@@ -1,15 +1,113 @@
-import { createHilosToastStore } from '@hilos/core'
+import { createHilosToastStore, createSignal } from '@hilos/core'
+import type {
+  HilosRouter,
+  HilosToastSeverity,
+  HilosToastStore,
+  PageRouteMatch,
+} from '@hilos/core'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import type { RenderResult } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { HilosRouterContext } from '../src/hilosRouterContext.js'
 import { HilosToastHost } from '../src/HilosToastHost.js'
+import type { HilosToastCorner } from '../src/hilosToastCorner.js'
 
 // The host is the only place the hold events, the measurement reports and the
 // live-region wiring are written down, so this covers them once for the three
 // SDKs — the store's own behavior (lifetimes, holds, the height cap) is a core
-// unit test.
+// unit test. It also carries the card's form for the Angular host, which has no
+// component test of its own: ng test is blocked upstream and the Angular SDK
+// project is a node environment without jsdom (HIL-491).
 function byId(container: HTMLElement, id: string): HTMLElement | null {
   return container.querySelector(`[data-id="${id}"]`)
+}
+
+/**
+ * A router that only records where it was asked to go.
+ *
+ * It has to be there for the click cases at all: HilosLink hands the plain
+ * click to the navigator and swallows the event only then, and the swallow is
+ * what tells the host the reader left the page.
+ *
+ * @param visited The paths the link navigated to, in order.
+ */
+function router(visited: string[]): HilosRouter {
+  return {
+    currentRoute: createSignal<PageRouteMatch>({
+      page: 'user',
+      params: {},
+      admin: false,
+    }),
+    currentPath: createSignal(''),
+    currentTitle: createSignal(''),
+    pageError: createSignal(null),
+    pageLoading: createSignal(false),
+    clearPageError: () => {},
+    denyCurrentPage: () => {},
+    awaitPageAnswer: () => {},
+    navigate: (path: string) => {
+      visited.push(path)
+    },
+    replacePath: () => {},
+    start: () => {},
+    stop: () => {},
+  }
+}
+
+/**
+ * Render a host over one stack of its own, with a router behind its links.
+ *
+ * @param store The stack to render.
+ * @param visited The paths its links navigated to, in order.
+ * @param corner The corner the shell chose, if it chose one.
+ */
+function renderHost(
+  store: HilosToastStore,
+  visited: string[] = [],
+  corner?: HilosToastCorner,
+): RenderResult {
+  return render(
+    <HilosRouterContext.Provider value={router(visited)}>
+      <HilosToastHost store={store} corner={corner} />
+    </HilosRouterContext.Provider>,
+  )
+}
+
+/**
+ * The same stack, with a lens on the frame in which the host reports a height.
+ *
+ * React flushes the effects before render() returns, so the frame before the
+ * measurement cannot be read out of the DOM afterwards. The host reports from
+ * that very frame though — the card is committed and the store has not been
+ * told yet — so the callback runs with exactly the DOM in question on screen.
+ *
+ * @param store The stack to watch.
+ * @param seen Called once, at the first height report.
+ */
+function watchFirstReport(
+  store: HilosToastStore,
+  seen: () => void,
+): HilosToastStore {
+  let reported = false
+
+  return {
+    ...store,
+    attach: () => {
+      const viewer = store.attach()
+
+      return {
+        ...viewer,
+        reportHeight: (id: number, pixels: number) => {
+          if (!reported) {
+            reported = true
+            seen()
+          }
+          viewer.reportHeight(id, pixels)
+        },
+      }
+    },
+  }
 }
 
 /**
@@ -24,6 +122,14 @@ function switchTab(hidden: boolean): void {
   })
   fireEvent(document, new Event('visibilitychange'))
 }
+
+/** What names each severity on the card: the rail, the icon, the accent. */
+const VISUALS: [HilosToastSeverity, string, string, string][] = [
+  ['error', 'border-danger', 'bi-x-circle-fill', 'text-danger'],
+  ['success', 'border-success', 'bi-check-circle-fill', 'text-success'],
+  ['warning', 'border-warning', 'bi-exclamation-triangle-fill', 'text-warning'],
+  ['info', 'border-primary', 'bi-info-circle-fill', 'text-primary'],
+]
 
 describe('HilosToastHost', () => {
   afterEach(() => {
@@ -108,19 +214,216 @@ describe('HilosToastHost', () => {
     }
   })
 
-  it('interrupts a screen reader for a failure and waits its turn for a success', () => {
+  it('names a severity with a rail and an icon, not with a filled surface', () => {
     const store = createHilosToastStore()
-    store.push('Backup failed.', { severity: 'error' })
-    store.push('Backup created.', { severity: 'success' })
-    const { container } = render(<HilosToastHost store={store} />)
+    for (const [severity] of VISUALS) {
+      store.push(`${severity} happened`, { severity })
+    }
+    const { container } = renderHost(store)
 
-    const failure = byId(container, 'hilos-toast-error') as HTMLElement
-    expect(failure.getAttribute('role')).toBe('alert')
-    expect(failure.getAttribute('aria-live')).toBe('assertive')
+    for (const [severity, rail, icon, accent] of VISUALS) {
+      const card = byId(container, `hilos-toast-${severity}`) as HTMLElement
+      expect(card.className).not.toContain('text-bg-danger')
+      expect(card.querySelector(`.border-start.${rail}`)).not.toBeNull()
+      const glyph = card.querySelector(`i.${icon}`) as HTMLElement
+      expect(glyph.className).toContain(accent)
+      expect(glyph.getAttribute('aria-hidden')).toBe('true')
+    }
+  })
 
-    const success = byId(container, 'hilos-toast-success') as HTMLElement
-    expect(success.getAttribute('role')).toBe('status')
-    expect(success.getAttribute('aria-live')).toBe('polite')
+  it('signs a background notice and leaves the connection its own', () => {
+    const store = createHilosToastStore()
+    store.push('The export is ready', {
+      scope: 'session',
+      source: 'Backup',
+      destination: '/hilos/backup',
+    })
+    store.push('Saved', { severity: 'success' })
+    const { container } = renderHost(store)
+
+    const background = byId(container, 'hilos-toast-info') as HTMLElement
+    expect(byId(background, 'hilos-toast-source')?.textContent).toBe('Backup')
+    const own = byId(container, 'hilos-toast-success') as HTMLElement
+    expect(byId(own, 'hilos-toast-source')).toBeNull()
+  })
+
+  it('counts a repeat on the card instead of drawing a second one', () => {
+    const store = createHilosToastStore()
+    store.push('Nothing to send', { severity: 'warning' })
+    const { container } = renderHost(store)
+    expect(byId(container, 'hilos-toast-repeats')).toBeNull()
+
+    act(() => {
+      store.push('Nothing to send', { severity: 'warning' })
+      store.push('Nothing to send', { severity: 'warning' })
+    })
+
+    expect(
+      container.querySelectorAll('[data-id="hilos-toast-warning"]'),
+    ).toHaveLength(1)
+    expect(byId(container, 'hilos-toast-repeats')?.textContent).toBe('×3')
+  })
+
+  it('makes the whole card a link only when the notice leads somewhere', () => {
+    const store = createHilosToastStore()
+    store.push('The export is ready', {
+      scope: 'session',
+      source: 'Backup',
+      destination: '/hilos/backup',
+    })
+    store.push('Saved', { severity: 'success' })
+    const { container } = renderHost(store)
+
+    const link = container.querySelector(
+      '[data-id="hilos-toast-info"] a',
+    ) as HTMLElement
+    expect(link.className).toContain('stretched-link')
+    expect(link.getAttribute('href')).toBe('/hilos/backup')
+    expect(
+      container.querySelector('[data-id="hilos-toast-success"] a'),
+    ).toBeNull()
+  })
+
+  it('closes the card whose link took the reader away', () => {
+    const store = createHilosToastStore()
+    const visited: string[] = []
+    store.push('The export is ready', {
+      scope: 'session',
+      source: 'Backup',
+      destination: '/hilos/backup',
+    })
+    const { container } = renderHost(store, visited)
+
+    fireEvent.click(
+      container.querySelector('[data-id="hilos-toast-info"] a') as HTMLElement,
+    )
+
+    expect(visited).toEqual(['/hilos/backup'])
+    expect(store.toasts.get()).toHaveLength(0)
+  })
+
+  it('keeps the card when the click only opened another tab', () => {
+    const store = createHilosToastStore()
+    const visited: string[] = []
+    store.push('The export is ready', {
+      scope: 'session',
+      source: 'Backup',
+      destination: '/hilos/backup',
+    })
+    const { container } = renderHost(store, visited)
+
+    fireEvent.click(
+      container.querySelector('[data-id="hilos-toast-info"] a') as HTMLElement,
+      { ctrlKey: true },
+    )
+
+    expect(visited).toEqual([])
+    expect(store.toasts.get()).toHaveLength(1)
+  })
+
+  it('gives a card its life bar only once its height has been reported', () => {
+    const store = createHilosToastStore()
+    store.push('Saved', { severity: 'success' })
+    let cardBeforeMeasurement: Element | null = null
+    let barBeforeMeasurement: Element | null = null
+    const { container } = renderHost(
+      watchFirstReport(store, () => {
+        cardBeforeMeasurement = document.querySelector(
+          '[data-id="hilos-toast-success"]',
+        )
+        barBeforeMeasurement = document.querySelector(
+          '[data-id="hilos-toast-life"]',
+        )
+      }),
+    )
+
+    // The card is drawn before it is measured — unmeasured it has no countdown
+    // started, so it has no bar either — and the bar arrives with the render
+    // that follows the report, which is the order on screen too.
+    expect(cardBeforeMeasurement).not.toBeNull()
+    expect(barBeforeMeasurement).toBeNull()
+    expect(store.toasts.get()[0].measured).toBe(true)
+    const bar = byId(container, 'hilos-toast-life') as HTMLElement
+    expect(bar.className).toContain('text-success')
+    expect(bar.className).not.toContain('hilos-toast-life-paused')
+  })
+
+  it('draws no life bar on an error, because an error does not expire', () => {
+    const store = createHilosToastStore()
+    store.push('The report could not be built', { severity: 'error' })
+    const { container } = renderHost(store)
+
+    expect(store.toasts.get()[0].measured).toBe(true)
+    expect(byId(container, 'hilos-toast-life')).toBeNull()
+  })
+
+  it('stands the bar still while the cursor holds the countdown', () => {
+    const store = createHilosToastStore()
+    store.push('Saved', { severity: 'success' })
+    const { container } = renderHost(store)
+    const stack = byId(container, 'hilos-toasts') as HTMLElement
+
+    fireEvent.mouseOver(stack)
+    expect(
+      (byId(container, 'hilos-toast-life') as HTMLElement).className,
+    ).toContain('hilos-toast-life-paused')
+
+    fireEvent.mouseLeave(stack)
+    expect(
+      (byId(container, 'hilos-toast-life') as HTMLElement).className,
+    ).not.toContain('hilos-toast-life-paused')
+  })
+
+  it('sits in the bottom end corner until a shell moves it', () => {
+    const bottomEnd = byId(
+      renderHost(createHilosToastStore()).container,
+      'hilos-toasts',
+    ) as HTMLElement
+    expect(bottomEnd.className).toContain('end-0')
+    expect(bottomEnd.className).toContain('hilos-toast-stack-bottom')
+
+    const topStart = byId(
+      renderHost(createHilosToastStore(), [], 'top-start').container,
+      'hilos-toasts',
+    ) as HTMLElement
+    expect(topStart.className).toContain('start-0')
+    expect(topStart.className).toContain('hilos-toast-stack-top')
+  })
+
+  it('announces a measured notice, an error apart from the rest', () => {
+    const store = createHilosToastStore()
+    store.push('The report could not be built', { severity: 'error' })
+    store.push('The export is ready', {
+      scope: 'session',
+      source: 'Backup',
+      destination: '/hilos/backup',
+    })
+    const { container } = renderHost(store)
+
+    // Both regions exist from the first frame — that is the point of declaring
+    // them in advance — and a background notice names its sender there, the way
+    // its card signs itself.
+    expect(byId(container, 'hilos-toast-live-assertive')?.textContent).toBe(
+      'The report could not be built',
+    )
+    expect(byId(container, 'hilos-toast-live-polite')?.textContent).toBe(
+      'Backup: The export is ready',
+    )
+  })
+
+  it('keeps the live regions outside the stack container', () => {
+    const store = createHilosToastStore()
+    store.push('Saved', { severity: 'success' })
+    const { container } = renderHost(store)
+
+    // Inside, they would double every visible line, and the demo suites look a
+    // notice up by its text within the container.
+    expect(
+      container.querySelector('[data-id="hilos-toasts"] [aria-live]'),
+    ).toBeNull()
+    expect((byId(container, 'hilos-toasts') as HTMLElement).textContent).toBe(
+      'Saved',
+    )
   })
 
   it('gives back the cursor hold when the toast under it closes itself', () => {

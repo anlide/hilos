@@ -101,6 +101,7 @@ export {
   type HilosActionErrorProps,
 } from './HilosActionError.js'
 export { HilosToastHost, type HilosToastHostProps } from './HilosToastHost.js'
+export type { HilosToastCorner } from './hilosToastCorner.js'
 export {
   HilosViewportTable,
   type HilosViewportTableProps,

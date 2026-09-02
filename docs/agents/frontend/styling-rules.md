@@ -88,9 +88,12 @@ stock Bootstrap classes, never on declarations a consumer would supply.
 **Angular delivers the layer consumer-side.** Because `@hilos/angular` cannot
 ship transitive CSS (ng-packagr emits no side-effect stylesheet), the Vue and
 React view layers side-effect-import `hilos-styles.scss` from their entry, while
-an Angular app lists the same one-rule file in its `angular.json` `styles`
-alongside Bootstrap — the documented Angular exception to "the consumer never
-wires styling", mirroring how Angular already delivers Bootstrap itself.
+an Angular app lists **the SDK's own file** in its `angular.json` `styles`
+(`node_modules/@hilos/angular/src/hilos-styles.scss`) alongside Bootstrap — the
+documented Angular exception to "the consumer never wires styling", mirroring
+how Angular already delivers Bootstrap itself. The app carries no copy of the
+rules: the layer belongs to the framework in all three view packages, and only
+the channel that loads it differs.
 
 ## Theming
 

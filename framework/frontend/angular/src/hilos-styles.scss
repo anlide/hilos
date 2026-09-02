@@ -1,13 +1,16 @@
 // Hilos custom style layer — the single home for declarations stock Bootstrap
-// utilities cannot express (docs/agents/frontend/styling-rules.md). Bootstrap
-// itself ships compiled (imported in index.ts); this file holds only the
-// documented exceptions, each stating WHY a stock utility cannot achieve it and
-// WHAT it is for. It is loaded after Bootstrap so it wins on equal specificity.
+// utilities cannot express (docs/agents/frontend/styling-rules.md). Each rule
+// states WHY a stock utility cannot achieve it and WHAT it is for.
+//
+// The Angular SDK cannot import it the way the Vue and React ones do:
+// ng-packagr ships no transitive CSS, so an application lists this very file in
+// its angular.json styles, the same channel that already brings it Bootstrap —
+// and after Bootstrap, so these win on equal specificity (styling-rules.md).
 
 // WHY: Bootstrap ships no min-height:0 utility, yet a flex child that owns its
-// own scroll — the app-shell main region and a scrollable list — needs
-// min-height:0 so it shrinks below its content instead of growing the page,
-// letting an inner overflow-auto region scroll rather than the whole document.
+// own scroll — the app-shell main region — needs min-height:0 so it shrinks
+// below its content instead of growing the page, letting an inner overflow-auto
+// region scroll rather than the whole document.
 // WHAT: applied down a flex column to localize scrolling to one inner region.
 .min-h-0 {
   min-height: 0;

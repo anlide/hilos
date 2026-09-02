@@ -210,6 +210,12 @@ test('saving a setting raises a toast the close button dismisses', async ({
   await expect(toast).toBeVisible()
   await expect(page.getByTestId('hilos-toasts')).toBeVisible()
 
+  // The life bar is drawn only for a measured card that is not an error, so its
+  // presence is the one automatic sign that the Angular card was redrawn and
+  // that the measurement and the countdown behind it are alive — this SDK has
+  // no component test of its own (ng test is blocked upstream, HIL-491).
+  await expect(page.getByTestId('hilos-toast-life')).toBeVisible()
+
   // Dismissed by hand, well inside the stack's own expiry — the close button is
   // what is under test, so the toast has to still be there to close.
   await page.getByTestId('hilos-toast-close').click()

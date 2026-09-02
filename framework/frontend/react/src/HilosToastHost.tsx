@@ -12,46 +12,67 @@
 //
 // Markup is the Bootstrap toast component driven declaratively — `.toast.show`
 // rendered by the store rather than Bootstrap's JS Toast (the SDK ships
-// Bootstrap's CSS, not its JS; HilosModal does the same). Colored variants use
-// the documented header-less form: a body plus a close button on a `text-bg-*`
-// surface. Bootstrap classes only, no CSS of its own (styling-rules.md).
-import { useEffect, useRef } from 'react'
-import type { FocusEvent } from 'react'
+// Bootstrap's CSS, not its JS; HilosModal does the same). The card keeps the
+// stock surface — the width, the translucent body background, the border, the
+// shadow and the z-index that puts the stack over a modal — and names its
+// severity with a colored rail and an icon instead of a solid `text-bg-*` fill:
+// a fill carries neither a readable link nor a long line, and in the dark theme
+// a thin border in its place all but disappears (mockups/components/toast).
+// Bootstrap classes only; what stock utilities cannot express lives in
+// hilos-styles.scss (styling-rules.md).
+import { useEffect, useRef, useState } from 'react'
+import type { FocusEvent, MouseEvent } from 'react'
 import { hilosToasts } from '@hilos/core'
 import type {
+  HilosToast,
   HilosToastSeverity,
   HilosToastStore,
   HilosToastViewer,
 } from '@hilos/core'
 
+import { HilosLink } from './HilosLink.js'
+import type { HilosToastCorner } from './hilosToastCorner.js'
 import { useSignal } from './useSignal.js'
 
 /** Props for {@link HilosToastHost}. */
 export interface HilosToastHostProps {
   /** The stack to render; defaults to the application-wide store. */
   store?: HilosToastStore
+  /** Which corner the stack sits in; defaults to the bottom end. */
+  corner?: HilosToastCorner
 }
 
-// Each severity maps to a Bootstrap color surface; the close button flips to its
-// light variant on the dark surfaces so it stays visible.
-const SURFACE: Record<HilosToastSeverity, string> = {
-  error: 'text-bg-danger',
-  success: 'text-bg-success',
-  warning: 'text-bg-warning',
-  info: 'text-bg-secondary',
+// What names a severity on the light card: the color of the rail down its left
+// edge, the color of its icon, and the icon itself. One table of the three
+// rather than three lookups or class strings glued together in the markup —
+// glued classes read badly and cannot be grepped (CONN_VISUAL in HilosLayout is
+// the same shape).
+type ToastVisual = { rail: string; accent: string; icon: string }
+const TOAST_VISUAL: Record<HilosToastSeverity, ToastVisual> = {
+  error: {
+    rail: 'border-danger',
+    accent: 'text-danger',
+    icon: 'bi-x-circle-fill',
+  },
+  success: {
+    rail: 'border-success',
+    accent: 'text-success',
+    icon: 'bi-check-circle-fill',
+  },
+  warning: {
+    rail: 'border-warning',
+    accent: 'text-warning',
+    icon: 'bi-exclamation-triangle-fill',
+  },
+  info: {
+    rail: 'border-primary',
+    accent: 'text-primary',
+    icon: 'bi-info-circle-fill',
+  },
 }
 
-// Only a failure earns an interrupt; a success, a caveat or a plain notice waits
-// its turn rather than cutting into what the screen-reader user is listening to.
-const LIVE_REGION: Record<
-  HilosToastSeverity,
-  { role: string; ariaLive: 'assertive' | 'polite' }
-> = {
-  error: { role: 'alert', ariaLive: 'assertive' },
-  success: { role: 'status', ariaLive: 'polite' },
-  warning: { role: 'status', ariaLive: 'polite' },
-  info: { role: 'status', ariaLive: 'polite' },
-}
+/** Which of the three holds on the countdown this host owns is changing. */
+type HoldKind = 'cursor' | 'focus' | 'tab'
 
 // A focus move inside the stack — tabbing from one close button to the next — is
 // neither an arrival nor a leave, and relatedTarget is what tells those apart;
@@ -79,26 +100,72 @@ function occupiedHeight(element: HTMLElement): number {
 }
 
 /**
+ * The line a screen reader reads out for one notice.
+ *
+ * A background notice names its sender: the listener would otherwise get news
+ * with no idea who sent it, while the reader of the card sees the signature.
+ *
+ * @param toast The notice being announced.
+ */
+function spoken(toast: HilosToast): string {
+  return toast.source === null
+    ? toast.message
+    : `${toast.source}: ${toast.message}`
+}
+
+/**
  * The application's transient notice stack.
  *
- * @param props The store to render (defaults to the shared one).
+ * @param props The store to render (defaults to the shared one) and the corner
+ *   it sits in.
  */
-export function HilosToastHost({ store }: HilosToastHostProps) {
+export function HilosToastHost({ store, corner }: HilosToastHostProps) {
   const target = store ?? hilosToasts
   const toasts = useSignal(target.toasts)
   const viewer = useRef<HilosToastViewer | null>(null)
   const cards = useRef(new Map<number, HTMLDivElement>())
-  // The cursor and keyboard focus are two independent holds on the countdown: the
-  // host only reports them, the store counts them. It owns at most one hold of each
-  // kind and knows whether it is holding it, because a toast that closes under the
-  // pointer takes the release event with it: Chrome and WebKit fire no mouseleave
-  // and no focusout for an element that leaves the DOM, and they never make it up
-  // afterwards. So both holds are given back by hand in dismiss, and the cursor's
-  // one is re-taken from onMouseOver rather than onMouseEnter — mouseover also
-  // fires for the toast that slides under a cursor standing still, which is exactly
-  // what happens to the notice below the one just closed.
-  const cursorHeld = useRef(false)
-  const focusHeld = useRef(false)
+  const stack = useRef<HTMLDivElement | null>(null)
+  // The cursor, the keyboard focus and a tab nobody is looking at are three
+  // independent holds on the countdown: the host only reports them, the store
+  // counts them. The ref is the source of truth for the "at most one hold of
+  // each kind" rule — a toast that closes under the pointer takes the release
+  // event with it (Chrome and WebKit fire no mouseleave and no focusout for an
+  // element that leaves the DOM, and they never make it up afterwards), so both
+  // holds are given back by hand in dismiss and the cursor's one is re-taken
+  // from onMouseOver rather than onMouseEnter — mouseover also fires for the
+  // toast that slides under a cursor standing still, which is exactly what
+  // happens to the notice below the one just closed. The state next to it is
+  // what the life bar draws its freeze from.
+  const held = useRef({ cursor: false, focus: false, tab: false })
+  const [frozen, setFrozen] = useState(false)
+
+  /**
+   * Take one of the three holds, or give it back.
+   *
+   * Both records are written here, in the one place that also tells the store,
+   * so the bar cannot drift apart from what the store was told. The ref carries
+   * the rule because handlers read it synchronously while state in a closure
+   * arrives stale, and the store would get a second hold of the same kind; a
+   * side effect inside a useState updater is out for the other reason — under
+   * StrictMode it is called twice and the hold would reach the store twice.
+   *
+   * @param kind Which hold is changing.
+   * @param taken Whether the host is holding it from now on.
+   */
+  const setHold = (kind: HoldKind, taken: boolean): void => {
+    const attached = viewer.current
+    if (held.current[kind] === taken || (taken && attached === null)) {
+      return
+    }
+    held.current[kind] = taken
+    const { cursor, focus, tab } = held.current
+    setFrozen(cursor || focus || tab)
+    if (taken) {
+      attached?.hold()
+    } else {
+      attached?.release()
+    }
+  }
 
   // Attached for as long as this host is mounted. While no viewer is attached
   // the store's countdown does not run at all, which is what keeps a notice that
@@ -111,20 +178,11 @@ export function HilosToastHost({ store }: HilosToastHostProps) {
       attached.setViewportHeight(window.innerHeight)
     }
     // A tab nobody is looking at is a hold like the cursor and the focus: walk
-    // away and everything is still there when you come back. It is tracked
-    // because visibilitychange fires on every switch and the host owes the store
-    // exactly one hold of each kind.
-    let tabHeld = false
+    // away and everything is still there when you come back. It goes through
+    // the same writer as the other two, because the life bar owes its freeze to
+    // all three.
     const onVisibility = (): void => {
-      if (document.hidden === tabHeld) {
-        return
-      }
-      tabHeld = document.hidden
-      if (tabHeld) {
-        attached.hold()
-      } else {
-        attached.release()
-      }
+      setHold('tab', document.hidden)
     }
     onVisibility()
     window.addEventListener('resize', onResize)
@@ -134,17 +192,26 @@ export function HilosToastHost({ store }: HilosToastHostProps) {
       window.removeEventListener('resize', onResize)
       document.removeEventListener('visibilitychange', onVisibility)
       // detach gives back whatever holds this host was still holding, so the
-      // bookkeeping of the two it owns has to start clean against the next one.
+      // bookkeeping of the three it owns has to start clean against the next one.
       attached.detach()
       viewer.current = null
-      cursorHeld.current = false
-      focusHeld.current = false
+      held.current.cursor = false
+      held.current.focus = false
+      held.current.tab = false
+      setFrozen(false)
     }
   }, [target])
 
   // Measured after the browser has laid the cards out, and again after every
   // render: a card is only really on screen once the store knows how tall it is,
-  // and every report after the first only updates the number.
+  // and every report after the first only updates the number. The cursor is
+  // re-checked in the same place, and one way only: it takes the hold if the
+  // stack turns out to be under the pointer and never gives it back. Chromium
+  // does not re-check what is under the cursor when an element is ADDED, so a
+  // stack that grew under a still pointer would otherwise never learn of it;
+  // removal both engines re-check honestly, and releasing here instead would
+  // need an environment that answers `:hover`, which jsdom is not. The first
+  // call of this effect is the mount, so there is no separate branch for it.
   useEffect(() => {
     const attached = viewer.current
     if (attached === null) {
@@ -152,6 +219,9 @@ export function HilosToastHost({ store }: HilosToastHostProps) {
     }
     for (const [id, element] of cards.current) {
       attached.reportHeight(id, occupiedHeight(element))
+    }
+    if (stack.current !== null && stack.current.matches(':hover')) {
+      setHold('cursor', true)
     }
   })
 
@@ -166,72 +236,184 @@ export function HilosToastHost({ store }: HilosToastHostProps) {
       cards.current.set(id, element)
     }
 
-  const holdOnCursor = (): void => {
-    const attached = viewer.current
-    if (attached !== null && !cursorHeld.current) {
-      cursorHeld.current = true
-      attached.hold()
-    }
-  }
-  const releaseCursorHold = (): void => {
-    if (cursorHeld.current) {
-      cursorHeld.current = false
-      viewer.current?.release()
-    }
-  }
-  const releaseFocusHold = (): void => {
-    if (focusHeld.current) {
-      focusHeld.current = false
-      viewer.current?.release()
-    }
-  }
   const holdOnFocus = (event: FocusEvent<HTMLDivElement>): void => {
-    const attached = viewer.current
-    if (attached !== null && !focusHeld.current && !movesWithin(event)) {
-      focusHeld.current = true
-      attached.hold()
+    if (!movesWithin(event)) {
+      setHold('focus', true)
     }
   }
   const releaseOnBlur = (event: FocusEvent<HTMLDivElement>): void => {
     if (!movesWithin(event)) {
-      releaseFocusHold()
+      setHold('focus', false)
     }
   }
   const dismiss = (id: number): void => {
-    releaseCursorHold()
-    releaseFocusHold()
+    setHold('cursor', false)
+    setHold('focus', false)
     target.dismiss(id)
   }
 
+  /**
+   * Close the card whose link just took the reader somewhere else.
+   *
+   * Which clicks those are is not decided here a second time: HilosLink swallows
+   * the event exactly when it navigated in place, while a modified click, a
+   * non-primary button and a missing router leave it alone — and in those the
+   * reader never left this page, so the notice stays. The handler sits on the
+   * card's positioned box rather than on the link itself, because HilosLink
+   * calls a handler given to it as a prop BEFORE its own preventDefault: such a
+   * handler would see defaultPrevented false every time and the card would never
+   * close. Bubbling puts it right — React hands one synthetic event up the tree,
+   * and the parent gets it with the flag already set. The close button bubbles
+   * here too and is harmless: it swallows nothing.
+   *
+   * @param event The click that reached the card.
+   * @param id The toast's id.
+   */
+  const dismissIfNavigated = (
+    event: MouseEvent<HTMLDivElement>,
+    id: number,
+  ): void => {
+    if (event.defaultPrevented) {
+      dismiss(id)
+    }
+  }
+
+  // Where the stack sits: the horizontal edge is a stock Bootstrap utility, the
+  // vertical one is not, because the narrow screen overrides it and the stock
+  // .bottom-0 carries !important that a media query cannot outrank.
+  const chosen = corner ?? 'bottom-end'
+  const cornerClasses = [
+    chosen.endsWith('-end') ? 'end-0' : 'start-0',
+    chosen.startsWith('bottom-')
+      ? 'hilos-toast-stack-bottom'
+      : 'hilos-toast-stack-top',
+  ].join(' ')
+
+  // What the live regions say. A notice reaches them only once it is measured:
+  // until then the store may still take it into the queue or into the missed
+  // count, and announcing a card that will not appear promises something that
+  // can be neither read nor dismissed. A repeat does not change the text, so
+  // twenty identical failures are read once — the merge, carried over to
+  // hearing. Plain filtering, no useMemo: the list is tiny and memoizing it
+  // would buy nothing.
+  const announced = toasts.filter((toast) => toast.measured)
+
   return (
-    <div
-      className="toast-container position-fixed bottom-0 end-0 p-3"
-      data-id="hilos-toasts"
-      onMouseOver={holdOnCursor}
-      onMouseLeave={releaseCursorHold}
-      onFocus={holdOnFocus}
-      onBlur={releaseOnBlur}
-    >
-      {toasts.map((toast) => (
-        <div
-          key={toast.id}
-          ref={keep(toast.id)}
-          className={`toast show align-items-center border-0 d-flex ${SURFACE[toast.severity]}`}
-          role={LIVE_REGION[toast.severity].role}
-          aria-live={LIVE_REGION[toast.severity].ariaLive}
-          aria-atomic="true"
-          data-id={`hilos-toast-${toast.severity}`}
-        >
-          <div className="toast-body">{toast.message}</div>
-          <button
-            type="button"
-            className="btn-close btn-close-white me-2 m-auto"
-            aria-label="Close"
-            data-id="hilos-toast-close"
-            onClick={() => dismiss(toast.id)}
-          ></button>
-        </div>
-      ))}
-    </div>
+    <>
+      {/* The two live regions, declared in advance and on the stack rather than
+      on the card that just appeared: a role attached to a freshly inserted node
+      leaves part of the screen readers silent. Two of them, because only a
+      failure is allowed to interrupt what the listener is hearing. They sit
+      OUTSIDE the stack container: inside, they would double every visible line
+      for a search by text, which is how the demo suites find a notice. */}
+      <div
+        className="visually-hidden"
+        role="alert"
+        aria-live="assertive"
+        data-id="hilos-toast-live-assertive"
+      >
+        {announced
+          .filter((toast) => toast.severity === 'error')
+          .map((toast) => (
+            <div key={toast.id}>{spoken(toast)}</div>
+          ))}
+      </div>
+      <div
+        className="visually-hidden"
+        role="status"
+        aria-live="polite"
+        data-id="hilos-toast-live-polite"
+      >
+        {announced
+          .filter((toast) => toast.severity !== 'error')
+          .map((toast) => (
+            <div key={toast.id}>{spoken(toast)}</div>
+          ))}
+      </div>
+      <div
+        ref={stack}
+        className={`toast-container position-fixed p-3 ${cornerClasses}`}
+        data-id="hilos-toasts"
+        onMouseOver={() => setHold('cursor', true)}
+        onMouseLeave={() => setHold('cursor', false)}
+        onFocus={holdOnFocus}
+        onBlur={releaseOnBlur}
+      >
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            ref={keep(toast.id)}
+            className="toast fade show overflow-hidden"
+            data-id={`hilos-toast-${toast.severity}`}
+          >
+            {/* The card's one positioned box: the rail, the icon and the text
+            sit in it, and it is what the message's stretched link covers, so the
+            whole card leads where the notice points while the close button stays
+            clickable over it (.z-2). */}
+            <div
+              className={`border-start border-4 d-flex align-items-start gap-2 p-2 position-relative ${TOAST_VISUAL[toast.severity].rail}`}
+              onClick={(event) => dismissIfNavigated(event, toast.id)}
+            >
+              <i
+                className={`bi ms-1 ${TOAST_VISUAL[toast.severity].icon} ${TOAST_VISUAL[toast.severity].accent}`}
+                aria-hidden="true"
+              ></i>
+              <div className="flex-grow-1 min-w-0">
+                {toast.source !== null && (
+                  <div
+                    className="hilos-toast-source text-body-secondary mb-1"
+                    data-id="hilos-toast-source"
+                  >
+                    {toast.source}
+                  </div>
+                )}
+                <div className="d-flex align-items-start gap-2">
+                  <div className="hilos-toast-clamp flex-grow-1 min-w-0">
+                    {toast.destination === null ? (
+                      toast.message
+                    ) : (
+                      <HilosLink
+                        to={toast.destination}
+                        className="stretched-link link-body-emphasis text-decoration-none"
+                      >
+                        {toast.message}
+                      </HilosLink>
+                    )}
+                  </div>
+                  {toast.repeats > 1 && (
+                    <span
+                      className="badge text-bg-light border"
+                      data-id="hilos-toast-repeats"
+                    >
+                      ×{toast.repeats}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-close position-relative z-2"
+                aria-label="Close"
+                data-id="hilos-toast-close"
+                onClick={() => dismiss(toast.id)}
+              ></button>
+            </div>
+            {/* The life bar, and only where a countdown actually runs: an error
+            never expires, and a card the host has not reported yet has no
+            countdown started. It is keyed by the repeat count because a merge
+            gives the notice its full time back — without a fresh node the
+            animation would finish the old round and show a time that is not the
+            one running. */}
+            {toast.measured && toast.severity !== 'error' && (
+              <div
+                key={toast.repeats}
+                className={`hilos-toast-life ${TOAST_VISUAL[toast.severity].accent}${frozen ? ' hilos-toast-life-paused' : ''}`}
+                data-id="hilos-toast-life"
+              ></div>
+            )}
+          </div>
+        ))}
+      </div>
+    </>
   )
 }
