@@ -9,6 +9,7 @@ use Hilos\Constants\LogRotationConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Log\LogBatchTakeoutMarker;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\Attributes\WithoutErrorHandler;
@@ -185,6 +186,34 @@ final class LogStoreAgentRotationTest extends TestCase
         $this->assertNotNull($agent->lastDelta());
     }
 
+    public function testTheCleanupRidesTheRotationAndTakesTheConfirmedBatchOnly(): void
+    {
+        $this->putRotationEnvironment('0', self::MAX_LIVE_SIZE_BYTES, '');
+        $agent = $this->startedAgent();
+        // Staged after the start so the start's own cleanup pass is not the one under test.
+        $taken = $this->archiveBatch($this->t0 - 7200, confirmed: true);
+        $kept = $this->archiveBatch($this->t0 - 3600, confirmed: false);
+        $this->write(self::DAEMON_LOG, 2048);
+
+        ob_start();
+        $this->walkAndRotate($agent, $this->t0 + 10);
+        $said = (string)ob_get_clean();
+
+        $names = $this->batchNames();
+        $this->assertNotContains($this->batchDirName($taken), $names);
+        $this->assertContains($this->batchDirName($kept), $names);
+        $this->assertStringContainsString(
+            'Log cleanup: removed batch ' . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME
+            . '/' . $this->batchDirName($taken) . '/, taken at ',
+            $said,
+        );
+        // One frame carries both halves: the batch rotation just made, and the one cleanup took.
+        $delta = $agent->lastDelta();
+        $this->assertNotNull($delta);
+        $this->assertSame([$taken], $delta->vanishedBatchTimestamps);
+        $this->assertCount(1, $delta->appearedBatchTimestamps);
+    }
+
     public function testAGrownRawStreamIsComplainedAboutOnce(): void
     {
         $agent = $this->startedAgent();
@@ -264,6 +293,37 @@ final class LogStoreAgentRotationTest extends TestCase
         }
         ftruncate($handle, $bytes);
         fclose($handle);
+    }
+
+    /**
+     * Puts one already-rotated batch in the archive, confirmed as carried off or not.
+     *
+     * @param int $timestamp Instant the batch is named after
+     * @param bool $confirmed Whether to leave a takeout marker in it
+     * @return int The timestamp it was named after, as the index reads it back
+     */
+    private function archiveBatch(int $timestamp, bool $confirmed): int
+    {
+        $path = $this->dir . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME
+            . DIRECTORY_SEPARATOR . $this->batchDirName($timestamp);
+        if (!mkdir($path, 0755, true) && !is_dir($path)) {
+            $this->fail("Could not create fixture batch: {$path}");
+        }
+        file_put_contents($path . DIRECTORY_SEPARATOR . self::AGENT_LOG, str_repeat('x', 16));
+        if ($confirmed) {
+            LogBatchTakeoutMarker::write($path, $timestamp + 60, null);
+        }
+
+        return $timestamp;
+    }
+
+    /**
+     * @param int $timestamp Instant a batch is named after
+     * @return string Name of that batch's directory
+     */
+    private function batchDirName(int $timestamp): string
+    {
+        return date(LogRotationConstants::TIMESTAMP_FORMAT, $timestamp);
     }
 
     /**

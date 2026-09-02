@@ -246,6 +246,10 @@ final class LogStoreAgent extends AbstractAgent
         $this->lastFullScanAt = microtime(true);
         $this->lastLiveScanAt = $this->lastFullScanAt;
         $this->walkStore(time());
+        // A start is a rotation too — the daemon rotated the live logs on its way up — so it is a
+        // moment to clean up after, and the walk above is what tells this pass which batches there
+        // are to consider.
+        $this->pruneTakenBatches();
         // Reported at once rather than at the first due moment: a node that comes up after the
         // aggregator would otherwise be missing from the cluster picture for a whole interval, and
         // nothing about that absence would say it is only the schedule.
@@ -320,6 +324,10 @@ final class LogStoreAgent extends AbstractAgent
      * The clock is a parameter rather than a reading, the way the walks take theirs: this method
      * is the whole of the trigger, and the tick is only what schedules it.
      *
+     * The cleanup of carried-off batches (HIL-382) rides this same moment, between the rotation and
+     * the walk that follows it, so one frame carries both halves of what just changed in the
+     * archive: the batch that appeared, and the ones that are gone.
+     *
      * @param float $now Monotonic-enough wall clock of the walk this check rides
      * @throws InvalidArgumentException When the frame announcing the new batch cannot be named
      */
@@ -341,19 +349,11 @@ final class LogStoreAgent extends AbstractAgent
         }
 
         $this->lastRotationAt = $now;
-        try {
-            $report = $rotator->rotate();
-        } catch (LogRotationException $exception) {
-            // Best-effort: a failed rotation must never crash the owner; the next walk tries again.
-            $this->logAgentError('Log rotation failed: ' . $exception->getMessage());
-
-            return;
-        }
-
-        foreach ($report->failedFiles as $failedFile) {
-            $this->logAgentError("Log rotation could not move {$failedFile}");
-        }
-        if ($report->batchDirName === null) {
+        $report = $this->rotateOnce($rotator);
+        // Hung on the ATTEMPT and not on its outcome: a node quiet enough to have nothing to move
+        // makes no batch, and a cleanup waiting for one would never run there at all.
+        $this->pruneTakenBatches();
+        if ($report?->batchDirName === null) {
             return;
         }
 
@@ -364,6 +364,85 @@ final class LogStoreAgent extends AbstractAgent
         $this->lastLiveScanAt = $now;
         $this->walkStore((int)$now);
         $this->pushIndex();
+    }
+
+    /**
+     * Runs one rotation and reports what it could not move, best-effort throughout.
+     *
+     * The failure answers with nothing rather than with an empty report: a rotation that could not
+     * make its batch is not the same event as one that found nothing to move, and only the caller's
+     * next step — announcing a batch — treats the two alike.
+     *
+     * @param LogRotator $rotator Rotator bound to this node's log directory
+     * @return ?LogRotationReport What the rotation did, or null when it could not run at all
+     */
+    private function rotateOnce(LogRotator $rotator): ?LogRotationReport
+    {
+        try {
+            $report = $rotator->rotate();
+        } catch (LogRotationException $exception) {
+            // Best-effort: a failed rotation must never crash the owner; the next walk tries again.
+            $this->logAgentError('Log rotation failed: ' . $exception->getMessage());
+
+            return null;
+        }
+
+        foreach ($report->failedFiles as $failedFile) {
+            $this->logAgentError("Log rotation could not move {$failedFile}");
+        }
+
+        return $report;
+    }
+
+    /**
+     * Removes the batches an operator has confirmed carrying off, and says what happened (HIL-382).
+     *
+     * Unlike the backup pruner next door this one is never silent about what it removed: a backup
+     * can be taken again, a log cannot, and a batch that disappeared without a line in the journal
+     * would be a deletion nobody could account for afterwards. A pass that found nothing to do says
+     * nothing at all, which on a live node is most of them.
+     *
+     * The pruner is handed every batch of the current index and decides for itself, re-reading each
+     * marker off the disk: a confirmation may have been withdrawn since the walk, and this walk's
+     * picture of the archive can be a minute old.
+     */
+    private function pruneTakenBatches(): void
+    {
+        $logDirectory = $this->reader->logDirectory();
+        if ($logDirectory === null || !$this->index->available) {
+            return;
+        }
+
+        $report = (new LogArchivePruner($logDirectory))->prune(self::batchTimestamps($this->index));
+
+        foreach ($report->removedBatchTimestamps as $batchTimestamp => $takenAt) {
+            $batch = self::batchLabel(date(LogRotationConstants::TIMESTAMP_FORMAT, $batchTimestamp));
+            $this->logAgentInfo("Log cleanup: removed batch {$batch}, taken at " . date('Y-m-d H:i:s', $takenAt));
+        }
+        foreach ($report->failedPaths as $failedPath) {
+            $this->logAgentError("Log cleanup could not remove {$failedPath}");
+        }
+        foreach ($report->keptDirNames as $dirName) {
+            $batch = self::batchLabel($dirName);
+            $this->logAgentError("Log cleanup left batch {$batch} in place: it holds files that are not logs");
+        }
+        foreach ($report->unreadableMarkerDirNames as $dirName) {
+            $batch = self::batchLabel($dirName);
+            $this->logAgentWarning(
+                "Log cleanup cannot read the takeout marker of batch {$batch}, so the batch counts as not taken",
+            );
+        }
+    }
+
+    /**
+     * Names one batch the way the journal names it: relative to the log root, and as a directory.
+     *
+     * @param string $dirName Name of the batch directory
+     * @return string The batch as a line of the journal spells it
+     */
+    private static function batchLabel(string $dirName): string
+    {
+        return LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME . '/' . $dirName . '/';
     }
 
     /**

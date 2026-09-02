@@ -50,6 +50,57 @@ final class FileSystemHelperTest extends TestCase
         }
     }
 
+    public function testUnlinkOrFalseRemovesAnExistingFile(): void
+    {
+        $directory = $this->createTempDirectory();
+        $file = $directory . DIRECTORY_SEPARATOR . 'sample.txt';
+        file_put_contents($file, 'x');
+
+        try {
+            $this->assertTrue(FileSystemHelper::unlinkOrFalse($file));
+            $this->assertFileDoesNotExist($file);
+        } finally {
+            rmdir($directory);
+        }
+    }
+
+    public function testUnlinkOrFalseReturnsFalseForMissingFile(): void
+    {
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'hilos-fs-missing-' . uniqid('', true);
+
+        $this->assertFalse(FileSystemHelper::unlinkOrFalse($path));
+    }
+
+    public function testRmdirOrFalseRemovesAnEmptyDirectory(): void
+    {
+        $directory = $this->createTempDirectory();
+
+        $this->assertTrue(FileSystemHelper::rmdirOrFalse($directory));
+        $this->assertDirectoryDoesNotExist($directory);
+    }
+
+    public function testRmdirOrFalseReturnsFalseForNonEmptyDirectory(): void
+    {
+        $directory = $this->createTempDirectory();
+        $file = $directory . DIRECTORY_SEPARATOR . 'sample.txt';
+        file_put_contents($file, 'x');
+
+        try {
+            $this->assertFalse(FileSystemHelper::rmdirOrFalse($directory));
+            $this->assertDirectoryExists($directory);
+        } finally {
+            unlink($file);
+            rmdir($directory);
+        }
+    }
+
+    public function testRmdirOrFalseReturnsFalseForMissingDirectory(): void
+    {
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'hilos-fs-missing-' . uniqid('', true);
+
+        $this->assertFalse(FileSystemHelper::rmdirOrFalse($path));
+    }
+
     public function testNormalizeBasenameLowercasesTrimmedBasename(): void
     {
         $this->assertSame('photo.jpg', FileSystemHelper::normalizeBasename('  Photo.JPG  '));
