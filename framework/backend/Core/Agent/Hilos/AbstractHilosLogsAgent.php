@@ -17,6 +17,7 @@ use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsIndexWatchSignalData;
 use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogStoreAgent;
+use Hilos\Pages\Logs\AbstractHilosLogsKeysPage;
 use Hilos\Pages\Logs\AbstractHilosLogsPage;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
 use Hilos\Pages\Logs\AbstractHilosLogsViewPage;
@@ -111,6 +112,7 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
         $this->watchIfDue(microtime(true));
         AbstractHilosLogsPage::onAgentTick($this);
         AbstractHilosLogsRotationsPage::onAgentTick($this);
+        AbstractHilosLogsKeysPage::onAgentTick($this);
         AbstractHilosLogsViewPage::onAgentTick($this);
     }
 
@@ -171,6 +173,7 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
     {
         AbstractHilosLogsPage::removeSubscriber($data->acceptKey);
         AbstractHilosLogsRotationsPage::removeSubscriber($data->acceptKey);
+        AbstractHilosLogsKeysPage::removeSubscriber($data->acceptKey);
         AbstractHilosLogsViewPage::removeSubscriber($data->acceptKey);
     }
 
