@@ -7,9 +7,11 @@ namespace Demo\Chat\Tests\Integration;
 use Hilos\Backup\Anonymization\AnonymizationCompatibilityValidator;
 use Hilos\Backup\Anonymization\AnonymizationCoverageValidator;
 use Hilos\Backup\Anonymization\AnonymizationSqlBuilder;
+use Hilos\Backup\Anonymization\AnonymizationStartupGuard;
 use Hilos\Backup\Anonymization\LiveSchemaReader;
 use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Backup\Exception\AnonymizationConfigException;
+use Hilos\Backup\Exception\UnclassifiedLiveSchemaException;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\SqlParamCollection;
@@ -19,11 +21,12 @@ use Hilos\Database\SqlParamCollection;
  *
  * The registry is collected out of what each table declares about itself, and the two
  * ways it goes wrong are invisible to a unit test. It can fall behind the schema - a
- * migration adds a table and nobody classifies it - and it can name a strategy the
- * column cannot carry. The first is what the coverage gate refuses at restore time, and
- * this test asks that gate the same question against the database the demo actually
- * creates. The second no gate can see, because it is the database's opinion of an
- * `UPDATE`, so the second test builds the whole pass and runs it.
+ * migration adds a table or a column and nobody classifies it - and it can name a strategy
+ * the column cannot carry. The first is what the coverage gates refuse, and the cases here
+ * ask both of them the same question against the database the demo actually creates: the
+ * archive gate the way a restore asks it, the startup gate the way a daemon does. The
+ * second no gate can see, because it is the database's opinion of an `UPDATE`, so the last
+ * case builds the whole pass and runs it.
  *
  * Runs on top of the test database raised by composer run test:db-reset; it neither
  * creates nor drops schema, reads information_schema, and rolls back everything it writes.
@@ -85,7 +88,7 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
         );
 
         $registry = PiiRegistry::collect();
-        AnonymizationCoverageValidator::validate(
+        AnonymizationCoverageValidator::validateArchiveTables(
             $registry,
             [self::CONNECTION_INDEX => array_keys($schemas)],
         );
@@ -95,6 +98,25 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
             $schemas,
             self::maxPrimaryKey(...),
         );
+    }
+
+    /**
+     * The demo's own node must be able to start: the gate the daemon asks says nothing.
+     *
+     * The one place the startup gate is exercised over a real schema, and it is asked the way
+     * a daemon asks it - its own entry point, its own walk over the configured connections,
+     * its own registry. The ways it can refuse are covered by unit cases over built schemas;
+     * what only a live database can answer is whether this demo, today, is classified down to
+     * the column.
+     *
+     * @throws UnclassifiedLiveSchemaException When a table or column of the demo carries no
+     *     verdict, or the schema cannot be read
+     */
+    public function testTheStartupGateLetsThisDemoStart(): void
+    {
+        AnonymizationStartupGuard::assertLiveSchemaClassified();
+
+        $this->expectNotToPerformAssertions();
     }
 
     /**

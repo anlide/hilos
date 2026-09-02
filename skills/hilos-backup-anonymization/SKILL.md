@@ -12,7 +12,7 @@ writing a verdict.
 ## Read First
 
 - The guide — core rule, where a verdict is declared, the seven strategies, the
-  selection rules, the two gates: `docs/agents/architecture/backup-anonymization.md`
+  selection rules, the three gates: `docs/agents/architecture/backup-anonymization.md`
 - Where the tables-without-entity class sits among the other backup catalog keys,
   and the rest of backup activation:
   `docs/agents/architecture/admin-feature-scaffold.md`
@@ -41,13 +41,17 @@ writing a verdict.
    incoming foreign keys yourself before declaring a whole-table purge.
 5. Declare a table with no Entity in a `TablesWithoutEntityProvider` instead, and
    name that class under `BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY`.
-6. Run the project's PII coverage test through composer, not a restore.
+6. Run the project's PII coverage test through composer, not a restore. A column left
+   out of both halves now also keeps the daemon from starting, so an unrun test is a
+   node that will not come up rather than a restore that will refuse later.
 
 ## Hard Rules
 
 - Never run `git commit` or `git push`.
 - Never leave a table of the project unclassified, and never add a bypass flag,
   an "anonymize everything" default, or a second entry that skips the gates.
+- Never leave a live column named by neither half in a project that carries backup:
+  its daemon refuses to start until one of them names it.
 - Never treat an empty column map as a gap to fill later; it is the declaration
   that the table holds nothing personal.
 - Never name one column in both `_pii` and `_piiNotPersonal`, and never declare

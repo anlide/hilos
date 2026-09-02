@@ -52,7 +52,9 @@ php cli.php db:seed:apply 001
 - A new table needs a `_pii` verdict on its Entity — an empty column map when it
   holds nothing personal — or a restore that requires anonymization refuses before
   it imports anything. A new column needs naming too: in `_pii` when it holds
-  personal data, in `_piiNotPersonal` when it does not
+  personal data, in `_piiNotPersonal` when it does not. In a project that carries
+  backup the cost arrives sooner than a restore: the daemon does not start while
+  anything the live schema holds carries no verdict
   ([../architecture/backup-anonymization.md](../architecture/backup-anonymization.md))
 
 ## Test reset

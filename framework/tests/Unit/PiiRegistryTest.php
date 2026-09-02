@@ -217,13 +217,6 @@ final class PiiRegistryTest extends TestCase
         $this->assertFalse($registry->isPurged(0, 'never_mentioned'));
     }
 
-    public function testAnEmptyDeclarationIsRecognizedAsUnconfigured(): void
-    {
-        $this->assertTrue(PiiRegistry::fromDeclarations()->isEmpty());
-        $this->assertTrue(PiiRegistry::fromDeclarations([0 => []])->isEmpty());
-        $this->assertFalse(PiiRegistry::fromDeclarations([0 => ['clean_table' => []]])->isEmpty());
-    }
-
     public function testAKeyNamingAClassThatIsNoTableIsRefused(): void
     {
         $this->expectException(AnonymizationConfigException::class);

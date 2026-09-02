@@ -15,7 +15,6 @@ use Hilos\Core\Process;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionConfig;
 use Hilos\Database\DatabaseException;
-use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Migration;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\Exception\FilePermissionException;
@@ -109,15 +108,15 @@ final class BackupRestorer
             throw new RestoreFailedException("Restore refused by the migration guard: {$migration->reason}");
         }
 
-        // Anything that can refuse must run before the first destructive step, and an
-        // unavailable anonymizer refuses: checked here, not after the imports, or a
-        // REQUIRE_ANONYMIZATION run would commit raw production data before failing.
+        // Built before the first destructive step rather than after the imports: the refusals
+        // it carries - a malformed verdict, a salt the platform will not mint - must land while
+        // a REQUIRE_ANONYMIZATION run still holds whatever the target held.
         $anonymizer = null;
         if ($decision === RestoreEnvDecision::REQUIRE_ANONYMIZATION) {
             if ($scope === BackupScope::SCHEMA_ONLY) {
-                // Asked before the registry is: a schema-only archive carries no rows, so there
-                // is nothing to anonymize and nothing an undeclared registry could fail to
-                // anonymize. Refusing here would block a restore over a configuration gap that
+                // Asked before the anonymizer is built: a schema-only archive carries no rows,
+                // so there is nothing to anonymize and nothing the coverage gate could refuse
+                // over. Building it here would let a configuration gap block a restore that
                 // this run cannot be harmed by.
                 Logger::info('Restore: anonymization skipped, this archive carries schema only', [
                     'id' => $id,
@@ -125,12 +124,6 @@ final class BackupRestorer
                 ]);
             } else {
                 $anonymizer = $this->resolveAnonymizer();
-                if ($anonymizer === null) {
-                    throw new RestoreFailedException(
-                        'Restore requires anonymization, but no table declares what of it is '
-                        . 'personal data (Entity constant: ' . Entity::META_PII . ')',
-                    );
-                }
             }
         }
 
@@ -571,14 +564,15 @@ final class BackupRestorer
      * The catalog is the resolution mechanism, the way it already is for the reference
      * registry and the schedule: the backup feature is activated by naming a catalog, and
      * a second, facade-level hook would be a second place to look for the same answer. An
-     * installation whose catalog declares no PII registry resolves to none, and the
-     * preflight in {@see restore()} refuses the run before anything destructive happens.
+     * installation always resolves to one: an empty registry is not an anonymizer that is
+     * missing, it is a registry that classifies nothing, and the coverage gate is the one
+     * that says so - naming the tables it found unclassified, which "no registry" could not.
      *
-     * @return ?RestoreAnonymizer Available anonymizer, or null when the catalog declares none
+     * @return RestoreAnonymizer Anonymizer over this installation's declarations
      * @throws RestoreFailedException When the declared registry is not a registry, or the
      *     platform's secure random source refuses to mint this run's salt
      */
-    private function resolveAnonymizer(): ?RestoreAnonymizer
+    private function resolveAnonymizer(): RestoreAnonymizer
     {
         try {
             return CatalogRestoreAnonymizer::fromCatalog();

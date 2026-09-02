@@ -117,26 +117,6 @@ final class PiiRegistry
     }
 
     /**
-     * Tells whether the registry classifies nothing at all.
-     *
-     * The condition the CLI preflight and the engine both refuse on: a project that
-     * declared no rows has not opted out of anonymization, it has not configured it, and
-     * running the pass would silently do nothing to production data.
-     *
-     * @return bool Whether no table is declared on any connection
-     */
-    public function isEmpty(): bool
-    {
-        foreach ($this->rowsByConnection as $tables) {
-            if ($tables !== []) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
      * Returns the tables classified for one connection.
      *
      * @param int $connectionIndex Connection index

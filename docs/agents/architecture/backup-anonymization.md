@@ -171,25 +171,36 @@ report them:
 - **NULL stays NULL.** A column that held nothing keeps holding nothing; no
   strategy invents a value for an empty column.
 
-## The Two Gates, And Why They Are Not One
+## The Three Gates, And Why They Are Not One
 
-| | Coverage | Compatibility |
-|---|---|---|
-| Class | `AnonymizationCoverageValidator` | `AnonymizationCompatibilityValidator` |
-| Runs | after the archive is unpacked, before the first import | after the forward migrations, before the first row is rewritten |
-| Reads | the tables the dump declares | the live schema of the target |
-| Asks | is every table of the archive classified? | can every classified column carry what its strategy produces? |
-| A refusal costs | a rerun; the target is untouched | a person; the target already holds production data |
+| | Startup coverage | Archive coverage | Compatibility |
+|---|---|---|---|
+| Class | `AnonymizationCoverageValidator::validateLiveSchema()`, through `AnonymizationStartupGuard` | `AnonymizationCoverageValidator::validateArchiveTables()` | `AnonymizationCompatibilityValidator` |
+| Runs | at the startup of a daemon, before anything composes | after the archive is unpacked, before the first import | after the forward migrations, before the first row is rewritten |
+| Reads | the live schema of every configured connection | the tables the dump declares | the live schema of the target |
+| Asks | is every table, and every column of it, classified? | is every table of the archive classified? | can every classified column carry what its strategy produces? |
+| A refusal costs | the node does not come up; fixed by a verdict in code | a rerun; the target is untouched | a person; the target already holds production data |
 
-Coverage refuses with `The PII registry does not match the archive: connection
-<index>: tables carry no PII declaration: <tables>`, and both gates collect every
-finding before refusing — an operator who meets one complaint per restore learns to
-dread the gate. Compatibility opens with `The PII registry does not fit the
-restored schema:` and is late by necessity rather than by oversight: between the
+Startup coverage refuses with `The live schema is not classified for anonymization:
+connection <index>: tables carry no PII verdict: <tables>; connection <index>:
+columns carry no PII verdict: <table>.<column>`, which the daemon log carries under
+`Daemon failed:`. It is the only gate whose reader is the author of the migration
+rather than an operator — the verdict is written in code, so the refusal names
+everything it found at once and expects one edit to answer all of it. Archive
+coverage refuses with `The PII registry does not match the archive: connection
+<index>: tables carry no PII declaration: <tables>`, and every gate here collects
+its findings before refusing — an operator who meets one complaint per restore
+learns to dread the gate. Compatibility opens with `The PII registry does not fit
+the restored schema:` and is late by necessity rather than by oversight: between the
 dump and the pass sit the import and every migration the code has gained since, and
 either may have narrowed a column or widened a key. A registry row naming a table
 the live schema does not carry is skipped there, not refused — coverage already
 judged the archive.
+
+Only the daemon asks the startup gate. The worker inherits the answer, the docker
+supervisor runs the migrations that open the gap, and the CLI is where the gap gets
+closed — a refusal there would be a dead end with no way out of it. A project that
+declares no `HilosFeature::BACKUP` is not asked at all.
 
 ## Adding A Table Or A Column
 
@@ -201,7 +212,8 @@ judged the archive.
 2. **Choose the strategy** by *Choosing A Strategy* above, and check the incoming
    foreign keys yourself if you reach for `purge`.
 3. **Run the project's coverage test.** It answers in seconds and does not need a
-   restore, an archive or a production database.
+   restore, an archive or a production database — and if you skip it, the daemon of
+   a project carrying backup will not start until the verdict is written.
 
 The same obligation follows a migration: see [../orm/migrations.md](../orm/migrations.md).
 
@@ -218,6 +230,10 @@ migration that broke it, with an operator waiting and a target database already
 holding the archive. That is the most expensive possible moment to learn that a row
 is missing, and the cheapest is a unit run on the commit that added the table.
 
+The startup gate does not replace that test: the gate answers when a node is
+started, the test answers on the commit, and the earlier of the two is the cheaper
+one.
+
 ## Boundaries
 
 - **There is no anonymization on create.** A production archive is raw by design;
@@ -225,7 +241,7 @@ is missing, and the cheapest is a unit run on the commit that added the table.
 - **The salt is minted per run and never stored.** Equal values stay equal inside
   one restored copy, so joins by a hashed value survive; two copies of the same
   archive produce hashes nobody can line up against each other.
-- **`--scope=schema-only` skips the registry, both gates and the pass**, because
-  such an archive carries no rows.
+- **`--scope=schema-only` skips the registry, the restore's own gates and the
+  pass**, because such an archive carries no rows.
 - **Purge order against foreign keys is not computed.** Stated twice on purpose;
   it is the only failure mode this document, and not a gate, has to prevent.

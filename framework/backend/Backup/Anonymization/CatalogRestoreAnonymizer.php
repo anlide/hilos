@@ -52,18 +52,20 @@ final class CatalogRestoreAnonymizer implements RestoreAnonymizer
     /**
      * Builds the anonymizer this installation's declarations describe.
      *
-     * @return ?self Anonymizer over the collected registry, or null when nothing is declared
+     * Always one, even over a registry that classifies nothing: an installation that declared
+     * no verdict has not opted out of anonymization, and the refusal it has earned belongs to
+     * the coverage gate, which can name the tables it found unclassified.
+     *
+     * @return self Anonymizer over the collected registry
      * @throws AnonymizationConfigException When a verdict is malformed
      * @throws RandomException When the platform's secure random source refuses to mint a salt
      */
-    public static function fromCatalog(): ?self
+    public static function fromCatalog(): self
     {
-        $registry = PiiRegistry::collect();
-        if ($registry->isEmpty()) {
-            return null;
-        }
-
-        return new self($registry, new AnonymizationSqlBuilder(RandomHelper::secureHex(self::SALT_BYTES)));
+        return new self(
+            PiiRegistry::collect(),
+            new AnonymizationSqlBuilder(RandomHelper::secureHex(self::SALT_BYTES)),
+        );
     }
 
     /**
@@ -75,7 +77,7 @@ final class CatalogRestoreAnonymizer implements RestoreAnonymizer
      */
     public function validateArchive(array $tablesByConnection): void
     {
-        AnonymizationCoverageValidator::validate($this->registry, $tablesByConnection);
+        AnonymizationCoverageValidator::validateArchiveTables($this->registry, $tablesByConnection);
     }
 
     /**

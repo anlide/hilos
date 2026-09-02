@@ -155,7 +155,8 @@ table belongs to one of the two lists — including a column outside `_columns`,
 ORM does not map but a restore still rewrites. A table with no Entity says the same two
 things in a `TablesWithoutEntityProvider`.
 
-How to choose a strategy, and what the two gates of a restore refuse on:
+How to choose a strategy, and what the gates of a restore and of a startup refuse
+on:
 [../architecture/backup-anonymization.md](../architecture/backup-anonymization.md).
 
 ## Settings Entity (special case)

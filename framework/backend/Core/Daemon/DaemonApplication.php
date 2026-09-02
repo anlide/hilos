@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\Backup\Anonymization\AnonymizationStartupGuard;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
@@ -21,11 +22,12 @@ use Throwable;
  * A daemon.php collapses to a single {@see run()} call naming its Hilos facade, its
  * manager class, and its persistence init. The spine runs the env prelude, checks the
  * environment against the project catalog and refuses to start naming every required value
- * that has no answer, points the logger at the daemon log, constructs the manager, hands it
- * a {@see DaemonContext} to compose its servers/routes/modules through
- * {@see DaemonManager::boot()}, and enters the main loop — all under one try/catch that logs
- * and exits ERROR, replacing the four duplicated flat trys. Any failure in env, persistence,
- * composition, or a module means the daemon refuses to start, which is the correct outcome.
+ * that has no answer, points the logger at the daemon log, lets a node carrying backup refuse a
+ * schema it could not anonymize, constructs the manager, hands it a {@see DaemonContext} to
+ * compose its servers/routes/modules through {@see DaemonManager::boot()}, and enters the main
+ * loop — all under one try/catch that logs and exits ERROR, replacing the four duplicated flat
+ * trys. Any failure in env, persistence, composition, or a module means the daemon refuses to
+ * start, which is the correct outcome.
  */
 final class DaemonApplication
 {
@@ -66,6 +68,11 @@ final class DaemonApplication
             // setting that overrides this. A worker tells it the real level once one registers,
             // and until then the node's own env is the honest answer.
             LogWriteLevelApplier::applyFromEnv();
+
+            // Before anything composes: a node that promises anonymized copies of its database
+            // refuses to come up over a schema it could not anonymize. Silent for a project that
+            // takes no backup.
+            AnonymizationStartupGuard::assertLiveSchemaClassified();
 
             $manager = new $daemonClass();
             $manager->boot(new DaemonContext($bootstrapDir, $projectRoot));

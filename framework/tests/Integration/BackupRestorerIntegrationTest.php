@@ -383,6 +383,36 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         $this->assertSame([], $this->tokenRows(), 'A purged table must arrive empty');
     }
 
+    public function testASchemaOnlyRestoreLeavesThePassUnrun(): void
+    {
+        // The skip nothing was watching (P-080): a schema-only archive carries no rows, so the
+        // engine must not build an anonymizer or run a pass over it. Proven with a dump that
+        // does carry rows - a shape the create path never produces, and the only way to tell a
+        // skipped pass from one that ran over an empty database and found nothing.
+        $this->publishFixtureBackup(
+            $this->piiDumpSql() . ArchiveMigrationMarker::statement(0),
+            0,
+            BackupScope::SCHEMA_ONLY,
+        );
+        PiiRestoreTestHilos::initBrowser();
+
+        new BackupRestorer()->restore(
+            self::BACKUP_ID,
+            BackupScope::SCHEMA_ONLY,
+            RestoreEnvDecision::REQUIRE_ANONYMIZATION,
+        );
+
+        $this->assertSame(
+            [
+                ['1', 'Alice', 'alice@real.example'],
+                ['2', 'Bob', 'bob@real.example'],
+            ],
+            $this->piiRows(),
+            'A schema-only restore must arrive with the pass unrun',
+        );
+        $this->assertSame([['1'], ['2']], $this->tokenRows(), 'And with the purge unrun as well');
+    }
+
     public function testAColumnOnlyTheMigratedSchemaCarriesIsAnonymized(): void
     {
         // The case the archive-shaped gate got wrong: the registry describes the code's

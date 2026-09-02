@@ -6,6 +6,7 @@ namespace Hilos\Core\CLI\Commands;
 
 use DateTimeImmutable;
 use DateTimeInterface;
+use Hilos\Backup\Anonymization\AnonymizationStartupGuard;
 use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupCreator;
@@ -32,7 +33,6 @@ use Hilos\Constants\AppEnv;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
-use Hilos\Database\Entity\Item\Entity;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -132,8 +132,8 @@ Description:
 
   Environment matrix: prod archive -> prod is allowed (disaster recovery); prod archive
   -> non-prod restores through the anonymization pass, which rewrites the personal data
-  the backup catalog declares under its [pii] registry and refuses when no registry is
-  declared (a schema-only archive carries no rows and is exempt); non-prod archive ->
+  the backup catalog declares under its [pii] registry and refuses over a table the
+  registry does not classify (a schema-only archive carries no rows and is exempt); non-prod archive ->
   prod is always refused; an archive with no recorded environment needs --force to enter
   prod.
 
@@ -164,7 +164,7 @@ Exit codes:
   0  restore completed (hot: reported by the agent; cold: engine returned)
   1  refused (digest mismatch, ENV guard, migration gate, daemon silent or busy) or failed
   2  unknown id/scope, or missing --yes
-  3  BACKUP_DIR is not configured, or no [pii] registry where anonymization is required
+  3  BACKUP_DIR is not configured, or the declared [pii] verdicts cannot be read
 
 Examples:
   php cli.php backup:restore 2026-08-08_03-00-00 --yes
@@ -322,25 +322,23 @@ HELP;
     }
 
     /**
-     * Tells the operator whether this installation declared what its personal data is.
+     * Tells the operator whether this installation's personal-data verdicts collect at all.
      *
      * Asked only when the ENV guard demands anonymization, and asked in the preflight
      * rather than left to the engine, because the answer is a configuration fact the
      * operator can act on immediately: nothing about the archive, the daemon or the target
-     * will change it. An empty registry is not "no personal data" - it is a project that
-     * has not classified its tables, and running the pass over it would rewrite nothing
-     * while reporting success.
+     * will change it. Whether the verdicts cover the schema is a different question with a
+     * gate of its own ({@see AnonymizationStartupGuard}); this one only asks whether they
+     * can be read, which on the cold path is the last cheap moment to ask.
      *
-     * @return bool Whether a PII registry is declared
+     * @return bool Whether the declared verdicts collect into a registry
      */
     private function reportPiiRegistry(): bool
     {
         try {
-            if (!PiiRegistry::collect()->isEmpty()) {
-                return true;
-            }
-            echo 'Error: this restore requires anonymization, but no table declares what of it is '
-                . 'personal data (Entity constant [' . Entity::META_PII . "])\n";
+            PiiRegistry::collect();
+
+            return true;
         } catch (AnonymizationConfigException $refusal) {
             echo "Error: the declared personal-data verdicts are not usable: {$refusal->getMessage()}\n";
         }
