@@ -258,13 +258,18 @@ final class PasskeyCommands extends AbstractLibraryCommands
      * defense-in-depth (the credential id stays authoritative). An authenticator
      * that holds no handle sends an empty one, so the check is skipped when it is.
      *
+     * The credential's identity anchor has to be alive for the same reason (HIL-722):
+     * unlink now takes both rows out together, but the credentials orphaned before it
+     * did are still stored, and a ceremony that reads only the sidecar would keep
+     * signing people in on a passkey their profile no longer shows.
+     *
      * @param string $acceptKey Accept key the action arrived on
      * @param PasskeyLoginConfirmActionDTO $dto Parsed confirm payload (signed challenge, credential id,
      *     authenticator data, client data, signature, optional user handle)
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws ValidationException When the challenge, credential, user handle, payload, or assertion is invalid
      * @throws InvalidArgumentException When the grant frame cannot be named or queued
-     * @throws HilosException When WebAuthn env config, credential lookup, or counter persistence fails
+     * @throws HilosException When WebAuthn env config, credential or identity lookup, or counter persistence fails
      */
     public function loginConfirm(string $acceptKey, PasskeyLoginConfirmActionDTO $dto): void
     {
@@ -283,6 +288,14 @@ final class PasskeyCommands extends AbstractLibraryCommands
 
         $credential = Hilos::$db->passkeyCredentials->findByCredentialId($dto->credentialId);
         if ($credential === null) {
+            throw new ValidationException(AuthMessages::INVALID_PASSKEY);
+        }
+
+        // A credential whose identity anchor is gone is not a way in (HIL-722). The
+        // cascade takes both rows out together, but the orphans made before it existed
+        // are still stored, and this ceremony never asks the anchor: it would sign a
+        // person in on a passkey their profile no longer lists and cannot unlink again.
+        if (!isset(Hilos::$db->identities[$credential->identityId])) {
             throw new ValidationException(AuthMessages::INVALID_PASSKEY);
         }
 

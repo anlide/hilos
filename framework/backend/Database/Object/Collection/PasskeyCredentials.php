@@ -9,6 +9,7 @@ use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\PasskeyCredentials as EntityPasskeyCredentials;
@@ -180,6 +181,46 @@ final class PasskeyCredentials extends Objects
         }
 
         return $result;
+    }
+
+    /**
+     * Deletes the credentials stored for one identity anchor (HIL-722).
+     *
+     * Unlink cascade: the `hilos_identity` anchor of a passkey and its crypto
+     * half are two rows with no foreign key between them, so removing the anchor
+     * alone leaves a credential that still signs assertions and still names an
+     * account, because the login ceremony resolves the account from the sidecar
+     * and never asks the anchor. This is the half that takes the crypto row out,
+     * and it runs before the anchor is dropped: an interruption in between has to
+     * leave a state that closes the sign-in, not one that opens it.
+     *
+     * The delete goes through the object so a DB_SYNC_DELETED broadcast takes the
+     * row off the profile screen. A sidecar is one row per identity by contract,
+     * but every matching row is removed and no count is assumed. An identity with
+     * no credential is not an error and does nothing: a non-passkey identity never
+     * reaches here, and a repeated unlink has to stay harmless.
+     *
+     * @param int $identityId Owning `hilos_identity` anchor row id (type=passkey)
+     * @throws DatabaseException If the lookup or delete query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     */
+    public function deleteByIdentity(int $identityId): void
+    {
+        $entities = EntityPasskeyCredential::get([EntityPasskeyCredential::identity_id => $identityId]);
+
+        foreach ($entities as $entity) {
+            if ($entity->id === null) {
+                continue;
+            }
+            if (!isset($this->objects[$entity->id])) {
+                $this->hydrate($entity->id, ObjectPasskeyCredential::fromEntity($entity));
+            }
+
+            $this->objects[$entity->id]->delete();
+            unset($this[$entity->id]);
+        }
     }
 
     /**

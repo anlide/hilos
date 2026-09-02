@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 
-import { clickSubmit, logout, signUp } from '../helpers/session'
+import { clickSubmit, login, logout, signUp } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
 
 // Passkey (WebAuthn) e2e (HIL-284): the register -> login round-trip driven
@@ -31,6 +31,14 @@ import { gotoPage } from '../helpers/page'
 // navigator.credentials.get() hangs and the external step stays parked for as
 // long as the test needs — which is exactly what makes the Cancel button
 // reachable instead of the ceremony resolving instantly.
+//
+// HIL-722 adds the fourth: UNLINK. A signed-in user removes the passkey from
+// the profile, and what the test is about is what happens afterwards — the key
+// the virtual authenticator still holds must no longer open the account, while
+// the email the account was registered with still does. It is the complaint the
+// ticket came from, checked on the surface: the Unlink button has to be
+// clickable while another sign-in method remains, and the removal has to take
+// the stored credential with it rather than only the row on the screen.
 
 /**
  * Attach a CDP virtual platform authenticator to the page so
@@ -113,6 +121,56 @@ test('signs in usernameless with a discoverable passkey — no email', async ({
   // user's name renders with no navigation.
   await expect(page.getByTestId('profile-name')).toBeVisible()
   expect(new URL(page.url()).pathname).toBe('/profile')
+})
+
+test('unlinks a passkey and leaves it unable to sign in', async ({ page }) => {
+  await addVirtualAuthenticator(page)
+  const user = await signUp(page)
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await page.getByTestId('profile-passkey-add').click()
+  await expect(
+    page.getByTestId('hilos-toasts').getByText('Passkey added.'),
+  ).toBeVisible()
+
+  // The account now holds two sign-in methods, so neither is the last one and the
+  // passkey row's Unlink must be offered. That assertion IS the reported bug: the
+  // button was dead while an email sign-in was standing right next to it.
+  const passkeyRow = page
+    .getByTestId('profile-identity-item')
+    .filter({ has: page.getByTestId('identity-passkey-added') })
+  await expect(passkeyRow).toHaveCount(1)
+  await expect(page.getByTestId('profile-identity-item')).toHaveCount(2)
+  const unlink = passkeyRow.getByTestId('identity-unlink')
+  await expect(unlink).toBeEnabled()
+  await unlink.click()
+  await clickSubmit(passkeyRow.getByTestId('identity-unlink-yes'))
+
+  // Success is state-driven: the delete broadcast re-emits the projection, so the
+  // passkey row leaves on its own and the email row stays.
+  await expect(passkeyRow).toHaveCount(0)
+  await expect(page.getByTestId('profile-identity-item')).toHaveCount(1)
+
+  await logout(page)
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+
+  // The authenticator still holds the resident credential, which is the whole
+  // point: the browser can still offer the key, and the server must refuse it
+  // because the credential it was stored under is gone.
+  const discoverable = page.getByTestId('auth-icon-passkey')
+  await discoverable.scrollIntoViewIfNeeded()
+  await expect(discoverable).toBeEnabled()
+  await discoverable.click()
+  await expect(page.getByTestId('auth-error')).toBeVisible()
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await expect(page.getByTestId('auth-identifier')).toBeVisible()
+
+  // The account itself is untouched: the address it was registered with signs in.
+  await login(page, user.email)
+  await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+  await expect(page.getByTestId('profile-name')).toBeVisible()
 })
 
 test('cancels a parked passkey ceremony and leaves the surface usable', async ({

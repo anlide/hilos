@@ -444,8 +444,14 @@ final class Identities extends DbCollection
      * {@see ObjectIdentities::deleteIdentity()} primitive, which owns the
      * ownership and last-identity guards and the (id, user_id)-scoped delete.
      *
+     * Since HIL-722 the primitive also refuses a passkey anchor whose stored
+     * credential is still there, because taking the anchor alone leaves a key that
+     * keeps signing its owner in. A caller reaching this door for a passkey wants
+     * the unlink command instead, which removes both halves in the safe order.
+     *
      * @param int $userId Owning user id (session user)
      * @param int $identityId Identity id to unlink
+     * @throws LogicException When a passkey identity is deleted directly while its credential is still stored
      * @throws ValidationException When the identity is not owned by the user, or is their last one
      * @throws DatabaseException On database error while deleting the identity
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises

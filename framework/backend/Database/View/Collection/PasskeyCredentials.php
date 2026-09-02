@@ -8,6 +8,7 @@ use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\PasskeyCredentials as ObjectPasskeyCredentials;
 use Hilos\Database\Object\Item\PasskeyCredential as ObjectPasskeyCredential;
@@ -114,6 +115,25 @@ final class PasskeyCredentials extends DbCollection
     public function listByUser(int $userId): array
     {
         return $this->objectCollection->listByUser($userId);
+    }
+
+    /**
+     * Deletes the credentials stored for one identity anchor (HIL-722).
+     *
+     * Unlink cascade bridged to {@see ObjectPasskeyCredentials::deleteByIdentity()};
+     * see there for the ordering the cascade owes and for why an identity without a
+     * credential is a silent no-op. Bridged because the caller writes through
+     * {@see Hilos}::$db, so a primitive living on one side only would be
+     * unreachable from the ceremony code that needs it.
+     *
+     * @param int $identityId Owning `hilos_identity` anchor row id (type=passkey)
+     * @throws DatabaseException If the lookup or delete query fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     */
+    public function deleteByIdentity(int $identityId): void
+    {
+        $this->objectCollection->deleteByIdentity($identityId);
     }
 
     /**

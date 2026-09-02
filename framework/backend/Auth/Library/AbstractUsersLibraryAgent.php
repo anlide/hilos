@@ -9,6 +9,7 @@ use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Library\Command\AbstractLibraryCommands;
 use Hilos\Auth\Library\Command\ActingSession;
 use Hilos\Auth\Library\Command\DetectionCommands;
+use Hilos\Auth\Library\Command\IdentityCommands;
 use Hilos\Auth\Library\Command\MagicLinkCommands;
 use Hilos\Auth\Library\Command\OAuthCommands;
 use Hilos\Auth\Library\Command\PasskeyCommands;
@@ -220,6 +221,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
     /** The three submits of a password recovery, built on first use. */
     private ?RecoveryCommands $recoveryCommands = null;
+
+    /** Taking a sign-in method off an account, built on first use. */
+    private ?IdentityCommands $identityCommands = null;
 
     /**
      * Claims the people this library answers for and resolves the project's auth seams.
@@ -686,6 +690,21 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     protected function buildOAuthService(): ?OAuthService
     {
         return null;
+    }
+
+    /**
+     * Builds the group that takes a sign-in method off an account.
+     *
+     * Protected where the seven command factories below are private, because its caller is
+     * one floor down: unlink is a project's own action rather than one of the library's
+     * AUTH_ACTIONS, so the demo handler that used to call the identity primitive itself
+     * calls this group instead.
+     *
+     * @return IdentityCommands Taking a sign-in method off an account, built once per process
+     */
+    protected function identityCommands(): IdentityCommands
+    {
+        return $this->identityCommands ??= new IdentityCommands($this);
     }
 
     /**

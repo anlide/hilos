@@ -22,6 +22,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\Identities as EntityIdentities;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
+use Hilos\Database\Entity\Item\PasskeyCredential as EntityPasskeyCredential;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
@@ -391,8 +392,18 @@ final class Identities extends Objects
      * physical delete goes through the object so a DB_SYNC_DELETED broadcast
      * re-emits the owner's identities projection to all of their connections.
      *
+     * A passkey anchor whose crypto half is still stored is refused out loud
+     * (HIL-722). This primitive stays public, so a caller can reach it around the
+     * unlink command that owns the cascade, and what such a call would leave is
+     * not litter but a way in: the login ceremony resolves an account from the
+     * credential and never asks the anchor, so the identity would be gone from
+     * the profile while the key kept signing its way into the account. On the
+     * intended path the guard never fires — the command takes the credential out
+     * first.
+     *
      * @param int $userId Owning user id (session user)
      * @param int $identityId Identity id to unlink
+     * @throws LogicException When a passkey identity is deleted directly while its credential is still stored
      * @throws ValidationException When the identity is not owned by the user, or is their last one
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
@@ -407,6 +418,15 @@ final class Identities extends Objects
 
         if ($entityIdentity->user_id !== $userId) {
             throw new ValidationException('cannot unlink an identity you do not own');
+        }
+
+        if (
+            $entityIdentity->type === IdentityType::PASSKEY
+            && EntityPasskeyCredential::get([EntityPasskeyCredential::identity_id => $identityId])->first() !== null
+        ) {
+            throw new LogicException(
+                "cannot delete passkey identity {$identityId} directly: its passkey credential is still stored",
+            );
         }
 
         if (count($this->listByUser($userId)) <= 1) {

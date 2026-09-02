@@ -26,6 +26,7 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
+use Hilos\Auth\Library\Command\IdentityCommands;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Auth\PasswordPolicy;
 use Hilos\Auth\PhoneNumber;
@@ -499,20 +500,22 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     }
 
     /**
-     * Unlinks one of the signed-in user's login identities (HIL-377).
+     * Unlinks one of the signed-in user's login identities (HIL-377, HIL-722).
      *
-     * The thin demo half of the unlink: it resolves the acting user from the connection and
-     * delegates to the framework identity primitive, which owns the server-authoritative guards
-     * (ownership, last-identity refusal) and the delete. Success is state-driven — the delete
-     * broadcasts DB_SYNC_DELETED, re-emitting the owner's identities projection so the row
-     * disappears from every connection; a rejected unlink surfaces through the default framework
-     * action_error contract.
+     * The thin demo half of the unlink: it delegates to the framework's unlink command
+     * ({@see IdentityCommands::unlink()}), which resolves the acting user, refuses a last
+     * sign-in method, and takes a passkey out whole — anchor and stored credential together.
+     * It calls the command rather than the identity primitive because the primitive removes
+     * the anchor alone, and the credential left behind kept signing its owner in. Success is
+     * state-driven — the deletes broadcast DB_SYNC_DELETED, re-emitting the owner's identities
+     * projection so the row disappears from every connection; a rejected unlink surfaces
+     * through the default framework action_error contract.
      *
      * @param string $acceptKey Accept key
      * @param UnlinkIdentityActionDTO $dto Unlink DTO carrying the identity id
      * @throws ValidationException When the id is missing, not owned by the user, or is their last identity
      * @throws ItemNotFoundForUpdateException When the user session is missing
-     * @throws DatabaseException When the identity lookup or delete query fails
+     * @throws HilosException When an identity or credential lookup or delete fails
      */
     private function unlinkIdentity(string $acceptKey, UnlinkIdentityActionDTO $dto): void
     {
@@ -520,7 +523,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
             throw new ValidationException('Identity id is required');
         }
 
-        Hilos::$db->identities->deleteIdentity($this->requireUserId($acceptKey), $dto->identityId);
+        $this->identityCommands()->unlink($acceptKey, $dto->identityId);
     }
 
     /**
