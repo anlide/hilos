@@ -112,11 +112,12 @@ final class ProfilePage extends AbstractHilosProfilePage
      * snapshot, so it rides the one-shot subscription payload rather than the
      * reactive browser data.
      *
+     * @param string $acceptKey WebSocket accept key of the subscribing connection (unused; this page reads its subscriber off the self-connection)
      * @param PageRouteParams $params Route params for the profile subscription (unused; profile has none)
      * @return ?PagePayload Notification-section payload, or null outside a signed-in session
      * @throws DatabaseException When a preference or address lookup query fails
      */
-    protected function buildPagePayload(PageRouteParams $params): ?PagePayload
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
         if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
             return null;

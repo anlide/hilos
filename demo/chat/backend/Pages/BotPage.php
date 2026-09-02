@@ -93,13 +93,14 @@ final class BotPage extends AbstractPage
      * naming a bot that is not there: an absent row here means the guard did not
      * run, and a quiet empty page would hide that.
      *
+     * @param string $acceptKey WebSocket accept key of the subscribing connection (unused; the profile is the same for everyone)
      * @param PageRouteParams $params Route params for the page subscription
      * @return ?PagePayload Bot profile entity payload
      * @throws MissingPageRouteParamException When `id` is absent
      * @throws InvalidPageRouteParamException When `id` is non-numeric or `<= 0`
      * @throws PageInternalErrorException When the guarded bot row is absent all the same
      */
-    protected function buildPagePayload(PageRouteParams $params): ?PagePayload
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
         $botId = BotPageSubscribeParams::fromPageRouteParams($params)->botId;
         $bot = Hilos::$db->bots[$botId]

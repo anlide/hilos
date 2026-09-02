@@ -12,6 +12,9 @@ import {
   formatBackupProgressLabel,
   formatBackupSize,
   formatRestoreCliCommand,
+  formatRestoreOutcomeLine,
+  createHilosBackupsActions,
+  createHilosBackupsReopenGate,
   hasBackupFailureDetail,
   hasRestoreOutcome,
   isBackupChecksumMismatch,
@@ -20,9 +23,58 @@ import {
   isBackupRestorable,
   resolveHilosBackupRow,
   type HilosBackupRow,
+  type HilosBackupsContext,
   type HilosProgressAnchors,
+  type HilosRestoreStatus,
 } from '../../src/admin/backup/hilosBackups.js'
+import { type ActionLifecycle } from '../../src/connection/actionLifecycle.js'
+import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
+
+/** A restore progress frame with only the keys a case cares about spelled out. */
+function restoreStatus(
+  overrides: Partial<HilosRestoreStatus> = {},
+): HilosRestoreStatus {
+  return {
+    running: false,
+    backupId: 'b1',
+    scope: 'full',
+    phase: null,
+    phaseStartedAt: null,
+    startedAt: null,
+    finishedAt: null,
+    outcome: null,
+    failureReason: null,
+    estimatedSeconds: null,
+    rehydrateComplete: true,
+    rehydrateProblems: [],
+    databaseTouched: false,
+    ...overrides,
+  }
+}
+
+/**
+ * A context carrying real page scopes; the gate reads nothing else off it, and a fake
+ * scope store would test the fake rather than the resolution being asserted.
+ */
+function gateContext(scopes: ScopeManager): HilosBackupsContext {
+  return { scopes } as unknown as HilosBackupsContext
+}
+
+/** A context whose action lifecycle records what was dispatched over it. */
+function dispatchContext(
+  sent: Array<{ action: string; payload: unknown }>,
+): HilosBackupsContext {
+  const actions = {
+    dispatch(action: string, payload: unknown) {
+      sent.push({ action, payload })
+
+      return { done: Promise.resolve(), loading: null }
+    },
+  } as unknown as ActionLifecycle
+
+  return { actions } as unknown as HilosBackupsContext
+}
 
 function row(overrides: Partial<HilosBackupRow> = {}): HilosBackupRow {
   return {
@@ -548,6 +600,77 @@ describe('formatRestoreCliCommand', () => {
     expect(formatRestoreCliCommand(row({ scope: null }))).toContain(
       '--scope=<scope>',
     )
+  })
+})
+
+describe('formatRestoreOutcomeLine', () => {
+  it('says the system is still closed, and names no button', () => {
+    // The same line is shown on the maintenance placeholder, where the reopen block does
+    // not exist - so it reports the state and leaves the control to the surface that has one.
+    const line = formatRestoreOutcomeLine(restoreStatus({ outcome: 'success' }))
+
+    expect(line).toBe(
+      'Restored. The system stays closed to everyone but this browser until it is reopened.',
+    )
+    expect(line).not.toContain('Reopen')
+  })
+
+  it('is empty while the run is still going', () => {
+    expect(formatRestoreOutcomeLine(restoreStatus({ outcome: null }))).toBe('')
+  })
+})
+
+describe('createHilosBackupsReopenGate', () => {
+  it('offers the block when the backend says this browser may reopen', () => {
+    const scopes = new ScopeManager()
+    scopes.openPage('hilos_backup').data.set('backupReopen', { offered: true })
+
+    expect(createHilosBackupsReopenGate(gateContext(scopes)).get()).toBe(true)
+  })
+
+  it('withholds it when the backend says another browser owns the window', () => {
+    const scopes = new ScopeManager()
+    scopes.openPage('hilos_backup').data.set('backupReopen', { offered: false })
+
+    expect(createHilosBackupsReopenGate(gateContext(scopes)).get()).toBe(false)
+  })
+
+  it('withholds it when the section has not arrived at all', () => {
+    // The moment before the subscription lands, and every backend older than the leaf.
+    const scopes = new ScopeManager()
+    scopes.openPage('hilos_backup')
+
+    expect(createHilosBackupsReopenGate(gateContext(scopes)).get()).toBe(false)
+  })
+
+  it('withholds it when the section is not the shape it promised', () => {
+    const scopes = new ScopeManager()
+    scopes.openPage('hilos_backup').data.set('backupReopen', { offered: 'yes' })
+
+    expect(createHilosBackupsReopenGate(gateContext(scopes)).get()).toBe(false)
+  })
+
+  it('re-resolves to the new page scope when navigation swaps it', () => {
+    const scopes = new ScopeManager()
+    scopes.openPage('hilos_backup').data.set('backupReopen', { offered: true })
+    const gate = createHilosBackupsReopenGate(gateContext(scopes))
+    expect(gate.get()).toBe(true)
+
+    scopes.openPage('hilos_users')
+    expect(gate.get()).toBe(false)
+  })
+})
+
+describe('createHilosBackupsActions', () => {
+  it('sends the reopen action with an empty payload', () => {
+    // The empty payload is the gate: the freeze and the browser allowed to end it are
+    // both named on the server, so there is nothing here to name either with.
+    const sent: Array<{ action: string; payload: unknown }> = []
+    const actions = createHilosBackupsActions(dispatchContext(sent))
+
+    actions.sendBackupReopen()
+
+    expect(sent).toEqual([{ action: 'backup_reopen', payload: {} }])
   })
 })
 

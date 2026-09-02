@@ -307,7 +307,7 @@ abstract class AbstractPage implements ActionHostInterface
     final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
         $this->onSubscribeBeforeResponse($acceptKey, $params);
-        $payload = $this->withPageIdentity($this->buildPagePayload($params));
+        $payload = $this->withPageIdentity($this->buildPagePayload($acceptKey, $params));
         Hilos::$browser?->subscribeSnapshot(static::PAGE, $acceptKey, $params);
         $this->sendToUser(
             SignalTypeConstants::PAGE_RESPONSE,
@@ -327,12 +327,21 @@ abstract class AbstractPage implements ActionHostInterface
      * PageSubscriptionException on failure so the framework reports a
      * subscription error to the client.
      *
+     * The accept key comes first because the page_response frame this payload
+     * rides is addressed personally: onSubscribe() sends it to the one
+     * connection that asked, so what the payload says is allowed to differ
+     * between two subscribers of the same page. A page that answers everyone
+     * the same way ignores the argument; a page whose content depends on WHO
+     * subscribed resolves that subscriber through it - the connection behind an
+     * accept key, and the session behind that connection.
+     *
+     * @param string $acceptKey WebSocket accept key of the subscribing connection
      * @param PageRouteParams $params Route params from page subscription
      * @return ?PagePayload Page scope payload, or null when the page carries none
      * @throws PageSubscriptionException When the override refuses the subscription on its own terms
      * @throws HilosException Whatever else the override's read of domain state raises
      */
-    protected function buildPagePayload(PageRouteParams $params): ?PagePayload
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
         return null;
     }

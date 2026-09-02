@@ -109,9 +109,11 @@ the protocol at all — only that this page also needs one more thing:
 Into the page's own answer, assembled on the backend:
 
 - `AbstractPage::buildPagePayload()` — the page builds its payload and reads
-  whatever foreign source it needs while building it;
-- `AbstractPage::onSubscribeBeforeResponse()` — when the assembly needs the
-  accept key or the subscription itself.
+  whatever foreign source it needs while building it. It receives the accept key
+  of the subscriber, so a payload may be personal: the `page_response` frame it
+  rides is addressed to the one connection that asked;
+- `AbstractPage::onSubscribeBeforeResponse()` — when the assembly is a side
+  effect rather than payload, or has to refuse the subscription outright.
 
 `AbstractPage::withPageIdentity()` is the worked example: the label, lead, and
 breadcrumb that a project's admin page catalog owns are folded into the payload

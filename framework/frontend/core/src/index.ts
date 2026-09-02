@@ -541,6 +541,8 @@ export {
   formatRestorePhaseLine,
   formatRestoreOutcomeLine,
   createHilosBackupsRestoreGate,
+  createHilosBackupsReopenGate,
+  HILOS_BACKUP_REOPEN_COPY,
   createHilosRestoreProgress,
   BACKUP_SIGNAL_SCHEMAS,
   BACKUP_RESTORE_PROGRESS_SIGNAL,

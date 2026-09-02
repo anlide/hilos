@@ -11,7 +11,10 @@
 // destructive one: it is offered as a button only where the backend says so
 // (everywhere but production), it confirms by typing the archive id, and while it
 // runs the addressed progress frames are the only live thing on the page — the node
-// is frozen and the table sends nothing. All table logic and the
+// is frozen and the table sends nothing. Once it ends, the node stands in a
+// verification window, and the one browser that started the restore is offered the
+// block that closes it — the backend answers that personally in the page-data section,
+// so a second admin looking at the same page sees nothing. All table logic and the
 // row view-model are the core headless's too; this view owns only the markup, so a
 // project mounts it by passing its HilosBackupsContext. Bootstrap classes only
 // (styling-rules.md).
@@ -24,6 +27,7 @@ import {
   signal,
 } from '@angular/core'
 import {
+  HILOS_BACKUP_REOPEN_COPY,
   HILOS_BACKUP_SCOPES,
   HilosPages,
   BACKUP_CREATED_AT_FIELD,
@@ -42,6 +46,7 @@ import {
   backupRowAnchors,
   createBackupProgressClock,
   createHilosBackupsActions,
+  createHilosBackupsReopenGate,
   createHilosBackupsRestoreGate,
   createHilosBackupsTable,
   createHilosRestoreProgress,
@@ -51,6 +56,7 @@ import {
   formatBackupProgressLabel,
   formatBackupSize,
   formatRestoreCliCommand,
+  formatRestoreOutcomeLine,
   copyToClipboard,
   hasBackupFailureDetail,
   hasRestoreOutcome,
@@ -160,9 +166,7 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
             Restore {{ status.backupId }} · {{ status.phase }}
           </div>
           @if (status.outcome === 'success') {
-            <div class="small">
-              Restored. This page reloads itself as soon as the system reopens.
-            </div>
+            <div class="small">{{ formatOutcomeLine(status) }}</div>
           } @else if (status.outcome === 'error') {
             <div class="small">
               <div>{{ status.failureReason }}</div>
@@ -198,6 +202,25 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
               {{ restoreProgressLabel(status) }}
             </div>
           }
+        </div>
+      }
+
+      @if (reopenOffered()) {
+        <div
+          class="alert alert-warning"
+          role="status"
+          data-id="hilos-backup-reopen-panel"
+        >
+          <div class="fw-semibold">{{ reopenCopy.title }}</div>
+          <div class="small">{{ reopenCopy.body }}</div>
+          <button
+            type="button"
+            class="btn btn-warning btn-sm mt-2"
+            data-id="hilos-backup-reopen"
+            (click)="openReopen()"
+          >
+            {{ reopenCopy.button }}
+          </button>
         </div>
       }
 
@@ -403,6 +426,36 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
             (click)="submitDelete()"
           >
             Delete
+          </button>
+        </ng-template>
+      </hilos-modal>
+
+      <hilos-modal
+        [open]="reopenOpen()"
+        (openChange)="reopenOpen.set($event)"
+        [title]="reopenCopy.modalTitle"
+        [closeOnBackdrop]="!reopen.busy()"
+        [closeOnEsc]="!reopen.busy()"
+      >
+        <hilos-action-error [action]="reopen" />
+        <p class="mb-0 text-body-secondary">{{ reopenCopy.modalBody }}</p>
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            [disabled]="reopen.busy()"
+            (click)="requestClose()"
+          >
+            Cancel
+          </button>
+          <button
+            hilosLoadingButton
+            class="btn-warning"
+            [loading]="reopen.loading()"
+            data-id="hilos-backup-reopen-confirm"
+            (click)="submitReopen()"
+          >
+            Reopen
           </button>
         </ng-template>
       </hilos-modal>
@@ -628,6 +681,13 @@ export class HilosBackupPage {
     return row ? `Delete · ${row.id}` : 'Delete backup'
   })
 
+  // Reopen dialog: ending the verification window. Confirmation is the modal itself and
+  // nothing more — typing the archive id guards restore against picking the WRONG target,
+  // and reopening has no target to miss; the only mistake left is the click.
+  protected readonly reopenOpen = signal(false)
+  protected readonly reopen = createHilosTrackedAction()
+  protected readonly reopenCopy = HILOS_BACKUP_REOPEN_COPY
+
   // Failure-detail dialog: a read-only view of a failed backup's stored reason. It
   // holds a snapshot of the row it opened on, so a parallel delete or rotation does
   // not close it; the text is already in the row, so there is no server request.
@@ -690,6 +750,9 @@ export class HilosBackupPage {
     uiEnabled: false,
     targetEnv: null,
   })
+  // Whether THIS browser is the one that may end the verification window a restore left
+  // the node in. Personal to the subscription, so a second admin's tab reads false.
+  protected readonly reopenOffered = signal(false)
   protected readonly restoreStatus = signal<HilosRestoreStatus | null>(null)
   private readonly rows = signal<readonly (HilosBackupRow | null)[]>([])
   protected readonly subsystemBusy = computed(() =>
@@ -723,13 +786,16 @@ export class HilosBackupPage {
     // start arriving the moment it asks for a run.
     effect((onCleanup) => {
       const gate = createHilosBackupsRestoreGate(this.context())
+      const reopenGate = createHilosBackupsReopenGate(this.context())
       const progress = this.restoreProgress()
       const windowRows = this.backups().controller.rows
       progress.start()
       this.restoreGate.set(gate.get())
+      this.reopenOffered.set(reopenGate.get())
       this.rows.set(windowRows.get().map((entry) => entry.row))
       const subscriptions = [
         subscribeSignal(gate, (value) => this.restoreGate.set(value)),
+        subscribeSignal(reopenGate, (value) => this.reopenOffered.set(value)),
         subscribeSignal(progress.status, (value) =>
           this.restoreStatus.set(value),
         ),
@@ -770,6 +836,20 @@ export class HilosBackupPage {
     this.del.clearError()
     this.deleteRow.set(row)
     this.deleteOpen.set(true)
+  }
+
+  protected openReopen(): void {
+    this.reopen.clearError()
+    this.reopenOpen.set(true)
+  }
+
+  protected async submitReopen(): Promise<void> {
+    if (this.reopen.busy()) {
+      return
+    }
+    if (await this.reopen.run(this.actions().sendBackupReopen())) {
+      this.reopenOpen.set(false)
+    }
   }
 
   protected openDetails(row: HilosBackupRow): void {
@@ -924,6 +1004,16 @@ export class HilosBackupPage {
     return percent === null
       ? 'progress-bar progress-bar-striped progress-bar-animated'
       : 'progress-bar'
+  }
+
+  /**
+   * The outcome sentence of a finished restore, from the core formatter.
+   *
+   * @param status The latest restore frame this connection received.
+   * @returns The outcome line, empty while the run is still going.
+   */
+  protected formatOutcomeLine(status: HilosRestoreStatus): string {
+    return formatRestoreOutcomeLine(status)
   }
 
   /** Human-readable archive size, shared with the other view layers. */

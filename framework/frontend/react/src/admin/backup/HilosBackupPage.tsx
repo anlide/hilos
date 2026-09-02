@@ -11,12 +11,16 @@
 // destructive one: it is offered as a button only where the backend says so
 // (everywhere but production), it confirms by typing the archive id, and while it
 // runs the addressed progress frames are the only live thing on the page — the node
-// is frozen and the table sends nothing. All table logic and the
+// is frozen and the table sends nothing. Once it ends, the node stands in a
+// verification window, and the one browser that started the restore is offered the
+// block that closes it — the backend answers that personally in the page-data section,
+// so a second admin looking at the same page sees nothing. All table logic and the
 // row view-model are the core headless's too; this view owns only the markup, so a
 // project mounts it by passing its HilosBackupsContext. Bootstrap classes only
 // (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
 import {
+  HILOS_BACKUP_REOPEN_COPY,
   HILOS_BACKUP_SCOPES,
   HilosPages,
   BACKUP_CREATED_AT_FIELD,
@@ -35,6 +39,7 @@ import {
   backupRowAnchors,
   createBackupProgressClock,
   createHilosBackupsActions,
+  createHilosBackupsReopenGate,
   createHilosBackupsRestoreGate,
   createHilosBackupsTable,
   createHilosRestoreProgress,
@@ -44,6 +49,7 @@ import {
   formatBackupProgressLabel,
   formatBackupSize,
   formatRestoreCliCommand,
+  formatRestoreOutcomeLine,
   copyToClipboard,
   hasBackupFailureDetail,
   hasRestoreOutcome,
@@ -175,6 +181,11 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
   const restoreGate = useSignal(
     useMemo(() => createHilosBackupsRestoreGate(context), [context]),
   )
+  // Whether THIS browser is the one that may end the verification window a restore left
+  // the node in. Personal to the subscription, so a second admin's tab reads false.
+  const reopenOffered = useSignal(
+    useMemo(() => createHilosBackupsReopenGate(context), [context]),
+  )
   const restoreStatus = useSignal(restoreProgress.status)
   // One ticker for the whole page: a percentage moves with wall time, while the socket
   // only speaks on a change of phase, so every bar here redraws from this signal.
@@ -262,6 +273,30 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
 
   function closeDetails(): void {
     setDetailsOpen(false)
+  }
+
+  // Reopen dialog: ending the verification window. Confirmation is the modal itself and
+  // nothing more — typing the archive id guards restore against picking the WRONG target,
+  // and reopening has no target to miss; the only mistake left is the click.
+  const [reopenOpen, setReopenOpen] = useState(false)
+  const reopen = useTrackedAction()
+
+  function openReopen(): void {
+    reopen.clearError()
+    setReopenOpen(true)
+  }
+
+  function closeReopen(): void {
+    setReopenOpen(false)
+  }
+
+  async function submitReopen(): Promise<void> {
+    if (reopen.busy) {
+      return
+    }
+    if (await reopen.run(actions.sendBackupReopen())) {
+      closeReopen()
+    }
   }
 
   // Restore dialog: the destructive one. Confirmation is typing the archive's id —
@@ -402,7 +437,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           </div>
           {restoreStatus.outcome === 'success' ? (
             <div className="small">
-              Restored. This page reloads itself as soon as the system reopens.
+              {formatRestoreOutcomeLine(restoreStatus)}
             </div>
           ) : null}
           {restoreStatus.outcome === 'error' ? (
@@ -430,6 +465,25 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
                 'Restore progress',
               )
             : null}
+        </div>
+      ) : null}
+
+      {reopenOffered ? (
+        <div
+          className="alert alert-warning"
+          role="status"
+          data-id="hilos-backup-reopen-panel"
+        >
+          <div className="fw-semibold">{HILOS_BACKUP_REOPEN_COPY.title}</div>
+          <div className="small">{HILOS_BACKUP_REOPEN_COPY.body}</div>
+          <button
+            type="button"
+            className="btn btn-warning btn-sm mt-2"
+            data-id="hilos-backup-reopen"
+            onClick={openReopen}
+          >
+            {HILOS_BACKUP_REOPEN_COPY.button}
+          </button>
         </div>
       ) : null}
 
@@ -636,6 +690,39 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
             <code>{deleteRow.id}</code>
           </p>
         ) : null}
+      </HilosModal>
+
+      <HilosModal
+        open={reopenOpen}
+        title={HILOS_BACKUP_REOPEN_COPY.modalTitle}
+        closeOnBackdrop={!reopen.busy}
+        closeOnEsc={!reopen.busy}
+        onClose={closeReopen}
+        actions={({ requestClose }) => (
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={reopen.busy}
+              onClick={requestClose}
+            >
+              Cancel
+            </button>
+            <LoadingButton
+              className="btn-warning"
+              loading={reopen.loading}
+              data-id="hilos-backup-reopen-confirm"
+              onClick={() => void submitReopen()}
+            >
+              Reopen
+            </LoadingButton>
+          </>
+        )}
+      >
+        <HilosActionError action={reopen} />
+        <p className="mb-0 text-body-secondary">
+          {HILOS_BACKUP_REOPEN_COPY.modalBody}
+        </p>
       </HilosModal>
 
       <HilosModal

@@ -16,6 +16,7 @@ use Hilos\Auth\Session\SessionCarryover;
 use Hilos\Auth\Session\SessionIdentityRef;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
+use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreProgressSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
@@ -80,6 +81,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
 use Hilos\Runtime\View\Actions\Item\RestoreRuntimeActions;
 use Hilos\Runtime\View\Collection\BackupHistories;
@@ -130,14 +132,16 @@ final class BackupAgent extends AbstractAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_BACKUP;
 
     /**
-     * Page → agent routes for the list-page actions (HIL-333, restore HIL-276). All four are
-     * singleton signals (the agent is monopolistic), so each maps straight to its payload DTO.
+     * Page → agent routes for the list-page actions (HIL-333, restore HIL-276, reopen HIL-676).
+     * All five are singleton signals (the agent is monopolistic), so each maps straight to its
+     * payload DTO.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
         HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
         HilosSignalConstants::BACKUP_AGENT_SET_KEEP => BackupSetKeepSignalData::class,
         HilosSignalConstants::BACKUP_AGENT_RESTORE => BackupRestoreSignalData::class,
+        HilosSignalConstants::BACKUP_AGENT_REOPEN => BackupReopenSignalData::class,
     ];
 
     /**
@@ -997,6 +1001,50 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
+     * Ends the verification window on behalf of the browser that pressed the button (HIL-676).
+     *
+     * The page already checked the row and told the browser its request was taken, so this is the
+     * backstop half: between that answer and this frame a terminal may have run
+     * `protected-mode:open`, or the operator may have refrozen the node. Both re-checks are the
+     * ones {@see ProtectedModeOperatorTrait} makes for the command channel - the row stands in the
+     * verification window, and this very agent is the initiator the row names - because the lever
+     * pulled is literally the same one.
+     *
+     * A refusal ends in the log and nowhere else. The browser has its ack already, and the only
+     * honest report of an open that did not happen is that the system did not open: every tab
+     * reloads when it does, so silence is a visible answer here rather than a swallowed one.
+     *
+     * {@see ProtectedModeOperatorTrait::handleProtectedModeOperatorCommand()} is deliberately not
+     * reused: it holds the correlation id of a command channel and waits out the row's verdict to
+     * answer it, and there is nobody on this road waiting for that answer.
+     *
+     * @param BackupReopenSignalData $data Reopen request naming the connection that asked
+     * @throws InvalidArgumentException When the queued protected-mode release cannot be named
+     */
+    private function handleReopenRequest(BackupReopenSignalData $data): void
+    {
+        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($freeze === null || $freeze->phase !== StateProtectedModeRuntime::PHASE_VERIFYING) {
+            $this->logAgentWarning(
+                "Ignoring reopen from {$data->acceptKey}: this node stands in no verification window",
+            );
+
+            return;
+        }
+
+        if (!$this->isProtectedModeOperatorInitiator($freeze)) {
+            $this->logAgentWarning(
+                "Ignoring reopen from {$data->acceptKey}: this freeze was started by another initiator",
+            );
+
+            return;
+        }
+
+        $this->logAgentInfo("Reopening the system on request from {$data->acceptKey}");
+        $this->requestProtectedModeDisable();
+    }
+
+    /**
      * Admits one restore run: parks it pending and asks the cluster to freeze.
      *
      * The single admission both entrances go through, so the CLI and the page cannot drift into
@@ -1190,8 +1238,9 @@ final class BackupAgent extends AbstractAgent
      * The page validates each request synchronously and acks the client; this owns the
      * storage mutation: create funnels through the guarded {@see startBackup()} (with an
      * in-memory pending slot when busy), delete through the shared delete path, set-keep
-     * through an atomic sidecar rewrite plus an index re-mirror, and restore through the same
-     * admission the `backup:restore` CLI goes through ({@see admitRestore()}).
+     * through an atomic sidecar rewrite plus an index re-mirror, restore through the same
+     * admission the `backup:restore` CLI goes through ({@see admitRestore()}), and reopen through
+     * the same release `protected-mode:open` asks for ({@see handleReopenRequest()}).
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $source Signal source (unused)
@@ -1228,6 +1277,13 @@ final class BackupAgent extends AbstractAgent
             case HilosSignalConstants::BACKUP_AGENT_RESTORE:
                 if ($data->data instanceof BackupRestoreSignalData) {
                     $this->handleRestoreSignal($data->data);
+                }
+
+                return;
+
+            case HilosSignalConstants::BACKUP_AGENT_REOPEN:
+                if ($data->data instanceof BackupReopenSignalData) {
+                    $this->handleReopenRequest($data->data);
                 }
 
                 return;

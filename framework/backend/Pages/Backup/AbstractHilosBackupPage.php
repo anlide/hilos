@@ -7,6 +7,7 @@ namespace Hilos\Pages\Backup;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
+use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Backup\BackupScope;
@@ -37,8 +38,10 @@ use Hilos\Environment\Exception\MissingEnvironmentVariableException;
 use Hilos\Hilos;
 use Hilos\Pages\Backup\DTO\BackupCreateActionDTO;
 use Hilos\Pages\Backup\DTO\BackupDeleteActionDTO;
+use Hilos\Pages\Backup\DTO\BackupReopenActionDTO;
 use Hilos\Pages\Backup\DTO\BackupRestoreActionDTO;
 use Hilos\Pages\Backup\DTO\BackupSetKeepActionDTO;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Collection\BackupHistories;
 
 /**
@@ -73,6 +76,7 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
         HilosSignalConstants::BACKUP_DELETE => BackupDeleteActionDTO::class,
         HilosSignalConstants::BACKUP_SET_KEEP => BackupSetKeepActionDTO::class,
         HilosSignalConstants::BACKUP_RESTORE => BackupRestoreActionDTO::class,
+        HilosSignalConstants::BACKUP_REOPEN => BackupReopenActionDTO::class,
     ];
 
     public const array BROWSER = [
@@ -88,8 +92,14 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
     /** Restore section key: the environment this installation runs in, as the modal names it. */
     public const string RESTORE_TARGET_ENV = 'targetEnv';
 
+    /** Page-data section carrying whether this subscriber may end the verification window. */
+    public const string REOPEN_SECTION = 'backupReopen';
+
+    /** Reopen section key: whether this one browser is offered the reopen block at all. */
+    public const string REOPEN_OFFERED = 'offered';
+
     /**
-     * Routes backup create, delete, set-keep, and restore actions to typed handlers.
+     * Routes backup create, delete, set-keep, restore, and reopen actions to typed handlers.
      *
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name from the WebSocket envelope
@@ -136,6 +146,14 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
                     throw new InvalidActionPayloadException($action, BackupRestoreActionDTO::class, $dto);
                 }
                 $this->handleRestore($acceptKey, $dto);
+
+                break;
+
+            case HilosSignalConstants::BACKUP_REOPEN:
+                if (!$dto instanceof BackupReopenActionDTO) {
+                    throw new InvalidActionPayloadException($action, BackupReopenActionDTO::class, $dto);
+                }
+                $this->handleReopen($acceptKey);
 
                 break;
 
@@ -330,27 +348,104 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
     }
 
     /**
-     * Tells the subscribing client what this environment offers for restoring.
+     * Ends the verification window this node stands in, on behalf of the browser that asked.
      *
-     * The button is a property of the installation, not of a row, so it is answered once at
-     * subscribe rather than per row. Production - and an installation whose APP_ENV names no
+     * The gate is recomputed here and is not read back from the subscription payload: the section
+     * that drew the button was answered once, at subscribe, and between that frame and this click
+     * a terminal may have run `protected-mode:open` already. The two refusals are the two ways
+     * this can be wrong, and no more - a node standing in no verification window at all reads the
+     * same to an operator as one standing in somebody else's, so "the row is not mounted" and
+     * "the phase is not verifying" say one sentence between them.
+     *
+     * Nothing is written from here. The row belongs to {@see BackupAgent}, so the passed gate
+     * turns into a signal on the same road `protected-mode:open` takes, and the outcome comes
+     * back to every tab as the frame that lifts the mode - not as this action's ack, which only
+     * says the request was taken.
+     *
+     * @param string $acceptKey Accept key of the connection that pressed the button
+     * @throws TableActionException When this node is in no verification window, or the asking
+     *     browser is not the one that started the restore
+     */
+    private function handleReopen(string $acceptKey): void
+    {
+        $protectedMode = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($protectedMode === null || $protectedMode->phase !== StateProtectedModeRuntime::PHASE_VERIFYING) {
+            throw new TableActionException('The system is not standing in a verification window');
+        }
+
+        if (!$protectedMode->belongsToInitiator($this->subscriberSessionTokenHash($acceptKey))) {
+            throw new TableActionException('Only the browser that started the restore can reopen the system');
+        }
+
+        $this->agent->sendToAgent(
+            HilosSignalConstants::BACKUP_AGENT_REOPEN,
+            new BackupReopenSignalData($acceptKey),
+        );
+    }
+
+    /**
+     * Tells the subscribing client what this environment offers for restoring, and whether this
+     * one browser is the one that may end a verification window the node stands in.
+     *
+     * The restore button is a property of the installation, not of a row, so it is answered once
+     * at subscribe rather than per row. Production - and an installation whose APP_ENV names no
      * known environment - gets `uiEnabled: false` and shows the CLI instruction instead; the
      * environment name travels with it because the confirmation modal names the pair the
      * operator is about to bridge (archive's environment → this one).
      *
+     * The reopen section is the personal half of this frame, and the reason the hook is given an
+     * accept key at all: the answer differs between two subscribers of the same page, because the
+     * right belongs to the browser session that started the restore and to no other. It is
+     * computed once here rather than pushed later because nothing can change it under a mounted
+     * page - lifting the mode reloads every tab, and re-entering the freeze replaces the page with
+     * the maintenance placeholder. A restore begun from a terminal or a schedule leaves the row
+     * with no initiator session at all, and then it is false for everybody, production included.
+     *
+     * @param string $acceptKey WebSocket accept key of the subscribing connection
      * @param PageRouteParams $params Route params from page subscription (unused; the page takes none)
-     * @return PagePayload Restore section of the page data
+     * @return PagePayload Restore and reopen sections of the page data
      */
-    protected function buildPagePayload(PageRouteParams $params): PagePayload
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
     {
         $targetEnv = $this->currentEnv();
+        $protectedMode = Hilos::$rt?->hilosProtectedModeRuntime;
 
         return new PagePayload(data: [
             self::RESTORE_SECTION => [
                 self::RESTORE_UI_ENABLED => $targetEnv !== null && $targetEnv !== AppEnv::PROD,
                 self::RESTORE_TARGET_ENV => $targetEnv?->value,
             ],
+            self::REOPEN_SECTION => [
+                self::REOPEN_OFFERED => $protectedMode !== null
+                    && $protectedMode->phase === StateProtectedModeRuntime::PHASE_VERIFYING
+                    && $protectedMode->belongsToInitiator($this->subscriberSessionTokenHash($acceptKey)),
+            ],
         ]);
+    }
+
+    /**
+     * Reads the session behind a subscribing or acting connection, in the form the row compares.
+     *
+     * The connection knows its session token, and the protected-mode row keeps only a hash of the
+     * initiator's - so the two meet through the one hashing door the row owns
+     * ({@see StateProtectedModeRuntime::hashSessionToken()}) rather than through a second spelling of
+     * the algorithm here.
+     *
+     * Null is the honest answer to three different questions - the session registry is not
+     * mounted, this accept key names no connection, that connection carries no session - and all
+     * three mean the same thing to the only caller that reads it: this is not the browser the
+     * freeze was started from ({@see StateProtectedModeRuntime::belongsToInitiator()} refuses null).
+     *
+     * @param string $acceptKey Accept key of the connection to read
+     * @return ?string Hash of that connection's session token, or null when it carries no session
+     */
+    private function subscriberSessionTokenHash(string $acceptKey): ?string
+    {
+        $sessionToken = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey)?->sessionToken;
+
+        return $sessionToken === null || $sessionToken === ''
+            ? null
+            : StateProtectedModeRuntime::hashSessionToken($sessionToken);
     }
 
     /**

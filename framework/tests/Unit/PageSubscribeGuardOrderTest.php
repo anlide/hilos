@@ -197,10 +197,11 @@ class SubscribeGuardOrderTestPage extends AbstractPage
     /**
      * Counts the build and contributes nothing.
      *
+     * @param string $acceptKey WebSocket accept key of the subscribing connection (unused)
      * @param PageRouteParams $params Route params from page subscription (unused)
      * @return ?PagePayload Always null; the fixture only records that it ran
      */
-    protected function buildPagePayload(PageRouteParams $params): ?PagePayload
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
         $this->payloadBuilds++;
 

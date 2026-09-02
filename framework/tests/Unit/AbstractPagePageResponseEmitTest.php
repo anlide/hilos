@@ -275,7 +275,7 @@ final class AbstractPagePageResponseEmitTestPayloadPage extends AbstractPage
 {
     public const string PAGE = 'probe_payload';
 
-    protected function buildPagePayload(PageRouteParams $params): ?PagePayload
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
         return new PagePayload(entities: ['currentUser' => ['id' => 7, 'name' => 'Ada']]);
     }
@@ -304,7 +304,7 @@ final class AbstractPagePageResponseEmitTestOwnLabelPage extends AbstractPage
 {
     public const string PAGE = HilosPageConstants::HILOS_I18N_LANGUAGE;
 
-    protected function buildPagePayload(PageRouteParams $params): ?PagePayload
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
         return new PagePayload(data: [PageCatalogConstants::WIRE_PAGE_LABEL => 'Russian']);
     }

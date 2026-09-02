@@ -91,13 +91,14 @@ final class UserPage extends AbstractPage
      * naming a user that is not there: an absent row here means the guard did not
      * run, and a quiet empty page would hide that.
      *
+     * @param string $acceptKey WebSocket accept key of the subscribing connection (unused; the profile is the same for everyone)
      * @param PageRouteParams $params Route params for the user detail subscription
      * @return ?PagePayload User profile entity payload
      * @throws MissingPageRouteParamException When `id` is absent
      * @throws InvalidPageRouteParamException When `id` is non-numeric or `<= 0`
      * @throws PageInternalErrorException When the guarded user row is absent all the same
      */
-    protected function buildPagePayload(PageRouteParams $params): ?PagePayload
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
         $userId = UserPageSubscribeParams::fromPageRouteParams($params)->userId;
         $user = Hilos::$db->users[$userId]

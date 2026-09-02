@@ -87,6 +87,22 @@ final class ProtectedModeRuntime extends RtItem
     }
 
     /**
+     * Whether this connection belongs to the browser session that asked for the operation.
+     *
+     * The rule lives on the state row ({@see StateProtectedModeRuntime::belongsToInitiator()});
+     * this delegate is what lets a caller outside the runtime - the backup page deciding whether
+     * to offer the reopen block, and the action recomputing that decision on the click - ask the
+     * question without holding the backing row.
+     *
+     * @param ?string $sessionTokenHash Hash of the connection's session token, or null when it carries no session
+     * @return bool Whether the session behind this connection is the initiator's
+     */
+    public function belongsToInitiator(?string $sessionTokenHash): bool
+    {
+        return $this->_state->belongsToInitiator($sessionTokenHash);
+    }
+
+    /**
      * Whether this browser session presented a valid pass and was let in for the verification.
      *
      * The rule lives on the state row ({@see StateProtectedModeRuntime::admits()}); this

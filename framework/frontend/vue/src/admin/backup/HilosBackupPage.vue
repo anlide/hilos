@@ -11,8 +11,11 @@ surfaces the backend's failure (authoritative-backend). Restore is the
 destructive one: it is offered as a button only where the backend says so
 (everywhere but production), it confirms by typing the archive id, and while it
 runs the addressed progress frames are the only live thing on the page — the
-node is frozen and the table sends nothing. All table logic and the row view-model
-are the core headless's too; this view owns only the markup, so a project mounts
+node is frozen and the table sends nothing. Once it ends, the node stands in a
+verification window, and the one browser that started the restore is offered the
+block that closes it — the backend answers that personally in the page-data
+section, so a second admin looking at the same page sees nothing. All table logic
+and the row view-model are the core headless's too; this view owns only the markup, so a project mounts
 it by passing its HilosBackupsContext. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
@@ -32,6 +35,7 @@ import {
   backupRowAnchors,
   createBackupProgressClock,
   createHilosBackupsActions,
+  createHilosBackupsReopenGate,
   createHilosBackupsRestoreGate,
   createHilosBackupsTable,
   createHilosRestoreProgress,
@@ -41,9 +45,11 @@ import {
   formatBackupProgressLabel,
   formatBackupSize,
   formatRestoreCliCommand,
+  formatRestoreOutcomeLine,
   copyToClipboard,
   hasBackupFailureDetail,
   hasRestoreOutcome,
+  HILOS_BACKUP_REOPEN_COPY,
   HILOS_BACKUP_SCOPES,
   HilosPages,
   isBackupChecksumMismatch,
@@ -81,11 +87,15 @@ const {
   sendBackupDelete,
   sendBackupSetKeep,
   sendBackupRestore,
+  sendBackupReopen,
 } = createHilosBackupsActions(props.context)
 
 // What this installation offers for restoring, and the live frames a restore this
 // tab started sends back while the node is frozen.
 const restoreGate = useSignal(createHilosBackupsRestoreGate(props.context))
+// Whether THIS browser is the one that may end the verification window a restore left
+// the node in. Personal to the subscription, so a second admin's tab reads false.
+const reopenOffered = useSignal(createHilosBackupsReopenGate(props.context))
 const restoreProgress = createHilosRestoreProgress(props.context.connection)
 const restoreStatus = useSignal(restoreProgress.status)
 const rows = useSignal(backupsTable.rows)
@@ -307,6 +317,36 @@ async function submitRestore(): Promise<void> {
   }
 }
 
+// Reopen dialog: ending the verification window. Confirmation is the modal itself and
+// nothing more — typing the archive id guards restore against picking the WRONG target,
+// and reopening has no target to miss; the only mistake left is the click.
+const reopenOpen = ref(false)
+const reopenAction = useTrackedAction()
+const {
+  loading: reopenLoading,
+  busy: reopenBusy,
+  run: runReopenAction,
+  clearError: clearReopenError,
+} = reopenAction
+
+function openReopen(): void {
+  clearReopenError()
+  reopenOpen.value = true
+}
+
+function closeReopen(): void {
+  reopenOpen.value = false
+}
+
+async function submitReopen(): Promise<void> {
+  if (reopenBusy.value) {
+    return
+  }
+  if (await runReopenAction(sendBackupReopen())) {
+    closeReopen()
+  }
+}
+
 // CLI instruction dialog: what the production surface offers instead of a button.
 const cliOpen = ref(false)
 const cliRow = ref<HilosBackupRow | null>(null)
@@ -386,7 +426,7 @@ function openOutcome(row: HilosBackupRow): void {
         Restore {{ restoreStatus.backupId }} · {{ restoreStatus.phase }}
       </div>
       <div v-if="restoreStatus.outcome === 'success'" class="small">
-        Restored. This page reloads itself as soon as the system reopens.
+        {{ formatRestoreOutcomeLine(restoreStatus) }}
       </div>
       <div v-else-if="restoreStatus.outcome === 'error'" class="small">
         <div>{{ restoreStatus.failureReason }}</div>
@@ -422,6 +462,24 @@ function openOutcome(row: HilosBackupRow): void {
           {{ restoreProgressLabel }}
         </div>
       </template>
+    </div>
+
+    <div
+      v-if="reopenOffered"
+      class="alert alert-warning"
+      role="status"
+      data-id="hilos-backup-reopen-panel"
+    >
+      <div class="fw-semibold">{{ HILOS_BACKUP_REOPEN_COPY.title }}</div>
+      <div class="small">{{ HILOS_BACKUP_REOPEN_COPY.body }}</div>
+      <button
+        type="button"
+        class="btn btn-warning btn-sm mt-2"
+        data-id="hilos-backup-reopen"
+        @click="openReopen"
+      >
+        {{ HILOS_BACKUP_REOPEN_COPY.button }}
+      </button>
     </div>
 
     <HilosViewportTable
@@ -634,6 +692,37 @@ function openOutcome(row: HilosBackupRow): void {
           @click="submitDelete"
         >
           Delete
+        </LoadingButton>
+      </template>
+    </HilosModal>
+
+    <HilosModal
+      v-model="reopenOpen"
+      :title="HILOS_BACKUP_REOPEN_COPY.modalTitle"
+      :close-on-backdrop="!reopenBusy"
+      :close-on-esc="!reopenBusy"
+      @cancel="closeReopen"
+    >
+      <HilosActionError :action="reopenAction" />
+      <p class="mb-0 text-body-secondary">
+        {{ HILOS_BACKUP_REOPEN_COPY.modalBody }}
+      </p>
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="reopenBusy"
+          @click="requestClose"
+        >
+          Cancel
+        </button>
+        <LoadingButton
+          class="btn-warning"
+          :loading="reopenLoading"
+          data-id="hilos-backup-reopen-confirm"
+          @click="submitReopen"
+        >
+          Reopen
         </LoadingButton>
       </template>
     </HilosModal>

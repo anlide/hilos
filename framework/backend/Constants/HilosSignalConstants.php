@@ -17,6 +17,7 @@ use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
 use Hilos\Core\Router\SignalSource;
@@ -309,6 +310,17 @@ final class HilosSignalConstants
      * source of truth about where it runs.
      */
     public const string BACKUP_RESTORE = 'backup_restore';
+
+    /**
+     * Client → server: end the verification window a restore left the node in (HIL-676).
+     *
+     * Payload-less on purpose. The freeze it ends is named by the runtime row on the server,
+     * and the one browser allowed to end it is named there too, so a client has nothing left
+     * to say about it — the empty payload IS the gate. It is the page's half of what
+     * `php cli.php protected-mode:open` does from a terminal, and it reaches the same agent
+     * by the same road.
+     */
+    public const string BACKUP_REOPEN = 'backup_reopen';
 
     // ── Hilos backup admin: restore progress (server → the connection that asked) ──
     /**
@@ -854,6 +866,17 @@ final class HilosSignalConstants
      * backstop: between the page's answer and this signal the agent may have taken work on.
      */
     public const string BACKUP_AGENT_RESTORE = 'backup_agent_restore';
+
+    /**
+     * Page → BackupAgent: end the verification window this node stands in (HIL-676).
+     *
+     * The page has already checked the runtime row and answered the browser, so this frame is
+     * a request to act, not to decide; the agent re-checks the row all the same, because
+     * between the page's answer and this signal a terminal may have opened the system already.
+     * The accept key rides along only so the agent can name whose click it is carrying out or
+     * refusing in its log. Carried by {@see BackupReopenSignalData}.
+     */
+    public const string BACKUP_AGENT_REOPEN = 'backup_agent_reopen';
 
     // ── Hilos logs admin: viewer page → the node that owns the files (agent signal) ──
     /**

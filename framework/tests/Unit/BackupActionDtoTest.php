@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
+use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreProgressSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
@@ -13,6 +14,7 @@ use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Pages\Backup\DTO\BackupCreateActionDTO;
 use Hilos\Pages\Backup\DTO\BackupDeleteActionDTO;
+use Hilos\Pages\Backup\DTO\BackupReopenActionDTO;
 use Hilos\Pages\Backup\DTO\BackupRestoreActionDTO;
 use Hilos\Pages\Backup\DTO\BackupSetKeepActionDTO;
 use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
@@ -29,7 +31,9 @@ use PHPUnit\Framework\TestCase;
  * signal carries the same, plus the verdict and scope the page resolved and the user id whose
  * identities the agent photographs before the swap (HIL-279). The restore progress
  * frame is pinned against the runtime row it photographs, because the initiator's view and the
- * CLI monitor's are meant to be the same snapshot.
+ * CLI monitor's are meant to be the same snapshot. The reopen pair (HIL-676) is the odd one out:
+ * its action carries nothing at all, and the assertion worth making about it is that it stays
+ * that way whatever a client sends.
  */
 final class BackupActionDtoTest extends TestCase
 {
@@ -195,6 +199,39 @@ final class BackupActionDtoTest extends TestCase
         $this->expectException(InvalidFormatException::class);
 
         BackupRestoreActionDTO::fromArray([]);
+    }
+
+    public function testReopenCarriesNothingFromABarePayload(): void
+    {
+        $dto = BackupReopenActionDTO::fromArray([]);
+
+        $this->assertSame([], $dto->toArray());
+    }
+
+    public function testReopenIgnoresWhateverAClientPutsInThePayload(): void
+    {
+        // The empty payload is the gate: the freeze and the browser allowed to end it are both
+        // named on the server, so a client naming either of them changes nothing.
+        $dto = BackupReopenActionDTO::fromArray([
+            SignalPayloadConstants::FIELD_DATA => ['initiatorSessionTokenHash' => 'somebody-elses'],
+        ]);
+
+        $this->assertSame([], $dto->toArray());
+    }
+
+    public function testReopenSignalRoundTripsTheRequestingConnection(): void
+    {
+        $dto = BackupReopenSignalData::fromArray(new BackupReopenSignalData('accept-key-4')->toArray());
+
+        $this->assertSame('accept-key-4', $dto->acceptKey);
+    }
+
+    public function testReopenSignalRefusesAPayloadNamingNoConnection(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(BackupReopenSignalData::acceptKey);
+
+        BackupReopenSignalData::fromArray([]);
     }
 
     public function testRestoreSignalRoundTripsEveryKeyTheAgentActsOn(): void

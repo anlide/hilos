@@ -42,10 +42,11 @@ abstract class AbstractHilosDashboardPage extends AbstractHilosPage
      * catalog entry before the daemon serves anything, so a card without identity cannot reach
      * here, and a guard would swallow the typo the startup check exists to show.
      *
+     * @param string $acceptKey WebSocket accept key of the subscribing connection (unused; every subscriber gets the same cards)
      * @param PageRouteParams $params Route params from page subscription
      * @return ?PagePayload Dashboard sections in display order
      */
-    protected function buildPagePayload(PageRouteParams $params): ?PagePayload
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
         $sections = [];
         foreach (PageCatalogResolver::dashboardSections() as $section) {

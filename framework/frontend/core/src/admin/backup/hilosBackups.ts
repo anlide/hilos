@@ -170,16 +170,21 @@ const BACKUP_CREATE_ACTION = 'backup_create'
 const BACKUP_DELETE_ACTION = 'backup_delete'
 const BACKUP_SET_KEEP_ACTION = 'backup_set_keep'
 const BACKUP_RESTORE_ACTION = 'backup_restore'
+const BACKUP_REOPEN_ACTION = 'backup_reopen'
 /** The page's own actions, so an addressed failure notice for one is recognized as ours. */
 const BACKUP_ACTIONS = new Set<string>([
   BACKUP_CREATE_ACTION,
   BACKUP_DELETE_ACTION,
   BACKUP_SET_KEEP_ACTION,
   BACKUP_RESTORE_ACTION,
+  BACKUP_REOPEN_ACTION,
 ])
 
 /** Page-data section saying what this installation offers for restoring (backend `RESTORE_SECTION`). */
 const BACKUP_RESTORE_DATA = 'backupRestore'
+
+/** Page-data section saying whether THIS browser may reopen the system (backend `REOPEN_SECTION`). */
+const BACKUP_REOPEN_DATA = 'backupReopen'
 
 /** Server→initiator signal `type` carrying one restore runtime snapshot (PHP `BACKUP_RESTORE_PROGRESS`). */
 export const BACKUP_RESTORE_PROGRESS_SIGNAL = 'backup_restore_progress'
@@ -343,6 +348,12 @@ export interface HilosBackupsActions {
    * @param id The backup id (also the table row key).
    */
   sendBackupRestore(id: string): ActionHandle
+  /**
+   * End the verification window the node stands in after a restore, as a tracked
+   * action. The ack answers acceptance only: the outcome is that the system reopens,
+   * which reloads every connected page including this one.
+   */
+  sendBackupReopen(): ActionHandle
 }
 
 /** What this installation offers for restoring, from the page-data section. */
@@ -974,6 +985,15 @@ const restoreGateSchema = z.looseObject({
 })
 
 /**
+ * Payload of the reopen page-data section: whether this one browser is offered the
+ * block that ends the verification window. One boolean, because the decision is the
+ * backend's and there is nothing here to recompute it from.
+ */
+const reopenGateSchema = z.looseObject({
+  offered: z.boolean(),
+})
+
+/**
  * Payload of one restore progress frame — the restore runtime row as the agent
  * photographs it, key for key with what the CLI monitor is answered
  * (PHP `BackupRestoreProgressSignalData`).
@@ -1028,6 +1048,34 @@ export function createHilosBackupsRestoreGate(
     return parsed.success
       ? { uiEnabled: parsed.data.uiEnabled, targetEnv: parsed.data.targetEnv }
       : { uiEnabled: false, targetEnv: null }
+  })
+}
+
+/**
+ * Whether this browser is offered the block that reopens the system, reactively.
+ *
+ * The section is personal: the backend answers it against the session behind the
+ * subscribing connection, so two tabs of two different admins on the same shuttered
+ * node get two different answers to the same page. It is read once at subscribe and
+ * needs no push — reopening the system reloads every page, and re-freezing replaces
+ * this one with the maintenance surface, so nothing can change it under a mounted page.
+ *
+ * A page scope without the section — an older backend, or the moment before the
+ * subscription lands — reads as no block, for the same reason the restore gate
+ * withholds: the state where the block is absent is by far the common one, and drawing
+ * it on a guess offers an action the backend would refuse.
+ *
+ * @param context The project context (the scope stores holding the page scope).
+ */
+export function createHilosBackupsReopenGate(
+  context: HilosBackupsContext,
+): ReadonlySignal<boolean> {
+  const section = context.scopes.pageDataSignal(BACKUP_REOPEN_DATA)
+
+  return computedSignal(() => {
+    const parsed = reopenGateSchema.safeParse(section.get())
+
+    return parsed.success ? parsed.data.offered : false
   })
 }
 
@@ -1123,11 +1171,17 @@ export function formatRestorePhaseLine(status: HilosRestoreStatus): string {
  * that is precisely why they are said here: the person reading it is the one who will
  * have to act from a terminal.
  *
+ * The success wording names no button, deliberately. This line is shown on the
+ * maintenance placeholder as well as on the backup page, and the placeholder has no
+ * reopen block to point at — a sentence promising one there would be a promise about a
+ * control the reader cannot see. What it says instead is the state, which is true on
+ * both surfaces: the system is closed to everyone but this browser until it is reopened.
+ *
  * @param status The latest restore frame this connection received.
  */
 export function formatRestoreOutcomeLine(status: HilosRestoreStatus): string {
   if (status.outcome === 'success') {
-    return 'Restored. This page reloads itself as soon as the system reopens.'
+    return 'Restored. The system stays closed to everyone but this browser until it is reopened.'
   }
   if (status.outcome !== 'error') {
     return ''
@@ -1145,6 +1199,36 @@ export function formatRestoreOutcomeLine(status: HilosRestoreStatus): string {
 
   return sentences.join(' ')
 }
+
+/**
+ * The words of the reopen block and of its confirmation, owned here rather than by the
+ * three view shells.
+ *
+ * Same rule the panel formatters above stand on: a sentence copied into a Vue, a React
+ * and an Angular template is three sentences that drift, and the one that drifts is
+ * always the one nobody opened this month. Here it is one string with one owner, and a
+ * shell that renders it cannot disagree with the other two.
+ *
+ * The modal says what the click costs before it is paid — everyone comes back in, every
+ * page reloads including this one — and says the one thing that is not undoable from
+ * this screen: closing the system again is a CLI command, not a button.
+ */
+export const HILOS_BACKUP_REOPEN_COPY = {
+  /** Heading of the block offered to the browser that started the restore. */
+  title: 'Verification window open',
+  /** The block's body: what state the installation is in, and what the button ends. */
+  body:
+    'The restore finished and this installation is closed to everyone but this browser. ' +
+    'Check what you need to check, then reopen it - every open page reloads itself when you do.',
+  /** Label of the button in the block. */
+  button: 'Reopen the system',
+  /** Heading of the confirmation modal. */
+  modalTitle: 'Reopen the system',
+  /** The modal's body: the cost of the click, and the way back. */
+  modalBody:
+    'This ends the verification window and lets everyone back in. Every connected page ' +
+    'reloads itself, this one included. Closing the system again is a CLI command.',
+} as const
 
 /** The shared clock a backup view redraws its progress from. */
 export interface HilosBackupProgressClock {
@@ -1291,6 +1375,9 @@ export function createHilosBackupsActions(
       return context.actions.dispatch(BACKUP_RESTORE_ACTION, {
         backupId: id,
       })
+    },
+    sendBackupReopen() {
+      return context.actions.dispatch(BACKUP_REOPEN_ACTION, {})
     },
   }
 }
