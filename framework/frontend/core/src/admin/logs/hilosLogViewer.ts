@@ -18,9 +18,20 @@
 // with its continuation lines, so a twenty-frame stack does not push its
 // neighbours out of sight.
 //
-// Following the live tail (the Follow switch, the sticky bottom, the rotation
-// divider) is HIL-758, and there is no Refresh button on purpose: freshness
-// arrives as a push, not as a re-request.
+// Following the live tail is here too, and there is no Refresh button on
+// purpose: freshness arrives as a push, not as a re-request. Scrolling up
+// releases the STICKINESS and not the follow — the tail keeps running, what
+// arrives while the reader is above piles up in a buffer beside the feed, and
+// the return control says how much of it is waiting. The rejected alternative
+// (the follow switching itself off, which is what the mockup drew) loses
+// whatever grew while the reader was away, silently and without a size, and
+// this subsystem loses nothing silently anywhere else.
+//
+// So the feed is a list of ITEMS and not of lines: a rotation, a jump, a
+// server-side stop and a buffer overflow are notes standing at their own place
+// in the sequence, and the grouping into entries runs over that list and breaks
+// on a note. A line arriving after a rotation does not belong to the error
+// above it.
 
 import { z } from 'zod'
 import {
@@ -32,6 +43,7 @@ import { resolveHilosPath } from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { type PageRouteMatch } from '../../routing/PageRouter.js'
 import {
+  computedSignal,
   createSignal,
   subscribeSignal,
   type ReadonlySignal,
@@ -44,6 +56,21 @@ export const LOG_VIEWER_CATALOG_SIGNAL = 'subscription_page_hilos_logs_view'
 
 /** The action one page of lines is asked for by (PHP `LOGS_READ_LINES`). */
 export const LOGS_READ_LINES_ACTION = 'logs_read_lines'
+
+/**
+ * The action the live tail is begun by (PHP `LOGS_FOLLOW_START`).
+ *
+ * Its reply is the first page, which is why no read is sent before it: a read
+ * followed by a start would cost a round trip and still leave a gap between the
+ * page it answered and the moment the owner began watching.
+ */
+export const LOGS_FOLLOW_START_ACTION = 'logs_follow_start'
+
+/** The action the live tail is ended by (PHP `LOGS_FOLLOW_STOP`). */
+export const LOGS_FOLLOW_STOP_ACTION = 'logs_follow_stop'
+
+/** Server→client signal `type` carrying what happened to the followed file (PHP `LOGS_LINES_APPENDED`). */
+export const LOG_LINES_APPENDED_SIGNAL = 'logs_lines_appended'
 
 /** Source value: the live journal, the file still being written to. */
 export const LOG_SOURCE_LIVE = 'live'
@@ -68,6 +95,27 @@ const LOG_VIEWER_SOURCE_PARAM = 'source'
 
 /** Route param naming the stream, matching the `{stream?}` slot of the viewer route. */
 const LOG_VIEWER_STREAM_PARAM = 'stream'
+
+/**
+ * How near the bottom the reader counts as being AT it, in pixels.
+ *
+ * Not zero: a pane rounded to fractional pixels never reports an exact bottom,
+ * and a tail that unsticks itself on a rounding error would be unusable.
+ */
+const LOG_VIEWER_TAIL_THRESHOLD_PX = 24
+
+/**
+ * The most lines the feed holds; the oldest are cut off the top past it.
+ *
+ * Ten pages of reading (PHP `LogStoreAgent::READ_PAGE_LINES` = 200) and ten
+ * rounds of the tail (PHP `LogStoreAgent::FOLLOW_PUSH_MAX_LINES` = 200, once a
+ * second), which is far more than a screen and is what stands in for the
+ * virtualized list this pane deliberately does not have.
+ */
+const LOG_VIEWER_FEED_MAX_LINES = 2000
+
+/** The most lines the buffer beside the feed holds while the reader is above it. */
+const LOG_VIEWER_PENDING_MAX_LINES = 2000
 
 /** One stream of one node: the file, what writes it, and where it can be found. */
 const logViewerStreamSchema = z.looseObject({
@@ -107,10 +155,40 @@ export type HilosLogViewerNode = z.infer<typeof logViewerNodeSchema>
 export type HilosLogViewerStream = z.infer<typeof logViewerStreamSchema>
 
 /**
+ * One line as the owner of the file sends it, in a read reply and in a follow
+ * frame alike (PHP `LogsReadLinesReplyDTO::linesFromPage()`).
+ *
+ * One shape for both because the browser draws the first page and every frame
+ * after it with one renderer; a second shape here would be a second renderer.
+ */
+const logViewerLineSchema = z.looseObject({
+  text: z.string(),
+  level: z.string(),
+  isContinuation: z.boolean(),
+})
+
+/**
+ * What happened to the followed file since the last frame (PHP
+ * `LogsLinesAppendedSignalData`).
+ *
+ * Four mutually exclusive shapes and never two at once: lines were appended, the
+ * file was carried off and reading restarted on the new one, the owner jumped
+ * ahead to catch up, or the follow ended on its side. A tick with nothing to say
+ * sends no frame at all.
+ */
+const logsLinesAppendedSchema = z.looseObject({
+  followId: z.string(),
+  lines: z.array(logViewerLineSchema),
+  rotated: z.boolean(),
+  skippedBytes: z.number().nullable(),
+  stopped: z.boolean(),
+})
+
+/**
  * The log-viewer signal schemas keyed for a connection's `projectSchemas`, so the
- * parse boundary validates the catalog frames {@link createHilosLogViewer}
- * ingests. {@link createHilosConnection} merges them in, so a project never
- * restates them.
+ * parse boundary validates the catalog and follow frames
+ * {@link createHilosLogViewer} ingests. {@link createHilosConnection} merges them
+ * in, so a project never restates them.
  *
  * Named apart from the rotation screen's `LOGS_SIGNAL_SCHEMAS` deliberately: two
  * independent names cost one line in the merge and do not depend on which of the
@@ -118,24 +196,22 @@ export type HilosLogViewerStream = z.infer<typeof logViewerStreamSchema>
  */
 export const LOGS_VIEWER_SIGNAL_SCHEMAS = {
   [LOG_VIEWER_CATALOG_SIGNAL]: logViewerCatalogSchema,
+  [LOG_LINES_APPENDED_SIGNAL]: logsLinesAppendedSchema,
 }
 
-/** One page of lines as the owner of the file answers a read with. */
+/** One page of lines as the owner of the file answers a read — and a start — with. */
 const logsReadLinesReplySchema = z.looseObject({
   readable: z.boolean(),
-  lines: z.array(
-    z.looseObject({
-      text: z.string(),
-      level: z.string(),
-      isContinuation: z.boolean(),
-    }),
-  ),
+  lines: z.array(logViewerLineSchema),
   nextCursor: z.number().nullable(),
   hasMore: z.boolean(),
 })
 
-/** One page of lines, as it comes off the wire. */
-type LogsReadLinesReply = z.infer<typeof logsReadLinesReplySchema>
+/** One line as it comes off the wire, before it is keyed and laid out. */
+type LogViewerWireLine = z.infer<typeof logViewerLineSchema>
+
+/** One follow frame, as it comes off the wire. */
+type LogsLinesAppended = z.infer<typeof logsLinesAppendedSchema>
 
 /** A log level the level picker offers, and the value it sends. */
 export interface HilosLogLevelOption {
@@ -211,6 +287,44 @@ export interface HilosLogViewerReadLine {
   /** Whether the line continues the entry above it instead of starting one. */
   readonly isContinuation: boolean
 }
+
+/** What a note in the feed has to say, each of them a break in the reading. */
+export type HilosLogViewerNotice =
+  /** The file was carried off and reading restarted at the start of the new one. */
+  | 'rotated'
+  /** The owner jumped ahead over bytes it was too far behind to read. */
+  | 'skipped'
+  /** The buffer overflowed while the reader was above it. */
+  | 'dropped'
+  /** The follow ended on the server's side. */
+  | 'stopped'
+
+/**
+ * One item of the feed: a line that was read, or a note about what happened
+ * between the lines around it.
+ *
+ * The notes travel IN the sequence rather than beside it, because a rotation
+ * that arrived while the reader was above must land back where it happened once
+ * the buffer is poured in — not at the end of everything.
+ */
+export type HilosLogViewerFeedItem =
+  | { readonly kind: 'line'; readonly line: HilosLogViewerReadLine }
+  | {
+      readonly kind: 'notice'
+      readonly key: string
+      readonly notice: HilosLogViewerNotice
+      readonly text: string
+    }
+
+/** One row of the pane: an entry with its continuation frames, or a note. */
+export type HilosLogViewerRow =
+  | ({ readonly kind: 'entry' } & HilosLogViewerEntry)
+  | {
+      readonly kind: 'notice'
+      readonly key: string
+      readonly notice: HilosLogViewerNotice
+      readonly text: string
+    }
 
 /**
  * The slice of the navigator the viewer drives: it reads the address it was
@@ -441,14 +555,14 @@ export type HilosLogViewerPaneState =
  *
  * @param catalog The latest catalog, or null before the first one arrives.
  * @param selection The file being read.
- * @param entryCount How many entries the pane holds.
+ * @param rowCount How many rows the pane holds — notes count, so a note in a file with no lines is not hidden under "this file is empty".
  * @param readable Whether the named file could be read at all.
  * @param filtered Whether a level or a substring is narrowing the read.
  */
 export function logViewerPaneState(
   catalog: HilosLogViewerCatalog | null,
   selection: HilosLogViewerSelection,
-  entryCount: number,
+  rowCount: number,
   readable: boolean,
   filtered: boolean,
 ): HilosLogViewerPaneState {
@@ -462,11 +576,31 @@ export function logViewerPaneState(
   if (!readable) {
     return 'missing'
   }
-  if (entryCount > 0) {
+  if (rowCount > 0) {
     return 'lines'
   }
 
   return filtered ? 'nomatch' : 'silent'
+}
+
+/**
+ * Whether the reader is at the tail, which is what decides between a line
+ * sticking to the bottom and a line waiting in the buffer.
+ *
+ * It lives here rather than in a view so the React and Angular viewers measure
+ * the same edge as the Vue one: a threshold restated per framework is a
+ * threshold that drifts.
+ *
+ * @param scrollTop How far the pane is scrolled from its top.
+ * @param scrollHeight The full height of the pane's content.
+ * @param clientHeight The visible height of the pane.
+ */
+export function isLogViewerPinned(
+  scrollTop: number,
+  scrollHeight: number,
+  clientHeight: number,
+): boolean {
+  return scrollHeight - scrollTop - clientHeight <= LOG_VIEWER_TAIL_THRESHOLD_PX
 }
 
 /**
@@ -498,8 +632,18 @@ export interface HilosLogViewer {
   readonly catalog: ReadonlySignal<HilosLogViewerCatalog | null>
   /** The file being read, each slot null until it is chosen. */
   readonly selection: ReadonlySignal<HilosLogViewerSelection>
-  /** The entries read so far, oldest first. */
-  readonly entries: ReadonlySignal<readonly HilosLogViewerEntry[]>
+  /** The rows the pane draws — entries and notes — oldest first. */
+  readonly rows: ReadonlySignal<readonly HilosLogViewerRow[]>
+  /** Where the Follow switch stands: whether the reader WANTS the tail. */
+  readonly followRequested: ReadonlySignal<boolean>
+  /** Whether the tail is actually running on the server; this is what the badge burns by. */
+  readonly following: ReadonlySignal<boolean>
+  /** Whether the chosen source can be followed at all; an archived batch cannot. */
+  readonly canFollow: ReadonlySignal<boolean>
+  /** Whether the reader is at the tail, so new lines stick instead of waiting. */
+  readonly pinned: ReadonlySignal<boolean>
+  /** How many LINES wait in the buffer; an entry whose continuations have not arrived is not assembled yet. */
+  readonly pendingLines: ReadonlySignal<number>
   /** Level asked of the server, empty for any level. */
   readonly level: ReadonlySignal<string>
   /** Substring asked of the server, empty for no substring. */
@@ -530,6 +674,23 @@ export interface HilosLogViewer {
    * @param substring The text to look for, or empty for no substring.
    */
   setSubstring(substring: string): void
+  /**
+   * Raise or lower the Follow switch.
+   *
+   * Lowering it pours the buffer into the feed rather than throwing it away: the
+   * lines already arrived and are real.
+   *
+   * @param next Whether the reader wants the tail.
+   */
+  setFollow(next: boolean): void
+  /**
+   * Say where the reader is, as {@link isLogViewerPinned} measured it.
+   *
+   * @param next Whether the reader is at the tail.
+   */
+  setPinned(next: boolean): void
+  /** Pour the buffer into the feed and stick to the tail again. */
+  returnToTail(): void
   /** Read the page before the oldest line held, keeping what is already shown. */
   readOlder(): void
   /** Start listening for the catalog and read what the address names — call on mount. */
@@ -558,17 +719,38 @@ export function createHilosLogViewer(
   const selection = createSignal<HilosLogViewerSelection>(
     readLogViewerAddress(address.currentRoute.get().params),
   )
-  const lines = createSignal<readonly HilosLogViewerReadLine[]>([])
-  const entries = createSignal<readonly HilosLogViewerEntry[]>([])
+  const feed = createSignal<readonly HilosLogViewerFeedItem[]>([])
+  const rows = createSignal<readonly HilosLogViewerRow[]>([])
   const level = createSignal('')
   const substring = createSignal('')
   const busy = createSignal(false)
   const readable = createSignal(true)
   const hasMore = createSignal(false)
   const refusal = createSignal<string | null>(null)
+  // The switch stands up by default: an operator opening a live file is looking
+  // at what is happening now, and asking them to turn that on is asking twice.
+  const followRequested = createSignal(true)
+  const following = createSignal(false)
+  const canFollow = computedSignal(
+    () => selection.get().source === LOG_SOURCE_LIVE,
+  )
+  const pinned = createSignal(true)
+  const pendingLines = createSignal(0)
   const teardown: Unsubscribe[] = []
   let cursor: number | null = null
   let page = 0
+  // What arrived while the reader was above the tail, and how many lines fell out
+  // of the front of it. The dropped count is held apart from the buffer so that
+  // the note it becomes is not itself buffered and counted.
+  let pending: readonly HilosLogViewerFeedItem[] = []
+  let pendingDropped = 0
+  let notices = 0
+  // The requestId of the start in progress: every frame of that follow is stamped
+  // with it, and frames of a follow already left behind may still be in flight.
+  let followId: string | null = null
+  // The node the follow was begun on, which is the node the removal is addressed
+  // to — a switch that has moved on since would name a different one.
+  let followNode: string | null = null
   // Only the newest read may write the pane: a reply to a file the operator has
   // already moved off would otherwise land under the selects of another one.
   let generation = 0
@@ -578,22 +760,90 @@ export function createHilosLogViewer(
   // node and the source the operator had just chosen.
   let ownPath: string | null = null
 
-  const publish = (stored: readonly HilosLogViewerReadLine[]): void => {
-    lines.set(stored)
-    entries.set(toLogViewerEntries(stored))
+  const publish = (items: readonly HilosLogViewerFeedItem[]): void => {
+    const kept = trimFeedItems(items, LOG_VIEWER_FEED_MAX_LINES)
+    feed.set(kept)
+    rows.set(toLogViewerRows(kept))
   }
 
   const store = (
-    reply: LogsReadLinesReply,
-  ): readonly HilosLogViewerReadLine[] => {
+    stored: readonly LogViewerWireLine[],
+  ): readonly HilosLogViewerFeedItem[] => {
     page += 1
 
-    return reply.lines.map((line, index) => ({
-      id: `${page}:${index}`,
-      text: line.text,
-      level: line.level,
-      isContinuation: line.isContinuation,
+    return stored.map((line, index) => ({
+      kind: 'line',
+      line: {
+        id: `${page}:${index}`,
+        text: line.text,
+        level: line.level,
+        isContinuation: line.isContinuation,
+      },
     }))
+  }
+
+  const note = (
+    notice: HilosLogViewerNotice,
+    text: string,
+  ): HilosLogViewerFeedItem => {
+    notices += 1
+
+    return { kind: 'notice', key: `notice:${notices}`, notice, text }
+  }
+
+  // Pouring the buffer in rebuilds the entries over the WHOLE feed rather than
+  // appending assembled ones: a stack whose first frames arrived before the
+  // reader scrolled up and whose last ones waited in the buffer has to end up
+  // under its own error line, not as an orphan under the seam.
+  const drain = (): void => {
+    if (pending.length === 0 && pendingDropped === 0) {
+      return
+    }
+
+    const poured =
+      pendingDropped === 0
+        ? pending
+        : [
+            note(
+              'dropped',
+              `${pendingDropped} lines were dropped while you were away.`,
+            ),
+            ...pending,
+          ]
+    pending = []
+    pendingDropped = 0
+    pendingLines.set(0)
+    publish([...feed.get(), ...poured])
+  }
+
+  const buffer = (items: readonly HilosLogViewerFeedItem[]): void => {
+    const all = [...pending, ...items]
+    const kept = trimFeedItems(all, LOG_VIEWER_PENDING_MAX_LINES)
+    pendingDropped += countFeedLines(all) - countFeedLines(kept)
+    pending = kept
+    pendingLines.set(countFeedLines(kept))
+  }
+
+  /**
+   * Forget the follow in progress and empty what it had buffered.
+   *
+   * The owner is told only when nothing is starting in its place: a start on the
+   * same connection replaces the previous follow by itself, and a removal sent
+   * alongside it would race the replacement it is not needed for.
+   */
+  const unfollow = (tellOwner: boolean): void => {
+    const node = followNode
+    followId = null
+    followNode = null
+    following.set(false)
+    pending = []
+    pendingDropped = 0
+    pendingLines.set(0)
+    if (tellOwner && node !== null) {
+      // Untracked on purpose: the removal is answered with nothing, and a handle
+      // waiting for a reply that is not coming would time out for show.
+      context.connection.sendAction(LOGS_FOLLOW_STOP_ACTION, { nodeId: node })
+    }
   }
 
   const read = (older: boolean): void => {
@@ -603,6 +853,7 @@ export function createHilosLogViewer(
       current.source === null ||
       current.stream === null
     ) {
+      unfollow(true)
       // The generation moves although nothing is asked for: a reply still on the
       // wire belongs to the file just left, and without this it would pass the
       // guard below and republish its lines under a selection that names no file.
@@ -616,67 +867,153 @@ export function createHilosLogViewer(
       return
     }
 
+    // Reading older lines leaves the tail alone: the two travel in opposite
+    // directions and the operator asked for both.
+    const starts =
+      !older && current.source === LOG_SOURCE_LIVE && followRequested.get()
+    if (!older) {
+      unfollow(!starts)
+    }
+
     generation += 1
     const mine = generation
     busy.set(true)
     refusal.set(null)
-    context.actions
-      .dispatch(
-        LOGS_READ_LINES_ACTION,
-        {
-          nodeId: current.nodeId,
-          source:
-            current.source === LOG_SOURCE_LIVE
-              ? LOG_SOURCE_LIVE
-              : LOG_SOURCE_BATCH,
-          batchTimestamp:
-            current.source === LOG_SOURCE_LIVE ? null : current.source,
-          stream: current.stream,
-          level: level.get() === '' ? null : level.get(),
-          substring: substring.get() === '' ? null : substring.get(),
-          cursor: older ? cursor : null,
-        },
-        { replySchema: logsReadLinesReplySchema },
-      )
-      .done.then(
-        (result) => {
-          if (mine !== generation || result.reply === undefined) {
-            return
-          }
+    const handle = starts
+      ? context.actions.dispatch(
+          LOGS_FOLLOW_START_ACTION,
+          {
+            nodeId: current.nodeId,
+            stream: current.stream,
+            level: level.get() === '' ? null : level.get(),
+            substring: substring.get() === '' ? null : substring.get(),
+          },
+          { replySchema: logsReadLinesReplySchema },
+        )
+      : context.actions.dispatch(
+          LOGS_READ_LINES_ACTION,
+          {
+            nodeId: current.nodeId,
+            source:
+              current.source === LOG_SOURCE_LIVE
+                ? LOG_SOURCE_LIVE
+                : LOG_SOURCE_BATCH,
+            batchTimestamp:
+              current.source === LOG_SOURCE_LIVE ? null : current.source,
+            stream: current.stream,
+            level: level.get() === '' ? null : level.get(),
+            substring: substring.get() === '' ? null : substring.get(),
+            cursor: older ? cursor : null,
+          },
+          { replySchema: logsReadLinesReplySchema },
+        )
+    if (starts) {
+      // Taken synchronously, not off the reply: the owner begins pushing the
+      // moment it takes the file, and the first frames can outrun the first page.
+      followId = handle.requestId
+      followNode = current.nodeId
+    }
+    handle.done.then(
+      (result) => {
+        if (mine !== generation || result.reply === undefined) {
+          return
+        }
 
-          const reply = result.reply
-          busy.set(false)
-          readable.set(reply.readable)
-          hasMore.set(reply.hasMore)
-          cursor = reply.nextCursor
-          // Older lines go ABOVE what is shown, and the view holds its scroll
-          // position, so the page the operator was reading does not move.
-          publish(older ? [...store(reply), ...lines.get()] : store(reply))
-        },
-        (error: unknown) => {
-          if (mine !== generation) {
-            return
-          }
+        const reply = result.reply
+        busy.set(false)
+        readable.set(reply.readable)
+        hasMore.set(reply.hasMore)
+        cursor = reply.nextCursor
+        if (starts && followId === handle.requestId) {
+          // The id and not the generation: lowering the switch stops the follow
+          // without asking for anything, so it leaves the generation where it is
+          // and a reply still on the wire would otherwise light the badge for a
+          // tail that has just been called off.
+          following.set(true)
+        }
+        // Older lines go ABOVE what is shown, and the view holds its scroll
+        // position, so the page the operator was reading does not move.
+        publish(
+          older ? [...store(reply.lines), ...feed.get()] : store(reply.lines),
+        )
+      },
+      (error: unknown) => {
+        if (mine !== generation) {
+          return
+        }
 
-          busy.set(false)
-          if (
-            error instanceof ActionError &&
-            error.outcome === 'disconnected'
-          ) {
-            // Not a refusal of anything: the socket was not open when the mount
-            // asked. The reconnect below reads again, and saying so in the pane
-            // would put a fault where the shell already shows the transport.
-            return
-          }
+        busy.set(false)
+        if (starts && followId === handle.requestId) {
+          // The start was refused, so no frame will ever carry this id: keeping
+          // it would leave the badge lit for a tail that never began.
+          unfollow(false)
+        }
+        if (error instanceof ActionError && error.outcome === 'disconnected') {
+          // Not a refusal of anything: the socket was not open when the mount
+          // asked. The reconnect below reads again, and saying so in the pane
+          // would put a fault where the shell already shows the transport.
+          return
+        }
 
-          // A node this cluster does not have, or one the master last saw offline,
-          // is shown in the pane and not as a toast: the operator is looking
-          // straight at it, and a toast is for somebody looking elsewhere.
-          refusal.set(
-            error instanceof ActionError ? error.message : 'The read failed.',
-          )
-        },
-      )
+        // A node this cluster does not have, or one the master last saw offline,
+        // is shown in the pane and not as a toast: the operator is looking
+        // straight at it, and a toast is for somebody looking elsewhere.
+        refusal.set(
+          error instanceof ActionError ? error.message : 'The read failed.',
+        )
+      },
+    )
+  }
+
+  /**
+   * Takes one frame of the follow it belongs to.
+   *
+   * Four shapes and never two at once, so exactly one of the branches speaks.
+   * Where the result goes is the other question, and the only one the reading
+   * position decides: stuck to the tail it goes into the feed, above it into the
+   * buffer, and the pane under the reader's eyes does not move either way.
+   */
+  const appended = (frame: LogsLinesAppended): void => {
+    if (frame.followId !== followId) {
+      return
+    }
+
+    let items: readonly HilosLogViewerFeedItem[]
+    if (frame.lines.length > 0) {
+      items = store(frame.lines)
+    } else if (frame.rotated) {
+      items = [
+        note(
+          'rotated',
+          'The file was rotated. Reading continues from the start of the new one.',
+        ),
+      ]
+    } else if (frame.skippedBytes !== null) {
+      items = [
+        note(
+          'skipped',
+          `Jumped over ${formatLogViewerBytes(frame.skippedBytes)} to catch up.`,
+        ),
+      ]
+    } else if (frame.stopped) {
+      items = [note('stopped', 'Following stopped on the server.')]
+      followId = null
+      followNode = null
+      following.set(false)
+      // The switch goes down by itself here, and only here: the fact changed
+      // against the reader's wish, and a raised switch over a dead tail lies.
+      followRequested.set(false)
+    } else {
+      return
+    }
+
+    if (pinned.get()) {
+      publish([...feed.get(), ...items])
+
+      return
+    }
+
+    buffer(items)
   }
 
   // What can be chosen without guessing, once there is a catalog to choose from.
@@ -716,7 +1053,12 @@ export function createHilosLogViewer(
   return {
     catalog,
     selection,
-    entries,
+    rows,
+    followRequested,
+    following,
+    canFollow,
+    pinned,
+    pendingLines,
     level,
     substring,
     busy,
@@ -732,6 +1074,33 @@ export function createHilosLogViewer(
       substring.set(next)
       read(false)
     },
+    setFollow(next) {
+      followRequested.set(next)
+      if (next) {
+        if (canFollow.get()) {
+          read(false)
+        }
+
+        return
+      }
+
+      // What waited in the buffer is shown rather than dropped: the lines
+      // arrived and are real, and losing them is the very thing the rejected
+      // design was rejected for. Nothing is re-read — the switch answers for the
+      // tail, not for what has already been shown.
+      drain()
+      unfollow(true)
+    },
+    setPinned(next) {
+      if (next) {
+        drain()
+      }
+      pinned.set(next)
+    },
+    returnToTail() {
+      drain()
+      pinned.set(true)
+    },
     readOlder() {
       read(true)
     },
@@ -744,6 +1113,12 @@ export function createHilosLogViewer(
             const next = signal.data as HilosLogViewerCatalog
             catalog.set(next)
             preselect(next)
+
+            return
+          }
+          if (signal.type === LOG_LINES_APPENDED_SIGNAL) {
+            // Validated against logsLinesAppendedSchema at the same boundary.
+            appended(signal.data as LogsLinesAppended)
           }
         }),
         // A read refused with no requestId answers no pending request: nothing here
@@ -758,9 +1133,13 @@ export function createHilosLogViewer(
         }),
         // A reconnect reads from the tail again with the cursor thrown away: a
         // rotation may have happened while the socket was down, and the offset
-        // would then point into a file that is no longer this one.
+        // would then point into a file that is no longer this one. The follow is
+        // gone with the old connection — the owner keys its viewers by accept
+        // key, and the reconnected browser carries a different one — so it is
+        // begun anew and not removed: there is nothing left to remove.
         context.connection.on('state', (state) => {
           if (state === 'connected') {
+            unfollow(false)
             read(false)
           }
         }),
@@ -793,45 +1172,118 @@ export function createHilosLogViewer(
 }
 
 /**
- * Groups lines into entries: a line that starts one, and the lines continuing it.
+ * Groups the feed into rows: a line that starts an entry, the lines continuing
+ * it, and the notes standing between them.
  *
- * A continuation whose start line was never read stays an entry of its own,
- * marked an orphan. Folding it into whatever happens to be above it would claim a
- * relationship the read cannot know about.
+ * A continuation whose start line was never read stays a row of its own, marked
+ * an orphan. Folding it into whatever happens to be above it would claim a
+ * relationship the read cannot know about — and a note closes whatever entry was
+ * open for the same reason: the first line after a rotation belongs to the new
+ * file, not to the error that was being written when the old one was carried off.
  *
- * @param lines The accumulated lines, oldest first.
+ * @param items The accumulated feed, oldest first.
  */
-export function toLogViewerEntries(
-  lines: readonly HilosLogViewerReadLine[],
-): readonly HilosLogViewerEntry[] {
-  const entries: EntryDraft[] = []
-  for (const line of lines) {
+export function toLogViewerRows(
+  items: readonly HilosLogViewerFeedItem[],
+): readonly HilosLogViewerRow[] {
+  const rows: (EntryDraft | HilosLogViewerRow)[] = []
+  let open: EntryDraft | null = null
+  for (const item of items) {
+    if (item.kind === 'notice') {
+      rows.push(item)
+      open = null
+      continue
+    }
+
+    const line = item.line
     const split = splitLogLine(line.text, line.level)
-    const open = entries.at(-1)
-    if (line.isContinuation && open !== undefined && !open.orphan) {
+    if (line.isContinuation && open !== null && !open.orphan) {
       open.frames.push(split)
       continue
     }
 
-    entries.push({
+    open = {
+      kind: 'entry',
       key: line.id,
       ...split,
       frames: [],
       orphan: line.isContinuation,
-    })
+    }
+    rows.push(open)
   }
 
-  return entries
+  return rows
 }
 
 /** One entry while it is still being filled with the frames that continue it. */
 interface EntryDraft {
+  kind: 'entry'
   key: string
   time: string
   level: string
   text: string
   frames: HilosLogViewerLine[]
   orphan: boolean
+}
+
+/** How many of the feed's items are lines; the notes are not lines. */
+function countFeedLines(items: readonly HilosLogViewerFeedItem[]): number {
+  return items.reduce(
+    (count, item) => (item.kind === 'line' ? count + 1 : count),
+    0,
+  )
+}
+
+/**
+ * Cuts the oldest items off the front until no more than `maxLines` lines are
+ * left, notes and all.
+ *
+ * The cap is counted in LINES because that is what the memory is spent on; a
+ * note riding along at the front costs nothing and would only be cut with the
+ * line it stands before.
+ *
+ * @param items The feed or the buffer, oldest first.
+ * @param maxLines The most lines to keep.
+ */
+function trimFeedItems(
+  items: readonly HilosLogViewerFeedItem[],
+  maxLines: number,
+): readonly HilosLogViewerFeedItem[] {
+  let lines = countFeedLines(items)
+  if (lines <= maxLines) {
+    return items
+  }
+
+  let cut = 0
+  while (lines > maxLines) {
+    if (items[cut].kind === 'line') {
+      lines -= 1
+    }
+    cut += 1
+  }
+
+  return items.slice(cut)
+}
+
+/**
+ * A byte figure in the largest unit that leaves a readable number, for the note
+ * saying how much the owner jumped over.
+ *
+ * A fourth copy of one body, and deliberately so: hoisting the shared helper
+ * would edit three modules this leaf has no business in (P-231).
+ *
+ * @param bytes The figure, in bytes.
+ */
+function formatLogViewerBytes(bytes: number): string {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = bytes
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024
+    unit += 1
+  }
+
+  return `${unit === 0 ? size : size.toFixed(1)} ${units[unit]}`
 }
 
 /** Matches the `[YYYY-MM-DD HH:MM:SS.mmm] ` prefix, capturing the clock time. */

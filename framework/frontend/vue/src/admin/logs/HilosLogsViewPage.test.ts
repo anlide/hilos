@@ -1,10 +1,12 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
   createSignal,
   HilosPages,
+  LOGS_FOLLOW_START_ACTION,
+  LOG_LINES_APPENDED_SIGNAL,
   LOG_VIEWER_CATALOG_SIGNAL,
 } from '@hilos/core'
 import type {
@@ -107,45 +109,84 @@ function router(params: Record<string, string> = {}): HilosRouter {
   }
 }
 
+/** One follow frame as the owner of the file pushes it. */
+interface AppendedFrame {
+  followId: string
+  lines: { text: string; level: string; isContinuation: boolean }[]
+  rotated: boolean
+  skippedBytes: number | null
+  stopped: boolean
+}
+
 /**
- * A connection stub handing back the one frame this screen lives on — the page's
- * own catalog — and swallowing the reads, whose answers the pane states below do
- * not depend on.
+ * A connection stub handing back the frames this screen lives on — the page's
+ * own catalog and the frames of a follow — and recording the actions it is sent,
+ * so a test can answer one the way the owner of the file does.
  */
 function makeConnection(): {
   connection: HilosConnection
+  sent: { action: string; data: unknown; requestId?: string }[]
   pushCatalog: (frame: HilosLogViewerCatalog) => void
+  pushAppended: (frame: Partial<AppendedFrame> & { followId: string }) => void
+  answer: (requestId: string | undefined, reply: unknown) => void
 } {
-  const projectListeners: ((signal: {
-    type: string
-    data: unknown
-  }) => void)[] = []
+  const listeners: Record<string, ((signal: never) => void)[]> = {}
+  const sent: { action: string; data: unknown; requestId?: string }[] = []
+  const emit = (event: string, signal: unknown): void => {
+    for (const listener of listeners[event] ?? []) {
+      ;(listener as unknown as (payload: unknown) => void)(signal)
+    }
+  }
   const connection = {
     on(event: string, listener: (signal: never) => void): () => void {
-      if (event === 'projectSignal') {
-        projectListeners.push(
-          listener as unknown as (signal: {
-            type: string
-            data: unknown
-          }) => void,
-        )
-      }
+      listeners[event] = [...(listeners[event] ?? []), listener]
 
       return () => {}
     },
-    sendAction(): boolean {
+    sendAction(action: string, data: unknown, requestId?: string): boolean {
+      sent.push({ action, data, requestId })
+
       return true
     },
   } as unknown as HilosConnection
 
   return {
     connection,
+    sent,
     pushCatalog(frame: HilosLogViewerCatalog): void {
-      for (const listener of projectListeners) {
-        listener({ type: LOG_VIEWER_CATALOG_SIGNAL, data: frame })
-      }
+      emit('projectSignal', { type: LOG_VIEWER_CATALOG_SIGNAL, data: frame })
+    },
+    pushAppended(frame: Partial<AppendedFrame> & { followId: string }): void {
+      emit('projectSignal', {
+        type: LOG_LINES_APPENDED_SIGNAL,
+        data: {
+          lines: [],
+          rotated: false,
+          skippedBytes: null,
+          stopped: false,
+          ...frame,
+        },
+      })
+    },
+    answer(requestId: string | undefined, reply: unknown): void {
+      emit('actionSuccess', {
+        kind: 'actionSuccess',
+        action: LOGS_FOLLOW_START_ACTION,
+        message: undefined,
+        reply,
+        requestId,
+        envelope: { type: 'action_success', data: {} },
+      })
     },
   }
+}
+
+/** The address of the live file every follow test opens. */
+const LIVE_FILE = { nodeId: '-', source: 'live', stream: 'worker-0.log' }
+
+/** One line as it comes off the wire. */
+function wireLine(text: string, level = 'INFO', isContinuation = false) {
+  return { text, level, isContinuation }
 }
 
 function mountPage(
@@ -280,4 +321,111 @@ describe('HilosLogsViewPage', () => {
       wrapper.find('[data-id="hilos-log-earlier"]').attributes('disabled'),
     ).toBeDefined()
   })
+
+  it('greys the Follow switch out on an archived batch and says why', async () => {
+    // Greyed out says "not applicable here", not "you turned it off": the switch
+    // keeps its own position, so coming back to the live journal resumes the tail
+    // without a click nobody made.
+    const { connection, pushCatalog } = makeConnection()
+    const wrapper = mountPage(connection, {
+      ...LIVE_FILE,
+      source: String(BATCH),
+    })
+
+    pushCatalog(catalog())
+    await nextTick()
+
+    const control = wrapper.find('[data-id="hilos-log-follow"]')
+    expect(control.attributes('disabled')).toBeDefined()
+    expect((control.element as HTMLInputElement).checked).toBe(true)
+    expect(wrapper.find('[data-id="hilos-log-follow-off"]').text()).toBe(
+      'An archived batch has no tail.',
+    )
+  })
+
+  it('lights the tail badge once the start is answered', async () => {
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const wrapper = mountPage(connection, LIVE_FILE)
+    pushCatalog(catalog())
+    await nextTick()
+
+    expect(wrapper.find('[data-id="hilos-log-tail-badge"]').exists()).toBe(
+      false,
+    )
+
+    answer(sent.at(-1)?.requestId, {
+      readable: true,
+      lines: [],
+      nextCursor: null,
+      hasMore: false,
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-id="hilos-log-tail-badge"]').text()).toBe(
+      'Tail is running',
+    )
+  })
+
+  it('offers the way back with a count while the reader is above the tail', async () => {
+    const { connection, pushCatalog, pushAppended, sent } = makeConnection()
+    const wrapper = mountPage(connection, LIVE_FILE)
+    pushCatalog(catalog())
+    await nextTick()
+    const followId = sent.at(-1)?.requestId ?? ''
+
+    expect(wrapper.find('[data-id="hilos-log-back-to-tail"]').exists()).toBe(
+      false,
+    )
+
+    await scrollUp(wrapper.find('[data-id="hilos-log-pane"]').element)
+    pushAppended({ followId, lines: [wireLine('one'), wireLine('two')] })
+    await nextTick()
+
+    expect(wrapper.find('[data-id="hilos-log-back-to-tail"]').text()).toBe(
+      'Back to the tail · 2 new',
+    )
+    // The pane under the reader's eyes does not move at all while they are up.
+    expect(wrapper.findAll('[data-id="hilos-log-entry"]')).toHaveLength(0)
+
+    await wrapper.find('[data-id="hilos-log-back-to-tail"]').trigger('click')
+
+    expect(wrapper.findAll('[data-id="hilos-log-entry"]')).toHaveLength(2)
+    expect(wrapper.find('[data-id="hilos-log-back-to-tail"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('draws a note as a row of the feed, in the reading where it happened', async () => {
+    const { connection, pushCatalog, pushAppended, sent } = makeConnection()
+    const wrapper = mountPage(connection, LIVE_FILE)
+    pushCatalog(catalog())
+    await nextTick()
+
+    pushAppended({ followId: sent.at(-1)?.requestId ?? '', rotated: true })
+    await nextTick()
+
+    expect(wrapper.find('[data-id="hilos-log-notice"]').text()).toBe(
+      'The file was rotated. Reading continues from the start of the new one.',
+    )
+  })
 })
+
+/**
+ * Puts the reader above the tail: jsdom lays nothing out, so the pane is told how
+ * tall it is and then scrolled the way a hand would.
+ *
+ * @param pane The scrolling pane element.
+ */
+async function scrollUp(pane: Element): Promise<void> {
+  Object.defineProperty(pane, 'scrollHeight', {
+    value: 1000,
+    configurable: true,
+  })
+  Object.defineProperty(pane, 'clientHeight', {
+    value: 200,
+    configurable: true,
+  })
+  pane.scrollTop = 0
+  pane.dispatchEvent(new Event('scroll'))
+  await nextTick()
+}

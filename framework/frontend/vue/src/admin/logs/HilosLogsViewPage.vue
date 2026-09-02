@@ -5,19 +5,25 @@ and the stream together ARE the address of this screen, so choosing another file
 rewrites the address in place rather than navigating — it is another file of the
 same page, and a navigation would re-subscribe it and drop the catalog. Nothing
 is filtered here: the level and the substring are fields of the read request, and
-the server answers with what matched. Following the live tail — the Follow
-switch, the sticky bottom, the rotation divider — is HIL-758, and there is no
-Refresh button on purpose: freshness arrives as a push. The catalog, the address,
-the read and the entry view-model are the core headless's (hilosLogViewer); this
-view owns only the markup, so a project mounts it by passing its
-HilosLogViewerContext. Bootstrap classes only, save the one pre-wrap declaration
-the pane calls for because Bootstrap has no utility for it (styling-rules.md,
-same exception as HilosActionError). -->
+the server answers with what matched. The Follow switch runs the live tail, and
+there is no Refresh button on purpose: freshness arrives as a push. Scrolling up
+releases only the STICKING — the tail keeps running, what arrives while the
+reader is up waits beside the pane, and the return control at the bottom carries
+its count; so nothing ever moves under the reader's eyes, and nothing is lost
+without saying so. The catalog, the address, the read, the buffer and the row
+view-model are the core headless's (hilosLogViewer), including the threshold that
+decides "at the tail" and the wording of the notes — this view owns only the
+markup and the scrolling, so a project mounts it by passing its
+HilosLogViewerContext and the React and Angular ports measure the same edge.
+Bootstrap classes only, save the one pre-wrap declaration the pane calls for
+because Bootstrap has no utility for it (styling-rules.md, same exception as
+HilosActionError). -->
 <script setup lang="ts">
 import {
   createHilosLogViewer,
   createSignal,
   hasLogViewerNodes,
+  isLogViewerPinned,
   logLevelVariant,
   logViewerNodeOf,
   logViewerPaneState,
@@ -28,9 +34,18 @@ import {
   type HilosLogViewerAddress,
   type HilosLogViewerContext,
   type HilosLogViewerEntry,
+  type HilosLogViewerNotice,
   type PageRouteMatch,
 } from '@hilos/core'
-import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
+import {
+  computed,
+  inject,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch,
+} from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
@@ -60,13 +75,18 @@ onUnmounted(() => viewer.dispose())
 
 const catalog = useSignal(viewer.catalog)
 const selection = useSignal(viewer.selection)
-const entries = useSignal(viewer.entries)
+const rows = useSignal(viewer.rows)
 const level = useSignal(viewer.level)
 const substring = useSignal(viewer.substring)
 const busy = useSignal(viewer.busy)
 const readable = useSignal(viewer.readable)
 const hasMore = useSignal(viewer.hasMore)
 const refusal = useSignal(viewer.refusal)
+const followRequested = useSignal(viewer.followRequested)
+const following = useSignal(viewer.following)
+const canFollow = useSignal(viewer.canFollow)
+const pinned = useSignal(viewer.pinned)
+const pendingLines = useSignal(viewer.pendingLines)
 
 // The node select exists only where nodes have names: a picker with one nameless
 // option is furniture for a choice that does not exist.
@@ -79,15 +99,23 @@ const streams = computed(() =>
 )
 
 // Which state the pane is in — the discrimination is the headless's, because it
-// is the same question in all three view frameworks.
+// is the same question in all three view frameworks. The count is of ROWS and
+// not of entries: a file with no lines that has just been rotated has something
+// to say, and "this file is empty" would hide the note saying it.
 const paneState = computed(() =>
   logViewerPaneState(
     catalog.value,
     selection.value,
-    entries.value.length,
+    rows.value.length,
     readable.value,
     level.value !== '' || substring.value !== '',
   ),
+)
+
+// The counter beside the Earlier button counts entries, because that is the word
+// it uses; a note is not one.
+const entryCount = computed(
+  () => rows.value.filter((row) => row.kind === 'entry').length,
 )
 
 // Newest batch first: an operator opening the archive is looking for what just
@@ -126,6 +154,52 @@ function onLevel(event: Event): void {
 function onSubstring(event: Event): void {
   viewer.setSubstring((event.target as HTMLInputElement).value)
 }
+
+function onFollow(event: Event): void {
+  viewer.setFollow((event.target as HTMLInputElement).checked)
+}
+
+/** The icon one note is drawn with; its wording belongs to the headless. */
+const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
+  rotated: 'bi-arrow-repeat',
+  skipped: 'bi-fast-forward',
+  dropped: 'bi-scissors',
+  stopped: 'bi-stop-circle',
+}
+
+// The pane is the scrolling element, so it is the one whose position answers
+// "is the reader at the tail" — the threshold itself is the headless's, so that
+// the React and Angular ports do not each invent their own.
+const pane = ref<HTMLElement | null>(null)
+
+function onScroll(): void {
+  const element = pane.value
+  if (element === null) {
+    return
+  }
+
+  viewer.setPinned(
+    isLogViewerPinned(
+      element.scrollTop,
+      element.scrollHeight,
+      element.clientHeight,
+    ),
+  )
+}
+
+// Sticking to the bottom happens after the rows are drawn, because the height to
+// scroll to does not exist until then (the same move as demo/chat's Main.vue).
+watch(rows, async () => {
+  if (!pinned.value) {
+    return
+  }
+
+  await nextTick()
+  const element = pane.value
+  if (element !== null) {
+    element.scrollTop = element.scrollHeight
+  }
+})
 
 // Which stacks are open, by entry key. The key survives a page of older lines
 // arriving above, so an opened stack stays open when the pane grows upwards.
@@ -236,6 +310,30 @@ function toggle(entry: HilosLogViewerEntry): void {
             </option>
           </select>
         </div>
+        <div class="col-6 col-md-2">
+          <span class="form-label small fw-semibold mb-1 d-block">Follow</span>
+          <div class="form-check form-switch mb-1">
+            <input
+              id="hilos-log-follow"
+              class="form-check-input"
+              type="checkbox"
+              :checked="followRequested"
+              :disabled="!canFollow"
+              data-id="hilos-log-follow"
+              @change="onFollow"
+            />
+            <label class="form-check-label small" for="hilos-log-follow">
+              tail
+            </label>
+          </div>
+          <span
+            v-if="!canFollow"
+            class="small text-body-secondary"
+            data-id="hilos-log-follow-off"
+          >
+            An archived batch has no tail.
+          </span>
+        </div>
         <div class="col-12">
           <label class="visually-hidden" for="hilos-log-substring">
             Search inside the lines
@@ -264,125 +362,154 @@ function toggle(entry: HilosLogViewerEntry): void {
         <i class="bi bi-arrow-up me-1" aria-hidden="true"></i>Earlier
       </button>
       <span class="small text-body-secondary" data-id="hilos-log-count">
-        {{ entries.length }} entries shown
+        {{ entryCount }} entries shown
+      </span>
+      <span
+        v-if="following"
+        class="ms-auto badge text-bg-success-subtle text-success-emphasis border border-success-subtle"
+        data-id="hilos-log-tail-badge"
+      >
+        <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Tail is running
       </span>
     </div>
 
-    <div
-      class="border rounded-3 bg-body-tertiary py-2 overflow-auto"
-      style="max-height: 26rem; white-space: pre-wrap"
-      data-id="hilos-log-pane"
-    >
-      <p
-        v-if="refusal"
-        class="px-3 mb-0 small text-danger"
-        data-id="hilos-log-refusal"
+    <div class="position-relative">
+      <div
+        ref="pane"
+        class="border rounded-3 bg-body-tertiary py-2 overflow-auto"
+        style="max-height: 26rem; white-space: pre-wrap"
+        data-id="hilos-log-pane"
+        @scroll="onScroll"
       >
-        {{ refusal }}
-      </p>
-      <p
-        v-else-if="paneState === 'unknown'"
-        class="px-3 mb-0 small text-body-secondary"
-        data-id="hilos-log-empty-unknown"
-      >
-        The cluster picture has not arrived yet, so there is nothing to choose
-        between — not nothing to read.
-      </p>
-      <p
-        v-else-if="paneState === 'unreadable'"
-        class="px-3 mb-0 small text-body-secondary"
-        data-id="hilos-log-empty-unreadable"
-      >
-        No node could read its log store.
-      </p>
-      <p
-        v-else-if="paneState === 'empty'"
-        class="px-3 mb-0 small text-body-secondary"
-        data-id="hilos-log-empty-catalog"
-      >
-        No streams have been reported yet.
-      </p>
-      <p
-        v-else-if="paneState === 'unchosen'"
-        class="px-3 mb-0 small text-body-secondary"
-        data-id="hilos-log-empty-unchosen"
-      >
-        Choose a stream to read.
-      </p>
-      <p
-        v-else-if="paneState === 'missing'"
-        class="px-3 mb-0 small text-body-secondary"
-        data-id="hilos-log-empty-missing"
-      >
-        This file cannot be read. The rotation may have carried it off, or
-        nothing has written to it yet.
-      </p>
-      <p
-        v-else-if="paneState === 'nomatch'"
-        class="px-3 mb-0 small text-body-secondary"
-        data-id="hilos-log-empty-nomatch"
-      >
-        Nothing in this file matched.
-      </p>
-      <p
-        v-else-if="paneState === 'silent'"
-        class="px-3 mb-0 small text-body-secondary"
-        data-id="hilos-log-empty-silent"
-      >
-        This file is empty.
-      </p>
-      <template v-else>
-        <div
-          v-for="entry in entries"
-          :key="entry.key"
-          data-id="hilos-log-entry"
+        <p
+          v-if="refusal"
+          class="px-3 mb-0 small text-danger"
+          data-id="hilos-log-refusal"
         >
-          <div
-            class="d-flex gap-2 px-3 py-1 font-monospace small text-break border-start border-4"
-            :class="[
-              `border-${logLevelVariant(entry.level)}`,
-              { 'opacity-75': entry.orphan },
-            ]"
-          >
-            <span
-              class="fw-semibold text-nowrap"
-              :class="`text-${logLevelVariant(entry.level)}`"
-            >
-              {{ entry.level }}
-            </span>
-            <span class="text-body-secondary text-nowrap">{{
-              entry.time
-            }}</span>
-            <span class="flex-grow-1">{{ entry.text }}</span>
-            <button
-              v-if="entry.frames.length > 0"
-              type="button"
-              class="btn btn-sm btn-link p-0 text-decoration-none text-nowrap"
-              :aria-expanded="isOpen(entry)"
-              :aria-label="`Call stack of this entry, ${entry.frames.length} frames`"
-              data-id="hilos-log-stack-toggle"
-              @click="toggle(entry)"
-            >
-              <i class="bi bi-info-circle me-1" aria-hidden="true"></i
-              >{{ entry.frames.length }}
-            </button>
-          </div>
-          <div
-            v-if="entry.frames.length > 0 && isOpen(entry)"
-            class="bg-body"
-            data-id="hilos-log-stack"
-          >
+          {{ refusal }}
+        </p>
+        <p
+          v-else-if="paneState === 'unknown'"
+          class="px-3 mb-0 small text-body-secondary"
+          data-id="hilos-log-empty-unknown"
+        >
+          The cluster picture has not arrived yet, so there is nothing to choose
+          between — not nothing to read.
+        </p>
+        <p
+          v-else-if="paneState === 'unreadable'"
+          class="px-3 mb-0 small text-body-secondary"
+          data-id="hilos-log-empty-unreadable"
+        >
+          No node could read its log store.
+        </p>
+        <p
+          v-else-if="paneState === 'empty'"
+          class="px-3 mb-0 small text-body-secondary"
+          data-id="hilos-log-empty-catalog"
+        >
+          No streams have been reported yet.
+        </p>
+        <p
+          v-else-if="paneState === 'unchosen'"
+          class="px-3 mb-0 small text-body-secondary"
+          data-id="hilos-log-empty-unchosen"
+        >
+          Choose a stream to read.
+        </p>
+        <p
+          v-else-if="paneState === 'missing'"
+          class="px-3 mb-0 small text-body-secondary"
+          data-id="hilos-log-empty-missing"
+        >
+          This file cannot be read. The rotation may have carried it off, or
+          nothing has written to it yet.
+        </p>
+        <p
+          v-else-if="paneState === 'nomatch'"
+          class="px-3 mb-0 small text-body-secondary"
+          data-id="hilos-log-empty-nomatch"
+        >
+          Nothing in this file matched.
+        </p>
+        <p
+          v-else-if="paneState === 'silent'"
+          class="px-3 mb-0 small text-body-secondary"
+          data-id="hilos-log-empty-silent"
+        >
+          This file is empty.
+        </p>
+        <template v-else>
+          <template v-for="row in rows" :key="row.key">
             <div
-              v-for="(frame, index) in entry.frames"
-              :key="index"
-              class="d-flex gap-2 px-3 py-1 font-monospace small text-break opacity-75 border-start border-4"
-              :class="`border-${logLevelVariant(entry.level)}`"
+              v-if="row.kind === 'notice'"
+              class="d-flex align-items-center justify-content-center gap-2 px-3 py-1 small text-body-secondary"
+              data-id="hilos-log-notice"
             >
-              <span class="flex-grow-1">{{ frame.text }}</span>
+              <i
+                :class="`bi ${NOTICE_ICONS[row.notice]}`"
+                aria-hidden="true"
+              ></i>
+              <span>{{ row.text }}</span>
             </div>
-          </div>
-        </div>
-      </template>
+            <div v-else data-id="hilos-log-entry">
+              <div
+                class="d-flex gap-2 px-3 py-1 font-monospace small text-break border-start border-4"
+                :class="[
+                  `border-${logLevelVariant(row.level)}`,
+                  { 'opacity-75': row.orphan },
+                ]"
+              >
+                <span
+                  class="fw-semibold text-nowrap"
+                  :class="`text-${logLevelVariant(row.level)}`"
+                >
+                  {{ row.level }}
+                </span>
+                <span class="text-body-secondary text-nowrap">{{
+                  row.time
+                }}</span>
+                <span class="flex-grow-1">{{ row.text }}</span>
+                <button
+                  v-if="row.frames.length > 0"
+                  type="button"
+                  class="btn btn-sm btn-link p-0 text-decoration-none text-nowrap"
+                  :aria-expanded="isOpen(row)"
+                  :aria-label="`Call stack of this entry, ${row.frames.length} frames`"
+                  data-id="hilos-log-stack-toggle"
+                  @click="toggle(row)"
+                >
+                  <i class="bi bi-info-circle me-1" aria-hidden="true"></i
+                  >{{ row.frames.length }}
+                </button>
+              </div>
+              <div
+                v-if="row.frames.length > 0 && isOpen(row)"
+                class="bg-body"
+                data-id="hilos-log-stack"
+              >
+                <div
+                  v-for="(frame, index) in row.frames"
+                  :key="index"
+                  class="d-flex gap-2 px-3 py-1 font-monospace small text-break opacity-75 border-start border-4"
+                  :class="`border-${logLevelVariant(row.level)}`"
+                >
+                  <span class="flex-grow-1">{{ frame.text }}</span>
+                </div>
+              </div>
+            </div>
+          </template>
+        </template>
+      </div>
+      <button
+        v-if="!pinned"
+        type="button"
+        class="btn btn-sm btn-primary position-absolute bottom-0 start-50 translate-middle-x mb-2"
+        data-id="hilos-log-back-to-tail"
+        @click="viewer.returnToTail()"
+      >
+        Back to the tail{{ pendingLines > 0 ? ` · ${pendingLines} new` : '' }}
+      </button>
     </div>
   </HilosAdminPage>
 </template>
