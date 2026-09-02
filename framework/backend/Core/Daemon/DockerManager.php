@@ -19,6 +19,7 @@ use Hilos\Core\Exception\Process\FailedToWriteStdInException;
 use Hilos\Core\Process;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Log\DaemonLogAddress;
 use Hilos\Log\DaemonRawStream;
 use Hilos\Log\LogRotator;
 use Hilos\Log\LogStoreAgent;
@@ -92,6 +93,10 @@ class DockerManager extends BaseManager
         // Setup error handling and signal handlers
         $this->setupErrorHandling();
         $this->setupSignalHandlers();
+
+        // Before anything that consequence follows from, and before the rotation that silently
+        // skips itself when the log directory is unknown.
+        $this->announceMissingLogAddresses();
 
         // Rotate logs before starting processes
         $this->rotateLogs();
@@ -200,8 +205,7 @@ class DockerManager extends BaseManager
      * @throws FailedToTerminateProcessException If the process cannot be terminated
      * @throws FailedToClosePipeException If pipes cannot be closed
      * @throws FailedToWriteStdInException If buffered input cannot be written to the daemon process
-     * @throws EnvException If the restart interval, failed-start threshold or error log env value is
-     *     missing or invalid
+     * @throws EnvException If the restart interval or failed-start threshold env value is missing or invalid
      */
     private function tickDaemon(): void
     {
@@ -314,12 +318,18 @@ class DockerManager extends BaseManager
      * the Logger, so that is where it lands, and reading the other file would leave the
      * escalation quoting an empty tail.
      *
-     * @return string Tail of the raw error stream, or a note when it cannot be read
-     * @throws EnvException If the daemon error log env value is missing or invalid
+     * @return string Tail of the raw error stream, or a note when it is unconfigured or unreadable
      */
     private function readErrorLogTail(): string
     {
-        $path = DaemonRawStream::pathFor(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]);
+        // Its own note, separate from the one below: "not configured" is cured by a line in .env,
+        // "not readable" by permissions or a disk, and the escalation mail carries the difference.
+        $errorLogFile = DaemonLogAddress::configured(EnvConstants::DAEMON_ERROR_LOG_FILE);
+        if ($errorLogFile === null) {
+            return '(error log is not configured)';
+        }
+
+        $path = DaemonRawStream::pathFor($errorLogFile);
         // warning-suppressed: the error log may not exist yet, the escalation says it is not readable
         $size = @filesize($path);
         if ($size === false) {
@@ -350,11 +360,16 @@ class DockerManager extends BaseManager
      * (HIL-480). The raw pair is the one runtime rotation leaves alone, so it is replaced here,
      * by the start rotation that runs a few lines before this one.
      *
+     * An address the environment does not name ({@see DaemonLogAddress}) hands the child this
+     * process's own descriptor instead of refusing the start: the daemon is the one that refuses,
+     * and its list of missing names has to reach docker logs to be of any use. A descriptor rather
+     * than a path to /dev/stdout, because in a container that path resolves to an anonymous pipe,
+     * which open() answers with ENOENT.
+     *
      * @param string $script Path to daemon script
      * @throws CouldNotStartException If daemon process cannot be started
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
      * @throws LogRotationException If log directory cannot be created
-     * @throws EnvException If daemon log env values are missing or invalid
      */
     private function startDaemon(string $script): void
     {
@@ -367,32 +382,37 @@ class DockerManager extends BaseManager
         // makes "the daemon starts alone" an invariant instead of a race.
         new OrphanReaper()->reap();
 
-        // Create log directories if they don't exist
-        $logDir = dirname(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]);
-        if (!is_dir($logDir)) {
-            if (!mkdir($logDir, 0700, true)) {
-                throw new LogRotationException("Cannot create log directory: $logDir");
+        $logFile = DaemonLogAddress::configured(EnvConstants::DAEMON_LOG_FILE);
+        $errorLogFile = DaemonLogAddress::configured(EnvConstants::DAEMON_ERROR_LOG_FILE);
+
+        // Create log directories if they don't exist. Only when an address names one at all: an
+        // unnamed address sends the stream to our own descriptor, and there is no directory in
+        // that to create.
+        if ($logFile !== null) {
+            $logDir = dirname($logFile);
+            if (!is_dir($logDir)) {
+                if (!mkdir($logDir, 0700, true)) {
+                    throw new LogRotationException("Cannot create log directory: $logDir");
+                }
             }
         }
 
-        // Create Process object with stdout and stderr redirected to files
+        // Create Process object with stdout and stderr redirected to files. An address that was
+        // never named has no raw stream to sit beside, so there is nothing to hand pathFor(); the
+        // child gets our own descriptor, which is what docker logs is reading.
         $this->process = new Process(
             'php',
             [$script],
             getcwd(),
             [Process::DESCRIPTOR_PIPE, Process::PIPE_READ], // stdin
-            // stdout - to the raw output file
-            [
-                Process::DESCRIPTOR_FILE,
-                DaemonRawStream::pathFor(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]),
-                Process::PIPE_APPEND,
-            ],
-            // stderr - to the raw error file
-            [
-                Process::DESCRIPTOR_FILE,
-                DaemonRawStream::pathFor(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]),
-                Process::PIPE_APPEND,
-            ],
+            // stdout - to the raw output file, or our own stdout when unconfigured
+            $logFile === null
+                ? [Process::DESCRIPTOR_REDIRECT, 1]
+                : [Process::DESCRIPTOR_FILE, DaemonRawStream::pathFor($logFile), Process::PIPE_APPEND],
+            // stderr - to the raw error file, or our own stderr when unconfigured
+            $errorLogFile === null
+                ? [Process::DESCRIPTOR_REDIRECT, 2]
+                : [Process::DESCRIPTOR_FILE, DaemonRawStream::pathFor($errorLogFile), Process::PIPE_APPEND],
         );
 
         // Log startup time
@@ -525,6 +545,28 @@ class DockerManager extends BaseManager
     }
 
     /**
+     * Says once, at startup, which daemon log addresses the environment leaves unset.
+     *
+     * At warning level and not error: the watchdog has no main log configured either, so a warning
+     * is echoed to stdout ({@see Logger}) and lands in docker logs, without being written to an
+     * error file that may not exist. An error level would read as a refusal, and refusing over
+     * these names is exactly what this leaf removes.
+     */
+    private function announceMissingLogAddresses(): void
+    {
+        $missing = DaemonLogAddress::missingNames();
+        if ($missing === []) {
+            return;
+        }
+
+        Logger::warning(
+            'Missing daemon log address, so that stream goes to the container log instead: '
+            . implode(', ', $missing)
+            . '. The daemon names every missing value when it starts.',
+        );
+    }
+
+    /**
      * Rotate log files — move all existing logs under the log root into the archive.
      *
      * Delegates to {@see LogRotator}, which creates the timestamped archive batch and moves each
@@ -537,11 +579,16 @@ class DockerManager extends BaseManager
      * than inside the rotator, which reports what it did and lets each caller speak in its own
      * journal.
      *
-     * @throws EnvException If the daemon log path env value is missing or invalid
      * @throws LogRotationException If log directory operations fail
      */
     private function rotateLogs(): void
     {
+        // Nothing to rotate while the log directory is unknown, and nothing to say about it
+        // either: announceMissingLogAddresses() has already named it, just before this call.
+        if (DaemonLogAddress::configured(EnvConstants::DAEMON_LOG_FILE) === null) {
+            return;
+        }
+
         $report = LogRotator::forStartup()->rotate();
 
         $batchDirName = $report->batchDirName;

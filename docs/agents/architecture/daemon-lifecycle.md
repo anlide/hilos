@@ -74,6 +74,14 @@ Two rules make that supervision survive a *crash* rather than only a clean exit:
   Who restarts a watchdog is a question outside Hilos: a compose restart policy, systemd,
   zabbix. The framework does not answer it, and the next author should not make it try.
 
+**The watchdog does not refuse over an address it does not own (HIL-843).** With
+`DAEMON_LOG_FILE` or `DAEMON_ERROR_LOG_FILE` unset it names the gap once at warning level,
+skips the rotation it has no directory for, and hands the child its own descriptor
+(`Process::DESCRIPTOR_REDIRECT`) in place of the file the address would have named, so the
+daemon's own list of *every* missing name is what reaches `docker logs`. A descriptor and
+not a path: `/dev/stdout` inside a container resolves to an anonymous pipe, which `open()`
+answers with `ENOENT`, so no path leads to the container log.
+
 **Two occasions get mail, and no others (HIL-617).** `WatchdogAlertMailer` writes when the
 failed-start run hits the threshold above, and when the watchdog is exiting after a failure
 of its own — the first from `recordFailedStart()` at the exact moment the count reaches the

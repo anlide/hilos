@@ -14,6 +14,7 @@ use Hilos\Core\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
 use Hilos\Hilos;
+use Hilos\Log\DaemonLogAddress;
 use Hilos\Log\LogWriteLevelApplier;
 use Hilos\Utils\Logger;
 use Throwable;
@@ -70,7 +71,13 @@ final class DockerApplication
 
             // Only the error log address: setLogFile() would stop Logger from echoing and
             // leave the container's docker logs empty, which is where a dead node is read first.
-            Logger::setErrorLogFile(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]);
+            // Asked unassertively, because the address may not be set at all: then the watchdog
+            // configures nothing and says nothing here, and refusing over that one name belongs to
+            // the daemon, which names the whole missing list at once.
+            $errorLogFile = DaemonLogAddress::configured(EnvConstants::DAEMON_ERROR_LOG_FILE);
+            if ($errorLogFile !== null) {
+                Logger::setErrorLogFile($errorLogFile);
+            }
 
             // The environment only, and it stays that way: the watchdog receives no frame about
             // a settings edit, so half-obeying the setting would be worse than not obeying it.

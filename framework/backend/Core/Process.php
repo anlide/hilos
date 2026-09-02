@@ -33,6 +33,10 @@ class Process
     public const string DESCRIPTOR_PIPE = 'pipe';
     public const string DESCRIPTOR_FILE = 'file';
     public const string DESCRIPTOR_PTY = 'pty';
+    // Hands the child a descriptor this process already holds, named by its number: [redirect, 1]
+    // gives the child our own stdout. The only way into a container log, whose descriptor is an
+    // anonymous pipe that no path reopens (HIL-843).
+    public const string DESCRIPTOR_REDIRECT = 'redirect';
 
     // Pipe modes
     public const string PIPE_READ = 'r';
@@ -45,13 +49,13 @@ class Process
     /** @var array<int, resource> Open pipe resources for stdin, stdout and stderr */
     private array $pipes = [];
 
-    /** @var list<string> Descriptor for stdin (e.g. [pipe, r]) */
+    /** @var list<string|int> Descriptor for stdin (e.g. [pipe, r]) */
     private array $stdinDescriptor;
 
-    /** @var list<string> Descriptor for stdout (e.g. [pipe, w]) */
+    /** @var list<string|int> Descriptor for stdout (e.g. [pipe, w], or [redirect, 1]) */
     private array $stdoutDescriptor;
 
-    /** @var list<string> Descriptor for stderr (e.g. [pipe, w]) */
+    /** @var list<string|int> Descriptor for stderr (e.g. [pipe, w], or [redirect, 2]) */
     private array $stderrDescriptor;
 
     /** @var string Unread stdout content */
@@ -82,9 +86,9 @@ class Process
      *                        quoted, shell-like arguments which are split into argv tokens
      * @param list<string> $params Parameters passed verbatim as argv entries (no shell, no escaping)
      * @param ?string $cwd Working directory for the process
-     * @param list<string> $stdIn Standard input descriptor (e.g. [pipe, r])
-     * @param list<string> $stdOut Standard output descriptor (e.g. [pipe, w])
-     * @param list<string> $stdErr Standard error descriptor (e.g. [pipe, w])
+     * @param list<string|int> $stdIn Standard input descriptor (e.g. [pipe, r])
+     * @param list<string|int> $stdOut Standard output descriptor (e.g. [pipe, w], or [redirect, 1])
+     * @param list<string|int> $stdErr Standard error descriptor (e.g. [pipe, w], or [redirect, 2])
      *
      * @throws CouldNotStartException If process cannot be started
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set

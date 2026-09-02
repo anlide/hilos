@@ -119,6 +119,28 @@ final class LoggerTest extends TestCase
     }
 
     /**
+     * warning() with no main log file echoes to stdout and stays out of the error log file.
+     *
+     * This is why the container watchdog says its missing log addresses at warning level
+     * (HIL-843): the line has to reach docker logs, and it must not be written into an error
+     * file the environment may not have named either.
+     */
+    public function testWarningWithoutMainLogFileGoesToStdoutOnly(): void
+    {
+        $errorLogFile = $this->createTempLogFile();
+        Logger::setErrorLogFile($errorLogFile);
+
+        ob_start();
+        Logger::warning('missing address');
+        $stdout = ob_get_clean();
+
+        $this->assertNotFalse($stdout);
+        $this->assertStringContainsString('missing address', $stdout);
+
+        $this->assertSame('', $this->readLogLine($errorLogFile));
+    }
+
+    /**
      * errorLog() with only the error log file set stamps the message and writes it there
      * instead of falling through to error_log().
      */
