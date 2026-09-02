@@ -19,7 +19,9 @@ namespace Hilos\Backup\Anonymization;
  * type it is and how many characters it takes (a substitution has to fit, and
  * {@see AnonymizationStrategy::HASH} truncates), the primary key the `fake-*` strategies
  * derive from, and the unique indexes a non-injective substitution would collide inside
- * the moment it touches one of their columns.
+ * the moment it touches one of their columns. The value also carries the incoming foreign
+ * keys that forbid emptying the table at all, which is what {@see AnonymizationStrategy::PURGE}
+ * asks about the table rather than about a column.
  */
 final class LiveTableSchema
 {
@@ -34,6 +36,8 @@ final class LiveTableSchema
      *     declares none
      * @param array<string, list<string>> $uniqueIndexes Unique index name to its columns, in
      *     `SEQ_IN_INDEX` order; the primary key is one of them, under its own name `PRIMARY`
+     * @param list<RestrictingForeignKey> $restrictingKeys Incoming foreign keys that forbid
+     *     deleting a row of this table, in key name order
      */
     public function __construct(
         public readonly string $table,
@@ -42,6 +46,7 @@ final class LiveTableSchema
         public readonly array $columnLengths,
         public readonly array $primaryKey,
         public readonly array $uniqueIndexes,
+        public readonly array $restrictingKeys,
     ) {
     }
 

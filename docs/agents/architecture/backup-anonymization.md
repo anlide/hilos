@@ -132,15 +132,18 @@ not something the framework may do, so the project names the formatter it wants.
 
 ## Choosing A Strategy
 
-**`purge` only where nothing points at the table with `ON DELETE RESTRICT`.** This
-is the one rule with no machine behind it. The pass runs a connection's statements
-in the registry's declaration order inside a single transaction, and no foreign-key
-ordering is computed, so a purge of a RESTRICT parent fails *during the pass* — that
-is, after the import, over a database that already holds production data. The pass
-rolls back and the restore ends saying the target holds personal data. Check the
-incoming keys yourself before declaring `purge`; a table whose children are
-`ON DELETE CASCADE` or `SET NULL` is safe, one with a RESTRICT child is not, and
-that one is classified per column instead.
+**`purge` only where nothing points at the table with `ON DELETE RESTRICT`.** The
+pass runs a connection's statements in the registry's declaration order inside a
+single transaction, and no foreign-key ordering is computed, so a purge of a
+RESTRICT parent would fail *during the pass* — that is, after the import, over a
+database that already holds production data. The compatibility gate stands in front
+of that: it reads the incoming keys of every table declared `purge` and refuses the
+declaration, naming the child table, its columns and the key. The refusal comes
+earliest of all in the project's own coverage test, which calls the same gate over
+the schema the project's migrations create — so a wrong declaration is red before
+it is committed, and no restore is needed to find it. A table whose children are
+`ON DELETE CASCADE` or `SET NULL` is safe, one with a RESTRICT or NO ACTION child is
+not, and that one is classified per column instead.
 
 The remaining rules are enforced by the compatibility gate, which refuses rather
 than adjusts — knowing them saves a restore, not a leak:
@@ -178,7 +181,7 @@ report them:
 | Class | `AnonymizationCoverageValidator::validateLiveSchema()`, through `AnonymizationStartupGuard` | `AnonymizationCoverageValidator::validateArchiveTables()` | `AnonymizationCompatibilityValidator` |
 | Runs | at the startup of a daemon, before anything composes | after the archive is unpacked, before the first import | after the forward migrations, before the first row is rewritten |
 | Reads | the live schema of every configured connection | the tables the dump declares | the live schema of the target |
-| Asks | is every table, and every column of it, classified? | is every table of the archive classified? | can every classified column carry what its strategy produces? |
+| Asks | is every table, and every column of it, classified? | is every table of the archive classified? | can every classified column carry what its strategy produces, and can a table declared `purge` be emptied at all? |
 | A refusal costs | the node does not come up; fixed by a verdict in code | a rerun; the target is untouched | a person; the target already holds production data |
 
 Startup coverage refuses with `The live schema is not classified for anonymization:
@@ -209,8 +212,9 @@ declares no `HilosFeature::BACKUP` is not asked at all.
    when it holds personal data, in `_piiNotPersonal` when it does not. Both, or
    neither, is the answer; leaving a column out of both is the gap the per-column
    verdict exists to close.
-2. **Choose the strategy** by *Choosing A Strategy* above, and check the incoming
-   foreign keys yourself if you reach for `purge`.
+2. **Choose the strategy** by *Choosing A Strategy* above; if you reach for `purge`,
+   the compatibility gate checks the incoming foreign keys and names the one holding
+   the table back.
 3. **Run the project's coverage test.** It answers in seconds and does not need a
    restore, an archive or a production database — and if you skip it, the daemon of
    a project carrying backup will not start until the verdict is written.
@@ -243,5 +247,8 @@ one.
   archive produce hashes nobody can line up against each other.
 - **`--scope=schema-only` skips the registry, the restore's own gates and the
   pass**, because such an archive carries no rows.
-- **Purge order against foreign keys is not computed.** Stated twice on purpose;
-  it is the only failure mode this document, and not a gate, has to prevent.
+- **Purge order against foreign keys is not computed.** Nothing sorts the pass so
+  that a purged child is emptied before its purged parent; instead the compatibility
+  gate refuses a purge any incoming key holds back, whatever the order. Sorting is
+  the task nobody has asked for — no installation purges a parent and its children
+  together — and this document explains the refusal rather than preventing it.

@@ -72,9 +72,10 @@ final class AnonymizationSqlBuilder
      *
      * `DELETE`, not `TRUNCATE`, and the reason is rollback rather than foreign keys: a
      * `TRUNCATE` commits implicitly, so it would survive a pass that fails two tables later
-     * and leave the connection's one transaction meaning nothing. (Neither statement gets
-     * past a RESTRICT child row - a parent table declared for purge fails the pass either
-     * way, and the schema reader does not read key clauses, so the gate cannot warn first.)
+     * and leave the connection's one transaction meaning nothing. Neither statement gets
+     * past a RESTRICT child row, but the pass no longer meets that row: the compatibility
+     * gate reads the incoming keys and refuses the declaration before the first statement
+     * ({@see AnonymizationCompatibilityValidator}).
      *
      * @param string $table Table to empty
      * @return string SQL statement

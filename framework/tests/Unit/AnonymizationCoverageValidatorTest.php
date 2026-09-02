@@ -203,6 +203,7 @@ final class AnonymizationCoverageValidatorTest extends TestCase
             array_fill_keys($columns, 255),
             ['id'],
             ['PRIMARY' => ['id']],
+            [],
         );
     }
 }

@@ -123,10 +123,11 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
      * Every statement the pass would run must be one the database accepts.
      *
      * What no gate can know, because it reads a schema rather than asks the server: a value
-     * the column refuses for a reason its declaration does not show, and a purge held back
-     * by an incoming RESTRICT key (P-070). The statements are built exactly as a restore
-     * builds them and run in the registry's declaration order, which is the order that
-     * decides whether a purged parent meets its children first.
+     * the column refuses for a reason its declaration does not show. A purge held back by an
+     * incoming key is no longer among those (P-070) - the compatibility gate reads the keys
+     * and refuses the declaration, whatever order the pass would meet the tables in. The
+     * statements are built exactly as a restore builds them and run in the registry's
+     * declaration order.
      *
      * @throws AnonymizationConfigException When a strategy cannot be expressed for its column
      * @throws DatabaseException When a statement of the pass is refused

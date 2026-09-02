@@ -64,10 +64,10 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
      *
      * Analytics is classified per column, not per table. Purging it whole is not
      * available: its name and dictionary tables are RESTRICT parents of the fact tables,
-     * and an archive's alphabetical order puts them first. So the identifying columns are
-     * named one by one - tokens hashed, addresses nulled, free text masked - and the two
-     * tables whose payload is a NOT NULL `json` column are purged instead, which their
-     * all-SET NULL incoming keys allow.
+     * and the compatibility gate refuses a purge held back by such a key. So the
+     * identifying columns are named one by one - tokens hashed, addresses nulled, free
+     * text masked - and the two tables whose payload is a NOT NULL `json` column are
+     * purged instead, which their all-SET NULL incoming keys allow.
      *
      * @return array<string, array<string, AnonymizationStrategy>|AnonymizationStrategy> Table name to its
      *     per-column strategies, or to {@see AnonymizationStrategy::PURGE} for a table emptied whole

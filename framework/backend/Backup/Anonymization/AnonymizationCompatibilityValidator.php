@@ -23,7 +23,9 @@ use Hilos\Database\DatabaseException;
  * write NULL into, that the `fake-*` family has the single primary key it derives from,
  * that the column's type holds characters when the strategy writes them, that the widest
  * value the strategy can write fits the column, and that no column of a UNIQUE index is
- * touched by a strategy that writes the same value over every row.
+ * touched by a strategy that writes the same value over every row. Of a table taken whole
+ * by {@see AnonymizationStrategy::PURGE} it asks one question more: whether anything
+ * references it with a key that forbids deleting a parent row.
  *
  * Every one of those is a refusal rather than an adjustment. A gate that quietly shortened
  * a mask or widened a column would be deciding, at restore time and without an operator,
@@ -56,6 +58,13 @@ final class AnonymizationCompatibilityValidator
     private const int UNIQUE_HASH_MIN_LENGTH = 32;
 
     /**
+     * Printed in place of one rule name when the keys holding a table back do not agree on
+     * one. Naming both is the whole answer: they are the two rules InnoDB checks at once,
+     * and which of them stopped the `DELETE` first changes nothing for the reader.
+     */
+    private const string MIXED_DELETE_RULES = 'RESTRICT/NO ACTION';
+
+    /**
      * Checks a registry against the live schema of one connection.
      *
      * @param PiiRegistry $registry Registry this restore run was built with
@@ -82,6 +91,7 @@ final class AnonymizationCompatibilityValidator
             }
             self::checkTable($registry, $connectionIndex, $schema, $maxPrimaryKey, $problems);
             self::checkUniqueIndexes($registry, $connectionIndex, $schema, $problems);
+            self::checkPurgeKeys($registry, $connectionIndex, $schema, $problems);
         }
 
         if ($problems !== []) {
@@ -221,5 +231,47 @@ final class AnonymizationCompatibilityValidator
                 . '); one value over every row cannot keep the index unique - use ['
                 . AnonymizationStrategy::HASH->value . '] there';
         }
+    }
+
+    /**
+     * Checks that a table declared purged can be emptied at all.
+     *
+     * A whole-table purge is a `DELETE`, and an incoming key that forbids deleting a parent
+     * row stops it in the middle of the pass, over a database already holding the archive's
+     * rows. Only a purge is asked about: a per-column verdict is written by an `UPDATE`,
+     * which touches no key.
+     *
+     * The question is put to the schema and not to the data - a child table that happens to
+     * be empty on one installation says nothing about the next restore - and not to the
+     * order the registry declares its tables in either, so that whether a configuration is
+     * correct cannot depend on the order of lines in a file.
+     *
+     * @param PiiRegistry $registry Registry this restore run was built with
+     * @param int $connectionIndex Connection index the table belongs to
+     * @param LiveTableSchema $schema Table as the live database declares it
+     * @param list<string> $problems Findings so far, appended to in place
+     */
+    private static function checkPurgeKeys(
+        PiiRegistry $registry,
+        int $connectionIndex,
+        LiveTableSchema $schema,
+        array &$problems,
+    ): void {
+        if (!$registry->isPurged($connectionIndex, $schema->table) || $schema->restrictingKeys === []) {
+            return;
+        }
+
+        $references = [];
+        $rules = [];
+        foreach ($schema->restrictingKeys as $key) {
+            $references[] = "{$key->childTable}." . implode(',', $key->childColumns) . " ({$key->constraint})";
+            $rules[$key->deleteRule] = true;
+        }
+        $rule = count($rules) === 1 ? $schema->restrictingKeys[0]->deleteRule : self::MIXED_DELETE_RULES;
+
+        $problems[] = "connection {$connectionIndex}: {$schema->table} takes ["
+            . AnonymizationStrategy::PURGE->value . '] but ' . implode(', ', $references)
+            . " references it ON DELETE {$rule}; a purged parent fails mid-pass over an already"
+            . ' restored database - classify it per column instead';
     }
 }

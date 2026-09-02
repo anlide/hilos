@@ -187,6 +187,7 @@ final class AnonymizationSqlBuilderTest extends TestCase
                 ['label' => 32],
                 [],
                 [],
+                [],
             ),
         );
     }
@@ -269,6 +270,7 @@ final class AnonymizationSqlBuilderTest extends TestCase
             ['id' => null, 'email' => 255, 'phone' => 32, 'nickname' => 32, 'bio' => 65535],
             ['id'],
             ['PRIMARY' => ['id']],
+            [],
         );
     }
 }

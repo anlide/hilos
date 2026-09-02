@@ -37,8 +37,9 @@ writing a verdict.
    `_piiNotPersonal` naming the columns that judgement covers.
 3. Judge every column of the live table, not only the ones the ORM maps: a column
    named by neither constant is the gap the per-column verdict exists to close.
-4. Choose a strategy per column by the guide's selection rules, and check the
-   incoming foreign keys yourself before declaring a whole-table purge.
+4. Choose a strategy per column by the guide's selection rules; a whole-table purge
+   is refused by the compatibility gate when an incoming foreign key forbids
+   deleting a parent row, and the refusal names that key.
 5. Declare a table with no Entity in a `TablesWithoutEntityProvider` instead, and
    name that class under `BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY`.
 6. Run the project's PII coverage test through composer, not a restore. A column left
@@ -57,8 +58,9 @@ writing a verdict.
 - Never name one column in both `_pii` and `_piiNotPersonal`, and never declare
   `_piiNotPersonal` on a table purged whole: neither survives the collection.
 - Never declare `AnonymizationStrategy::PURGE` on a table with an incoming
-  `ON DELETE RESTRICT` foreign key: nothing checks the order, and the pass fails
-  after the import, over a database already holding production data.
+  `ON DELETE RESTRICT` or `NO ACTION` foreign key: the compatibility gate refuses
+  it, and the project's coverage test asks that gate — so the cost is a red test
+  before the commit rather than a pass failing after the import.
 - Never declare `AnonymizationStrategy::NULLIFY` on a NOT NULL column, a
   `fake-*` strategy on a table without a single-column primary key, or
   `AnonymizationStrategy::MASK` on a column covering a UNIQUE index.

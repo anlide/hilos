@@ -8,6 +8,7 @@ use Hilos\Backup\Anonymization\AnonymizationCompatibilityValidator;
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Backup\Anonymization\LiveTableSchema;
 use Hilos\Backup\Anonymization\PiiRegistry;
+use Hilos\Backup\Anonymization\RestrictingForeignKey;
 use Hilos\Backup\Exception\AnonymizationConfigException;
 use PHPUnit\Framework\TestCase;
 
@@ -375,6 +376,177 @@ final class AnonymizationCompatibilityValidatorTest extends TestCase
         $this->expectNotToPerformAssertions();
     }
 
+    public function testAPurgedTableNothingHoldsBackPasses(): void
+    {
+        AnonymizationCompatibilityValidator::validate(
+            self::purgeRegistry(),
+            0,
+            self::purgedSchemas([]),
+            self::maxKey(),
+        );
+
+        $this->expectNotToPerformAssertions();
+    }
+
+    public function testAPurgedTableWithAnIncomingRestrictIsRefused(): void
+    {
+        $this->expectException(AnonymizationConfigException::class);
+        $this->expectExceptionMessage(
+            'connection 0: hilos_probe takes [purge] but hilos_probe_fact.probe_id (hilos_probe_fact_probe)'
+            . ' references it ON DELETE RESTRICT',
+        );
+
+        AnonymizationCompatibilityValidator::validate(
+            self::purgeRegistry(),
+            0,
+            self::purgedSchemas([
+                new RestrictingForeignKey('hilos_probe_fact_probe', 'hilos_probe_fact', ['probe_id'], 'RESTRICT'),
+            ]),
+            self::maxKey(),
+        );
+    }
+
+    public function testAPurgedTableWithAnIncomingNoActionIsRefused(): void
+    {
+        // InnoDB checks both rules at once, so NO ACTION holds the parent exactly as firmly.
+        $this->expectException(AnonymizationConfigException::class);
+        $this->expectExceptionMessage('references it ON DELETE NO ACTION');
+
+        AnonymizationCompatibilityValidator::validate(
+            self::purgeRegistry(),
+            0,
+            self::purgedSchemas([
+                new RestrictingForeignKey('hilos_probe_fact_probe', 'hilos_probe_fact', ['probe_id'], 'NO ACTION'),
+            ]),
+            self::maxKey(),
+        );
+    }
+
+    public function testEveryKeyHoldingOnePurgedTableBackIsNamedInOneFinding(): void
+    {
+        try {
+            AnonymizationCompatibilityValidator::validate(
+                self::purgeRegistry(),
+                0,
+                self::purgedSchemas([
+                    new RestrictingForeignKey('hilos_probe_fact_probe', 'hilos_probe_fact', ['probe_id'], 'RESTRICT'),
+                    new RestrictingForeignKey(
+                        'hilos_probe_visit_probe',
+                        'hilos_probe_visit',
+                        ['tenant_id', 'probe_id'],
+                        'RESTRICT',
+                    ),
+                ]),
+                self::maxKey(),
+            );
+            $this->fail('A purged table two keys hold back must be refused');
+        } catch (AnonymizationConfigException $refusal) {
+            $this->assertStringContainsString(
+                'hilos_probe_fact.probe_id (hilos_probe_fact_probe),'
+                . ' hilos_probe_visit.tenant_id,probe_id (hilos_probe_visit_probe) references it',
+                $refusal->getMessage(),
+            );
+            $this->assertSame(1, substr_count($refusal->getMessage(), 'takes [purge]'));
+        }
+    }
+
+    public function testKeysDisagreeingOnTheirRuleAreNamedByBoth(): void
+    {
+        $this->expectException(AnonymizationConfigException::class);
+        $this->expectExceptionMessage('references it ON DELETE RESTRICT/NO ACTION');
+
+        AnonymizationCompatibilityValidator::validate(
+            self::purgeRegistry(),
+            0,
+            self::purgedSchemas([
+                new RestrictingForeignKey('hilos_probe_fact_probe', 'hilos_probe_fact', ['probe_id'], 'RESTRICT'),
+                new RestrictingForeignKey('hilos_probe_visit_probe', 'hilos_probe_visit', ['probe_id'], 'NO ACTION'),
+            ]),
+            self::maxKey(),
+        );
+    }
+
+    public function testAPurgedTableReferencedByItselfIsRefused(): void
+    {
+        // A DELETE walks the table row by row, so a row's own parent stops it too.
+        $this->expectException(AnonymizationConfigException::class);
+        $this->expectExceptionMessage('but hilos_probe.parent_id (hilos_probe_parent) references it');
+
+        AnonymizationCompatibilityValidator::validate(
+            self::purgeRegistry(),
+            0,
+            self::purgedSchemas([
+                new RestrictingForeignKey('hilos_probe_parent', 'hilos_probe', ['parent_id'], 'RESTRICT'),
+            ]),
+            self::maxKey(),
+        );
+    }
+
+    public function testATableClassifiedPerColumnIsNotAskedAboutItsKeys(): void
+    {
+        // Its verdict is written by an UPDATE, which no incoming key stands in the way of.
+        $registry = PiiRegistry::fromDeclarations([0 => [
+            'hilos_probe' => ['label' => AnonymizationStrategy::NULLIFY],
+        ]]);
+
+        AnonymizationCompatibilityValidator::validate(
+            $registry,
+            0,
+            self::purgedSchemas([
+                new RestrictingForeignKey('hilos_probe_fact_probe', 'hilos_probe_fact', ['probe_id'], 'RESTRICT'),
+            ]),
+            self::maxKey(),
+        );
+
+        $this->expectNotToPerformAssertions();
+    }
+
+    public function testAPurgeFindingTravelsWithAColumnFinding(): void
+    {
+        $registry = PiiRegistry::fromDeclarations([0 => [
+            'hilos_probe' => AnonymizationStrategy::PURGE,
+            'hilos_identity' => ['e_mail' => AnonymizationStrategy::MASK],
+        ]]);
+        $schemas = self::purgedSchemas([
+            new RestrictingForeignKey('hilos_probe_fact_probe', 'hilos_probe_fact', ['probe_id'], 'RESTRICT'),
+        ]) + self::identitySchemas();
+
+        try {
+            AnonymizationCompatibilityValidator::validate($registry, 0, $schemas, self::maxKey());
+            $this->fail('Both a purged table held back and a missing column must be refused');
+        } catch (AnonymizationConfigException $refusal) {
+            $this->assertStringContainsString('hilos_identity.e_mail', $refusal->getMessage());
+            $this->assertStringContainsString('takes [purge]', $refusal->getMessage());
+        }
+    }
+
+    /**
+     * @return PiiRegistry Registry that empties the probe table whole
+     */
+    private static function purgeRegistry(): PiiRegistry
+    {
+        return PiiRegistry::fromDeclarations([0 => ['hilos_probe' => AnonymizationStrategy::PURGE]]);
+    }
+
+    /**
+     * Builds the probe table as a purge would meet it: one column and the keys given.
+     *
+     * @param list<RestrictingForeignKey> $restrictingKeys Keys forbidding a delete of its rows
+     * @return array<string, LiveTableSchema> The probe table, keyed as the reader keys it
+     */
+    private static function purgedSchemas(array $restrictingKeys): array
+    {
+        return ['hilos_probe' => new LiveTableSchema(
+            'hilos_probe',
+            ['label' => true],
+            ['label' => 'varchar'],
+            ['label' => 64],
+            [],
+            [],
+            $restrictingKeys,
+        )];
+    }
+
     /**
      * @return PiiRegistry Registry whose one column takes a faked address
      */
@@ -429,6 +601,7 @@ final class AnonymizationCompatibilityValidatorTest extends TestCase
             ['id' => null] + $lengths,
             $primaryKey,
             ['PRIMARY' => $primaryKey] + $uniqueIndexes,
+            [],
         )];
     }
 
@@ -444,6 +617,7 @@ final class AnonymizationCompatibilityValidatorTest extends TestCase
             ['id' => null, 'email' => 255, 'phone' => 32],
             ['id'],
             ['PRIMARY' => ['id']],
+            [],
         )];
     }
 
@@ -459,6 +633,7 @@ final class AnonymizationCompatibilityValidatorTest extends TestCase
             ['user_id' => null, 'channel' => 32, 'address' => 255],
             ['user_id', 'channel'],
             ['PRIMARY' => ['user_id', 'channel']],
+            [],
         )];
     }
 }
