@@ -45,6 +45,13 @@ final class LogSettingsResolverTest extends TestCase
     {
         Hilos::$setting = $this->previousSettings;
         LogSettingsResolverTestAccessor::$values = [];
+        foreach ([
+            EnvConstants::LOG_ROTATION_MAX_AGE_SECONDS,
+            EnvConstants::LOG_ROTATION_MAX_LIVE_SIZE_BYTES,
+            EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES,
+        ] as $key) {
+            putenv($key->name);
+        }
 
         parent::tearDown();
     }
@@ -128,6 +135,8 @@ final class LogSettingsResolverTest extends TestCase
         $complaint = $resolver->takeComplaint();
         $this->assertNotNull($complaint);
         $this->assertStringContainsString(LogSettingsCatalog::ROTATION_MAX_AGE_SECONDS, $complaint);
+        // The consequence is carried by the line that knows it, not appended to every complaint.
+        $this->assertStringEndsWith('using the environment instead', $complaint);
     }
 
     public function testAScheduleThatWouldNeverFireIsRefusedOnTheReadToo(): void
@@ -201,6 +210,63 @@ final class LogSettingsResolverTest extends TestCase
 
         $resolver->rotationPolicy();
         $resolver->retentionPolicy();
+        $this->assertNull($resolver->takeComplaint());
+    }
+
+    public function testAnUnreadableRotationAxisIsNamedWithWhatItCost(): void
+    {
+        Hilos::$setting = new SettingsAccessor(SettingsCatalogStub::class);
+        putenv(EnvConstants::LOG_ROTATION_MAX_AGE_SECONDS->name . '=1h');
+
+        $resolver = new LogSettingsResolver();
+        $policy = $resolver->rotationPolicy();
+
+        $this->assertSame(0, $policy->maxAgeSeconds);
+        $complaint = $resolver->takeComplaint();
+        $this->assertNotNull($complaint);
+        $this->assertStringContainsString(
+            EnvConstants::LOG_ROTATION_MAX_AGE_SECONDS->name . ' is unreadable, that axis is off (',
+            $complaint,
+        );
+        // The environment is what failed, so the old blanket tail would have been a false promise.
+        $this->assertStringNotContainsString('using the environment instead', $complaint);
+        $this->assertNull($resolver->takeComplaint());
+    }
+
+    public function testAnUnreadableRetentionValueSaysNothingWillBeEvicted(): void
+    {
+        Hilos::$setting = new SettingsAccessor(SettingsCatalogStub::class);
+        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name . '=twenty');
+
+        $resolver = new LogSettingsResolver();
+        $policy = $resolver->retentionPolicy();
+
+        $this->assertSame(0, $policy->keepBatches);
+        $this->assertSame(0, $policy->maxAgeSeconds);
+        $complaint = $resolver->takeComplaint();
+        $this->assertNotNull($complaint);
+        $this->assertStringContainsString(
+            EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name . ' is unreadable, nothing will be evicted (',
+            $complaint,
+        );
+        $this->assertNull($resolver->takeComplaint());
+    }
+
+    public function testTwoUnreadableAxesArriveAsOneComplaint(): void
+    {
+        Hilos::$setting = new SettingsAccessor(SettingsCatalogStub::class);
+        putenv(EnvConstants::LOG_ROTATION_MAX_AGE_SECONDS->name . '=1h');
+        putenv(EnvConstants::LOG_ROTATION_MAX_LIVE_SIZE_BYTES->name . '=lots');
+
+        $resolver = new LogSettingsResolver();
+        $resolver->rotationPolicy();
+
+        $complaint = $resolver->takeComplaint();
+        $this->assertNotNull($complaint);
+        $this->assertStringContainsString(EnvConstants::LOG_ROTATION_MAX_AGE_SECONDS->name . ' is unreadable', $complaint);
+        $this->assertStringContainsString(EnvConstants::LOG_ROTATION_MAX_LIVE_SIZE_BYTES->name . ' is unreadable', $complaint);
+        // Both axes in one line joined by '; ', not two lines the journal reports one after another.
+        $this->assertSame(2, substr_count($complaint, ' is unreadable, that axis is off ('));
         $this->assertNull($resolver->takeComplaint());
     }
 

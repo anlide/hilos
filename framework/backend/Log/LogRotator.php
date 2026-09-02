@@ -7,6 +7,7 @@ namespace Hilos\Log;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Daemon\DockerManager;
 use Hilos\Constants\LogRotationConstants;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Utils\Exception\LogRotationException;
 use Hilos\Utils\Logger;
@@ -37,7 +38,13 @@ final class LogRotator
     /**
      * Builds a rotator over the daemon log root (the directory of DAEMON_LOG_FILE).
      *
+     * Unlike the two policies beside it (HIL-682) this read is not contained: the log path has no
+     * axis to switch off, and a node that cannot name its log directory has nothing to rotate. It
+     * never fires in a live system either — DAEMON_LOG_FILE is required, so the master's startup
+     * gate stops the daemon long before a worker holds this rotator.
+     *
      * @return self Rotator bound to the configured log directory
+     * @throws EnvException When the daemon log path is missing, outside the catalog, or not a string
      */
     public static function fromEnv(): self
     {

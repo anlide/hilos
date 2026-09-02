@@ -509,6 +509,7 @@ class DockerManager extends BaseManager
      * live `*.log` file there. Invoked before starting processes so the live log directory is
      * clean; the same rotator serves the runtime {@see LogRotationAgent}.
      *
+     * @throws EnvException If the daemon log path env value is missing or invalid
      * @throws LogRotationException If log directory operations fail
      */
     private function rotateLogs(): void

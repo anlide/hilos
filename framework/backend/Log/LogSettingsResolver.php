@@ -23,7 +23,10 @@ use Throwable;
  * all and nothing is wrong — that is the plain env installation. Trouble is the other way: the
  * settings layer is not initialized, the read throws, or the stored value does not pass the rule
  * its key declares. Then the environment is used as well, but a line is owed to the journal —
- * rotation is not something to stop over.
+ * rotation is not something to stop over. The environment itself can be the thing that cannot
+ * answer, and the policies contain that on their own (HIL-682); what is owed to the journal then
+ * is the consequence, which only this class knows — an axis that is off, or a retention that will
+ * evict nothing.
  *
  * The complaint is raised when the outcome CHANGES, not on every check: the same failing value
  * asked about every five seconds would flood the very journal this class configures. A recovery
@@ -135,7 +138,7 @@ final class LogSettingsResolver
 
         $refusal = NonNegativeIntegerRule::validate($value);
         if ($refusal !== null) {
-            $this->trouble("setting '{$key}' is refused by its own rule ({$refusal})");
+            $this->trouble("setting '{$key}' is refused by its own rule ({$refusal}), using the environment instead");
 
             return null;
         }
@@ -158,7 +161,7 @@ final class LogSettingsResolver
 
         $refusal = LogIndexPushIntervalRule::validate($value);
         if ($refusal !== null) {
-            $this->trouble("setting '{$key}' is refused by its own rule ({$refusal})");
+            $this->trouble("setting '{$key}' is refused by its own rule ({$refusal}), using the environment instead");
 
             return null;
         }
@@ -181,7 +184,7 @@ final class LogSettingsResolver
 
         $refusal = CronExpressionRule::validate($value);
         if ($refusal !== null) {
-            $this->trouble("setting '{$key}' is refused by its own rule ({$refusal})");
+            $this->trouble("setting '{$key}' is refused by its own rule ({$refusal}), using the environment instead");
 
             return null;
         }
@@ -199,7 +202,7 @@ final class LogSettingsResolver
     {
         $settings = Hilos::$setting;
         if ($settings === null) {
-            $this->trouble('settings are not initialized in this process');
+            $this->trouble('settings are not initialized in this process, using the environment instead');
 
             return null;
         }
@@ -213,26 +216,25 @@ final class LogSettingsResolver
         try {
             return $settings->effectiveValueFor($key);
         } catch (Throwable $exception) {
-            $this->trouble("setting '{$key}' could not be read: " . $exception->getMessage());
+            $this->trouble("setting '{$key}' could not be read: " . $exception->getMessage() . ', using the environment instead');
 
             return null;
         }
     }
 
     /**
-     * Builds the rotation policy from the environment, inert when even that cannot be read.
+     * Builds the rotation policy from the environment, reporting the axes it could not read.
      *
-     * @return LogRotationTriggerPolicy Policy from the environment, or one with every axis off
+     * @return LogRotationTriggerPolicy Policy from the environment, with an unreadable axis off
      */
     private function rotationFromEnv(): LogRotationTriggerPolicy
     {
-        try {
-            return LogRotationTriggerPolicy::fromEnv();
-        } catch (EnvException $exception) {
-            $this->trouble('log rotation environment is unreadable: ' . $exception->getMessage());
-
-            return new LogRotationTriggerPolicy(0, 0);
+        $policy = LogRotationTriggerPolicy::fromEnv();
+        foreach ($policy->unreadable as $key => $reason) {
+            $this->trouble("{$key} is unreadable, that axis is off ({$reason})");
         }
+
+        return $policy;
     }
 
     /**
@@ -249,7 +251,10 @@ final class LogSettingsResolver
         $fallback = LogSettingsCatalog::INDEX_PUSH_INTERVAL_FALLBACK_MS;
         $env = Hilos::$env;
         if ($env === null) {
-            $this->trouble('log index push environment is unreadable: no environment in this process');
+            $this->trouble(
+                'log index push environment is unreadable: no environment in this process, using the fallback of '
+                . LogSettingsCatalog::INDEX_PUSH_INTERVAL_FALLBACK_MS . ' ms',
+            );
 
             return $fallback;
         }
@@ -257,13 +262,19 @@ final class LogSettingsResolver
         try {
             $interval = $env->int(EnvConstants::LOG_INDEX_PUSH_INTERVAL_MS);
         } catch (EnvException $exception) {
-            $this->trouble('log index push environment is unreadable: ' . $exception->getMessage());
+            $this->trouble(
+                'log index push environment is unreadable: ' . $exception->getMessage()
+                . ', using the fallback of ' . LogSettingsCatalog::INDEX_PUSH_INTERVAL_FALLBACK_MS . ' ms',
+            );
 
             return $fallback;
         }
 
         if ($interval < LogIndexPushIntervalRule::MINIMUM_MS) {
-            $this->trouble("log index push environment says {$interval} ms, below the minimum");
+            $this->trouble(
+                "log index push environment says {$interval} ms, below the minimum, using the fallback of "
+                . LogSettingsCatalog::INDEX_PUSH_INTERVAL_FALLBACK_MS . ' ms',
+            );
 
             return $fallback;
         }
@@ -272,19 +283,18 @@ final class LogSettingsResolver
     }
 
     /**
-     * Builds the retention policy from the environment, inert when even that cannot be read.
+     * Builds the retention policy from the environment, reporting the values it could not read.
      *
      * @return LogArchiveRetentionPolicy Policy from the environment, or one that keeps everything
      */
     private function retentionFromEnv(): LogArchiveRetentionPolicy
     {
-        try {
-            return LogArchiveRetentionPolicy::fromEnv();
-        } catch (EnvException $exception) {
-            $this->trouble('log retention environment is unreadable: ' . $exception->getMessage());
-
-            return new LogArchiveRetentionPolicy(0, 0);
+        $policy = LogArchiveRetentionPolicy::fromEnv();
+        foreach ($policy->unreadable as $key => $reason) {
+            $this->trouble("{$key} is unreadable, nothing will be evicted ({$reason})");
         }
+
+        return $policy;
     }
 
     /**
@@ -319,7 +329,7 @@ final class LogSettingsResolver
         }
 
         if (($this->lastTrouble[$scope] ?? null) !== $trouble) {
-            $this->complaints[] = 'Log settings: ' . $trouble . '; using the environment instead';
+            $this->complaints[] = 'Log settings: ' . $trouble;
         }
 
         $this->lastTrouble[$scope] = $trouble;

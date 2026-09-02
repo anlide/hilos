@@ -18,7 +18,8 @@ use Hilos\Hilos;
  * {@see CronRule} by {@see createCronRule()} and evaluated by the caller. Any axis firing rotates;
  * a numeric axis of 0 is disabled and an empty (or malformed) cron expression disables the
  * schedule. All axes off means the policy never fires, preserving the start-only rotation the
- * daemon does on boot.
+ * daemon does on boot. A value the environment cannot answer disables only its own axis and is
+ * named in {@see $unreadable}; the other axes keep the values they were configured with.
  */
 final class LogRotationTriggerPolicy
 {
@@ -30,27 +31,36 @@ final class LogRotationTriggerPolicy
      * @param int $maxLiveSizeBytes Summed live *.log size threshold in bytes; 0 disables the size axis
      * @param ?string $cronExpression Five-field cron expression for the schedule axis; empty or
      *                                malformed disables it, null means no expression was configured
+     * @param array<string, string> $unreadable Reason by environment variable name for every axis
+     *                                          whose value could not be read; empty when the
+     *                                          environment answered
      */
     public function __construct(
         public readonly int $maxAgeSeconds,
         public readonly int $maxLiveSizeBytes,
         public readonly ?string $cronExpression = null,
+        public readonly array $unreadable = [],
     ) {
     }
 
     /**
      * Builds the policy from the environment, clamping negative numeric thresholds to 0 (disabled).
      *
+     * Each axis is read on its own, so a value the environment cannot answer leaves that axis
+     * disabled and named in {@see $unreadable} while the other two stay configured. No access to
+     * the environment at all disables every axis silently — that is the documented contract of
+     * this class, not a failure worth naming.
+     *
      * @return self Policy carrying the configured age, size, and schedule axes
-     * @throws EnvException When a rotation key is missing, outside the catalog, or of the wrong type
      */
     public static function fromEnv(): self
     {
-        return new self(
-            max(0, Hilos::$env?->int(EnvConstants::LOG_ROTATION_MAX_AGE_SECONDS) ?? 0),
-            max(0, Hilos::$env?->int(EnvConstants::LOG_ROTATION_MAX_LIVE_SIZE_BYTES) ?? 0),
-            Hilos::$env?->string(EnvConstants::LOG_ROTATION_CRON),
-        );
+        $unreadable = [];
+        $maxAge = self::envInt(EnvConstants::LOG_ROTATION_MAX_AGE_SECONDS, $unreadable);
+        $maxSize = self::envInt(EnvConstants::LOG_ROTATION_MAX_LIVE_SIZE_BYTES, $unreadable);
+        $cron = self::envString(EnvConstants::LOG_ROTATION_CRON, $unreadable);
+
+        return new self($maxAge, $maxSize, $cron, $unreadable);
     }
 
     /**
@@ -152,5 +162,41 @@ final class LogRotationTriggerPolicy
         }
 
         return $expression;
+    }
+
+    /**
+     * Reads one numeric axis, disabling it and recording why when the environment cannot answer.
+     *
+     * @param EnvConstants $key Environment variable backing this axis
+     * @param array<string, string> $unreadable Accumulator the failure reason is added to, keyed by variable name
+     * @return int Configured threshold clamped to 0 or more; 0 when the value could not be read
+     */
+    private static function envInt(EnvConstants $key, array &$unreadable): int
+    {
+        try {
+            return max(0, Hilos::$env?->int($key) ?? 0);
+        } catch (EnvException $exception) {
+            $unreadable[$key->name] = $exception->getMessage();
+
+            return 0;
+        }
+    }
+
+    /**
+     * Reads the schedule axis, disabling it and recording why when the environment cannot answer.
+     *
+     * @param EnvConstants $key Environment variable backing this axis
+     * @param array<string, string> $unreadable Accumulator the failure reason is added to, keyed by variable name
+     * @return ?string Configured expression, or null when none was configured or it could not be read
+     */
+    private static function envString(EnvConstants $key, array &$unreadable): ?string
+    {
+        try {
+            return Hilos::$env?->string($key);
+        } catch (EnvException $exception) {
+            $unreadable[$key->name] = $exception->getMessage();
+
+            return null;
+        }
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Log;
 
+use Hilos\Constants\EnvConstants;
 use Hilos\Log\LogArchiveRetentionPolicy;
 use PHPUnit\Framework\TestCase;
 
@@ -13,6 +14,10 @@ use PHPUnit\Framework\TestCase;
  * Locks the union-keep semantics without any I/O: a batch is a candidate only when it is BOTH
  * outside the newest kept batches AND older than the max age; either threshold at 0 disables that
  * criterion and both at 0 yields no candidates. Ages are measured against an injected `$now`.
+ *
+ * The environment tests (HIL-682) lock the direction a typo must never take here: because a 0
+ * threshold widens eviction instead of narrowing it, an unreadable value makes the whole policy
+ * inert rather than disabling only its own criterion.
  */
 final class LogArchiveRetentionPolicyTest extends TestCase
 {
@@ -21,6 +26,18 @@ final class LogArchiveRetentionPolicyTest extends TestCase
 
     /** One day in seconds, the unit the age fixtures are built from. */
     private const int DAY = 86_400;
+
+    protected function tearDown(): void
+    {
+        foreach ([
+            EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES,
+            EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS,
+        ] as $key) {
+            putenv($key->name);
+        }
+
+        parent::tearDown();
+    }
 
     public function testBothThresholdsZeroYieldsNoCandidates(): void
     {
@@ -102,6 +119,45 @@ final class LogArchiveRetentionPolicyTest extends TestCase
 
         $this->assertSame(7, $policy->keepBatches);
         $this->assertSame(604_800, $policy->maxAgeSeconds);
+    }
+
+    public function testUnreadableKeepCountMakesTheWholePolicyInert(): void
+    {
+        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name . '=twenty');
+        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name . '=' . 30 * self::DAY);
+
+        $policy = LogArchiveRetentionPolicy::fromEnv();
+
+        // Not "the count criterion is off": that would hand the pruner every batch older than the age.
+        $this->assertSame(0, $policy->keepBatches);
+        $this->assertSame(0, $policy->maxAgeSeconds);
+        $this->assertSame([], $policy->selectEvictionCandidates($this->batchesAgedDays([0, 10, 100, 1000]), self::NOW));
+        $this->assertSame([EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name], array_keys($policy->unreadable));
+    }
+
+    public function testUnreadableMaxAgeMakesTheWholePolicyInert(): void
+    {
+        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name . '=2');
+        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name . '=a month');
+
+        $policy = LogArchiveRetentionPolicy::fromEnv();
+
+        $this->assertSame(0, $policy->keepBatches);
+        $this->assertSame(0, $policy->maxAgeSeconds);
+        $this->assertSame([], $policy->selectEvictionCandidates($this->batchesAgedDays([0, 10, 100, 1000]), self::NOW));
+        $this->assertSame([EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name], array_keys($policy->unreadable));
+    }
+
+    public function testEnvironmentThatAnswersLeavesNothingUnreadable(): void
+    {
+        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name . '=2');
+        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name . '=' . 30 * self::DAY);
+
+        $policy = LogArchiveRetentionPolicy::fromEnv();
+
+        $this->assertSame([], $policy->unreadable);
+        $this->assertSame(2, $policy->keepBatches);
+        $this->assertSame(30 * self::DAY, $policy->maxAgeSeconds);
     }
 
     /**

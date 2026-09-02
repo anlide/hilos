@@ -28,31 +28,44 @@ use Hilos\Hilos;
  * outside the newest {@see $keepBatches} AND older than {@see $maxAgeSeconds}. Either threshold
  * at 0 disables that criterion, leaving the other to decide; both at 0 means nothing is ever a
  * candidate.
+ *
+ * A value the environment cannot answer makes the whole policy inert — both thresholds 0, the
+ * reasons named in {@see $unreadable} — because here a disabled criterion widens eviction instead
+ * of narrowing it, and a typo must never hand the pruner more batches than the operator asked for.
  */
 final class LogArchiveRetentionPolicy
 {
     /**
      * @param int $keepBatches Newest batches always kept; 0 disables the count criterion
      * @param int $maxAgeSeconds Age in seconds beyond which a batch is eligible; 0 disables the age criterion
+     * @param array<string, string> $unreadable Reason by environment variable name for every value
+     *                                          that could not be read; empty when the environment
+     *                                          answered
      */
     public function __construct(
         public readonly int $keepBatches,
         public readonly int $maxAgeSeconds,
+        public readonly array $unreadable = [],
     ) {
     }
 
     /**
      * Builds the policy from the environment, clamping negatives to 0 (disabled).
      *
+     * Either value being unreadable yields the inert policy — no candidates at all — rather than a
+     * partly configured one, because a 0 threshold here removes a constraint instead of adding one.
+     * No access to the environment at all yields the same pair of zeroes silently, which is the
+     * documented contract of this class.
+     *
      * @return self Policy carrying the configured keep-count and max-age thresholds
-     * @throws EnvException When a retention key is missing, outside the catalog, or not an int
      */
     public static function fromEnv(): self
     {
-        return new self(
-            max(0, Hilos::$env?->int(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES) ?? 0),
-            max(0, Hilos::$env?->int(EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS) ?? 0),
-        );
+        $unreadable = [];
+        $keepBatches = self::envInt(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES, $unreadable);
+        $maxAge = self::envInt(EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS, $unreadable);
+
+        return $unreadable === [] ? new self($keepBatches, $maxAge) : new self(0, 0, $unreadable);
     }
 
     /**
@@ -107,5 +120,23 @@ final class LogArchiveRetentionPolicy
         }
 
         return $protected;
+    }
+
+    /**
+     * Reads one threshold, recording why when the environment cannot answer.
+     *
+     * @param EnvConstants $key Environment variable backing this threshold
+     * @param array<string, string> $unreadable Accumulator the failure reason is added to, keyed by variable name
+     * @return int Configured threshold clamped to 0 or more; 0 when the value could not be read
+     */
+    private static function envInt(EnvConstants $key, array &$unreadable): int
+    {
+        try {
+            return max(0, Hilos::$env?->int($key) ?? 0);
+        } catch (EnvException $exception) {
+            $unreadable[$key->name] = $exception->getMessage();
+
+            return 0;
+        }
     }
 }
