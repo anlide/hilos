@@ -1,7 +1,8 @@
-// The chat's contexts for the five framework Hilos log pages that read live data:
+// The chat's contexts for the six framework Hilos log pages that read live data:
 // the section overview (@hilos/vue HilosLogsPage), the stream list
 // (HilosLogsKeysPage), the worker streams (HilosLogsWorkersPage), the rotation
-// history (HilosLogsRotationsPage) and the log viewer (HilosLogsViewPage). The
+// history (HilosLogsRotationsPage), the logging modes (HilosLogsSettingsPage) and
+// the log viewer (HilosLogsViewPage). The
 // framework owns the tables, the view-models, the catalog and the wording; the
 // project supplies only where the data lives — and, on its backend, the registration
 // of the hilosLogKeys, hilosLogWorkers and hilosLogRotations tables against their
@@ -9,9 +10,10 @@
 //
 // Separate contexts and not one, because the screens need different things: the
 // windowed tables read the scope stores, the viewer reads one file through a tracked
-// action and therefore the action lifecycle, and the overview needs neither — it has
-// no table window at all, so the connection its one frame arrives on is the whole of
-// its context.
+// action and therefore the action lifecycle, the logging modes read one frame and
+// send one action and so need no scope stores either, and the overview needs neither
+// — it has no table window at all, so the connection its one frame arrives on is the
+// whole of its context.
 // Deciding what to do with a batch the rule recommends carrying off is HIL-483.
 import {
   type HilosLogKeysContext,
@@ -19,6 +21,7 @@ import {
   type HilosLogRotationsContext,
   type HilosLogWorkersContext,
   type HilosLogViewerContext,
+  type HilosSettingPresetsContext,
 } from '@hilos/core'
 
 import { actions, connection } from '../../../bootstrap/connection'
@@ -45,6 +48,12 @@ export const hilosLogWorkersContext: HilosLogWorkersContext = {
 export const hilosLogsContext: HilosLogRotationsContext = {
   connection,
   scopes,
+}
+
+/** This project's context for the framework logging-mode page. */
+export const hilosLogSettingsContext: HilosSettingPresetsContext = {
+  connection,
+  actions,
 }
 
 /** This project's context for the framework log viewer. */

@@ -290,14 +290,14 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Log rotation history and retention.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LOGS,
         ],
-        HilosPageConstants::HILOS_LOGS_VIEW => [
-            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Viewer',
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Stream and filter log lines.',
-            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LOGS,
-        ],
         HilosPageConstants::HILOS_LOGS_SETTINGS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Settings',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Logging modes and what differs from the chosen one.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LOGS,
+        ],
+        HilosPageConstants::HILOS_LOGS_VIEW => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Viewer',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Stream and filter log lines.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LOGS,
         ],
         HilosPageConstants::HILOS_CHANGE_LOG => [

@@ -58,6 +58,7 @@ export const HilosPages = {
   LOGS_KEYS: 'hilos_logs_keys',
   LOGS_WORKERS: 'hilos_logs_workers',
   LOGS_ROTATIONS: 'hilos_logs_rotations',
+  LOGS_SETTINGS: 'hilos_logs_settings',
   LOGS_VIEW: 'hilos_logs_view',
   USERS: 'hilos_users',
   USER: 'hilos_user',
@@ -186,6 +187,7 @@ export const HILOS_ROUTE_DECLARATIONS: Record<string, HilosRouteDeclaration> = {
   [HilosPages.LOGS_KEYS]: { path: '/hilos/logs/keys', admin: true },
   [HilosPages.LOGS_WORKERS]: { path: '/hilos/logs/workers', admin: true },
   [HilosPages.LOGS_ROTATIONS]: { path: '/hilos/logs/rotations', admin: true },
+  [HilosPages.LOGS_SETTINGS]: { path: '/hilos/logs/settings', admin: true },
   [HilosPages.LOGS_VIEW]: {
     path: '/hilos/logs/view/{nodeId?}/{source?}/{stream?}',
     admin: true,
@@ -560,6 +562,11 @@ export const HILOS_ADMIN_PAGES: Record<string, HilosAdminPageMeta> = {
   [HilosPages.LOGS_ROTATIONS]: {
     label: 'Rotations',
     lead: 'Log rotation history and retention.',
+    parent: HilosPages.LOGS,
+  },
+  [HilosPages.LOGS_SETTINGS]: {
+    label: 'Settings',
+    lead: 'Logging modes and what differs from the chosen one.',
     parent: HilosPages.LOGS,
   },
   [HilosPages.LOGS_VIEW]: {

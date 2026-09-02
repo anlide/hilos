@@ -4,6 +4,7 @@
 // project's connection bootstrap (docs/agents/frontend/bootstrap-structure.md).
 import { BACKUP_SIGNAL_SCHEMAS } from '../admin/backup/hilosBackups.js'
 import { LOGS_KEYS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogKeys.js'
+import { LOGS_SETTINGS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogSettings.js'
 import { LOGS_OVERVIEW_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogsOverview.js'
 import { LOGS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogRotations.js'
 import { LOGS_VIEWER_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogViewer.js'
@@ -117,6 +118,7 @@ export function createHilosConnection(
       ...LOGS_SIGNAL_SCHEMAS,
       ...LOGS_KEYS_SIGNAL_SCHEMAS,
       ...LOGS_OVERVIEW_SIGNAL_SCHEMAS,
+      ...LOGS_SETTINGS_SIGNAL_SCHEMAS,
       ...LOGS_VIEWER_SIGNAL_SCHEMAS,
       ...LOGS_WORKERS_SIGNAL_SCHEMAS,
       ...NOTIFICATION_SIGNAL_SCHEMAS,
