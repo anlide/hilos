@@ -13,8 +13,9 @@
 // action and therefore the action lifecycle, the logging modes read one frame and
 // send one action and so need no scope stores either, and the overview needs neither
 // — it has no table window at all, so the connection its one frame arrives on is the
-// whole of its context.
-// Deciding what to do with a batch the rule recommends carrying off is HIL-483.
+// whole of its context. The rotation history needs both: a windowed table AND the
+// action lifecycle, because a recommended batch is confirmed as carried off from it
+// (HIL-483).
 import {
   type HilosLogKeysContext,
   type HilosLogsOverviewContext,
@@ -48,6 +49,7 @@ export const hilosLogWorkersContext: HilosLogWorkersContext = {
 export const hilosLogsContext: HilosLogRotationsContext = {
   connection,
   scopes,
+  actions,
 }
 
 /** This project's context for the framework logging-mode page. */

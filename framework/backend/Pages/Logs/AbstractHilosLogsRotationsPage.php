@@ -7,6 +7,7 @@ namespace Hilos\Pages\Logs;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -14,18 +15,25 @@ use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndex;
 use Hilos\Log\ClusterLogIndexMirror;
+use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
 use Hilos\Log\LogBatchSummary;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Log\LogSettingsResolver;
 use Hilos\Pages\Logs\DTO\HilosLogsRotationsSignalData;
+use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use JsonException;
 
@@ -48,6 +56,14 @@ use JsonException;
  * hand either — batches change once per rotation, and each connection's own descriptor (its sort,
  * filter and page) is what the window is rebuilt from, so an administrator stays where they stood.
  *
+ * The one action of this screen — an operator's word that a batch has been carried off — is handed
+ * on rather than answered (HIL-483). The directory belongs to one node's {@see LogStoreAgent}, and
+ * this page runs wherever the browser happens to be attached, so it checks that the node the
+ * request names is still there, sends the confirmation to that node's owner and steps out of its
+ * own ack. The row the operator is looking at is repainted by the node's next index reaching the
+ * mirror, not by the ack — which is why {@see self::rowsFingerprint()} counts the confirmation
+ * among the things a window is rebuilt for.
+ *
  * Projects register a concrete empty subclass in the page factory (wiring only).
  */
 abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
@@ -58,6 +74,10 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_ROTATIONS,
+    ];
+
+    public const array ACTIONS = [
+        HilosSignalConstants::LOGS_TAKEOUT_CONFIRM => LogsTakeoutConfirmActionDTO::class,
     ];
 
     /** Seconds between two tick refreshes, so a busy agent does not rebuild the header per loop pass. */
@@ -143,6 +163,35 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
         self::$lastHeaderFingerprint = $headerFingerprint;
         foreach (array_keys(self::$subscribers) as $acceptKey) {
             self::queueHeaderToUser($agent, $acceptKey, $header);
+        }
+    }
+
+    /**
+     * Routes the one action of this screen: an operator's word that a batch has been carried off.
+     *
+     * @param string $acceptKey WebSocket accept key
+     * @param string $action Action name
+     * @param ActionPayloadDTO $dto Action payload DTO
+     * @return ?ActionReplyDTO Always null: the confirmation is acked by the node that writes it
+     * @throws AgentUnknownActionException When the page does not support the action
+     * @throws InvalidActionPayloadException When the payload is not the request its action declares
+     * @throws TableActionException When the request names a node this cluster does not have, or one
+     *     the master last saw offline
+     * @throws RtActionsStateCollectionNullException When the cluster roster is unavailable
+     * @throws InvalidArgumentException When the frame to the owner cannot be named
+     */
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
+    {
+        switch ($action) {
+            case HilosSignalConstants::LOGS_TAKEOUT_CONFIRM:
+                if (!$dto instanceof LogsTakeoutConfirmActionDTO) {
+                    throw new InvalidActionPayloadException($action, LogsTakeoutConfirmActionDTO::class, $dto);
+                }
+
+                return $this->forwardTakeoutConfirm($acceptKey, $action, $dto);
+
+            default:
+                throw new AgentUnknownActionException("Unknown action: {$action}");
         }
     }
 
@@ -303,6 +352,12 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
      * because the retention badge of every row is judged from them: an edited threshold repaints
      * the column without a single batch having moved.
      *
+     * The takeout stamp and the node's log root are counted for the same reason and would be easy
+     * to leave out, because neither is a measurement of the archive. A confirmation moves nothing
+     * else about a batch, so without its stamp here the click an operator just made would reach
+     * the mirror and stop, leaving them looking at the badge they had before; and the log root is
+     * where every row's absolute address comes from ({@see HilosLogRotationsTable}).
+     *
      * @param HilosLogsRotationsSignalData $header Header of this pass, for the rules it carries
      * @return string Stable fingerprint of what the rows are built from
      * @throws JsonException From {@see json_encode()} with {@see JSON_THROW_ON_ERROR}
@@ -314,6 +369,7 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
             $slots[] = [
                 $slot->nodeId,
                 $slot->index->available,
+                $slot->index->logDirectory,
                 array_map(
                     static fn(LogBatchSummary $batch): array => [
                         $batch->timestamp,
@@ -325,6 +381,7 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
                         $batch->workerMonopolisticBytes,
                         $batch->daemonFileCount,
                         $batch->daemonBytes,
+                        $batch->takenAt,
                     ],
                     $slot->index->batches,
                 ),
@@ -375,5 +432,83 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
     private static function settingsResolver(): LogSettingsResolver
     {
         return self::$settingsResolver ??= new LogSettingsResolver();
+    }
+
+    /**
+     * Hands one confirmation to the node that owns the batch directory and lets that node answer it.
+     *
+     * The id of whoever confirmed is added here and not sent by the browser: the marker records
+     * who carried the batch off, and the owner of the directory has no session to ask — the socket
+     * is attached to this page worker. A connection carrying no user leaves it null, which is the
+     * honest answer for a fact nobody can be named for rather than a reason to refuse.
+     *
+     * @param string $acceptKey Accept key of the connection waiting for the confirmation
+     * @param string $action Action name the reply acknowledges
+     * @param LogsTakeoutConfirmActionDTO $dto Validated confirmation request
+     * @return ?ActionReplyDTO Always null: the answer is owed by the owner, not by this page
+     * @throws TableActionException When the request names a node this cluster does not have, or one
+     *     the master last saw offline
+     * @throws RtActionsStateCollectionNullException When the cluster roster is unavailable
+     * @throws InvalidArgumentException When the frame to the owner cannot be named
+     */
+    private function forwardTakeoutConfirm(
+        string $acceptKey,
+        string $action,
+        LogsTakeoutConfirmActionDTO $dto,
+    ): ?ActionReplyDTO {
+        $this->requireLiveNode($dto->nodeId);
+
+        // Deferring is the promise that somebody else acks, so it is made only when there is an
+        // ack to make: an untracked confirmation has nothing to correlate and the owner refuses to
+        // write for it, the same shape the viewer page hands its reads over in.
+        $requestId = $this->currentActionRequestId();
+        $this->sendToAgent(
+            HilosSignalConstants::LOGS_AGENT_TAKEOUT_CONFIRM,
+            LogsTakeoutConfirmSignalData::fromAction(
+                $dto,
+                $acceptKey,
+                $action,
+                $requestId,
+                Hilos::$browser?->resolveActionUserId($acceptKey),
+            ),
+        );
+        if ($requestId !== null) {
+            $this->deferActionReply();
+        }
+
+        return null;
+    }
+
+    /**
+     * Refuses a node the operator can still do something about, before the frame travels.
+     *
+     * The twin of {@see AbstractHilosLogsViewPage::requireLiveNode()}, and deliberately its own
+     * copy: the two screens hand different requests to the same owners, and the check belongs to
+     * the handover rather than to a shared ancestor neither page has.
+     *
+     * Two refusals and not one, because they mean opposite things to the person reading: an id
+     * no node ever answered to is a stale or mistyped choice, while a node the master last saw
+     * offline is the machine whose archive is being asked about.
+     *
+     * An empty id is this node and is not looked up at all — a single-node install publishes
+     * itself under one, so a lookup would be asking whether this machine exists.
+     *
+     * @param string $nodeId Node id from the request, empty for this node
+     * @throws TableActionException When no such node is known, or the master last saw it offline
+     * @throws RtActionsStateCollectionNullException When the cluster roster is unavailable
+     */
+    private function requireLiveNode(string $nodeId): void
+    {
+        if ($nodeId === '') {
+            return;
+        }
+
+        $node = Hilos::$rt->hilosClusterNodes[$nodeId];
+        if ($node === null) {
+            throw new TableActionException("Unknown cluster node: {$nodeId}");
+        }
+        if (!$node->online) {
+            throw new TableActionException("Cluster node {$nodeId} is offline");
+        }
     }
 }

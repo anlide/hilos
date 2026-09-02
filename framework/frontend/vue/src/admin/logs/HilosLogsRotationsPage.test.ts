@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   HilosPages,
   ScopeManager,
@@ -8,6 +8,9 @@ import {
   ROTATIONS_HEADER_SIGNAL,
 } from '@hilos/core'
 import type {
+  ActionHandle,
+  ActionLifecycle,
+  ActionResult,
   HilosConnection,
   HilosLogRotationsHeader,
   HilosRouter,
@@ -120,6 +123,42 @@ function makeConnection(): {
   }
 }
 
+/** One dispatched action, held open so the test times the answer the backend gives. */
+interface Dispatched {
+  action: string
+  payload: Record<string, unknown>
+  settle: (result: ActionResult) => void
+}
+
+/**
+ * An action lifecycle that records what was dispatched and hands the answer back to
+ * the test: the takeout dialog closes on the server's word, so a fake that settled
+ * by itself would hide exactly the step under test.
+ */
+function makeActions(): {
+  actions: ActionLifecycle
+  dispatched: Dispatched[]
+} {
+  const dispatched: Dispatched[] = []
+  const actions = {
+    dispatch(action: string, payload: Record<string, unknown>): ActionHandle {
+      let settle: (result: ActionResult) => void = () => {}
+      const done = new Promise<ActionResult>((resolve) => {
+        settle = resolve
+      })
+      dispatched.push({ action, payload, settle })
+
+      return {
+        requestId: String(dispatched.length),
+        loading: createSignal(false),
+        done,
+      }
+    },
+  } as unknown as ActionLifecycle
+
+  return { actions, dispatched }
+}
+
 /** One batch as the backend puts it on the wire. */
 function batch(
   overrides: Record<string, unknown> = {},
@@ -129,6 +168,7 @@ function batch(
     batchAt: 1800000000,
     node: null,
     path: 'archive/2027-01-15-08-00-00/',
+    absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00/',
     agentFileCount: 12,
     workerFileCount: 8,
     workerMonopolisticFileCount: 2,
@@ -146,11 +186,34 @@ function makeScopes(): ScopeManager {
   return scopes
 }
 
-function mountPage(connection: HilosConnection) {
-  return mount(HilosLogsRotationsPage, {
-    props: { context: { connection, scopes: makeScopes() } },
+// The takeout dialog is teleported to the document body, so a wrapper left mounted
+// would leave its modal there for the next case to find.
+const mounted: ReturnType<typeof mount>[] = []
+
+afterEach(() => {
+  for (const wrapper of mounted.splice(0)) {
+    wrapper.unmount()
+  }
+})
+
+function mountPage(
+  connection: HilosConnection,
+  actions: ActionLifecycle = makeActions().actions,
+) {
+  const wrapper = mount(HilosLogsRotationsPage, {
+    props: { context: { connection, scopes: makeScopes(), actions } },
     global: { provide: { [hilosRouterKey as symbol]: router() } },
   })
+  mounted.push(wrapper)
+
+  return wrapper
+}
+
+/** Wait out the microtasks a settled action resolves through. */
+async function settled(): Promise<void> {
+  await nextTick()
+  await nextTick()
+  await nextTick()
 }
 
 describe('HilosLogsRotationsPage', () => {
@@ -280,6 +343,95 @@ describe('HilosLogsRotationsPage', () => {
     expect(
       wrapper.find('[data-id^="hilos-table-row-"] .d-lg-none').text(),
     ).toBe('node-1 · 1.5 GB')
+  })
+
+  it('offers the takeout only on a batch the rule recommends carrying off', async () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([
+      batch({ rowKey: 'a:1', batchAt: 1, retentionState: 'kept' }),
+      batch({ rowKey: 'a:2', batchAt: 2, retentionState: 'due' }),
+      batch({ rowKey: 'a:3', batchAt: 3, retentionState: 'taken' }),
+    ])
+    await nextTick()
+
+    expect(wrapper.findAll('[data-id="hilos-rotation-takeout"]')).toHaveLength(
+      1,
+    )
+  })
+
+  it('says where the batch lies and how to copy it off, node first in a cluster', async () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    pushHeader(header({ nodes: ['node-1'] }))
+    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    await nextTick()
+    await wrapper.find('[data-id="hilos-rotation-takeout"]').trigger('click')
+
+    expect(
+      document.querySelector('[data-id="hilos-rotation-takeout-path"]')
+        ?.textContent,
+    ).toBe('node-1:/var/log/hilos/archive/2027-01-15-08-00-00/')
+    expect(
+      document.querySelector('[data-id="hilos-rotation-takeout-command"]')
+        ?.textContent,
+    ).toBe(
+      'rsync -a node-1:/var/log/hilos/archive/2027-01-15-08-00-00/ ./cold-logs/node-1/2027-01-15-08-00-00/',
+    )
+  })
+
+  /**
+   * A node that reported no log root has no address to give, and this screen must
+   * not fill the gap with its own: the page worker knows where ITS logs live, and
+   * that directory is on another machine.
+   */
+  it('offers no address at all when the holding node reported no log root', async () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([batch({ absolutePath: null, retentionState: 'due' })])
+    await nextTick()
+    await wrapper.find('[data-id="hilos-rotation-takeout"]').trigger('click')
+
+    expect(
+      document.querySelector('[data-id="hilos-rotation-takeout-path"]'),
+    ).toBeNull()
+    expect(document.body.textContent).toContain(
+      'did not report where its logs live',
+    )
+  })
+
+  it("names the batch by node and stamp, and closes only on the server's word", async () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const wrapper = mountPage(connection, actions)
+
+    pushHeader(header({ nodes: ['node-1'] }))
+    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    await nextTick()
+    await wrapper.find('[data-id="hilos-rotation-takeout"]').trigger('click')
+    const confirm = document.querySelector(
+      '[data-id="hilos-rotation-takeout-confirm"]',
+    ) as HTMLElement
+    confirm.click()
+    await settled()
+
+    expect(dispatched).toMatchObject([
+      {
+        action: 'logs_takeout_confirm',
+        payload: { nodeId: 'node-1', batchTimestamp: 1800000000 },
+      },
+    ])
+    expect(document.body.textContent).toContain('Where it lies')
+
+    dispatched[0]?.settle({ action: 'logs_takeout_confirm' } as ActionResult)
+    await settled()
+
+    expect(document.body.textContent).not.toContain('Where it lies')
   })
 
   it('opens the legend modal, which is where the three numbers are explained', async () => {

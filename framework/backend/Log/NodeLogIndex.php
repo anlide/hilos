@@ -14,6 +14,11 @@ namespace Hilos\Log;
  * both duplicate the cluster aggregator (HIL-754) and spill full replicas across every node where
  * batched deltas belong (HIL-755).
  *
+ * It also names the DIRECTORY it measured ({@see $logDirectory}), which is the one thing about a
+ * node's store that no other machine can work out. A page worker holding the cluster picture knows
+ * its OWN log root and nobody else's, so the absolute address an operator is told to copy from
+ * comes from here rather than from the settings of whoever happens to draw the screen (HIL-483).
+ *
  * Unavailability is a state and not an exception, the same way {@see LogStoreSnapshot} carries it:
  * {@see $available} false comes with empty projections, which the overview draws as blank tiles
  * rather than as zeros — a zero would claim there were no rotations, and here we simply do not know.
@@ -28,6 +33,7 @@ final class NodeLogIndex
      * @param list<LogKeySummary> $keys Log keys across live and archive, ascending by key
      * @param list<LogWorkerSummary> $workers Worker streams, ascending by key, monopolistic ones apart
      * @param array<string, ?int> $growthBytesPerDay Key → bytes written over the last day, null until the window fills
+     * @param ?string $logDirectory Absolute log root of this node, or null when the environment cannot name one
      */
     public function __construct(
         public readonly ?string $nodeId,
@@ -37,6 +43,7 @@ final class NodeLogIndex
         public readonly array $keys,
         public readonly array $workers,
         public readonly array $growthBytesPerDay,
+        public readonly ?string $logDirectory = null,
     ) {
     }
 }

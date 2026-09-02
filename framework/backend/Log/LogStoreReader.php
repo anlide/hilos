@@ -114,7 +114,22 @@ final class LogStoreReader
     }
 
     /**
+     * The log root this reader walks, which is also the address an operator is told to copy from.
+     *
+     * @return ?string Absolute log root, or null when the environment could not name one
+     */
+    public function logDirectory(): ?string
+    {
+        return $this->logDirectory;
+    }
+
+    /**
      * Walk the log store once and return a classified snapshot.
+     *
+     * Each batch directory is asked for its takeout marker as it is walked (HIL-483). The marker
+     * is read here rather than counted with the files because it is not one of them: the glob
+     * below takes `*.log` alone, so the confirmation reaches the snapshot without reaching any
+     * file count or byte weight.
      *
      * @return LogStoreSnapshot Live + archive index, or {@see LogStoreSnapshot::unavailable()} when
      *                          the log root is unresolved or a directory cannot be listed
@@ -127,6 +142,7 @@ final class LogStoreReader
 
         $archivePath = $this->logDirectory . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
         $archiveBatches = [];
+        $batchTakenAt = [];
         if (is_dir($archivePath)) {
             $entries = FileSystemHelper::scandirOrFalse($archivePath);
             if ($entries === false) {
@@ -152,6 +168,7 @@ final class LogStoreReader
                     return LogStoreSnapshot::unavailable();
                 }
                 $archiveBatches[$timestamp] = $batch;
+                $batchTakenAt[$timestamp] = LogBatchTakeoutMarker::read($full);
             }
         }
 
@@ -160,7 +177,7 @@ final class LogStoreReader
             return LogStoreSnapshot::unavailable();
         }
 
-        return new LogStoreSnapshot(true, $archiveBatches, $liveFiles);
+        return new LogStoreSnapshot(true, $archiveBatches, $liveFiles, $batchTakenAt);
     }
 
     /**

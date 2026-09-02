@@ -7,20 +7,30 @@ namespace Hilos\Tests\Unit;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
+use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
 use Hilos\Log\LogBatchSummary;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
 use Hilos\Pages\Logs\DTO\HilosLogsRotationsSignalData;
+use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
+use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
+use Hilos\Runtime\View\Context\RtContext;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -33,6 +43,11 @@ use PHPUnit\Framework\TestCase;
  * column rather than offer a filter with one entry in it. And that a viewer who leaves is dropped
  * from the page's own set AND from the section's count - a viewer left counted keeps the
  * aggregator sending frames for a page nobody has open.
+ *
+ * The screen's one action lives here too (HIL-483). The page owns no batch directory - one node's
+ * owner does - so what is judged is the handover: it refuses a node an operator can still do
+ * something about, forwards everything else with the whole request plus whom to answer and who
+ * asked, and then stops owing an ack of its own.
  */
 final class HilosLogsRotationsPageSubscribeTest extends TestCase
 {
@@ -47,6 +62,15 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
     /** Any fixed instant, so a timestamp in a fixture means something to read. */
     private const int T0 = 1_800_000_000;
 
+    /** Node on the other end of the cluster, the one the confirmations are addressed to. */
+    private const string PEER = 'node-2';
+
+    /** Request id of the tracked dispatch the confirmation cases run under. */
+    private const string REQUEST_ID = 'req-takeout-1';
+
+    /** The batch a confirmation names; the one the fixture slots hold. */
+    private const int CONFIRMED_BATCH_AT = self::T0 - 3_600;
+
     /** Weight of each fixture node's one batch; each move of it moves the rows fingerprint. */
     private int $batchBytes = 0;
 
@@ -59,8 +83,12 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
 
         Hilos::$sr = new SignalRouter();
         // Binds the base facade, whose page catalog answers for the framework admin pages. The
-        // base creates no browser context, so this clears the browser in the same call.
+        // base creates no browser context, so this clears the browser in the same call - which is
+        // also the connection carrying no user that the confirmation cases forward under.
         Hilos::initBrowser();
+        Hilos::$rt = new LogsRotationsPageTestRtContext();
+        Hilos::$rt->mountFeatureRuntime([]);
+        RtTruthSourceRegistry::registerDaemon(StateHilosClusterNode::RT_COLLECTION);
 
         $this->emptyTheMirror();
         $this->growTheClusterPicture();
@@ -84,6 +112,8 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
             putenv($key->name);
         }
 
+        RtTruthSourceRegistry::unregisterDaemon(StateHilosClusterNode::RT_COLLECTION);
+        Hilos::$rt = null;
         Hilos::$sr = null;
         Hilos::$browser = null;
 
@@ -259,6 +289,135 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
     }
 
     /**
+     * The whole request reaches the owner, and the page stops owing an answer: the node that
+     * writes the marker is the one that can say what instant it wrote, so it acks the browser
+     * itself.
+     */
+    public function testAConfirmationForALiveNodeReachesItsOwnerWholeAndLeavesThePageOwingNothing(): void
+    {
+        $this->publishNode(self::PEER, online: true);
+        $page = $this->dispatchingPage();
+
+        $reply = $page->onAction(
+            self::ACCEPT_KEY,
+            HilosSignalConstants::LOGS_TAKEOUT_CONFIRM,
+            $this->confirmation(self::PEER),
+        );
+
+        $this->assertNull($reply, 'The page answers with nothing: the owner answers instead');
+        $this->assertTrue($page->actionReplyDeferred(), 'Having handed the request over, the page must not also ack');
+        $this->assertEquals(
+            new LogsTakeoutConfirmSignalData(
+                nodeId: self::PEER,
+                batchTimestamp: self::CONFIRMED_BATCH_AT,
+                acceptKey: self::ACCEPT_KEY,
+                action: HilosSignalConstants::LOGS_TAKEOUT_CONFIRM,
+                requestId: self::REQUEST_ID,
+                // Nobody is signed in on this connection, and a fact nobody can be named for is
+                // recorded without a name rather than refused.
+                userId: null,
+            ),
+            $this->sentToOwner(),
+        );
+    }
+
+    public function testAConfirmationWithNoNodeGoesToThisNodesOwnerWithoutConsultingTheRoster(): void
+    {
+        // The roster is deliberately empty: a standalone install publishes itself under an EMPTY
+        // id, so a page that looked an empty id up would be asking whether this machine exists.
+        $page = $this->dispatchingPage();
+
+        $page->onAction(self::ACCEPT_KEY, HilosSignalConstants::LOGS_TAKEOUT_CONFIRM, $this->confirmation(''));
+
+        $this->assertSame('', $this->sentToOwner()->nodeId);
+        $this->assertTrue($page->actionReplyDeferred());
+    }
+
+    public function testAConfirmationNamingANodeThisClusterDoesNotHaveIsRefusedOnTheSpot(): void
+    {
+        $this->publishNode('node-1', online: true);
+        $page = $this->dispatchingPage();
+
+        try {
+            $page->onAction(
+                self::ACCEPT_KEY,
+                HilosSignalConstants::LOGS_TAKEOUT_CONFIRM,
+                $this->confirmation(self::PEER),
+            );
+            $this->fail('Expected TableActionException');
+        } catch (TableActionException $e) {
+            $this->assertSame('Unknown cluster node: ' . self::PEER, $e->getMessage());
+        }
+
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal(), 'A refused confirmation travels nowhere');
+    }
+
+    /**
+     * The two refusals mean opposite things to the person reading, and a node the master last saw
+     * offline is the one whose archive they were about to carry off by hand.
+     */
+    public function testAConfirmationNamingANodeTheMasterSawFallOverSaysThatInsteadOfUnknown(): void
+    {
+        $this->publishNode(self::PEER, online: false);
+        $page = $this->dispatchingPage();
+
+        try {
+            $page->onAction(
+                self::ACCEPT_KEY,
+                HilosSignalConstants::LOGS_TAKEOUT_CONFIRM,
+                $this->confirmation(self::PEER),
+            );
+            $this->fail('Expected TableActionException');
+        } catch (TableActionException $e) {
+            $this->assertSame('Cluster node ' . self::PEER . ' is offline', $e->getMessage());
+        }
+
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    /**
+     * An untracked confirmation has no ack to correlate, so there is nothing to defer - and
+     * deferring it anyway would be a promise the owner cannot keep.
+     */
+    public function testAnUntrackedConfirmationIsForwardedWithNoRequestIdAndNothingIsDeferred(): void
+    {
+        $this->publishNode(self::PEER, online: true);
+        $page = new LogsRotationsPageSubscribeTestPage(new LogsRotationsPageSubscribeTestAgent());
+        $page->beginActionDispatch();
+
+        $page->onAction(
+            self::ACCEPT_KEY,
+            HilosSignalConstants::LOGS_TAKEOUT_CONFIRM,
+            $this->confirmation(self::PEER),
+        );
+
+        $this->assertNull($this->sentToOwner()->requestId);
+        $this->assertFalse($page->actionReplyDeferred());
+    }
+
+    public function testAnActionThePageDoesNotOwnIsRefusedByName(): void
+    {
+        $page = $this->dispatchingPage();
+
+        $this->expectException(AgentUnknownActionException::class);
+
+        $page->onAction(self::ACCEPT_KEY, 'logs_takeout_undo', $this->confirmation(''));
+    }
+
+    public function testAPayloadThatIsNotAConfirmationIsRefusedByType(): void
+    {
+        $page = $this->dispatchingPage();
+
+        $this->expectException(InvalidActionPayloadException::class);
+
+        $page->onAction(
+            self::ACCEPT_KEY,
+            HilosSignalConstants::LOGS_TAKEOUT_CONFIRM,
+            new LogsRotationsPageTestForeignActionDTO(),
+        );
+    }
+
+    /**
      * Runs one tick past its throttle, with the picture changed underneath so the header really
      * differs and a push has a reason to go out. An empty result therefore means "nobody is
      * registered" rather than "nothing happened".
@@ -281,6 +440,60 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
         }
 
         return $keys;
+    }
+
+    /**
+     * Builds a page in the middle of a tracked dispatch, the way the dispatcher hands it one.
+     *
+     * @return LogsRotationsPageSubscribeTestPage Page whose running action carries a request id
+     */
+    private function dispatchingPage(): LogsRotationsPageSubscribeTestPage
+    {
+        $page = new LogsRotationsPageSubscribeTestPage(new LogsRotationsPageSubscribeTestAgent());
+        $page->beginActionDispatch(self::REQUEST_ID);
+
+        return $page;
+    }
+
+    /**
+     * Publishes one row of the cluster roster the page reads.
+     *
+     * @param string $nodeId Id of the node the row is about
+     * @param bool $online Whether the master saw the node connected when it last published
+     */
+    private function publishNode(string $nodeId, bool $online): void
+    {
+        Hilos::$rt?->hilosClusterNodes->actions->publish($nodeId, 'master', [], null, $online, microtime(true));
+    }
+
+    /**
+     * Builds one confirmation request as the page receives it.
+     *
+     * @param string $nodeId Id of the node holding the batch, empty for this node
+     * @return LogsTakeoutConfirmActionDTO Confirmation request
+     */
+    private function confirmation(string $nodeId): LogsTakeoutConfirmActionDTO
+    {
+        return new LogsTakeoutConfirmActionDTO(nodeId: $nodeId, batchTimestamp: self::CONFIRMED_BATCH_AT);
+    }
+
+    /**
+     * Reads back the one frame the page sent to the owner of the batch directory.
+     *
+     * @return LogsTakeoutConfirmSignalData Payload of that frame
+     */
+    private function sentToOwner(): LogsTakeoutConfirmSignalData
+    {
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+
+        $this->assertNotNull($signal, 'The page forwards the confirmation; nothing was queued');
+        $this->assertSame(SignalTypeConstants::AGENT_SIGNAL, $signal->signalType->getType());
+        $this->assertSame(HilosSignalConstants::LOGS_AGENT_TAKEOUT_CONFIRM, $signal->signalName->getName());
+        $this->assertInstanceOf(AgentSignalData::class, $signal->data);
+        $this->assertInstanceOf(LogsTakeoutConfirmSignalData::class, $signal->data->data);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal(), 'One confirmation is one frame');
+
+        return $signal->data->data;
     }
 
     /**
@@ -420,5 +633,46 @@ final class LogsRotationsPageSubscribeTestAgent implements PageAgentInterface
     public function getAgentSignalSource(): SignalSourceInterface
     {
         return new SignalSource(SignalSource::AGENT, 'hilos_logs');
+    }
+}
+
+/**
+ * Runtime context carrying nothing of its own: the cluster roster is mounted by the framework.
+ */
+final class LogsRotationsPageTestRtContext extends RtContext
+{
+    public function configure(): void
+    {
+    }
+}
+
+/**
+ * Payload of another action entirely, for the type guard.
+ */
+final class LogsRotationsPageTestForeignActionDTO extends ActionPayloadDTO
+{
+    /**
+     * @return string Action name this payload belongs to
+     */
+    public function getAction(): string
+    {
+        return 'logs_takeout_undo';
+    }
+
+    /**
+     * @return array<string, mixed> Empty payload
+     */
+    public function toArray(): array
+    {
+        return [];
+    }
+
+    /**
+     * @param array<string, mixed> $data Wire payload
+     * @return static Restored payload
+     */
+    public static function fromArray(array $data): static
+    {
+        return new static();
     }
 }

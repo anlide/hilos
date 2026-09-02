@@ -28,6 +28,11 @@ use PHPUnit\Framework\TestCase;
  * list would spend the whole protection on N batches in total and recommend carrying off a
  * neighbour's freshest batch.
  *
+ * The same "one node at a time" runs through what HIL-483 adds. The confirmation that a batch was
+ * carried off arrives WITH that batch and overrules the verdict judged here, and the absolute
+ * address a row offers is built from the reporting node's own log root - this page worker knows
+ * one log directory, and it is not necessarily the one the batch is lying in.
+ *
  * The policy is read through the settings resolver, which falls back to the environment when no
  * settings layer is initialized - which is what these cases configure.
  */
@@ -138,6 +143,86 @@ final class HilosLogRotationsTableTest extends TestCase
         $this->assertSame(
             [HilosLogRotationsTable::STATE_KEPT, HilosLogRotationsTable::STATE_KEPT],
             $states,
+        );
+    }
+
+    /**
+     * The operator's word beats the rule's reading, and this is the case the two disagree on: the
+     * batch is inside what the policy protects, and it was carried off all the same. Judging it
+     * kept would offer to protect a directory that is not there any more.
+     */
+    public function testAConfirmedBatchStaysTakenEvenWhereTheRuleWouldProtectIt(): void
+    {
+        $this->retention(keepBatches: 5, maxAgeSeconds: 0);
+        $this->picture($this->node('node-1', [self::NOW - self::DAY, self::NOW], confirmed: [self::NOW - self::DAY]));
+
+        $states = array_map(static fn($row): string => $row->retentionState, $this->rows(new TableQueryDTO()));
+
+        $this->assertSame(
+            [HilosLogRotationsTable::STATE_KEPT, HilosLogRotationsTable::STATE_TAKEN],
+            $states,
+        );
+    }
+
+    /**
+     * The list of what still has to be carried off is the one the screen's filter serves, so a
+     * batch that has been carried off has to leave it - otherwise the operator is asked twice.
+     */
+    public function testAConfirmedBatchLeavesTheListOfWhatIsStillRecommended(): void
+    {
+        $this->retention(keepBatches: 1, maxAgeSeconds: 0);
+        $this->picture($this->node(
+            'node-1',
+            [self::NOW - 2 * self::DAY, self::NOW - self::DAY, self::NOW],
+            confirmed: [self::NOW - 2 * self::DAY],
+        ));
+
+        $rows = $this->rows(new TableQueryDTO(
+            filter: [HilosLogRotationsTable::FILTER_STATE => HilosLogRotationsTable::STATE_DUE],
+        ));
+
+        $this->assertSame([self::NOW - self::DAY], array_map(static fn($row): int => $row->batchAt, $rows));
+    }
+
+    /**
+     * The address an operator copies from belongs to the machine holding the batch, so each row
+     * carries its OWN node's root: this page worker knows one log directory, and it is not
+     * necessarily any of theirs.
+     */
+    public function testTheAbsolutePathIsBuiltFromTheReportingNodesOwnLogRoot(): void
+    {
+        $this->picture(
+            $this->node('node-1', [self::NOW], logDirectory: '/var/log/hilos'),
+            $this->node('node-2', [self::NOW], logDirectory: '/srv/hilos/log/'),
+        );
+
+        $directory = date(LogRotationConstants::TIMESTAMP_FORMAT, self::NOW);
+
+        $this->assertSame(
+            [
+                '/var/log/hilos/' . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME . '/' . $directory . '/',
+                '/srv/hilos/log/' . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME . '/' . $directory . '/',
+            ],
+            array_map(static fn($row): ?string => $row->absolutePath, $this->rows(new TableQueryDTO())),
+        );
+    }
+
+    /**
+     * A node that named no root has no address to give, and the row says so with nothing rather
+     * than with an empty string that reads on screen as a path to the filesystem root.
+     */
+    public function testABatchFromANodeThatNamedNoLogRootCarriesNoAbsolutePath(): void
+    {
+        $this->picture($this->node('node-1', [self::NOW]));
+
+        $row = $this->rows(new TableQueryDTO())[0];
+
+        $this->assertNull($row->absolutePath);
+        $this->assertSame(
+            LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME
+                . '/' . date(LogRotationConstants::TIMESTAMP_FORMAT, self::NOW) . '/',
+            $row->path,
+            'The relative name is the node\'s own and survives a missing root',
         );
     }
 
@@ -269,10 +354,17 @@ final class HilosLogRotationsTableTest extends TestCase
      * @param string $nodeId Node the slot belongs to
      * @param list<int> $batchTimestamps Batch timestamps, ascending as a node reports them
      * @param int $bytesPerBatch Weight of each stream class within a batch
+     * @param list<int> $confirmed Batch timestamps an operator has confirmed carrying off
+     * @param ?string $logDirectory Log root this node reports, null when its build named none
      * @return ClusterLogNodeSlot Slot as the aggregator would hold it
      */
-    private function node(string $nodeId, array $batchTimestamps, int $bytesPerBatch = 1_000): ClusterLogNodeSlot
-    {
+    private function node(
+        string $nodeId,
+        array $batchTimestamps,
+        int $bytesPerBatch = 1_000,
+        array $confirmed = [],
+        ?string $logDirectory = null,
+    ): ClusterLogNodeSlot {
         $batches = array_map(
             static fn(int $timestamp): LogBatchSummary => new LogBatchSummary(
                 timestamp: $timestamp,
@@ -284,6 +376,9 @@ final class HilosLogRotationsTableTest extends TestCase
                 workerMonopolisticBytes: $bytesPerBatch,
                 daemonFileCount: 4,
                 daemonBytes: $bytesPerBatch,
+                // The stamp says the batch was carried off, not when the run happened, so it is
+                // deliberately unlike the batch's own timestamp.
+                takenAt: in_array($timestamp, $confirmed, true) ? self::NOW : null,
             ),
             $batchTimestamps,
         );
@@ -298,6 +393,7 @@ final class HilosLogRotationsTableTest extends TestCase
                 keys: [],
                 workers: [],
                 growthBytesPerDay: [],
+                logDirectory: $logDirectory,
             ),
             receivedAt: self::NOW,
         );

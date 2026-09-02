@@ -25,11 +25,13 @@ final class LogStoreSnapshot
      *     workerMonopolistic: array<string, int>}> $archiveBatches Batch Unix timestamp → classified basename → size in bytes
      * @param array{daemon: array<string, int>, agent: array<string, int>, worker: array<string, int>,
      *     workerMonopolistic: array<string, int>} $liveFiles Live (non-archived) classified basename → size in bytes
+     * @param array<int, ?int> $batchTakenAt Batch Unix timestamp → the stamp its takeout marker carries, null when it carries none
      */
     public function __construct(
         public readonly bool $available,
         private readonly array $archiveBatches,
         private readonly array $liveFiles,
+        private readonly array $batchTakenAt = [],
     ) {
     }
 
@@ -62,7 +64,7 @@ final class LogStoreSnapshot
      */
     public function withLiveFiles(array $liveFiles): self
     {
-        return new self($this->available, $this->archiveBatches, $liveFiles);
+        return new self($this->available, $this->archiveBatches, $liveFiles, $this->batchTakenAt);
     }
 
     /**
@@ -82,6 +84,10 @@ final class LogStoreSnapshot
 
     /**
      * Per rotation batch summary, oldest first.
+     *
+     * The takeout confirmation travels beside the figures rather than among them (HIL-483): it is
+     * read off a marker file the walk does not weigh, so it changes what a batch IS without
+     * changing a single count or byte of it.
      *
      * @return list<LogBatchSummary> One entry per archive batch, ascending by timestamp
      */
@@ -105,6 +111,7 @@ final class LogStoreSnapshot
                 workerMonopolisticBytes: array_sum($workerMonopolistic),
                 daemonFileCount: count($daemon),
                 daemonBytes: array_sum($daemon),
+                takenAt: $this->batchTakenAt[$timestamp] ?? null,
             );
         }
 

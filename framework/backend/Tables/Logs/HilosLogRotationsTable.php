@@ -37,11 +37,18 @@ use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
  * therefore nothing a delta could be built from. The page re-sends the window when the mirror's
  * fingerprint moves ({@see AbstractHilosLogsRotationsPage::onAgentTick()}).
  *
- * The retention verdict is judged HERE and per node. Judged here, because no durable per-batch
- * state exists yet — HIL-483 introduces it and this screen then draws what arrives instead of
- * deciding it. Per node, because {@see LogArchiveRetentionPolicy::$keepBatches} means "the newest
- * N of THIS archive": one list across the cluster would spend the whole protection on N batches
- * total and send a neighbour's freshest batch to the recommended pile.
+ * The retention verdict is judged HERE and per node. Judged here, because the rule is a reading of
+ * the whole archive rather than a fact about one batch: the node reports what it holds, and what
+ * `keepBatches` protects out of that is one question asked in one place. Per node, because
+ * {@see LogArchiveRetentionPolicy::$keepBatches} means "the newest N of THIS archive": one list
+ * across the cluster would spend the whole protection on N batches total and send a neighbour's
+ * freshest batch to the recommended pile.
+ *
+ * One state is NOT judged here, and it overrules the verdict when it is present: a batch an
+ * operator has confirmed carrying off is {@see self::STATE_TAKEN} whatever the rule now says
+ * (HIL-483). That one IS a fact about one batch — a marker file inside its directory — so it
+ * arrives with the batch instead of being decided from the picture, and it survives an
+ * administrator raising the retention period after the fact.
  */
 final class HilosLogRotationsTable extends TableDefinition implements ViewportTable
 {
@@ -63,9 +70,10 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
     /**
      * Retention state: an operator has confirmed the batch was carried off.
      *
-     * SCAFFOLD: never assigned here — the confirmation is a durable fact this leaf has no source
-     * for, and HIL-483 is what starts writing it. The value is named now so that the screen, the
-     * wire and the frontend badge already know the third state by the time it can happen.
+     * It overrules the other two rather than sitting beside them: the confirmation is a durable
+     * fact on the node ({@see LogBatchSummary::$takenAt}), and the verdict is a reading of a rule
+     * that may have moved since. A batch that came back under protection while its owner was
+     * copying it off is still a batch that was carried off.
      */
     public const string STATE_TAKEN = 'taken';
 
@@ -215,20 +223,20 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
 
         $rows = [];
         foreach ($batches as $batch) {
+            $path = self::archivePath($batch->timestamp);
             $rows[] = [
                 HilosLogRotationsTableRow::rowKey => self::rowKey($slot->nodeId, $batch->timestamp),
                 HilosLogRotationsTableRow::batchAt => $batch->timestamp,
                 HilosLogRotationsTableRow::node => $slot->nodeId,
-                HilosLogRotationsTableRow::path => self::archivePath($batch->timestamp),
+                HilosLogRotationsTableRow::path => $path,
+                HilosLogRotationsTableRow::absolutePath => self::absolutePath($slot->index->logDirectory, $path),
                 HilosLogRotationsTableRow::agentFileCount => $batch->agentFileCount,
                 HilosLogRotationsTableRow::workerFileCount => $batch->workerFileCount,
                 HilosLogRotationsTableRow::workerMonopolisticFileCount => $batch->workerMonopolisticFileCount,
                 // Every class of stream, the daemon's own included: this is what the directory costs.
                 HilosLogRotationsTableRow::bytes => $batch->agentBytes + $batch->workerBytes
                     + $batch->workerMonopolisticBytes + $batch->daemonBytes,
-                HilosLogRotationsTableRow::retentionState => isset($due[$batch->timestamp])
-                    ? self::STATE_DUE
-                    : self::STATE_KEPT,
+                HilosLogRotationsTableRow::retentionState => self::retentionState($batch, isset($due[$batch->timestamp])),
             ];
         }
 
@@ -357,6 +365,47 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
             ->format(LogRotationConstants::TIMESTAMP_FORMAT);
 
         return LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME . '/' . $name . '/';
+    }
+
+    /**
+     * The state the badge shows, with the operator's word ahead of the rule's reading.
+     *
+     * @param LogBatchSummary $batch Batch as its node reported it
+     * @param bool $due Whether the retention rule names this batch among the ones to carry off
+     * @return string One of the three retention states
+     */
+    private static function retentionState(LogBatchSummary $batch, bool $due): string
+    {
+        if ($batch->takenAt !== null) {
+            return self::STATE_TAKEN;
+        }
+
+        return $due ? self::STATE_DUE : self::STATE_KEPT;
+    }
+
+    /**
+     * Names the batch directory the way an operator has to type it, on the machine holding it.
+     *
+     * The root comes from the node's own index and from nowhere else: a page worker knows the log
+     * directory of the machine it runs on, and printing that one beside a neighbour's batch would
+     * hand an administrator an address that exists — on the wrong host.
+     *
+     * A node that named no log root — an older build reporting an index frame without one — has no
+     * address to offer, and that stays null all the way to the screen rather than becoming an empty
+     * string somewhere in the middle. Inventing one out of this worker's own root would be worse
+     * than silence: it would look exactly like an answer.
+     *
+     * @param ?string $logDirectory Absolute log root of the node holding the batch, null when unknown
+     * @param string $path Archive directory of the batch, relative to that root
+     * @return ?string Absolute directory of the batch, or null when the node named no root
+     */
+    private static function absolutePath(?string $logDirectory, string $path): ?string
+    {
+        if ($logDirectory === null) {
+            return null;
+        }
+
+        return rtrim($logDirectory, '/') . '/' . $path;
     }
 
     /**

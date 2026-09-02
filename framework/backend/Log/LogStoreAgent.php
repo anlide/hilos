@@ -15,23 +15,31 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Fs\FsException;
 use Hilos\Hilos;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
 use Hilos\Log\DTO\LogsFollowStopSignalData;
 use Hilos\Log\DTO\LogsLinesAppendedSignalData;
 use Hilos\Log\DTO\LogsReadLinesSignalData;
+use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
 use Hilos\Log\DTO\NodeLogIndexSignalData;
+use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
 use Hilos\Pages\Logs\AbstractHilosLogsViewPage;
 use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
 use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesReplyDTO;
+use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
+use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmReplyDTO;
 use Hilos\Runtime\ConnectionRosterReconciler;
+use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Utils\Exception\LogRotationException;
+use JsonException;
 use Throwable;
 
 /**
@@ -64,6 +72,12 @@ use Throwable;
  * a second it reads what each followed file gained and sends it straight to the viewer's socket,
  * which another node may be holding. A follow is dropped when the viewer asks, when its page
  * unsubscribes, and when its connection is no longer on the roster.
+ *
+ * And it is the only process that can WRITE in that directory, which is what the takeout
+ * confirmation rests on (HIL-483): an operator who has carried a rotation batch off says so, and
+ * the fact is a marker file inside the batch ({@see LogBatchTakeoutMarker}) rather than a row
+ * anywhere else. The index carries it back out, so the screen that asked draws what the disk
+ * actually holds.
  */
 final class LogStoreAgent extends AbstractAgent
 {
@@ -85,6 +99,10 @@ final class LogStoreAgent extends AbstractAgent
         HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP => [
             AgentSignalConfigKey::NODE_FIELD => LogsFollowStopActionDTO::nodeId,
             AgentSignalConfigKey::DTO => LogsFollowStopSignalData::class,
+        ],
+        HilosSignalConstants::LOGS_AGENT_TAKEOUT_CONFIRM => [
+            AgentSignalConfigKey::NODE_FIELD => LogsTakeoutConfirmActionDTO::nodeId,
+            AgentSignalConfigKey::DTO => LogsTakeoutConfirmSignalData::class,
         ],
     ];
 
@@ -223,7 +241,7 @@ final class LogStoreAgent extends AbstractAgent
         $this->nodeId = $clustered ? $cluster->identity()->nodeId : null;
         // Seeded as readable so the baseline walk stays silent on a healthy store and still says
         // one line on a broken one: a start is not a crossing, an unreadable directory is news.
-        $this->index = new NodeLogIndex($this->nodeId, true, time(), [], [], [], []);
+        $this->index = new NodeLogIndex($this->nodeId, true, time(), [], [], [], [], $this->reader->logDirectory());
         $this->snapshot = LogStoreSnapshot::unavailable();
         $this->lastFullScanAt = microtime(true);
         $this->lastLiveScanAt = $this->lastFullScanAt;
@@ -535,7 +553,8 @@ final class LogStoreAgent extends AbstractAgent
     }
 
     /**
-     * Answers one read of one file of this node's log directory, or takes a follow of one on or off.
+     * Answers one read of one file of this node's log directory, takes a follow of one on or off,
+     * or records that one rotation batch has been carried off.
      *
      * The blocking file walk is legitimate here and nowhere else: this agent is monopolistic and
      * node-local (HIL-753), so one reader of one directory is exactly what it is for.
@@ -545,7 +564,8 @@ final class LogStoreAgent extends AbstractAgent
      * @param string $name Signal name
      * @throws AgentUnknownSignalException When the agent is reached by a signal it does not own
      * @throws InvalidAgentSignalPayloadException When a frame carries the wrong payload
-     * @throws InvalidArgumentException When the answer to the read or the follow cannot be named
+     * @throws InvalidArgumentException When the answer to the read, the follow or the confirmation
+     *     cannot be named
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
@@ -577,6 +597,16 @@ final class LogStoreAgent extends AbstractAgent
                 }
 
                 unset($this->followers[$stop->acceptKey]);
+
+                return;
+
+            case HilosSignalConstants::LOGS_AGENT_TAKEOUT_CONFIRM:
+                $confirm = $data->data;
+                if (!$confirm instanceof LogsTakeoutConfirmSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, LogsTakeoutConfirmSignalData::class, $confirm);
+                }
+
+                $this->handleTakeoutConfirm($confirm);
 
                 return;
 
@@ -761,6 +791,141 @@ final class LogStoreAgent extends AbstractAgent
             $this->logAgentError('Log follow failed to start: ' . $e->getMessage());
             $this->sendActionFailure($request->acceptKey, $request->action, $request->requestId, $e, detailAllowed: false);
         }
+    }
+
+    /**
+     * Records that one batch has been carried off, and answers the browser waiting on it.
+     *
+     * The whole of it is guarded for the reason the read is: this agent is the LAST step of
+     * somebody else's action ({@see AbstractHilosLogsRotationsPage} deferred its ack when it
+     * handed the request over), so a failure that only reached the log would leave a modal
+     * spinning on another machine until the browser gave up on itself.
+     *
+     * @param LogsTakeoutConfirmSignalData $request Confirmation request, carrying whom to answer
+     * @throws InvalidArgumentException When the success or failure ack cannot be named
+     */
+    private function handleTakeoutConfirm(LogsTakeoutConfirmSignalData $request): void
+    {
+        if ($request->requestId === null) {
+            // Nothing to answer: an untracked confirmation has no ack to correlate, and writing a
+            // durable fact for a reply nobody receives would leave the asker unable to see it.
+            $this->logAgentWarning('Ignoring an untracked takeout confirmation: no request id to answer on');
+
+            return;
+        }
+
+        try {
+            $reply = new LogsTakeoutConfirmReplyDTO(
+                $this->confirmTakeout($request->batchTimestamp, $request->userId),
+            );
+            // The screen does not answer for this by itself: the badge repaints when this
+            // node's next index reaches the mirror, which is a moment later and somewhere
+            // else on the page. The sentence is what tells the person their click landed.
+            $this->setActionSuccessMessage('The batch is recorded as carried off.');
+            $this->sendActionSuccess($request->acceptKey, $request->action, $request->requestId, $reply);
+        } catch (Throwable $e) {
+            $this->logAgentError('Log takeout confirmation failed: ' . $e->getMessage());
+            $this->sendActionFailure($request->acceptKey, $request->action, $request->requestId, $e, detailAllowed: false);
+        }
+    }
+
+    /**
+     * Writes the marker of one batch, having re-judged the batch it is asked about.
+     *
+     * The three questions are asked in the order that keeps the promise the screen makes. Is the
+     * directory still there — a batch cleaned away between the click and the frame is gone, and
+     * saying so is the honest answer. Is it already confirmed — then this IS the answer, with the
+     * stamp that is on disk, so a second tab and a second administrator are told what the first
+     * was told rather than an error about a fact they were right about. Only then, is the policy
+     * still recommending it — because a batch that came back under protection while the modal was
+     * open must not be confirmed, and that guard is about what has NOT been confirmed yet.
+     *
+     * The stamp is this node's clock and not the browser's: the fact belongs to the directory, and
+     * the machine holding it is the one whose time its neighbours can compare against.
+     *
+     * The walk and the frame that follow are out of turn on purpose. Both would come round on
+     * their own within a minute, and for the length of that minute the person who clicked would be
+     * looking at the row they just changed, unchanged.
+     *
+     * @param int $batchTimestamp Unix timestamp of the batch to confirm
+     * @param ?int $userId Id of the user who confirmed, or null when the connection carries no user
+     * @return int Unix timestamp the batch is recorded as carried off at
+     * @throws ValidationException When the batch is gone, is protected again, or its directory
+     *     cannot be written to — the three refusals whose own text reaches the person who asked
+     * @throws InvalidArgumentException When the frame announcing the confirmation cannot be named
+     */
+    private function confirmTakeout(int $batchTimestamp, ?int $userId): int
+    {
+        $directory = $this->batchDirectory($batchTimestamp);
+        if ($directory === null || !is_dir($directory)) {
+            throw new ValidationException('This batch is no longer on the node');
+        }
+
+        $existing = LogBatchTakeoutMarker::read($directory);
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        if (!$this->batchIsDue($batchTimestamp)) {
+            throw new ValidationException('The batch is protected again');
+        }
+
+        $takenAt = time();
+        try {
+            LogBatchTakeoutMarker::write($directory, $takenAt, $userId);
+        } catch (FsException | JsonException $failure) {
+            throw new ValidationException('The batch directory cannot be written to', 0, $failure);
+        }
+
+        $this->logAgentInfo("Log takeout confirmed for batch {$batchTimestamp}");
+        $now = microtime(true);
+        $this->lastFullScanAt = $now;
+        $this->lastLiveScanAt = $now;
+        $this->walkStore((int)$now);
+        $this->pushIndex();
+
+        return $takenAt;
+    }
+
+    /**
+     * Whether the retention rule recommends carrying this batch off as things stand now.
+     *
+     * Judged over THIS node's archive alone, the way the screen judges it per node
+     * ({@see HilosLogRotationsTable}): the rule protects the newest N of one archive, and one list
+     * across the cluster would spend the whole protection on N batches in total.
+     *
+     * The rule is re-read rather than remembered: the whole point of the check is that an
+     * administrator may have raised the retention period since the modal was opened.
+     *
+     * @param int $batchTimestamp Unix timestamp of the batch in question
+     * @return bool True when the policy names this batch among the ones to carry off
+     */
+    private function batchIsDue(int $batchTimestamp): bool
+    {
+        $due = $this->resolver->retentionPolicy()->selectEvictionCandidates(self::batchTimestamps($this->index), time());
+
+        return in_array($batchTimestamp, $due, true);
+    }
+
+    /**
+     * Names the archive directory of one batch on this node.
+     *
+     * The second place the wire's unix stamp meets the directory name rotation writes, and it
+     * formats it the way {@see self::relativePath()} does — in the timezone of the process that
+     * wrote that name, which for this node is this very process.
+     *
+     * @param int $batchTimestamp Unix timestamp of the batch
+     * @return ?string Absolute directory path, or null when the environment names no log root
+     */
+    private function batchDirectory(int $batchTimestamp): ?string
+    {
+        $logDirectory = $this->reader->logDirectory();
+        if ($logDirectory === null) {
+            return null;
+        }
+
+        return $logDirectory . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME
+            . DIRECTORY_SEPARATOR . date(LogRotationConstants::TIMESTAMP_FORMAT, $batchTimestamp);
     }
 
     /**
@@ -964,6 +1129,7 @@ final class LogStoreAgent extends AbstractAgent
             keys: $keys,
             workers: $snapshot->workers(),
             growthBytesPerDay: $growth,
+            logDirectory: $this->reader->logDirectory(),
         );
         $this->lastDelta = self::diff($previous, $this->index);
         // Raised here and not where the frame is scheduled, because this is the one moment the
@@ -1046,6 +1212,9 @@ final class LogStoreAgent extends AbstractAgent
         }
         foreach ($delta->appearedBatchTimestamps as $timestamp) {
             $this->logAgentDebug("Log store: batch {$timestamp} appeared");
+        }
+        foreach ($delta->confirmedBatchTimestamps as $timestamp) {
+            $this->logAgentDebug("Log store: batch {$timestamp} confirmed as carried off");
         }
     }
 
@@ -1171,7 +1340,8 @@ final class LogStoreAgent extends AbstractAgent
     }
 
     /**
-     * Difference between two indexes: what appeared, grew, vanished, and whether the store changed side.
+     * Difference between two indexes: what appeared, grew, vanished, was confirmed, and whether the
+     * store changed side.
      *
      * @param NodeLogIndex $previous Older index
      * @param NodeLogIndex $current Newer index
@@ -1211,6 +1381,7 @@ final class LogStoreAgent extends AbstractAgent
             grownKeys: $grown,
             appearedBatchTimestamps: array_values(array_diff($batchesAfter, $batchesBefore)),
             vanishedBatchTimestamps: array_values(array_diff($batchesBefore, $batchesAfter)),
+            confirmedBatchTimestamps: self::newlyConfirmed($previous, $current),
             availabilityChanged: $previous->available !== $current->available,
         );
     }
@@ -1230,6 +1401,42 @@ final class LogStoreAgent extends AbstractAgent
         }
 
         return $bytes;
+    }
+
+    /**
+     * Batches that gained a takeout confirmation between two indexes.
+     *
+     * Its own axis and not part of the appeared/vanished pair, because a confirmation is the one
+     * change that moves NOTHING else: the same batches, the same files, the same weights, and one
+     * marker the walk does not weigh (HIL-483). Without this line the frame carrying an operator's
+     * own click would be judged empty and never sent.
+     *
+     * A stamp that merely changed is not counted: the marker is written once and never rewritten
+     * here, so a different stamp on the same batch is a directory rebuilt underneath us rather
+     * than news to report.
+     *
+     * @param NodeLogIndex $previous Older index
+     * @param NodeLogIndex $current Newer index
+     *
+     * @return list<int> Timestamps of batches confirmed in the newer index and not in the older
+     */
+    private static function newlyConfirmed(NodeLogIndex $previous, NodeLogIndex $current): array
+    {
+        $before = [];
+        foreach ($previous->batches as $batch) {
+            if ($batch->takenAt !== null) {
+                $before[$batch->timestamp] = true;
+            }
+        }
+
+        $confirmed = [];
+        foreach ($current->batches as $batch) {
+            if ($batch->takenAt !== null && !isset($before[$batch->timestamp])) {
+                $confirmed[] = $batch->timestamp;
+            }
+        }
+
+        return $confirmed;
     }
 
     /**

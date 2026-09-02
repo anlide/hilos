@@ -12,11 +12,17 @@
 // everything else on the screen — whether there is a picture at all, which nodes
 // exist, and the rules in force — rides the page's own header signal.
 //
-// The screen judges nothing and commands nothing: the retention verdict is decided
-// on the backend, and the actions over a batch (how to carry it off, confirming it
-// was taken) are HIL-483.
+// The screen judges nothing: the retention verdict is decided on the backend. It
+// does command one thing (HIL-483) — an operator's word that a recommended batch
+// has been carried off — and even that it only forwards: the confirmation is a
+// durable fact written by the node holding the directory, and the badge repaints
+// when that node's next index arrives rather than when the ack does.
 
 import { z } from 'zod'
+import {
+  type ActionHandle,
+  type ActionLifecycle,
+} from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
@@ -40,6 +46,12 @@ export interface HilosLogRotationRow {
   readonly node: string | null
   /** Archive directory of the batch, relative to that node's log root. */
   readonly path: string
+  /**
+   * Archive directory of the batch as addressed ON ITS OWN NODE, or null when
+   * that node named no log root. It is what an operator pastes into a copy
+   * command, which is the only place a machine's private layout belongs.
+   */
+  readonly absolutePath: string | null
   /** Agent files in the batch. */
   readonly agentFileCount: number
   /** Worker files in the batch, the monopolistic ones apart. */
@@ -74,6 +86,9 @@ export const ROTATION_NODE_FIELD = 'node'
 /** Row payload key of the archive directory. */
 const ROTATION_PATH_FIELD = 'path'
 
+/** Row payload key of the archive directory as addressed on its own node. */
+const ROTATION_ABSOLUTE_PATH_FIELD = 'absolutePath'
+
 /** Row payload key of the agent file count. */
 const ROTATION_AGENT_FILE_COUNT_FIELD = 'agentFileCount'
 
@@ -105,11 +120,33 @@ export const HILOS_ROTATION_STATE_DUE = 'due'
 /**
  * Retention verdict: an operator has confirmed the batch was carried off.
  *
- * SCAFFOLD: no backend sets it yet — the confirmation is a durable fact HIL-483
- * introduces. The value is named now so the badge already knows the third state by
- * the time it can arrive, rather than falling through to "kept" on the day it does.
+ * It outranks the other two rather than sitting beside them: the confirmation is a
+ * durable fact on the node, while kept and due are a reading of a rule that may
+ * have moved since. A batch that came back under protection while it was being
+ * copied off is still a batch that was carried off.
  */
 export const HILOS_ROTATION_STATE_TAKEN = 'taken'
+
+/**
+ * Client→server action `type` confirming one batch has been carried off (PHP
+ * `LOGS_TAKEOUT_CONFIRM`). It names the batch by the pair that identifies it — the
+ * node and the rotation stamp — because one rotation moment on two nodes is two
+ * directories and two confirmations.
+ */
+export const LOGS_TAKEOUT_CONFIRM_ACTION = 'logs_takeout_confirm'
+
+/**
+ * Ack of {@link LOGS_TAKEOUT_CONFIRM_ACTION}: the instant the batch is now
+ * recorded as carried off, which is the one the node wrote and not the one the
+ * click asked for.
+ *
+ * Nothing here is drawn. The row repaints when the node's next index reaches the
+ * mirror, and the schema is declared so a backend that changed the shape of its
+ * ack fails at the parse boundary instead of quietly acking something else.
+ */
+const logsTakeoutConfirmReplySchema = z.looseObject({
+  takenAt: z.number(),
+})
 
 /**
  * Payload of the screen header: whether there is a picture, which nodes it holds,
@@ -151,6 +188,8 @@ export interface HilosLogRotationsContext {
   readonly connection: HilosConnection
   /** The scope manager owning the page scope the table window normalizes into. */
   readonly scopes: ScopeManager
+  /** The action lifecycle the takeout confirmation dispatches over. */
+  readonly actions: ActionLifecycle
 }
 
 /** Read a row slot as an inline record, or undefined when it is not one. */
@@ -180,6 +219,9 @@ export function resolveHilosLogRotationRow(row: TableRow): HilosLogRotationRow {
     // node reads as nullable here and the column disappears rather than emptying.
     node: readStringOrNull(slot, ROTATION_NODE_FIELD),
     path: readString(slot, ROTATION_PATH_FIELD),
+    // Null is a node that named no log root — an older build reporting an index
+    // frame without one — and not an address that happens to be blank.
+    absolutePath: readStringOrNull(slot, ROTATION_ABSOLUTE_PATH_FIELD),
     agentFileCount: readNumber(slot, ROTATION_AGENT_FILE_COUNT_FIELD),
     workerFileCount: readNumber(slot, ROTATION_WORKER_FILE_COUNT_FIELD),
     workerMonopolisticFileCount: readNumber(
@@ -259,6 +301,46 @@ export function createHilosLogRotationsTable(
       for (const off of teardown.splice(0)) {
         off()
       }
+    },
+  }
+}
+
+/** The takeout surface a rotations view binds to — the one thing this screen commands. */
+export interface HilosLogRotationsActions {
+  /**
+   * Confirm that one batch has been carried off, as a tracked action.
+   *
+   * The answer is owed by the node holding the directory rather than by the page:
+   * the page forwards the request and steps out of its own ack, so a refusal here
+   * is the owner's sentence (the batch is gone, it is protected again, the
+   * directory cannot be written to) and not this screen's guess at one.
+   *
+   * @param row The batch being confirmed.
+   */
+  sendTakeoutConfirm(row: HilosLogRotationRow): ActionHandle
+}
+
+/**
+ * The takeout surface, bound to a project's action lifecycle.
+ *
+ * @param context The project context (the action lifecycle the confirmation dispatches over).
+ */
+export function createHilosLogRotationsActions(
+  context: HilosLogRotationsContext,
+): HilosLogRotationsActions {
+  return {
+    sendTakeoutConfirm(row) {
+      return context.actions.dispatch(
+        LOGS_TAKEOUT_CONFIRM_ACTION,
+        {
+          // The empty id is the wire's word for "this node", which is what a
+          // single-node installation always sends: it names no nodes at all, so
+          // there is no id to send and none to look up on the other side.
+          nodeId: row.node ?? '',
+          batchTimestamp: row.batchAt,
+        },
+        { replySchema: logsTakeoutConfirmReplySchema },
+      )
     },
   }
 }
@@ -391,10 +473,16 @@ export function formatRotationWeight(row: HilosLogRotationRow): string {
 /**
  * The label of one retention badge.
  *
+ * The taken one says what happens NEXT and not only what happened: an operator who
+ * confirms a takeout has just given the one permission that lets the batch be
+ * deleted, and a badge reading "Taken" alone would leave that consequence
+ * unspoken. It is said before the pruner exists (HIL-382) on purpose — the
+ * permission is granted here, whatever acts on it later.
+ *
  * A verdict this build does not know is printed as it arrived rather than folded
- * into "kept": the third state is written by a backend this screen may be older
- * than (HIL-483), and silently calling an evicted batch protected is the one
- * mistake here that an operator cannot see.
+ * into "kept": this screen may be older than the backend answering it, and
+ * silently calling an evicted batch protected is the one mistake here that an
+ * operator cannot see.
  *
  * @param row The batch row to label.
  */
@@ -405,10 +493,80 @@ export function formatRotationState(row: HilosLogRotationRow): string {
     case HILOS_ROTATION_STATE_DUE:
       return 'Awaiting carry-off'
     case HILOS_ROTATION_STATE_TAKEN:
-      return 'Taken'
+      return 'Taken — removed at the next cleanup'
     default:
       return row.retentionState
   }
+}
+
+/**
+ * Where the batch lies, said the way an operator has to say it to reach it.
+ *
+ * In a cluster the node leads the address, because the batch is on that machine
+ * and only on it — logs do not converge anywhere. In a single-node installation
+ * there is no node to name and the address is the path alone.
+ *
+ * Null is a node that reported no log root: it has no address to give, and this
+ * screen must not fill the gap with its OWN root — the page worker knows where
+ * ITS logs live, and that directory is on the wrong machine.
+ *
+ * @param row The batch to address.
+ */
+export function rotationTakeoutAddress(
+  row: HilosLogRotationRow,
+): string | null {
+  if (row.absolutePath === null) {
+    return null
+  }
+
+  return row.node === null
+    ? row.absolutePath
+    : `${row.node}:${row.absolutePath}`
+}
+
+/**
+ * The command that carries one batch off, ready to be copied.
+ *
+ * `rsync -a` and not a bare copy: the archive keeps timestamps and permissions,
+ * and the trailing slash on the source is what makes the batch land INSIDE the
+ * destination rather than beside it. The destination is a suggestion under the
+ * working directory and is named after the batch (and its node, in a cluster), so
+ * two nodes' batches of one rotation moment do not land on top of each other.
+ *
+ * Null when the batch has no address, for the reason
+ * {@link rotationTakeoutAddress} gives.
+ *
+ * @param row The batch to carry off.
+ */
+export function rotationTakeoutCommand(
+  row: HilosLogRotationRow,
+): string | null {
+  const address = rotationTakeoutAddress(row)
+  if (address === null) {
+    return null
+  }
+
+  const batch = rotationBatchDirectoryName(row)
+  const destination =
+    row.node === null
+      ? `./cold-logs/${batch}/`
+      : `./cold-logs/${row.node}/${batch}/`
+
+  return `rsync -a ${address} ${destination}`
+}
+
+/**
+ * The name of the batch's own directory, taken off the relative path.
+ *
+ * The path is the one the backend built (`archive/<name>/`), so the last segment
+ * is the batch's name whatever the archive subdirectory is called.
+ *
+ * @param row The batch to name.
+ */
+function rotationBatchDirectoryName(row: HilosLogRotationRow): string {
+  const segments = row.path.split('/').filter((segment) => segment !== '')
+
+  return segments[segments.length - 1] ?? row.path
 }
 
 /** A selectable retention state: its wire value and a human-readable label. */

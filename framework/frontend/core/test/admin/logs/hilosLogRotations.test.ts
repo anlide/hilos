@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  createHilosLogRotationsActions,
   formatRetentionRule,
   formatRotationFileCounts,
   formatRotationRule,
@@ -9,13 +10,18 @@ import {
   hasRotationNodes,
   resolveHilosLogRotationRow,
   rotationsEmptyState,
+  rotationTakeoutAddress,
+  rotationTakeoutCommand,
   HILOS_ROTATION_STATE_DUE,
   HILOS_ROTATION_STATE_TAKEN,
   LOGS_SIGNAL_SCHEMAS,
+  LOGS_TAKEOUT_CONFIRM_ACTION,
   ROTATIONS_HEADER_SIGNAL,
   type HilosLogRotationRow,
+  type HilosLogRotationsContext,
   type HilosLogRotationsHeader,
 } from '../../../src/admin/logs/hilosLogRotations.js'
+import { type ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
 function row(
@@ -26,6 +32,7 @@ function row(
     batchAt: 1800000000,
     node: 'node-1',
     path: 'archive/2027-01-15-08-00-00/',
+    absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00/',
     agentFileCount: 12,
     workerFileCount: 8,
     workerMonopolisticFileCount: 2,
@@ -64,6 +71,7 @@ describe('resolveHilosLogRotationRow', () => {
         batchAt: 1800000000,
         node: 'node-2',
         path: 'archive/2027-01-15-08-00-00/',
+        absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00/',
         agentFileCount: 11,
         workerFileCount: 8,
         workerMonopolisticFileCount: 2,
@@ -77,6 +85,7 @@ describe('resolveHilosLogRotationRow', () => {
       batchAt: 1800000000,
       node: 'node-2',
       path: 'archive/2027-01-15-08-00-00/',
+      absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00/',
       agentFileCount: 11,
       workerFileCount: 8,
       workerMonopolisticFileCount: 2,
@@ -91,6 +100,14 @@ describe('resolveHilosLogRotationRow', () => {
     )
 
     expect(resolved.node).toBeNull()
+  })
+
+  it('keeps an unreported log root null, so no address is invented for it', () => {
+    const resolved = resolveHilosLogRotationRow(
+      rotationTableRow('node-1:1800000000', { batchAt: 1800000000, bytes: 10 }),
+    )
+
+    expect(resolved.absolutePath).toBeNull()
   })
 
   it('takes the identity from the row key, never from inside the slot', () => {
@@ -208,7 +225,18 @@ describe('formatRotationState', () => {
     ).toBe('Awaiting carry-off')
     expect(
       formatRotationState(row({ retentionState: HILOS_ROTATION_STATE_TAKEN })),
-    ).toBe('Taken')
+    ).toBe('Taken — removed at the next cleanup')
+  })
+
+  /**
+   * The taken badge names the consequence and not only the fact: confirming a
+   * takeout is the one permission that lets the batch be deleted, and an operator
+   * who reads "Taken" alone is not told what they have just allowed.
+   */
+  it('says of a taken batch what happens to it next', () => {
+    expect(
+      formatRotationState(row({ retentionState: HILOS_ROTATION_STATE_TAKEN })),
+    ).toContain('cleanup')
   })
 
   it('prints a verdict it does not know rather than calling it protected', () => {
@@ -261,5 +289,86 @@ describe('formatRetentionRule', () => {
     expect(formatRetentionRule(header())).toBe(
       'Nothing is ever recommended for carrying off',
     )
+  })
+})
+
+describe('rotationTakeoutAddress', () => {
+  it('leads with the node, because the batch is on that machine and only there', () => {
+    expect(rotationTakeoutAddress(row())).toBe(
+      'node-1:/var/log/hilos/archive/2027-01-15-08-00-00/',
+    )
+  })
+
+  it('is the path alone where there is no node to name', () => {
+    expect(rotationTakeoutAddress(row({ node: null }))).toBe(
+      '/var/log/hilos/archive/2027-01-15-08-00-00/',
+    )
+  })
+
+  it('has nothing to say when the node reported no log root', () => {
+    expect(rotationTakeoutAddress(row({ absolutePath: null }))).toBeNull()
+  })
+})
+
+describe('rotationTakeoutCommand', () => {
+  it('copies the batch into a folder named after it, under the node it came from', () => {
+    expect(rotationTakeoutCommand(row())).toBe(
+      'rsync -a node-1:/var/log/hilos/archive/2027-01-15-08-00-00/ ./cold-logs/node-1/2027-01-15-08-00-00/',
+    )
+  })
+
+  it('drops the node level of the destination where there is no node', () => {
+    expect(rotationTakeoutCommand(row({ node: null }))).toBe(
+      'rsync -a /var/log/hilos/archive/2027-01-15-08-00-00/ ./cold-logs/2027-01-15-08-00-00/',
+    )
+  })
+
+  it('offers no command when there is no address to copy from', () => {
+    expect(rotationTakeoutCommand(row({ absolutePath: null }))).toBeNull()
+  })
+})
+
+describe('createHilosLogRotationsActions', () => {
+  /** A context whose action lifecycle records what was dispatched over it. */
+  function dispatchContext(
+    sent: Array<{ action: string; payload: unknown }>,
+  ): HilosLogRotationsContext {
+    const actions = {
+      dispatch(action: string, payload: unknown) {
+        sent.push({ action, payload })
+
+        return { done: Promise.resolve(), loading: null }
+      },
+    } as unknown as ActionLifecycle
+
+    return { actions } as unknown as HilosLogRotationsContext
+  }
+
+  it('names the batch by the pair that identifies it — the node and the stamp', () => {
+    const sent: Array<{ action: string; payload: unknown }> = []
+
+    createHilosLogRotationsActions(dispatchContext(sent)).sendTakeoutConfirm(
+      row({ node: 'node-2', batchAt: 1800000000 }),
+    )
+
+    expect(sent).toEqual([
+      {
+        action: LOGS_TAKEOUT_CONFIRM_ACTION,
+        payload: { nodeId: 'node-2', batchTimestamp: 1800000000 },
+      },
+    ])
+  })
+
+  it('sends the empty id for a nameless node, which is how the wire says "this one"', () => {
+    const sent: Array<{ action: string; payload: unknown }> = []
+
+    createHilosLogRotationsActions(dispatchContext(sent)).sendTakeoutConfirm(
+      row({ node: null }),
+    )
+
+    expect(sent[0]?.payload).toEqual({
+      nodeId: '',
+      batchTimestamp: 1800000000,
+    })
   })
 })

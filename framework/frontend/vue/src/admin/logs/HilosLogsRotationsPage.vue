@@ -6,14 +6,18 @@ machines is two directories, carried off apart — so the node column and the no
 filter exist only where nodes have names. Search, the node filter and the
 All / awaiting switch ride the open viewport filter map (server-side, no local
 filtering); the window is re-served by the page whenever the cluster picture or
-the rule moves. The screen commands nothing: what to do with a recommended batch
-is HIL-483, deleting a taken one is HIL-382, and there is no way through to the
-viewer yet because it takes no batch address (HIL-388). All table logic, the row
+the rule moves. A recommended batch carries the one command of this screen: a
+modal saying where the batch lies and how to copy it off, and a confirmation that
+it was (HIL-483) — the badge then repaints when the holding node's next index
+arrives, not when the ack does. Deleting a taken batch is HIL-382, taking a
+confirmation back is HIL-759, and there is no way through to the viewer yet
+because it takes no batch address (HIL-388). All table logic, the row
 view-model, the empty-state discrimination and the wording are the core headless's
 (hilosLogRotations); this view owns only the markup, so a project mounts it by
 passing its HilosLogRotationsContext. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
+  createHilosLogRotationsActions,
   createHilosLogRotationsHeader,
   createHilosLogRotationsTable,
   formatRetentionRule,
@@ -23,6 +27,8 @@ import {
   formatRotationWeight,
   hasRotationNodes,
   rotationsEmptyState,
+  rotationTakeoutAddress,
+  rotationTakeoutCommand,
   HILOS_PAGE_ROUTES,
   HILOS_ROTATION_STATE_DUE,
   HILOS_ROTATION_STATE_OPTIONS,
@@ -39,19 +45,23 @@ import {
 } from '@hilos/core'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
+import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
+import LoadingButton from '../../LoadingButton.vue'
 import { useSignal } from '../../useSignal.js'
+import { useTrackedAction } from '../../useTrackedAction.js'
 
 const props = defineProps<{
-  /** The project context: scope stores and the connection. */
+  /** The project context: scope stores, the connection, and the action lifecycle. */
   context: HilosLogRotationsContext
 }>()
 
 const rotations = createHilosLogRotationsTable(props.context)
 const rotationsTable = rotations.controller
+const rotationsActions = createHilosLogRotationsActions(props.context)
 const headerHandle = createHilosLogRotationsHeader(props.context)
 const header = useSignal(headerHandle.header)
 
@@ -103,6 +113,7 @@ const columns = computed<HilosTableColumn[]>(() => [
     headerClass: 'text-end d-none d-lg-table-cell',
   },
   { key: 'retention', label: 'Retention' },
+  { key: 'actions', label: '', headerClass: 'text-end' },
 ])
 
 // Domain filters: the node and the state ride the open filter map so the backend
@@ -155,6 +166,52 @@ function clearFilters(): void {
   rotationsTable.setSearch('')
   setNode('')
   setState('')
+}
+
+// The takeout dialog: how to carry one batch off, and the button that records
+// that it was. Only a recommended batch offers it — a kept one is not being asked
+// for, and a taken one has already been answered.
+const takeoutOpen = ref(false)
+const takeoutRow = ref<HilosLogRotationRow | null>(null)
+const takeoutAction = useTrackedAction()
+const {
+  loading: takeoutLoading,
+  busy: takeoutBusy,
+  run: runTakeout,
+  clearError: clearTakeoutError,
+} = takeoutAction
+
+function offersTakeout(row: HilosLogRotationRow): boolean {
+  return row.retentionState === HILOS_ROTATION_STATE_DUE
+}
+
+function openTakeout(row: HilosLogRotationRow): void {
+  clearTakeoutError()
+  takeoutRow.value = row
+  takeoutOpen.value = true
+}
+
+// A snapshot of the row the dialog opened on, so a window re-served underneath it
+// (the page re-sends one whenever the picture moves) does not swap the batch the
+// operator is reading the address of.
+const takeoutAddress = computed(() =>
+  takeoutRow.value === null ? null : rotationTakeoutAddress(takeoutRow.value),
+)
+const takeoutCommand = computed(() =>
+  takeoutRow.value === null ? null : rotationTakeoutCommand(takeoutRow.value),
+)
+
+async function submitTakeout(): Promise<void> {
+  const row = takeoutRow.value
+  if (row === null || takeoutBusy.value) {
+    return
+  }
+  // The dialog closes on the server's word and not on the click: the refusals
+  // this can meet — the batch is gone, it is protected again — are the whole
+  // reason the confirmation travels to the node that holds the directory.
+  if (await runTakeout(rotationsActions.sendTakeoutConfirm(row))) {
+    takeoutOpen.value = false
+  }
 }
 
 // The rule line leads to the general settings screen: the log settings page does
@@ -266,6 +323,17 @@ const legendOpen = ref(false)
             {{ formatRotationState(row) }}
           </span>
         </td>
+        <td class="text-end text-nowrap">
+          <button
+            v-if="offersTakeout(row)"
+            type="button"
+            class="btn btn-sm btn-warning"
+            data-id="hilos-rotation-takeout"
+            @click="openTakeout(row)"
+          >
+            How to carry it off
+          </button>
+        </td>
       </template>
 
       <template #empty>
@@ -324,6 +392,76 @@ const legendOpen = ref(false)
       </button>
       — three numbers in a row: agent / worker / monopolistic worker.
     </p>
+
+    <HilosModal
+      v-model="takeoutOpen"
+      :title="
+        takeoutRow
+          ? `Carrying off the batch of ${batchTime(takeoutRow)}${takeoutRow.node ? ` · ${takeoutRow.node}` : ''}`
+          : 'Carrying off a batch'
+      "
+      :close-on-backdrop="!takeoutBusy"
+      :close-on-esc="!takeoutBusy"
+    >
+      <HilosActionError :action="takeoutAction" />
+      <p>
+        This batch is recommended for carrying off: it is older than the
+        retention rule keeps. The system does
+        <strong>not delete it</strong> — you copy it where you keep cold logs,
+        and then confirm that you have.
+      </p>
+      <template v-if="takeoutAddress && takeoutCommand">
+        <div class="fw-semibold mb-1">Where it lies</div>
+        <pre
+          class="border rounded-2 p-2 bg-body-tertiary mb-3"
+          data-id="hilos-rotation-takeout-path"
+        ><code>{{ takeoutAddress }}</code></pre>
+        <div class="fw-semibold mb-1">How to take it</div>
+        <pre
+          class="border rounded-2 p-2 bg-body-tertiary mb-3"
+          data-id="hilos-rotation-takeout-command"
+        ><code>{{ takeoutCommand }}</code></pre>
+      </template>
+      <!-- A node that reported no log root has no address to give, and this
+      screen must not offer its own: the page worker knows where ITS logs live,
+      and that directory is on the wrong machine. Confirming is still possible —
+      the operator may know the path from the node itself. -->
+      <div v-else class="alert alert-secondary small py-2">
+        This node did not report where its logs live, so there is no address to
+        copy from here. Look it up on the node itself.
+      </div>
+      <div
+        v-if="clustered && takeoutRow?.node"
+        class="alert alert-warning small py-2 mb-0"
+      >
+        The batch lies on node
+        <span class="font-monospace">{{ takeoutRow.node }}</span> and only
+        there: logs do not converge anywhere. Take it from that node, and the
+        confirmation covers this batch on this node.
+      </div>
+      <div v-else class="alert alert-secondary small py-2 mb-0">
+        Once confirmed, the batch becomes available to the cleaner — until then
+        it will not be touched.
+      </div>
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="takeoutBusy"
+          @click="requestClose"
+        >
+          Close
+        </button>
+        <LoadingButton
+          class="btn-primary"
+          :loading="takeoutLoading"
+          data-id="hilos-rotation-takeout-confirm"
+          @click="submitTakeout"
+        >
+          I have taken this batch
+        </LoadingButton>
+      </template>
+    </HilosModal>
 
     <HilosModal v-model="legendOpen" title="What is in a batch">
       <p>

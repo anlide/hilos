@@ -200,7 +200,7 @@ final class LogIndexPushTest extends TestCase
      */
     public function testADeltaWithNothingInItIsEmpty(): void
     {
-        $this->assertTrue(new NodeLogIndexDelta([], [], [], [], [], false)->isEmpty());
+        $this->assertTrue(new NodeLogIndexDelta([], [], [], [], [], [], false)->isEmpty());
     }
 
     /**
@@ -210,7 +210,17 @@ final class LogIndexPushTest extends TestCase
      */
     public function testCrossingIntoUnavailabilityCountsAsAChangeOnItsOwn(): void
     {
-        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], true)->isEmpty());
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], true)->isEmpty());
+    }
+
+    /**
+     * A takeout confirmation moves nothing else at all - the same batches, the same files, the same
+     * weights - so without an axis of its own the frame carrying an operator's click is judged
+     * empty and never sent (HIL-483).
+     */
+    public function testAConfirmedBatchCountsAsAChangeOnItsOwn(): void
+    {
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [1756166400], false)->isEmpty());
     }
 
     public function testTheWrittenSettingSetsTheInterval(): void

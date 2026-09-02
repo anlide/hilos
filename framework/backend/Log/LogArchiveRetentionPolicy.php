@@ -20,9 +20,10 @@ use Hilos\Hilos;
  * and carries no per-batch flags. Unlike the backup grid it needs no timeline reconstruction —
  * logs are a flat newest-first stream.
  *
- * The policy only *recommends*: a batch it names a candidate is not deleted here. The eviction
- * state machine (HIL-483) turns recommendations into acknowledged instructions, and the pruner
- * (HIL-382) deletes only what the operator acknowledged.
+ * The policy only *recommends*: a batch it names a candidate is not deleted here. A candidate
+ * becomes an acknowledged instruction when an operator confirms carrying it off and the node
+ * writes that down ({@see LogBatchTakeoutMarker}, HIL-483), and the pruner (HIL-382) will delete
+ * only what was acknowledged that way.
  *
  * Candidacy is the union-keep of the two criteria: a batch is a candidate only when it is BOTH
  * outside the newest {@see $keepBatches} AND older than {@see $maxAgeSeconds}. Either threshold

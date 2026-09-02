@@ -41,6 +41,16 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
     public const string batchAt = 'batchAt';
     public const string node = 'node';
     public const string path = 'path';
+
+    /**
+     * Payload key of the batch directory as it is addressed ON ITS OWN NODE.
+     *
+     * Beside {@see self::path} and not instead of it: the relative one is what the operator reads
+     * in the list, the absolute one is what they paste into a copy command, and a screen holding
+     * only the second would print a machine's private layout into every row of the table.
+     */
+    public const string absolutePath = 'absolutePath';
+
     public const string agentFileCount = 'agentFileCount';
     public const string workerFileCount = 'workerFileCount';
     public const string workerMonopolisticFileCount = 'workerMonopolisticFileCount';
@@ -52,6 +62,8 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
      * @param int $batchAt Unix timestamp of the rotation batch
      * @param ?string $node Cluster node holding the batch, null in a single-node installation
      * @param string $path Archive directory of the batch, relative to the node's log root
+     * @param ?string $absolutePath Archive directory of the batch on its own node, null when that
+     *     node named no log root
      * @param int $agentFileCount Number of agent files in the batch
      * @param int $workerFileCount Number of worker files in the batch (monopolistic ones apart)
      * @param int $workerMonopolisticFileCount Number of monopolistic worker files in the batch
@@ -63,6 +75,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
         public int $batchAt,
         public ?string $node,
         public string $path,
+        public ?string $absolutePath,
         public int $agentFileCount,
         public int $workerFileCount,
         public int $workerMonopolisticFileCount,
@@ -95,6 +108,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
             self::batchAt => $this->batchAt,
             self::node => $this->node,
             self::path => $this->path,
+            self::absolutePath => $this->absolutePath,
             self::agentFileCount => $this->agentFileCount,
             self::workerFileCount => $this->workerFileCount,
             self::workerMonopolisticFileCount => $this->workerMonopolisticFileCount,
@@ -117,6 +131,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
             batchAt: self::requireInt($data, self::batchAt),
             node: self::optionalString($data, self::node),
             path: self::requireString($data, self::path),
+            absolutePath: self::optionalString($data, self::absolutePath),
             agentFileCount: self::requireInt($data, self::agentFileCount),
             workerFileCount: self::requireInt($data, self::workerFileCount),
             workerMonopolisticFileCount: self::requireInt($data, self::workerMonopolisticFileCount),

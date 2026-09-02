@@ -33,6 +33,12 @@ use Hilos\Log\NodeLogIndex;
  * Every payload key is named after the field it carries, so the wire reads the same as the objects
  * on both ends. {@see self::streamClass} is the one exception, and not by choice: `class` cannot
  * be a class-constant name in PHP.
+ *
+ * Two of the keys are not measurements at all. A batch carries {@see self::takenAt}, the operator's
+ * own confirmation that it has been carried off, and the index carries {@see self::logDirectory},
+ * the absolute root the node measured (HIL-483). Both exist because nobody else can supply them:
+ * the confirmation lives in a marker file on that machine, and a page worker holding the cluster
+ * picture knows its own log root and no other node's.
  */
 final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -56,6 +62,9 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
 
     /** Payload key: key → bytes written over the last day, null for a window that has not filled. */
     public const string growthBytesPerDay = 'growthBytesPerDay';
+
+    /** Payload key: absolute log root of the reporting node, absent when its environment names none. */
+    public const string logDirectory = 'logDirectory';
 
     /** Batch row key: Unix timestamp of the rotation folder. */
     public const string timestamp = 'timestamp';
@@ -83,6 +92,9 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
 
     /** Batch row key: summed size in bytes of the daemon files. */
     public const string daemonBytes = 'daemonBytes';
+
+    /** Batch row key: instant an operator confirmed carrying the batch off, absent while none has. */
+    public const string takenAt = 'takenAt';
 
     /** Key and worker row key: file basename, stable across batches. */
     public const string key = 'key';
@@ -115,6 +127,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
      * @param list<LogKeySummary> $keys Log keys across live and archive, ascending by key
      * @param list<LogWorkerSummary> $workers Worker streams, ascending by key
      * @param array<string, ?int> $growthBytesPerDay Key → bytes written over the last day, null until the window fills
+     * @param ?string $logDirectory Absolute log root of the reporting node, or null when its environment names none
      */
     public function __construct(
         public readonly ?string $nodeId,
@@ -124,6 +137,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
         public readonly array $keys,
         public readonly array $workers,
         public readonly array $growthBytesPerDay,
+        public readonly ?string $logDirectory = null,
     ) {
     }
 
@@ -143,6 +157,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             keys: $index->keys,
             workers: $index->workers,
             growthBytesPerDay: $index->growthBytesPerDay,
+            logDirectory: $index->logDirectory,
         );
     }
 
@@ -168,6 +183,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
                 $this->workers,
             ),
             self::growthBytesPerDay => $this->growthBytesPerDay,
+            self::logDirectory => $this->logDirectory,
         ];
     }
 
@@ -209,6 +225,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             keys: $keys,
             workers: $workers,
             growthBytesPerDay: self::growthFromArray($data),
+            logDirectory: self::optionalString($data, self::logDirectory),
         );
     }
 
@@ -227,6 +244,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             keys: $this->keys,
             workers: $this->workers,
             growthBytesPerDay: $this->growthBytesPerDay,
+            logDirectory: $this->logDirectory,
         );
     }
 
@@ -268,6 +286,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             self::workerMonopolisticBytes => $batch->workerMonopolisticBytes,
             self::daemonFileCount => $batch->daemonFileCount,
             self::daemonBytes => $batch->daemonBytes,
+            self::takenAt => $batch->takenAt,
         ];
     }
 
@@ -288,6 +307,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             workerMonopolisticBytes: self::requireInt($row, self::workerMonopolisticBytes),
             daemonFileCount: self::requireInt($row, self::daemonFileCount),
             daemonBytes: self::requireInt($row, self::daemonBytes),
+            takenAt: self::optionalInt($row, self::takenAt),
         );
     }
 

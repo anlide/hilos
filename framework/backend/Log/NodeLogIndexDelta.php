@@ -20,6 +20,7 @@ final class NodeLogIndexDelta
      * @param array<string, int> $grownKeys Key → bytes added since the previous index (growth only)
      * @param list<int> $appearedBatchTimestamps Rotation batches present now and absent before
      * @param list<int> $vanishedBatchTimestamps Rotation batches present before and absent now
+     * @param list<int> $confirmedBatchTimestamps Rotation batches an operator confirmed carrying off since the previous index
      * @param bool $availabilityChanged Whether the store crossed between readable and unreadable
      */
     public function __construct(
@@ -28,6 +29,7 @@ final class NodeLogIndexDelta
         public readonly array $grownKeys,
         public readonly array $appearedBatchTimestamps,
         public readonly array $vanishedBatchTimestamps,
+        public readonly array $confirmedBatchTimestamps,
         public readonly bool $availabilityChanged,
     ) {
     }
@@ -40,7 +42,12 @@ final class NodeLogIndexDelta
      * find exactly that. Availability counts as a change on its own - a directory that has become
      * unreadable is news even though no key moved.
      *
-     * @return bool True when nothing appeared, grew, vanished or changed side
+     * So does a confirmation, and it is the reason this question is asked about it at all: two
+     * walks either side of a takeout differ in NOTHING but a marker file the walk does not weigh
+     * (HIL-483). Left out, the frame carrying the operator's own click would never be sent, and
+     * the screen they clicked on would go on showing the batch as due.
+     *
+     * @return bool True when nothing appeared, grew, vanished, was confirmed or changed side
      */
     public function isEmpty(): bool
     {
@@ -49,6 +56,7 @@ final class NodeLogIndexDelta
             && $this->grownKeys === []
             && $this->appearedBatchTimestamps === []
             && $this->vanishedBatchTimestamps === []
+            && $this->confirmedBatchTimestamps === []
             && !$this->availabilityChanged;
     }
 }

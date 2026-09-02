@@ -27,6 +27,7 @@ use Hilos\Log\DTO\LogsFollowStopSignalData;
 use Hilos\Log\DTO\LogsIndexWatchSignalData;
 use Hilos\Log\DTO\LogsLinesAppendedSignalData;
 use Hilos\Log\DTO\LogsReadLinesSignalData;
+use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
 use Hilos\Log\DTO\NodeLogIndexSignalData;
 use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogStoreAgent;
@@ -42,6 +43,7 @@ use Hilos\Notification\HilosNotifier;
 use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
 use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
+use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
 use Hilos\Push\Delivery\PushDeliveryChannel;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Sms\DTO\SmsSendSignalData;
@@ -417,6 +419,20 @@ final class HilosSignalConstants
      * for a fact about somebody else. Carried by {@see LogsFollowStopActionDTO}.
      */
     public const string LOGS_FOLLOW_STOP = 'logs_follow_stop';
+
+    // ── Hilos logs admin: rotations page actions (client → server) ──
+    /**
+     * Client → server: confirm that one rotation batch has been carried off (HIL-483).
+     *
+     * Owned by the rotations page, and forwarded the way {@see self::LOGS_READ_LINES} is: the fact
+     * is a marker file inside the batch directory, so only the node holding that directory can
+     * write it, and only it can say whether the batch is still there to be confirmed. The ack
+     * comes from that node; the page owes none.
+     *
+     * The batch is named by its node and its rotation stamp, never by a path — the same rule the
+     * viewer's read is named by. Carried by {@see LogsTakeoutConfirmActionDTO}.
+     */
+    public const string LOGS_TAKEOUT_CONFIRM = 'logs_takeout_confirm';
 
     // ── Hilos sign-in surface: guest commands (client → server) ──
     /** Client → server: look an identifier up while it is typed (public, anonymous-reachable). */
@@ -919,6 +935,18 @@ final class HilosSignalConstants
      * left behind. Carried by {@see LogsFollowStopSignalData}.
      */
     public const string LOGS_AGENT_FOLLOW_STOP = 'logs_agent_follow_stop';
+
+    /**
+     * Rotations page → {@see LogStoreAgent} on the named node: write this batch's takeout marker (HIL-483).
+     *
+     * The cross-node half of {@see self::LOGS_TAKEOUT_CONFIRM}, routed by the same
+     * {@see AgentSignalConfigKey::NODE_FIELD} the read is routed by. The owner re-judges the batch
+     * before it writes: the page decided the button was worth offering, this decides whether the
+     * directory still deserves the marker. It carries the accept key, the action name and the
+     * request id, because the page deferred its own ack and the owner answers the browser itself.
+     * Carried by {@see LogsTakeoutConfirmSignalData}.
+     */
+    public const string LOGS_AGENT_TAKEOUT_CONFIRM = 'logs_agent_takeout_confirm';
 
     // ── Mail subsystem: facade → sharded hilos_mail agent pool (agent signal) ──
     /**
