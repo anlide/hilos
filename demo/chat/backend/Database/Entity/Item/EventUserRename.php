@@ -54,6 +54,10 @@ final class EventUserRename extends Entity
         'actor_user_id' => [Entity::INDEX_COLUMNS => [self::actor_user_id]],
     ];
 
+    // target_user_id and actor_user_id stay foreign keys and do not become owners.
+    public const string _setVia = self::event_id;
+    public const bool _setRoot = false;
+
     // Only the new name is faked: both derive from the same primary key, so faking both
     // would render every rename as "User 42 -> User 42".
     public const array _pii = [

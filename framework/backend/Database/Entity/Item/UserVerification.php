@@ -81,6 +81,10 @@ final class UserVerification extends Entity
         'idx_uv_user' => [Entity::INDEX_COLUMNS => [self::user_id]],
     ];
 
+    // user_id is nullable because the call exists before the account does.
+    public const string _setVia = Entity::SET_STANDALONE;
+    public const bool _setRoot = false;
+
     // A verification code is a live secret with no value once the archive is a copy,
     // and no other table points at it.
     public const AnonymizationStrategy _pii = AnonymizationStrategy::PURGE;

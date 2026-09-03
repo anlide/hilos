@@ -73,6 +73,10 @@ final class Bot extends Entity
         'active' => [Entity::INDEX_COLUMNS => [self::active]],
     ];
 
+    // event_message hangs its author on author_bot_id.
+    public const string _setVia = Entity::SET_STANDALONE;
+    public const bool _setRoot = true;
+
     // A bot is written by the installation, not by a person, and is the same for everyone.
     public const array _pii = [];
 

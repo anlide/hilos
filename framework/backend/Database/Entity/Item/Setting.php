@@ -45,6 +45,10 @@ final class Setting extends Entity
         'uk_key' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::key]],
     ];
 
+    // Installation settings are cut by nobody's key.
+    public const string _setVia = Entity::SET_STANDALONE;
+    public const bool _setRoot = false;
+
     // A setting value is masked because the framework cannot know what a project put
     // in one; the key and the type describe the setting rather than its content.
     public const array _pii = [self::value => AnonymizationStrategy::MASK];

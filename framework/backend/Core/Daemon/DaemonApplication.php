@@ -9,6 +9,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Bootstrap\EntrypointPrelude;
+use Hilos\Database\Schema\SetOwnershipGuard;
 use Hilos\Environment\Exception\MissingRequiredEnvironmentException;
 use Hilos\Hilos;
 use Hilos\Log\LogWriteLevelApplier;
@@ -22,8 +23,9 @@ use Throwable;
  * A daemon.php collapses to a single {@see run()} call naming its Hilos facade, its
  * manager class, and its persistence init. The spine runs the env prelude, checks the
  * environment against the project catalog and refuses to start naming every required value
- * that has no answer, points the logger at the daemon log, lets a node carrying backup refuse a
- * schema it could not anonymize, constructs the manager, hands it a {@see DaemonContext} to
+ * that has no answer, points the logger at the daemon log, refuses a table that does not declare
+ * whose set it is part of, lets a node carrying backup refuse a schema it could not anonymize,
+ * constructs the manager, hands it a {@see DaemonContext} to
  * compose its servers/routes/modules through {@see DaemonManager::boot()}, and enters the main
  * loop — all under one try/catch that logs and exits ERROR, replacing the four duplicated flat
  * trys. Any failure in env, persistence, composition, or a module means the daemon refuses to
@@ -68,6 +70,12 @@ final class DaemonApplication
             // setting that overrides this. A worker tells it the real level once one registers,
             // and until then the node's own env is the honest answer.
             LogWriteLevelApplier::applyFromEnv();
+
+            // Before anything composes: a mounted table that does not say whose set its rows are
+            // part of leaves "did all of them arrive" with nobody to answer it. Ahead of the
+            // anonymization gate below because it reads constants alone and costs less, and
+            // because an unmarked table is the more basic of the two defects.
+            SetOwnershipGuard::assertMountedSetsDeclared();
 
             // Before anything composes: a node that promises anonymized copies of its database
             // refuses to come up over a schema it could not anonymize. Silent for a project that

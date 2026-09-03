@@ -58,6 +58,9 @@ final class User extends Entity
         'last_activity' => [Entity::INDEX_COLUMNS => [self::last_activity]],
     ];
 
+    public const string _setVia = Entity::SET_STANDALONE;
+    public const bool _setRoot = true;
+
     // A display name is derived from the primary key rather than masked, so the restored
     // chat still reads as a conversation between distinct people.
     public const array _pii = [self::name => AnonymizationStrategy::FAKE_NAME];

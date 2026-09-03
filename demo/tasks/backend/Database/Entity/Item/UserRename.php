@@ -56,6 +56,9 @@ final class UserRename extends Entity
         'timestamp' => [Entity::INDEX_COLUMNS => [self::timestamp]],
     ];
 
+    public const string _setVia = self::target_user_id;
+    public const bool _setRoot = false;
+
     // Properties
     public ?int $id = null;
     public int $target_user_id;

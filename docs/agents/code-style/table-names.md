@@ -32,6 +32,13 @@ Order the two entities by how central each is to the project: the **more
 frequently used — or more frequently to-be-used — entity comes first**. For an
 N-M relation with no other asymmetry, that dominance is the tie-break.
 
+The same dominance is **also declared to the machine**, on the Entity: `_setVia`
+names the column the bridge's set is cut by, which is the leading entity's key.
+The two are not alternatives — a name says it to a reader, the constant says it
+to the gate that refuses a table nobody answers for, and one is not left out
+because the other is there. See
+[../orm/entity.md](../orm/entity.md).
+
 ## Preferred Shape
 
 ```

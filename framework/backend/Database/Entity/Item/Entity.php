@@ -30,6 +30,10 @@ use Hilos\Database\SqlSortDirection;
  *   coverage gate of a restore names table by table.
  * - const array _piiNotPersonal — the columns looked at and found to hold no personal
  *   data. Absent on a purged table, where no row survives to hold anything.
+ * - const string _setVia — the column this table's set is cut by, or {@see Entity::SET_STANDALONE}
+ *   when its rows belong to nobody's set. A nullable column is not an owner: a row that can
+ *   fall out of the set was never in it.
+ * - const bool _setRoot — whether other tables may hang their sets off this one.
  *
  * @property-read bool $_related
  */
@@ -44,6 +48,12 @@ abstract class Entity
     public const string META_INDEXES = '_indexes';
     public const string META_PII = '_pii';
     public const string META_PII_NOT_PERSONAL = '_piiNotPersonal';
+    public const string META_SET_VIA = '_setVia';
+    public const string META_SET_ROOT = '_setRoot';
+
+    // The _setVia value of a table whose rows belong to nobody's set. The leading underscore
+    // is what keeps it apart from a real column: column names in this project carry none.
+    public const string SET_STANDALONE = '_standalone';
 
     // Index definition keys (for _indexes array structure)
     public const string INDEX_COLUMNS = 'columns';

@@ -66,6 +66,10 @@ final class Notification extends Entity
         'idx_notification_user_created' => [Entity::INDEX_COLUMNS => [self::user_id, self::created_at]],
     ];
 
+    // hilos_notification_delivery hangs its set on notification_id.
+    public const string _setVia = self::user_id;
+    public const bool _setRoot = true;
+
     // What a notification says is written for one person to read, and `data` carries
     // whatever the sending feature put there.
     public const array _pii = [

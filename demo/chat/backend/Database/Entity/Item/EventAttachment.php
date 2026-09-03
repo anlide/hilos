@@ -52,6 +52,10 @@ final class EventAttachment extends Entity
         'stored_name' => [Entity::INDEX_COLUMNS => [self::stored_name], Entity::INDEX_UNIQUE => true],
     ];
 
+    // The column is named event_id, but _foreign hangs it on event_message.
+    public const string _setVia = self::event_id;
+    public const bool _setRoot = false;
+
     // The name the uploader gave the file; `stored_name` is the name it has on disk and
     // identifies a file rather than a person - the attachment would be unreachable
     // without it.

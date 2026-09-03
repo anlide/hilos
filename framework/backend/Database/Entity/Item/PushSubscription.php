@@ -69,6 +69,9 @@ final class PushSubscription extends Entity
         'idx_push_subscription_user' => [Entity::INDEX_COLUMNS => [self::user_id]],
     ];
 
+    public const string _setVia = self::user_id;
+    public const bool _setRoot = false;
+
     // An endpoint addresses one person's browser and is a live credential of it; a
     // restored copy that kept it could push to a real device.
     public const AnonymizationStrategy _pii = AnonymizationStrategy::PURGE;

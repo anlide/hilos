@@ -51,6 +51,11 @@ final class EventMessage extends Entity
         'author_bot_id' => [Entity::INDEX_COLUMNS => [self::author_bot_id]],
     ];
 
+    // _foreign names three tables, and the owner is the one the table name carries: the event.
+    // event_attachment in turn hangs its set on this one.
+    public const string _setVia = self::event_id;
+    public const bool _setRoot = true;
+
     // What somebody typed into the chat.
     public const array _pii = [self::message => AnonymizationStrategy::MASK];
 

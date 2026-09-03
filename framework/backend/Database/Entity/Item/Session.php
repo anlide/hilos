@@ -78,6 +78,11 @@ final class Session extends Entity
         ],
     ];
 
+    // A session is anonymous while user_id is empty, and a nullable column is not an owner:
+    // a row that can fall out of the set was never in it.
+    public const string _setVia = Entity::SET_STANDALONE;
+    public const bool _setRoot = false;
+
     // A session token is NOT NULL and UNIQUE, so a hash would leave a structurally
     // valid session behind; nothing points at this table, so emptying it costs nothing.
     public const AnonymizationStrategy _pii = AnonymizationStrategy::PURGE;

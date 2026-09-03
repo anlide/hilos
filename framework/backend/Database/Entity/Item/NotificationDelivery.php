@@ -66,6 +66,9 @@ final class NotificationDelivery extends Entity
         'idx_notification_delivery_status_created' => [Entity::INDEX_COLUMNS => [self::status, self::created_at]],
     ];
 
+    public const string _setVia = self::notification_id;
+    public const bool _setRoot = false;
+
     // A transport's error text quotes what it was given - an address, a token, a body.
     public const array _pii = [self::last_error => AnonymizationStrategy::MASK];
 

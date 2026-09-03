@@ -68,6 +68,10 @@ final class Identity extends Entity
         'idx_identity_user' => [Entity::INDEX_COLUMNS => [self::user_id]],
     ];
 
+    // hilos_passkey_credential hangs its set on identity_id.
+    public const string _setVia = self::user_id;
+    public const bool _setRoot = true;
+
     // The identifier is a login handle, so it stays unique and stays an address; the
     // secret is a password hash, and a restored copy has no business being able to
     // check a real password against it.

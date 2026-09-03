@@ -159,6 +159,36 @@ How to choose a strategy, and what the gates of a restore and of a startup refus
 on:
 [../architecture/backup-anonymization.md](../architecture/backup-anonymization.md).
 
+## Whose set the table is part of
+
+An Entity also declares which larger set its rows belong to, in two more constants
+beside `_indexes`:
+
+- `_setVia` — the column the table's set is cut by (`Identity` names `user_id`,
+  `EventMessage` names `event_id`), or `Entity::SET_STANDALONE` when its rows belong to
+  nobody's set;
+- `_setRoot` — whether other tables may hang their sets off this one.
+
+Two constants and not one, because a table is often both at once: `hilos_notification`
+is cut by `user_id` and is itself the root `hilos_notification_delivery` hangs on.
+
+**A nullable column is not an owner.** A row that can fall out of the set was never in
+it, so a table whose owner column is nullable declares `SET_STANDALONE` —
+`hilos_session` and `hilos_user_verification` both do, because they exist before there is
+an account to belong to. The machine does not check this: nullability is a fact of the
+live schema, not of a constant, and the rule is applied by whoever writes the Entity.
+
+The declaration names the column and not the parent class, because the framework does not
+know the class of a project's `user` — it asks a collection key through
+`AbstractUsersLibraryAgent::usersCollection()`. Who stands behind the column is said by
+`_foreign` where there is one; framework Entities have none on purpose, `user_id` being a
+soft reference across the framework/project boundary.
+
+Both constants are mandatory on every Entity of a mounted collection. A node refuses to
+start over a table missing either of them (`SetOwnershipGuard`), because the gap is born
+on the day of a migration and a refusal at the read would surface it on the day somebody
+opened a page.
+
 ## Settings Entity (special case)
 
 `Entity/Item/Setting.php` — key/value store for app-level runtime settings.

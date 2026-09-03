@@ -38,6 +38,9 @@ final class ModeratorPromptPiece extends Entity
         self::prompt_piece => PhpType::TEXT->value,
     ];
 
+    public const string _setVia = Entity::SET_STANDALONE;
+    public const bool _setRoot = false;
+
     // Prompt text the installation wrote for its moderator bot.
     public const array _pii = [];
 

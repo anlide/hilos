@@ -58,6 +58,10 @@ final class AuthBlock extends Entity
         'uk_auth_block_scope_identity_action' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::scope, self::identity, self::action]],
     ];
 
+    // A block is keyed by scope/identity/action, where identity is a string and not somebody's id.
+    public const string _setVia = Entity::SET_STANDALONE;
+    public const bool _setRoot = false;
+
     // A block names the identity it was raised against - an address or a phone - and
     // means nothing outside the installation that raised it.
     public const AnonymizationStrategy _pii = AnonymizationStrategy::PURGE;

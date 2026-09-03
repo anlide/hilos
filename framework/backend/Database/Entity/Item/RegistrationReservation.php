@@ -81,6 +81,10 @@ final class RegistrationReservation extends Entity
         'idx_reservation_expires' => [Entity::INDEX_COLUMNS => [self::expires_at]],
     ];
 
+    // A reservation lives before anybody exists, so it has no owner column at all.
+    public const string _setVia = Entity::SET_STANDALONE;
+    public const bool _setRoot = false;
+
     // A held registration is a token-shaped row that expires on its own; a restored
     // copy has no use for one.
     public const AnonymizationStrategy _pii = AnonymizationStrategy::PURGE;

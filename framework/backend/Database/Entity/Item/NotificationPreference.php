@@ -58,6 +58,9 @@ final class NotificationPreference extends Entity
         ],
     ];
 
+    public const string _setVia = self::user_id;
+    public const bool _setRoot = false;
+
     // A preference is a channel and a flag: it says how somebody is reached, never who
     // they are or what was said.
     public const array _pii = [];

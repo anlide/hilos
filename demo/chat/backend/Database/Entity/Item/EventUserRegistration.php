@@ -42,6 +42,9 @@ final class EventUserRegistration extends Entity
         'target_user_id' => [Entity::INDEX_COLUMNS => [self::target_user_id]],
     ];
 
+    public const string _setVia = self::event_id;
+    public const bool _setRoot = false;
+
     // Two keys and nothing else; the name behind the key is anonymized on the user row.
     public const array _pii = [];
 

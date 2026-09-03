@@ -51,6 +51,9 @@ final class User extends Entity
         'last_activity' => [Entity::INDEX_COLUMNS => [self::last_activity]],
     ];
 
+    public const string _setVia = Entity::SET_STANDALONE;
+    public const bool _setRoot = true;
+
     // Properties
     public ?int $id = null;
     public string $name;

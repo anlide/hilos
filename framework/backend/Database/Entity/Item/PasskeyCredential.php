@@ -86,6 +86,11 @@ final class PasskeyCredential extends Entity
         'idx_passkey_user' => [Entity::INDEX_COLUMNS => [self::user_id]],
     ];
 
+    // The owner is identity_id and not user_id: the credential is tied to the hilos_identity
+    // anchor row, and user_id beside it is a short path to that same owner.
+    public const string _setVia = self::identity_id;
+    public const bool _setRoot = false;
+
     // A credential is a public key bound to one person's authenticator; masking it
     // would leave a usable-looking credential nobody can authenticate with.
     public const AnonymizationStrategy _pii = AnonymizationStrategy::PURGE;

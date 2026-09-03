@@ -49,6 +49,9 @@ final class Event extends Entity
         'timestamp' => [Entity::INDEX_COLUMNS => [self::timestamp]],
     ];
 
+    public const string _setVia = Entity::SET_STANDALONE;
+    public const bool _setRoot = true;
+
     // An event is a type and a moment; who it was about is held by the row that extends it.
     public const array _pii = [];
 

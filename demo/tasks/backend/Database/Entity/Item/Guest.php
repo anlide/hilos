@@ -51,6 +51,9 @@ final class Guest extends Entity
         'uk_guest_session' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::session_token]],
     ];
 
+    public const string _setVia = Entity::SET_STANDALONE;
+    public const bool _setRoot = false;
+
     // Properties
     public ?int $id = null;
     public string $session_token;
