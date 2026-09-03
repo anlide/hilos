@@ -41,22 +41,34 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $this->assertFalse(new ProtectedModeRuntime($state)->locksOut('any-key', null));
     }
 
-    public function testTheInitiatorStaysLiveWhileEveryoneElseIsLockedOut(): void
+    public function testAFrozenNodeLocksTheInitiatorOutWithEveryoneElse(): void
     {
         $view = $this->frozenView();
 
-        $this->assertFalse($view->locksOut(self::INITIATOR_KEY, null));
+        $this->assertTrue($view->locksOut(self::INITIATOR_KEY, null));
         $this->assertTrue($view->locksOut('accept-1', null));
         // A connection with no key of its own is not the initiator either.
         $this->assertTrue($view->locksOut(null, null));
     }
 
-    public function testEveryTabOfTheInitiatorSessionStaysInsideTheFreeze(): void
+    public function testEveryTabOfTheInitiatorSessionWaitsOutTheFreezeTogether(): void
     {
         $view = $this->frozenView(self::INITIATOR_SESSION_HASH);
 
         // The tab that asked, by its accept key, and the reload that replaced it, by its session:
-        // a new socket of the same browser is the same operator watching the same operation.
+        // both halves name the same operator, and while the node is frozen both halves wait. That
+        // is the point of the leaf - two tabs of one person must not disagree about the screen.
+        $this->assertTrue($view->locksOut(self::INITIATOR_KEY, self::INITIATOR_SESSION_HASH));
+        $this->assertTrue($view->locksOut('accept-reloaded', self::INITIATOR_SESSION_HASH));
+        $this->assertTrue($view->locksOut('accept-stranger', 'session-hash-stranger'));
+    }
+
+    public function testEveryTabOfTheInitiatorSessionIsLetInOnceTheWindowOpens(): void
+    {
+        // Same two halves one phase later: the system is live again, so both carry the operator
+        // back in at once and neither tab needs an F5 the other did not need.
+        $view = $this->verifyingView(self::INITIATOR_SESSION_HASH);
+
         $this->assertFalse($view->locksOut(self::INITIATOR_KEY, self::INITIATOR_SESSION_HASH));
         $this->assertFalse($view->locksOut('accept-reloaded', self::INITIATOR_SESSION_HASH));
         $this->assertTrue($view->locksOut('accept-stranger', 'session-hash-stranger'));
@@ -130,8 +142,10 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $view->actions->enterDeactivating();
 
         $this->assertSame(StateProtectedModeRuntime::PHASE_DEACTIVATING, $view->phase);
-        // Lifting is not lifted: everyone but the initiator stays out until the row is inactive.
+        // Lifting is not lifted: the way out of the freeze is the lift, not the window, so this
+        // phase holds every connection - the initiator's included - until the row is inactive.
         $this->assertTrue($view->locksOut('accept-1', null));
+        $this->assertTrue($view->locksOut(self::INITIATOR_KEY, null));
     }
 
     public function testEnterInactiveForgetsTheInitiatorWithTheFreeze(): void
@@ -308,8 +322,27 @@ final class ProtectedModeRuntimeViewTest extends TestCase
      */
     private function frozenView(?string $initiatorSessionTokenHash = null): ProtectedModeRuntime
     {
+        return $this->viewInPhase(StateProtectedModeRuntime::PHASE_ACTIVE, $initiatorSessionTokenHash);
+    }
+
+    /**
+     * @param ?string $initiatorSessionTokenHash Session hash the freeze recognizes, or null when it names none
+     * @return ProtectedModeRuntime View over a node whose verification window is open
+     */
+    private function verifyingView(?string $initiatorSessionTokenHash = null): ProtectedModeRuntime
+    {
+        return $this->viewInPhase(StateProtectedModeRuntime::PHASE_VERIFYING, $initiatorSessionTokenHash);
+    }
+
+    /**
+     * @param string $phase Freeze phase to mount the row in
+     * @param ?string $initiatorSessionTokenHash Session hash the freeze recognizes, or null when it names none
+     * @return ProtectedModeRuntime View over a node in that phase, frozen for the initiator's restore
+     */
+    private function viewInPhase(string $phase, ?string $initiatorSessionTokenHash): ProtectedModeRuntime
+    {
         $state = StateProtectedModeRuntime::fromRow([
-            StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_ACTIVE,
+            StateProtectedModeRuntime::phase => $phase,
             StateProtectedModeRuntime::operation => 'restore',
             StateProtectedModeRuntime::initiatorAcceptKey => self::INITIATOR_KEY,
             StateProtectedModeRuntime::initiatorSessionTokenHash => $initiatorSessionTokenHash,

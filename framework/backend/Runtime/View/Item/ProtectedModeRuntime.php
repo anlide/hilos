@@ -12,17 +12,18 @@ use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
 /**
  * Read-only view of the protected-mode runtime singleton.
  *
- * The row carries the freeze this node is under: which phase it is in and whose
- * connection and agent are allowed to keep working through it. Both lockdown checks —
- * the master welcome path and the browser page guards — read it through
- * {@see locksOut()}. Writing goes through {@see ProtectedModeRuntimeActions}, so each
- * phase change reaches the other workers on this node.
+ * The row carries the freeze this node is under: which phase it is in, whose agent is
+ * allowed to keep working through it, and whose connection the verification window
+ * lets back in once the operation is over. Both lockdown checks — the master welcome
+ * path and the browser page guards — read it through {@see locksOut()}. Writing goes
+ * through {@see ProtectedModeRuntimeActions}, so each phase change reaches the other
+ * workers on this node.
  *
  * @extends RtItem<StateProtectedModeRuntime>
  *
  * @property-read string $phase Current lifecycle phase of the protected mode
  * @property-read ?string $operation Operation the initiator is running; null when inactive
- * @property-read ?string $initiatorAcceptKey Accept key let through the lockdown; null when none
+ * @property-read ?string $initiatorAcceptKey Accept key admitted in the verification window; null when none
  * @property-read ?string $initiatorSessionTokenHash Hash of the initiator browser's session token; null when none
  * @property-read ?string $initiatorAgentType Agent type of the initiator agent; null when inactive
  * @property-read ?int $initiatorAgentIndex Agent index of the initiator agent; null when inactive

@@ -24,15 +24,17 @@ interface ProtectedModeClientNotifier
     /**
      * Pushes the protected-mode state to every connected browser client on this node.
      *
-     * The initiator is kept out by both halves of its identity, and the session half is the one
-     * that matters to a person: the accept key spares the socket that asked, while every other tab
-     * of the same browser is raised to a stub describing the operation its owner is running. Kept
-     * as two arguments rather than one, because an initiator with no browser behind it - a CLI
-     * trigger, a scheduled run - leaves the hash null and must go on being served as before.
+     * A caller that keeps the initiator out names both halves of its identity, and the session half
+     * is the one that matters to a person: the accept key spares the socket that asked, the hash
+     * spares every other tab of the same browser. Kept as two arguments rather than one, because an
+     * initiator with no browser behind it - a CLI trigger, a scheduled run - leaves the hash null.
+     * Who is spared is the caller's to decide and changes by phase: entering the freeze and closing
+     * back into it spare nobody, while the verification window spares the session it is about to
+     * address on its own ({@see notifyProtectedModeSessionState()}).
      *
      * @param ProtectedModeStateSignalData $state State to announce, with the copy already resolved
-     * @param ?string $excludeAcceptKey Accept key kept out of the broadcast (the initiator, which
-     *                                  must keep seeing the real app), or null to tell everyone
+     * @param ?string $excludeAcceptKey Accept key kept out of the broadcast (the initiator, when the
+     *                                  phase owes it a verdict of its own), or null to tell everyone
      * @param ?string $excludeSessionTokenHash Hash of the initiator browser's session token, kept out
      *                                         with all its tabs, or null when no browser asked
      * @throws InvalidArgumentException When the protected-mode signal cannot be named

@@ -21,18 +21,28 @@
 // The second exception is the restore panel, and it appears for one visitor only:
 // the admin whose own restore is what shuttered the node. Its frames are addressed
 // to that browser's session (HIL-655), so every other tab receives none and keeps
-// this screen exactly as it was. What it says is the phase and the outcome, not the
-// backup list — under the freeze there is nobody left to serve a list.
+// this screen exactly as it was. What it says is the phase, a bar with the share of
+// the work behind it and an estimate of what is left, and finally the outcome — not
+// the backup list, since under the freeze there is nobody left to serve a list. The
+// bar is here because this screen is now the operator's only view of their own
+// restore: the freeze holds every one of their tabs, the backups page included.
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
+  backupProgressPercent,
+  createBackupProgressClock,
   createHilosRestoreProgress,
+  formatBackupProgressLabel,
   formatRestoreOutcomeLine,
   formatRestorePhaseLine,
   PROTECTED_MODE_FALLBACK_COPY,
   PROTECTED_MODE_PASS_COPY,
 } from '@hilos/core'
-import type { HilosConnection, ProtectedModeStatus } from '@hilos/core'
+import type {
+  HilosConnection,
+  HilosProgressAnchors,
+  ProtectedModeStatus,
+} from '@hilos/core'
 
 import { useSignal } from './useSignal.js'
 
@@ -49,6 +59,47 @@ function restoreOutcomeVariant(outcome: string | null): string {
   }
 
   return outcome === 'success' ? 'alert-success' : 'alert-info'
+}
+
+/**
+ * The bar under the phase line: determinate once the run can be estimated, and the
+ * indeterminate striped one until then, with a caption naming the phase, the
+ * percentage and the time left.
+ *
+ * The same shape the backups page draws, under data ids of its own: two nodes
+ * carrying one id on two surfaces would answer an e2e selector as a single node.
+ *
+ * @param anchors The progress anchors of the restore this browser asked for.
+ * @param nowMs The current epoch milliseconds the percentage is measured against.
+ */
+function restoreProgressBar(anchors: HilosProgressAnchors, nowMs: number) {
+  const percent = backupProgressPercent(anchors, nowMs)
+
+  return (
+    <>
+      <div
+        className="progress mt-2"
+        role="progressbar"
+        aria-label="Restore progress"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent ?? undefined}
+        data-id="maintenance-restore-bar"
+      >
+        <div
+          className={
+            percent === null
+              ? 'progress-bar progress-bar-striped progress-bar-animated'
+              : 'progress-bar'
+          }
+          style={{ width: `${percent ?? 100}%` }}
+        />
+      </div>
+      <div className="small" data-id="maintenance-restore-progress">
+        {formatBackupProgressLabel(anchors, nowMs)}
+      </div>
+    </>
+  )
 }
 
 /** Props for {@link HilosMaintenance}. */
@@ -86,11 +137,18 @@ export function HilosMaintenance({
     [connection],
   )
   const restoreStatus = useSignal(restoreProgress.status)
+  // A percentage moves with wall time while the socket only speaks on a change of
+  // phase, so the bar redraws from this ticker rather than from the frames.
+  const progressClock = useMemo(() => createBackupProgressClock(), [])
+  const progressNow = useSignal(progressClock.now)
   useEffect(() => {
     restoreProgress.start()
 
-    return () => restoreProgress.dispose()
-  }, [restoreProgress])
+    return () => {
+      restoreProgress.dispose()
+      progressClock.dispose()
+    }
+  }, [restoreProgress, progressClock])
 
   // The typed code is deliberately kept after a submit: a rejection is most often
   // a typo, and clearing the field would make the visitor retype the whole key.
@@ -130,6 +188,8 @@ export function HilosMaintenance({
               {formatRestoreOutcomeLine(restoreStatus)}
             </div>
           )}
+          {formatRestoreOutcomeLine(restoreStatus) === '' &&
+            restoreProgressBar(restoreStatus, progressNow)}
         </div>
       )}
       {status.acceptsPass && adminSurface && !status.passIssued && (

@@ -67,9 +67,11 @@ final class ProtectedModeRuntimeActions extends RtActions
      * Records the freeze this node is entering and the identity allowed through it.
      *
      * The initiator's accept key and session hash are recorded only on the node that froze itself
-     * with them; elsewhere they stay null, which is what locks every connection out on the other
-     * nodes. A browser that reconnects to another node of a cluster is therefore locked out there
-     * exactly as it is today - deliberately, and it is the cluster epic that widens it.
+     * with them; elsewhere they stay null, which is what keeps the verification window shut to
+     * that browser on the other nodes. A browser that reconnects to another node of a cluster is
+     * therefore locked out there for the whole operation - deliberately, and it is the cluster
+     * epic that widens it. Neither name buys anything while the freeze holds: under the frozen
+     * phases the row refuses every connection, this one included.
      *
      * A new freeze starts with no passes and nobody admitted, and that is written rather than
      * assumed: {@see ViewProtectedModeRuntime::admits()} reads the frozen phases as empty by
@@ -79,9 +81,10 @@ final class ProtectedModeRuntimeActions extends RtActions
      * hole where a voided pass could admit its holder to the next operation.
      *
      * @param ProtectedModeQuiesceData $freeze Operation and initiator identity the freeze protects
-     * @param ?string $initiatorAcceptKey Accept key let through here; null on a follower node
-     * @param ?string $initiatorSessionTokenHash Hash of the initiator browser's session token, let through
-     *                                           here for as long as the freeze holds; null on a follower
+     * @param ?string $initiatorAcceptKey Accept key recorded here and admitted once the verification
+     *                                    window opens; null on a follower node
+     * @param ?string $initiatorSessionTokenHash Hash of the initiator browser's session token, recorded
+     *                                           and admitted on the same terms; null on a follower
      *                                           node and whenever nothing with a browser asked
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source

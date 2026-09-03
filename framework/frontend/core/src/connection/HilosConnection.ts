@@ -838,10 +838,14 @@ export class HilosConnection {
   /**
    * A pushed frame is a phase transition, not a re-announcement — the daemon sends
    * it exactly when the mode goes on or off — so it is stored and reported without
-   * comparing it to the current state. The initiator is what makes that load-bearing:
-   * it is left out of the "mode on" push and its own welcome reported the mode off,
-   * so the lift frame says byte for byte what it already holds. Compare the two and
-   * the admin who ran the restore is the one client that never reloads.
+   * comparing it to the current state. A comparison would be a second opinion about
+   * a state this side does not own: the daemon speaks on the phase, and a frame that
+   * repeats what this client already holds still means the phase moved under it.
+   * Until HIL-718 the initiator was the standing proof of that — left out of the
+   * "mode on" push, it held the mode off all the way to the lift, and comparing
+   * would have made the one admin who ran the restore the one client that never
+   * reloads. That browser is pushed to like every other now, and the rule stays for
+   * the reason above rather than for that example.
    */
   private handleProtectedMode(signal: ProtectedModeSignal): void {
     this.keepPassWhileTheWindowIsOpen(signal.state)

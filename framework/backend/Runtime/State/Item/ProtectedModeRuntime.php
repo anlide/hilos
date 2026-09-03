@@ -13,7 +13,8 @@ use Hilos\Core\Exception\InvalidFormatException;
  * Framework-owned runtime state registered by the project as a single item, mirroring
  * {@see BackupRuntime}. It tracks whether the cluster is quiescing for a destructive
  * operation (restore today, other initiators later) so the master's welcome path and
- * the browser page guards can lock every connection except the initiator's out.
+ * the browser page guards can lock every connection out, the initiator's included, and
+ * let the initiator and the pass holders back in for the verification window.
  *
  * The truth source is the leader daemon: the leader gates every state decision behind
  * {@see ClusterContext::amLeader()} and drives the two-phase freeze
@@ -67,7 +68,7 @@ final class ProtectedModeRuntime extends RtState
     /** Operation name the initiator is running, or null when inactive. */
     public ?string $operation = null;
 
-    /** Accept key of the initiator connection allowed through the lockdown, or null. */
+    /** Accept key of the initiator connection, admitted in the verification window, or null. */
     public ?string $initiatorAcceptKey = null;
 
     /**
@@ -210,24 +211,28 @@ final class ProtectedModeRuntime extends RtState
      * Whether a connection holding this accept key is locked out of everything but
      * authentication while the freeze is up.
      *
-     * The lockdown is binary: the initiator connection ({@see self::initiatorAcceptKey})
-     * stays fully live so it can drive its destructive operation; every other connection
-     * is frozen out. It engages the moment this node leaves {@see self::PHASE_INACTIVE} —
+     * The lockdown is total while the node is frozen: under {@see self::PHASE_ACTIVATING} and
+     * {@see self::PHASE_ACTIVE} no browser is let through, the initiator's own included. There is
+     * nowhere to let it - the executor stops every agent but the one driving the operation, so no
+     * page subscription is answered - and the operator watches the operation from the restore
+     * panel on the maintenance surface instead, which is the one screen that keeps being fed while
+     * the freeze holds. It engages the moment this node leaves {@see self::PHASE_INACTIVE} —
      * not only at {@see self::PHASE_ACTIVE} — because a follower node quiesces to
      * `activating` and never advances to `active` (that phase is the leader-local marker
      * that every node has quiesced), so a lockdown gated on `active` would leave followers
-     * open for the whole freeze. The initiator's accept key is recorded only on the node
-     * that froze itself with it, so on every other node the null key locks out all.
+     * open for the whole freeze.
      *
-     * {@see self::PHASE_VERIFYING} is the one phase that lets a second circle through, and it
-     * does so by pass ({@see admits()}) rather than by widening this rule: every other phase
-     * keeps the binary lockdown it had.
+     * {@see self::PHASE_VERIFYING} is the one phase that lets anyone through, and it opens two
+     * doors at once: the initiator by its own identity ({@see admitsInitiator()}) and a second
+     * circle by pass ({@see admits()}). Both are worth opening only there, for one reason - by
+     * then the executor has the agents back up and there is a live system behind the door.
      *
      * The initiator is recognized by either half of its identity: the accept key of the socket
      * that asked, and the session token hash of the browser behind it ({@see belongsToInitiator()}).
      * The second is what a reload and a second tab arrive with - they carry the same cookie and a
-     * brand new accept key - and without it the person watching their own restore was locked out
-     * of it by pressing F5 (HIL-655).
+     * brand new accept key - and without it the person who asked would come back from an F5 as a
+     * stranger once the window opened (HIL-655). The accept key is recorded only on the node that
+     * froze itself with it, so on every other node that half never matches.
      *
      * @param ?string $acceptKey Connection accept key to test, or null when none is known
      * @param ?string $sessionTokenHash Hash of the connection's session token, or null when it carries no session
@@ -236,8 +241,7 @@ final class ProtectedModeRuntime extends RtState
     public function locksOut(?string $acceptKey, ?string $sessionTokenHash): bool
     {
         return $this->phase !== self::PHASE_INACTIVE
-            && $acceptKey !== $this->initiatorAcceptKey
-            && !$this->belongsToInitiator($sessionTokenHash)
+            && !$this->admitsInitiator($acceptKey, $sessionTokenHash)
             && !$this->admits($sessionTokenHash);
     }
 
@@ -328,5 +332,30 @@ final class ProtectedModeRuntime extends RtState
             self::passHashes => $this->passHashes,
             self::admittedSessionTokenHashes => $this->admittedSessionTokenHashes,
         ];
+    }
+
+    /**
+     * Whether the browser that asked for the operation is let in right now.
+     *
+     * Carries the phase beside both halves of the identity on purpose, so that the one sentence
+     * worth saying about the initiator has somewhere to be said: it is let in only inside
+     * {@see self::PHASE_VERIFYING}, because that is the phase where being inside means anything.
+     * Under the frozen phases there is no application to hold - the agents are down and the page
+     * subscription goes unanswered - so admitting the initiator there would hand it the same dead
+     * screen every other browser is being spared, and take away the restore panel that is being
+     * fed to the maintenance surface in its place.
+     *
+     * The phase is what enforces this rather than an assumption about the row: the accept key and
+     * the session hash are recorded on the way into the freeze and outlive it until the lift, the
+     * way {@see admits()} is enforced by the phase rather than by the emptiness of its list.
+     *
+     * @param ?string $acceptKey Connection accept key to test, or null when none is known
+     * @param ?string $sessionTokenHash Hash of the connection's session token, or null when it carries no session
+     * @return bool Whether this connection is the initiator's and the phase lets it through
+     */
+    private function admitsInitiator(?string $acceptKey, ?string $sessionTokenHash): bool
+    {
+        return $this->phase === self::PHASE_VERIFYING
+            && ($acceptKey === $this->initiatorAcceptKey || $this->belongsToInitiator($sessionTokenHash));
     }
 }

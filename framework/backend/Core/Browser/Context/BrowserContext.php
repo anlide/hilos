@@ -2350,13 +2350,14 @@ abstract class BrowserContext
      * Enforces page-level access checks in a fixed order: lockdown, level, guards.
      *
      * The protected-mode route lockdown is checked first, as defense-in-depth behind
-     * the master welcome choke: while the freeze is up every connection but the
-     * initiator's is refused all page data with one domain sentence, regardless of the
-     * page's own guards (the lockdown is binary, no per-page whitelist). The page's
-     * declared ACCESS_LEVEL comes second ({@see PageAccessGate}): checking it here —
-     * not only at subscribe time — is what starves a kept-alive denied subscription
-     * of fan-out and table-window data, because most framework admin pages declare
-     * no browser guards at all. The page's own browser guards run last.
+     * the master welcome choke: while the freeze is up every connection is refused all
+     * page data with one domain sentence, the initiator's included, regardless of the
+     * page's own guards (the lockdown is total, no per-page whitelist), and the
+     * verification window is the one phase that reads a connection back in. The
+     * page's declared ACCESS_LEVEL comes second ({@see PageAccessGate}): checking it
+     * here — not only at subscribe time — is what starves a kept-alive denied
+     * subscription of fan-out and table-window data, because most framework admin
+     * pages declare no browser guards at all. The page's own browser guards run last.
      *
      * @param string $page Page name the config belongs to
      * @param BrowserPageConfig $pageConfig Browser page config
@@ -2447,6 +2448,10 @@ abstract class BrowserContext
      * The token comes from the session stage of the runtime connection roster - the framework's own
      * seam, the one {@see SessionCarrier} reads - and a connection the roster does not carry hashes
      * to null, which is the accept-key-only verdict this gate gave before.
+     *
+     * Neither name is a way past the freeze itself: while the node is frozen the row refuses every
+     * connection, the initiator's included, and only the verification window reads the two names
+     * as an admission (HIL-718).
      *
      * @param string $acceptKey Subscriber accept key
      * @return bool Whether this connection is frozen out right now

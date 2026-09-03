@@ -48,8 +48,10 @@ final class SignalRouterWebSocketDestinationRoutingTest extends TestCase
 
     public function testABroadcastCarriesTheExcludedSessionToTheMarkerToo(): void
     {
-        // The initiator is spared by both halves of its identity: the socket that asked and the
-        // browser behind it, whose other tabs the freeze frame would otherwise raise to a stub.
+        // A caller sparing the initiator spares it by both halves of its identity: the socket that
+        // asked and the browser behind it, whose other tabs the frame would otherwise reach. Since
+        // HIL-718 the caller is the verification window rather than the entry, and there the half
+        // that matters is the session: the window pushes the operator's tabs a verdict of their own.
         $this->assertEquals(
             [
                 new AllClientsDestination('sender-key', 'session-hash-sender'),

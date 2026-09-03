@@ -26,14 +26,20 @@ frozen for a **destructive operation** — a restore is the one this framework
 ships. While that freeze is up the node stops serving its pages, and when the
 freeze lifts the application does a real full-page reload.
 
-**The freeze lets through the browser session that started the operation, and
-nobody else.** A browser that did not start it — another profile, another cookie
-jar, another machine — stays locked out for the whole freeze and gets a
-maintenance stub naming the operation in flight. There is one narrow way in, and
-it does not widen that sentence: while the freeze sits in its verification phase
-it takes a one-time code, and a browser presenting a valid one is admitted to
-check the result. That admission belongs to the window — it exists only while
-the window is open, and either way out of the window ends it.
+**The freeze lets nobody through, the browser that started the operation
+included.** While the node is frozen there is nothing to be let into: the
+executor stops every agent but the one driving the operation, so no page
+subscription is answered. Every browser gets a maintenance stub naming the
+operation in flight, and the operator gets one thing on top of it — the restore
+panel, addressed to their own session, which is the only view of their operation
+they have left while their pages are shut.
+
+**The ways in belong to the verification phase, and there are two of them.** By
+then the operation is over and the agents are back up, so there is a live system
+behind the door. The browser that started the operation is let back in by its
+own identity, and any browser presenting a valid one-time code is admitted to
+check the result. Both admissions belong to the window — they exist only while
+it is open, and either way out of it ends them.
 
 Two bits ride the connection so a surface can tell those states apart:
 `acceptsPass` says the verification window is open, `passIssued` says at least
@@ -41,9 +47,10 @@ one code is standing, so the field has something it could take.
 
 | Event | What the browser sees |
 |---|---|
-| a manual F5 inside one's own freeze | the ordinary application: the new socket is recognized by the session behind it, not by the socket it replaced |
-| a new tab of the same profile | the ordinary application, recognized the same way |
-| a tab opened *before* the mode was entered | the maintenance stub, until that tab is reloaded — the push that raises the stub skips a single socket, so the initiator's other tabs are raised along with everyone else's |
+| a manual F5 inside one's own freeze | the maintenance stub, the same screen it was on before: while the node is frozen the browser that asked is held like every other, so a reload changes nothing |
+| a new tab of the same profile | the maintenance stub, held the same way |
+| a tab opened *before* the mode was entered | the maintenance stub, and without being reloaded to it — the push that raises the stub skips nobody |
+| the verification window opening | the ordinary application, for the browser that started the operation and for any browser holding a code: a frame of its own reaches that session, so every tab of it leaves the stub at once and none of them needs an F5 |
 | a reconnect | the same answer the first socket got: the welcome frame is computed per connection, on every connection |
 | the mode lifting | a full-page reload |
 

@@ -11,9 +11,9 @@ use Throwable;
  *
  * Thrown when the system withholds a page from a connection for a transient,
  * operational reason rather than a permission or resource fault - the protected-mode
- * route lockdown freezes every non-initiator connection out while a destructive
- * operation runs. Maps to HTTP 503 and error code 'service_unavailable'. The default
- * message is a domain sentence (never engine detail), per
+ * route lockdown freezes every connection out, the initiator's included, while a
+ * destructive operation runs. Maps to HTTP 503 and error code 'service_unavailable'.
+ * The default message is a domain sentence (never engine detail), per
  * docs/agents/frontend/wire-protocol.md.
  */
 class PageServiceUnavailableException extends PageSubscriptionException

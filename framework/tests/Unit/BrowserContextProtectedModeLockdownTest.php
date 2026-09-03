@@ -20,10 +20,10 @@ use PHPUnit\Framework\TestCase;
 /**
  * Unit tests for the protected-mode route lockdown enforced by the browser context
  * as defense-in-depth behind the master welcome choke. While the freeze is up every
- * connection but the initiator's is refused all page data with a 503 domain sentence,
- * regardless of the page's own guards (the lockdown is binary). The check reads the
- * daemon-owned runtime singleton synced into the worker and is inert when no project
- * mounted it.
+ * connection is refused all page data with a 503 domain sentence, the initiator's own
+ * included, regardless of the page's own guards; the verification window is the one phase
+ * that reads the initiator's key as a way back in. The check reads the daemon-owned runtime
+ * singleton synced into the worker and is inert when no project mounted it.
  */
 final class BrowserContextProtectedModeLockdownTest extends TestCase
 {
@@ -56,14 +56,34 @@ final class BrowserContextProtectedModeLockdownTest extends TestCase
         }
     }
 
-    public function testInitiatorPassesTheLockdown(): void
+    public function testFrozenInitiatorIsRefusedAlongsideEverybodyElse(): void
     {
         Hilos::$sr = new SignalRouter();
         $this->seed(ProtectedModeRuntime::PHASE_ACTIVE, 'ak-initiator');
         $context = new ProtectedModeLockdownTestBrowserContext();
 
-        // The initiator holds the recorded key, so the lockdown lets it through;
-        // judging a subscription sends nothing, whichever way it goes.
+        // The initiator holds the recorded key and is refused anyway: while the node is frozen the
+        // agents behind this page are down, so there is no page data to hand anyone.
+        try {
+            $context->assertSubscriptionAccess(
+                ProtectedModeLockdownTestBrowserContext::PAGE,
+                'ak-initiator',
+                new PageRouteParams([]),
+            );
+            $this->fail('Expected the frozen initiator to be refused.');
+        } catch (PageServiceUnavailableException $e) {
+            $this->assertSame(503, $e->httpCode);
+        }
+    }
+
+    public function testInitiatorPassesTheLockdownInsideTheVerificationWindow(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        $this->seed(ProtectedModeRuntime::PHASE_VERIFYING, 'ak-initiator');
+        $context = new ProtectedModeLockdownTestBrowserContext();
+
+        // One phase later the system is live again, and the recorded key is what lets the operator
+        // back to its pages without a pass; judging a subscription sends nothing, either way.
         $context->assertSubscriptionAccess(
             ProtectedModeLockdownTestBrowserContext::PAGE,
             'ak-initiator',

@@ -1380,9 +1380,11 @@ abstract class DaemonManager extends BaseManager implements
      * Queues the state as a broadcast signal rather than writing to the sockets here: the
      * WS_ALL_CONNECTED type resolves to {@see AllClientsDestination} and the routing pass
      * of the same loop fans it out through {@see sendToAllClients()}, so the freeze frame
-     * leaves the daemon by the one path every other broadcast uses. Both exclusions are the
-     * initiator's — it drives the operation and must keep seeing the real app, in the tab it
-     * started from and in the ones it already had open.
+     * leaves the daemon by the one path every other broadcast uses. Both exclusions, when a caller
+     * names them, are the initiator's — the tab it started from and the ones it already had open.
+     * Whether that is worth doing belongs to the caller and to the phase it announces: while the
+     * node is frozen the operator is behind the stub with everybody else, and only the verification
+     * window leaves them out, to address them by session with the opposite verdict.
      *
      * @param ProtectedModeStateSignalData $state State to announce, with the copy already resolved
      * @param ?string $excludeAcceptKey Accept key kept out of the broadcast, or null to tell everyone

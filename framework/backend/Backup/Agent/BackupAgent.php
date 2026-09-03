@@ -319,8 +319,9 @@ final class BackupAgent extends AbstractAgent
      * Hash of the session token behind that connection, or null when nobody with a browser asked.
      *
      * The accept key above is one socket and dies with a reload; this is the browser it belonged to,
-     * and it is what protected mode keeps letting through for the length of the run, so the person
-     * watching their own restore can press F5 without locking themselves out of it (HIL-655). Only
+     * and it is what protected mode keeps knowing the operator by for the length of the run - the
+     * address its progress frames are sent to while every tab of it waits on the stub, and the half
+     * that carries them all back in when the verification window opens (HIL-655, HIL-718). Only
      * the hash is held, here and on the freeze row: the token itself is the key to the account.
      */
     private ?string $pendingRestoreInitiatorSessionTokenHash = null;

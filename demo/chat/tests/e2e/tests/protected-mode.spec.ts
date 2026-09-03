@@ -84,14 +84,19 @@ test('a live window shows the maintenance stub while the mode is on', async ({
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 })
 
-test('the browser that asked keeps its way in across a reload and a second tab', async ({
+test('every tab of the browser that asked agrees, phase by phase', async ({
   page,
   context,
   browser,
 }) => {
-  // HIL-655 acceptance, and the observation it was written from: the operator who
-  // started a restore pressed F5 and locked themselves out of watching it, because
-  // the way in was the accept key of one socket and a reload mints a new one.
+  // HIL-655 acceptance, re-decided by HIL-718 and kept for the same reason it was
+  // written: the operator who started a restore must not be told two different
+  // things by two of their own tabs. HIL-655 answered that by letting the whole
+  // session in from the first phase; this leaf answers it the other way, because
+  // there was nothing to be let into — under the freeze every agent but the one
+  // driving the operation is stopped, so the application behind that door does not
+  // answer. So all their tabs wait on the stub together, and all of them come back
+  // together when the verification window opens and the system is live again.
   //
   // A cold connection first — the session cookie is minted on the first 101, and it
   // is the only handle a browser has on its own identity here: the welcome frame
@@ -102,27 +107,39 @@ test('the browser that asked keeps its way in across a reload and a second tab',
   expect(sessionToken).not.toBe('')
 
   // Entered for this BROWSER and for no particular socket: the accept key is left
-  // empty on purpose, so whatever gets in below got in as the session.
+  // empty on purpose, so whatever happens below happens to the session.
   expect(await enterProtectedMode(OPERATION, '', sessionToken)).toBe('active')
 
-  // The reload. A brand new accept key, the same cookie, and the same person.
-  await gotoAdmitted(page, '/')
-  await expect(page.getByTestId('maintenance')).toBeHidden()
+  // The tab that was already open goes to the stub without being asked to reload:
+  // the entry frame leaves nobody out any more.
+  await expect(page.getByTestId('maintenance')).toBeVisible()
+
+  // The reload. A brand new accept key, the same cookie, and the same person — and
+  // the same screen as before it, which is the whole point: F5 changes nothing.
+  await gotoMaintenance(page, '/')
+  await expect(page.getByTestId('maintenance-title')).toHaveText(STUB_TITLE)
 
   // The second tab, which the freeze was never told about at all — it did not exist
   // when the operation started, and under the freeze no agent is left running to
-  // register it anywhere. The master recognizes it off its own connection list.
+  // register it anywhere. The master recognizes it off its own connection list and
+  // answers it exactly as it answered the reload.
   const secondTab = await context.newPage()
-  await gotoAdmitted(secondTab, ADMIN_URL)
-  await expect(secondTab.getByTestId('maintenance')).toBeHidden()
+  await gotoMaintenance(secondTab, ADMIN_URL)
 
-  // The right belongs to one session and not to everybody: another browser is held
-  // exactly as it was before this leaf.
+  // A stranger is held too, and was all along — this leaf changed nothing for them.
+  // What it changed is that the three screens now say the same thing.
   const strangerContext = await browser.newContext()
   const stranger = await strangerContext.newPage()
   await gotoMaintenance(stranger, '/')
   await expect(stranger.getByTestId('maintenance-title')).toHaveText(STUB_TITLE)
   await strangerContext.close()
+
+  // The window. The system comes back up, and with it the reason to let the
+  // operator in — so both of their tabs leave the stub on their own, with nothing
+  // clicked and nothing reloaded. That is the frame this leaf added.
+  expect(await leaveProtectedMode()).toBe('verifying')
+  await expect(page.getByTestId('maintenance')).toBeHidden()
+  await expect(secondTab.getByTestId('maintenance')).toBeHidden()
 
   expect(await openProtectedMode()).toBe('inactive')
 
@@ -279,14 +296,18 @@ test('the code lets the whole browser in, and the tab that was waiting comes out
   await waiting.close()
 })
 
-test('the tabs the operator already had open are never raised to the stub', async ({
+test('the tabs the operator already had open are raised and lowered together', async ({
   page,
   context,
   browser,
 }) => {
-  // The HIL-748 criterion, closed by this leaf: the frame announcing the freeze used
-  // to spare one socket, so the operator's other tabs went to a maintenance screen
-  // describing the operation their owner was running, and only an F5 took them back.
+  // The HIL-748 criterion, re-decided by HIL-718 and inverted here. HIL-748 read the
+  // operator's other tabs going to the stub as the defect; the answer it got —
+  // sparing the whole session from the first phase — spared them into an application
+  // with no agents behind it. So the criterion becomes the one thing both readings
+  // actually wanted: the operator's tabs never disagree with each other. They all go
+  // to the stub when the freeze lands, and they all come off it when the window
+  // opens — by the frame, without an F5, which is what the old defect needed.
   await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   const sessionToken = await sessionTokenOf(context)
@@ -298,20 +319,23 @@ test('the tabs the operator already had open are never raised to the stub', asyn
 
   expect(await enterProtectedMode(OPERATION, '', sessionToken)).toBe('active')
 
-  // A stranger's browser is the barrier before every negative assertion below: it
-  // proves the frame has actually gone out on this node, so "still no stub here"
-  // means the frame passed this browser by rather than that it has not arrived yet.
-  // It stands on the admin url because the second barrier needs it to: the sentence
-  // that stands in for the code field is an administrative surface's, and a public
-  // one shows neither of the two (HIL-615).
+  // Both tabs, on the stub, by the frame alone: neither was navigated, and the tab
+  // that pressed nothing is the one the old defect left looking at a live-looking
+  // application that answered nothing.
+  await expect(page.getByTestId('maintenance')).toBeVisible()
+  await expect(otherTab.getByTestId('maintenance')).toBeVisible()
+
+  // A stranger's browser is the barrier before the negative assertions below: it
+  // proves the window frame has actually gone out on this node, so "no stub here any
+  // more" cannot be read off a frame that simply has not arrived. It stands on the
+  // admin url because that is where the sentence standing in for the code field is
+  // shown at all — a public surface shows neither of the two (HIL-615).
   const strangerContext = await browser.newContext()
   const stranger = await strangerContext.newPage()
   await gotoMaintenance(stranger, ADMIN_URL)
 
-  await expect(page.getByTestId('maintenance')).toBeHidden()
-  await expect(otherTab.getByTestId('maintenance')).toBeHidden()
-
-  // The window frame is a second broadcast, and it spares the same browser.
+  // The window frame is a second broadcast, and this time it spares the operator's
+  // session — which is addressed by a frame of its own saying the opposite.
   expect(await leaveProtectedMode()).toBe('verifying')
   await expect(stranger.getByTestId('maintenance-pass-pending')).toBeVisible()
   await expect(page.getByTestId('maintenance')).toBeHidden()
@@ -419,8 +443,8 @@ test('closing the window puts the admitted verifier back behind the stub', async
 }) => {
   // The browser half of the close, and the reason it is asserted on a live tab
   // rather than after a reload: what is in question is the delivery of the
-  // transition — the frame goes to everyone but the connection that asked — and a
-  // reload would only prove the frame a cold load gets.
+  // transition — the frame goes to everyone without exception, the operator
+  // included (HIL-718) — and a reload would only prove the frame a cold load gets.
   await enterProtectedMode(OPERATION)
   expect(await leaveProtectedMode()).toBe('verifying')
   const pass = await mintProtectedModePass()

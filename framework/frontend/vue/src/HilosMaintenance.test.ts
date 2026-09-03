@@ -351,6 +351,67 @@ describe('HilosMaintenance', () => {
     ).toBe(false)
   })
 
+  it('draws the bar of a restore still in flight, and captions it', async () => {
+    const { connection, pushRestore } = fakeConnection(FROZEN)
+    const wrapper = mount(HilosMaintenance, {
+      props: { status: FROZEN, connection, adminSurface: true },
+    })
+
+    pushRestore(restoreFrame())
+    await nextTick()
+
+    // Nothing estimates this run, so the bar is the indeterminate one and the
+    // caption falls back to naming the phase alone.
+    const bar = wrapper.find('[data-id="maintenance-restore-bar"]')
+    expect(bar.exists()).toBe(true)
+    expect(bar.attributes('aria-valuenow')).toBeUndefined()
+    expect(
+      wrapper.find('[data-id="maintenance-restore-progress"]').text(),
+    ).toBe('importing')
+  })
+
+  it('reads the bar off the estimate once the run carries one', async () => {
+    const { connection, pushRestore } = fakeConnection(FROZEN)
+    const wrapper = mount(HilosMaintenance, {
+      props: { status: FROZEN, connection, adminSurface: true },
+    })
+
+    pushRestore(
+      restoreFrame({
+        estimatedSeconds: 600,
+        phaseStartedAt: new Date().toISOString(),
+      }),
+    )
+    await nextTick()
+
+    const bar = wrapper.find('[data-id="maintenance-restore-bar"]')
+    expect(bar.attributes('aria-valuenow')).not.toBeUndefined()
+    const label = wrapper
+      .find('[data-id="maintenance-restore-progress"]')
+      .text()
+    expect(label).toContain('importing')
+    expect(label).toContain('%')
+  })
+
+  it('drops the bar once the run has an outcome to report', async () => {
+    const { connection, pushRestore } = fakeConnection(FROZEN)
+    const wrapper = mount(HilosMaintenance, {
+      props: { status: FROZEN, connection, adminSurface: true },
+    })
+
+    pushRestore(
+      restoreFrame({ running: false, phase: 'done', outcome: 'success' }),
+    )
+    await nextTick()
+
+    expect(wrapper.find('[data-id="maintenance-restore-bar"]').exists()).toBe(
+      false,
+    )
+    expect(
+      wrapper.find('[data-id="maintenance-restore-progress"]').exists(),
+    ).toBe(false)
+  })
+
   it('says how the restore ended, and what a failure left behind', async () => {
     const { connection, pushRestore } = fakeConnection(FROZEN)
     const wrapper = mount(HilosMaintenance, {

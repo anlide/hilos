@@ -68,9 +68,11 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
 
     /**
      * @param ProtectedModeQuiesceData $freeze Operation and initiator identity the freeze protects
-     * @param ?string $initiatorAcceptKey Accept key let through when the leader freezes itself; null on a follower
-     * @param ?string $initiatorSessionTokenHash Hash of the initiator browser's session token, let through on the
-     *                                           same terms; null on a follower and when nobody with a browser asked
+     * @param ?string $initiatorAcceptKey Accept key recorded when the leader freezes itself, admitted once the
+     *                                    verification window opens and not before; null on a follower
+     * @param ?string $initiatorSessionTokenHash Hash of the initiator browser's session token, recorded and
+     *                                           admitted on the same terms; null on a follower and when nobody
+     *                                           with a browser asked
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
@@ -99,11 +101,12 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
             $freeze->initiatorAgentIndex === null ? null : (string)$freeze->initiatorAgentIndex,
         );
 
-        // Tell the connections that were already open: the lockdown is binary from this phase on,
+        // Tell the connections that were already open: the lockdown is total from this phase on,
         // so this is the earliest honest moment, and on a follower the phase never gets past it.
-        // The initiator's own browser is left out, and by the session rather than by the one
-        // socket: the operator watching a restore usually has other tabs open, and they were being
-        // raised to a stub describing the operation their owner is running.
+        // Nobody is left out, the initiator's own browser included - there is no application to
+        // keep it in, the line above just stopped the agents behind every page. Its tabs go to the
+        // same stub as everyone's, and the one the operation was asked from goes with them: what it
+        // gets there is the restore panel, which is the only screen still being fed (HIL-718).
         $copy = ProtectedModeStubCopy::forOperation($freeze->operation);
         Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState(
             new ProtectedModeStateSignalData(
@@ -112,8 +115,8 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
                 title: $copy->title,
                 message: $copy->message,
             ),
-            $initiatorAcceptKey,
-            $initiatorSessionTokenHash,
+            null,
+            null,
         );
     }
 
@@ -154,8 +157,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         // The stub stays up for everyone without a pass, so the frame still says active: what it
         // adds is that this surface may now offer a code field. The window opens with nothing
         // minted, so the surface says to wait rather than showing a field that can take nothing.
-        // The initiator is left out for the same reason as on entry - it has been seeing the real
-        // app all along.
+        // The initiator is left out because it is owed the opposite verdict, and gets it below.
         $copy = ProtectedModeStubCopy::forOperation($view->operation);
         Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState(
             new ProtectedModeStateSignalData(
@@ -169,6 +171,31 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
             $view->initiatorAcceptKey,
             $view->initiatorSessionTokenHash,
         );
+
+        // This phase is where the operator comes back in, and it has to be pushed: entering the
+        // freeze tore no connection down, so every tab of theirs is standing on the stub and would
+        // stand there for the whole window waiting for an F5 nobody told them to press. The frame
+        // is the opposite of the broadcast above - active: false, the mode does not hold you - and
+        // it goes to the session so that all their tabs leave the stub at the same moment.
+        // It is a second frame rather than one broadcast without the exclusion, because a personal
+        // frame racing the general one would arrive in either order, and losing that race leaves
+        // the operator on the stub in a system that is running again.
+        // acceptsPass stays true: it carries the row's own bit, and a client reading active: false
+        // without it takes the frame for a lift and reloads itself back out of the window.
+        // passIssued is false because the window opens before anything is minted (HIL-718).
+        if ($view->initiatorSessionTokenHash !== null) {
+            Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeSessionState(
+                new ProtectedModeStateSignalData(
+                    active: false,
+                    operation: $view->operation,
+                    title: null,
+                    message: null,
+                    acceptsPass: true,
+                    passIssued: false,
+                ),
+                $view->initiatorSessionTokenHash,
+            );
+        }
     }
 
     /**
@@ -177,7 +204,9 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
      * The only announcement the mode makes without moving a phase, and it exists because the
      * verifier is normally already staring at the stub when the operator mints: the sentence turns
      * into the field with nothing clicked and nothing reloaded. The copy and the initiator
-     * exclusion are the ones {@see enterVerifying()} used - the same frame, one bit later.
+     * exclusion are the ones {@see enterVerifying()} used - the same frame, one bit later. The
+     * exclusion is still worth making here, where the frame says active: it would put the operator
+     * back on the stub in the one phase they are inside the application.
      */
     public function announcePassIssued(): void
     {
@@ -232,6 +261,9 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         $view->actions->enterActive();
         $this->persistFreeze($view);
 
+        // Nobody is left out, the mirror of the entry above: the window is shut, the agents are
+        // down again, and the operator goes back behind the stub together with everyone else. The
+        // panel there is what they keep watching the operation from (HIL-718).
         $copy = ProtectedModeStubCopy::forOperation($view->operation);
         Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState(
             new ProtectedModeStateSignalData(
@@ -242,8 +274,8 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
                 acceptsPass: false,
                 passIssued: false,
             ),
-            $view->initiatorAcceptKey,
-            $view->initiatorSessionTokenHash,
+            null,
+            null,
         );
     }
 

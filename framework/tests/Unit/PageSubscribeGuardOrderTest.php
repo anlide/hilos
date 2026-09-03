@@ -171,7 +171,8 @@ final class PageSubscribeGuardOrderTest extends TestCase
     /**
      * Mounts the protected-mode runtime singleton frozen for one initiator key.
      *
-     * @param string $initiatorAcceptKey Accept key the freeze lets through
+     * @param string $initiatorAcceptKey Accept key the freeze records; it lets nobody through
+     *                                   before the verification window
      */
     private function freezeFor(string $initiatorAcceptKey): void
     {

@@ -27,8 +27,9 @@ interface ProtectedModeExecutor
      *
      * @param ProtectedModeQuiesceData $freeze Operation and initiator identity the freeze protects
      * @param ?string $initiatorAcceptKey Accept key of the initiator connection when the leader
-     *                                    freezes itself; null on a follower, which locks out every
-     *                                    connection and has no initiator to let through
+     *                                    freezes itself, recorded for the verification window rather
+     *                                    than let through this phase; null on a follower, which has
+     *                                    no initiator connection to name
      * @param ?string $initiatorSessionTokenHash Hash of the session token behind that connection, on the
      *                                           same terms; null on a follower and whenever the freeze
      *                                           was asked for by something without a browser

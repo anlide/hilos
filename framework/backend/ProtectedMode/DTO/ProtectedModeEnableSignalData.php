@@ -14,14 +14,16 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
  *
  * The initiator (the backup restore agent today, other operations later) is passive: it
  * asks the leader to freeze the cluster and identifies itself so the leader can leave it
- * running and let its connection through the lockdown. The leader records these fields on
+ * running and recognize its browser again when the verification window opens. The
+ * connection itself is frozen out meanwhile, like every other. The leader records these fields on
  * {@see ProtectedModeRuntime}, drives the two-phase freeze, and
  * signals PROTECTED_MODE_READY back to this initiator once every node has quiesced.
  *
  * The initiator is named twice over, and both are needed: the accept key is the socket that asked,
  * and the session token hash is the browser it asked from. A reload or a second tab arrives with a
- * new accept key and the same cookie, so the hash is the half that keeps the person who started the
- * operation inside it (HIL-655). Only the hash travels - the token itself opens the account.
+ * new accept key and the same cookie, so the hash is the half that still knows the person who
+ * started the operation once the window lets them back in (HIL-655, HIL-718). Only the hash
+ * travels - the token itself opens the account.
  */
 final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataInterface
 {

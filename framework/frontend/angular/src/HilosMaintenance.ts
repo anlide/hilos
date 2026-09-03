@@ -21,8 +21,11 @@
 // The second exception is the restore panel, and it appears for one visitor only:
 // the admin whose own restore is what shuttered the node. Its frames are addressed
 // to that browser's session (HIL-655), so every other tab receives none and keeps
-// this screen exactly as it was. What it says is the phase and the outcome, not the
-// backup list — under the freeze there is nobody left to serve a list.
+// this screen exactly as it was. What it says is the phase, a bar with the share of
+// the work behind it and an estimate of what is left, and finally the outcome — not
+// the backup list, since under the freeze there is nobody left to serve a list. The
+// bar is here because this screen is now the operator's only view of their own
+// restore: the freeze holds every one of their tabs, the backups page included.
 import {
   ChangeDetectionStrategy,
   Component,
@@ -32,7 +35,10 @@ import {
   signal,
 } from '@angular/core'
 import {
+  backupProgressPercent,
+  createBackupProgressClock,
   createHilosRestoreProgress,
+  formatBackupProgressLabel,
   formatRestoreOutcomeLine,
   formatRestorePhaseLine,
   subscribeSignal,
@@ -79,6 +85,24 @@ import type {
           @if (restoreOutcomeLine()) {
             <div class="small" data-id="maintenance-restore-outcome">
               {{ restoreOutcomeLine() }}
+            </div>
+          } @else {
+            <div
+              class="progress mt-2"
+              role="progressbar"
+              aria-label="Restore progress"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              [attr.aria-valuenow]="restorePercent()"
+              data-id="maintenance-restore-bar"
+            >
+              <div
+                [class]="progressBarClass(restorePercent())"
+                [style.width.%]="restorePercent() ?? 100"
+              ></div>
+            </div>
+            <div class="small" data-id="maintenance-restore-progress">
+              {{ restoreProgressLabel() }}
             </div>
           }
         </div>
@@ -187,6 +211,28 @@ export class HilosMaintenance {
   })
 
   /**
+   * Wall time the bar is measured against: a percentage moves while the socket is
+   * silent, because the frames only speak on a change of phase.
+   */
+  protected readonly progressNow = signal(Date.now())
+
+  protected readonly restorePercent = computed(() => {
+    const status = this.restoreStatus()
+
+    return status === null
+      ? null
+      : backupProgressPercent(status, this.progressNow())
+  })
+
+  protected readonly restoreProgressLabel = computed(() => {
+    const status = this.restoreStatus()
+
+    return status === null
+      ? ''
+      : formatBackupProgressLabel(status, this.progressNow())
+  })
+
+  /**
    * The alert variant the restore panel wears: the colour follows the outcome, and
    * the sentence inside says the same thing in words — the colour is never the only
    * carrier (WCAG 1.4.1).
@@ -215,6 +261,31 @@ export class HilosMaintenance {
         progress.dispose()
       })
     })
+    // The progress clock belongs to the component rather than to the connection: it
+    // ticks off wall time, not off anything that arrives over a socket, so it is
+    // built once and torn down with the screen.
+    effect((onCleanup) => {
+      const clock = createBackupProgressClock()
+      const unsubscribe = subscribeSignal(clock.now, (value) =>
+        this.progressNow.set(value),
+      )
+      onCleanup(() => {
+        unsubscribe()
+        clock.dispose()
+      })
+    })
+  }
+
+  /**
+   * The bar's own class: determinate once the run can be estimated, and the
+   * indeterminate striped one until then.
+   *
+   * @param percent The share of the run behind us, or null when it cannot be told.
+   */
+  protected progressBarClass(percent: number | null): string {
+    return percent === null
+      ? 'progress-bar progress-bar-striped progress-bar-animated'
+      : 'progress-bar'
   }
 
   /**

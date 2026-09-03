@@ -28,9 +28,11 @@ use PHPUnit\Framework\TestCase;
  *
  * The exclusion used to name one socket, which is the wrong unit for the one thing it is used
  * for: the operator who starts a destructive operation is a person with tabs open, and a frame
- * that spared only the tab they clicked in raised the rest to a maintenance stub describing
- * the operation they are running. Both exclusions live here at once, because the accept key is
- * still the only thing a node knows about a connection that carries no cookie.
+ * that spared only the tab they clicked in reached the rest, leaving that browser holding two
+ * answers about one freeze. Since HIL-718 the caller doing the sparing is the verification
+ * window rather than the entry, and the unit is the same for the same reason. Both exclusions
+ * live here at once, because the accept key is still the only thing a node knows about a
+ * connection that carries no cookie.
  */
 final class DaemonBroadcastSessionExclusionTest extends TestCase
 {

@@ -69,10 +69,10 @@ final class ProtectedModeSnapshotTest extends TestCase
      */
     public function testTheSnapshotNeverPublishesTheInitiatorAcceptKey(): void
     {
-        // That key is the pass through the lockdown and the command socket authenticates
-        // nobody, so publishing it would hand any reader of the port the one credential the
-        // freeze exists to withhold. Asserted against the encoded reply rather than the keys,
-        // because what must not leak is the value, wherever it might be nested.
+        // That key is what the verification window admits its holder by, and the command socket
+        // authenticates nobody, so publishing it would hand any reader of the port the one
+        // credential the freeze exists to withhold. Asserted against the encoded reply rather
+        // than the keys, because what must not leak is the value, wherever it might be nested.
         $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null);
         $snapshot = $this->buildManager()->protectedModeSnapshot();
 

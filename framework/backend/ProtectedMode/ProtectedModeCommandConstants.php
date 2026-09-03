@@ -27,7 +27,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
  * The snapshot names the {@see ProtectedModeRuntime} row's fields with the row's own
  * spelling, so an assertion reads the same word in the JSON and in the state class -
  * with one deliberate omission. {@see ProtectedModeRuntime::$initiatorAcceptKey} is NOT
- * published: that key is the pass through the lockdown
+ * published: that key is what the verification window admits its holder by
  * ({@see ProtectedModeRuntime::locksOut()}), and the command socket authenticates
  * nobody, so putting it in a reply would hand every reader of the port the one
  * credential the freeze is built to withhold. Nothing needs it - a test drives the

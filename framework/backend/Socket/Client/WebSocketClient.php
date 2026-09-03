@@ -737,7 +737,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * Written directly to the write buffer so the 101 response and the welcome leave in
      * one flush.
      *
-     * @param string $acceptKey This connection's accept key, compared against the initiator's
+     * @param string $acceptKey This connection's accept key, compared against the initiator's inside the verification window
      * @param string $sessionCookieName Name of this deployment's session cookie
      * @throws EnvException When the build timestamp env value cannot be read
      */
@@ -788,9 +788,12 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      *
      * The connection is offered under both of its names: the accept key of this socket and the hash
      * of the session behind it. The second is the one a reload and a second tab arrive with, and
-     * without it the operator watching their own restore is locked out of it by pressing F5.
+     * without it the operator would come back from an F5 as a stranger once the verification
+     * window opened. Neither name buys a way in before that window: while the node is frozen the
+     * row holds every browser, the operator's included, and the welcome sends them all to the
+     * maintenance surface where the restore panel is (HIL-718).
      *
-     * @param string $acceptKey This connection's accept key, compared against the initiator's
+     * @param string $acceptKey This connection's accept key, compared against the initiator's inside the verification window
      * @return bool Whether an active freeze locks this connection out
      */
     private function protectedModeLocksOut(string $acceptKey): bool

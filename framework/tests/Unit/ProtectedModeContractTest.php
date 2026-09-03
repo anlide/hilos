@@ -171,8 +171,11 @@ final class ProtectedModeContractTest extends TestCase
         $this->assertFalse($runtime->locksOut(null, null));
     }
 
-    public function testActiveRuntimeLocksOutEveryConnectionButTheInitiator(): void
+    public function testActiveRuntimeLocksOutEveryConnectionIncludingTheInitiator(): void
     {
+        // The recorded key does not buy a way in while the node is frozen: the agents behind
+        // every page are down, so the socket that asked would find the same dead application as
+        // anybody else and would lose the restore panel it is being shown instead.
         $runtime = ProtectedModeRuntime::fromRow([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
@@ -180,7 +183,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]);
 
-        $this->assertFalse($runtime->locksOut('accept-initiator', null));
+        $this->assertTrue($runtime->locksOut('accept-initiator', null));
         $this->assertTrue($runtime->locksOut('accept-other', null));
         $this->assertTrue($runtime->locksOut(null, null));
     }
@@ -201,8 +204,10 @@ final class ProtectedModeContractTest extends TestCase
         $this->assertTrue($runtime->locksOut('accept-other', null));
     }
 
-    public function testDeactivatingRuntimeStillLocksOutNonInitiator(): void
+    public function testDeactivatingRuntimeStillLocksEverybodyOut(): void
     {
+        // The way out of the freeze is not the window: the lift is what opens the node again, and
+        // until it lands this phase holds the initiator on the same terms as everyone else.
         $runtime = ProtectedModeRuntime::fromRow([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_DEACTIVATING,
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
@@ -210,7 +215,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]);
 
-        $this->assertFalse($runtime->locksOut('accept-initiator', null));
+        $this->assertTrue($runtime->locksOut('accept-initiator', null));
         $this->assertTrue($runtime->locksOut('accept-other', null));
     }
 

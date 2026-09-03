@@ -20,13 +20,19 @@ refused every outbound frame can only ask to be let in on the 101.
 The second exception is the restore panel, and it appears for one visitor only:
 the admin whose own restore is what shuttered the node. Its frames are addressed
 to that browser's session (HIL-655), so every other tab receives none and keeps
-this screen exactly as it was. What it says is the phase and the outcome, not the
-backup list — under the freeze there is nobody left to serve a list. -->
+this screen exactly as it was. What it says is the phase, a bar with the share of
+the work behind it and an estimate of what is left, and finally the outcome — not
+the backup list, since under the freeze there is nobody left to serve a list. The
+bar is here because this screen is now the operator's only view of their own
+restore: the freeze holds every one of their tabs, the backups page included. -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { HilosConnection, ProtectedModeStatus } from '@hilos/core'
 import {
+  backupProgressPercent,
+  createBackupProgressClock,
   createHilosRestoreProgress,
+  formatBackupProgressLabel,
   formatRestoreOutcomeLine,
   formatRestorePhaseLine,
   PROTECTED_MODE_FALLBACK_COPY,
@@ -66,11 +72,32 @@ const restoreOutcomeLine = computed(() =>
     : formatRestoreOutcomeLine(restoreStatus.value),
 )
 
+// A percentage moves with wall time while the socket only speaks on a change of
+// phase, so the bar redraws from this ticker rather than from the frames.
+const progressClock = createBackupProgressClock()
+const progressNow = useSignal(progressClock.now)
+const restorePercent = computed(() =>
+  restoreStatus.value === null
+    ? null
+    : backupProgressPercent(restoreStatus.value, progressNow.value),
+)
+const restoreProgressLabel = computed(() =>
+  restoreStatus.value === null
+    ? ''
+    : formatBackupProgressLabel(restoreStatus.value, progressNow.value),
+)
+// While the restore is still running there is no outcome sentence to read, and this
+// is the screen the operator was moved to: the bar is what tells them it is moving.
+const restoreRunning = computed(
+  () => restoreStatus.value !== null && restoreOutcomeLine.value === '',
+)
+
 onMounted(() => {
   restoreProgress.start()
 })
 onUnmounted(() => {
   restoreProgress.dispose()
+  progressClock.dispose()
 })
 
 const code = ref('')
@@ -121,6 +148,29 @@ function present(): void {
       >
         {{ restoreOutcomeLine }}
       </div>
+      <template v-if="restoreRunning">
+        <div
+          class="progress mt-2"
+          role="progressbar"
+          aria-label="Restore progress"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          :aria-valuenow="restorePercent ?? undefined"
+          data-id="maintenance-restore-bar"
+        >
+          <div
+            :class="
+              restorePercent === null
+                ? 'progress-bar progress-bar-striped progress-bar-animated'
+                : 'progress-bar'
+            "
+            :style="{ width: `${restorePercent ?? 100}%` }"
+          ></div>
+        </div>
+        <div class="small" data-id="maintenance-restore-progress">
+          {{ restoreProgressLabel }}
+        </div>
+      </template>
     </div>
     <p
       v-if="status.acceptsPass && adminSurface && !status.passIssued"

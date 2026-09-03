@@ -248,11 +248,11 @@ describe('lifting the mode reloads the document', () => {
     expect(onProtectedModeLift).toHaveBeenCalledTimes(1)
   })
 
-  it('calls the lift handler for the initiator, which never saw the freeze', () => {
-    // The initiator is excluded from the "mode on" push by its accept key and its
-    // own welcome reports the mode off, so the lift frame carries exactly the state
-    // it already holds. It is deliberately NOT excluded from that frame: after a
-    // restore its data is as stale as everybody else's, and the frame means reload.
+  it('calls the lift handler for a client whose welcome already said the mode was off', () => {
+    // A browser let in for the verification window is told the mode does not hold it,
+    // so the lift frame repeats the bit it already carries. It is reported anyway: the
+    // frame is a phase transition, and after a restore this browser's data is as stale
+    // as everybody else's, so the frame means reload.
     const { onProtectedModeLift, socket } = openBundle()
     socket.emit('message', {
       data: JSON.stringify({

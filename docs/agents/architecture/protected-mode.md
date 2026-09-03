@@ -352,16 +352,27 @@ make it useless for the disaster recovery it exists for.
 - A real restore does not forbid production at all; it obeys the restore ENV
   matrix instead.
 
-## Who The Freeze Lets Through (HIL-655)
+## Who The Freeze Lets Through (HIL-655, re-decided by HIL-718)
 
 `ProtectedModeRuntime::locksOut()` is the whole admission rule, and it shuts a
-connection out only when four things hold at once: the phase is not
-`PHASE_INACTIVE`, **and** the connection's accept key is not
-`initiatorAcceptKey`, **and** the connection does not belong to the initiator's
-browser session (`initiatorSessionTokenHash`, matched by
-`belongsToInitiator()`), **and** the browser session behind it holds no admitted
-pass (`admittedSessionTokenHashes`, matched by `admits()`). Any one of them
-failing serves that connection the real application. There is no fifth way in.
+connection out when three things hold at once: the phase is not
+`PHASE_INACTIVE`, **and** the connection is not the initiator's with the
+verification window open (`admitsInitiator()`), **and** the browser session
+behind it holds no admitted pass (`admittedSessionTokenHashes`, matched by
+`admits()`). Either of the last two failing serves that connection the real
+application, and there is no third way in.
+
+**Both doors are gated on `PHASE_VERIFYING`, and for one reason: that is the
+first phase with anything behind them.** Under `PHASE_ACTIVATING` and
+`PHASE_ACTIVE` the executor has stopped every agent but the one driving the
+operation, so no page subscription is answered — admitting a browser there would
+hand it a dead application rather than the maintenance surface, where the restore
+panel is the one screen still being fed. So the freeze holds every browser, the
+initiator's own included, and the window is where they come back. The phase is
+what enforces this rather than an assumption about the row: the accept key and
+the session hash are recorded on the way in and outlive the freeze until the
+lift, the way `admits()` is enforced by the phase rather than by the emptiness of
+its list.
 
 **Both halves of the rule are keyed by the browser, and for the same reason
 (HIL-666).** The verifier reads a code out once and then behaves like a person:
@@ -385,8 +396,10 @@ reads `admits()` first, and only a false there earns the announcement below.
 a reload.** The accept key names the socket that asked for the freeze and dies
 with it. An F5 inside one's own restore, or a second tab, arrives with a
 brand-new accept key and the same session cookie — so with the accept key alone
-the operator was locked out of the very operation being watched, which is the
-defect the session half closed.
+the operator would come back from a reload as a stranger once the window opened,
+which is what the session half closes. Inside the freeze the two halves say the
+same thing as every other browser, and that is the point of the pair: two tabs of
+one person must never disagree about which screen they are on (HIL-718).
 
 **Two nulls deliberately do not meet.** A freeze entered with no browser behind
 it — a CLI trigger, a scheduled run — leaves `initiatorSessionTokenHash` null,
@@ -417,16 +430,26 @@ there, and only for a project standing on the presence stage.
 
 **The welcome is personalized; the broadcast is addressed by browser.** Every
 connection is answered with a welcome computed for itself, which is why a reload
-and a new tab need no further state to be let back in. The push that announces
-the mode goes through `ProtectedModeClientNotifier::notifyProtectedModeState()`,
-which is told two exclusions and not one: `excludeAcceptKey` keeps the socket
-that asked out of the broadcast, and `excludeSessionTokenHash` keeps every other
-tab of that same browser out with it (HIL-666, absorbing HIL-748). They stay two
-arguments rather than one because an initiator with no browser behind it — a CLI
-trigger, a scheduled run — leaves the hash null and must go on being served
-exactly as before. The exclusion rides the wire on `WebSocketSignalData` and
-reaches the sockets through `AllClientsDestination`, so a fan-out forwarded from
-another node spares the same browser this one does.
+and a new tab need no further state to be told where they stand. The push that
+announces the mode goes through
+`ProtectedModeClientNotifier::notifyProtectedModeState()`, which is told two
+exclusions and not one: `excludeAcceptKey` keeps the socket that asked out of the
+broadcast, and `excludeSessionTokenHash` keeps every other tab of that same
+browser out with it (HIL-666, absorbing HIL-748). They stay two arguments rather
+than one because an initiator with no browser behind it — a CLI trigger, a
+scheduled run — leaves the hash null. The exclusion rides the wire on
+`WebSocketSignalData` and reaches the sockets through `AllClientsDestination`, so
+a fan-out forwarded from another node spares the same browser this one does.
+
+**Whom to spare is the caller's, and it changes by phase (HIL-718).** Entering
+the freeze (`enterActivating()`) and closing back into it (`reenterActive()`)
+spare nobody: there is no application to keep the operator in, so its tabs go to
+the same stub as everyone's. The verification window is the one caller that
+excludes, and it excludes in order to say the opposite: `enterVerifying()`
+broadcasts the stub to everyone still outside, then addresses the initiator's
+session on its own (see below). `announcePassIssued()` repeats that exclusion for
+the same reason — its frame says `active`, and reaching the operator with it
+would put them back on the stub in the one phase they are inside the application.
 
 **A verifier is pushed to as well, and by session (HIL-666).** Nothing tears a
 connection down when the mode turns on (`ConnectionDropper` is called only by a
@@ -438,6 +461,17 @@ for the initiator in HIL-655: `active: false` with `acceptsPass: true`. The
 second bit is load-bearing — the client calls the mode over only when both are
 false, and a frame without it would reload the tab out of the window instead of
 into it.
+
+**The operator is carried back in the same way, and by the same delivery
+(HIL-718).** `enterVerifying()` follows its broadcast with a frame addressed to
+the initiator's session: `active: false` with `acceptsPass: true`, `passIssued`
+false because the window opens before anything is minted. Two things about this
+one in particular. It is a second frame rather than the broadcast sent without
+its exclusion, because a personal frame racing the general one would arrive in
+either order, and losing that race would leave the operator on the stub in a
+system that is running again. And when the freeze recognized no session — a CLI
+restore, or a browser whose session the agent could not read — the frame is not
+sent at all, there being nothing to address it to.
 
 **On the way out the frame goes to everybody, the initiator included.**
 `DaemonProtectedModeExecutor::enterInactive()` passes no exclusion at all, and

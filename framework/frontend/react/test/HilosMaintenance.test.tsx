@@ -351,6 +351,68 @@ describe('HilosMaintenance', () => {
     expect(surface(container, 'maintenance-restore-outcome')).toBeNull()
   })
 
+  it('draws the bar of a restore still in flight, and captions it', () => {
+    const { connection, pushRestore } = fakeConnection(FROZEN)
+    const { container } = render(
+      <HilosMaintenance status={FROZEN} connection={connection} adminSurface />,
+    )
+
+    act(() => pushRestore(restoreFrame()))
+
+    // Nothing estimates this run, so the bar is the indeterminate one and the
+    // caption falls back to naming the phase alone.
+    const bar = surface(container, 'maintenance-restore-bar')
+    expect(bar).not.toBeNull()
+    expect(bar?.getAttribute('aria-valuenow')).toBeNull()
+    expect(
+      surface(container, 'maintenance-restore-progress')?.textContent,
+    ).toBe('importing')
+  })
+
+  it('reads the bar off the estimate once the run carries one', () => {
+    const { connection, pushRestore } = fakeConnection(FROZEN)
+    const { container } = render(
+      <HilosMaintenance status={FROZEN} connection={connection} adminSurface />,
+    )
+
+    act(() =>
+      pushRestore(
+        restoreFrame({
+          estimatedSeconds: 600,
+          phaseStartedAt: new Date().toISOString(),
+        }),
+      ),
+    )
+
+    expect(
+      surface(container, 'maintenance-restore-bar')?.getAttribute(
+        'aria-valuenow',
+      ),
+    ).not.toBeNull()
+    const label = surface(
+      container,
+      'maintenance-restore-progress',
+    )?.textContent
+    expect(label).toContain('importing')
+    expect(label).toContain('%')
+  })
+
+  it('drops the bar once the run has an outcome to report', () => {
+    const { connection, pushRestore } = fakeConnection(FROZEN)
+    const { container } = render(
+      <HilosMaintenance status={FROZEN} connection={connection} adminSurface />,
+    )
+
+    act(() =>
+      pushRestore(
+        restoreFrame({ running: false, phase: 'done', outcome: 'success' }),
+      ),
+    )
+
+    expect(surface(container, 'maintenance-restore-bar')).toBeNull()
+    expect(surface(container, 'maintenance-restore-progress')).toBeNull()
+  })
+
   it('says how the restore ended, and what a failure left behind', () => {
     const { connection, pushRestore } = fakeConnection(FROZEN)
     const { container } = render(

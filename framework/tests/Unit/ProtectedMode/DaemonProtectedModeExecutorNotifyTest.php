@@ -21,14 +21,15 @@ use PHPUnit\Framework\TestCase;
  * Unit tests for what the daemon executor tells this node's browser connections.
  *
  * A page loaded before the freeze landed hears about it exactly twice - entering and lifting -
- * and each of the two frames is shaped by a rule that is easy to get backwards: the entry frame
- * leaves the initiator out (it drives the operation and must keep seeing the real app), while the
- * lift frame leaves nobody out (after a restore the initiator's data is as stale as everyone
- * else's). The two phases in between say nothing, because the surface is already up and must stay
- * up. The verification window adds two frames of its own and one announcement that moves no
- * phase at all - the first minted pass, which turns the waiting sentence on the stub into the
- * code field without the verifier touching anything. With no notifier registered the executor is
- * inert, the same way it already is with no runtime row mounted.
+ * and both of those frames leave nobody out: while the node is frozen there is no application for
+ * the initiator to be kept in either, and after a restore its data is as stale as everyone else's.
+ * The two phases in between say nothing, because the surface is already up and must stay up. The
+ * verification window is where the exclusions live, and it is the one phase that speaks twice: the
+ * broadcast keeps the stub up for everyone still outside, and a session frame carries the operator
+ * back into the application without an F5. Beside it stands one announcement that moves no phase at
+ * all - the first minted pass, which turns the waiting sentence on the stub into the code field
+ * without the verifier touching anything. With no notifier registered the executor is inert, the
+ * same way it already is with no runtime row mounted.
  */
 final class DaemonProtectedModeExecutorNotifyTest extends TestCase
 {
@@ -79,8 +80,12 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         parent::tearDown();
     }
 
-    public function testEnteringAnnouncesTheModeWithCopyAndExcludesTheInitiator(): void
+    public function testEnteringAnnouncesTheModeWithCopyAndExcludesNobody(): void
     {
+        // Not even the browser that asked: the agents behind every page have just been stopped, so
+        // the operator would be held in an application that answers nothing. Every tab they have,
+        // the one they pressed Restore in included, goes to the stub - where the restore panel is
+        // the thing that keeps being fed (HIL-718).
         $this->executor->enterActivating($this->freeze(), 'accept-7', 'session-hash-7');
 
         $this->assertCount(1, $this->notifier->frames);
@@ -89,28 +94,18 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->assertSame('restore', $state->operation);
         $this->assertNotNull($state->title);
         $this->assertNotNull($state->message);
-        $this->assertSame('accept-7', $excludedKey);
-        // The half that spares the operator's other tabs: the socket that asked was already safe,
-        // and every other tab of the same browser was being raised to a stub about the operation
-        // its owner is running.
-        $this->assertSame('session-hash-7', $excludedSession);
+        $this->assertNull($excludedKey);
+        $this->assertNull($excludedSession);
+        // And nothing is said to the initiator's session on its own either: the entry has one
+        // verdict and it is the same for everybody.
+        $this->assertSame([], $this->notifier->sessionFrames);
     }
 
-    public function testAnInitiatorWithNoBrowserBehindItExcludesNoSession(): void
-    {
-        // A restore started from the CLI or by a schedule names no session, and the broadcast has
-        // to go on sparing only what it was actually told about.
-        $this->executor->enterActivating($this->freeze(), 'accept-7', null);
-
-        $this->assertSame('accept-7', $this->notifier->frames[0][1]);
-        $this->assertNull($this->notifier->frames[0][2]);
-    }
-
-    public function testOnAFollowerNobodyIsExcluded(): void
+    public function testOnAFollowerNobodyIsExcludedEither(): void
     {
         // The initiator's connection lives on the initiator's node, so a follower has no accept
-        // key to spare - and must not invent one, or it would quietly leave a browser unfrozen.
-        // Its session hash is withheld for the same reason and by the same caller.
+        // key to spare and no session hash to name. It arrives at the same broadcast the leader
+        // makes, which is what the two nodes are supposed to agree on.
         $this->executor->enterActivating($this->freeze(), null, null);
 
         $this->assertNull($this->notifier->frames[0][1]);
@@ -150,7 +145,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
 
     public function testTheVerificationWindowKeepsTheStubUpAndOffersACodeField(): void
     {
-        $this->executor->enterActivating($this->freeze(), 'accept-7', null);
+        $this->executor->enterActivating($this->freeze(), 'accept-7', 'session-hash-7');
         $this->executor->enterActive();
         $this->notifier->frames = [];
 
@@ -161,7 +156,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
             Hilos::$rt?->hilosProtectedModeRuntime?->phase,
         );
         $this->assertCount(1, $this->notifier->frames);
-        [$state, $excluded] = $this->notifier->frames[0];
+        [$state, $excludedKey, $excludedSession] = $this->notifier->frames[0];
         // Still active: everyone without a pass has to keep seeing the stub. What changed is
         // only that the stub may now ask for a code.
         $this->assertTrue($state->active);
@@ -171,12 +166,57 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->assertFalse($state->passIssued);
         $this->assertSame('restore', $state->operation);
         $this->assertNotNull($state->title);
-        $this->assertSame('accept-7', $excluded);
+        // The operator is left out of this one because the next frame says the opposite to them.
+        $this->assertSame('accept-7', $excludedKey);
+        $this->assertSame('session-hash-7', $excludedSession);
+    }
+
+    public function testTheWindowCarriesEveryTabOfTheOperatorBackInWithoutAReload(): void
+    {
+        // Nothing tore those connections down on the way into the freeze, so every tab of the
+        // operator is standing on the stub and would stand there for the whole window waiting for
+        // an F5 nobody told them to press. This frame is what takes them all off it at once.
+        $this->executor->enterActivating($this->freeze(), 'accept-7', 'session-hash-7');
+        $this->executor->enterActive();
+        $this->notifier->sessionFrames = [];
+
+        $this->executor->enterVerifying();
+
+        $this->assertCount(1, $this->notifier->sessionFrames);
+        [$state, $sessionTokenHash] = $this->notifier->sessionFrames[0];
+        $this->assertSame('session-hash-7', $sessionTokenHash);
+        $this->assertFalse($state->active);
+        // The row's own bit, not this session's: a client reading active: false without it takes
+        // the frame for a lift and reloads itself straight back out of the window.
+        $this->assertTrue($state->acceptsPass);
+        // The window opens before anything is minted, and this session is not the one that mints.
+        $this->assertFalse($state->passIssued);
+        // No copy: a browser being let into the application renders no stub to put words on.
+        $this->assertNull($state->title);
+        $this->assertNull($state->message);
+    }
+
+    public function testAnInitiatorWithNoBrowserBehindItIsAddressedByNeitherFrame(): void
+    {
+        // The freeze recognized one socket and no browser behind it - a CLI restore, or a browser
+        // whose session the agent could not read, which it warns about. The broadcast goes on
+        // sparing only what it was actually told about, and the session frame is not sent at all:
+        // there is no session to address it to, and inventing one would be addressing a stranger.
+        $this->executor->enterActivating($this->freeze(), 'accept-7', null);
+        $this->executor->enterActive();
+        $this->notifier->frames = [];
+
+        $this->executor->enterVerifying();
+
+        $this->assertCount(1, $this->notifier->frames);
+        $this->assertSame('accept-7', $this->notifier->frames[0][1]);
+        $this->assertNull($this->notifier->frames[0][2]);
+        $this->assertSame([], $this->notifier->sessionFrames);
     }
 
     public function testTheFirstMintTurnsTheSentenceIntoTheField(): void
     {
-        $this->executor->enterActivating($this->freeze(), 'accept-7', null);
+        $this->executor->enterActivating($this->freeze(), 'accept-7', 'session-hash-7');
         $this->executor->enterActive();
         $this->executor->enterVerifying();
         Hilos::$rt?->hilosProtectedModeRuntime?->actions->issuePass('hash-a');
@@ -185,15 +225,17 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->executor->announcePassIssued();
 
         $this->assertCount(1, $this->notifier->frames);
-        [$state, $excluded] = $this->notifier->frames[0];
+        [$state, $excludedKey, $excludedSession] = $this->notifier->frames[0];
         $this->assertTrue($state->active);
         $this->assertTrue($state->acceptsPass);
         $this->assertTrue($state->passIssued);
         $this->assertSame('restore', $state->operation);
         $this->assertNotNull($state->title);
-        // The same exclusion the entry and the window pushes make: the initiator has been looking
-        // at the real app all along and a frame reaching it would read as a lift.
-        $this->assertSame('accept-7', $excluded);
+        // The same exclusion the window push makes, and here it still earns its keep: this frame
+        // says active, and reaching the operator with it would put them back on the stub in the
+        // one phase they are inside the application.
+        $this->assertSame('accept-7', $excludedKey);
+        $this->assertSame('session-hash-7', $excludedSession);
     }
 
     public function testTheMintAnnouncementMovesNoPhaseAndWritesNoPass(): void
@@ -233,13 +275,16 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->assertTrue(Hilos::$rt?->hilosProtectedModeRuntime?->locksOut('accept-1', 'session-hash-1'));
 
         $this->assertCount(1, $this->notifier->frames);
-        [$state, $excluded] = $this->notifier->frames[0];
+        [$state, $excludedKey, $excludedSession] = $this->notifier->frames[0];
         $this->assertTrue($state->active);
         $this->assertFalse($state->acceptsPass);
         // Both bits fall together on the way out: the field is gone because the window is, not
         // because it ran out of codes.
         $this->assertFalse($state->passIssued);
-        $this->assertSame('accept-7', $excluded);
+        // Nobody is left out, the mirror of the entry: the node is shut again and the operator
+        // goes back behind the stub with everyone else.
+        $this->assertNull($excludedKey);
+        $this->assertNull($excludedSession);
     }
 
     public function testClosingBackIsRefusedWhenTheRowNamesNoInitiator(): void

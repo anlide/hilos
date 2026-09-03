@@ -191,11 +191,24 @@ final class ProtectedModeAdmissionTest extends TestCase
         $this->assertTrue($block['passIssued']);
     }
 
-    public function testTheInitiatorsOtherTabIsNotHeldByTheFreeze(): void
+    public function testTheInitiatorsOtherTabIsHeldByTheFreezeLikeEveryOther(): void
     {
         // The socket the operation was started from is gone - this is the reload that replaced it,
-        // arriving with a brand new accept key and the same cookie. It is the same person.
+        // arriving with a brand new accept key and the same cookie. It is the same person, and
+        // while the node is frozen that buys nothing: there is no application behind the door for
+        // anybody, so the operator is sent to the maintenance surface where the restore panel is.
         $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, [], self::INITIATOR_SESSION_TOKEN);
+
+        $block = $this->protectedModeBlock($this->handshake(null, sessionToken: self::INITIATOR_SESSION_TOKEN));
+
+        $this->assertTrue($block['active']);
+    }
+
+    public function testTheInitiatorsOtherTabIsLetInOnceTheWindowOpens(): void
+    {
+        // Same reload, one phase later: the agents are back up, so the identity the freeze ignored
+        // is what carries the operator back into the application without a pass of its own.
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, [], self::INITIATOR_SESSION_TOKEN);
 
         $block = $this->protectedModeBlock($this->handshake(null, sessionToken: self::INITIATOR_SESSION_TOKEN));
 
