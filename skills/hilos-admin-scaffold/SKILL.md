@@ -15,6 +15,9 @@ the recipe before generating code.
 - Normative boundary + the two modes: `docs/agents/architecture/admin-features.md`
 - The personal-data verdict every table must carry, and the restore gates that
   demand it: `docs/agents/architecture/backup-anonymization.md`
+- Offering a section's settings as presets — declaring the group, why a preset
+  names every key of it, and how a drift reaches the screen:
+  `docs/agents/architecture/setting-presets.md`
 - Browser table / source fan-out mechanics:
   `docs/agents/architecture/browser-source-fanout.md`
 - Topology registration (PAGES / TABLES / PAGE_TABLES): `docs/agents/app-topology.md`

@@ -200,6 +200,10 @@ field's value. As a recommendation (not a hard rule), avoid designing
 subscriptions that deliver divergent field-sets for the same `(entityType, id)`;
 the merge is a safety net, not a license for divergent projections.
 
+A value the server does not know is carried as an absence and drawn as a blank
+tile, never minted as a zero; see the rules wider than logs in
+[../architecture/logs.md](../architecture/logs.md).
+
 ## Clearing an entity slot — a `null` slot value
 
 A slot value may be `null` (not a fragment, not an array of them): a payload

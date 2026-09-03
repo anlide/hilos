@@ -7,6 +7,10 @@ frontend state payloads, or signal DTOs.
 
 ## Structure
 
+A picture the whole cluster shares but one process produces is not a runtime
+row — it lives in the memory of its owner and travels by signal; see the rules
+wider than logs in [../architecture/logs.md](../architecture/logs.md).
+
 ```php
 final class MyState extends RtState {
     // Declare field name constants

@@ -42,7 +42,7 @@ default, or `AgentScope::NODE`), and `AgentRegistryKey::PLACEMENT` says who pick
 node (`AgentPlacement::LEADER`, the default, or `AgentPlacement::POLICY`). Declaring
 neither is today's leader-hosted cluster singleton. `AgentScope::NODE` is a replica on
 every node, started automatically by `WorkerServer::onInitialWorkersReady()` once that
-node's workers are ready — for example the log rotation agent, whose logs are node-local.
+node's workers are ready — for example the log store agent, whose directory is node-local.
 `AgentPlacement::POLICY` is one instance cluster-wide on the node best-fit picks; the
 leader places it, and `DaemonManager` does that itself for the unindexed ones.
 

@@ -16,6 +16,8 @@ Use this skill for agent business logic and registration work. Start by reading 
   instance stays alive: `docs/agents/architecture/agent-lifecycle.md`
 - An agent that holds a whole entity's set — one entity one library, and which
   of the two placement axes is yours: `docs/agents/architecture/entity-libraries.md`
+- An agent that owns a directory of files on one node, and why the picture it
+  holds lives in its own memory rather than in RT: `docs/agents/architecture/logs.md`
 - The agent writes a fact somebody has on screen right now — when the server
   owes that screen a move, and which frame moves it:
   `docs/agents/signals/screen-invalidation.md`

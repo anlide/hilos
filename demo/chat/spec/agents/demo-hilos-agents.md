@@ -21,8 +21,15 @@ Runs AI agents (`ChatAiAgentFactory`) against the project code and reports resul
 
 ## DemoHilosLogsAgent (`AgentType::HILOS_LOGS`)
 
-Handles `HILOS_LOGS` page.
-Provides access to daemon and worker log files from the admin panel.
+Handles every page of the logs section: `HILOS_LOGS`, `HILOS_LOGS_KEYS`,
+`HILOS_LOGS_WORKERS`, `HILOS_LOGS_ROTATIONS`, `HILOS_LOGS_VIEW` and
+`HILOS_LOGS_SETTINGS`. An empty subclass of the framework's
+`AbstractHilosLogsAgent`: the demo owns the page agent of the section and nothing
+below it. The log files of a node belong to the framework's `hilos_log_store`
+agent on that node, and the cluster-wide picture the pages draw from belongs to
+`hilos_log_aggregator`; both are registered in `backend/Hilos.php` as framework
+classes, with no demo code of their own. See
+[docs/agents/architecture/logs.md](../../../../docs/agents/architecture/logs.md).
 
 ## Location
 

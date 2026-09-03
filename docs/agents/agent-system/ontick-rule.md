@@ -11,6 +11,10 @@ Worker processes a single message at a time. If `onTick()` runs long:
 
 ## What belongs in onTick
 
+A tick that reads configuration complains about a value it cannot use on the
+change of outcome, not on every check; see the rules wider than logs in
+[../architecture/logs.md](../architecture/logs.md).
+
 ```php
 public function onTick(): void {
     // ✅ Check a flag and do small work
