@@ -614,16 +614,18 @@ test('tells the tab that did not save the password that the flow succeeded', asy
   }).toPass()
   await expect(page.getByTestId('auth-continue')).toHaveText('Continue')
 
-  // And read once is read everywhere: Continue pressed in the tab that did NOT act
-  // takes the panel off the one that did.
-  // Pressing Continue in the tab that DID act is not asserted here to also close
-  // this one, though the seam promises it (clearSessionAck). It does clear the mark
-  // on both rows - a reload of this tab comes back to no panel - but no live surface
-  // watches the mark GO: authAckToFlowPatch answers null for a cleared ack and every
-  // view applies a patch only when it is non-null, so the copy stays on screen until
-  // something unmounts it. That is a defect of its own and not this one's to fix.
+  // And read once is read everywhere (HIL-865): Continue in the tab that DID act
+  // takes the panel off this one too. The truth is the row - clearSessionAck
+  // clears the mark and republishes it to every live socket of the session - so
+  // what closes the copy here is the cleared mark arriving, not the click.
   await continueFromDone(second)
   await expect(second.getByTestId('auth-surface')).toHaveCount(0)
+
+  // toPass for the same reason as above: this is a whole trip through the server
+  // and back down the other tab's socket, not a local unmount.
+  await expect(async () => {
+    await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+  }).toPass()
 })
 
 test('offers a countdown instead of a resend while the cooldown holds', async ({

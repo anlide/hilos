@@ -484,14 +484,20 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     auth.resumeHeldRegistration()
   }
 
-  // Continue on a finished flow: clear the announcement on the server, then let
-  // the gate play out the resume it was holding — closing the surface and
-  // un-gating the page in one move.
+  // Continue on a finished flow: clear the announcement on the server, then close
+  // the surface — dismiss reads the session at that moment, so the panel goes and
+  // a 401'd page is let through in one move. The OTHER tabs of the session learn
+  // of it the only way they can, by the cleared mark arriving through the
+  // projection.
   //
-  // Only when the server heard it. The ack is a ROW (HIL-422), so a surface
-  // closed over a refused dispatch would leave the mark standing and meet the
-  // person again with the same panel on the next handshake — while the error
-  // explaining why is gone with the screen that held it.
+  // Only once the server has said it heard. The ack is a ROW (HIL-422), so a
+  // surface closed over a refused dispatch would leave the mark standing and meet
+  // the person again with the same panel on the next handshake — while the error
+  // explaining why is gone with the screen that held it. Closing on the click
+  // instead saves a round trip and costs the ordering the seam leans on: the
+  // clearing is no longer provably behind whatever the person does next, and a
+  // logout that overtakes it hands the mark to a socket of a session that is
+  // already gone (HIL-865, and the seam itself is HIL-875).
   async function continueFromDone(): Promise<void> {
     await auth.submit()
     if (auth.error.get() === null) {
@@ -540,12 +546,36 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   // The ack is what a finished flow left to say — including in a tab that
   // finished nothing (another window of the same session). The gate opens the
   // surface for it; this is what draws the right panel.
+  //
+  // The mark going empty is answered here too, and on the TRANSITION rather than
+  // on the state: the initiator's machine stands on `done` from the server's
+  // reply before the frame carrying the mark arrives, and this effect also runs
+  // on mount — either way a tab reacting to "the mark is empty" would take its
+  // own panel away. The step is read from the machine rather than from `state`
+  // so that a step change does not re-run the effect (HIL-865). And only from
+  // `done`: the tab may have LEFT the panel and be typing an address again, and
+  // somebody else's dismissal must not pull that screen out from under them.
+  const previousAck = useRef(ack)
   useEffect(() => {
     const patch = authAckToFlowPatch(ack)
+    const previous = previousAck.current
+    previousAck.current = ack
     if (patch !== null) {
       auth.applyExternal(patch)
+
+      return
     }
-  }, [ack, auth])
+    if (previous === null || auth.flow.get().step !== 'done') {
+      return
+    }
+    // reset() orphans the answers of requests already sent, so the reply to the
+    // dispatch that cleared the mark cannot land on the emptied machine. It
+    // comes first: dismiss() usually unmounts the surface, and a reset after it
+    // would run for nothing wherever the surface does stay (the modal an
+    // anonymous session keeps).
+    auth.reset()
+    gate?.dismiss()
+  }, [ack, auth, gate])
 
   // Mount and unmount, in one effect. Its dependencies are the memos above, so
   // it runs once per context and not once per render. demo/tasks mounts

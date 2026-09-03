@@ -4,7 +4,9 @@
 // machine already knows (authFlow.ts DONE_SCREENS) — so this module maps the
 // value onto that pair and owns nothing else. A view applies the result through
 // `applyExternal`, the same door a converge comes in by, which is why the flow
-// machine itself needs no branch for acks at all.
+// machine itself needs no branch for acks at all. A mark that CLEARS is not this
+// module's business either: a view answers it, because only a view knows whether
+// the panel is still what its screen shows (HIL-865).
 
 import {
   SESSION_ACK_PASSWORD_CHANGED,
@@ -20,7 +22,10 @@ import { type AuthFlowState } from './authFlow.js'
  * Null covers three cases deliberately answered the same way: no ack, an ack the
  * person already dismissed, and a kind this build has no screen for. The last one
  * is the reason the default is null rather than a throw — a server one deploy
- * ahead must not leave the surface stuck on a panel it cannot draw.
+ * ahead must not leave the surface stuck on a panel it cannot draw. Null is a
+ * patch that is not asked for, never an instruction to leave a screen: a caller
+ * that wants to act on an ack being answered watches the mark itself change to
+ * null, and decides on the step it is standing on (HIL-865).
  *
  * @param ack The ack the session carries, from `sessionPendingAck`.
  */

@@ -88,9 +88,11 @@ export interface AuthGate {
   /** Open the modal — a live page's gated action or its sign-in banner calls it. */
   requireAuth(): void
   /**
-   * Close the modal without authenticating; the user may retry the action. When a
-   * resume is being held back by a pending ack, this settles it instead — the
-   * surface is going away either way, and a page must not stay gated behind it.
+   * Close the surface — the user did it by hand, or an ack the session owed was
+   * answered in another tab. A session that is already raised gets its resume
+   * played out here instead of a bare close: the ack was the only thing holding
+   * that resume back, and a page must not stay gated behind a surface that has
+   * gone.
    */
   dismiss(): void
 }
@@ -106,20 +108,16 @@ export interface AuthGate {
  *
  * With `pendingAck` wired, the resume is HELD while the session owes an ack
  * (HIL-422): a flow that ends by signing somebody in has a sentence left to say,
- * and un-gating on the upgrade alone would close the surface over it. The held
- * resume is not cancelled, only postponed — the ack turning empty plays it out,
- * which is what makes the Continue button both dismiss the panel and let the
- * page through in one move.
+ * and un-gating on the upgrade alone would close the surface over it. Nothing
+ * records that holding — `dismiss` reads `currentUserId` at the moment the
+ * surface goes, which is what makes the Continue button both dismiss the panel
+ * and let the page through in one move.
  *
  * @param options The navigator, current-user signal, optional action source and ack.
  */
 export function createAuthGate(options: AuthGateOptions): AuthGate {
   const { router, currentUserId, actionErrors, pendingAck } = options
   const modalOpen = createSignal(false)
-  // A resume the ack is holding back. It survives until the ack clears rather
-  // than being re-derived from the user id, because by then the upgrade is old
-  // news and nothing would fire to re-decide it.
-  let heldResume = false
 
   const resume = (): void => {
     // Other error codes (403/404/500) are left to their ErrorPage — only a 401
@@ -135,17 +133,17 @@ export function createAuthGate(options: AuthGateOptions): AuthGate {
   // un-gate a 401'd page and close the modal — unless an ack is standing there.
   subscribeSignal(currentUserId, (userId) => {
     if (userId === null) {
-      // The session went back to anonymous — a force-logout from another device
-      // (HIL-416) does exactly this while LEAVING the ack in place. Whatever
-      // resume that upgrade owed is void: playing it out later would un-gate a
-      // 401'd page for somebody who is no longer signed in.
-      heldResume = false
-
+      // An anonymous session has nothing to un-gate. A force-logout from another
+      // device (HIL-416) lands here while LEAVING the ack in place, and closing
+      // is right to stay a bare close for it: the person is no longer signed in,
+      // so no 401'd page may be let through.
       return
     }
     if (pendingAck?.get() != null) {
-      heldResume = true
-
+      // The upgrade happened, but the session still owes a sentence — resuming
+      // now would close the surface over the panel that says it. Nothing is
+      // remembered here: whoever closes the surface reads `currentUserId` again
+      // at that moment and plays the resume out then.
       return
     }
     resume()
@@ -153,17 +151,13 @@ export function createAuthGate(options: AuthGateOptions): AuthGate {
 
   // The ack is a surface trigger in its own right: it can land in a tab that was
   // not signing anybody in (the other window of the same session), and there the
-  // panel is the only thing that would ever open the surface.
+  // panel is the only thing that would ever open the surface. Raising it is all
+  // the gate does with the mark — the ack going empty is answered by the view,
+  // the only place that knows whether the panel is still what the screen shows.
   if (pendingAck !== undefined) {
     subscribeSignal(pendingAck, (ack) => {
       if (ack !== null) {
         modalOpen.set(true)
-
-        return
-      }
-      if (heldResume) {
-        heldResume = false
-        resume()
       }
     })
   }
@@ -181,12 +175,12 @@ export function createAuthGate(options: AuthGateOptions): AuthGate {
     modalOpen,
     requireAuth: () => modalOpen.set(true),
     dismiss: () => {
-      // Closing the surface by hand settles a held resume rather than leaving it
-      // held: the ack signal only fires when its value CHANGES, so a resume still
-      // waiting on it after the surface is gone would leave a 401'd page gated
-      // with nothing on screen to fix it.
-      if (heldResume) {
-        heldResume = false
+      // A raised session means the ack was holding a resume back, and the
+      // surface is going away either way — so play it out rather than leaving a
+      // 401'd page gated with nothing on screen to fix it. Read at this moment
+      // rather than remembered, so that a tab which never saw the upgrade land
+      // behind an ack closes exactly like the one that did.
+      if (currentUserId.get() !== null) {
         resume()
 
         return

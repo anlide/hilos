@@ -24,7 +24,9 @@ import {
   PASSWORD_FLOW_METHOD,
   PASSWORD_METHOD_KEY,
   ScopeManager,
+  SESSION_ACK_REGISTERED,
   type ActionHandle,
+  type AuthGate,
   type HilosAuthContext,
   type HilosConnection,
 } from '@hilos/core'
@@ -32,6 +34,11 @@ import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import HilosAuthSurface from './HilosAuthSurface.vue'
+import { hilosAuthGateKey } from './hilosAuthGateKey.js'
+
+// The session slot the surface reads its ack from — the default of
+// `sessionPendingAck`, which is what the surface asks for (sessionScope.ts).
+const PENDING_ACK_SLOT = 'pendingAck'
 
 /** The dispatch calls one mounted surface made, in order. */
 type Dispatched = Array<{ action: string; payload: Record<string, unknown> }>
@@ -146,6 +153,25 @@ function magicLinkContext(): {
 }
 
 /**
+ * A gate double: the surface only ever asks it to close, and the test asks the
+ * double whether that happened.
+ *
+ * @returns The gate to provide, and the spy standing in for `dismiss`.
+ */
+function gateDouble(): { gate: AuthGate; dismissed: ReturnType<typeof vi.fn> } {
+  const dismissed = vi.fn()
+
+  return {
+    dismissed,
+    gate: {
+      modalOpen: createSignal(false),
+      requireAuth: vi.fn(),
+      dismiss: dismissed,
+    },
+  }
+}
+
+/**
  * Let every pending microtask and the render that follows it settle.
  *
  * @param wrapper The mounted surface to flush the render of.
@@ -251,6 +277,50 @@ describe('HilosAuthSurface', () => {
       email: 'someone@example.com',
       code: '135790',
     })
+  })
+
+  it('takes the finished panel away when the ack is answered in another tab', async () => {
+    const { context } = passwordOnlyContext()
+    const { gate, dismissed } = gateDouble()
+    const wrapper = mount(HilosAuthSurface, {
+      props: { context },
+      global: { provide: { [hilosAuthGateKey as symbol]: gate } },
+    })
+
+    // This tab signed nobody in: the ack is the whole reason it shows a panel.
+    context.scopes.session.data.set(PENDING_ACK_SLOT, SESSION_ACK_REGISTERED)
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-continue"]').exists()).toBe(true)
+
+    // The other tab pressed Continue; the server cleared the row and published
+    // the cleared mark back here. That, and nothing local, is what closes it.
+    context.scopes.session.data.set(PENDING_ACK_SLOT, null)
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-continue"]').exists()).toBe(false)
+    expect(dismissed).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves a screen that has moved on alone when the ack is answered', async () => {
+    const { context } = passwordOnlyContext()
+    const { gate, dismissed } = gateDouble()
+    const wrapper = mount(HilosAuthSurface, {
+      props: { context },
+      global: { provide: { [hilosAuthGateKey as symbol]: gate } },
+    })
+
+    // A kind this build has no panel for: the mark stands on the session, and
+    // the surface goes on showing the identifier field. It stands for every tab
+    // that LEFT the panel — somebody else's dismissal may not take that screen.
+    context.scopes.session.data.set(PENDING_ACK_SLOT, 'ack-from-a-newer-server')
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
+
+    context.scopes.session.data.set(PENDING_ACK_SLOT, null)
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
+    expect(dismissed).not.toHaveBeenCalled()
   })
 
   it('refuses a registry with no method at all, at wiring time', () => {

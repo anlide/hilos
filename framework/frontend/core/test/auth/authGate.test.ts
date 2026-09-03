@@ -179,13 +179,33 @@ describe('createAuthGate with a pending ack', () => {
     expect(router.pageError.get()?.httpCode).toBe(401)
   })
 
-  it('plays the held resume out when the ack clears', () => {
+  it('does not close the surface itself when the ack clears', () => {
     const { gate, router, currentUserId, pendingAck } =
       setupWithAck(UNAUTHORIZED)
     pendingAck.set(SESSION_ACK_PASSWORD_CHANGED)
     currentUserId.set(42)
 
     pendingAck.set(null)
+
+    // The mark going empty is answered by the view, the only place that knows
+    // whether the panel is still what the screen shows (HIL-865). The gate goes
+    // through `dismiss` and nowhere else.
+    expect(gate.modalOpen.get()).toBe(true)
+    expect(router.clearedCount()).toBe(0)
+    expect(router.pageError.get()?.httpCode).toBe(401)
+  })
+
+  it('releases the surface closed on a session that was already raised', () => {
+    const { gate, router, currentUserId, pendingAck } = setupWithAck()
+
+    // The neighbouring tab: signed in long before, so no upgrade ever landed
+    // here behind a standing ack. Then a page it opens is refused, and the ack
+    // the other tab earned arrives and raises the panel over it.
+    currentUserId.set(42)
+    router.setError(UNAUTHORIZED)
+    pendingAck.set(SESSION_ACK_REGISTERED)
+
+    gate.dismiss()
 
     expect(gate.modalOpen.get()).toBe(false)
     expect(router.clearedCount()).toBe(1)

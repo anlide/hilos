@@ -552,14 +552,19 @@ function cancelMethod(): void {
 // trip's own and the flow parks in `external` for both of them.
 const trip = useSignal(oauthTrip)
 
-// Continue on a finished flow: clear the announcement on the server, then let the
-// gate play out the resume it was holding — closing the surface and un-gating the
-// page in one move.
+// Continue on a finished flow: clear the announcement on the server, then close
+// the surface — dismiss reads the session at that moment, so the panel goes and a
+// 401'd page is let through in one move. The OTHER tabs of the session learn of
+// it the only way they can, by the cleared mark arriving through the projection.
 //
-// Only when the server heard it. The ack is a ROW (HIL-422), so a surface closed
-// over a refused dispatch would leave the mark standing and meet the person again
-// with the same panel on the next handshake — while the error explaining why is
-// gone with the screen that held it.
+// Only once the server has said it heard. The ack is a ROW (HIL-422), so a
+// surface closed over a refused dispatch would leave the mark standing and meet
+// the person again with the same panel on the next handshake — while the error
+// explaining why is gone with the screen that held it. Closing on the click
+// instead saves a round trip and costs the ordering the seam leans on: the
+// clearing is no longer provably behind whatever the person does next, and a
+// logout that overtakes it hands the mark to a socket of a session that is
+// already gone (HIL-865, and the seam itself is HIL-875).
 async function continueFromDone(): Promise<void> {
   await auth.submit()
   if (auth.error.get() === null) {
@@ -645,11 +650,29 @@ watch(pending, (busy) => {
 // The ack is what a finished flow left to say — including in a tab that finished
 // nothing (another window of the same session). The gate opens the surface for
 // it; this is what draws the right panel.
-watch(ack, (value) => {
+//
+// The mark going empty is answered here too, and on the TRANSITION rather than on
+// the state: the initiator's machine stands on `done` from the server's reply
+// before the frame carrying the mark arrives, so a tab reacting to "the mark is
+// empty" would take its own panel away too early. And only from `done`: the tab
+// may have LEFT the panel and be typing an address again, and somebody else's
+// dismissal must not pull that screen out from under them (HIL-865).
+watch(ack, (value, previous) => {
   const patch = authAckToFlowPatch(value)
   if (patch !== null) {
     auth.applyExternal(patch)
+
+    return
   }
+  if (previous == null || state.value.step !== 'done') {
+    return
+  }
+  // reset() orphans the answers of requests already sent, so the reply to the
+  // dispatch that cleared the mark cannot land on the emptied machine. It comes
+  // first: dismiss() usually unmounts the surface, and a reset after it would
+  // run for nothing wherever the surface does stay (the anonymous-session modal).
+  auth.reset()
+  gate?.dismiss()
 })
 
 /**
