@@ -34,10 +34,33 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
                     HandshakeWelcomeSignalData::PROTECTED_MODE_MESSAGE => null,
                     HandshakeWelcomeSignalData::PROTECTED_MODE_ACCEPTS_PASS => false,
                     HandshakeWelcomeSignalData::PROTECTED_MODE_PASS_ISSUED => false,
+                    HandshakeWelcomeSignalData::PROTECTED_MODE_BANNER_MESSAGE => null,
                 ],
             ],
             $welcome->toArray(),
         );
+    }
+
+    public function testWelcomeCarriesTheBannerSentenceForAnAdmittedConnection(): void
+    {
+        // The mirror of the locked-out welcome: no surface copy, because this connection renders
+        // no surface, and the sentence of the banner it does render instead.
+        $welcome = new HandshakeWelcomeSignalData(
+            build: '20260101',
+            sessionCookieName: 'hilos_session_token',
+            protectedModeActive: false,
+            protectedModeOperation: 'restore',
+            protectedModeAcceptsPass: true,
+            protectedModeBannerMessage: 'The restore is being verified.',
+        );
+
+        $restored = HandshakeWelcomeSignalData::fromArray($welcome->toArray());
+
+        $this->assertFalse($restored->protectedModeActive);
+        $this->assertTrue($restored->protectedModeAcceptsPass);
+        $this->assertNull($restored->protectedModeTitle);
+        $this->assertNull($restored->protectedModeMessage);
+        $this->assertSame('The restore is being verified.', $restored->protectedModeBannerMessage);
     }
 
     public function testWelcomeCarriesTheActiveFreezeFlag(): void

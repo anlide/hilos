@@ -21,7 +21,9 @@ use Hilos\ProtectedMode\ProtectedModeStubCopy;
  * caught by a cluster freeze learns at handshake that it is locked out — and,
  * with the copy resolved through {@see ProtectedModeStubCopy}, learns it in
  * words, so the maintenance surface is painted before any subscription is
- * attempted and no empty shell flashes.
+ * attempted and no empty shell flashes. A connection the mode lets in learns the
+ * mirror of that: not the words of the surface, which it does not render, but the
+ * sentence of the banner it carries over the running application (HIL-736).
  *
  * It also names the session cookie (HIL-582). The frontend never reads that cookie —
  * it is HttpOnly — but on a token rotation it has to WRITE the auxiliary one beside it,
@@ -39,6 +41,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
     public const string PROTECTED_MODE_OPERATION = 'operation';
     public const string PROTECTED_MODE_TITLE = 'title';
     public const string PROTECTED_MODE_MESSAGE = 'message';
+    public const string PROTECTED_MODE_BANNER_MESSAGE = 'bannerMessage';
     public const string PROTECTED_MODE_ACCEPTS_PASS = 'acceptsPass';
     public const string PROTECTED_MODE_PASS_ISSUED = 'passIssued';
 
@@ -60,6 +63,10 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
      *                                      open but nothing has been minted yet. It tells a
      *                                      connection arriving mid-window whether the surface has a
      *                                      field to offer or only the sentence that says to wait
+     * @param ?string $protectedModeBannerMessage Sentence of the banner this connection carries over
+     *                                            the running application; null whenever no freeze
+     *                                            holds and whenever one holds this connection out,
+     *                                            which renders the surface instead
      */
     public function __construct(
         public readonly string $build,
@@ -70,6 +77,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
         public readonly ?string $protectedModeMessage = null,
         public readonly bool $protectedModeAcceptsPass = false,
         public readonly bool $protectedModePassIssued = false,
+        public readonly ?string $protectedModeBannerMessage = null,
     ) {
     }
 
@@ -88,6 +96,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
                 self::PROTECTED_MODE_MESSAGE => $this->protectedModeMessage,
                 self::PROTECTED_MODE_ACCEPTS_PASS => $this->protectedModeAcceptsPass,
                 self::PROTECTED_MODE_PASS_ISSUED => $this->protectedModePassIssued,
+                self::PROTECTED_MODE_BANNER_MESSAGE => $this->protectedModeBannerMessage,
             ],
         ];
     }
@@ -97,8 +106,9 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
      *
      * The block and all three of its flags are required, and a lowered flag is read
      * as the answer it is: a welcome that does not say whether a freeze holds is not
-     * a welcome saying none does. The three copy fields are null whenever no
-     * freeze holds, so they are read as the optional text they are - and a value
+     * a welcome saying none does. The copy fields are null whenever no
+     * freeze holds - and each of the two audiences leaves the other's null even while one
+     * does - so they are read as the optional text they are, and a value
      * of another type is refused rather than quietly dropped, which is what the
      * private reader this replaced used to do.
      *
@@ -121,6 +131,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
             protectedModeMessage: self::optionalString($protectedMode, self::PROTECTED_MODE_MESSAGE),
             protectedModeAcceptsPass: self::requireBool($protectedMode, self::PROTECTED_MODE_ACCEPTS_PASS),
             protectedModePassIssued: self::requireBool($protectedMode, self::PROTECTED_MODE_PASS_ISSUED),
+            protectedModeBannerMessage: self::optionalString($protectedMode, self::PROTECTED_MODE_BANNER_MESSAGE),
         );
     }
 }

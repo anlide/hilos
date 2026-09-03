@@ -9,6 +9,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ProtectedModeAdmissionConstants;
+use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -189,6 +190,57 @@ final class ProtectedModeAdmissionTest extends TestCase
         // and a client that could not tell would reload itself straight back out of it.
         $this->assertTrue($block['acceptsPass']);
         $this->assertTrue($block['passIssued']);
+    }
+
+    public function testAHeldConnectionIsWordedForTheSurfaceAndNotForTheBanner(): void
+    {
+        // The two audiences are exclusive, and the welcome is where that is decided. This one is
+        // held, so it renders the maintenance surface and gets the words for it - and no banner
+        // sentence, because it has no application to put a banner over.
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, [hash('sha256', self::PASS)]);
+
+        $block = $this->protectedModeBlock($this->handshake(null));
+
+        $this->assertTrue($block['active']);
+        $this->assertNotNull($block['title']);
+        $this->assertNotNull($block['message']);
+        $this->assertNull($block['bannerMessage']);
+    }
+
+    public function testAnAdmittedConnectionIsWordedForTheBannerAndNotForTheSurface(): void
+    {
+        // The mirror of the case above, and the hole this leaf closes: until HIL-736 the welcome
+        // resolved no copy at all for a connection it was letting in, so an operator coming back
+        // from an F5 was handed a running application with nothing on it saying the mode was
+        // still on.
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, [hash('sha256', self::PASS)]);
+
+        $block = $this->protectedModeBlock($this->handshake(self::PASS, admitOnTheRow: true));
+
+        $this->assertFalse($block['active']);
+        $this->assertNull($block['title']);
+        $this->assertNull($block['message']);
+        $this->assertSame(
+            ProtectedModeStubCopy::forOperation($block['operation'])->bannerMessage,
+            $block['bannerMessage'],
+        );
+        $this->assertNotNull($block['bannerMessage']);
+    }
+
+    public function testAWelcomeSentWithNoFreezeAtAllCarriesNeitherKindOfCopy(): void
+    {
+        // The third state, and the one that must stay wordless: nothing holds the node, so there
+        // is no surface to word and no banner to raise. Pinned because the resolution above is
+        // now reached by two conditions rather than one.
+        $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, []);
+
+        $block = $this->protectedModeBlock($this->handshake(null));
+
+        $this->assertFalse($block['active']);
+        $this->assertNull($block['operation']);
+        $this->assertNull($block['title']);
+        $this->assertNull($block['message']);
+        $this->assertNull($block['bannerMessage']);
     }
 
     public function testTheInitiatorsOtherTabIsHeldByTheFreezeLikeEveryOther(): void

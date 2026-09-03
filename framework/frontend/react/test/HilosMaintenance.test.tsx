@@ -20,6 +20,7 @@ const FROZEN: ProtectedModeStatus = {
   operation: 'restore',
   title: 'Restoring a backup',
   message: 'The application will be back in a few minutes.',
+  bannerMessage: undefined,
   acceptsPass: false,
   passIssued: false,
   passRejected: false,
@@ -30,6 +31,7 @@ const FROZEN_WITHOUT_COPY: ProtectedModeStatus = {
   operation: undefined,
   title: undefined,
   message: undefined,
+  bannerMessage: undefined,
   acceptsPass: false,
   passIssued: false,
   passRejected: false,
@@ -46,6 +48,15 @@ const MINTED: ProtectedModeStatus = { ...VERIFYING, passIssued: true }
 
 /** The window, after a code that opened nothing. */
 const REJECTED: ProtectedModeStatus = { ...MINTED, passRejected: true }
+
+/** The same window seen from inside it: the operator, or a verifier let through. */
+const ADMITTED: ProtectedModeStatus = {
+  ...VERIFYING,
+  active: false,
+  title: undefined,
+  message: undefined,
+  bannerMessage: 'The restore is being verified.',
+}
 
 /** A restore frame as the backup agent addresses it to the initiator's session. */
 function restoreFrame(
@@ -501,6 +512,45 @@ describe('HilosLayout under protected mode', () => {
     expect(surface(container, 'app-footer')).toBeNull()
     // The one status worth telling the visitor during planned work.
     expect(surface(container, 'conn-state')).not.toBeNull()
+  })
+
+  it('carries a banner over the application for whoever is inside the window', () => {
+    const container = renderShell(fakeConnection(ADMITTED).connection)
+
+    // The application itself is untouched - that is the whole point of the phase,
+    // and the banner is the only thing saying it is not open to anybody else.
+    expect(surface(container, 'page-body')).not.toBeNull()
+    expect(surface(container, 'maintenance')).toBeNull()
+    expect(surface(container, 'protected-mode-banner')?.textContent).toContain(
+      'The restore is being verified.',
+    )
+  })
+
+  it('raises no banner over a shell the mode is holding out', () => {
+    const container = renderShell(fakeConnection(VERIFYING).connection)
+
+    expect(surface(container, 'protected-mode-banner')).toBeNull()
+  })
+
+  it('raises no banner when no mode holds the node at all', () => {
+    const container = renderShell(
+      fakeConnection(PROTECTED_MODE_INACTIVE).connection,
+    )
+
+    expect(surface(container, 'protected-mode-banner')).toBeNull()
+  })
+
+  it('drops the banner the moment the window closes', () => {
+    // The lift is announced with both bits down, and the client reloads on it -
+    // but the banner must be gone by the frame itself, not by the reload.
+    const { connection, push } = fakeConnection(ADMITTED)
+    const container = renderShell(connection)
+
+    act(() => {
+      push(PROTECTED_MODE_INACTIVE)
+    })
+
+    expect(surface(container, 'protected-mode-banner')).toBeNull()
   })
 
   it('raises the surface when the mode arrives on an open connection', () => {

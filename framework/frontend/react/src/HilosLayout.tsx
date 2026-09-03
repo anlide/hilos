@@ -32,6 +32,7 @@ import {
   HILOS_PAGE_ROUTES,
   HilosPages,
   createSignal,
+  protectedModeBannerCopy,
   rtStalenessLabel,
 } from '@hilos/core'
 import { useContext, useEffect } from 'react'
@@ -137,6 +138,14 @@ export function HilosLayout({
   // a page store, so it outlives routing and subscription lifecycles.
   const protectedMode = useProtectedMode(connection)
   const underMaintenance = protectedMode.active
+
+  // The opposite side of the same state: whoever the mode does NOT hold, while
+  // it still holds the node, is inside a system that is closed to everybody else
+  // and looks exactly like an open one. The banner is what says so, and it comes
+  // from the connection for the same reason the surface does - navigation, a
+  // reconnect, an F5 and a second tab all learn it from the frame rather than
+  // from a store that would have to be rebuilt on each of them.
+  const verificationBanner = protectedModeBannerCopy(protectedMode)
 
   // A live socket that is nonetheless showing part of a frozen replica
   // (HIL-711): the same green, with a snowflake instead of the tick. It replaces
@@ -255,6 +264,27 @@ export function HilosLayout({
               </div>
             </div>
           </nav>
+          {verificationBanner !== undefined && (
+            // This shell has no app-banner region to sit in - React and Angular
+            // never grew the project banner slot the Vue one has - so the banner
+            // brings its own live region, the way that region declares one.
+            <div className="flex-shrink-0" role="status" aria-live="polite">
+              <div
+                className="alert alert-warning border-0 rounded-0 mb-0 py-2"
+                data-id="protected-mode-banner"
+              >
+                <div className="container d-flex flex-wrap align-items-center justify-content-center gap-3">
+                  <span>
+                    <i
+                      className="bi bi-shield-exclamation me-1"
+                      aria-hidden="true"
+                    ></i>{' '}
+                    {verificationBanner}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
           <main
             id="hilos-main-content"
             tabIndex={-1}

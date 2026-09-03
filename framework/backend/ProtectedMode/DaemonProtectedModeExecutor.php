@@ -183,6 +183,9 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         // acceptsPass stays true: it carries the row's own bit, and a client reading active: false
         // without it takes the frame for a lift and reloads itself back out of the window.
         // passIssued is false because the window opens before anything is minted (HIL-718).
+        // The stub copy stays null for the reason the frame exists - these tabs are leaving the
+        // stub - and the banner sentence rides instead: it is what they render once they are out,
+        // and it is the same $copy, read from the other side (HIL-736).
         if ($view->initiatorSessionTokenHash !== null) {
             Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeSessionState(
                 new ProtectedModeStateSignalData(
@@ -192,6 +195,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
                     message: null,
                     acceptsPass: true,
                     passIssued: false,
+                    bannerMessage: $copy->bannerMessage,
                 ),
                 $view->initiatorSessionTokenHash,
             );

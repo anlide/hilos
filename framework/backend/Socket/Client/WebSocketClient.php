@@ -727,7 +727,10 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * `build` carries the HILOS_BUILD_TIMESTAMP env value the frontend compares on every
      * (re)connect to force a page refresh on mismatch; `protectedMode.active` tells a
      * connection caught by a cluster freeze that it is locked out, and the copy beside it
-     * gives that connection the words to say so without asking anything further. The freeze
+     * gives that connection the words to say so without asking anything further. A connection
+     * the mode does NOT lock out while it still holds the node - the operator and the admitted
+     * verifier, inside the verification window - gets the other half of that copy instead: the
+     * sentence of the banner it carries over the running application. The freeze
      * flag is a light in-memory read of the daemon-owned runtime row on this same master
      * process — inert (false) when no project mounted the item — so the light master stays
      * light; the copy comes from a facade constant, not the database, which a restore is
@@ -744,15 +747,22 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     private function sendHandshakeWelcome(string $acceptKey, string $sessionCookieName): void
     {
         $locksOut = $this->protectedModeLocksOut($acceptKey);
-        $operation = $locksOut ? Hilos::$rt?->hilosProtectedModeRuntime?->operation : null;
-        $copy = $locksOut ? ProtectedModeStubCopy::forOperation($operation) : null;
+        // Resolved whenever the mode holds this node AT ALL, rather than only when it holds this
+        // connection out: the verification window is the phase where somebody is inside a system
+        // the mode still owns, and they are owed words too - the banner's (HIL-736).
+        $modeHolds = $locksOut || $this->protectedModePhaseIsVerifying();
+        $operation = $modeHolds ? Hilos::$rt?->hilosProtectedModeRuntime?->operation : null;
+        $copy = $modeHolds ? ProtectedModeStubCopy::forOperation($operation) : null;
         $welcome = new HandshakeWelcomeSignalData(
             build: Hilos::$env->string(EnvConstants::HILOS_BUILD_TIMESTAMP),
             sessionCookieName: $sessionCookieName,
             protectedModeActive: $locksOut,
             protectedModeOperation: $operation,
-            protectedModeTitle: $copy?->title,
-            protectedModeMessage: $copy?->message,
+            // The two audiences are exclusive, and so are their sentences: the surface copy goes
+            // only to a connection this freeze locks out, the banner copy only to one it does not.
+            // No welcome carries both, because no browser renders both.
+            protectedModeTitle: $locksOut ? $copy?->title : null,
+            protectedModeMessage: $locksOut ? $copy?->message : null,
             // The row's own bit, not this connection's - exactly what the pushed frame carries.
             // A locked-out connection reads it as "the surface may offer a code field"; an
             // admitted verifier reads it as "the window I am inside is still open", and needs
@@ -764,6 +774,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             // verifier arriving mid-window would be handed a field before any code exists, which
             // is the lie this pair was added to end.
             protectedModePassIssued: $this->protectedModePassIssued(),
+            protectedModeBannerMessage: $locksOut ? null : $copy?->bannerMessage,
         );
         $message = [
             SignalPayloadConstants::FIELD_TYPE => SignalTypeConstants::HANDSHAKE,

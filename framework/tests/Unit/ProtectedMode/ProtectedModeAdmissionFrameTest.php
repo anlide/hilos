@@ -13,6 +13,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
+use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -80,6 +81,14 @@ final class ProtectedModeAdmissionFrameTest extends TestCase
         $this->assertSame('restore', $state->operation);
         $this->assertNull($state->title);
         $this->assertNull($state->message);
+        // The surface copy stays null because this browser leaves the stub, and the banner
+        // sentence rides instead - the words it shows over the application it was just let into.
+        // Resolved off the framework's own registry, which no fixture here overrides.
+        $this->assertSame(
+            ProtectedModeStubCopy::forOperation('restore')->bannerMessage,
+            $state->bannerMessage,
+        );
+        $this->assertNotNull($state->bannerMessage);
     }
 
     public function testASecondTabOfTheSameBrowserPresentingTheCodeAgainWakesNobody(): void

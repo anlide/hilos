@@ -662,8 +662,33 @@ final class TopologyValidatorTest extends TestCase
                     . ProtectedModeStubConstants::TITLE . '] must be a non-empty string',
                 'PROTECTED_MODE_STUB[' . ProtectedModeStubConstants::DEFAULT_OPERATION . ']['
                     . ProtectedModeStubConstants::MESSAGE . '] must be a non-empty string',
+                'PROTECTED_MODE_STUB[' . ProtectedModeStubConstants::DEFAULT_OPERATION . ']['
+                    . ProtectedModeStubConstants::BANNER_MESSAGE . '] must be a non-empty string',
                 'PROTECTED_MODE_STUB[broken_entry_operation] must be an array carrying '
-                    . ProtectedModeStubConstants::TITLE . ' and ' . ProtectedModeStubConstants::MESSAGE,
+                    . ProtectedModeStubConstants::TITLE . ' and ' . ProtectedModeStubConstants::MESSAGE
+                    . ' and ' . ProtectedModeStubConstants::BANNER_MESSAGE,
+            ],
+        );
+    }
+
+    /**
+     * An entry that words the maintenance surface but not the banner is refused.
+     *
+     * The case a project written before HIL-736 lands in: two fields used to be the whole entry,
+     * and the registry that carried them was legal. It stops being legal the moment the banner
+     * has words of its own, and it has to stop loudly - a registry silently short one field
+     * leaves an admitted operator reading the frontend's last-resort sentence in a project that
+     * speaks in its own voice everywhere else.
+     */
+    public function testProtectedModeStubEntryWithoutTheBannerSentenceFails(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyProtectedModeStubNoBannerHilos::validateTopology();
+            },
+            [
+                'PROTECTED_MODE_STUB[' . ProtectedModeStubConstants::DEFAULT_OPERATION . ']['
+                    . ProtectedModeStubConstants::BANNER_MESSAGE . '] must be a non-empty string',
             ],
         );
     }
@@ -2361,6 +2386,7 @@ final class TopologyProtectedModeStubMissingDefaultHilos extends HilosFacade
         'restore' => [
             ProtectedModeStubConstants::TITLE => 'Restore in progress',
             ProtectedModeStubConstants::MESSAGE => 'The application is briefly unavailable.',
+            ProtectedModeStubConstants::BANNER_MESSAGE => 'The restore is being verified.',
         ],
     ];
 
@@ -2380,8 +2406,32 @@ final class TopologyProtectedModeStubBrokenEntryHilos extends HilosFacade
     protected const array PROTECTED_MODE_STUB = [
         ProtectedModeStubConstants::DEFAULT_OPERATION => [
             ProtectedModeStubConstants::TITLE => '',
+            ProtectedModeStubConstants::BANNER_MESSAGE => '',
         ],
         'broken_entry_operation' => 'Maintenance in progress',
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+/**
+ * Facade whose stub registry words the maintenance surface and stops there.
+ */
+final class TopologyProtectedModeStubNoBannerHilos extends HilosFacade
+{
+    protected const array PROTECTED_MODE_STUB = [
+        ProtectedModeStubConstants::DEFAULT_OPERATION => [
+            ProtectedModeStubConstants::TITLE => 'Maintenance in progress',
+            ProtectedModeStubConstants::MESSAGE => 'The application is briefly unavailable.',
+        ],
     ];
 
     /**
@@ -2401,6 +2451,7 @@ final class TopologyProtectedModeStubUnknownFieldHilos extends HilosFacade
         ProtectedModeStubConstants::DEFAULT_OPERATION => [
             ProtectedModeStubConstants::TITLE => 'Maintenance in progress',
             ProtectedModeStubConstants::MESSAGE => 'The application is briefly unavailable.',
+            ProtectedModeStubConstants::BANNER_MESSAGE => 'The work is being verified.',
             'mesage' => 'The application is briefly unavailable.',
         ],
     ];
@@ -2422,10 +2473,12 @@ final class TopologyProtectedModeStubNumericKeyHilos extends HilosFacade
         ProtectedModeStubConstants::DEFAULT_OPERATION => [
             ProtectedModeStubConstants::TITLE => 'Maintenance in progress',
             ProtectedModeStubConstants::MESSAGE => 'The application is briefly unavailable.',
+            ProtectedModeStubConstants::BANNER_MESSAGE => 'The work is being verified.',
         ],
         7 => [
             ProtectedModeStubConstants::TITLE => 'Maintenance in progress',
             ProtectedModeStubConstants::MESSAGE => 'The application is briefly unavailable.',
+            ProtectedModeStubConstants::BANNER_MESSAGE => 'The work is being verified.',
         ],
     ];
 
@@ -2453,10 +2506,12 @@ final class TopologyProtectedModeStubOverrideHilos extends HilosFacade
         ProtectedModeStubConstants::DEFAULT_OPERATION => [
             ProtectedModeStubConstants::TITLE => 'Project maintenance',
             ProtectedModeStubConstants::MESSAGE => 'This project is briefly unavailable.',
+            ProtectedModeStubConstants::BANNER_MESSAGE => 'This project is being verified.',
         ],
         'restore' => [
             ProtectedModeStubConstants::TITLE => 'Restoring a backup',
             ProtectedModeStubConstants::MESSAGE => 'The data is being restored.',
+            ProtectedModeStubConstants::BANNER_MESSAGE => 'The restore is being verified.',
         ],
     ];
 

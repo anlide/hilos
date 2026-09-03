@@ -2086,7 +2086,7 @@ final class TopologyValidator
     }
 
     /**
-     * Validates one stub registry entry: both copy fields as non-empty text, and nothing else.
+     * Validates one stub registry entry: every copy field as non-empty text, and nothing else.
      *
      * Empty strings and unknown fields are violations rather than shrugs because
      * {@see ProtectedModeStubCopy} cannot report either one: it turns a non-string into null and
@@ -2100,7 +2100,11 @@ final class TopologyValidator
     private function validateProtectedModeStubEntry(string $operation, mixed $entry, array &$errors): void
     {
         $path = self::SECTION_PROTECTED_MODE_STUB . "[{$operation}]";
-        $copyFields = [ProtectedModeStubConstants::TITLE, ProtectedModeStubConstants::MESSAGE];
+        $copyFields = [
+            ProtectedModeStubConstants::TITLE,
+            ProtectedModeStubConstants::MESSAGE,
+            ProtectedModeStubConstants::BANNER_MESSAGE,
+        ];
         if (!is_array($entry)) {
             $errors[] = "{$path} must be an array carrying " . implode(' and ', $copyFields);
             return;

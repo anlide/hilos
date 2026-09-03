@@ -41,6 +41,7 @@ final class ProtectedModeStubLsbResolutionTest extends TestCase
 
         self::assertSame('Restoring a backup', $copy->title);
         self::assertSame('The data is being restored.', $copy->message);
+        self::assertSame('The restore is being verified.', $copy->bannerMessage);
     }
 
     public function testAnUnregisteredOperationFallsBackToTheProjectsDefault(): void
@@ -51,6 +52,7 @@ final class ProtectedModeStubLsbResolutionTest extends TestCase
 
         self::assertSame('Project maintenance', $copy->title);
         self::assertSame('This project is briefly unavailable.', $copy->message);
+        self::assertSame('This project is being verified.', $copy->bannerMessage);
     }
 }
 
@@ -63,10 +65,12 @@ final class ProtectedModeStubLsbTestHilos extends Hilos
         ProtectedModeStubConstants::DEFAULT_OPERATION => [
             ProtectedModeStubConstants::TITLE => 'Project maintenance',
             ProtectedModeStubConstants::MESSAGE => 'This project is briefly unavailable.',
+            ProtectedModeStubConstants::BANNER_MESSAGE => 'This project is being verified.',
         ],
         'restore' => [
             ProtectedModeStubConstants::TITLE => 'Restoring a backup',
             ProtectedModeStubConstants::MESSAGE => 'The data is being restored.',
+            ProtectedModeStubConstants::BANNER_MESSAGE => 'The restore is being verified.',
         ],
     ];
 

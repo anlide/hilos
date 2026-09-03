@@ -21,6 +21,7 @@ const FROZEN: ProtectedModeStatus = {
   operation: 'restore',
   title: 'Restoring a backup',
   message: 'The application will be back in a few minutes.',
+  bannerMessage: undefined,
   acceptsPass: false,
   passIssued: false,
   passRejected: false,
@@ -31,6 +32,7 @@ const FROZEN_WITHOUT_COPY: ProtectedModeStatus = {
   operation: undefined,
   title: undefined,
   message: undefined,
+  bannerMessage: undefined,
   acceptsPass: false,
   passIssued: false,
   passRejected: false,
@@ -44,6 +46,15 @@ const MINTED: ProtectedModeStatus = { ...VERIFYING, passIssued: true }
 
 /** The window, after a code that opened nothing. */
 const REJECTED: ProtectedModeStatus = { ...MINTED, passRejected: true }
+
+/** The same window seen from inside it: the operator, or a verifier let through. */
+const ADMITTED: ProtectedModeStatus = {
+  ...VERIFYING,
+  active: false,
+  title: undefined,
+  message: undefined,
+  bannerMessage: 'The restore is being verified.',
+}
 
 /** A restore frame as the backup agent addresses it to the initiator's session. */
 function restoreFrame(
@@ -494,6 +505,50 @@ describe('HilosLayout under protected mode', () => {
     expect(wrapper.find('[data-id="app-footer"]').exists()).toBe(false)
     // The one status worth telling the visitor during planned work.
     expect(wrapper.find('[data-id="conn-state"]').exists()).toBe(true)
+  })
+
+  it('carries a banner over the application for whoever is inside the window', () => {
+    const wrapper = mountShell(fakeConnection(ADMITTED).connection)
+
+    // The application itself is untouched - that is the whole point of the phase,
+    // and the banner is the only thing saying it is not open to anybody else.
+    expect(wrapper.find('[data-id="page-body"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="maintenance"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="protected-mode-banner"]').text()).toContain(
+      'The restore is being verified.',
+    )
+  })
+
+  it('raises no banner over a shell the mode is holding out', () => {
+    const wrapper = mountShell(fakeConnection(VERIFYING).connection)
+
+    expect(wrapper.find('[data-id="protected-mode-banner"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('raises no banner when no mode holds the node at all', () => {
+    const wrapper = mountShell(
+      fakeConnection(PROTECTED_MODE_INACTIVE).connection,
+    )
+
+    expect(wrapper.find('[data-id="protected-mode-banner"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('drops the banner the moment the window closes', async () => {
+    // The lift is announced with both bits down, and the client reloads on it -
+    // but the banner must be gone by the frame itself, not by the reload.
+    const { connection, push } = fakeConnection(ADMITTED)
+    const wrapper = mountShell(connection)
+
+    push(PROTECTED_MODE_INACTIVE)
+    await nextTick()
+
+    expect(wrapper.find('[data-id="protected-mode-banner"]').exists()).toBe(
+      false,
+    )
   })
 
   it('raises the surface when the mode arrives on an open connection', async () => {

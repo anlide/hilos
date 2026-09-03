@@ -14,8 +14,11 @@ use Hilos\Socket\WebSocket\DTO\HandshakeWelcomeSignalData;
  *
  * Told to connections that were already open when the mode turned on or off: a fresh connection
  * learns the same state from {@see HandshakeWelcomeSignalData} instead. The copy fields carry the
- * words of the maintenance surface, resolved on this side through {@see ProtectedModeStubCopy};
- * a lift frame leaves all three null, because nothing renders them — the frontend reloads on it.
+ * words this side resolved through {@see ProtectedModeStubCopy}, and which of them a frame carries
+ * says who the frame is for: {@see title} and {@see message} word the maintenance surface for a
+ * recipient the mode locks out, {@see bannerMessage} words the banner for one it lets in. No frame
+ * carries both kinds, and a lift frame carries none of them — nothing renders them, the frontend
+ * reloads on it.
  */
 final class ProtectedModeStateSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -30,6 +33,9 @@ final class ProtectedModeStateSignalData extends BaseDTO implements SignalDataIn
 
     /** Payload key: sentence shown under the heading. */
     public const string message = 'message';
+
+    /** Payload key: sentence of the banner an admitted recipient carries over the application. */
+    public const string bannerMessage = 'bannerMessage';
 
     /** Payload key: whether the surface may offer a code field right now. */
     public const string acceptsPass = 'acceptsPass';
@@ -56,6 +62,11 @@ final class ProtectedModeStateSignalData extends BaseDTO implements SignalDataIn
      *                         also decides when the client calls the mode over and when it drops a
      *                         presented pass - narrowed, it would reload an admitted verifier out of
      *                         the window the instant nobody held a code
+     * @param ?string $bannerMessage Sentence of the banner an admitted recipient carries while the
+     *                               mode holds; null on every frame addressed to somebody the mode
+     *                               locks out, and on the lift frame. It comes last so that the
+     *                               positional calls written before it stay pointed at the same
+     *                               parameters they always were
      */
     public function __construct(
         public readonly bool $active,
@@ -64,6 +75,7 @@ final class ProtectedModeStateSignalData extends BaseDTO implements SignalDataIn
         public readonly ?string $message = null,
         public readonly bool $acceptsPass = false,
         public readonly bool $passIssued = false,
+        public readonly ?string $bannerMessage = null,
     ) {
     }
 
@@ -79,6 +91,7 @@ final class ProtectedModeStateSignalData extends BaseDTO implements SignalDataIn
             self::message => $this->message,
             self::acceptsPass => $this->acceptsPass,
             self::passIssued => $this->passIssued,
+            self::bannerMessage => $this->bannerMessage,
         ];
     }
 
@@ -91,6 +104,7 @@ final class ProtectedModeStateSignalData extends BaseDTO implements SignalDataIn
         $operation = $data[self::operation] ?? null;
         $title = $data[self::title] ?? null;
         $message = $data[self::message] ?? null;
+        $bannerMessage = $data[self::bannerMessage] ?? null;
 
         return new static(
             active: (bool)($data[self::active] ?? false),
@@ -99,6 +113,7 @@ final class ProtectedModeStateSignalData extends BaseDTO implements SignalDataIn
             message: $message === null ? null : (string)$message,
             acceptsPass: (bool)($data[self::acceptsPass] ?? false),
             passIssued: (bool)($data[self::passIssued] ?? false),
+            bannerMessage: $bannerMessage === null ? null : (string)$bannerMessage,
         );
     }
 }

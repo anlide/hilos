@@ -120,6 +120,7 @@ use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\ProtectedMode\ProtectedModeFreezeStore;
 use Hilos\ProtectedMode\ProtectedModeLiftAnnouncer;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
+use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\ProtectedMode\ProtectedModeWatchdog;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
@@ -1357,8 +1358,10 @@ abstract class DaemonManager extends BaseManager implements
         // `active: false` is the personalized verdict, the same one the welcome hands a connection
         // that presented the code; `acceptsPass: true` is the row's own bit and is what keeps the
         // client from reading this as a lift - it calls the mode over only when both are false, and
-        // would reload the tab out of the window instead of into it. The copy stays null because an
-        // admitted browser renders no stub, and `passIssued` is true by the fact that got us here.
+        // would reload the tab out of the window instead of into it. The surface copy stays null
+        // because an admitted browser renders no stub - what it does render is the banner over the
+        // running application, and that one sentence it gets (HIL-736). `passIssued` is true by the
+        // fact that got us here.
         try {
             $this->notifyProtectedModeSessionState(
                 new ProtectedModeStateSignalData(
@@ -1366,6 +1369,7 @@ abstract class DaemonManager extends BaseManager implements
                     operation: $freeze->operation,
                     acceptsPass: true,
                     passIssued: true,
+                    bannerMessage: ProtectedModeStubCopy::forOperation($freeze->operation)->bannerMessage,
                 ),
                 $sessionTokenHash,
             );

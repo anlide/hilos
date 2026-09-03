@@ -169,7 +169,15 @@ abstract class Hilos
     protected const string ADMIN_AUDIENCE = AdminAudience::class;
 
     /**
-     * Words of the maintenance surface shown while protected mode holds the node (HIL-268).
+     * Words protected mode is announced with while it holds the node (HIL-268).
+     *
+     * Two audiences, and an entry words both: the locked-out browser standing on the maintenance
+     * surface reads {@see ProtectedModeStubConstants::TITLE} and
+     * {@see ProtectedModeStubConstants::MESSAGE}, and the admitted one - the operator who started
+     * the operation, the verifier let in by a pass - reads
+     * {@see ProtectedModeStubConstants::BANNER_MESSAGE} off the banner it carries over the running
+     * application (HIL-736). The two are worded apart rather than shared because one sentence is
+     * told to somebody who is shut out and the other to somebody who is inside.
      *
      * Keyed by the operation name recorded on the freeze row, plus a
      * {@see ProtectedModeStubConstants::DEFAULT_OPERATION} entry used by any operation that
@@ -177,7 +185,7 @@ abstract class Hilos
      * constant WHOLESALE to speak in its own voice - the entries are not merged with the
      * framework's, so an override that drops the default key would leave every unregistered
      * operation without words. That is refused at startup by {@see TopologyValidator}, together
-     * with an entry that is not an array, misses either copy field, or carries a field beyond
+     * with an entry that is not an array, misses any copy field, or carries a field beyond
      * them (HIL-555); until then this paragraph was the only thing standing between an override
      * and a wordless maintenance screen. Unlike {@see NOTIFICATION_CHANNEL_REGISTRY} and
      * {@see BACKUP_CATALOG}, which name a class, this constant carries the content itself:
@@ -186,13 +194,15 @@ abstract class Hilos
      * Deliberately not a settings row: the database is exactly what a restore is rewriting,
      * so copy read from it during the mode is unreliable by construction.
      *
-     * @var array<string, array{title: string, message: string}>
+     * @var array<string, array{title: string, message: string, bannerMessage: string}>
      */
     protected const array PROTECTED_MODE_STUB = [
         ProtectedModeStubConstants::DEFAULT_OPERATION => [
             ProtectedModeStubConstants::TITLE => 'Maintenance in progress',
             ProtectedModeStubConstants::MESSAGE => 'The application is briefly unavailable while'
                 . ' a maintenance operation finishes. It will come back on its own.',
+            ProtectedModeStubConstants::BANNER_MESSAGE => 'Maintenance has finished and is being'
+                . ' verified. The system is still closed to everyone else.',
         ],
     ];
 

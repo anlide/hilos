@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { parseSignal } from '../../src/protocol/parseSignal.js'
 import {
+  PROTECTED_MODE_BANNER_FALLBACK_MESSAGE,
   PROTECTED_MODE_FALLBACK_COPY,
   PROTECTED_MODE_PASS_COPY,
   isSameProtectedModeStatus,
+  protectedModeBannerCopy,
   toProtectedModeStatus,
 } from '../../src/protocol/protectedMode.js'
 
@@ -185,6 +187,80 @@ describe('the minted marker on the block', () => {
     expect(PROTECTED_MODE_PASS_COPY.pending).not.toBe(
       PROTECTED_MODE_PASS_COPY.prompt,
     )
+  })
+})
+
+describe('the banner sentence for whoever is inside the window', () => {
+  it('says nothing while the mode holds this client', () => {
+    // The locked-out state: this browser stands on the maintenance surface, and a
+    // banner belongs over an application it is not being shown.
+    const status = toProtectedModeStatus({
+      active: true,
+      acceptsPass: true,
+      title: 'Maintenance in progress',
+      message: 'Back shortly.',
+    })
+
+    expect(protectedModeBannerCopy(status)).toBeUndefined()
+  })
+
+  it('says nothing once the window has closed', () => {
+    // Both bits down is how a lift is announced, and the reload rides on it - the
+    // banner must not outlive the mode it describes by even one frame.
+    const status = toProtectedModeStatus({ active: false })
+
+    expect(protectedModeBannerCopy(status)).toBeUndefined()
+  })
+
+  it("speaks the server's sentence when the frame carried one", () => {
+    const status = toProtectedModeStatus({
+      active: false,
+      acceptsPass: true,
+      bannerMessage: 'The restore is being verified.',
+    })
+
+    expect(protectedModeBannerCopy(status)).toBe(
+      'The restore is being verified.',
+    )
+  })
+
+  it('falls back to its own sentence when the frame carried none', () => {
+    // A banner is a state indicator, so silence from the registry costs words and
+    // not the indicator - the same trade the maintenance surface makes.
+    const status = toProtectedModeStatus({ active: false, acceptsPass: true })
+
+    expect(protectedModeBannerCopy(status)).toBe(
+      PROTECTED_MODE_BANNER_FALLBACK_MESSAGE,
+    )
+  })
+
+  it('normalizes a null sentence off the wire to the fallback', () => {
+    const status = toProtectedModeStatus({
+      active: false,
+      acceptsPass: true,
+      bannerMessage: null,
+    })
+
+    expect(status.bannerMessage).toBeUndefined()
+    expect(protectedModeBannerCopy(status)).toBe(
+      PROTECTED_MODE_BANNER_FALLBACK_MESSAGE,
+    )
+  })
+
+  it('is compared, so a reworded banner is news', () => {
+    const first = toProtectedModeStatus({
+      active: false,
+      acceptsPass: true,
+      bannerMessage: 'The restore is being verified.',
+    })
+    const second = toProtectedModeStatus({
+      active: false,
+      acceptsPass: true,
+      bannerMessage: 'The reindex is being verified.',
+    })
+
+    expect(isSameProtectedModeStatus(first, second)).toBe(false)
+    expect(isSameProtectedModeStatus(first, first)).toBe(true)
   })
 })
 

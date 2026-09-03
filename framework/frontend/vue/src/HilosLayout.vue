@@ -28,6 +28,7 @@ import {
   HILOS_FOOTER_LINKS,
   HILOS_PAGE_ROUTES,
   HilosPages,
+  protectedModeBannerCopy,
   rtStalenessLabel,
 } from '@hilos/core'
 import { computed, inject, watch } from 'vue'
@@ -72,6 +73,17 @@ const connectionState = useConnectionState(props.connection)
 // store, so it outlives routing and subscription lifecycles.
 const protectedMode = useProtectedMode(props.connection)
 const underMaintenance = computed(() => protectedMode.value.active)
+
+// The opposite side of the same state: whoever the mode does NOT hold, while it
+// still holds the node, is inside a system that is closed to everybody else and
+// looks exactly like an open one. The banner is what says so, and it comes from
+// the connection for the same reason the surface does - navigation, a reconnect,
+// an F5 and a second tab all learn it from the frame rather than from a store
+// that would have to be rebuilt on each of them. It is drawn above the project's
+// own banner slot: the SDK speaks first.
+const verificationBanner = computed(() =>
+  protectedModeBannerCopy(protectedMode.value),
+)
 
 // Before any of that can be read there is a frame where nothing has been
 // announced yet, and drawing the ordinary shell in it is what makes a reload
@@ -230,6 +242,20 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
       aria-live="polite"
       data-id="app-banner"
     >
+      <div
+        v-if="verificationBanner !== undefined"
+        class="alert alert-warning border-0 rounded-0 mb-0 py-2"
+        data-id="protected-mode-banner"
+      >
+        <div
+          class="container d-flex flex-wrap align-items-center justify-content-center gap-3"
+        >
+          <span>
+            <i class="bi bi-shield-exclamation me-1" aria-hidden="true"></i>
+            {{ verificationBanner }}
+          </span>
+        </div>
+      </div>
       <slot name="banner" />
     </div>
     <main

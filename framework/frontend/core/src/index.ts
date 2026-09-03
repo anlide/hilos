@@ -410,7 +410,9 @@ export {
   isSameProtectedModeStatus,
   PROTECTED_MODE_INACTIVE,
   PROTECTED_MODE_FALLBACK_COPY,
+  PROTECTED_MODE_BANNER_FALLBACK_MESSAGE,
   PROTECTED_MODE_PASS_COPY,
+  protectedModeBannerCopy,
   type ProtectedModeBlock,
   type ProtectedModeStatus,
 } from './protocol/protectedMode.js'

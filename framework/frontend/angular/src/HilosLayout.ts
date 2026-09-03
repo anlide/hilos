@@ -42,6 +42,7 @@ import {
   PROTECTED_MODE_INACTIVE,
   RT_STALENESS_FRESH,
   HilosPages,
+  protectedModeBannerCopy,
   rtStalenessLabel,
 } from '@hilos/core'
 
@@ -144,6 +145,29 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
             </div>
           </div>
         </nav>
+        <!-- This shell has no app-banner region to sit in - Angular and React
+        never grew the project banner slot the Vue one has - so the banner brings
+        its own live region, the way that region declares one. -->
+        @if (verificationBanner(); as bannerMessage) {
+          <div class="flex-shrink-0" role="status" aria-live="polite">
+            <div
+              class="alert alert-warning border-0 rounded-0 mb-0 py-2"
+              data-id="protected-mode-banner"
+            >
+              <div
+                class="container d-flex flex-wrap align-items-center justify-content-center gap-3"
+              >
+                <span>
+                  <i
+                    class="bi bi-shield-exclamation me-1"
+                    aria-hidden="true"
+                  ></i>
+                  {{ bannerMessage }}
+                </span>
+              </div>
+            </div>
+          </div>
+        }
         <main
           id="hilos-main-content"
           tabindex="-1"
@@ -232,6 +256,15 @@ export class HilosLayout {
   )
   protected readonly underMaintenance = computed(
     () => this.protectedMode().active,
+  )
+  // The opposite side of the same state: whoever the mode does NOT hold, while
+  // it still holds the node, is inside a system that is closed to everybody else
+  // and looks exactly like an open one. The banner is what says so, and it comes
+  // from the connection for the same reason the surface does - navigation, a
+  // reconnect, an F5 and a second tab all learn it from the frame rather than
+  // from a store that would have to be rebuilt on each of them.
+  protected readonly verificationBanner = computed(() =>
+    protectedModeBannerCopy(this.protectedMode()),
   )
   // Before any of that can be read there is a frame where nothing has been
   // announced yet, and drawing the ordinary shell in it is what makes a reload

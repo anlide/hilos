@@ -59,6 +59,7 @@ final class WebSocketClientHandshakeWelcomeTest extends TestCase
                         'message' => null,
                         'acceptsPass' => false,
                         'passIssued' => false,
+                        'bannerMessage' => null,
                     ],
                 ],
             ],

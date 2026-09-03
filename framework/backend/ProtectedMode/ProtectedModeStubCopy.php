@@ -7,7 +7,13 @@ namespace Hilos\ProtectedMode;
 use Hilos\Hilos;
 
 /**
- * The words a maintenance surface shows for one operation, resolved from the stub registry.
+ * The words one operation is announced with, resolved from the stub registry.
+ *
+ * Both audiences are worded here: {@see $title} and {@see $message} belong to the maintenance
+ * surface a locked-out browser stands on, {@see $bannerMessage} to the banner an admitted one
+ * carries over the running application. A resolved copy holds all three because resolution is
+ * keyed by the operation and not by the reader; which of them a frame carries is decided where
+ * the frame is composed, and no frame carries both kinds - locked out and admitted are exclusive.
  *
  * Both protected-mode frames carry copy — the welcome frame a fresh connection gets and the
  * frame pushed to connections that were already open — and both compose it here, on the daemon
@@ -22,10 +28,13 @@ final class ProtectedModeStubCopy
     /**
      * @param ?string $title Heading of the surface, or null when the registry names none
      * @param ?string $message Sentence under the heading, or null when the registry names none
+     * @param ?string $bannerMessage Sentence of the banner an admitted browser carries, or null
+     *                               when the registry names none
      */
     private function __construct(
         public readonly ?string $title,
         public readonly ?string $message,
+        public readonly ?string $bannerMessage,
     ) {
     }
 
@@ -35,7 +44,7 @@ final class ProtectedModeStubCopy
      * @param ?string $operation Operation name recorded on the freeze row, or null when none is
      *                           recorded — which resolves to the default entry, same as an
      *                           operation nobody registered
-     * @return self Copy for that operation; both fields null when the registry answers nothing
+     * @return self Copy for that operation; every field null when the registry answers nothing
      */
     public static function forOperation(?string $operation): self
     {
@@ -51,19 +60,20 @@ final class ProtectedModeStubCopy
      *
      * @param array<string, mixed> $registry Stub entries keyed by operation name
      * @param ?string $operation Operation to resolve, or null for the default entry
-     * @return self Copy for that operation; both fields null when the registry answers nothing
+     * @return self Copy for that operation; every field null when the registry answers nothing
      */
     public static function fromRegistry(array $registry, ?string $operation): self
     {
         $entry = $operation === null ? null : ($registry[$operation] ?? null);
         $entry ??= $registry[ProtectedModeStubConstants::DEFAULT_OPERATION] ?? null;
         if (!is_array($entry)) {
-            return new self(null, null);
+            return new self(null, null, null);
         }
 
         return new self(
             self::text($entry, ProtectedModeStubConstants::TITLE),
             self::text($entry, ProtectedModeStubConstants::MESSAGE),
+            self::text($entry, ProtectedModeStubConstants::BANNER_MESSAGE),
         );
     }
 

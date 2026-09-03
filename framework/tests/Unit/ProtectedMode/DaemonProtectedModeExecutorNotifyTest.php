@@ -12,6 +12,7 @@ use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\ProtectedModeClientNotifier;
+use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -166,6 +167,9 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->assertFalse($state->passIssued);
         $this->assertSame('restore', $state->operation);
         $this->assertNotNull($state->title);
+        // The broadcast is addressed to the locked out, and carries no sentence for a banner
+        // none of them is in a position to render.
+        $this->assertNull($state->bannerMessage);
         // The operator is left out of this one because the next frame says the opposite to them.
         $this->assertSame('accept-7', $excludedKey);
         $this->assertSame('session-hash-7', $excludedSession);
@@ -191,9 +195,15 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->assertTrue($state->acceptsPass);
         // The window opens before anything is minted, and this session is not the one that mints.
         $this->assertFalse($state->passIssued);
-        // No copy: a browser being let into the application renders no stub to put words on.
+        // No stub copy: a browser being let into the application renders no stub to put words on.
+        // The banner it does render is worded instead, off the same registry entry.
         $this->assertNull($state->title);
         $this->assertNull($state->message);
+        $this->assertSame(
+            ProtectedModeStubCopy::forOperation('restore')->bannerMessage,
+            $state->bannerMessage,
+        );
+        $this->assertNotNull($state->bannerMessage);
     }
 
     public function testAnInitiatorWithNoBrowserBehindItIsAddressedByNeitherFrame(): void

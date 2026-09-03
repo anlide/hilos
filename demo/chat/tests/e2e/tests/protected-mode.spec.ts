@@ -31,6 +31,12 @@ const STUB_MESSAGE =
   'The application is briefly unavailable while a maintenance operation finishes.' +
   ' It will come back on its own.'
 
+// The banner half of the same registry entry, shown to whoever the mode lets in
+// while it still holds the node.
+const BANNER_MESSAGE =
+  'Maintenance has finished and is being verified.' +
+  ' The system is still closed to everyone else.'
+
 const OPERATION = 'e2e-freeze'
 
 // The framework dashboard, an administrative surface by its own route
@@ -609,6 +615,81 @@ test('the verification window offers the reopen block to the operator, and to no
   // driver's carrier as its initiator, so BackupAgent would rightly refuse a reopen it
   // did not start. What the button does is held by the framework tests instead.
   await verifierContext.close()
+})
+
+test('the operator and the admitted verifier both see the verification banner, and nobody else does', async ({
+  page,
+  browser,
+}) => {
+  // HIL-736 acceptance. The window is the one phase where the application looks
+  // open while it is closed to everybody else, and the banner is the only thing
+  // that says so. What has to hold is that it survives everything the operator
+  // does next - a reload, a second tab - because a state indicator built out of
+  // anything but the connection would not.
+  await signUpAdmin(page)
+  await gotoPage(page, BACKUP_URL)
+  const operatorSession = await sessionTokenOf(page.context())
+  expect(operatorSession).not.toBe('')
+
+  // Entered for the operator's browser and then ended, which is what leaves the
+  // node in the verification window with them inside it.
+  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe('active')
+  expect(await leaveProtectedMode()).toBe('verifying')
+
+  // Pushed onto the tab that was already open: nothing tore it down, so this is
+  // the frame the operator is carried back into the application on.
+  await expect(page.getByTestId('protected-mode-banner')).toBeVisible()
+  await expect(page.getByTestId('protected-mode-banner')).toContainText(
+    BANNER_MESSAGE,
+  )
+
+  // The reload, which is where a banner living in a toast or a store would end.
+  await gotoAdmitted(page, BACKUP_URL)
+  await expect(page.getByTestId('protected-mode-banner')).toContainText(
+    BANNER_MESSAGE,
+  )
+
+  // And a second tab of the same profile, which never saw the frame at all and
+  // learns the whole state from its own welcome.
+  const secondTab = await page.context().newPage()
+  await gotoAdmitted(secondTab, '/')
+  await expect(secondTab.getByTestId('protected-mode-banner')).toContainText(
+    BANNER_MESSAGE,
+  )
+
+  // The verifier, let in by the code: the banner is addressed to whoever is
+  // inside the window, not to whoever started the operation.
+  const verifierContext = await browser.newContext()
+  const verifier = await verifierContext.newPage()
+  const pass = await mintProtectedModePass()
+  await gotoMaintenance(verifier, ADMIN_URL)
+  await presentCode(verifier, pass)
+  await expect(verifier.getByTestId('maintenance')).toBeHidden()
+  await expect(verifier.getByTestId('protected-mode-banner')).toContainText(
+    BANNER_MESSAGE,
+  )
+
+  // The stranger, still held: they are on the stub, and a banner over an
+  // application they are not being shown would be a banner over nothing.
+  const strangerContext = await browser.newContext()
+  const stranger = await strangerContext.newPage()
+  await gotoMaintenance(stranger, ADMIN_URL)
+  await expect(stranger.getByTestId('protected-mode-banner')).toHaveCount(0)
+
+  // The lift, and the banner goes with the mode it describes - for everybody at
+  // once, including the browser that was let in early. Both are re-navigated
+  // rather than asserted where they stand: the client reloads itself on the lift
+  // frame, and an absence asserted into that reload would pass on an empty
+  // document. A load that waited for the page to answer cannot.
+  expect(await openProtectedMode()).toBe('inactive')
+  await gotoPage(page, BACKUP_URL)
+  await expect(page.getByTestId('protected-mode-banner')).toHaveCount(0)
+  await gotoPage(stranger, '/')
+  await expect(stranger.getByTestId('protected-mode-banner')).toHaveCount(0)
+
+  await secondTab.close()
+  await verifierContext.close()
+  await strangerContext.close()
 })
 
 /**

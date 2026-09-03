@@ -18,6 +18,7 @@ export const protectedModeBlockSchema = z.looseObject({
   operation: z.string().nullish(),
   title: z.string().nullish(),
   message: z.string().nullish(),
+  bannerMessage: z.string().nullish(),
   acceptsPass: z.boolean().nullish(),
   passIssued: z.boolean().nullish(),
 })
@@ -56,6 +57,7 @@ export interface ProtectedModeStatus {
   readonly operation: string | undefined
   readonly title: string | undefined
   readonly message: string | undefined
+  readonly bannerMessage: string | undefined
   readonly acceptsPass: boolean
   readonly passIssued: boolean
   readonly passRejected: boolean
@@ -67,6 +69,7 @@ export const PROTECTED_MODE_INACTIVE: ProtectedModeStatus = {
   operation: undefined,
   title: undefined,
   message: undefined,
+  bannerMessage: undefined,
   acceptsPass: false,
   passIssued: false,
   passRejected: false,
@@ -85,6 +88,40 @@ export const PROTECTED_MODE_FALLBACK_COPY = {
     'The application is briefly unavailable while a maintenance operation finishes.' +
     ' It will come back on its own.',
 } as const
+
+/**
+ * Last-resort sentence of the banner: shown only when the frame said this client
+ * is inside a mode that still holds the node, but carried no words for it. Kept
+ * word for word in step with the framework default in the backend stub registry
+ * (`Hilos::PROTECTED_MODE_STUB`), for the same reason the surface copy above is —
+ * which of the two spoke is nothing the reader can tell.
+ */
+export const PROTECTED_MODE_BANNER_FALLBACK_MESSAGE =
+  'Maintenance has finished and is being verified.' +
+  ' The system is still closed to everyone else.'
+
+/**
+ * The sentence the application shell puts on its banner, or nothing when there is
+ * no banner to raise.
+ *
+ * One function rather than a predicate beside the words, so the three view
+ * packages cannot drift into three different answers about when the banner is up:
+ * a shell renders it exactly when this returns something. The condition is the
+ * pair coming apart — the mode does not hold THIS client, and the verification
+ * window on the node is still open — which is the one state in which somebody is
+ * inside an application the mode still owns.
+ *
+ * @param status Protected-mode state the connection currently holds.
+ */
+export function protectedModeBannerCopy(
+  status: ProtectedModeStatus,
+): string | undefined {
+  if (status.active || !status.acceptsPass) {
+    return undefined
+  }
+
+  return status.bannerMessage ?? PROTECTED_MODE_BANNER_FALLBACK_MESSAGE
+}
 
 /**
  * The words the surface puts around the code field.
@@ -123,6 +160,7 @@ export function toProtectedModeStatus(
     operation: block.operation ?? undefined,
     title: block.title ?? undefined,
     message: block.message ?? undefined,
+    bannerMessage: block.bannerMessage ?? undefined,
     acceptsPass: block.acceptsPass ?? false,
     passIssued: block.passIssued ?? false,
     passRejected: false,
@@ -146,6 +184,7 @@ export function isSameProtectedModeStatus(
     first.operation === second.operation &&
     first.title === second.title &&
     first.message === second.message &&
+    first.bannerMessage === second.bannerMessage &&
     first.acceptsPass === second.acceptsPass &&
     first.passIssued === second.passIssued &&
     first.passRejected === second.passRejected

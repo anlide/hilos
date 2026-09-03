@@ -46,9 +46,30 @@ final class ProtectedModeStateSignalDataTest extends TestCase
                 ProtectedModeStateSignalData::message => null,
                 ProtectedModeStateSignalData::acceptsPass => false,
                 ProtectedModeStateSignalData::passIssued => false,
+                ProtectedModeStateSignalData::bannerMessage => null,
             ],
             $state->toArray(),
         );
+    }
+
+    public function testTheBannerSentenceSurvivesTheRoundTrip(): void
+    {
+        // The frame told to somebody the mode lets in: the surface copy stays null because they
+        // render no surface, and the sentence they do render travels in its own field.
+        $state = new ProtectedModeStateSignalData(
+            active: false,
+            operation: 'restore',
+            acceptsPass: true,
+            bannerMessage: 'The restore is being verified.',
+        );
+
+        $restored = ProtectedModeStateSignalData::fromArray($state->toArray());
+
+        $this->assertFalse($restored->active);
+        $this->assertTrue($restored->acceptsPass);
+        $this->assertNull($restored->title);
+        $this->assertNull($restored->message);
+        $this->assertSame('The restore is being verified.', $restored->bannerMessage);
     }
 
     public function testAFrameWithoutFieldsReadsAsInactive(): void
