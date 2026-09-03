@@ -30,6 +30,12 @@ use Throwable;
  * loop — all under one try/catch that logs and exits ERROR, replacing the four duplicated flat
  * trys. Any failure in env, persistence, composition, or a module means the daemon refuses to
  * start, which is the correct outcome.
+ *
+ * The process has two codes and no third. The catch owns the one above: a startup that
+ * refused exits ERROR. The other comes from the loop below, where the manager reports
+ * {@see DaemonDeparture} rather than a number, and this class turns it into one - zero for an
+ * ordinary stop, ERROR when there was a failure on the node's way out. Nothing here decides
+ * which; the reason carries its own code so that a test can check the mapping.
  */
 final class DaemonApplication
 {
@@ -41,6 +47,7 @@ final class DaemonApplication
      * @param class-string<Hilos> $hilosClass Project Hilos facade whose catalogs drive env/cluster init
      * @param class-string<DaemonManager> $daemonClass Daemon manager to construct and run
      * @param callable(): void $persistenceInit Persistence bootstrap (e.g. Database::initialize) run after env is ready
+     * @return never
      */
     public static function run(
         string $bootstrapDir,
@@ -84,7 +91,7 @@ final class DaemonApplication
 
             $manager = new $daemonClass();
             $manager->boot(new DaemonContext($bootstrapDir, $projectRoot));
-            $manager->run();
+            exit($manager->run()->exitCode());
         } catch (Throwable $e) {
             // What reaches this catch is a failure of the startup, and the hard exit is the
             // right answer to it: there is no node yet to announce a departure for, no

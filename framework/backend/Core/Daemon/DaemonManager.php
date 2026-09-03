@@ -298,6 +298,20 @@ abstract class DaemonManager extends BaseManager implements
     /** @var ?float Shutdown start time (null if not shutting down) */
     private ?float $shutdownStartTime = null;
 
+    /**
+     * @var DaemonDeparture Why this node is leaving, as run() reports it to the entrypoint
+     *
+     * The reason is assigned by a failure, never by a request to leave: only the forced
+     * paths write here, and an ordinary stop is the default this field is born with. Both
+     * consequences are wanted. A failure that happens after SIGTERM still marks the
+     * departure forced, because the node is unhealthy either way; and a request to leave
+     * that arrives after a failure does not erase the diagnosis, because it writes nothing
+     * at all. No "the first cause wins" guard is needed or written - it is a property of
+     * the construction rather than a check. The expiry of shutdownTimeout writes nothing
+     * either: missing the deadline is a slow close, not a failure.
+     */
+    protected DaemonDeparture $departure = DaemonDeparture::Stopped;
+
     /** @var float Shutdown timeout in seconds */
     protected float $shutdownTimeout = 20.0;
 
@@ -583,12 +597,14 @@ abstract class DaemonManager extends BaseManager implements
      * What an iteration of the loop throws does not leave here: it is logged and turned
      * into a requested stop, so the node departs by the SIGTERM path rather than by an
      * uncaught throw. Only the startup above the loop still refuses outright - there is
-     * no node yet to announce a departure for.
+     * no node yet to announce a departure for. A departure that began with a failure says
+     * so on its way out, and the entrypoint turns that into the process code.
      *
+     * @return DaemonDeparture Why the node left, for the entrypoint to report as an exit code
      * @throws MissingRequiredParameterException When required process functions are unavailable
      * @throws EnvException When the cluster-enabled flag value is invalid
      */
-    public function run(): void
+    public function run(): DaemonDeparture
     {
         // Initialize event loop
         $this->eventLoop = new EventLoop();
@@ -693,7 +709,9 @@ abstract class DaemonManager extends BaseManager implements
         // Cleanup
         $this->eventLoop->cleanup();
         Hilos::$ac?->shutdown();
-        Logger::info("Daemon stopped");
+        Logger::info("Daemon " . $this->departure->value);
+
+        return $this->departure;
     }
 
     /**
@@ -812,6 +830,7 @@ abstract class DaemonManager extends BaseManager implements
                 $failure
             ));
 
+            $this->departure = DaemonDeparture::Failed;
             $this->shouldExit = true;
         }
     }
@@ -850,11 +869,16 @@ abstract class DaemonManager extends BaseManager implements
      * One line is logged per refusal, and no storm can follow it: the node is on its
      * way out by the time the next connection would ask.
      *
+     * The departure is marked forced along with it: the owner named the entropy stop as
+     * one of the paths a node takes because something failed, so it leaves with an error
+     * code the same way a failed iteration does.
+     *
      * @param RandomException $exception Refusal to name in the log line
      */
     private function requestEntropyStop(RandomException $exception): void
     {
         Logger::error('Secure random source refused; stopping this node: ' . $exception->getMessage());
+        $this->departure = DaemonDeparture::Failed;
         $this->shouldExit = true;
     }
 
@@ -5684,30 +5708,39 @@ abstract class DaemonManager extends BaseManager implements
     /**
      * Handles error event.
      *
-     * Sets exit flag to stop daemon loop.
+     * Sets exit flag to stop daemon loop, and marks the departure forced: a node leaving
+     * over a PHP error did not leave healthy.
      */
     protected function onError(): void
     {
+        $this->departure = DaemonDeparture::Failed;
         $this->shouldExit = true;
     }
 
     /**
      * Handles exception event.
      *
-     * Sets exit flag to stop daemon loop.
+     * Sets exit flag to stop daemon loop, and marks the departure forced. In production
+     * this never reaches the return from run() at all - PHP ends the process itself after
+     * an uncaught exception - and it is marked so that the list of forced paths is
+     * complete in one place.
      */
     protected function onException(): void
     {
+        $this->departure = DaemonDeparture::Failed;
         $this->shouldExit = true;
     }
 
     /**
      * Handles shutdown event.
      *
-     * Sets exit flag to stop daemon loop.
+     * Sets exit flag to stop daemon loop, and marks the departure forced. Like
+     * {@see onException()} it does not reach the return from run() in production, PHP
+     * being on its way out of the process already; it is marked for the same reason.
      */
     protected function onShutdown(): void
     {
+        $this->departure = DaemonDeparture::Failed;
         $this->shouldExit = true;
     }
 

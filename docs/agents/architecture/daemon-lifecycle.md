@@ -478,6 +478,12 @@ onto one node.
 - `initiateShutdown()` → fires `onClusterWorkStop()` (cluster mode only), then calls
   `prepareShutdown()` on all servers (the `PeerServer` broadcasts the `NodeLeaving` frame)
 - Loop continues until all servers report `isReadyToShutdown()` or `shutdownTimeout` (20s) expires
+- `run()` returns a `DaemonDeparture` saying why the node left, and `DaemonApplication`
+  turns it into the process code: `0` for an ordinary stop, `ExitCode::ERROR` when there
+  was a failure on the node's way out — a failed loop iteration (HIL-569), the entropy
+  stop (HIL-568), or one of the three PHP handler hooks. SIGTERM, SIGINT and SIGHUP write
+  nothing and leave the ordinary default in place, and the expiry of `shutdownTimeout`
+  does not change the reason either: missing the deadline is a slow close, not a failure.
 
 ## Key properties
 
