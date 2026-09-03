@@ -5,13 +5,15 @@
 // its own content. A project spreads this map into its app page map, then
 // overrides only the keys it implements itself.
 //
-// The users / user / settings / backup and communications hub / channel pages are
-// intentionally absent: they are real framework pages (HilosUsersPage / HilosUserPage /
-// HilosSettingsPage / HilosBackupPage / HilosCommunicationsPage /
-// HilosCommunicationsChannelPage) that require a project-supplied context, so a
-// project mounts them directly rather than through this default map. The dashboard
-// is the real HilosDashboardPage (self-contained, no project context), reused here
-// as its own default.
+// The users / user / settings / backup, communications hub / channel and the log
+// pages that read live data are intentionally absent: they are real framework pages
+// (HilosUsersPage / HilosUserPage / HilosSettingsPage / HilosBackupPage /
+// HilosCommunicationsPage / HilosCommunicationsChannelPage / HilosLogsPage /
+// HilosLogsKeysPage / HilosLogsWorkersPage / HilosLogsRotationsPage /
+// HilosLogsViewPage / HilosLogsSettingsPage) that require a project-supplied context,
+// so a project mounts them directly rather than through this default map. The
+// dashboard is the real HilosDashboardPage (self-contained, no project context),
+// reused here as its own default.
 //
 // This is the sanctioned registry form, not a God-map (page-module-structure.md):
 // every page is its own module file, the catalog of identity stays in @hilos/core
@@ -57,11 +59,6 @@ import { HilosDaemonAgentsPage } from './daemon/HilosDaemonAgentsPage.js'
 import { HilosDaemonCronPage } from './daemon/HilosDaemonCronPage.js'
 import { HilosDaemonWebsocketsPage } from './daemon/HilosDaemonWebsocketsPage.js'
 import { HilosDaemonHttpServerPage } from './daemon/HilosDaemonHttpServerPage.js'
-import { HilosLogsPage } from './logs/HilosLogsPage.js'
-import { HilosLogsKeysPage } from './logs/HilosLogsKeysPage.js'
-import { HilosLogsWorkersPage } from './logs/HilosLogsWorkersPage.js'
-import { HilosLogsRotationsPage } from './logs/HilosLogsRotationsPage.js'
-import { HilosLogsViewPage } from './logs/HilosLogsViewPage.js'
 import { HilosChangeLogPage } from './changeLog/HilosChangeLogPage.js'
 import { HilosChangeLogTablesPage } from './changeLog/HilosChangeLogTablesPage.js'
 import { HilosChangeLogTablePage } from './changeLog/HilosChangeLogTablePage.js'
@@ -124,11 +121,15 @@ export function hilosAdminViews(): Record<string, ComponentType> {
     [HilosPages.DAEMON_CRON]: HilosDaemonCronPage,
     [HilosPages.DAEMON_WEBSOCKETS]: HilosDaemonWebsocketsPage,
     [HilosPages.DAEMON_HTTP_SERVER]: HilosDaemonHttpServerPage,
-    [HilosPages.LOGS]: HilosLogsPage,
-    [HilosPages.LOGS_KEYS]: HilosLogsKeysPage,
-    [HilosPages.LOGS_WORKERS]: HilosLogsWorkersPage,
-    [HilosPages.LOGS_ROTATIONS]: HilosLogsRotationsPage,
-    [HilosPages.LOGS_VIEW]: HilosLogsViewPage,
+    // LOGS, LOGS_KEYS, LOGS_WORKERS, LOGS_ROTATIONS, LOGS_SETTINGS and LOGS_VIEW are
+    // absent for the same reason as the deliveries journal: the stream lists and the
+    // rotation history each read a live connection for their table and their header,
+    // the viewer reads one for its catalog and one action for its lines, the logging
+    // modes read one for their frame and one action to apply a mode, and the section
+    // root reads one for the overview frame its tiles and its per-node table are
+    // drawn from. So a project mounts HilosLogsPage, HilosLogsKeysPage,
+    // HilosLogsWorkersPage, HilosLogsRotationsPage, HilosLogsSettingsPage and
+    // HilosLogsViewPage directly with its own context.
     [HilosPages.CHANGE_LOG]: HilosChangeLogPage,
     [HilosPages.CHANGE_LOG_TABLES]: HilosChangeLogTablesPage,
     [HilosPages.CHANGE_LOG_TABLE]: HilosChangeLogTablePage,

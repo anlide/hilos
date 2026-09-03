@@ -36,6 +36,7 @@ final class TasksSignalRouter extends SignalRouter
     {
         return [
             AgentType::TASKS,
+            AgentType::HILOS_LOGS,
         ];
     }
 

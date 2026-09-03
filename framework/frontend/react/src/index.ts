@@ -60,6 +60,10 @@ export {
   type HilosSettingsPageProps,
 } from './admin/settings/HilosSettingsPage.js'
 export {
+  HilosSettingPresetsPage,
+  type HilosSettingPresetsPageProps,
+} from './admin/settings/HilosSettingPresetsPage.js'
+export {
   HilosBackupPage,
   type HilosBackupPageProps,
 } from './admin/backup/HilosBackupPage.js'
@@ -75,6 +79,30 @@ export {
   HilosCommunicationsDeliveriesPage,
   type HilosCommunicationsDeliveriesPageProps,
 } from './admin/communications/HilosCommunicationsDeliveriesPage.js'
+export {
+  HilosLogsPage,
+  type HilosLogsPageProps,
+} from './admin/logs/HilosLogsPage.js'
+export {
+  HilosLogsKeysPage,
+  type HilosLogsKeysPageProps,
+} from './admin/logs/HilosLogsKeysPage.js'
+export {
+  HilosLogsWorkersPage,
+  type HilosLogsWorkersPageProps,
+} from './admin/logs/HilosLogsWorkersPage.js'
+export {
+  HilosLogsRotationsPage,
+  type HilosLogsRotationsPageProps,
+} from './admin/logs/HilosLogsRotationsPage.js'
+export {
+  HilosLogsViewPage,
+  type HilosLogsViewPageProps,
+} from './admin/logs/HilosLogsViewPage.js'
+export {
+  HilosLogsSettingsPage,
+  type HilosLogsSettingsPageProps,
+} from './admin/logs/HilosLogsSettingsPage.js'
 export {
   HilosUsersPage,
   type HilosUsersPageProps,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Tasks;
 
 use Demo\Tasks\Agents\Hilos\DemoHilosAgent;
+use Demo\Tasks\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\Tasks\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\Tasks\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Tasks\Agents\Hilos\UsersLibraryAgent;
@@ -15,6 +16,7 @@ use Demo\Tasks\Browser\Table\UserDetailBrowserTable;
 use Demo\Tasks\Browser\TasksBrowserContext;
 use Demo\Tasks\Browser\TasksBrowserRef;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
@@ -26,6 +28,12 @@ use Demo\Tasks\Environment\TasksEnvCatalog;
 use Demo\Tasks\Pages\Hilos\AboutPage;
 use Demo\Tasks\Pages\Hilos\DashboardPage;
 use Demo\Tasks\Pages\Hilos\LicensePage;
+use Demo\Tasks\Pages\Hilos\Logs\LogsKeysPage;
+use Demo\Tasks\Pages\Hilos\Logs\LogsOverviewPage;
+use Demo\Tasks\Pages\Hilos\Logs\LogsRotationsPage;
+use Demo\Tasks\Pages\Hilos\Logs\LogsSettingsPage;
+use Demo\Tasks\Pages\Hilos\Logs\LogsViewPage;
+use Demo\Tasks\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Tasks\Pages\Hilos\PrivacyPage;
 use Demo\Tasks\Pages\Hilos\SettingsPage;
 use Demo\Tasks\Pages\Hilos\TermsPage;
@@ -53,11 +61,18 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos as HilosFacade;
+use Hilos\Log\LogAggregatorAgent;
+use Hilos\Log\LogAggregatorAgentDaemon;
+use Hilos\Log\LogStoreAgent;
+use Hilos\Log\LogStoreAgentDaemon;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
+use Hilos\Tables\Logs\HilosLogKeysTable;
+use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -88,6 +103,7 @@ final class Hilos extends HilosFacade
     protected const array FEATURES = [
         HilosFeature::SETTINGS,
         HilosFeature::HILOS_USERS,
+        HilosFeature::LOGS,
         HilosFeature::NOTIFICATIONS,
         HilosFeature::AUTH,
         HilosFeature::AUTH_THROTTLE,
@@ -98,6 +114,12 @@ final class Hilos extends HilosFacade
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         SettingsPage::PAGE => SettingsPage::class,
+        LogsOverviewPage::PAGE => LogsOverviewPage::class,
+        LogsKeysPage::PAGE => LogsKeysPage::class,
+        LogsWorkersPage::PAGE => LogsWorkersPage::class,
+        LogsRotationsPage::PAGE => LogsRotationsPage::class,
+        LogsViewPage::PAGE => LogsViewPage::class,
+        LogsSettingsPage::PAGE => LogsSettingsPage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
         NotificationsPage::PAGE => NotificationsPage::class,
@@ -135,6 +157,10 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => DemoHilosAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosAgentDaemon::class,
         ],
+        DemoHilosLogsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosLogsAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosLogsAgentDaemon::class,
+        ],
         OAuthAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => OAuthAgent::class,
             AgentRegistryKey::DAEMON => OAuthAgentDaemon::class,
@@ -149,6 +175,16 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => SmsDeliveryChannelAgent::class,
             AgentRegistryKey::DAEMON => SmsDeliveryChannelAgentDaemon::class,
             AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        LogStoreAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => LogStoreAgent::class,
+            AgentRegistryKey::DAEMON => LogStoreAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        LogAggregatorAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => LogAggregatorAgent::class,
+            AgentRegistryKey::DAEMON => LogAggregatorAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         AuthThrottleAgent::AGENT_TYPE => [
@@ -166,6 +202,9 @@ final class Hilos extends HilosFacade
     public const array TABLES = [
         TasksTableContext::settings => HilosSettingsTable::class,
         TasksTableContext::hilosUsers => HilosUsersTable::class,
+        TasksTableContext::hilosLogKeys => HilosLogKeysTable::class,
+        TasksTableContext::hilosLogRotations => HilosLogRotationsTable::class,
+        TasksTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -175,6 +214,15 @@ final class Hilos extends HilosFacade
     public const array PAGE_TABLES = [
         SettingsPage::PAGE => [
             TasksTableContext::settings => [],
+        ],
+        LogsKeysPage::PAGE => [
+            TasksTableContext::hilosLogKeys => [],
+        ],
+        LogsRotationsPage::PAGE => [
+            TasksTableContext::hilosLogRotations => [],
+        ],
+        LogsWorkersPage::PAGE => [
+            TasksTableContext::hilosLogWorkers => [],
         ],
         UsersPage::PAGE => [
             TasksTableContext::hilosUsers => [],
