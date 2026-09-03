@@ -34,13 +34,17 @@ use Hilos\Log\NodeLogIndex;
  * on both ends. {@see self::streamClass} is the one exception, and not by choice: `class` cannot
  * be a class-constant name in PHP.
  *
- * Three of the keys are not measurements at all. A batch carries {@see self::takenAt}, the
+ * Four of the keys are not measurements at all. A batch carries {@see self::takenAt}, the
  * operator's own confirmation that it has been carried off; the index carries
- * {@see self::logDirectory}, the absolute root the node measured (HIL-483), and
+ * {@see self::logDirectory}, the absolute root the node measured (HIL-483),
  * {@see self::takeoutUndoWindowSeconds}, how long that node protects a confirmed batch from its
- * pruner (HIL-759). All three exist because nobody else can supply them: the confirmation lives in
- * a marker file on that machine, and a page worker holding the cluster picture knows its own log
- * root and its own window and no other node's.
+ * pruner (HIL-759), and {@see self::dueBatchTimestamps}, the retention verdict that node reached
+ * over its own archive (HIL-871). All four exist because nobody else can supply them: the
+ * confirmation lives in a marker file on that machine, and a page worker holding the cluster
+ * picture knows its own log root, its own window and its own settings and no other node's.
+ *
+ * The last of them is also the only one that is allowed to be absent, and
+ * {@see self::dueFromArray()} says why.
  */
 final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -70,6 +74,9 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
 
     /** Payload key: seconds a confirmed batch is protected from the pruner on the reporting node. */
     public const string takeoutUndoWindowSeconds = 'takeoutUndoWindowSeconds';
+
+    /** Payload key: batches the reporting node's retention rule recommends carrying off, ascending. */
+    public const string dueBatchTimestamps = 'dueBatchTimestamps';
 
     /** Batch row key: Unix timestamp of the rotation folder. */
     public const string timestamp = 'timestamp';
@@ -134,6 +141,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
      * @param array<string, ?int> $growthBytesPerDay Key → bytes written over the last day, null until the window fills
      * @param ?string $logDirectory Absolute log root of the reporting node, or null when its environment names none
      * @param int $takeoutUndoWindowSeconds Seconds a confirmed batch is protected from the pruner on the reporting node
+     * @param list<int> $dueBatchTimestamps Batches the reporting node's retention rule recommends carrying off, ascending
      */
     public function __construct(
         public readonly ?string $nodeId,
@@ -145,6 +153,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
         public readonly array $growthBytesPerDay,
         public readonly ?string $logDirectory = null,
         public readonly int $takeoutUndoWindowSeconds = 0,
+        public readonly array $dueBatchTimestamps = [],
     ) {
     }
 
@@ -166,6 +175,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             growthBytesPerDay: $index->growthBytesPerDay,
             logDirectory: $index->logDirectory,
             takeoutUndoWindowSeconds: $index->takeoutUndoWindowSeconds,
+            dueBatchTimestamps: $index->dueBatchTimestamps,
         );
     }
 
@@ -193,6 +203,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             self::growthBytesPerDay => $this->growthBytesPerDay,
             self::logDirectory => $this->logDirectory,
             self::takeoutUndoWindowSeconds => $this->takeoutUndoWindowSeconds,
+            self::dueBatchTimestamps => $this->dueBatchTimestamps,
         ];
     }
 
@@ -201,8 +212,10 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
      *
      * A row that is not an object, and a row or a field the index has no meaning without, are
      * refused rather than filled in: an index that repaired itself here would put figures in the
-     * cluster picture that no node ever measured. {@see self::nodeId} is the one field allowed to
-     * be absent, because a single-node installation has no id to name itself with.
+     * cluster picture that no node ever measured. Two fields are allowed to be absent and neither
+     * is a measurement: {@see self::nodeId}, because a single-node installation has no id to name
+     * itself with, and {@see self::dueBatchTimestamps}, because a node predating that key still
+     * reports an index worth drawing.
      *
      * @param array<string, mixed> $data Wire form of one node's index
      * @return static Restored payload
@@ -236,6 +249,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             growthBytesPerDay: self::growthFromArray($data),
             logDirectory: self::optionalString($data, self::logDirectory),
             takeoutUndoWindowSeconds: self::requireInt($data, self::takeoutUndoWindowSeconds),
+            dueBatchTimestamps: self::dueFromArray($data),
         );
     }
 
@@ -256,6 +270,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             growthBytesPerDay: $this->growthBytesPerDay,
             logDirectory: $this->logDirectory,
             takeoutUndoWindowSeconds: $this->takeoutUndoWindowSeconds,
+            dueBatchTimestamps: $this->dueBatchTimestamps,
         );
     }
 
@@ -397,6 +412,33 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
         foreach (self::requireArray($row, self::batchTimestamps) as $timestamp) {
             if (!is_int($timestamp)) {
                 throw new InvalidFormatException('Node log index carries a batch timestamp that is not an integer');
+            }
+
+            $timestamps[] = $timestamp;
+        }
+
+        return $timestamps;
+    }
+
+    /**
+     * Reads the retention verdict the reporting node arrived at (HIL-871).
+     *
+     * The one list here that is allowed to be absent, and the reason is a rolling upgrade: a node
+     * still running the build before this key existed reports an index without it, and refusing
+     * the frame over one unknown line would take that node's whole history off the screen. Absence
+     * therefore reads as "recommends nothing", which is also what a node with a fresh archive
+     * honestly answers.
+     *
+     * @param array<string, mixed> $data Wire form of one node's index
+     * @return list<int> Batches the reporting node recommends carrying off, in the order it lists them
+     * @throws InvalidFormatException When the key holds something that is not a list of timestamps
+     */
+    private static function dueFromArray(array $data): array
+    {
+        $timestamps = [];
+        foreach (self::optionalArray($data, self::dueBatchTimestamps) ?? [] as $timestamp) {
+            if (!is_int($timestamp)) {
+                throw new InvalidFormatException('Node log index carries a due batch timestamp that is not an integer');
             }
 
             $timestamps[] = $timestamp;

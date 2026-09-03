@@ -8,6 +8,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\AgentSignalData;
@@ -16,6 +17,7 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
+use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Hilos;
@@ -31,6 +33,7 @@ use Hilos\Pages\Logs\DTO\HilosLogsRotationsSignalData;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
+use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
@@ -288,6 +291,39 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
         }
         sort($keys);
         $this->assertSame([self::ACCEPT_KEY, self::SECOND_ACCEPT_KEY], $keys);
+    }
+
+    /**
+     * A retention verdict that moved is enough to re-serve the window, and it is the one change
+     * that arrives with nothing else moving (HIL-871): the same node, the same batch, the same
+     * weight and the same marker, with a different badge over it. Before the verdict became part
+     * of the slot the fingerprint could not see it at all, and the column waited for whatever
+     * changed next.
+     */
+    public function testAVerdictThatMovedOnItsOwnReservesTheWindow(): void
+    {
+        $browser = new LogsRotationsPageSubscribeTestBrowser();
+        Hilos::$browser = $browser;
+        new LogsRotationsPageSubscribeTestPage(new LogsRotationsPageSubscribeTestAgent())
+            ->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $this->queuedSignalNames();
+        Hilos::$sr?->setTableViewport(
+            self::ACCEPT_KEY,
+            new TableViewportSubscription(tableKey: HilosLogRotationsTable::TABLE),
+        );
+
+        // One tick to settle the fingerprints on the current picture, whatever an earlier case in
+        // this process left them holding: they are static, and the point is what the NEXT one does.
+        $this->tickPastTheThrottle();
+        $browser->windows = [];
+        $this->tickPastTheThrottle();
+        $this->assertSame([], $browser->windows, 'A quiet picture re-serves nothing');
+
+        // The same picture again, batch for batch, with that one batch newly recommended.
+        $this->picture($this->slot('node-1', available: true, due: [self::CONFIRMED_BATCH_AT]));
+        $this->tickPastTheThrottle();
+
+        $this->assertSame([HilosLogRotationsTable::TABLE], $browser->windows);
     }
 
     /**
@@ -672,9 +708,10 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
      *
      * @param ?string $nodeId Node the slot belongs to, null in a single-node installation
      * @param bool $available Whether that node could read its log store
+     * @param list<int> $due Batches this node's own retention rule recommends carrying off
      * @return ClusterLogNodeSlot Slot as the aggregator would hold it
      */
-    private function slot(?string $nodeId, bool $available): ClusterLogNodeSlot
+    private function slot(?string $nodeId, bool $available, array $due = []): ClusterLogNodeSlot
     {
         // An unreadable store reports empty projections, the way NodeLogIndex carries the state:
         // zeros there would claim a walk that never happened.
@@ -692,9 +729,34 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
                 keys: [],
                 workers: [],
                 growthBytesPerDay: [],
+                dueBatchTimestamps: $due,
             ),
             receivedAt: self::T0,
         );
+    }
+}
+
+/**
+ * Browser context fixture recording the window deliveries the tick asked for.
+ */
+final class LogsRotationsPageSubscribeTestBrowser extends BrowserContext
+{
+    /** @var list<string> Table keys whose window delivery was reached */
+    public array $windows = [];
+
+    /**
+     * Records the window delivery instead of building one from a table nothing mounted.
+     *
+     * @param string $page Page the table belongs to (unused)
+     * @param string $acceptKey Subscribing WebSocket accept key (unused)
+     * @param TableViewportSubscription $viewport Window descriptor
+     * @return bool Always true; reaching this method is what the case asserts
+     */
+    public function sendTableWindow(string $page, string $acceptKey, TableViewportSubscription $viewport): bool
+    {
+        $this->windows[] = $viewport->tableKey;
+
+        return true;
     }
 }
 

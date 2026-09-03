@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
-use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -94,15 +93,6 @@ final class HilosLogsPageSubscribeTest extends TestCase
         AbstractHilosLogsPage::removeSubscriber(self::ACCEPT_KEY);
         AbstractHilosLogsPage::removeSubscriber(self::REFUSED_ACCEPT_KEY);
         $this->emptyTheMirror();
-
-        // The retention thresholds are the process environment's, and a case that set them would
-        // otherwise decide the takeout verdict of every case that runs after it.
-        foreach ([
-            EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES,
-            EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS,
-        ] as $key) {
-            putenv($key->name);
-        }
 
         Hilos::$sr = null;
         Hilos::$browser = null;
@@ -200,28 +190,49 @@ final class HilosLogsPageSubscribeTest extends TestCase
     }
 
     /**
-     * The takeout verdict is reached over each node's own archive and only then added up: archives
-     * do not travel, so a batch ages out where it lies. Judging the pile as one would protect the
-     * newest batch of the CLUSTER and evict a node's only batch behind its back.
+     * The verdict arrives with each node's own index and is only added up here (HIL-871): archives
+     * do not travel, so a batch ages out where it lies, and the machine holding the directory is
+     * the one that judged it. The counter is the length of the list that came, and the banner is
+     * the sum of those lengths.
      */
-    public function testBatchesDueForTakeoutAreJudgedNodeByNodeAndThenSummed(): void
+    public function testBatchesDueForTakeoutAreCountedNodeByNodeAndThenSummed(): void
     {
-        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name . '=1');
-        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name . '=' . self::AN_HOUR_IN_SECONDS);
         $old = time() - 10 * self::A_DAY_IN_SECONDS;
         $this->fileThePicture(
-            self::nodeSlot('node-1', batches: [self::batch($old), self::batch($old + 60), self::batch($old + 120)]),
+            self::nodeSlot(
+                'node-1',
+                batches: [self::batch($old), self::batch($old + 60), self::batch($old + 120)],
+                due: [$old, $old + 60],
+            ),
             self::nodeSlot('node-2', batches: [self::batch($old)]),
         );
         $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
 
         $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
 
-        // node-1 keeps its newest of three and gives up two; node-2's only batch is its newest.
+        // node-1 reported two of its three as recommended; node-2 reported none of its one.
         $overview = $this->overview();
         $this->assertSame(2, $overview->batchesDueForTakeout);
         $this->assertSame(2, $overview->nodes[0][HilosLogsOverviewSignalData::batchesDueForTakeout]);
         $this->assertSame(0, $overview->nodes[1][HilosLogsOverviewSignalData::batchesDueForTakeout]);
+    }
+
+    /**
+     * The counter follows the list that arrived and not a rule read here: this node names its
+     * NEWEST batch, which any threshold this process could read would have protected. The column
+     * is drawn from the answer of the machine that owns the files.
+     */
+    public function testTheCounterFollowsTheVerdictThatArrivedAndNotARuleReadHere(): void
+    {
+        $old = time() - 10 * self::A_DAY_IN_SECONDS;
+        $this->fileThePicture(
+            self::nodeSlot('node-1', batches: [self::batch($old), self::batch($old + 60)], due: [$old + 60]),
+        );
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $this->assertSame(1, $this->overview()->batchesDueForTakeout);
     }
 
     /**
@@ -522,6 +533,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
      * @param list<LogBatchSummary> $batches Rotation batches the node holds
      * @param list<LogKeySummary> $keys Streams the node holds, live and archived together
      * @param array<string, ?int> $growthBytesPerDay Stream → bytes over the last day, null until its window fills
+     * @param list<int> $due Batches this node's own retention rule recommends carrying off
      * @return ClusterLogNodeSlot Slot as the aggregator would hold it
      */
     private static function nodeSlot(
@@ -530,6 +542,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
         array $batches = [],
         array $keys = [],
         array $growthBytesPerDay = [],
+        array $due = [],
     ): ClusterLogNodeSlot {
         return new ClusterLogNodeSlot(
             nodeId: $nodeId,
@@ -541,6 +554,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
                 keys: $keys,
                 workers: [],
                 growthBytesPerDay: $growthBytesPerDay,
+                dueBatchTimestamps: $due,
             ),
             receivedAt: self::T0,
         );

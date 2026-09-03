@@ -22,6 +22,7 @@ final class NodeLogIndexDelta
      * @param list<int> $vanishedBatchTimestamps Rotation batches present before and absent now
      * @param list<int> $confirmedBatchTimestamps Rotation batches an operator confirmed carrying off since the previous index
      * @param list<int> $withdrawnBatchTimestamps Rotation batches whose confirmation an operator withdrew since the previous index
+     * @param list<int> $verdictChangedBatchTimestamps Rotation batches the retention rule started or stopped recommending since the previous index
      * @param bool $availabilityChanged Whether the store crossed between readable and unreadable
      */
     public function __construct(
@@ -32,6 +33,7 @@ final class NodeLogIndexDelta
         public readonly array $vanishedBatchTimestamps,
         public readonly array $confirmedBatchTimestamps,
         public readonly array $withdrawnBatchTimestamps,
+        public readonly array $verdictChangedBatchTimestamps,
         public readonly bool $availabilityChanged,
     ) {
     }
@@ -54,7 +56,15 @@ final class NodeLogIndexDelta
      * direction; a marker that went away is the opposite news, and counting it in the same list
      * would report a batch as confirmed at the very moment it stopped being.
      *
-     * @return bool True when nothing appeared, grew, vanished, changed its confirmation or changed side
+     * And so does the retention verdict, on an axis of its own again (HIL-871). It is the only
+     * change here that no file has to make: a batch crosses the age threshold because the clock
+     * moved, and a batch returns under protection because an administrator raised
+     * `keep_batches` - in both cases two walks either side of it are identical in every weight,
+     * name and marker. Left out, the frame that would have taken the new verdict to the screen
+     * is judged empty, and the badge waits for whatever changes next.
+     *
+     * @return bool True when nothing appeared, grew, vanished, changed its confirmation, changed
+     *     its retention verdict or changed side
      */
     public function isEmpty(): bool
     {
@@ -65,6 +75,7 @@ final class NodeLogIndexDelta
             && $this->vanishedBatchTimestamps === []
             && $this->confirmedBatchTimestamps === []
             && $this->withdrawnBatchTimestamps === []
+            && $this->verdictChangedBatchTimestamps === []
             && !$this->availabilityChanged;
     }
 }

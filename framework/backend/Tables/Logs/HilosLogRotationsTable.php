@@ -18,10 +18,8 @@ use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
-use Hilos\Log\LogArchiveRetentionPolicy;
 use Hilos\Log\LogBatchSummary;
-use Hilos\Log\LogStoreAgent;
-use Hilos\Log\LogSettingsResolver;
+use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
 
 /**
@@ -37,18 +35,19 @@ use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
  * therefore nothing a delta could be built from. The page re-sends the window when the mirror's
  * fingerprint moves ({@see AbstractHilosLogsRotationsPage::onAgentTick()}).
  *
- * The retention verdict is judged HERE and per node. Judged here, because the rule is a reading of
- * the whole archive rather than a fact about one batch: the node reports what it holds, and what
- * `keepBatches` protects out of that is one question asked in one place. Per node, because
- * {@see LogArchiveRetentionPolicy::$keepBatches} means "the newest N of THIS archive": one list
- * across the cluster would spend the whole protection on N batches total and send a neighbour's
- * freshest batch to the recommended pile.
+ * The retention verdict is NOT judged here (HIL-871). The node owns the files, so the node
+ * applies the rule to them and reports the answer with its index
+ * ({@see NodeLogIndex::$dueBatchTimestamps}); this table reads that list the way it reads a byte
+ * count. Two judges over one rule could disagree across the width of a delivery window - the
+ * screen offering "how to carry it off" while the node answers that the batch is protected again -
+ * and the one that matters is the one holding the directory.
  *
- * One state is NOT judged here, and it overrules the verdict when it is present: a batch an
+ * One state is judged here, and it overrules the verdict when it is present: a batch an
  * operator has confirmed carrying off is {@see self::STATE_TAKEN} whatever the rule now says
  * (HIL-483). That one IS a fact about one batch — a marker file inside its directory — so it
  * arrives with the batch instead of being decided from the picture, and it survives an
- * administrator raising the retention period after the fact.
+ * administrator raising the retention period after the fact. Stacking the three states is a
+ * reading of what arrived and stays here, because that is what this table is for.
  *
  * A confirmed row also carries the instant its node's pruner may first delete it (HIL-759). Added
  * up here from the two halves the node reports — when it was confirmed, and how long that node
@@ -90,15 +89,6 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
 
     /** Stands in for the node in a row key when the installation has no node id at all. */
     private const string ROW_KEY_NODELESS = '-';
-
-    /**
-     * @var ?LogSettingsResolver The reader the retention policy is asked for, one per process
-     *
-     * Static and kept, the way {@see LogStoreAgent} keeps its own: the resolver
-     * remembers the last outcome so an unchanged fault stops repeating itself into the journal,
-     * and a fresh instance per window would forget that with every keystroke in the search box.
-     */
-    private static ?LogSettingsResolver $settingsResolver = null;
 
     /**
      * The rotation history has no live per-row source; a window refresh is a re-projection.
@@ -192,13 +182,9 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
             return [];
         }
 
-        // Read once for the whole window, because the rule is one for the whole cluster: what is
-        // per node is the archive the rule is applied TO, not the rule itself.
-        $policy = self::settingsResolver()->retentionPolicy();
-        $now = time();
         $rows = [];
         foreach ($index->nodes() as $slot) {
-            foreach ($this->rowsOfNode($slot, $policy, $now) as $row) {
+            foreach ($this->rowsOfNode($slot) as $row) {
                 $rows[] = $row;
             }
         }
@@ -213,21 +199,17 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
     }
 
     /**
-     * Projects one node's archive into rows, with the retention verdict judged over that archive alone.
+     * Projects one node's archive into rows, with the retention verdict that node reported.
      *
      * @param ClusterLogNodeSlot $slot The node's slot in the cluster picture
-     * @param LogArchiveRetentionPolicy $policy The rule in force, one for the whole cluster
-     * @param int $now Instant the batch ages are measured against, in Unix seconds
      * @return list<array<string, mixed>> Row payloads of this node
      */
-    private function rowsOfNode(ClusterLogNodeSlot $slot, LogArchiveRetentionPolicy $policy, int $now): array
+    private function rowsOfNode(ClusterLogNodeSlot $slot): array
     {
-        $batches = $slot->index->batches;
-        $timestamps = array_map(static fn(LogBatchSummary $batch): int => $batch->timestamp, $batches);
-        $due = array_flip($policy->selectEvictionCandidates($timestamps, $now));
+        $due = array_flip($slot->index->dueBatchTimestamps);
 
         $rows = [];
-        foreach ($batches as $batch) {
+        foreach ($slot->index->batches as $batch) {
             $path = self::archivePath($batch->timestamp);
             $rows[] = [
                 HilosLogRotationsTableRow::rowKey => self::rowKey($slot->nodeId, $batch->timestamp),
@@ -440,17 +422,5 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
         }
 
         return rtrim($logDirectory, '/') . '/' . $path;
-    }
-
-    /**
-     * The process-wide settings reader the retention policy is asked for.
-     *
-     * @return LogSettingsResolver Reader over the settings, with the environment beneath them
-     */
-    private static function settingsResolver(): LogSettingsResolver
-    {
-        // The complaint the resolver raises is not taken here: the rotation agent on each node
-        // already writes that line, and a second copy from the page worker says nothing new.
-        return self::$settingsResolver ??= new LogSettingsResolver();
     }
 }

@@ -21,10 +21,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogTotals;
-use Hilos\Log\LogArchiveRetentionPolicy;
-use Hilos\Log\LogBatchSummary;
 use Hilos\Log\LogKeySummary;
-use Hilos\Log\LogSettingsResolver;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\DTO\HilosLogsOverviewSignalData;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
@@ -118,15 +115,6 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      *     per-node table, named nodes only; empty in a single-node installation
      */
     private static array $logsOverviewNodes = [];
-
-    /**
-     * Process-wide reader of the log settings, asked for the retention rule alone.
-     *
-     * Kept between refreshes for the reason the rotations table keeps its own
-     * ({@see HilosLogRotationsTable}): the reader speaks up about settings it cannot make sense
-     * of, and building a new one on every tick would repeat that line ten times a second.
-     */
-    private static ?LogSettingsResolver $settingsResolver = null;
 
     /**
      * Remove a connection from the subscriber set after {@see self::onUnsubscribe()} or when the connection
@@ -239,10 +227,10 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * the first - nobody has told us anything - and reporting it as zeros would put a measurement on
      * the screen that no node ever took.
      *
-     * The takeout verdict is the one figure not taken out of {@see ClusterLogTotals}, because it is
-     * not a property of the picture but of the picture read against the retention rule in force -
-     * and against the current instant, which is what makes a batch age into being due without
-     * anything in the picture having moved.
+     * The takeout figure is the one not taken out of {@see ClusterLogTotals}, because it is not a
+     * total over the picture but a per-node verdict added up: each node judges its own archive and
+     * reports the answer with its index (HIL-871), so this counter is the sum of those lists and
+     * moves when a node re-reports, not when this page next looks at a clock.
      */
     private static function refreshOverview(): void
     {
@@ -270,14 +258,10 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
         self::$logsOverviewGrowthBytesPerDay = $totals->growthBytesPerDay;
         self::$logsOverviewKeysWithoutGrowthWindow = $totals->keysWithoutGrowthWindow;
 
-        // Read once for the whole picture, because the rule is one for the whole cluster: what is
-        // per node is the archive the rule is applied TO, not the rule itself.
-        $policy = self::settingsResolver()->retentionPolicy();
-        $now = time();
         $batchesDueForTakeout = 0;
         $nodes = [];
         foreach ($index->nodes() as $slot) {
-            $due = self::batchesDueOf($slot->index, $policy, $now);
+            $due = self::batchesDueOf($slot->index);
             // Summed over every slot, the nameless one included: a single-node installation draws
             // no table, and the banner above it still has to say the batches are waiting.
             $batchesDueForTakeout += $due;
@@ -298,7 +282,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      *
      * @param string $nodeId Cluster node the row speaks for
      * @param NodeLogIndex $index That node's index, as it last reported it
-     * @param int $batchesDue Batches of this node past their retention, judged by the caller
+     * @param int $batchesDue Batches this node reported as past their retention, counted by the caller
      * @return array{nodeId: string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
      *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int} Row of the table
      */
@@ -330,22 +314,23 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     }
 
     /**
-     * How many of one node's batches are past their retention now.
+     * How many of one node's batches that node says are past their retention.
      *
-     * Judged over that node's archive alone and never over the cluster's: archives do not travel,
-     * so a batch ages out where it lies, and the cluster figure is the sum of these verdicts
-     * rather than a verdict over a pile nobody holds.
+     * Counted rather than judged (HIL-871): the rule is applied on the machine holding the
+     * directory, and this figure is the length of the list that arrived. It stays per node for
+     * the reason it was always per node - archives do not travel, so a batch ages out where it
+     * lies, and the cluster figure is the sum of these verdicts rather than a verdict over a pile
+     * nobody holds.
+     *
+     * A node that could not be read reports no batches and therefore no verdicts; the column
+     * still shows it a null rather than this zero, which {@see self::nodeRow()} decides.
      *
      * @param NodeLogIndex $index That node's index, as it last reported it
-     * @param LogArchiveRetentionPolicy $policy The rule in force, one for the whole cluster
-     * @param int $now Instant the batch ages are measured against, in Unix seconds
      * @return int Batches of this node awaiting takeout
      */
-    private static function batchesDueOf(NodeLogIndex $index, LogArchiveRetentionPolicy $policy, int $now): int
+    private static function batchesDueOf(NodeLogIndex $index): int
     {
-        $timestamps = array_map(static fn(LogBatchSummary $batch): int => $batch->timestamp, $index->batches);
-
-        return count($policy->selectEvictionCandidates($timestamps, $now));
+        return count($index->dueBatchTimestamps);
     }
 
     /**
@@ -445,18 +430,6 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
             : new DateTimeImmutable()
                 ->setTimestamp($timestamp)
                 ->format(DateTimeInterface::ATOM);
-    }
-
-    /**
-     * The process-wide settings reader the retention policy is asked for.
-     *
-     * @return LogSettingsResolver Reader over the settings, with the environment beneath them
-     */
-    private static function settingsResolver(): LogSettingsResolver
-    {
-        // The complaint the resolver raises is not taken here: the rotation agent on each node
-        // already writes that line, and a second copy from the page worker says nothing new.
-        return self::$settingsResolver ??= new LogSettingsResolver();
     }
 
     /**

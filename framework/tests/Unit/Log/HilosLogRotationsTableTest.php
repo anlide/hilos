@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Log;
 
-use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LogRotationConstants;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
@@ -23,18 +22,19 @@ use PHPUnit\Framework\TestCase;
  *
  * A row is one batch ON ONE NODE, and the two things that follow from that are what these cases
  * hold. The row key has to tell one rotation moment on two nodes apart, or the window would treat
- * them as one row and show whichever arrived last. And the retention verdict has to be judged over
- * one node's archive at a time: `keepBatches` means "the newest N of THIS directory", so a cluster
- * list would spend the whole protection on N batches in total and recommend carrying off a
- * neighbour's freshest batch.
+ * them as one row and show whichever arrived last. And the retention verdict is READ and not
+ * judged (HIL-871): the machine holding the directory applies the rule to it and reports the
+ * answer with its index, so what these cases put in a fixture is a verdict, the way they put in a
+ * byte count.
+ *
+ * That is why several of them name a verdict the rule in force here would never have reached: a
+ * table that quietly re-judged what arrived would pass them anyway, and it is exactly the
+ * disagreement across a delivery window that this leaf exists to remove.
  *
  * The same "one node at a time" runs through what HIL-483 adds. The confirmation that a batch was
- * carried off arrives WITH that batch and overrules the verdict judged here, and the absolute
- * address a row offers is built from the reporting node's own log root - this page worker knows
- * one log directory, and it is not necessarily the one the batch is lying in.
- *
- * The policy is read through the settings resolver, which falls back to the environment when no
- * settings layer is initialized - which is what these cases configure.
+ * carried off arrives WITH that batch and overrules the verdict that arrived with it, and the
+ * absolute address a row offers is built from the reporting node's own log root - this page worker
+ * knows one log directory, and it is not necessarily the one the batch is lying in.
  */
 final class HilosLogRotationsTableTest extends TestCase
 {
@@ -48,14 +48,11 @@ final class HilosLogRotationsTableTest extends TestCase
     {
         parent::setUp();
         ClusterLogIndexMirror::forgetPicture();
-        $this->retention(keepBatches: 0, maxAgeSeconds: 0);
     }
 
     protected function tearDown(): void
     {
         ClusterLogIndexMirror::forgetPicture();
-        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name);
-        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name);
 
         parent::tearDown();
     }
@@ -107,16 +104,20 @@ final class HilosLogRotationsTableTest extends TestCase
     }
 
     /**
-     * The verdict is judged per node, and this is the case that tells the two readings apart: over
-     * one cluster list the newest two batches are both the neighbour's, and all three of node-1's
-     * would be recommended for carrying off though node-1 has kept nothing at all.
+     * Each node's verdict lands on that node's own rows and nowhere else. The two archives here
+     * disagree - node-1 recommends its oldest batch, node-2 recommends none of its own - and a
+     * table that pooled the lists would badge a neighbour's batch by a timestamp that happens to
+     * be in somebody else's list.
      */
-    public function testTheRetentionVerdictIsJudgedOverOneNodesArchiveAtATime(): void
+    public function testEachNodesVerdictBadgesOnlyThatNodesRows(): void
     {
-        $this->retention(keepBatches: 2, maxAgeSeconds: 0);
         $this->picture(
-            $this->node('node-1', [self::NOW - 10 * self::DAY, self::NOW - 9 * self::DAY, self::NOW - 8 * self::DAY]),
-            $this->node('node-2', [self::NOW - self::DAY, self::NOW]),
+            $this->node(
+                'node-1',
+                [self::NOW - 10 * self::DAY, self::NOW - 9 * self::DAY],
+                due: [self::NOW - 10 * self::DAY],
+            ),
+            $this->node('node-2', [self::NOW - 10 * self::DAY, self::NOW]),
         );
 
         $due = array_values(array_filter(
@@ -130,12 +131,30 @@ final class HilosLogRotationsTableTest extends TestCase
     }
 
     /**
-     * An unreadable setting leaves the policy inert (HIL-682), and inert has to read as "nothing is
-     * recommended" rather than as "everything is": a zero threshold here removes a constraint.
+     * The point of the move, stated as a case (HIL-871): the node names a batch due that any rule
+     * this process could read would have protected - it is the newest of its archive and a day
+     * old - and the badge is due all the same. The table draws what arrived; second-guessing it is
+     * exactly the disagreement across a delivery window that the move removes.
      */
-    public function testAnInertPolicyRecommendsNothing(): void
+    public function testTheBadgeFollowsTheVerdictThatArrivedAndNotARuleReadHere(): void
     {
-        $this->retention(keepBatches: 0, maxAgeSeconds: 0);
+        $this->picture($this->node('node-1', [self::NOW - self::DAY, self::NOW], due: [self::NOW]));
+
+        $states = array_map(static fn($row): string => $row->retentionState, $this->rows(new TableQueryDTO()));
+
+        $this->assertSame(
+            [HilosLogRotationsTable::STATE_DUE, HilosLogRotationsTable::STATE_KEPT],
+            $states,
+        );
+    }
+
+    /**
+     * A node that recommends nothing - a fresh archive, or a policy left inert because its setting
+     * could not be read (HIL-682) - has to read as "nothing is recommended" rather than as
+     * "everything is", however old the batches it is holding are.
+     */
+    public function testANodeThatRecommendsNothingHasEverythingKept(): void
+    {
         $this->picture($this->node('node-1', [self::NOW - 400 * self::DAY, self::NOW - 300 * self::DAY]));
 
         $states = array_map(static fn($row): string => $row->retentionState, $this->rows(new TableQueryDTO()));
@@ -153,7 +172,6 @@ final class HilosLogRotationsTableTest extends TestCase
      */
     public function testAConfirmedBatchStaysTakenEvenWhereTheRuleWouldProtectIt(): void
     {
-        $this->retention(keepBatches: 5, maxAgeSeconds: 0);
         $this->picture($this->node('node-1', [self::NOW - self::DAY, self::NOW], confirmed: [self::NOW - self::DAY]));
 
         $states = array_map(static fn($row): string => $row->retentionState, $this->rows(new TableQueryDTO()));
@@ -170,11 +188,11 @@ final class HilosLogRotationsTableTest extends TestCase
      */
     public function testAConfirmedBatchLeavesTheListOfWhatIsStillRecommended(): void
     {
-        $this->retention(keepBatches: 1, maxAgeSeconds: 0);
         $this->picture($this->node(
             'node-1',
             [self::NOW - 2 * self::DAY, self::NOW - self::DAY, self::NOW],
             confirmed: [self::NOW - 2 * self::DAY],
+            due: [self::NOW - 2 * self::DAY, self::NOW - self::DAY],
         ));
 
         $rows = $this->rows(new TableQueryDTO(
@@ -281,8 +299,11 @@ final class HilosLogRotationsTableTest extends TestCase
 
     public function testTheStateFilterNarrowsToWhatIsRecommendedForCarryingOff(): void
     {
-        $this->retention(keepBatches: 1, maxAgeSeconds: 0);
-        $this->picture($this->node('node-1', [self::NOW - 2 * self::DAY, self::NOW - self::DAY, self::NOW]));
+        $this->picture($this->node(
+            'node-1',
+            [self::NOW - 2 * self::DAY, self::NOW - self::DAY, self::NOW],
+            due: [self::NOW - 2 * self::DAY, self::NOW - self::DAY],
+        ));
 
         $rows = $this->rows(new TableQueryDTO(
             filter: [HilosLogRotationsTable::FILTER_STATE => HilosLogRotationsTable::STATE_DUE],
@@ -397,6 +418,7 @@ final class HilosLogRotationsTableTest extends TestCase
      * @param list<int> $confirmed Batch timestamps an operator has confirmed carrying off
      * @param ?string $logDirectory Log root this node reports, null when its build named none
      * @param int $takeoutUndoWindowSeconds Seconds this node protects a confirmed batch for
+     * @param list<int> $due Batch timestamps this node's own retention rule recommends carrying off
      * @return ClusterLogNodeSlot Slot as the aggregator would hold it
      */
     private function node(
@@ -406,6 +428,7 @@ final class HilosLogRotationsTableTest extends TestCase
         array $confirmed = [],
         ?string $logDirectory = null,
         int $takeoutUndoWindowSeconds = 0,
+        array $due = [],
     ): ClusterLogNodeSlot {
         $batches = array_map(
             static fn(int $timestamp): LogBatchSummary => new LogBatchSummary(
@@ -437,20 +460,10 @@ final class HilosLogRotationsTableTest extends TestCase
                 growthBytesPerDay: [],
                 logDirectory: $logDirectory,
                 takeoutUndoWindowSeconds: $takeoutUndoWindowSeconds,
+                dueBatchTimestamps: $due,
             ),
             receivedAt: self::NOW,
         );
     }
 
-    /**
-     * Puts the retention thresholds where the settings resolver falls back to reading them.
-     *
-     * @param int $keepBatches Newest batches always kept
-     * @param int $maxAgeSeconds Age beyond which a batch is eligible
-     */
-    private function retention(int $keepBatches, int $maxAgeSeconds): void
-    {
-        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name . '=' . $keepBatches);
-        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name . '=' . $maxAgeSeconds);
-    }
 }

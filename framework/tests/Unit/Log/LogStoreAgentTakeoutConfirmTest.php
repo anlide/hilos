@@ -211,6 +211,30 @@ final class LogStoreAgentTakeoutConfirmTest extends TestCase
     }
 
     /**
+     * The same race read from the other side, now that the node publishes its verdict (HIL-871):
+     * the guard re-judges with a fresh clock and a fresh resolver instead of reading the list the
+     * last walk left in the index. One judge means one place in the CODE, not one value over
+     * time - the index goes on carrying the verdict of the walk that measured it, and the click
+     * is still refused.
+     */
+    public function testTheGuardRejudgesInsteadOfReadingTheVerdictInTheIndex(): void
+    {
+        $this->writeBatch('worker-0.log', "[2026-08-01 00:00:00.000] archived\n");
+        $agent = $this->startedAgent();
+        $this->assertSame([$this->batchTimestamp()], $agent->index()->dueBatchTimestamps);
+
+        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name . '=' . self::KEEP_MORE_THAN_THERE_ARE);
+        $this->confirm();
+
+        $this->assertSame('The batch is protected again', $this->failed());
+        $this->assertSame(
+            [$this->batchTimestamp()],
+            $agent->index()->dueBatchTimestamps,
+            'The refusal judged afresh; the index still carries what the last walk measured',
+        );
+    }
+
+    /**
      * The guard is about what has NOT been confirmed yet: a batch that is already taken stays
      * taken when the rule moves back over it, and says so idempotently.
      */

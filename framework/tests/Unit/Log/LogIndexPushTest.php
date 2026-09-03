@@ -200,7 +200,7 @@ final class LogIndexPushTest extends TestCase
      */
     public function testADeltaWithNothingInItIsEmpty(): void
     {
-        $this->assertTrue(new NodeLogIndexDelta([], [], [], [], [], [], [], false)->isEmpty());
+        $this->assertTrue(new NodeLogIndexDelta([], [], [], [], [], [], [], [], false)->isEmpty());
     }
 
     /**
@@ -210,7 +210,7 @@ final class LogIndexPushTest extends TestCase
      */
     public function testCrossingIntoUnavailabilityCountsAsAChangeOnItsOwn(): void
     {
-        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [], true)->isEmpty());
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [], [], true)->isEmpty());
     }
 
     /**
@@ -220,7 +220,7 @@ final class LogIndexPushTest extends TestCase
      */
     public function testAConfirmedBatchCountsAsAChangeOnItsOwn(): void
     {
-        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [1756166400], [], false)->isEmpty());
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [1756166400], [], [], false)->isEmpty());
     }
 
     /**
@@ -230,7 +230,17 @@ final class LogIndexPushTest extends TestCase
      */
     public function testAWithdrawnBatchCountsAsAChangeOnItsOwn(): void
     {
-        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [1756166400], false)->isEmpty());
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [1756166400], [], false)->isEmpty());
+    }
+
+    /**
+     * And so does a retention verdict that moved, which is the one change here that needs no file
+     * to move with it: the clock crossing the age threshold, or an administrator raising the
+     * keep-count, leaves two walks identical in every weight and marker (HIL-871).
+     */
+    public function testAChangedVerdictCountsAsAChangeOnItsOwn(): void
+    {
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [], [1756166400], false)->isEmpty());
     }
 
     public function testTheWrittenSettingSetsTheInterval(): void

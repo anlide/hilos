@@ -39,7 +39,6 @@ use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmReplyDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Runtime\ConnectionRosterReconciler;
-use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Utils\Exception\LogRotationException;
 use JsonException;
 use Throwable;
@@ -1079,21 +1078,44 @@ final class LogStoreAgent extends AbstractAgent
     /**
      * Whether the retention rule recommends carrying this batch off as things stand now.
      *
-     * Judged over THIS node's archive alone, the way the screen judges it per node
-     * ({@see HilosLogRotationsTable}): the rule protects the newest N of one archive, and one list
-     * across the cluster would spend the whole protection on N batches in total.
-     *
-     * The rule is re-read rather than remembered: the whole point of the check is that an
-     * administrator may have raised the retention period since the modal was opened.
+     * The rule is re-read rather than remembered, through the same {@see self::judgeDueBatches()}
+     * the walk publishes its verdict with: the whole point of the check is that an administrator
+     * may have raised the retention period since the modal was opened, so it judges by the clock
+     * of the click and not by the list the last walk left in the index.
      *
      * @param int $batchTimestamp Unix timestamp of the batch in question
      * @return bool True when the policy names this batch among the ones to carry off
      */
     private function batchIsDue(int $batchTimestamp): bool
     {
-        $due = $this->resolver->retentionPolicy()->selectEvictionCandidates(self::batchTimestamps($this->index), time());
+        return in_array($batchTimestamp, $this->judgeDueBatches(self::batchTimestamps($this->index), time()), true);
+    }
 
-        return in_array($batchTimestamp, $due, true);
+    /**
+     * Applies the retention rule to this node's archive: the one place the policy is read (HIL-871).
+     *
+     * The node owns the files, so the node is the only judge of them, and both callers reach the
+     * rule through here - the pass that publishes the verdict for the screen, and the guard that
+     * refuses a confirmation for a batch the rule protects. Being the only judge means one place
+     * in the CODE and not one value over time: the guard deliberately re-judges with a fresh clock
+     * and a fresh resolver, because the threshold may have been raised while the modal was open.
+     *
+     * It is asked over THIS node's archive and never over the cluster's, which is the reason the
+     * verdict can only be reached here at all: {@see LogArchiveRetentionPolicy::$keepBatches}
+     * means "the newest N of THIS directory", so one list across the cluster would spend the whole
+     * protection on N batches in total and recommend carrying off a neighbour's freshest batch.
+     *
+     * The resolver is read on every pass, the way rotation reads it on every check
+     * ({@see self::refreshPolicy()}): an edited threshold is then honoured without a restart, and
+     * a policy cache of our own would be one more thing to invalidate for no gain.
+     *
+     * @param list<int> $batchTimestamps Timestamps of the batches in this node's archive
+     * @param int $now Instant every batch's age is measured against, in Unix seconds
+     * @return list<int> The subset the rule recommends carrying off, in the order it was given them
+     */
+    private function judgeDueBatches(array $batchTimestamps, int $now): array
+    {
+        return $this->resolver->retentionPolicy()->selectEvictionCandidates($batchTimestamps, $now);
     }
 
     /**
@@ -1293,6 +1315,12 @@ final class LogStoreAgent extends AbstractAgent
     /**
      * Turn a snapshot into the published index, its delta, and the log lines it deserves.
      *
+     * The retention verdict is reached HERE, on every pass, full walk and live one alike, and it
+     * is measured by the clock of the walk rather than by the clock of this call (HIL-871): the
+     * index says what was true when the store was read, not when the reading was written down.
+     * Passing it through {@see self::diff()} afterwards needs no help - a verdict that moved is an
+     * axis of the delta like any other.
+     *
      * @param LogStoreSnapshot $snapshot Snapshot to publish
      * @param int $sampledAt Unix timestamp of the walk
      * @param bool $full Whether this came from a full walk, the only kind that feeds the windows
@@ -1309,17 +1337,21 @@ final class LogStoreAgent extends AbstractAgent
             $growth[$key->key] = ($this->windows[$key->key] ?? null)?->growthPerDay($sampledAt);
         }
 
+        $batches = $snapshot->batches();
+        $batchTimestamps = array_map(static fn (LogBatchSummary $batch): int => $batch->timestamp, $batches);
+
         $previous = $this->index;
         $this->index = new NodeLogIndex(
             nodeId: $this->nodeId,
             available: $snapshot->available,
             sampledAt: $sampledAt,
-            batches: $snapshot->batches(),
+            batches: $batches,
             keys: $keys,
             workers: $snapshot->workers(),
             growthBytesPerDay: $growth,
             logDirectory: $this->reader->logDirectory(),
             takeoutUndoWindowSeconds: $this->resolver->takeoutUndoWindowSeconds(),
+            dueBatchTimestamps: $this->judgeDueBatches($batchTimestamps, $sampledAt),
         );
         $this->lastDelta = self::diff($previous, $this->index);
         // Raised here and not where the frame is scheduled, because this is the one moment the
@@ -1533,8 +1565,8 @@ final class LogStoreAgent extends AbstractAgent
     }
 
     /**
-     * Difference between two indexes: what appeared, grew, vanished, was confirmed, and whether the
-     * store changed side.
+     * Difference between two indexes: what appeared, grew, vanished, was confirmed, changed its
+     * retention verdict, and whether the store changed side.
      *
      * @param NodeLogIndex $previous Older index
      * @param NodeLogIndex $current Newer index
@@ -1576,6 +1608,7 @@ final class LogStoreAgent extends AbstractAgent
             vanishedBatchTimestamps: array_values(array_diff($batchesBefore, $batchesAfter)),
             confirmedBatchTimestamps: self::newlyConfirmed($previous, $current),
             withdrawnBatchTimestamps: self::newlyWithdrawn($previous, $current),
+            verdictChangedBatchTimestamps: self::verdictChanged($previous, $current),
             availabilityChanged: $previous->available !== $current->available,
         );
     }
@@ -1667,6 +1700,49 @@ final class LogStoreAgent extends AbstractAgent
         }
 
         return $withdrawn;
+    }
+
+    /**
+     * Batches whose retention verdict moved between two indexes, either way (HIL-871).
+     *
+     * Symmetric on purpose, where {@see self::newlyConfirmed()} and {@see self::newlyWithdrawn()}
+     * are a pair of one-way lists. A confirmation and its withdrawal are opposite news about an
+     * operator's own act and read differently on the screen; a verdict is one field of one batch,
+     * and both of its crossings are the same news - this batch is drawn with another badge now.
+     * The reverse crossing is real and not theoretical: an administrator raising `keep_batches`
+     * pulls a batch back under protection, and a frame that skipped it would leave the screen
+     * offering to carry off what the node has already gone back to refusing.
+     *
+     * A batch that arrived or vanished along with its verdict is not counted: those crossings are
+     * already reported on their own axes, and naming a gone batch here would ask the screen to
+     * repaint a row that is no longer there.
+     *
+     * @param NodeLogIndex $previous Older index
+     * @param NodeLogIndex $current Newer index
+     *
+     * @return list<int> Timestamps present in both indexes and named due by exactly one of them
+     */
+    private static function verdictChanged(NodeLogIndex $previous, NodeLogIndex $current): array
+    {
+        $before = array_flip($previous->dueBatchTimestamps);
+        $after = array_flip($current->dueBatchTimestamps);
+
+        $present = [];
+        foreach ($previous->batches as $batch) {
+            $present[$batch->timestamp] = true;
+        }
+
+        $changed = [];
+        foreach ($current->batches as $batch) {
+            if (!isset($present[$batch->timestamp])) {
+                continue;
+            }
+            if (isset($before[$batch->timestamp]) !== isset($after[$batch->timestamp])) {
+                $changed[] = $batch->timestamp;
+            }
+        }
+
+        return $changed;
     }
 
     /**

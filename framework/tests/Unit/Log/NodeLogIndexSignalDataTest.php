@@ -52,6 +52,7 @@ final class NodeLogIndexSignalDataTest extends TestCase
                 new LogWorkerSummary('worker-monopolistic-1.log', true, false, [self::T0 - 3600], 400),
             ],
             growthBytesPerDay: ['agent-a.log' => 17, 'daemon.log' => null, 'worker-0.log' => 0],
+            dueBatchTimestamps: [self::T0 - 7200],
         );
 
         $restored = $this->roundTrip($index);
@@ -63,6 +64,24 @@ final class NodeLogIndexSignalDataTest extends TestCase
         $this->assertEquals($index->keys, $restored->keys);
         $this->assertEquals($index->workers, $restored->workers);
         $this->assertSame(['agent-a.log' => 17, 'daemon.log' => null, 'worker-0.log' => 0], $restored->growthBytesPerDay);
+        $this->assertSame([self::T0 - 7200], $restored->dueBatchTimestamps);
+    }
+
+    /**
+     * The verdict is the one key here a node may honestly omit: during a rolling upgrade the node
+     * still running the previous build reports an index without it (HIL-871). Refusing the frame
+     * over that would take a whole node's history off the screen, so absence reads as "recommends
+     * nothing" - the same answer a node with a fresh archive gives.
+     */
+    public function testAPayloadWithoutTheVerdictReadsAsRecommendingNothing(): void
+    {
+        $payload = $this->payload();
+        unset($payload[NodeLogIndexSignalData::dueBatchTimestamps]);
+
+        $restored = NodeLogIndexSignalData::fromArray($payload)->toIndex();
+
+        $this->assertSame([], $restored->dueBatchTimestamps);
+        $this->assertCount(1, $restored->batches);
     }
 
     /**
@@ -169,6 +188,19 @@ final class NodeLogIndexSignalDataTest extends TestCase
     }
 
     /**
+     * Allowed to be absent is not allowed to be nonsense: a verdict that arrives as anything but
+     * timestamps would put a badge on the screen against a batch nobody judged.
+     */
+    public function testAVerdictThatIsNotATimestampIsRefused(): void
+    {
+        $payload = $this->payload();
+        $payload[NodeLogIndexSignalData::dueBatchTimestamps] = ['soon'];
+
+        $this->expectException(InvalidFormatException::class);
+        NodeLogIndexSignalData::fromArray($payload);
+    }
+
+    /**
      * @param NodeLogIndex $index Index a node holds
      * @return NodeLogIndex The same index after a trip through the payload and back
      * @throws InvalidFormatException When the payload this test built refuses to be read back
@@ -191,6 +223,7 @@ final class NodeLogIndexSignalDataTest extends TestCase
             keys: [new LogKeySummary('agent-a.log', LogKeySummary::CLASS_AGENT, true, [self::T0 - 3600], 100)],
             workers: [new LogWorkerSummary('worker-0.log', false, true, [], 300)],
             growthBytesPerDay: ['agent-a.log' => 17],
+            dueBatchTimestamps: [self::T0 - 3600],
         ))->toArray();
     }
 }

@@ -132,9 +132,9 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
      * Worker tick hook for the Hilos logs agent: throttled change check, then a push on change.
      *
      * A changed picture re-sends every subscriber's window, because the rows come out of it; a
-     * changed header goes out in the same pass. The rules count as part of the picture for the
-     * first purpose too — the retention verdict of every row is judged from them, so an edited
-     * threshold repaints the badges without the batches themselves having moved.
+     * changed header goes out in the same pass. A badge that moved counts as a changed picture:
+     * since HIL-871 the retention verdict arrives with each node's index, so an edited threshold
+     * reaches the screen as a node re-reporting rather than as this page re-judging.
      *
      * @param PageAgentInterface $agent Hilos logs agent, for {@see PageAgentInterface::getAgentSignalSource()}
      * @throws InvalidArgumentException When the header or the table-window signal cannot be named
@@ -356,21 +356,27 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
     }
 
     /**
-     * Fingerprint of everything the batch rows are projected from — the picture AND the rules.
+     * Fingerprint of everything the batch rows are projected from.
+     *
+     * The header is folded in beside the picture. The verdict has moved onto the node and the
+     * rules no longer decide a badge, so this asks a wider question than the rows strictly need;
+     * it is kept because the two frames of this screen are meant to agree, and re-sending a window
+     * on an edited threshold costs one message on an action an administrator takes by hand.
      *
      * The batch figures rather than the frame's arrival time: a node re-sends its index whole on
      * its own schedule, so an arrival time would move on every frame and re-send every window for
-     * a picture that had not changed at all. The rules belong here as well as in the header,
-     * because the retention badge of every row is judged from them: an edited threshold repaints
-     * the column without a single batch having moved.
+     * a picture that had not changed at all.
      *
-     * The takeout stamp, the node's log root and its undo window are counted for the same reason
-     * and would be easy to leave out, because none of them is a measurement of the archive. A
-     * confirmation — or its withdrawal — moves nothing else about a batch, so without the stamp
-     * here the click an operator just made would reach the mirror and stop, leaving them looking
-     * at the badge they had before; the log root is where every row's absolute address comes from,
-     * and the window is what every row's prune deadline is computed with
-     * ({@see HilosLogRotationsTable}).
+     * The takeout stamp, the node's log root, its undo window and its retention verdict are
+     * counted as well, and each would be easy to leave out because none of them is a measurement
+     * of the archive. A confirmation — or its withdrawal — moves nothing else about a batch, so
+     * without the stamp here the click an operator just made would reach the mirror and stop,
+     * leaving them looking at the badge they had before; the log root is where every row's
+     * absolute address comes from, and the window is what every row's prune deadline is computed
+     * with ({@see HilosLogRotationsTable}). The verdict is now the badge itself (HIL-871): a batch
+     * that crossed its age threshold, or a threshold an administrator edited, arrives here with
+     * every weight and every marker unchanged, and it is this list alone that says the column has
+     * to be drawn again.
      *
      * @param HilosLogsRotationsSignalData $header Header of this pass, for the rules it carries
      * @return string Stable fingerprint of what the rows are built from
@@ -385,6 +391,7 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
                 $slot->index->available,
                 $slot->index->logDirectory,
                 $slot->index->takeoutUndoWindowSeconds,
+                $slot->index->dueBatchTimestamps,
                 array_map(
                     static fn(LogBatchSummary $batch): array => [
                         $batch->timestamp,

@@ -43,6 +43,15 @@ final class LogStoreAgentIndexTest extends TestCase
     /** Any fixed instant, for the tests that drive a growth window and no agent. */
     private const int T0 = 1_800_000_000;
 
+    /** Keep-count under which no batch is protected by being among the newest. */
+    private const string KEEP_NO_BATCHES = '0';
+
+    /** Age past which a batch is recommended for takeout; every fixture batch here is from 2026-08. */
+    private const string EVICT_AFTER_A_SECOND = '1';
+
+    /** Keep-count that protects the fixture archive by being wider than it. */
+    private const string KEEP_MORE_THAN_THERE_ARE = '10';
+
     /**
      * @var int Baseline the agent tests place their walks relative to. It is the real clock,
      *     because onStart() stamps its own baseline walk with time() and a synthetic origin
@@ -82,6 +91,8 @@ final class LogStoreAgentIndexTest extends TestCase
     {
         putenv(EnvConstants::DAEMON_LOG_FILE->name);
         putenv(EnvConstants::DAEMON_ERROR_LOG_FILE->name);
+        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name);
+        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name);
         if ($this->previousEnv !== null) {
             Hilos::$env = $this->previousEnv;
         }
@@ -253,6 +264,93 @@ final class LogStoreAgentIndexTest extends TestCase
         $this->assertSame(0, $agent->index()->growthBytesPerDay['agent-hilos_logs.log']);
     }
 
+    /**
+     * The node owns the files, so the node is the judge of them (HIL-871): the verdict rides out
+     * with the index it was measured against, and the screen draws what arrived.
+     */
+    public function testTheWalkPublishesTheRetentionVerdictWithTheIndex(): void
+    {
+        $this->evictAnythingOlderThanASecond();
+        $this->write('agent-hilos_logs.log', 100);
+        $agent = $this->startedAgent();
+        $this->assertSame([], $agent->index()->dueBatchTimestamps, 'An empty archive recommends nothing');
+
+        $timestamp = $this->rotate('2026-08-01-00-00-00');
+        $agent->walkStore($this->t0 + 60);
+
+        $this->assertSame([$timestamp], $agent->index()->dueBatchTimestamps);
+        $this->assertSame(
+            [],
+            $agent->lastDelta()?->verdictChangedBatchTimestamps,
+            'A batch that has just arrived is reported as arrived, not as re-judged',
+        );
+    }
+
+    /**
+     * The verdict is the one thing in the index that moves without a file moving: an administrator
+     * edits the threshold, and the very next walk finds the same batches, the same weights and the
+     * same markers with a different answer over them. Without its own axis the delta would be
+     * judged empty and the frame carrying the new badges would never leave the node.
+     */
+    public function testAnEditedThresholdMovesTheVerdictWithoutMovingAFile(): void
+    {
+        $this->write('agent-hilos_logs.log', 100);
+        $agent = $this->startedAgent();
+        $timestamp = $this->rotate('2026-08-01-00-00-00');
+        $agent->walkStore($this->t0 + 60);
+        $this->assertSame([], $agent->index()->dueBatchTimestamps);
+
+        $this->evictAnythingOlderThanASecond();
+        $agent->walkStore($this->t0 + 120);
+
+        $this->assertSame([$timestamp], $agent->index()->dueBatchTimestamps);
+        $this->assertSame([$timestamp], $agent->lastDelta()?->verdictChangedBatchTimestamps);
+        $this->assertSame([], $agent->lastDelta()?->appearedBatchTimestamps);
+        $this->assertSame([], $agent->lastDelta()?->grownKeys);
+        $this->assertFalse($agent->lastDelta()?->isEmpty(), 'A verdict that moved is worth a frame');
+    }
+
+    /**
+     * And the crossing back, which is why the axis counts both directions: raising the keep-count
+     * pulls a batch under protection again, and a one-way axis would leave the screen offering to
+     * carry off what the node has already gone back to refusing.
+     */
+    public function testABatchPulledBackUnderProtectionMovesTheVerdictToo(): void
+    {
+        $this->evictAnythingOlderThanASecond();
+        $this->write('agent-hilos_logs.log', 100);
+        $agent = $this->startedAgent();
+        $timestamp = $this->rotate('2026-08-01-00-00-00');
+        $agent->walkStore($this->t0 + 60);
+        $this->assertSame([$timestamp], $agent->index()->dueBatchTimestamps);
+
+        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name . '=' . self::KEEP_MORE_THAN_THERE_ARE);
+        $agent->walkStore($this->t0 + 120);
+
+        $this->assertSame([], $agent->index()->dueBatchTimestamps);
+        $this->assertSame([$timestamp], $agent->lastDelta()?->verdictChangedBatchTimestamps);
+    }
+
+    /**
+     * A batch that goes away takes its verdict with it and is reported as gone, once: naming it on
+     * the verdict axis as well would ask the screen to repaint a row that is no longer there.
+     */
+    public function testAVanishedBatchIsNotAlsoReportedAsReJudged(): void
+    {
+        $this->evictAnythingOlderThanASecond();
+        $this->write('agent-hilos_logs.log', 100);
+        $agent = $this->startedAgent();
+        $timestamp = $this->rotate('2026-08-01-00-00-00');
+        $agent->walkStore($this->t0 + 60);
+        $this->assertSame([$timestamp], $agent->index()->dueBatchTimestamps);
+
+        $this->removeTree($this->batchPath('2026-08-01-00-00-00'));
+        $agent->walkStore($this->t0 + 120);
+
+        $this->assertSame([$timestamp], $agent->lastDelta()?->vanishedBatchTimestamps);
+        $this->assertSame([], $agent->lastDelta()?->verdictChangedBatchTimestamps);
+    }
+
     public function testGrowthWindowNeverCountsAShrinkAsGrowth(): void
     {
         $window = new LogGrowthWindow();
@@ -289,6 +387,19 @@ final class LogStoreAgentIndexTest extends TestCase
         $agent->onStart();
 
         return $agent;
+    }
+
+    /**
+     * Puts the retention rule where every archived batch of these fixtures is a candidate.
+     *
+     * The count criterion is switched off and the age one set to a second, so what the rule
+     * recommends is decided by the archive alone - the fixture batches are stamped 2026-08, which
+     * is older than a second by any clock a test runs on.
+     */
+    private function evictAnythingOlderThanASecond(): void
+    {
+        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name . '=' . self::KEEP_NO_BATCHES);
+        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name . '=' . self::EVICT_AFTER_A_SECOND);
     }
 
     /**

@@ -25,6 +25,14 @@ namespace Hilos\Log;
  * only the node itself can say which one it holds. Zero is a value and not an absence: it is the
  * installation that wants the pruner to take a confirmed batch on its very next pass.
  *
+ * {@see $dueBatchTimestamps} is the one entry here that is a VERDICT and not a measurement
+ * (HIL-871): the node is the only judge of its own retention rule, and the screen draws what
+ * arrived. It rides on the index rather than on the batch because
+ * {@see LogBatchSummary} projects the file walk, which has no settings resolver and is not to
+ * grow one, while {@see LogArchiveRetentionPolicy} reads the whole archive at once to decide
+ * which of it the newest few protect. An empty list means the rule recommends carrying nothing
+ * off, and it is the same answer an index measured by a node that predates this field gives.
+ *
  * Unavailability is a state and not an exception, the same way {@see LogStoreSnapshot} carries it:
  * {@see $available} false comes with empty projections, which the overview draws as blank tiles
  * rather than as zeros — a zero would claim there were no rotations, and here we simply do not know.
@@ -41,6 +49,7 @@ final class NodeLogIndex
      * @param array<string, ?int> $growthBytesPerDay Key → bytes written over the last day, null until the window fills
      * @param ?string $logDirectory Absolute log root of this node, or null when the environment cannot name one
      * @param int $takeoutUndoWindowSeconds Seconds a confirmed batch is protected from the pruner on this node, 0 when it is not to wait
+     * @param list<int> $dueBatchTimestamps Batches the retention rule recommends carrying off, ascending; empty when it recommends none
      */
     public function __construct(
         public readonly ?string $nodeId,
@@ -52,6 +61,7 @@ final class NodeLogIndex
         public readonly array $growthBytesPerDay,
         public readonly ?string $logDirectory = null,
         public readonly int $takeoutUndoWindowSeconds = 0,
+        public readonly array $dueBatchTimestamps = [],
     ) {
     }
 }
