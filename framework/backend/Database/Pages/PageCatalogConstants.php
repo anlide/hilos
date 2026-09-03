@@ -48,6 +48,9 @@ final class PageCatalogConstants
     /** @var string Wire: breadcrumb chain, root first, ending with the subscribing page */
     public const string WIRE_PAGE_BREADCRUMB = 'pageBreadcrumb';
 
+    /** @var string Wire: the subscribing page's own children, in catalog order; empty on a leaf */
+    public const string WIRE_PAGE_CHILDREN = 'pageChildren';
+
     /** @var string Wire: dashboard sections, sent to the dashboard page alone */
     public const string WIRE_DASHBOARD_SECTIONS = 'dashboardSections';
 
@@ -59,4 +62,7 @@ final class PageCatalogConstants
 
     /** @var string Wire: page key of one dashboard card; the frontend builds the URL from it */
     public const string WIRE_ITEM_PAGE = 'page';
+
+    /** @var string Wire: page key of one child card; the frontend builds the URL from it */
+    public const string WIRE_CHILD_PAGE = 'page';
 }

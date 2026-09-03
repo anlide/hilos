@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { bootHilos } from '../../src/bootstrap/bootHilos.js'
 import { createAppPageRouter } from '../../src/routing/appPageRouter.js'
 import { type NavigationEnvironment } from '../../src/routing/HilosRouter.js'
+import { HilosPages } from '../../src/routing/hilosPages.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import {
   type ConnectionState,
@@ -129,6 +130,36 @@ describe('bootHilos', () => {
     })
 
     expect(hilosRouter.currentTitle.get()).toBe('Home · Demo')
+  })
+
+  it('renames the tab when the page answers with its heading', () => {
+    // The title closure reads the identity signal, so currentTitle recomputes on
+    // the answer, not only on the navigation. Before it lands the title is empty
+    // on purpose: the shell would otherwise announce the app name and then the
+    // page name, two page-change announcements for one navigation.
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const router = createAppPageRouter(
+      { [HilosPages.SETTINGS]: { path: '/hilos/settings', admin: true } },
+      { fallback: HilosPages.SETTINGS },
+    )
+    const hilosRouter = bootHilos({
+      connection: connection as unknown as HilosConnection,
+      scopes,
+      router,
+      navigationEnvironment: fakeNavigation('/hilos/settings'),
+      appName: 'Demo',
+    })
+    hilosRouter.start()
+
+    expect(hilosRouter.currentTitle.get()).toBe('')
+
+    connection.emitProjectSignal('page_response', {
+      page: HilosPages.SETTINGS,
+      payload: { data: { pageLabel: 'Settings' } },
+    })
+
+    expect(hilosRouter.currentTitle.get()).toBe('Settings · Demo')
   })
 
   it('binds the page scope so a page_response lands in the page scope', () => {

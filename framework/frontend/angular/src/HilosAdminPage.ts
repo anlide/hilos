@@ -1,12 +1,18 @@
 // HilosAdminPage — the admin section page shell: the breadcrumb, heading, and
 // lead common to every Hilos admin page, plus a default body. A page passes only
 // its key ([page]); the shell reads the live route params from the navigator to
-// keep the breadcrumb and child links in context, and resolves label / lead /
-// parent from the framework admin tree (HILOS_ADMIN_PAGES). It is page-agnostic —
-// it renders whichever key it is given, never choosing the page itself (that is
-// the app shell's page->view map). The default body is the section's
-// sub-navigation cards, or a stub empty-state for a leaf; a real page projects
-// its own content to replace the default while keeping the shell.
+// keep the breadcrumb and child links in context, and takes the heading, the lead,
+// the chain and the subsection cards from the navigator's pageIdentity — what the
+// page's own subscription answered with, not a frontend constant. It is
+// page-agnostic — it renders whichever key it is given, never choosing the page
+// itself (that is the app shell's page->view map). The default body is the
+// section's sub-navigation cards, or a stub empty-state for a leaf; a real page
+// projects its own content to replace the default while keeping the shell.
+//
+// While the identity is still on the wire the heading is a neutral placeholder and
+// nothing else of the shell is drawn: the raw page key is never printed, and an
+// empty h1 under the same data-id would make "the name did not arrive" look
+// exactly like "the name arrived empty".
 //
 // A section ROOT that has content of its own projects it with the `body`
 // attribute instead, which is drawn after the default content: it needs both, the
@@ -20,11 +26,7 @@ import {
   inject,
   input,
 } from '@angular/core'
-import {
-  HILOS_ADMIN_PAGES,
-  hilosAdminBreadcrumb,
-  hilosAdminChildren,
-} from '@hilos/core'
+import { hilosChildLinks, hilosCrumbLinks } from '@hilos/core'
 
 import { HilosBreadcrumb } from './HilosBreadcrumb.js'
 import { HilosLink } from './HilosLink.js'
@@ -38,12 +40,19 @@ import { hilosSignal } from './hilosSignal.js'
   imports: [HilosBreadcrumb, HilosLink],
   template: `
     <section data-id="hilos-admin-page" [attr.data-page]="page()">
-      <hilos-breadcrumb [crumbs]="crumbs()" />
-      <h1 class="h4 mb-1" data-id="hilos-admin-title">
-        {{ meta()?.label ?? page() }}
-      </h1>
-      @if (meta()?.lead; as lead) {
-        <p class="text-body-secondary">{{ lead }}</p>
+      @if (identity(); as pageIdentity) {
+        <hilos-breadcrumb [crumbs]="crumbs()" />
+        <h1 class="h4 mb-1" data-id="hilos-admin-title">
+          {{ pageIdentity.label }}
+        </h1>
+        @if (pageIdentity.lead) {
+          <p class="text-body-secondary">{{ pageIdentity.lead }}</p>
+        }
+      } @else {
+        <div class="placeholder-glow mb-3" data-id="hilos-admin-title-skeleton">
+          <span class="placeholder col-3 d-block mb-2 rounded"></span>
+          <span class="placeholder col-6 d-block rounded"></span>
+        </div>
       }
 
       <ng-content>
@@ -77,7 +86,7 @@ import { hilosSignal } from './hilosSignal.js'
               </div>
             }
           </div>
-        } @else {
+        } @else if (identity()) {
           <div
             class="border rounded p-4 text-center text-body-secondary"
             data-id="hilos-admin-empty"
@@ -104,11 +113,19 @@ export class HilosAdminPage {
   private readonly router = inject(HILOS_ROUTER)
   private readonly route = hilosSignal(this.router.currentRoute)
 
-  protected readonly meta = computed(() => HILOS_ADMIN_PAGES[this.page()])
+  protected readonly identity = hilosSignal(this.router.pageIdentity)
   protected readonly crumbs = computed(() =>
-    hilosAdminBreadcrumb(this.page(), this.route().params),
+    hilosCrumbLinks(
+      this.identity()?.breadcrumb ?? [],
+      this.route().params,
+      this.router.resolvePath,
+    ),
   )
   protected readonly children = computed(() =>
-    hilosAdminChildren(this.page(), this.route().params),
+    hilosChildLinks(
+      this.identity()?.children ?? [],
+      this.route().params,
+      this.router.resolvePath,
+    ),
   )
 }

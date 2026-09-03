@@ -33,7 +33,16 @@ export async function prerenderPublicRoutes<TComponent>(
 
   const written: string[] = []
   for (const { page, route, component } of pages) {
-    const title = resolvePageTitle(page, config.pageTitles, config.appName)
+    // No catalog label and nothing to wait for: prerendering runs at build time
+    // with no socket, and the pages it renders are the public footer ones, whose
+    // labels the frontend owns outright.
+    const title = resolvePageTitle(
+      page,
+      config.pageTitles,
+      config.appName,
+      undefined,
+      true,
+    )
     const result = await config.renderRoute({
       route,
       component,

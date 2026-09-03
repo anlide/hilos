@@ -56,7 +56,10 @@ for (const { page } of HILOS_FOOTER_LINKS) {
   const body = await renderToString(
     createSSRApp({ render: () => h(component) }),
   )
-  const title = resolvePageTitle(page, pageTitles, appName)
+  // No catalog label and nothing to wait for: prerendering runs at build time
+  // with no socket, and the pages it renders are the public footer ones, whose
+  // labels the frontend owns outright.
+  const title = resolvePageTitle(page, pageTitles, appName, undefined, true)
   const html = template
     .replace('<div id="app"></div>', `<div id="app">${body}</div>`)
     .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)

@@ -7,6 +7,10 @@
 // stays testable with no DOM and core keeps its no-browser-environment test
 // rule; browserNavigationEnvironment is the binding a project passes in.
 
+import {
+  type HilosDashboardSection,
+  type HilosPageIdentity,
+} from '../admin/identity/hilosPageIdentity.js'
 import { type PageSubscriptionError } from '../protocol/pageError.js'
 import {
   computedSignal,
@@ -29,6 +33,12 @@ export interface NavigablePages {
   readonly pageError: ReadonlySignal<PageSubscriptionError | null>
   /** True while the subscribed page has not answered yet. */
   readonly pageLoading: ReadonlySignal<boolean>
+  /** The current page's catalog identity, or undefined while it is on the wire. */
+  readonly pageIdentity: ReadonlySignal<HilosPageIdentity | undefined>
+  /** The dashboard's section grouping; undefined on every other page. */
+  readonly dashboardSections: ReadonlySignal<
+    HilosDashboardSection[] | undefined
+  >
   /** Clear the current page's subscription error without leaving the page. */
   clearPageError(): void
   /** Draw a 403 on the current page and drop what it was showing. */
@@ -88,6 +98,34 @@ export interface HilosRouter {
    * round trip with a visibility assertion.
    */
   readonly pageLoading: ReadonlySignal<boolean>
+  /**
+   * The current page's identity as the backend catalog holds it: its heading,
+   * its lead, its breadcrumb chain and the cards of its subsections. `undefined`
+   * while the page's answer is still on the wire — which is what the admin shell
+   * draws its skeleton for — and `undefined` for a page the catalog carries no
+   * entry for, which the shell draws as no heading rather than as a raw page key.
+   * {@link HilosRouter.pageLoading} tells the two apart.
+   */
+  readonly pageIdentity: ReadonlySignal<HilosPageIdentity | undefined>
+  /**
+   * The admin dashboard's section grouping, cards and all, or `undefined` until
+   * its answer lands. Only the dashboard is sent it, so every other page reads
+   * `undefined` for the whole of its life.
+   */
+  readonly dashboardSections: ReadonlySignal<
+    HilosDashboardSection[] | undefined
+  >
+  /**
+   * The path a page key names, with each `{name}` slot filled from `params`, or
+   * `undefined` when the page has no route or a required slot is uncovered. It
+   * reads the application's whole route map — the framework's pages and the
+   * project's alike — so a link out of a breadcrumb or a card reaches a project
+   * screen as readily as a framework one.
+   *
+   * @param page The page key to resolve.
+   * @param params The route params to fill the slots from, defaulting to none.
+   */
+  resolvePath(page: string, params?: Record<string, string>): string | undefined
   /**
    * Clear the current page's subscription error without navigating. The auth
    * gate calls it on a successful session upgrade so a 401'd page un-gates and
@@ -192,6 +230,9 @@ export function createHilosRouter(
     currentTitle,
     pageError: pages.pageError,
     pageLoading: pages.pageLoading,
+    pageIdentity: pages.pageIdentity,
+    dashboardSections: pages.dashboardSections,
+    resolvePath: (page, params) => router.path(page, params),
     clearPageError: () => pages.clearPageError(),
     denyCurrentPage: () => pages.denyCurrentPage(),
     awaitPageAnswer: () => pages.awaitPageAnswer(),

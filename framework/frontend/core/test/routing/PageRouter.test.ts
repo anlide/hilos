@@ -251,3 +251,69 @@ describe('createPageRouter', () => {
     })
   })
 })
+
+describe('PageRouter.path', () => {
+  const router = createPageRouter(
+    {
+      main: { path: '/', admin: false },
+      panel: { path: '/hilos', admin: true },
+      user: { path: '/hilos/users/{id}', admin: true },
+      viewer: {
+        path: '/hilos/logs/view/{nodeId?}/{source?}/{stream?}',
+        admin: true,
+      },
+    },
+    { fallback: 'main' },
+  )
+
+  it('names a static page its own path', () => {
+    expect(router.path('panel')).toBe('/hilos')
+    expect(router.path('main')).toBe('/')
+  })
+
+  it('fills each slot from the params it is given', () => {
+    expect(router.path('user', { id: '7' })).toBe('/hilos/users/7')
+  })
+
+  it('cuts an unfilled optional tail together with its slashes', () => {
+    // Entered from the section tree, the viewer names no file: leaving the
+    // slashes would be an address with empty segments, which matches nothing.
+    expect(router.path('viewer')).toBe('/hilos/logs/view')
+  })
+
+  it('fills the optional tail once it is chosen', () => {
+    expect(
+      router.path('viewer', {
+        nodeId: '-',
+        source: 'live',
+        stream: 'worker-0.log',
+      }),
+    ).toBe('/hilos/logs/view/-/live/worker-0.log')
+  })
+
+  it('names nothing for a page the router does not carry', () => {
+    expect(router.path('nowhere')).toBeUndefined()
+  })
+
+  it('names nothing when a required slot is uncovered', () => {
+    // A card whose route wants an id the current route does not carry is left
+    // out; a path with the slot dropped would silently name another page's row.
+    expect(router.path('user')).toBeUndefined()
+  })
+
+  it('agrees with match on every path it produces', () => {
+    // The two directions read the same declarations, and a link that led
+    // somewhere match does not recognise would open the fallback page instead.
+    for (const [page, params] of [
+      ['panel', {}],
+      ['user', { id: '7' }],
+      ['viewer', {}],
+      ['viewer', { nodeId: '-', source: 'live', stream: 'w.log' }],
+    ] as const) {
+      const path = router.path(page, params)
+
+      expect(path).toBeDefined()
+      expect(router.match(path as string).page).toBe(page)
+    }
+  })
+})

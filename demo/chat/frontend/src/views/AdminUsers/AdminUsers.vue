@@ -1,5 +1,7 @@
-<!-- The chat admin-users page (PAGE_ADMIN_USERS) at /hilos/admin_users: the admin
-users table reached from the dashboard's "Chat administration" section. A user's
+<!-- The chat admin-users page (PAGE_ADMIN_USERS) at /hilos/app/users: the admin
+users table reached from the dashboard's "Chat administration" section. The
+heading, the lead and the breadcrumb come from the page catalog on the backend
+through the framework's HilosAdminPage shell. A user's
 only action is a rename (edit) — no add or delete. The server-windowed table and
 the framework user row view-model live with the page (adminUsersPage.ts), the
 rename submit in adminUsersActions.ts. Authoritative-backend: a submit dispatches
@@ -9,6 +11,7 @@ step 7.4); a failure surfaces in the dialog. Bootstrap classes only
 <script setup lang="ts">
 import {
   HilosActionError,
+  HilosAdminPage,
   HilosModal,
   HilosViewportTable,
   LoadingButton,
@@ -18,6 +21,7 @@ import {
 import { type HilosTableColumn, type HilosUserRow } from '@hilos/core'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
+import { PAGE_ADMIN_USERS } from '../../pages/keys'
 import { currentUserId } from '../../bootstrap/session'
 import { sendAdminUserUpdate, sendImpersonateStart } from './adminUsersActions'
 import {
@@ -140,144 +144,141 @@ async function submitImpersonate(): Promise<void> {
 </script>
 
 <template>
-  <section data-id="admin-users-view">
-    <div class="d-flex flex-column gap-1 mb-4">
-      <h1 class="h4 mb-0">Admin users</h1>
-      <p class="mb-0 text-body-secondary">
-        Application users: presence, activity, and rename.
-      </p>
-    </div>
+  <HilosAdminPage :page="PAGE_ADMIN_USERS">
+    <section data-id="admin-users-view">
+      <HilosViewportTable
+        label="Users"
+        :controller="adminUsersTable"
+        :columns="columns"
+        searchable
+        search-placeholder="Search users…"
+        empty-text="No users yet."
+      >
+        <template #row="{ row }">
+          <td class="text-body-secondary">{{ row.id }}</td>
+          <td class="fw-medium">{{ row.name }}</td>
+          <td>{{ row.lastActivity ?? '—' }}</td>
+          <td>
+            <span
+              class="badge"
+              :class="
+                row.presence === 'online'
+                  ? 'text-bg-success'
+                  : 'text-bg-secondary'
+              "
+              >{{ row.presence }}</span
+            >
+          </td>
+          <td class="text-end">{{ row.onlineSessionCount }}</td>
+          <td class="text-end">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-primary"
+              title="Edit"
+              aria-label="Edit"
+              :data-id="`admin-users-edit-${row.id}`"
+              @click="openEdit(row)"
+            >
+              <i class="bi bi-pencil" aria-hidden="true"></i>
+            </button>
+            <button
+              v-if="row.id !== currentUid"
+              type="button"
+              class="btn btn-sm btn-outline-secondary ms-2"
+              title="Impersonate"
+              aria-label="Impersonate"
+              :data-id="`admin-users-impersonate-${row.id}`"
+              @click="openImpersonate(row)"
+            >
+              <i class="bi bi-person-badge" aria-hidden="true"></i>
+            </button>
+          </td>
+        </template>
+      </HilosViewportTable>
 
-    <HilosViewportTable
-      label="Users"
-      :controller="adminUsersTable"
-      :columns="columns"
-      searchable
-      search-placeholder="Search users…"
-      empty-text="No users yet."
-    >
-      <template #row="{ row }">
-        <td class="text-body-secondary">{{ row.id }}</td>
-        <td class="fw-medium">{{ row.name }}</td>
-        <td>{{ row.lastActivity ?? '—' }}</td>
-        <td>
-          <span
-            class="badge"
-            :class="
-              row.presence === 'online'
-                ? 'text-bg-success'
-                : 'text-bg-secondary'
-            "
-            >{{ row.presence }}</span
-          >
-        </td>
-        <td class="text-end">{{ row.onlineSessionCount }}</td>
-        <td class="text-end">
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-primary"
-            title="Edit"
-            aria-label="Edit"
-            :data-id="`admin-users-edit-${row.id}`"
-            @click="openEdit(row)"
-          >
-            <i class="bi bi-pencil" aria-hidden="true"></i>
-          </button>
-          <button
-            v-if="row.id !== currentUid"
-            type="button"
-            class="btn btn-sm btn-outline-secondary ms-2"
-            title="Impersonate"
-            aria-label="Impersonate"
-            :data-id="`admin-users-impersonate-${row.id}`"
-            @click="openImpersonate(row)"
-          >
-            <i class="bi bi-person-badge" aria-hidden="true"></i>
-          </button>
-        </td>
-      </template>
-    </HilosViewportTable>
-
-    <HilosModal
-      v-model="editOpen"
-      :title="editRow ? `Edit · ${editRow.name}` : 'Edit user'"
-      :confirm-on-close="editDirty"
-      @cancel="closeEdit"
-    >
-      <HilosActionError :action="editAction" />
-      <form v-if="editRow" @submit.prevent="submitEdit">
-        <div class="mb-3">
-          <label class="form-label" for="admin-users-name">Name</label>
-          <input
-            id="admin-users-name"
-            v-model="editName"
-            type="text"
-            class="form-control"
-            required
-            minlength="2"
-            maxlength="64"
-            data-id="admin-users-name"
-          />
-        </div>
-        <div class="mb-0">
-          <span class="form-label d-block">Last activity</span>
-          <div class="form-control-plaintext">
-            {{ editRow.lastActivity ?? '—' }}
+      <HilosModal
+        v-model="editOpen"
+        :title="editRow ? `Edit · ${editRow.name}` : 'Edit user'"
+        :confirm-on-close="editDirty"
+        @cancel="closeEdit"
+      >
+        <HilosActionError :action="editAction" />
+        <form v-if="editRow" @submit.prevent="submitEdit">
+          <div class="mb-3">
+            <label class="form-label" for="admin-users-name">Name</label>
+            <input
+              id="admin-users-name"
+              v-model="editName"
+              type="text"
+              class="form-control"
+              required
+              minlength="2"
+              maxlength="64"
+              data-id="admin-users-name"
+            />
           </div>
-        </div>
-      </form>
-      <template #actions="{ requestClose }">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="editBusy"
-          @click="requestClose"
-        >
-          Cancel
-        </button>
-        <LoadingButton
-          class="btn-primary"
-          :loading="editLoading"
-          :disabled="!editDirty || editBusy"
-          data-id="admin-users-save"
-          @click="submitEdit"
-        >
-          Save
-        </LoadingButton>
-      </template>
-    </HilosModal>
+          <div class="mb-0">
+            <span class="form-label d-block">Last activity</span>
+            <div class="form-control-plaintext">
+              {{ editRow.lastActivity ?? '—' }}
+            </div>
+          </div>
+        </form>
+        <template #actions="{ requestClose }">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            :disabled="editBusy"
+            @click="requestClose"
+          >
+            Cancel
+          </button>
+          <LoadingButton
+            class="btn-primary"
+            :loading="editLoading"
+            :disabled="!editDirty || editBusy"
+            data-id="admin-users-save"
+            @click="submitEdit"
+          >
+            Save
+          </LoadingButton>
+        </template>
+      </HilosModal>
 
-    <HilosModal
-      v-model="impersonateOpen"
-      :title="
-        impersonateRow ? `Impersonate · ${impersonateRow.name}` : 'Impersonate user'
-      "
-      @cancel="closeImpersonate"
-    >
-      <HilosActionError :action="impersonateAction" />
-      <p v-if="impersonateRow" class="mb-0">
-        Become <strong>{{ impersonateRow.name }}</strong> and see the app as they
-        do? You can stop from the banner at any time.
-      </p>
-      <template #actions="{ requestClose }">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="impersonateBusy"
-          @click="requestClose"
-        >
-          Cancel
-        </button>
-        <LoadingButton
-          class="btn-primary"
-          :loading="impersonateLoading"
-          :disabled="impersonateBusy"
-          data-id="admin-users-impersonate-confirm"
-          @click="submitImpersonate"
-        >
-          Impersonate
-        </LoadingButton>
-      </template>
-    </HilosModal>
-  </section>
+      <HilosModal
+        v-model="impersonateOpen"
+        :title="
+          impersonateRow
+            ? `Impersonate · ${impersonateRow.name}`
+            : 'Impersonate user'
+        "
+        @cancel="closeImpersonate"
+      >
+        <HilosActionError :action="impersonateAction" />
+        <p v-if="impersonateRow" class="mb-0">
+          Become <strong>{{ impersonateRow.name }}</strong> and see the app as
+          they do? You can stop from the banner at any time.
+        </p>
+        <template #actions="{ requestClose }">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            :disabled="impersonateBusy"
+            @click="requestClose"
+          >
+            Cancel
+          </button>
+          <LoadingButton
+            class="btn-primary"
+            :loading="impersonateLoading"
+            :disabled="impersonateBusy"
+            data-id="admin-users-impersonate-confirm"
+            @click="submitImpersonate"
+          >
+            Impersonate
+          </LoadingButton>
+        </template>
+      </HilosModal>
+    </section>
+  </HilosAdminPage>
 </template>

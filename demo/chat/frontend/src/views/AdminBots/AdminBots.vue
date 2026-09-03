@@ -1,5 +1,7 @@
-<!-- The chat bots admin page (PAGE_ADMIN_BOTS) at /hilos/admin_bots: the library
-bots table reached from the dashboard's "Chat administration" section. The bots
+<!-- The chat bots admin page (PAGE_ADMIN_BOTS) at /hilos/app/bots: the library
+bots table reached from the dashboard's "Chat administration" section. The
+heading, the lead and the breadcrumb come from the page catalog on the backend
+through the framework's HilosAdminPage shell. The bots
 table is a free CRUD table (not cataloged) — add, edit, or delete a bot; the row
 shows live agent presence (online/offline) from the runtime status slot. The table
 controller and the row view-model live with the page (adminBotsPage.ts), the
@@ -10,6 +12,7 @@ failure surfaces in the dialog. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   HilosActionError,
+  HilosAdminPage,
   HilosModal,
   HilosViewportTable,
   LoadingButton,
@@ -25,6 +28,7 @@ import {
   sendBotUpdate,
   type BotInput,
 } from './adminBotsActions'
+import { PAGE_ADMIN_BOTS } from '../../pages/keys'
 import { botsTable, disposeBotsTable, startBotsTable } from './adminBotsPage'
 import { type BotRow } from './types/tables/BotRow'
 
@@ -209,221 +213,218 @@ async function submitDelete(): Promise<void> {
 </script>
 
 <template>
-  <section data-id="admin-bots-view">
-    <div class="d-flex justify-content-between align-items-start gap-2 mb-4">
-      <div class="d-flex flex-column gap-1">
-        <h1 class="h4 mb-0">Bots</h1>
-        <p class="mb-0 text-body-secondary">
-          Library bots: create, edit, and toggle the chat's automated
-          participants.
-        </p>
+  <HilosAdminPage :page="PAGE_ADMIN_BOTS">
+    <section data-id="admin-bots-view">
+      <div class="d-flex justify-content-end mb-4">
+        <button
+          type="button"
+          class="btn btn-primary flex-shrink-0"
+          data-id="admin-bots-add"
+          @click="openCreate"
+        >
+          <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Add bot
+        </button>
       </div>
-      <button
-        type="button"
-        class="btn btn-primary flex-shrink-0"
-        data-id="admin-bots-add"
-        @click="openCreate"
+
+      <HilosViewportTable
+        label="Bots"
+        :controller="botsTable"
+        :columns="columns"
+        searchable
+        search-placeholder="Search bots…"
+        loading-text="Loading bots…"
+        empty-text="No bots yet."
       >
-        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Add bot
-      </button>
-    </div>
+        <template #row="{ row }">
+          <td>
+            <span class="fw-medium">{{ row.name }}</span>
+          </td>
+          <td style="max-width: 18rem">
+            <span
+              class="text-truncate d-block text-body-secondary"
+              :title="row.description ?? ''"
+              >{{ row.description ?? '—' }}</span
+            >
+          </td>
+          <td>
+            <span
+              v-if="row.presence === 'online'"
+              class="badge rounded-pill bg-success-subtle text-success-emphasis border border-success-subtle"
+              >online</span
+            >
+            <span
+              v-else
+              class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
+              >offline</span
+            >
+          </td>
+          <td>
+            <span
+              v-if="row.active"
+              class="badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle"
+              >active</span
+            >
+            <span
+              v-else
+              class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
+              >off</span
+            >
+          </td>
+          <td class="text-end">
+            <div class="d-flex gap-1 justify-content-end">
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-primary"
+                title="Edit"
+                aria-label="Edit"
+                :data-id="`admin-bots-edit-${row.id}`"
+                @click="openEdit(row)"
+              >
+                <i class="bi bi-pencil" aria-hidden="true"></i>
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-danger"
+                title="Delete"
+                aria-label="Delete"
+                :data-id="`admin-bots-delete-${row.id}`"
+                @click="openDelete(row)"
+              >
+                <i class="bi bi-trash" aria-hidden="true"></i>
+              </button>
+            </div>
+          </td>
+        </template>
+      </HilosViewportTable>
 
-    <HilosViewportTable
-      label="Bots"
-      :controller="botsTable"
-      :columns="columns"
-      searchable
-      search-placeholder="Search bots…"
-      loading-text="Loading bots…"
-      empty-text="No bots yet."
-    >
-      <template #row="{ row }">
-        <td>
-          <span class="fw-medium">{{ row.name }}</span>
-        </td>
-        <td style="max-width: 18rem">
-          <span
-            class="text-truncate d-block text-body-secondary"
-            :title="row.description ?? ''"
-            >{{ row.description ?? '—' }}</span
-          >
-        </td>
-        <td>
-          <span
-            v-if="row.presence === 'online'"
-            class="badge rounded-pill bg-success-subtle text-success-emphasis border border-success-subtle"
-            >online</span
-          >
-          <span
-            v-else
-            class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
-            >offline</span
-          >
-        </td>
-        <td>
-          <span
-            v-if="row.active"
-            class="badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle"
-            >active</span
-          >
-          <span
-            v-else
-            class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
-            >off</span
-          >
-        </td>
-        <td class="text-end">
-          <div class="d-flex gap-1 justify-content-end">
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-primary"
-              title="Edit"
-              aria-label="Edit"
-              :data-id="`admin-bots-edit-${row.id}`"
-              @click="openEdit(row)"
-            >
-              <i class="bi bi-pencil" aria-hidden="true"></i>
-            </button>
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-danger"
-              title="Delete"
-              aria-label="Delete"
-              :data-id="`admin-bots-delete-${row.id}`"
-              @click="openDelete(row)"
-            >
-              <i class="bi bi-trash" aria-hidden="true"></i>
-            </button>
+      <HilosModal
+        v-model="formOpen"
+        :title="formMode === 'create' ? 'Add bot' : `Edit · ${fName}`"
+        :confirm-on-close="formDirty"
+        @cancel="closeForm"
+      >
+        <HilosActionError :action="formAction" />
+        <form @submit.prevent="submitForm">
+          <div class="mb-3">
+            <label class="form-label" for="admin-bots-name">Name</label>
+            <input
+              id="admin-bots-name"
+              v-model="fName"
+              type="text"
+              class="form-control"
+              required
+              data-id="admin-bots-name"
+            />
           </div>
-        </td>
-      </template>
-    </HilosViewportTable>
-
-    <HilosModal
-      v-model="formOpen"
-      :title="formMode === 'create' ? 'Add bot' : `Edit · ${fName}`"
-      :confirm-on-close="formDirty"
-      @cancel="closeForm"
-    >
-      <HilosActionError :action="formAction" />
-      <form @submit.prevent="submitForm">
-        <div class="mb-3">
-          <label class="form-label" for="admin-bots-name">Name</label>
-          <input
-            id="admin-bots-name"
-            v-model="fName"
-            type="text"
-            class="form-control"
-            required
-            data-id="admin-bots-name"
-          />
-        </div>
-        <div class="mb-3">
-          <label class="form-label" for="admin-bots-description"
-            >Description</label
+          <div class="mb-3">
+            <label class="form-label" for="admin-bots-description"
+              >Description</label
+            >
+            <textarea
+              id="admin-bots-description"
+              v-model="fDescription"
+              class="form-control"
+              rows="2"
+              data-id="admin-bots-description"
+            ></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="admin-bots-style">Style</label>
+            <input
+              id="admin-bots-style"
+              v-model="fStyle"
+              type="text"
+              class="form-control"
+              data-id="admin-bots-style"
+            />
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="admin-bots-topics">Topics</label>
+            <input
+              id="admin-bots-topics"
+              v-model="fTopics"
+              type="text"
+              class="form-control"
+              data-id="admin-bots-topics"
+            />
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="admin-bots-personality"
+              >Personality</label
+            >
+            <textarea
+              id="admin-bots-personality"
+              v-model="fPersonality"
+              class="form-control"
+              rows="2"
+              data-id="admin-bots-personality"
+            ></textarea>
+          </div>
+          <div class="form-check form-switch mb-0">
+            <input
+              id="admin-bots-active"
+              v-model="fActive"
+              type="checkbox"
+              class="form-check-input"
+              data-id="admin-bots-active"
+            />
+            <label class="form-check-label" for="admin-bots-active"
+              >Active</label
+            >
+          </div>
+        </form>
+        <template #actions="{ requestClose }">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            :disabled="formBusy"
+            @click="requestClose"
           >
-          <textarea
-            id="admin-bots-description"
-            v-model="fDescription"
-            class="form-control"
-            rows="2"
-            data-id="admin-bots-description"
-          ></textarea>
-        </div>
-        <div class="mb-3">
-          <label class="form-label" for="admin-bots-style">Style</label>
-          <input
-            id="admin-bots-style"
-            v-model="fStyle"
-            type="text"
-            class="form-control"
-            data-id="admin-bots-style"
-          />
-        </div>
-        <div class="mb-3">
-          <label class="form-label" for="admin-bots-topics">Topics</label>
-          <input
-            id="admin-bots-topics"
-            v-model="fTopics"
-            type="text"
-            class="form-control"
-            data-id="admin-bots-topics"
-          />
-        </div>
-        <div class="mb-3">
-          <label class="form-label" for="admin-bots-personality"
-            >Personality</label
+            Cancel
+          </button>
+          <LoadingButton
+            class="btn-primary"
+            :loading="formLoading"
+            :disabled="!fName.trim() || formBusy"
+            data-id="admin-bots-save"
+            @click="submitForm"
           >
-          <textarea
-            id="admin-bots-personality"
-            v-model="fPersonality"
-            class="form-control"
-            rows="2"
-            data-id="admin-bots-personality"
-          ></textarea>
-        </div>
-        <div class="form-check form-switch mb-0">
-          <input
-            id="admin-bots-active"
-            v-model="fActive"
-            type="checkbox"
-            class="form-check-input"
-            data-id="admin-bots-active"
-          />
-          <label class="form-check-label" for="admin-bots-active">Active</label>
-        </div>
-      </form>
-      <template #actions="{ requestClose }">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="formBusy"
-          @click="requestClose"
-        >
-          Cancel
-        </button>
-        <LoadingButton
-          class="btn-primary"
-          :loading="formLoading"
-          :disabled="!fName.trim() || formBusy"
-          data-id="admin-bots-save"
-          @click="submitForm"
-        >
-          Save
-        </LoadingButton>
-      </template>
-    </HilosModal>
+            Save
+          </LoadingButton>
+        </template>
+      </HilosModal>
 
-    <HilosModal
-      v-model="deleteOpen"
-      :title="deleteRow ? `Delete · ${deleteRow.name}` : 'Delete bot'"
-      :close-on-backdrop="!deleteBusy"
-      :close-on-esc="!deleteBusy"
-      @cancel="closeDelete"
-    >
-      <HilosActionError :action="deleteAction" />
-      <p class="mb-0 text-body-secondary">
-        This permanently removes the bot and stops its agent.
-      </p>
-      <p v-if="deleteRow" class="mb-0 mt-2 fw-medium">{{ deleteRow.name }}</p>
-      <template #actions="{ requestClose }">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="deleteBusy"
-          @click="requestClose"
-        >
-          Cancel
-        </button>
-        <LoadingButton
-          class="btn-danger"
-          :loading="deleteLoading"
-          data-id="admin-bots-delete-confirm"
-          @click="submitDelete"
-        >
-          Delete
-        </LoadingButton>
-      </template>
-    </HilosModal>
-  </section>
+      <HilosModal
+        v-model="deleteOpen"
+        :title="deleteRow ? `Delete · ${deleteRow.name}` : 'Delete bot'"
+        :close-on-backdrop="!deleteBusy"
+        :close-on-esc="!deleteBusy"
+        @cancel="closeDelete"
+      >
+        <HilosActionError :action="deleteAction" />
+        <p class="mb-0 text-body-secondary">
+          This permanently removes the bot and stops its agent.
+        </p>
+        <p v-if="deleteRow" class="mb-0 mt-2 fw-medium">{{ deleteRow.name }}</p>
+        <template #actions="{ requestClose }">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            :disabled="deleteBusy"
+            @click="requestClose"
+          >
+            Cancel
+          </button>
+          <LoadingButton
+            class="btn-danger"
+            :loading="deleteLoading"
+            data-id="admin-bots-delete-confirm"
+            @click="submitDelete"
+          >
+            Delete
+          </LoadingButton>
+        </template>
+      </HilosModal>
+    </section>
+  </HilosAdminPage>
 </template>

@@ -7,6 +7,12 @@
 // payload is ingested only while its page is still the current subscription.
 
 import {
+  dashboardSections,
+  pageIdentity,
+  type HilosDashboardSection,
+  type HilosPageIdentity,
+} from '../admin/identity/hilosPageIdentity.js'
+import {
   FIELD_PAGE,
   FIELD_PARAMS,
   FIELD_TYPE,
@@ -73,10 +79,25 @@ export class PageSubscription {
    */
   private sessionAnswered = false
 
+  /** The current page's catalog identity, read off the page scope it arrives in. */
+  private readonly pageIdentitySignal: ReadonlySignal<
+    HilosPageIdentity | undefined
+  >
+
+  /** The dashboard's section grouping, read off the same page scope. */
+  private readonly dashboardSectionsSignal: ReadonlySignal<
+    HilosDashboardSection[] | undefined
+  >
+
   constructor(
     private readonly connection: PageSubscriptionConnection,
     private readonly scopes: ScopeManager,
   ) {
+    // Both selectors are derived once and held, not rebuilt per read: they are
+    // computed over the page-scope signal, so one instance already answers for
+    // every page this subscription will ever open.
+    this.pageIdentitySignal = pageIdentity(scopes)
+    this.dashboardSectionsSignal = dashboardSections(scopes)
     connection.on('state', (state) => {
       if (state !== 'connected') {
         this.sessionAnswered = false
@@ -111,6 +132,27 @@ export class PageSubscription {
    */
   get pageLoading(): ReadonlySignal<boolean> {
     return this.pageLoadingSignal
+  }
+
+  /**
+   * The current page's catalog identity — heading, lead, breadcrumb, subsection
+   * cards — as the page's own answer delivered it, or `undefined` while that
+   * answer is on the wire and for a page the catalog carries no entry for.
+   *
+   * It reads the page scope rather than a store of its own: navigation drops
+   * that scope, so the previous screen's name cannot outlive the screen, and the
+   * value returns on its own when the next answer lands.
+   */
+  get pageIdentity(): ReadonlySignal<HilosPageIdentity | undefined> {
+    return this.pageIdentitySignal
+  }
+
+  /**
+   * The admin dashboard's section grouping, or `undefined` until the dashboard's
+   * own answer lands. Only the dashboard is sent it.
+   */
+  get dashboardSections(): ReadonlySignal<HilosDashboardSection[] | undefined> {
+    return this.dashboardSectionsSignal
   }
 
   /**

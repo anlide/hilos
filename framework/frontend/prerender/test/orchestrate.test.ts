@@ -94,7 +94,7 @@ it('passes the template and resolved title to renderRoute', async () => {
       route: HILOS_PAGE_ROUTES[first.page],
       component: `component:${first.page}`,
       template: TEMPLATE,
-      title: resolvePageTitle(first.page, {}, 'Demo'),
+      title: resolvePageTitle(first.page, {}, 'Demo', undefined, true),
     }),
   )
 })

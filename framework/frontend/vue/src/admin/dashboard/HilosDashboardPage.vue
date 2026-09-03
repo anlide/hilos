@@ -1,31 +1,42 @@
 <!-- HilosDashboardPage — the framework Hilos admin dashboard (HilosPages.DASHBOARD):
 the entry to the admin section reached by the shell's gear over the live socket. It
-renders the admin sections grouped from the framework admin catalog (@hilos/core
-HILOS_ADMIN_DASHBOARD_SECTIONS) as no-refresh HilosLink cards. It is self-contained
-(no project context), so it is the framework default for the dashboard key; a
-project that wants its own admin areas above the framework sections wraps this page
-and fills the `#top` slot (the chat demo adds its bots / moderation cards there).
+renders the admin sections the dashboard's own subscription answered with, framework
+groups first and a project's own after them, as no-refresh HilosLink cards. It is
+self-contained (no project context), so it is the framework default for the dashboard
+key; a project declares its cards in its page catalog on the backend rather than
+wrapping this page, and the `#top` slot is left for content that is not a card at
+all (the React and Angular ports offer the same seam). The sections are a computed, not a module constant: nothing is
+known about them at module load, they arrive with the page. Until they do, the cards
+are placeholders — an empty grid would jump the layout on every visit.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import {
-  HILOS_ADMIN_DASHBOARD_SECTIONS,
-  HILOS_ADMIN_PAGES,
-  resolveHilosPath,
-} from '@hilos/core'
+import { computed, inject } from 'vue'
 
 import HilosLink from '../../HilosLink.vue'
+import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { useSignal } from '../../useSignal.js'
 
-const sections = HILOS_ADMIN_DASHBOARD_SECTIONS.map((section) => ({
-  title: section.title,
-  description: section.description,
-  items: section.items.map((page) => ({
-    page,
-    title: HILOS_ADMIN_PAGES[page]?.label ?? page,
-    lead: HILOS_ADMIN_PAGES[page]?.lead ?? '',
-    icon: HILOS_ADMIN_PAGES[page]?.icon ?? 'bi-square',
-    to: resolveHilosPath(page),
+const router = inject(hilosRouterKey)
+if (!router) {
+  throw new Error(
+    'HilosDashboardPage requires a provided router: app.provide(hilosRouterKey, router).',
+  )
+}
+
+const answered = useSignal(router.dashboardSections)
+const sections = computed(() =>
+  (answered.value ?? []).map((section) => ({
+    title: section.title,
+    description: section.description,
+    // A card with no address is left out: a card IS its target, and the shell
+    // must not offer one that goes nowhere.
+    items: section.items.flatMap((item) => {
+      const to = router.resolvePath(item.page)
+
+      return to === undefined ? [] : [{ ...item, to }]
+    }),
   })),
-}))
+)
 </script>
 
 <template>
@@ -38,8 +49,19 @@ const sections = HILOS_ADMIN_DASHBOARD_SECTIONS.map((section) => ({
     </div>
 
     <!-- Project-supplied admin areas above the framework sections; empty by
-    default, filled by a project wrapper (the chat demo's bots / moderation). -->
+    default. A project's own cards ride its page catalog on the backend, so this
+    seam is for content that is not a card at all. -->
     <slot name="top" />
+
+    <div
+      v-if="answered === undefined"
+      class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3 placeholder-glow"
+      data-id="dashboard-skeleton"
+    >
+      <div v-for="slot in 6" :key="slot" class="col">
+        <span class="placeholder col-12 rounded py-5 d-block"></span>
+      </div>
+    </div>
 
     <div v-for="section in sections" :key="section.title" class="mb-4">
       <div class="mb-3">
@@ -61,10 +83,13 @@ const sections = HILOS_ADMIN_DASHBOARD_SECTIONS.map((section) => ({
                 <span
                   class="bg-body-secondary rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0 p-3 fs-3 lh-1"
                 >
-                  <i :class="['bi', item.icon]" aria-hidden="true"></i>
+                  <i
+                    :class="['bi', item.icon ?? 'bi-square']"
+                    aria-hidden="true"
+                  ></i>
                 </span>
                 <span class="d-flex flex-column gap-1">
-                  <span class="h6 mb-0">{{ item.title }}</span>
+                  <span class="h6 mb-0">{{ item.label }}</span>
                   <span class="small text-body-secondary">{{ item.lead }}</span>
                 </span>
               </div>

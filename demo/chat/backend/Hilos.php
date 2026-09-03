@@ -45,6 +45,7 @@ use Demo\Chat\Browser\Table\GuardianAgentStatusDetailBrowserTable;
 use Demo\Chat\Browser\Table\GuardianAgentStatusesBrowserTable;
 use Demo\Chat\Browser\Table\UserDetailBrowserTable;
 use Demo\Chat\Database\ChatDbContext;
+use Demo\Chat\Database\Pages\PageCatalog;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Environment\ChatEnvCatalog;
 use Demo\Chat\Environment\ChatLlmProfileCatalog;
@@ -210,6 +211,8 @@ final class Hilos extends HilosFacade
     protected const string ENV_CATALOG = ChatEnvCatalog::class;
 
     protected const string SETTINGS_CATALOG = SettingsCatalog::class;
+
+    protected const string PAGE_CATALOG = PageCatalog::class;
 
     protected const string LLM_PROFILE_CATALOG = ChatLlmProfileCatalog::class;
 

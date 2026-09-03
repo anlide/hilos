@@ -47,7 +47,6 @@ import AdminBots from './views/AdminBots/AdminBots.vue'
 import AdminModerator from './views/AdminModerator/AdminModerator.vue'
 import AdminUsers from './views/AdminUsers/AdminUsers.vue'
 import Bot from './views/Bot/Bot.vue'
-import Dashboard from './views/Dashboard/Dashboard.vue'
 import License from './views/License/License.vue'
 import Main from './views/Main/Main.vue'
 import Privacy from './views/Privacy/Privacy.vue'
@@ -91,7 +90,6 @@ const pages: Record<string, Component> = {
   [PAGE_ADMIN_MODERATOR]: AdminModerator,
   [PAGE_ADMIN_USERS]: AdminUsers,
   ...hilosAdminViews(),
-  [HilosPages.DASHBOARD]: Dashboard,
   [HilosPages.PROFILE]: Profile,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,

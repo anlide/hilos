@@ -12,7 +12,7 @@ use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the page catalog reader: the merge, one page's identity, its breadcrumb.
+ * Unit tests for the page catalog reader: the merge, a page's identity, its breadcrumb, its children.
  *
  * The project half is bound the way a running process binds it - a facade fixture naming its own
  * provider, captured by initBrowser() - because the merge rule is only interesting when there is
@@ -150,6 +150,79 @@ final class PageCatalogResolverTest extends TestCase
 
         self::assertNull(PageCatalogResolver::identity(HilosPageConstants::HILOS_PROFILE));
         self::assertSame([], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_PROFILE));
+    }
+
+    public function testASectionListsItsChildrenInCatalogOrder(): void
+    {
+        PageCatalogResolverTestHilos::initBrowser();
+
+        self::assertSame(
+            [
+                HilosPageConstants::HILOS_LOGS_KEYS,
+                HilosPageConstants::HILOS_LOGS_WORKERS,
+                HilosPageConstants::HILOS_LOGS_ROTATIONS,
+                HilosPageConstants::HILOS_LOGS_SETTINGS,
+                HilosPageConstants::HILOS_LOGS_VIEW,
+            ],
+            array_column(
+                PageCatalogResolver::children(HilosPageConstants::HILOS_LOGS),
+                PageCatalogConstants::WIRE_CHILD_PAGE,
+            ),
+        );
+    }
+
+    /**
+     * A card carries the identity of the page it points at, the same shape a dashboard card
+     * travels in - so a port renders both from one template.
+     */
+    public function testAChildCarriesItsOwnIdentityBesideItsKey(): void
+    {
+        PageCatalogResolverTestHilos::initBrowser();
+
+        self::assertSame(
+            [
+                PageCatalogConstants::WIRE_CHILD_PAGE => HilosPageConstants::HILOS_LOGS_KEYS,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'By key',
+                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Log volume grouped by log key.',
+            ],
+            PageCatalogResolver::children(HilosPageConstants::HILOS_LOGS)[0],
+        );
+    }
+
+    public function testALeafHasNoChildren(): void
+    {
+        PageCatalogResolverTestHilos::initBrowser();
+
+        self::assertSame([], PageCatalogResolver::children(HilosPageConstants::HILOS_LOGS_KEYS));
+    }
+
+    /**
+     * A page with no entry answers the same empty list as a leaf: having no children and being
+     * outside the catalog look alike to the frontend, and neither is an error.
+     */
+    public function testAPageWithoutAnEntryHasNoChildren(): void
+    {
+        PageCatalogResolverTestHilos::initBrowser();
+
+        self::assertSame([], PageCatalogResolver::children(HilosPageConstants::HILOS_PROFILE));
+    }
+
+    /**
+     * A project page naming a framework key as its parent shows up among that page's children,
+     * which is how a project's screen reaches the panel as a card rather than as a second-class
+     * link somewhere else.
+     */
+    public function testAProjectPageIsAChildOfTheFrameworkPageItNames(): void
+    {
+        PageCatalogResolverTestHilos::initBrowser();
+
+        self::assertContains(
+            PageCatalogResolverTestCatalog::MODERATION,
+            array_column(
+                PageCatalogResolver::children(HilosPageConstants::HILOS_DASHBOARD),
+                PageCatalogConstants::WIRE_CHILD_PAGE,
+            ),
+        );
     }
 
     public function testProjectSectionsComeAfterTheFrameworkOnes(): void

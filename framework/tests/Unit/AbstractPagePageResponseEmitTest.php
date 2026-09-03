@@ -99,8 +99,10 @@ final class AbstractPagePageResponseEmitTest extends TestCase
     }
 
     /**
-     * A page the catalog knows answers with its heading, its lead and its breadcrumb, so the one
-     * subscription carries everything the page needs to draw itself.
+     * A page the catalog knows answers with its heading, its lead, its breadcrumb and its children,
+     * so the one subscription carries everything the page needs to draw itself. A leaf gets the
+     * children key all the same, empty: a key that comes and goes would make the frontend ask
+     * whether the backend forgot it.
      */
     public function testSubscribeCarriesTheCatalogIdentityOfTheSubscribedPage(): void
     {
@@ -134,6 +136,7 @@ final class AbstractPagePageResponseEmitTest extends TestCase
                                 PageCatalogConstants::WIRE_CRUMB_LABEL => 'By key',
                             ],
                         ],
+                        PageCatalogConstants::WIRE_PAGE_CHILDREN => [],
                     ],
                 ],
             ],
@@ -200,6 +203,66 @@ final class AbstractPagePageResponseEmitTest extends TestCase
             ],
             $sections[0][PageCatalogConstants::SECTION_ITEMS][0],
         );
+    }
+
+    /**
+     * A section answers with the cards of the pages under it, in the order the catalog declares
+     * them - that is the navigation of the twenty-five screens that are not the dashboard, and it
+     * rides the frame the section already sends.
+     */
+    public function testASectionCarriesTheCardsOfItsChildren(): void
+    {
+        $page = new AbstractPagePageResponseEmitTestSectionPage(new AbstractPagePageResponseEmitTestAgent());
+
+        $page->onSubscribe('ak-1', new PageRouteParams([]));
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+
+        $this->assertNotNull($signal);
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+
+        $data = $signal->data->data->toArray()[PageResponseSignalData::payload][PagePayload::data];
+
+        $this->assertSame(
+            [
+                HilosPageConstants::HILOS_LOGS_KEYS,
+                HilosPageConstants::HILOS_LOGS_WORKERS,
+                HilosPageConstants::HILOS_LOGS_ROTATIONS,
+                HilosPageConstants::HILOS_LOGS_SETTINGS,
+                HilosPageConstants::HILOS_LOGS_VIEW,
+            ],
+            array_column($data[PageCatalogConstants::WIRE_PAGE_CHILDREN], PageCatalogConstants::WIRE_CHILD_PAGE),
+        );
+        $this->assertSame(
+            [
+                PageCatalogConstants::WIRE_CHILD_PAGE => HilosPageConstants::HILOS_LOGS_KEYS,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'By key',
+                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Log volume grouped by log key.',
+            ],
+            $data[PageCatalogConstants::WIRE_PAGE_CHILDREN][0],
+        );
+    }
+
+    /**
+     * The children key follows the same rule as the heading: a page that wrote its own list keeps
+     * it, which is how a section whose subsections depend on the row being viewed narrows them.
+     */
+    public function testAPageKeepsTheChildrenListItWroteItself(): void
+    {
+        $page = new AbstractPagePageResponseEmitTestOwnChildrenPage(new AbstractPagePageResponseEmitTestAgent());
+
+        $page->onSubscribe('ak-1', new PageRouteParams([]));
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+
+        $this->assertNotNull($signal);
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+
+        $data = $signal->data->data->toArray()[PageResponseSignalData::payload][PagePayload::data];
+
+        $this->assertSame([], $data[PageCatalogConstants::WIRE_PAGE_CHILDREN]);
     }
 
     /**
@@ -295,6 +358,27 @@ final class AbstractPagePageResponseEmitTestDefaultPage extends AbstractPage
 final class AbstractPagePageResponseEmitTestCatalogPage extends AbstractPage
 {
     public const string PAGE = HilosPageConstants::HILOS_LOGS_KEYS;
+}
+
+/**
+ * Test page standing on a framework section, so the catalog holds children under its key.
+ */
+final class AbstractPagePageResponseEmitTestSectionPage extends AbstractPage
+{
+    public const string PAGE = HilosPageConstants::HILOS_LOGS;
+}
+
+/**
+ * Test page writing its own subsection cards over the ones the catalog holds under its key.
+ */
+final class AbstractPagePageResponseEmitTestOwnChildrenPage extends AbstractPage
+{
+    public const string PAGE = HilosPageConstants::HILOS_LOGS;
+
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
+    {
+        return new PagePayload(data: [PageCatalogConstants::WIRE_PAGE_CHILDREN => []]);
+    }
 }
 
 /**

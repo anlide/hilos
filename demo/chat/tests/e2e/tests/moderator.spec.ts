@@ -3,7 +3,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 
-// Moderation admin e2e: /hilos/admin_moderator renders the prompt-pieces table
+// Moderation admin e2e: /hilos/app/moderator renders the prompt-pieces table
 // over the live socket, and the create / edit / delete dialogs round-trip through
 // the backend (AdminModeratorPage), the row appearing, updating, and leaving the
 // live table with no document reload. Prompt text is stamped unique so a retry
@@ -16,7 +16,7 @@ import { gotoPage } from '../helpers/page'
 
 /** Open the moderation admin and wait for the live table; the caller is admin already. */
 async function openModerator(page: Page): Promise<void> {
-  await gotoPage(page, '/hilos/admin_moderator')
+  await gotoPage(page, '/hilos/app/moderator')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('admin-moderator-view')).toBeVisible()
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
@@ -36,7 +36,7 @@ test('creates, edits, and deletes a prompt piece through the live table', async 
     fullLoads += 1
   })
 
-  await gotoPage(page, '/hilos/admin_moderator')
+  await gotoPage(page, '/hilos/app/moderator')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('admin-moderator-view')).toBeVisible()
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
@@ -78,7 +78,7 @@ test('saving an edit with no changes still closes the dialog', async ({
   page,
 }) => {
   await signUpAdmin(page)
-  await gotoPage(page, '/hilos/admin_moderator')
+  await gotoPage(page, '/hilos/app/moderator')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 
@@ -101,7 +101,7 @@ test('reaches the moderation admin from the dashboard', async ({ page }) => {
 
   await page.getByTestId('dashboard-card-admin_moderator').click()
   await expect(page.getByTestId('admin-moderator-view')).toBeVisible()
-  expect(new URL(page.url()).pathname).toBe('/hilos/admin_moderator')
+  expect(new URL(page.url()).pathname).toBe('/hilos/app/moderator')
 })
 
 test('an edit in one tab hangs as pending in another until applied', async ({

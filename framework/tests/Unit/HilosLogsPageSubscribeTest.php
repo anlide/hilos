@@ -366,7 +366,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
 
     /**
      * The frame the page gained carries the identity the catalog holds for it, which is the whole
-     * point of answering with it: the page itself writes none of these three keys.
+     * point of answering with it: the page itself writes none of these four keys.
      */
     public function testTheFrameCarriesTheCatalogIdentityOfTheLogsPage(): void
     {
@@ -397,6 +397,34 @@ final class HilosLogsPageSubscribeTest extends TestCase
                             [
                                 PageCatalogConstants::WIRE_CRUMB_PAGE => HilosPageConstants::HILOS_LOGS,
                                 PageCatalogConstants::WIRE_CRUMB_LABEL => 'Logs',
+                            ],
+                        ],
+                        PageCatalogConstants::WIRE_PAGE_CHILDREN => [
+                            [
+                                PageCatalogConstants::WIRE_CHILD_PAGE => HilosPageConstants::HILOS_LOGS_KEYS,
+                                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'By key',
+                                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Log volume grouped by log key.',
+                            ],
+                            [
+                                PageCatalogConstants::WIRE_CHILD_PAGE => HilosPageConstants::HILOS_LOGS_WORKERS,
+                                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'By worker',
+                                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Log volume grouped by worker.',
+                            ],
+                            [
+                                PageCatalogConstants::WIRE_CHILD_PAGE => HilosPageConstants::HILOS_LOGS_ROTATIONS,
+                                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Rotations',
+                                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Log rotation history and retention.',
+                            ],
+                            [
+                                PageCatalogConstants::WIRE_CHILD_PAGE => HilosPageConstants::HILOS_LOGS_SETTINGS,
+                                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Settings',
+                                PageCatalogConstants::CATALOG_ENTRY_LEAD =>
+                                    'Logging modes and what differs from the chosen one.',
+                            ],
+                            [
+                                PageCatalogConstants::WIRE_CHILD_PAGE => HilosPageConstants::HILOS_LOGS_VIEW,
+                                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Viewer',
+                                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Stream and filter log lines.',
                             ],
                         ],
                     ],

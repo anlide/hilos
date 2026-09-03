@@ -53,7 +53,10 @@ const routes: Routes = HILOS_FOOTER_LINKS.flatMap(({ page }) => {
     {
       path: route.replace(/^\//, ''),
       component,
-      title: resolvePageTitle(page, pageTitles, appName),
+      // No catalog label and nothing to wait for: prerendering runs at build
+      // time with no socket, and the pages it renders are the public footer
+      // ones, whose labels the frontend owns outright.
+      title: resolvePageTitle(page, pageTitles, appName, undefined, true),
     },
   ]
 })

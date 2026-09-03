@@ -56,8 +56,8 @@ test('navigates the admin tree with no reload or reconnect', async ({
 // A parametrized admin page resolves on cold load through the framework shell:
 // the Billing leaf is still an un-implemented page, so it renders via the
 // framework default view (hilosAdminViews) — the route param is captured and the
-// leaf renders with the framework breadcrumb built from the core admin tree
-// (HILOS_ADMIN_PAGES), proving a deep link works without a per-project stub file.
+// leaf renders with the breadcrumb its own subscription answered with, proving a
+// deep link works without a per-project stub file.
 test('cold-loads a parametrized admin page through the framework shell', async ({
   page,
 }) => {

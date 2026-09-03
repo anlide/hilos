@@ -106,8 +106,17 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
     config.router,
     pages,
     config.navigationEnvironment ?? browserNavigationEnvironment(),
+    // The two signal reads happen INSIDE the closure, which is what makes the
+    // title reactive: currentTitle is a computed over this call, so it recomputes
+    // when the page's heading lands, not only when the route changes.
     (pageKey) =>
-      resolvePageTitle(pageKey, config.pageTitles ?? {}, config.appName ?? ''),
+      resolvePageTitle(
+        pageKey,
+        config.pageTitles ?? {},
+        config.appName ?? '',
+        pages.pageIdentity.get()?.label,
+        !pages.pageLoading.get(),
+      ),
   )
   // A rights change reaches the open tab (HIL-621): the handshake response the
   // grant re-sends moves this marker, and the page on screen is judged again -

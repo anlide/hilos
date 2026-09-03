@@ -782,6 +782,7 @@ abstract class AbstractPage implements ActionHostInterface
                 PageCatalogConstants::WIRE_PAGE_LABEL => $identity[PageCatalogConstants::CATALOG_ENTRY_LABEL],
                 PageCatalogConstants::WIRE_PAGE_LEAD => $identity[PageCatalogConstants::CATALOG_ENTRY_LEAD],
                 PageCatalogConstants::WIRE_PAGE_BREADCRUMB => PageCatalogResolver::breadcrumb(static::PAGE),
+                PageCatalogConstants::WIRE_PAGE_CHILDREN => PageCatalogResolver::children(static::PAGE),
             ],
             lists: $payload->lists,
             tables: $payload->tables,

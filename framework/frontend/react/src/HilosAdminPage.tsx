@@ -1,20 +1,22 @@
 // HilosAdminPage — the admin section page shell: the breadcrumb, heading, and
 // lead common to every Hilos admin page, plus a default body. A page passes only
 // its key (props.page); the shell reads the live route params from the navigator
-// to keep the breadcrumb and child links in context, and resolves label / lead /
-// parent from the framework admin tree (HILOS_ADMIN_PAGES). It is page-agnostic —
-// it renders whichever key it is given, never choosing the page itself (that is
-// the app shell's page->view map). The default body is the section's
-// sub-navigation cards, or a stub empty-state for a leaf; a real page overrides
-// the body (children) with its own content while keeping the shell. Pass children
-// as a function to receive the resolved admin children. Bootstrap classes only.
+// to keep the breadcrumb and child links in context, and takes the heading, the
+// lead, the chain and the subsection cards from the navigator's pageIdentity —
+// what the page's own subscription answered with, not a frontend constant. It is
+// page-agnostic — it renders whichever key it is given, never choosing the page
+// itself (that is the app shell's page->view map). The default body is the
+// section's sub-navigation cards, or a stub empty-state for a leaf; a real page
+// overrides the body (children) with its own content while keeping the shell.
+// Pass children as a function to receive the resolved admin children.
+//
+// While the identity is still on the wire the heading is a neutral placeholder
+// and nothing else of the shell is drawn: the raw page key is never printed, and
+// an empty h1 under the same data-id would make "the name did not arrive" look
+// exactly like "the name arrived empty". Bootstrap classes only.
 import { useContext } from 'react'
 import type { ReactNode } from 'react'
-import {
-  HILOS_ADMIN_PAGES,
-  hilosAdminBreadcrumb,
-  hilosAdminChildren,
-} from '@hilos/core'
+import { hilosChildLinks, hilosCrumbLinks } from '@hilos/core'
 import type { HilosAdminChild } from '@hilos/core'
 
 import { HilosBreadcrumb } from './HilosBreadcrumb.js'
@@ -48,32 +50,68 @@ export function HilosAdminPage({ page, children }: HilosAdminPageProps) {
   }
 
   const route = useSignal(router.currentRoute)
-  const meta = HILOS_ADMIN_PAGES[page]
-  const crumbs = hilosAdminBreadcrumb(page, route.params)
-  const adminChildren = hilosAdminChildren(page, route.params)
+  const identity = useSignal(router.pageIdentity)
+  const crumbs = hilosCrumbLinks(
+    identity?.breadcrumb ?? [],
+    route.params,
+    router.resolvePath,
+  )
+  const adminChildren = hilosChildLinks(
+    identity?.children ?? [],
+    route.params,
+    router.resolvePath,
+  )
 
   const body =
     typeof children === 'function'
       ? children({ adminChildren })
       : children === undefined
-        ? defaultBody(adminChildren)
+        ? defaultBody(adminChildren, identity !== undefined)
         : children
 
   return (
     <section data-id="hilos-admin-page" data-page={page}>
-      <HilosBreadcrumb crumbs={crumbs} />
-      <h1 className="h4 mb-1" data-id="hilos-admin-title">
-        {meta?.label ?? page}
-      </h1>
-      {meta?.lead ? <p className="text-body-secondary">{meta.lead}</p> : null}
+      {identity === undefined ? (
+        <div
+          className="placeholder-glow mb-3"
+          data-id="hilos-admin-title-skeleton"
+        >
+          <span className="placeholder col-3 d-block mb-2 rounded" />
+          <span className="placeholder col-6 d-block rounded" />
+        </div>
+      ) : (
+        <>
+          <HilosBreadcrumb crumbs={crumbs} />
+          <h1 className="h4 mb-1" data-id="hilos-admin-title">
+            {identity.label}
+          </h1>
+          {identity.lead ? (
+            <p className="text-body-secondary">{identity.lead}</p>
+          ) : null}
+        </>
+      )}
       {body}
     </section>
   )
 }
 
-/** The default body: the section's sub-navigation cards, or a leaf empty state. */
-function defaultBody(adminChildren: HilosAdminChild[]): ReactNode {
+/**
+ * The default body: the section's sub-navigation cards, or a leaf empty state.
+ * Neither is drawn before the page has answered — an empty state shown while the
+ * cards are still on the wire says "nothing here" about a section that has five.
+ *
+ * @param adminChildren The resolved subsection cards.
+ * @param answered Whether the page's identity has arrived.
+ */
+function defaultBody(
+  adminChildren: HilosAdminChild[],
+  answered: boolean,
+): ReactNode {
   if (adminChildren.length === 0) {
+    if (!answered) {
+      return null
+    }
+
     return (
       <div
         className="border rounded p-4 text-center text-body-secondary"

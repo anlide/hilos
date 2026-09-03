@@ -822,7 +822,7 @@ test('re-decides an open admin page when the person signs out, in place', async 
 }) => {
   const { userId } = await signUp(page)
   await setAdmin(userId, true)
-  await gotoPage(page, '/hilos/admin_users')
+  await gotoPage(page, '/hilos/app/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 
   let fullLoads = 0
@@ -838,7 +838,7 @@ test('re-decides an open admin page when the person signs out, in place', async 
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await expect(page.getByTestId('admin-users-view')).toHaveCount(0)
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
-  expect(new URL(page.url()).pathname).toBe('/hilos/admin_users')
+  expect(new URL(page.url()).pathname).toBe('/hilos/app/users')
   expect(fullLoads).toBe(0)
 
   // Revoke so the shared-DB user does not stay admin for later specs.

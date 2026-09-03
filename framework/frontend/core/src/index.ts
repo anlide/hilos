@@ -378,19 +378,24 @@ export {
   HILOS_ROUTE_DECLARATIONS,
   HILOS_PAGE_ROUTES,
   HILOS_FOOTER_LINKS,
-  HILOS_ADMIN_PAGES,
-  HILOS_ADMIN_DASHBOARD_SECTIONS,
   type HilosFooterLink,
-  type HilosAdminPageMeta,
-  type HilosAdminDashboardSection,
 } from './routing/hilosPages.js'
 export {
   resolveHilosPath,
-  hilosAdminBreadcrumb,
-  hilosAdminChildren,
+  hilosCrumbLinks,
+  hilosChildLinks,
   type HilosCrumb,
   type HilosAdminChild,
+  type HilosPathResolver,
 } from './routing/hilosAdmin.js'
+export {
+  pageIdentity,
+  dashboardSections,
+  type HilosPageCrumb,
+  type HilosPageChild,
+  type HilosPageIdentity,
+  type HilosDashboardSection,
+} from './admin/identity/hilosPageIdentity.js'
 export { resolvePageTitle } from './routing/pageTitle.js'
 export { assertNever } from './protocol/assertNever.js'
 export {

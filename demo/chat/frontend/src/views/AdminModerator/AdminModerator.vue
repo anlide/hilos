@@ -1,6 +1,7 @@
-<!-- The chat moderation admin page (PAGE_ADMIN_MODERATOR) at /hilos/admin_moderator:
+<!-- The chat moderation admin page (PAGE_ADMIN_MODERATOR) at /hilos/app/moderator:
 the moderator prompt-pieces table reached from the dashboard's "Chat
-administration" section. A free CRUD table (not cataloged) — add, edit, or delete
+administration" section. The heading, the lead and the breadcrumb come from the
+page catalog on the backend through the framework's HilosAdminPage shell. A free CRUD table (not cataloged) — add, edit, or delete
 a prompt piece; each piece belongs to a moderation rule section (name / message).
 The table controller and the row view-model live with the page
 (adminModeratorPage.ts), the create/update/delete submits in
@@ -11,6 +12,7 @@ dialog. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   HilosActionError,
+  HilosAdminPage,
   HilosModal,
   HilosViewportTable,
   LoadingButton,
@@ -20,6 +22,7 @@ import {
 import { type HilosTableColumn } from '@hilos/vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
+import { PAGE_ADMIN_MODERATOR } from '../../pages/keys'
 import {
   sendModeratorPieceCreate,
   sendModeratorPieceDelete,
@@ -184,167 +187,164 @@ async function submitDelete(): Promise<void> {
 </script>
 
 <template>
-  <section data-id="admin-moderator-view">
-    <div class="d-flex justify-content-between align-items-start gap-2 mb-4">
-      <div class="d-flex flex-column gap-1">
-        <h1 class="h4 mb-0">Moderation</h1>
-        <p class="mb-0 text-body-secondary">
-          Moderator prompt pieces: the rule fragments the moderator agent
-          applies to names and messages.
-        </p>
+  <HilosAdminPage :page="PAGE_ADMIN_MODERATOR">
+    <section data-id="admin-moderator-view">
+      <div class="d-flex justify-content-end mb-4">
+        <button
+          type="button"
+          class="btn btn-primary flex-shrink-0"
+          data-id="admin-moderator-add"
+          @click="openCreate"
+        >
+          <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Add piece
+        </button>
       </div>
-      <button
-        type="button"
-        class="btn btn-primary flex-shrink-0"
-        data-id="admin-moderator-add"
-        @click="openCreate"
+
+      <HilosViewportTable
+        label="Prompt pieces"
+        :controller="moderatorPiecesTable"
+        :columns="columns"
+        searchable
+        search-placeholder="Search prompt pieces…"
+        empty-text="No prompt pieces yet."
       >
-        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Add piece
-      </button>
-    </div>
+        <template #row="{ row }">
+          <td>
+            <span
+              v-if="row.section === 'name_rule'"
+              class="badge rounded-pill bg-info-subtle text-info-emphasis border border-info-subtle"
+              >name rule</span
+            >
+            <span
+              v-else
+              class="badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle"
+              >message rule</span
+            >
+          </td>
+          <td style="max-width: 28rem">
+            <span class="text-truncate d-block" :title="row.promptPiece">{{
+              row.promptPiece
+            }}</span>
+          </td>
+          <td class="text-end">
+            <div class="d-flex gap-1 justify-content-end">
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-primary"
+                title="Edit"
+                aria-label="Edit"
+                :data-id="`admin-moderator-edit-${row.id}`"
+                @click="openEdit(row)"
+              >
+                <i class="bi bi-pencil" aria-hidden="true"></i>
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-danger"
+                title="Delete"
+                aria-label="Delete"
+                :data-id="`admin-moderator-delete-${row.id}`"
+                @click="openDelete(row)"
+              >
+                <i class="bi bi-trash" aria-hidden="true"></i>
+              </button>
+            </div>
+          </td>
+        </template>
+      </HilosViewportTable>
 
-    <HilosViewportTable
-      label="Prompt pieces"
-      :controller="moderatorPiecesTable"
-      :columns="columns"
-      searchable
-      search-placeholder="Search prompt pieces…"
-      empty-text="No prompt pieces yet."
-    >
-      <template #row="{ row }">
-        <td>
-          <span
-            v-if="row.section === 'name_rule'"
-            class="badge rounded-pill bg-info-subtle text-info-emphasis border border-info-subtle"
-            >name rule</span
-          >
-          <span
-            v-else
-            class="badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle"
-            >message rule</span
-          >
-        </td>
-        <td style="max-width: 28rem">
-          <span class="text-truncate d-block" :title="row.promptPiece">{{
-            row.promptPiece
-          }}</span>
-        </td>
-        <td class="text-end">
-          <div class="d-flex gap-1 justify-content-end">
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-primary"
-              title="Edit"
-              aria-label="Edit"
-              :data-id="`admin-moderator-edit-${row.id}`"
-              @click="openEdit(row)"
+      <HilosModal
+        v-model="formOpen"
+        :title="
+          formMode === 'create' ? 'Add prompt piece' : 'Edit prompt piece'
+        "
+        :confirm-on-close="formDirty"
+        @cancel="closeForm"
+      >
+        <HilosActionError :action="formAction" />
+        <form @submit.prevent="submitForm">
+          <div class="mb-3">
+            <label class="form-label" for="admin-moderator-section"
+              >Section</label
             >
-              <i class="bi bi-pencil" aria-hidden="true"></i>
-            </button>
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-danger"
-              title="Delete"
-              aria-label="Delete"
-              :data-id="`admin-moderator-delete-${row.id}`"
-              @click="openDelete(row)"
+            <select
+              id="admin-moderator-section"
+              v-model="fSection"
+              class="form-select"
+              data-id="admin-moderator-section"
             >
-              <i class="bi bi-trash" aria-hidden="true"></i>
-            </button>
+              <option value="name_rule">Name rule</option>
+              <option value="message_rule">Message rule</option>
+            </select>
           </div>
-        </td>
-      </template>
-    </HilosViewportTable>
+          <div class="mb-0">
+            <label class="form-label" for="admin-moderator-prompt"
+              >Prompt piece</label
+            >
+            <textarea
+              id="admin-moderator-prompt"
+              v-model="fPromptPiece"
+              class="form-control"
+              rows="4"
+              required
+              data-id="admin-moderator-prompt"
+            ></textarea>
+          </div>
+        </form>
+        <template #actions="{ requestClose }">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            :disabled="formBusy"
+            @click="requestClose"
+          >
+            Cancel
+          </button>
+          <LoadingButton
+            class="btn-primary"
+            :loading="formLoading"
+            :disabled="!fPromptPiece.trim() || formBusy"
+            data-id="admin-moderator-save"
+            @click="submitForm"
+          >
+            Save
+          </LoadingButton>
+        </template>
+      </HilosModal>
 
-    <HilosModal
-      v-model="formOpen"
-      :title="formMode === 'create' ? 'Add prompt piece' : 'Edit prompt piece'"
-      :confirm-on-close="formDirty"
-      @cancel="closeForm"
-    >
-      <HilosActionError :action="formAction" />
-      <form @submit.prevent="submitForm">
-        <div class="mb-3">
-          <label class="form-label" for="admin-moderator-section"
-            >Section</label
+      <HilosModal
+        v-model="deleteOpen"
+        title="Delete prompt piece"
+        :close-on-backdrop="!deleteBusy"
+        :close-on-esc="!deleteBusy"
+        @cancel="closeDelete"
+      >
+        <HilosActionError :action="deleteAction" />
+        <p class="mb-0 text-body-secondary">
+          This permanently removes the prompt piece from the moderation rules.
+        </p>
+        <p v-if="deleteRow" class="mb-0 mt-2 text-truncate">
+          {{ deleteRow.promptPiece }}
+        </p>
+        <template #actions="{ requestClose }">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            :disabled="deleteBusy"
+            @click="requestClose"
           >
-          <select
-            id="admin-moderator-section"
-            v-model="fSection"
-            class="form-select"
-            data-id="admin-moderator-section"
+            Cancel
+          </button>
+          <LoadingButton
+            class="btn-danger"
+            :loading="deleteLoading"
+            data-id="admin-moderator-delete-confirm"
+            @click="submitDelete"
           >
-            <option value="name_rule">Name rule</option>
-            <option value="message_rule">Message rule</option>
-          </select>
-        </div>
-        <div class="mb-0">
-          <label class="form-label" for="admin-moderator-prompt"
-            >Prompt piece</label
-          >
-          <textarea
-            id="admin-moderator-prompt"
-            v-model="fPromptPiece"
-            class="form-control"
-            rows="4"
-            required
-            data-id="admin-moderator-prompt"
-          ></textarea>
-        </div>
-      </form>
-      <template #actions="{ requestClose }">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="formBusy"
-          @click="requestClose"
-        >
-          Cancel
-        </button>
-        <LoadingButton
-          class="btn-primary"
-          :loading="formLoading"
-          :disabled="!fPromptPiece.trim() || formBusy"
-          data-id="admin-moderator-save"
-          @click="submitForm"
-        >
-          Save
-        </LoadingButton>
-      </template>
-    </HilosModal>
-
-    <HilosModal
-      v-model="deleteOpen"
-      title="Delete prompt piece"
-      :close-on-backdrop="!deleteBusy"
-      :close-on-esc="!deleteBusy"
-      @cancel="closeDelete"
-    >
-      <HilosActionError :action="deleteAction" />
-      <p class="mb-0 text-body-secondary">
-        This permanently removes the prompt piece from the moderation rules.
-      </p>
-      <p v-if="deleteRow" class="mb-0 mt-2 text-truncate">
-        {{ deleteRow.promptPiece }}
-      </p>
-      <template #actions="{ requestClose }">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="deleteBusy"
-          @click="requestClose"
-        >
-          Cancel
-        </button>
-        <LoadingButton
-          class="btn-danger"
-          :loading="deleteLoading"
-          data-id="admin-moderator-delete-confirm"
-          @click="submitDelete"
-        >
-          Delete
-        </LoadingButton>
-      </template>
-    </HilosModal>
-  </section>
+            Delete
+          </LoadingButton>
+        </template>
+      </HilosModal>
+    </section>
+  </HilosAdminPage>
 </template>

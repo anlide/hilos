@@ -7,6 +7,10 @@ import {
 } from '../../src/routing/HilosRouter.js'
 import { createPageRouter } from '../../src/routing/PageRouter.js'
 import { type PageSubscriptionError } from '../../src/protocol/pageError.js'
+import {
+  type HilosDashboardSection,
+  type HilosPageIdentity,
+} from '../../src/admin/identity/hilosPageIdentity.js'
 import { createSignal } from '../../src/state/signal.js'
 
 const router = createPageRouter(
@@ -80,6 +84,10 @@ function fakePages() {
   const calls: Array<{ page: string; params: Record<string, string> }> = []
   const pageError = createSignal<PageSubscriptionError | null>(null)
   const pageLoading = createSignal(false)
+  const pageIdentity = createSignal<HilosPageIdentity | undefined>(undefined)
+  const dashboardSections = createSignal<HilosDashboardSection[] | undefined>(
+    undefined,
+  )
   let cleared = 0
   const calledOnPages: string[] = []
   const pages: NavigablePages = {
@@ -90,6 +98,8 @@ function fakePages() {
     },
     pageError,
     pageLoading,
+    pageIdentity,
+    dashboardSections,
     clearPageError: () => {
       cleared += 1
       pageError.set(null)
@@ -102,6 +112,8 @@ function fakePages() {
     pages,
     calls,
     pageError,
+    pageIdentity,
+    dashboardSections,
     clearedCount: () => cleared,
     calledOnPages,
   }
@@ -275,6 +287,47 @@ describe('createHilosRouter', () => {
     // Resume in place: no re-subscribe, and history tracking is untouched.
     expect(calls.length).toBe(subscribesBefore)
     expect(isPopAttached()).toBe(true)
+  })
+
+  it('resolves a page key to its path through the route map it navigates over', () => {
+    const { env } = fakeEnvironment('/')
+    const { pages } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+
+    expect(navigator.resolvePath('dash')).toBe('/hilos')
+    expect(navigator.resolvePath('user', { id: '7' })).toBe('/user/7')
+  })
+
+  it('resolves nothing for a page the route map does not carry', () => {
+    // The shell draws a crumb with no target as plain text and leaves a card
+    // out entirely; silently answering some other page's address would send the
+    // visitor somewhere they did not ask for.
+    const { env } = fakeEnvironment('/')
+    const { pages } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+
+    expect(navigator.resolvePath('nowhere')).toBeUndefined()
+    expect(navigator.resolvePath('user')).toBeUndefined()
+  })
+
+  it('re-exports the page identity and the dashboard sections as they arrive', () => {
+    const { env } = fakeEnvironment('/')
+    const { pages, pageIdentity, dashboardSections } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+
+    expect(navigator.pageIdentity.get()).toBeUndefined()
+    expect(navigator.dashboardSections.get()).toBeUndefined()
+
+    pageIdentity.set({
+      label: 'Logs',
+      lead: 'Rotation stats.',
+      breadcrumb: [{ page: 'dash', label: 'Hilos' }],
+      children: [],
+    })
+    dashboardSections.set([{ title: 'Access', description: '', items: [] }])
+
+    expect(navigator.pageIdentity.get()?.label).toBe('Logs')
+    expect(navigator.dashboardSections.get()?.[0].title).toBe('Access')
   })
 
   it('passes the access re-decision controls to the page subscription', () => {

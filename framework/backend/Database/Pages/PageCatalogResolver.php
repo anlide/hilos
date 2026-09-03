@@ -7,7 +7,7 @@ namespace Hilos\Database\Pages;
 use Hilos\Hilos;
 
 /**
- * PageCatalogResolver - Reads the page catalog: the merge, one page's identity, its breadcrumb.
+ * PageCatalogResolver - Reads the page catalog: the merge, a page's identity, breadcrumb and children.
  *
  * Every read of admin page identity goes through here, so the merge rule is stated once: the
  * framework catalog first, the project's entries laid over it. An entry under a key the framework
@@ -110,6 +110,33 @@ final class PageCatalogResolver
         }
 
         return array_reverse($crumbs);
+    }
+
+    /**
+     * Returns the cards of a page's own subsections, in the order the catalog declares them.
+     *
+     * A leaf gets an empty list, and so does a page the catalog does not carry - the same
+     * non-error as {@see self::identity()}. Each card carries its page key beside the identity
+     * of that page, the shape a dashboard card already travels in.
+     *
+     * The lookup is not guarded against a broken tree for the reason {@see self::breadcrumb()}
+     * states: a parent naming no entry is refused by topology validation at startup.
+     *
+     * @param string $page Page key
+     * @return list<array{page: string, label: string, lead: string, icon?: string}> Cards of this page's children in catalog order
+     */
+    public static function children(string $page): array
+    {
+        $children = [];
+        foreach (self::catalog() as $key => $entry) {
+            if (($entry[PageCatalogConstants::CATALOG_ENTRY_PARENT] ?? null) !== $page) {
+                continue;
+            }
+
+            $children[] = [PageCatalogConstants::WIRE_CHILD_PAGE => $key] + self::identity($key);
+        }
+
+        return $children;
     }
 
     /**

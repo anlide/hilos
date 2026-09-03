@@ -3,7 +3,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 
-// Bots admin e2e: /hilos/admin_bots renders the bots table over the live socket,
+// Bots admin e2e: /hilos/app/bots renders the bots table over the live socket,
 // and the create / edit / delete dialogs round-trip through the backend
 // (AdminBotsPage), the row appearing, updating, and leaving the live table with no
 // document reload. Bot names are stamped unique so a retry (which reuses the same
@@ -23,7 +23,7 @@ import { gotoPage } from '../helpers/page'
 
 /** Open the bots admin and wait for the live window's first row; the caller is admin already. */
 async function openBots(page: Page): Promise<void> {
-  await gotoPage(page, '/hilos/admin_bots')
+  await gotoPage(page, '/hilos/app/bots')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(
@@ -180,5 +180,5 @@ test.fixme('reaches the bots admin from the dashboard', async ({ page }) => {
 
   await page.getByTestId('dashboard-card-admin_bots').click()
   await expect(page.getByTestId('admin-bots-view')).toBeVisible()
-  expect(new URL(page.url()).pathname).toBe('/hilos/admin_bots')
+  expect(new URL(page.url()).pathname).toBe('/hilos/app/bots')
 })

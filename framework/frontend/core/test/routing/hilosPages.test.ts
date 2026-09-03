@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  hilosAdminBreadcrumb,
-  hilosAdminChildren,
-  resolveHilosPath,
-} from '../../src/routing/hilosAdmin.js'
+import { resolveHilosPath } from '../../src/routing/hilosAdmin.js'
 import { createPageRouter } from '../../src/routing/PageRouter.js'
 import {
   HilosPages,
@@ -113,18 +109,6 @@ describe('the log viewer route', () => {
     // positional, and a skipped node would slide the source into its place.
     expect(resolveHilosPath(HilosPages.LOGS_VIEW, { source: 'live' })).toBe(
       '/hilos/logs/view/live',
-    )
-  })
-
-  it('stays in the section tree and in the breadcrumb with no file chosen', () => {
-    const children = hilosAdminChildren(HilosPages.LOGS)
-
-    expect(children.map((child) => child.page)).toContain(HilosPages.LOGS_VIEW)
-    expect(
-      children.find((child) => child.page === HilosPages.LOGS_VIEW)?.to,
-    ).toBe('/hilos/logs/view')
-    expect(hilosAdminBreadcrumb(HilosPages.LOGS_VIEW).at(-1)?.to).toBe(
-      '/hilos/logs/view',
     )
   })
 

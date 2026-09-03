@@ -5,8 +5,8 @@ import type { HilosCrumb } from '@hilos/core'
 import HilosBreadcrumb from './HilosBreadcrumb.vue'
 
 const TRAIL: HilosCrumb[] = [
-  { label: 'Dashboard', to: '/hilos' },
-  { label: 'Billing', to: '/hilos/billing' },
+  { page: 'hilos', label: 'Dashboard', to: '/hilos' },
+  { page: 'hilos_billing', label: 'Billing', to: '/hilos/billing' },
 ]
 
 describe('HilosBreadcrumb', () => {
@@ -26,5 +26,23 @@ describe('HilosBreadcrumb', () => {
     const active = wrapper.find('.breadcrumb-item.active')
     expect(active.text()).toBe('Billing')
     expect(active.attributes('aria-current')).toBe('page')
+  })
+
+  it('draws a crumb with no address as text, keeping the chain whole', () => {
+    // A link that goes nowhere is worse than no link, but a missing link is
+    // worse still: the ancestry would renumber and name the wrong parent.
+    const wrapper = mount(HilosBreadcrumb, {
+      props: {
+        crumbs: [
+          { page: 'hilos', label: 'Dashboard', to: '/hilos' },
+          { page: 'unrouted', label: 'Section' },
+          { page: 'hilos_billing', label: 'Billing', to: '/hilos/billing' },
+        ],
+      },
+    })
+
+    expect(wrapper.findAll('a')).toHaveLength(1)
+    expect(wrapper.findAll('.breadcrumb-item')).toHaveLength(3)
+    expect(wrapper.findAll('.breadcrumb-item')[1].text()).toBe('Section')
   })
 })

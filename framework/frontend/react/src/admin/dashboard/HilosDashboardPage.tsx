@@ -1,47 +1,56 @@
 // HilosDashboardPage — the framework Hilos admin dashboard (HilosPages.DASHBOARD):
 // the entry to the admin section reached by the shell's gear over the live socket.
-// It renders the admin sections grouped from the framework admin catalog (@hilos/core
-// HILOS_ADMIN_DASHBOARD_SECTIONS) as no-refresh HilosLink cards. It is self-contained
-// (no project context), so it is the framework default for the dashboard key; a
-// project that wants its own admin areas above the framework sections wraps this page
-// and passes them as children (the `top` slot — the chat demo's bots / moderation
-// cards). Bootstrap classes only (styling-rules.md).
+// It renders the admin sections the dashboard's own subscription answered with,
+// framework groups first and a project's own after them, as no-refresh HilosLink
+// cards. It is self-contained (no project context), so it is the framework default
+// for the dashboard key; a project declares its cards in its page catalog on the
+// backend rather than wrapping this page, and the children seam is left for
+// content that is not a card at all (the Vue and Angular ports offer it too). The sections are read per render, not
+// captured at module load: nothing is known about them until the page answers, and
+// until it does the cards are placeholders — an empty grid would jump the layout on
+// every visit. Bootstrap classes only (styling-rules.md).
+import { useContext } from 'react'
 import type { ReactNode } from 'react'
-import {
-  HILOS_ADMIN_DASHBOARD_SECTIONS,
-  HILOS_ADMIN_PAGES,
-  resolveHilosPath,
-} from '@hilos/core'
 
 import { HilosLink } from '../../HilosLink.js'
+import { HilosRouterContext } from '../../hilosRouterContext.js'
+import { useSignal } from '../../useSignal.js'
 
 /** Props for {@link HilosDashboardPage}. */
 export interface HilosDashboardPageProps {
   /**
    * Project-supplied admin areas shown above the framework sections; omitted by
-   * default (the chat demo passes its bots / moderation cards here).
+   * default.
    */
   children?: ReactNode
 }
 
-const sections = HILOS_ADMIN_DASHBOARD_SECTIONS.map((section) => ({
-  title: section.title,
-  description: section.description,
-  items: section.items.map((page) => ({
-    page,
-    title: HILOS_ADMIN_PAGES[page]?.label ?? page,
-    lead: HILOS_ADMIN_PAGES[page]?.lead ?? '',
-    icon: HILOS_ADMIN_PAGES[page]?.icon ?? 'bi-square',
-    to: resolveHilosPath(page),
-  })),
-}))
-
 /**
- * The framework admin dashboard: grouped section cards over the admin catalog.
+ * The framework admin dashboard: grouped section cards over the page catalog.
  *
  * @param props The optional project-supplied areas shown above the sections.
  */
 export function HilosDashboardPage({ children }: HilosDashboardPageProps) {
+  const router = useContext(HilosRouterContext)
+  if (!router) {
+    throw new Error(
+      'HilosDashboardPage requires a HilosRouterContext provider.',
+    )
+  }
+
+  const answered = useSignal(router.dashboardSections)
+  const sections = (answered ?? []).map((section) => ({
+    title: section.title,
+    description: section.description,
+    // A card with no address is left out: a card IS its target, and the shell
+    // must not offer one that goes nowhere.
+    items: section.items.flatMap((item) => {
+      const to = router.resolvePath(item.page)
+
+      return to === undefined ? [] : [{ ...item, to }]
+    }),
+  }))
+
   return (
     <section data-id="dashboard-view">
       <div className="d-flex flex-column gap-1 mb-4">
@@ -52,8 +61,22 @@ export function HilosDashboardPage({ children }: HilosDashboardPageProps) {
       </div>
 
       {/* Project-supplied admin areas above the framework sections; empty by
-      default, filled by a project wrapper (the chat demo's bots / moderation). */}
+      default. A project's own cards ride its page catalog on the backend, so this
+      seam is for content that is not a card at all. */}
       {children}
+
+      {answered === undefined ? (
+        <div
+          className="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3 placeholder-glow"
+          data-id="dashboard-skeleton"
+        >
+          {[0, 1, 2, 3, 4, 5].map((slot) => (
+            <div key={slot} className="col">
+              <span className="placeholder col-12 rounded py-5 d-block" />
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {sections.map((section) => (
         <div key={section.title} className="mb-4">
@@ -75,10 +98,13 @@ export function HilosDashboardPage({ children }: HilosDashboardPageProps) {
                   <div className="card-body">
                     <div className="d-flex align-items-start gap-3">
                       <span className="bg-body-secondary rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0 p-3 fs-3 lh-1">
-                        <i className={`bi ${item.icon}`} aria-hidden="true" />
+                        <i
+                          className={`bi ${item.icon ?? 'bi-square'}`}
+                          aria-hidden="true"
+                        />
                       </span>
                       <span className="d-flex flex-column gap-1">
-                        <span className="h6 mb-0">{item.title}</span>
+                        <span className="h6 mb-0">{item.label}</span>
                         <span className="small text-body-secondary">
                           {item.lead}
                         </span>

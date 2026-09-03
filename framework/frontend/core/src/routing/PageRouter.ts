@@ -35,7 +35,7 @@ export interface PageRouteMatch {
   admin: boolean
 }
 
-/** Matches a pathname to the page it names. */
+/** Matches a pathname to the page it names, and names the path of a page. */
 export interface PageRouter {
   /**
    * Resolve the page key, route params, and surface type a pathname names. A
@@ -48,6 +48,21 @@ export interface PageRouter {
    * @param pathname The location pathname to resolve.
    */
   match(pathname: string): PageRouteMatch
+  /**
+   * The path a page key names, with each `{name}` slot filled from `params`. An
+   * unfilled `{name?}` slot is cut together with the slash in front of it, so a
+   * page entered with none of its optional tail resolves to the bare path rather
+   * than to one with empty segments.
+   *
+   * `undefined` for a page the router does not carry, and for one whose required
+   * slot `params` does not cover: a link with no target is drawn as no link,
+   * whereas a half-filled path would be an address that silently names something
+   * else.
+   *
+   * @param page The page key to resolve.
+   * @param params The route params to fill the slots from, defaulting to none.
+   */
+  path(page: string, params?: Record<string, string>): string | undefined
 }
 
 /** Router construction options. */
@@ -73,6 +88,12 @@ interface CompiledRoute {
 /** A template segment that is a route param: `{name}`, or `{name?}` optional. */
 const SEGMENT_PARAM_PATTERN = /^\{(\w+)(\??)}$/
 
+/** A route-template slot anywhere in a template: `{name}`, or `{name?}` optional. */
+const ROUTE_SLOT_PATTERN = /\{(\w+)(\??)}/g
+
+/** An optional `{name?}` slot together with the slash that precedes it. */
+const OPTIONAL_ROUTE_SLOT_PATTERN = /\/\{(\w+)\?}/g
+
 /** Escape a literal path segment so its characters carry no regex meaning. */
 function escapeSegment(segment: string): string {
   return segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -96,9 +117,14 @@ export function createPageRouter(
 ): PageRouter {
   const staticRoutes: Record<string, StaticRoute> = {}
   const paramRoutes: CompiledRoute[] = []
+  // The templates are kept as written beside their compiled form: matching reads
+  // the regex, naming a page's path reads the template back, and the two answers
+  // have to agree or a link would lead where nothing matches.
+  const templates: Record<string, string> = {}
 
   for (const [page, declaration] of Object.entries(routes)) {
     const { path, admin } = declaration
+    templates[page] = path
     if (!path.includes('{')) {
       staticRoutes[path] = { page, admin }
       continue
@@ -155,6 +181,41 @@ export function createPageRouter(
         return { page: route.page, params, admin: route.admin }
       }
       return { page: options.fallback, params: {}, admin: fallbackAdmin }
+    },
+    path(
+      page: string,
+      params: Record<string, string> = {},
+    ): string | undefined {
+      const template = templates[page]
+      if (template === undefined) {
+        return undefined
+      }
+      // A required slot with nothing to put in it is noticed while substituting,
+      // not by reading the result back: the result of dropping one is an address
+      // that still looks like an address and names another page's row.
+      let covered = true
+      const resolved = template
+        .replace(OPTIONAL_ROUTE_SLOT_PATTERN, (_match, name: string) => {
+          const value = params[name]
+
+          return value === undefined ? '' : `/${value}`
+        })
+        .replace(
+          ROUTE_SLOT_PATTERN,
+          (_match, name: string, optional: string) => {
+            const value = params[name]
+            if (value !== undefined) {
+              return value
+            }
+            if (optional !== '?') {
+              covered = false
+            }
+
+            return ''
+          },
+        )
+
+      return covered ? resolved : undefined
     },
   }
 }
