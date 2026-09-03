@@ -43,6 +43,7 @@ use Hilos\Core\CLI\Commands\HelpCommand;
 use Hilos\Core\CLI\Commands\ImpersonateStartCommand;
 use Hilos\Core\CLI\Commands\ImpersonateStopCommand;
 use Hilos\Core\CLI\Commands\LlmPingCommand;
+use Hilos\Core\CLI\Commands\LogTestAppendCommand;
 use Hilos\Core\CLI\Commands\MigrationDownCommand;
 use Hilos\Core\CLI\Commands\MigrationRetryCommand;
 use Hilos\Core\CLI\Commands\MigrationStatusCommand;
@@ -149,6 +150,7 @@ class CliManager
         $this->commands[CliCommands::USER_TEST_SEED] = new UserTestSeedCommand();
         $this->commands[CliCommands::NOTIFICATION_TEST_EMIT] = new NotificationTestEmitCommand();
         $this->commands[CliCommands::COMMAND_TEST_ECHO] = new CommandTestEchoCommand();
+        $this->commands[CliCommands::LOG_TEST_APPEND] = new LogTestAppendCommand();
         $this->commands[CliCommands::ADMIN_GRANT] = new AdminGrantCommand();
         $this->commands[CliCommands::ADMIN_REVOKE] = new AdminRevokeCommand();
         $this->commands[CliCommands::ADMIN_CREATE] = new AdminCreateCommand();

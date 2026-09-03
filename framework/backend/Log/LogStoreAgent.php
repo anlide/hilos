@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Log;
 
 use Hilos\Cluster\Exception\ClusterConfigurationException;
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\LogRotationConstants;
@@ -39,7 +41,11 @@ use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmReplyDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Runtime\ConnectionRosterReconciler;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use Hilos\Utils\Exception\LogRotationException;
+use Hilos\Utils\Logger;
 use JsonException;
 use Throwable;
 
@@ -113,8 +119,34 @@ final class LogStoreAgent extends AbstractAgent
         ],
     ];
 
+    /**
+     * The test-only append, mounted here because this is the process a log line comes out of.
+     *
+     * A command that makes the node write a log line belongs to the owner of the node's log
+     * directory for the same reason HIL-771 moved the notification emit onto the agent that
+     * owns the tables: the answer comes from where the work happens. The agent does not touch
+     * the file - it prints the line the way it prints any of its own, and the master files it
+     * under {@see Logger::AGENT_LOG_MARKER} - which is exactly what makes the line real: a
+     * follower watching agent-hilos_log_store.log sees the same shape it would see in
+     * production, not a line a test wrote into a file.
+     *
+     * What keeps the append off a production node is its `test:` prefix, which the command
+     * socket reads through {@see TestOnlyCommandRegistry}: the socket authenticates nobody,
+     * so the name has to say what the command may do.
+     */
+    public const array AGENT_COMMANDS = [
+        CliCommands::LOG_TEST_APPEND,
+    ];
+
     /** @var int Lines one page of the viewer holds, the number the mockup shows */
     private const int READ_PAGE_LINES = 200;
+
+    /**
+     * @var int Lines one test-only append may write at once. The append is synchronous, and the
+     *     agent is the single reader of its own directory, so a caller asking for an unbounded
+     *     run would stall the follow it is trying to exercise.
+     */
+    private const int APPEND_MAX_LINES = 500;
 
     /** @var float Minimum seconds between two live walks of the log root */
     private const float LIVE_SCAN_INTERVAL_SECONDS = 5.0;
@@ -719,6 +751,73 @@ final class LogStoreAgent extends AbstractAgent
             default:
                 throw new AgentUnknownSignalException($name);
         }
+    }
+
+    /**
+     * Answers the test-only append command on the command channel (HIL-395).
+     *
+     * @param CommandRequestDTO $data Command request payload
+     * @param string $source Signal source (unused)
+     * @param string $name Signal name (unused; the routing is on $data->command)
+     * @throws InvalidArgumentException When the command reply carries an empty correlation id
+     */
+    public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
+    {
+        if ($data->command !== CliCommands::LOG_TEST_APPEND) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+
+            return;
+        }
+
+        $this->handleLogAppend($data);
+    }
+
+    /**
+     * Writes the asked-for lines into this agent's own log and reports how many (HIL-395).
+     *
+     * Numbering happens here rather than in the caller so that every line the command produces
+     * is distinguishable from every other, including from the lines an earlier call with the
+     * same message left behind: the log file outlives a test run, and a caller asserting on its
+     * own line has to be able to name it whole.
+     *
+     * The lines go out through {@see AbstractAgent::logAgentInfo()} - the ordinary agent log
+     * call, not a file write - because a line that reached the file any other way would not
+     * exercise what the caller is checking: the agent prints, the master files it under
+     * {@see Logger::AGENT_LOG_MARKER}, and only then does a follower have anything to see.
+     *
+     * @param CommandRequestDTO $data Command request carrying the message and the line count
+     * @throws InvalidArgumentException When the command reply carries an empty correlation id
+     */
+    private function handleLogAppend(CommandRequestDTO $data): void
+    {
+        $payload = $data->payload;
+        $message = $payload[CommandConstants::FIELD_MESSAGE] ?? null;
+        if (!is_string($message) || $message === '') {
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                'Append needs a non-empty message',
+            ));
+
+            return;
+        }
+
+        $count = $payload[LogCommandConstants::FIELD_COUNT] ?? null;
+        if (!is_int($count) || $count < 1 || $count > self::APPEND_MAX_LINES) {
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                'Append needs a count between 1 and ' . self::APPEND_MAX_LINES,
+            ));
+
+            return;
+        }
+
+        for ($i = 1; $i <= $count; $i++) {
+            $this->logAgentInfo("{$message} #{$i}");
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            LogCommandConstants::FIELD_COUNT => $count,
+        ]));
     }
 
     /**

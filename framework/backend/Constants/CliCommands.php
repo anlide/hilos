@@ -9,6 +9,7 @@ use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\PageAccessGate;
+use Hilos\Log\LogStoreAgent;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 
 /**
@@ -171,6 +172,21 @@ final class CliCommands
      * @var string Command: Forget every anti-abuse counter and stored block (test-only)
      */
     public const string THROTTLE_TEST_RESET = 'test:throttle:reset';
+
+    /**
+     * Append lines to this node's own log through the live daemon (test-only).
+     *
+     * Doubles as the command-channel wire name routed to {@see LogStoreAgent}, the same
+     * one-string arrangement {@see self::NOTIFICATION_TEST_EMIT} uses: there is exactly one
+     * route for it. It is answered by the agent that owns the node's log directory, so the
+     * line a caller asks for is written by the very process an operator watches - the agent
+     * prints it, the master files it, and a follower sees it arrive the way any other agent
+     * line does. Writing the file from the CLI process instead would prove only that a file
+     * grew.
+     *
+     * @var string Command: Append lines to this node's log through the live daemon (test-only)
+     */
+    public const string LOG_TEST_APPEND = 'test:log:append';
 
     /**
      * Print this node's protected-mode snapshot as JSON (test-only).
