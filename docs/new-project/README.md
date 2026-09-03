@@ -180,15 +180,16 @@ dashboard, owned by the monopolistic `hilos_index` agent (a concrete
 `AbstractHilosIndexAgent` + an `AbstractHilosDashboardPage`; see
 demo/tasks). The app agent plus the dashboard therefore needs
 `WORKER_MIN_MONOPOLISTIC` ≥ 2 — which is also the catalog default. The demos pin
-it in compose regardless, so the pool is explicit: tasks and simple-poll use 7 on
-the local and test stacks and 4 in prod, chat 15 for its larger agent roster.
+it in compose regardless, so the pool is explicit: tasks and simple-poll use 10
+on every stack, chat 16 for its larger agent roster.
 
 Every framework feature a project activates can raise that floor, and the logs
-feature is one of them: it requires the monopolistic `hilos_log_store` agent
-(HIL-753), so activating it costs one more monopolistic worker. The symptom of
-forgetting is not a warning but a crash loop — `NoSuitableWorkerException` in the
-daemon loop, and every page stuck at `data-state="loading"` because no daemon is
-left to answer the subscription.
+feature is one of them: it requires TWO monopolistic agents — `hilos_log_store`,
+which owns the directory (HIL-753), and `hilos_log_carrier`, which moves rotated
+batches into the archive (HIL-870) — so activating it costs two more monopolistic
+workers. The symptom of forgetting is not a warning but a crash loop —
+`NoSuitableWorkerException` in the daemon loop, and every page stuck at
+`data-state="loading"` because no daemon is left to answer the subscription.
 
 ## Composer script lifecycle
 

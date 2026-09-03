@@ -58,6 +58,9 @@ final class HilosAgentType
     /** @var string Hilos log store agent (per-node monopolistic owner of the log directory and of the node's log index) */
     public const string HILOS_LOG_STORE = 'hilos_log_store';
 
+    /** @var string Hilos log carrier agent (per-node monopolistic mover of rotated batches from staging into the archive) */
+    public const string HILOS_LOG_CARRIER = 'hilos_log_carrier';
+
     /** @var string Hilos log aggregator agent (cluster-wide owner of the merged log index across nodes) */
     public const string HILOS_LOG_AGGREGATOR = 'hilos_log_aggregator';
 }

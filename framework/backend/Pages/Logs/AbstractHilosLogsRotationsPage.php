@@ -404,6 +404,10 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
                         $batch->daemonFileCount,
                         $batch->daemonBytes,
                         $batch->takenAt,
+                        // Not decoration: when a batch ARRIVES, every number above it stays what it
+                        // was and only this flag turns over. Left out, the screen would keep
+                        // showing "moving to the archive" for a batch already there (HIL-870).
+                        $batch->carrying,
                     ],
                     $slot->index->batches,
                 ),

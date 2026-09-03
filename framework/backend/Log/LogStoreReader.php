@@ -18,11 +18,12 @@ use Hilos\Utils\Helpers\FileSystemHelper;
  * API so the overview page and the by-key / by-worker / by-batch drill-down pages
  * (HIL-385/386/387) share a single source of truth. Bound to a log directory (from the daemon log
  * path via {@see fromEnv()}, or an explicit directory for tests), it holds no state: every
- * {@see read()} does a fresh walk of the log root plus each `archive/{timestamp}/` batch dir and
+ * {@see read()} does a fresh walk of the log root plus each `staging/{timestamp}/` and
+ * `archive/{timestamp}/` batch dir and
  * classifies files by the `worker-monopolistic-` / `worker-` / `agent-` prefix. Caching and
  * throttling stay with the caller.
  *
- * Unavailability (missing env, unreadable archive) is carried in the returned {@see LogStoreSnapshot}
+ * Unavailability (missing env, unreadable subtree) is carried in the returned {@see LogStoreSnapshot}
  * rather than thrown.
  */
 final class LogStoreReader
@@ -49,7 +50,8 @@ final class LogStoreReader
     private const string PREFIX_AGENT = 'agent-';
 
     /**
-     * @param ?string $logDirectory Log root holding the live `*.log` files and the archive subtree, or null when it could not be resolved
+     * @param ?string $logDirectory Log root holding the live `*.log` files and the staging and archive
+     *     subtrees, or null when it could not be resolved
      * @param list<string> $daemonBasenames Exact basenames of the daemon's own logs, classified as {@see self::CLASS_DAEMON}
      */
     public function __construct(
@@ -131,8 +133,12 @@ final class LogStoreReader
      * below takes `*.log` alone, so the confirmation reaches the snapshot without reaching any
      * file count or byte weight.
      *
-     * @return LogStoreSnapshot Live + archive index, or {@see LogStoreSnapshot::unavailable()} when
-     *                          the log root is unresolved or a directory cannot be listed
+     * Two subtrees of batches are walked, not one (HIL-870): the archive and the staging directory
+     * rotation lands in. A batch waiting there is as real as an archived one — its files have left
+     * the log root — and it reaches the snapshot marked as carrying.
+     *
+     * @return LogStoreSnapshot Live, staging and archive index, or {@see LogStoreSnapshot::unavailable()}
+     *                          when the log root is unresolved or a directory cannot be listed
      */
     public function read(): LogStoreSnapshot
     {
@@ -140,36 +146,27 @@ final class LogStoreReader
             return LogStoreSnapshot::unavailable();
         }
 
-        $archivePath = $this->logDirectory . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
-        $archiveBatches = [];
-        $batchTakenAt = [];
-        if (is_dir($archivePath)) {
-            $entries = FileSystemHelper::scandirOrFalse($archivePath);
-            if ($entries === false) {
-                return LogStoreSnapshot::unavailable();
-            }
-            foreach ($entries as $name) {
-                if ($name === '.' || $name === '..') {
-                    continue;
-                }
-                $full = $archivePath . DIRECTORY_SEPARATOR . $name;
-                if (!is_dir($full)) {
-                    continue;
-                }
-                if (preg_match(LogRotationConstants::TIMESTAMP_DIR_NAME_PATTERN, $name) !== 1) {
-                    continue;
-                }
-                $timestamp = self::timestampDirNameToUnix($name);
-                if ($timestamp === null) {
-                    continue;
-                }
-                $batch = $this->scanLogFilesInDirectory($full);
-                if ($batch === null) {
-                    return LogStoreSnapshot::unavailable();
-                }
-                $archiveBatches[$timestamp] = $batch;
-                $batchTakenAt[$timestamp] = LogBatchTakeoutMarker::read($full);
-            }
+        // Staging FIRST and the archive after, which is the order a batch itself travels in. The
+        // carrier may publish a batch while this walk is between the two listings, and only this
+        // order survives that: the batch is then read out of staging before the move and out of the
+        // archive after it, so it is in both lists rather than in neither. Read the other way round
+        // it would vanish off the screen — and out of the index as a false "batch gone" — until the
+        // next full walk a minute later.
+        $staging = $this->readBatchDirectory(
+            $this->logDirectory,
+            LogRotationConstants::LOG_STAGING_SUBDIR_NAME,
+            readMarkers: false,
+        );
+        if ($staging === null) {
+            return LogStoreSnapshot::unavailable();
+        }
+        $archive = $this->readBatchDirectory(
+            $this->logDirectory,
+            LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME,
+            readMarkers: true,
+        );
+        if ($archive === null) {
+            return LogStoreSnapshot::unavailable();
         }
 
         $liveFiles = $this->scanLogFilesInDirectory($this->logDirectory);
@@ -177,11 +174,83 @@ final class LogStoreReader
             return LogStoreSnapshot::unavailable();
         }
 
-        return new LogStoreSnapshot(true, $archiveBatches, $liveFiles, $batchTakenAt);
+        // The archive wins a name held by both, and so does its verdict: a batch that is in both
+        // lists has arrived, whether because its emptied staging directory has not gone yet or
+        // because it travelled while this very walk was running.
+        return new LogStoreSnapshot(
+            true,
+            $archive['batches'] + $staging['batches'],
+            $liveFiles,
+            $archive['takenAt'],
+            array_values(array_diff(array_keys($staging['batches']), array_keys($archive['batches']))),
+        );
     }
 
     /**
-     * Walk the log root alone, skipping the archive subtree.
+     * Walks one subtree of batch directories and classifies the files of each.
+     *
+     * Both subtrees are read the same way and reach the snapshot alike (HIL-870): a batch waiting
+     * in staging to be carried has already left the log root, so an index that skipped it would
+     * show the operator files that exist nowhere. What tells them apart in the snapshot is the
+     * carrying flag, not the shape of the entry.
+     *
+     * Takeout markers are read in the archive alone. A batch on its way there cannot have been
+     * carried off — that is what the confirmation is about — and the copy step writes nothing but
+     * the files it copies.
+     *
+     * The `.incoming-` copy of a batch inside the archive is skipped for free, because the name
+     * pattern does not admit it.
+     *
+     * @param string $logDirectory Log root this reader walks, already known to be named
+     * @param string $subdirectory Name of the subtree under the log root
+     * @param bool $readMarkers Whether to read the takeout marker of each batch
+     * @return ?array{batches: array<int, array{daemon: array<string, int>, agent: array<string, int>,
+     *     worker: array<string, int>, workerMonopolistic: array<string, int>}>, takenAt: array<int, ?int>}
+     *     Classified batches and their markers, or null when the subtree cannot be listed
+     */
+    private function readBatchDirectory(string $logDirectory, string $subdirectory, bool $readMarkers): ?array
+    {
+        $path = $logDirectory . DIRECTORY_SEPARATOR . $subdirectory;
+        $batches = [];
+        $takenAt = [];
+        if (!is_dir($path)) {
+            return ['batches' => $batches, 'takenAt' => $takenAt];
+        }
+
+        $entries = FileSystemHelper::scandirOrFalse($path);
+        if ($entries === false) {
+            return null;
+        }
+        foreach ($entries as $name) {
+            if ($name === '.' || $name === '..') {
+                continue;
+            }
+            $full = $path . DIRECTORY_SEPARATOR . $name;
+            if (!is_dir($full)) {
+                continue;
+            }
+            if (preg_match(LogRotationConstants::TIMESTAMP_DIR_NAME_PATTERN, $name) !== 1) {
+                continue;
+            }
+            $timestamp = self::timestampDirNameToUnix($name);
+            if ($timestamp === null) {
+                continue;
+            }
+            $batch = $this->scanLogFilesInDirectory($full);
+            if ($batch === null) {
+                return null;
+            }
+            $batches[$timestamp] = $batch;
+            if ($readMarkers) {
+                $takenAt[$timestamp] = LogBatchTakeoutMarker::read($full);
+            }
+        }
+
+        return ['batches' => $batches, 'takenAt' => $takenAt];
+    }
+
+    /**
+     * Walk the log root alone, skipping the staging and archive subtrees.
      *
      * The cheap half of the split walk (HIL-753): live files change every second while a batch
      * changes only when rotation or cleanup runs, so a caller sampling often takes this and reaches
@@ -224,7 +293,7 @@ final class LogStoreReader
      * daemon" rule would swallow every stray file in the directory. The prefixes follow, with
      * `worker-monopolistic-` before `worker-` before `agent-` so they do not overlap incorrectly.
      *
-     * @param string $dir Absolute directory path (log root or one archive batch folder)
+     * @param string $dir Absolute directory path (log root or one batch folder of either subtree)
      *
      * @return ?array{daemon: array<string, int>, agent: array<string, int>, worker: array<string, int>, workerMonopolistic: array<string, int>}
      *         Basename → size in bytes (0 when the size could not be read), or null when the directory cannot be listed

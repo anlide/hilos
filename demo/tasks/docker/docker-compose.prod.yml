@@ -32,7 +32,7 @@ services:
       # seven that stood here before the logs feature was activated (HIL-392): a
       # stack starting under it dies with NoSuitableWorkerException as soon as the
       # fifth agent asks for a worker.
-      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-9}
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-10}
       - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
       - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
       # Trust this stand's own nginx, by address, to name the visitor behind it

@@ -593,8 +593,11 @@ class DockerManager extends BaseManager
 
         $batchDirName = $report->batchDirName;
         if ($batchDirName !== null && $report->movedCount > 0) {
-            $archiveName = LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
-            Logger::info("Log rotation: moved {$report->movedCount} log file(s) to {$archiveName}/{$batchDirName}/");
+            // Named as the staging directory and not the archive (HIL-870): the start path lands
+            // there like every other rotation, and the carrier moves the batch on once the node is
+            // up. Saying "archive" here would send an operator to a directory that is still empty.
+            $stagingName = LogRotationConstants::LOG_STAGING_SUBDIR_NAME;
+            Logger::info("Log rotation: moved {$report->movedCount} log file(s) to {$stagingName}/{$batchDirName}/");
         }
 
         foreach ($report->failedFiles as $failedFile) {

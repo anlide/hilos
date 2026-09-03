@@ -152,6 +152,45 @@ final class LogStoreReaderTest extends TestCase
         $this->assertSame(125, $keys[0]->totalBytes);
     }
 
+    public function testAStagingBatchIsIndexedBesideTheArchivedOnesAndMarkedCarrying(): void
+    {
+        $this->writeBatch('2026-08-01-00-00-00', ['agent-hilos_logs.log' => 30]);
+        $this->writeStagingBatch('2026-08-01-01-00-00', ['agent-hilos_logs.log' => 40]);
+
+        $batches = $this->reader()->read()->batches();
+
+        // Both are real: the staging batch's files have left the log root, so an index that
+        // skipped it would show an administrator fewer files than the node holds.
+        $this->assertCount(2, $batches);
+        $this->assertFalse($batches[0]->carrying);
+        $this->assertTrue($batches[1]->carrying);
+        $this->assertSame(40, $batches[1]->agentBytes);
+    }
+
+    public function testAHalfCarriedCopyInTheArchiveIsNotIndexed(): void
+    {
+        $this->writeBatch(
+            LogRotationConstants::INCOMING_DIR_PREFIX . '2026-08-01-00-00-00',
+            ['agent-hilos_logs.log' => 30],
+        );
+
+        // The pruner and the screen both read this list, and half a batch belongs in neither.
+        $this->assertSame([], $this->reader()->read()->batches());
+    }
+
+    public function testAnArchivedBatchOutranksAnEmptyStagingLeftoverOfTheSameName(): void
+    {
+        $this->writeBatch('2026-08-01-00-00-00', ['agent-hilos_logs.log' => 30]);
+        // What one tick of a carry interrupted between the two last steps leaves behind.
+        $this->writeStagingBatch('2026-08-01-00-00-00', []);
+
+        $batches = $this->reader()->read()->batches();
+
+        $this->assertCount(1, $batches);
+        $this->assertFalse($batches[0]->carrying);
+        $this->assertSame(30, $batches[0]->agentBytes);
+    }
+
     public function testUnresolvedLogRootIsUnavailableRatherThanEmpty(): void
     {
         $reader = new LogStoreReader(null);
@@ -190,8 +229,31 @@ final class LogStoreReaderTest extends TestCase
      */
     private function writeBatch(string $timestampDirName, array $files): void
     {
+        $this->writeBatchIn(LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME, $timestampDirName, $files);
+    }
+
+    /**
+     * Writes one batch folder into the staging subtree, where rotation leaves it.
+     *
+     * @param string $timestampDirName Folder name in {@see LogRotationConstants::TIMESTAMP_FORMAT}
+     * @param array<string, int> $files Basename → size in bytes
+     */
+    private function writeStagingBatch(string $timestampDirName, array $files): void
+    {
+        $this->writeBatchIn(LogRotationConstants::LOG_STAGING_SUBDIR_NAME, $timestampDirName, $files);
+    }
+
+    /**
+     * Writes one batch folder into the named subtree of the log root.
+     *
+     * @param string $subdirectory Subtree under the log root
+     * @param string $timestampDirName Folder name in {@see LogRotationConstants::TIMESTAMP_FORMAT}
+     * @param array<string, int> $files Basename → size in bytes
+     */
+    private function writeBatchIn(string $subdirectory, string $timestampDirName, array $files): void
+    {
         $path = $this->dir
-            . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME
+            . DIRECTORY_SEPARATOR . $subdirectory
             . DIRECTORY_SEPARATOR . $timestampDirName;
         if (!mkdir($path, 0755, true) && !is_dir($path)) {
             $this->fail("Could not create fixture batch: {$path}");

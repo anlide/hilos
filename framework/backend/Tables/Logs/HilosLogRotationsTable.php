@@ -19,6 +19,7 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\LogBatchSummary;
+use Hilos\Log\LogStoreAgent;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
 
@@ -42,12 +43,15 @@ use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
  * screen offering "how to carry it off" while the node answers that the batch is protected again -
  * and the one that matters is the one holding the directory.
  *
- * One state is judged here, and it overrules the verdict when it is present: a batch an
+ * Two states are judged here, and each overrules the verdict when it is present. A batch an
  * operator has confirmed carrying off is {@see self::STATE_TAKEN} whatever the rule now says
  * (HIL-483). That one IS a fact about one batch — a marker file inside its directory — so it
  * arrives with the batch instead of being decided from the picture, and it survives an
- * administrator raising the retention period after the fact. Stacking the three states is a
- * reading of what arrived and stays here, because that is what this table is for.
+ * administrator raising the retention period after the fact. Above even that is
+ * {@see self::STATE_CARRYING} (HIL-870), which says the batch has left the log root but has not
+ * reached the archive: none of the other three is true of it yet, and neither of the row's actions
+ * applies to it. Stacking the four states is a reading of what arrived and stays here, because
+ * that is what this table is for.
  *
  * A confirmed row also carries the instant its node's pruner may first delete it (HIL-759). Added
  * up here from the two halves the node reports — when it was confirmed, and how long that node
@@ -80,6 +84,17 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
      * copying it off is still a batch that was carried off.
      */
     public const string STATE_TAKEN = 'taken';
+
+    /**
+     * Retention state: the batch is still on its way from staging into the archive (HIL-870).
+     *
+     * It overrules all three of the states above, the confirmation included, because it is not a
+     * verdict about the batch at all but a statement of where the batch IS. Nothing may be said
+     * about carrying off a directory that has not arrived, and the node refuses a confirmation for
+     * it ({@see LogStoreAgent}); a row that showed "waiting to be carried off" would be offering an
+     * action that cannot be taken.
+     */
+    public const string STATE_CARRYING = 'carrying';
 
     /** Wire slot the row payload rides under; must match the frontend batch slot. */
     private const string ROW_SLOT = 'batch';
@@ -210,7 +225,7 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
 
         $rows = [];
         foreach ($slot->index->batches as $batch) {
-            $path = self::archivePath($batch->timestamp);
+            $path = self::batchPath($batch);
             $rows[] = [
                 HilosLogRotationsTableRow::rowKey => self::rowKey($slot->nodeId, $batch->timestamp),
                 HilosLogRotationsTableRow::batchAt => $batch->timestamp,
@@ -337,7 +352,7 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
     }
 
     /**
-     * Names the archive directory of one batch, relative to that node's log root.
+     * Names the directory of one batch, relative to that node's log root.
      *
      * The name is re-derived rather than carried: {@see LogBatchSummary} holds the instant and not
      * the directory it was parsed out of. That round-trips exactly while every node of the cluster
@@ -346,27 +361,40 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
      * offset; carrying the name itself is the cure, and it belongs to the read model this leaf
      * reads rather than writes.
      *
-     * @param int $timestamp Unix timestamp of the batch
+     * The subtree is the batch's own (HIL-870): a batch still being carried is in `staging/`, and
+     * printing the archive address of a directory that is not there yet would send an
+     * administrator to an empty path — the one they would reach for precisely when the far volume
+     * is down.
+     *
+     * @param LogBatchSummary $batch Batch as its node reported it
      * @return string Directory path, as rotation wrote it
      */
-    private static function archivePath(int $timestamp): string
+    private static function batchPath(LogBatchSummary $batch): string
     {
         $name = new DateTimeImmutable()
-            ->setTimestamp($timestamp)
+            ->setTimestamp($batch->timestamp)
             ->format(LogRotationConstants::TIMESTAMP_FORMAT);
+        $subdirectory = $batch->carrying
+            ? LogRotationConstants::LOG_STAGING_SUBDIR_NAME
+            : LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
 
-        return LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME . '/' . $name . '/';
+        return $subdirectory . '/' . $name . '/';
     }
 
     /**
-     * The state the badge shows, with the operator's word ahead of the rule's reading.
+     * The state the badge shows: where the batch is first, then the operator's word, then the rule.
      *
      * @param LogBatchSummary $batch Batch as its node reported it
      * @param bool $due Whether the retention rule names this batch among the ones to carry off
-     * @return string One of the three retention states
+     * @return string One of the four retention states
      */
     private static function retentionState(LogBatchSummary $batch, bool $due): string
     {
+        // Answered first, ahead of the confirmation that used to be first: the other three states
+        // are readings of a batch that is in the archive, and this one says it is not there yet.
+        if ($batch->carrying) {
+            return self::STATE_CARRYING;
+        }
         if ($batch->takenAt !== null) {
             return self::STATE_TAKEN;
         }

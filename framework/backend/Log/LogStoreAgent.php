@@ -64,8 +64,9 @@ use Throwable;
  *
  * The walk is split because the two halves change at different rates. Live files at the log root
  * move every second, so {@see LogStoreReader::readLiveFiles()} resamples them every
- * {@see self::LIVE_SCAN_INTERVAL_SECONDS}; the archive only moves when rotation or cleanup runs,
- * so the full {@see LogStoreReader::read()} runs every {@see self::FULL_SCAN_INTERVAL_SECONDS}.
+ * {@see self::LIVE_SCAN_INTERVAL_SECONDS}; the batches only move when rotation, the carry
+ * ({@see LogCarrierAgent}) or the cleanup runs, so the full {@see LogStoreReader::read()} runs
+ * every {@see self::FULL_SCAN_INTERVAL_SECONDS}.
  * Rotation announces itself: {@see LogRotator::rotate()} renames a live file away whole, so a live
  * key that disappeared or shrank forces the full walk out of turn — otherwise the index would deny
  * the new batch for up to a minute.
@@ -80,7 +81,9 @@ use Throwable;
  * which another node may be holding. A follow is dropped when the viewer asks, when its page
  * unsubscribes, and when its connection is no longer on the roster.
  *
- * And it is the only process that can WRITE in that directory, which is what the takeout
+ * And it is all but the only process that can WRITE in that directory — the one exception is
+ * {@see LogCarrierAgent}, which moves rotated batches out of staging and into the archive on this
+ * same node (HIL-870) and touches nothing else. That is what the takeout
  * confirmation rests on (HIL-483): an operator who has carried a rotation batch off says so, and
  * the fact is a marker file inside the batch ({@see LogBatchTakeoutMarker}) rather than a row
  * anywhere else. The index carries it back out, so the screen that asked draws what the disk
@@ -241,13 +244,6 @@ final class LogStoreAgent extends AbstractAgent
     /** @var float Timestamp of the last rotation ATTEMPT, the age-axis baseline */
     private float $lastRotationAt = 0.0;
 
-    /**
-     * @var bool Last verdict of the device gate, so only a crossing is reported. Seeded open the
-     *     way the index is seeded readable: a start is not a crossing, and a live directory whose
-     *     archive sits somewhere else is news.
-     */
-    private bool $sameDeviceVerdict = true;
-
     /** @var array<string, true> Raw stream basename → its size has already been complained about */
     private array $rawStreamComplained = [];
 
@@ -377,6 +373,11 @@ final class LogStoreAgent extends AbstractAgent
      * the walk that follows it, so one frame carries both halves of what just changed in the
      * archive: the batch that appeared, and the ones that are gone.
      *
+     * Nothing is asked about the archive's device any more (HIL-870). Rotation lands in the staging
+     * directory, which is inside the log root and so on the device of the live logs whatever the
+     * archive is; the boundary, if there is one, is crossed afterwards by {@see LogCarrierAgent},
+     * which finds out by trying rather than by predicting from `stat`.
+     *
      * @param float $now Monotonic-enough wall clock of the walk this check rides
      * @throws InvalidArgumentException When the frame announcing the new batch cannot be named
      */
@@ -391,9 +392,6 @@ final class LogStoreAgent extends AbstractAgent
 
         $this->refreshPolicy();
         if (!$this->policy->isActive() || !$this->shouldRotate($now, $rotator)) {
-            return;
-        }
-        if (!$this->deviceGateOpen($rotator)) {
             return;
         }
 
@@ -462,7 +460,7 @@ final class LogStoreAgent extends AbstractAgent
             return;
         }
 
-        $report = (new LogArchivePruner($logDirectory))->prune(self::batchTimestamps($this->index));
+        $report = (new LogArchivePruner($logDirectory))->prune(self::settledBatchTimestamps($this->index));
 
         foreach ($report->removedBatchTimestamps as $batchTimestamp => $takenAt) {
             $batch = self::batchLabel(date(LogRotationConstants::TIMESTAMP_FORMAT, $batchTimestamp));
@@ -572,69 +570,6 @@ final class LogStoreAgent extends AbstractAgent
         }
 
         return $total;
-    }
-
-    /**
-     * Whether rotation may run, saying one line whenever the answer changes.
-     *
-     * @param LogRotator $rotator Rotator naming the live and archive directories
-     * @return bool True when the archive is on the device of the live logs
-     */
-    private function deviceGateOpen(LogRotator $rotator): bool
-    {
-        $open = $this->archiveOnSameDevice($rotator);
-        if ($open === $this->sameDeviceVerdict) {
-            return $open;
-        }
-
-        $this->sameDeviceVerdict = $open;
-        if ($open) {
-            $this->logAgentInfo('Log rotation is on again: the archive directory is back on the device of the live logs');
-        } else {
-            $this->logAgentError(
-                'Log rotation is off: the archive directory is on a different device than the live logs, '
-                . 'so a batch could only be moved by copying every byte',
-            );
-        }
-
-        return $open;
-    }
-
-    /**
-     * Whether the archive directory sits on the device holding the live logs.
-     *
-     * Asked before every rotation and not once at start: a mount point can be put under a running
-     * node. Across a device boundary a rename is no longer a rename — the kernel refuses it, and
-     * doing it anyway would mean copying every byte, which is the cost this whole design exists to
-     * avoid. An archive that does not exist yet passes: rotation creates it inside the live
-     * directory, which is the same device by construction.
-     *
-     * A directory neither of them can be measured leaves the gate OPEN rather than shut: the
-     * rename that follows reports its own failure, and refusing on a reading that never arrived
-     * would stop rotation for a reason nobody could name.
-     *
-     * Kept a method of its own on purpose: two devices cannot be arranged inside a unit test, so
-     * the refusing half is exercised by hand on a stand with a bind mount over `archive/`.
-     *
-     * @param LogRotator $rotator Rotator naming the live and archive directories
-     * @return bool True when a batch can be made by renaming
-     */
-    private function archiveOnSameDevice(LogRotator $rotator): bool
-    {
-        $archiveDirectory = $rotator->archiveDirectory();
-        if (!is_dir($archiveDirectory)) {
-            return true;
-        }
-
-        // warning-suppressed: an unstattable directory leaves the gate open, see the docblock
-        $live = @stat($rotator->logDirectory());
-        // warning-suppressed: same degrade as the line above
-        $archive = @stat($archiveDirectory);
-        if ($live === false || $archive === false) {
-            return true;
-        }
-
-        return $live['dev'] === $archive['dev'];
     }
 
     /**
@@ -1061,6 +996,14 @@ final class LogStoreAgent extends AbstractAgent
      */
     private function confirmTakeout(int $batchTimestamp, ?int $userId): int
     {
+        if ($this->batchIsCarrying($batchTimestamp)) {
+            // Refused where it used to be refused by accident: the path was built out of the
+            // archive constant, so a batch still in staging failed the is_dir() below. The outcome
+            // is deliberate — confirming a takeout is what lets the cleanup delete a batch, and
+            // this one is not yet where it would have been carried off from (HIL-870).
+            throw new ValidationException('This batch has not reached the archive yet');
+        }
+
         $directory = $this->batchDirectory($batchTimestamp);
         if ($directory === null || !is_dir($directory)) {
             throw new ValidationException('This batch is no longer on the node');
@@ -1187,7 +1130,15 @@ final class LogStoreAgent extends AbstractAgent
      */
     private function batchIsDue(int $batchTimestamp): bool
     {
-        return in_array($batchTimestamp, $this->judgeDueBatches(self::batchTimestamps($this->index), time()), true);
+        if ($this->batchIsCarrying($batchTimestamp)) {
+            return false;
+        }
+
+        return in_array(
+            $batchTimestamp,
+            $this->judgeDueBatches(self::settledBatchTimestamps($this->index), time()),
+            true,
+        );
     }
 
     /**
@@ -1218,11 +1169,16 @@ final class LogStoreAgent extends AbstractAgent
     }
 
     /**
-     * Names the archive directory of one batch on this node.
+     * Names the directory of one batch on this node, whichever subtree currently holds it.
      *
      * The second place the wire's unix stamp meets the directory name rotation writes, and it
      * formats it the way {@see self::relativePath()} does — in the timezone of the process that
      * wrote that name, which for this node is this very process.
+     *
+     * The subtree is looked up rather than taken from one constant (HIL-870): a batch on its way to
+     * the archive is still in staging, and an administrator whose far volume is down has no other
+     * way to read the logs of the last hours. Reading them there is the one thing allowed on a
+     * batch in flight; the confirmation and the cleanup are not.
      *
      * @param int $batchTimestamp Unix timestamp of the batch
      * @return ?string Absolute directory path, or null when the environment names no log root
@@ -1234,7 +1190,7 @@ final class LogStoreAgent extends AbstractAgent
             return null;
         }
 
-        return $logDirectory . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME
+        return $logDirectory . DIRECTORY_SEPARATOR . self::batchSubdirectory($logDirectory, $batchTimestamp)
             . DIRECTORY_SEPARATOR . date(LogRotationConstants::TIMESTAMP_FORMAT, $batchTimestamp);
     }
 
@@ -1374,6 +1330,11 @@ final class LogStoreAgent extends AbstractAgent
      * archive layout is known, and it is the only place the wire's unix stamp meets the directory
      * name rotation writes ({@see LogRotationConstants::TIMESTAMP_FORMAT}).
      *
+     * Which of the two subtrees holds the batch is asked of the disk, the way
+     * {@see self::batchDirectory()} asks it: the files of a batch waiting to be carried are as
+     * readable as any others, and on a node whose far volume is down they are the only recent ones
+     * there are (HIL-870).
+     *
      * @param LogsReadLinesSignalData $request Read request naming the file
      * @return ?string Path relative to the log root, or null when the request names no file at all
      */
@@ -1386,7 +1347,14 @@ final class LogStoreAgent extends AbstractAgent
             return null;
         }
 
-        return LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME
+        // From the environment rather than from this agent's own reader: a read is answered whole
+        // out of the request, and nothing about it should wait on a walk having happened.
+        $logDirectory = LogStoreReader::fromEnv()->logDirectory();
+        $subdirectory = $logDirectory === null
+            ? LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME
+            : self::batchSubdirectory($logDirectory, $request->batchTimestamp);
+
+        return $subdirectory
             . '/' . date(LogRotationConstants::TIMESTAMP_FORMAT, $request->batchTimestamp)
             . '/' . $request->stream;
     }
@@ -1437,7 +1405,16 @@ final class LogStoreAgent extends AbstractAgent
         }
 
         $batches = $snapshot->batches();
-        $batchTimestamps = array_map(static fn (LogBatchSummary $batch): int => $batch->timestamp, $batches);
+        // A batch still being carried is left out of the verdict, not judged and found safe: the
+        // rule counts the newest N of the archive, and a batch that has not arrived there would
+        // take a place away from one that has (HIL-870).
+        $batchTimestamps = [];
+        foreach ($batches as $batch) {
+            if ($batch->carrying) {
+                continue;
+            }
+            $batchTimestamps[] = $batch->timestamp;
+        }
 
         $previous = $this->index;
         $this->index = new NodeLogIndex(
@@ -1859,5 +1836,76 @@ final class LogStoreAgent extends AbstractAgent
         }
 
         return $timestamps;
+    }
+
+    /**
+     * Timestamps of the batches that have reached the archive, in the order the index lists them.
+     *
+     * The three things that act on a batch — the retention verdict, the cleanup and the takeout
+     * confirmation — all mean the archive and only the archive. A batch still in staging is in the
+     * index because its files are real and an operator has to see them (HIL-870), not because
+     * anything may be done to it there.
+     *
+     * @param NodeLogIndex $index Index to read the batches of
+     * @return list<int> Unix timestamps of the batches that are not being carried
+     */
+    private static function settledBatchTimestamps(NodeLogIndex $index): array
+    {
+        $timestamps = [];
+        foreach ($index->batches as $batch) {
+            if ($batch->carrying) {
+                continue;
+            }
+            $timestamps[] = $batch->timestamp;
+        }
+
+        return $timestamps;
+    }
+
+    /**
+     * Whether this batch is still waiting in the staging directory rather than sitting in the archive.
+     *
+     * @param int $batchTimestamp Unix timestamp of the batch in question
+     * @return bool True while the batch is on its way to the archive
+     */
+    private function batchIsCarrying(int $batchTimestamp): bool
+    {
+        $logDirectory = $this->reader->logDirectory();
+
+        return $logDirectory !== null
+            && self::batchSubdirectory($logDirectory, $batchTimestamp) === LogRotationConstants::LOG_STAGING_SUBDIR_NAME;
+    }
+
+    /**
+     * Which of the two subtrees of the log root currently holds one batch (HIL-870).
+     *
+     * Asked of the disk, and deliberately not of the index that carries the same flag to the
+     * screen: this answer addresses a directory about to be read from or written into, while the
+     * index is a walk up to a minute old. A batch that reached the archive in between would be
+     * addressed to a staging directory that is no longer there — and the walk is not the thing a
+     * read of a file should depend on.
+     *
+     * A batch that is in neither is answered with the archive, so a request for something that is
+     * simply gone is refused where it has always been refused: on the directory not being there.
+     *
+     * @param string $logDirectory Log root of this node
+     * @param int $batchTimestamp Unix timestamp of the batch
+     * @return string Name of the subtree holding it
+     */
+    private static function batchSubdirectory(string $logDirectory, int $batchTimestamp): string
+    {
+        $name = date(LogRotationConstants::TIMESTAMP_FORMAT, $batchTimestamp);
+        $inArchive = $logDirectory . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME
+            . DIRECTORY_SEPARATOR . $name;
+        if (is_dir($inArchive)) {
+            return LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
+        }
+        $inStaging = $logDirectory . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_STAGING_SUBDIR_NAME
+            . DIRECTORY_SEPARATOR . $name;
+        if (is_dir($inStaging)) {
+            return LogRotationConstants::LOG_STAGING_SUBDIR_NAME;
+        }
+
+        return LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
     }
 }

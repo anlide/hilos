@@ -9,6 +9,7 @@ use Hilos\Constants\LogRotationConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Log\LogBatchCarrier;
 use Hilos\Log\LogBatchTakeoutMarker;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Utils\Logger;
@@ -24,9 +25,11 @@ use PHPUnit\Framework\TestCase;
  * {@see LogStoreAgentIndexTest}, and the policy comes from the process environment, which is where
  * the resolver lands when no settings are initialized.
  *
- * What the run cannot cover is named in the leaf and here: the device gate refusing. Two devices
- * cannot be arranged inside a unit test, so only the passing verdict is asserted below and the
- * refusal is exercised by hand on a stand with a bind mount over `archive/`.
+ * Since HIL-870 rotation lands in `staging/` and never in the archive, so the assertions about
+ * what a rotation made read that subtree; the archive is what the cleanup below acts on. There is
+ * no device gate left to cover — the rotation moment is O(1) whatever the archive is, because
+ * staging is inside the log root by construction, and the boundary is crossed afterwards by
+ * {@see LogBatchCarrier}, which has a test of its own.
  */
 final class LogStoreAgentRotationTest extends TestCase
 {
@@ -147,22 +150,42 @@ final class LogStoreAgentRotationTest extends TestCase
         $this->assertCount(1, $delta->appearedBatchTimestamps);
     }
 
-    public function testAnExistingArchiveOnTheSameDeviceOpensTheGate(): void
+    public function testASecondRotationReusesTheStagingDirectory(): void
     {
         $this->putRotationEnvironment('0', self::MAX_LIVE_SIZE_BYTES, '');
-        // The other half of the gate — an archive that does not exist yet — is what every other
-        // case here goes through; this one has the directory already made.
-        mkdir($this->dir . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME, 0755, true);
+        // Every other case here makes the staging directory on the way; this one has it already,
+        // as a node that has rotated once before does.
+        mkdir($this->dir . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_STAGING_SUBDIR_NAME, 0755, true);
         $this->write(self::DAEMON_LOG, 2048);
         $agent = $this->startedAgent();
 
         $this->walkAndRotate($agent, $this->t0 + 10);
 
         $this->assertCount(1, $this->batchNames());
+        // And the archive is untouched by a rotation: getting the batch there is the carrier's job.
+        $this->assertSame([], $this->archiveBatchNames());
+    }
+
+    public function testTheCarrierMovesTheRotatedBatchIntoTheArchive(): void
+    {
+        $this->putRotationEnvironment('0', self::MAX_LIVE_SIZE_BYTES, '');
+        $this->write(self::DAEMON_LOG, 2048);
+        $agent = $this->startedAgent();
+        $this->walkAndRotate($agent, $this->t0 + 10);
+        $batchName = $this->batchNames()[0];
+
+        // The two steps meet here and nowhere else in this suite: the fixture is one device, so the
+        // carry is the whole-directory rename an ordinary installation does.
+        $report = new LogBatchCarrier($this->dir)->carry($batchName);
+
+        $this->assertNull($report->failure);
+        $this->assertTrue($report->renamedWhole);
+        $this->assertSame([], $this->batchNames());
+        $this->assertSame([$batchName], $this->archiveBatchNames());
     }
 
     /**
-     * The archive path is taken by a file, so the batch cannot be made and the rotator raises.
+     * The staging path is taken by a file, so the batch cannot be made and the rotator raises.
      *
      * The failing `mkdir()` warns before it returns false, and the assertion is about what the
      * agent does after the exception — hence the error handler is stood down for this test alone.
@@ -174,8 +197,8 @@ final class LogStoreAgentRotationTest extends TestCase
         $this->write(self::DAEMON_LOG, 2048);
         $agent = $this->startedAgent();
         file_put_contents(
-            $this->dir . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME,
-            'a file where the archive directory would go',
+            $this->dir . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_STAGING_SUBDIR_NAME,
+            'a file where the staging directory would go',
         );
 
         $this->walkAndRotate($agent, $this->t0 + 10);
@@ -199,7 +222,7 @@ final class LogStoreAgentRotationTest extends TestCase
         $this->walkAndRotate($agent, $this->t0 + 10);
         $said = (string)ob_get_clean();
 
-        $names = $this->batchNames();
+        $names = $this->archiveBatchNames();
         $this->assertNotContains($this->batchDirName($taken), $names);
         $this->assertContains($this->batchDirName($kept), $names);
         $this->assertStringContainsString(
@@ -335,11 +358,28 @@ final class LogStoreAgentRotationTest extends TestCase
     }
 
     /**
-     * @return list<string> Names of the batch directories under the archive, sorted
+     * @return list<string> Names of the batch directories rotation made, under staging, sorted
      */
     private function batchNames(): array
     {
-        $batches = glob($this->dir . '/' . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME . '/*', GLOB_ONLYDIR);
+        return $this->batchNamesIn(LogRotationConstants::LOG_STAGING_SUBDIR_NAME);
+    }
+
+    /**
+     * @return list<string> Names of the batch directories under the archive, sorted
+     */
+    private function archiveBatchNames(): array
+    {
+        return $this->batchNamesIn(LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME);
+    }
+
+    /**
+     * @param string $subdirectory Subtree of the log root to list the batches of
+     * @return list<string> Names of the batch directories there, sorted
+     */
+    private function batchNamesIn(string $subdirectory): array
+    {
+        $batches = glob($this->dir . '/' . $subdirectory . '/*', GLOB_ONLYDIR);
         if ($batches === false) {
             return [];
         }
@@ -350,13 +390,13 @@ final class LogStoreAgentRotationTest extends TestCase
     }
 
     /**
-     * @param string $batchName Name of one batch directory
+     * @param string $batchName Name of one batch directory rotation made
      * @return list<string> Basenames of the log files that batch holds, sorted
      */
     private function batchFileNames(string $batchName): array
     {
         return $this->sortedBasenames(
-            $this->dir . '/' . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME . '/' . $batchName,
+            $this->dir . '/' . LogRotationConstants::LOG_STAGING_SUBDIR_NAME . '/' . $batchName,
         );
     }
 

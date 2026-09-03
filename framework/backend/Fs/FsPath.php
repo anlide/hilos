@@ -136,6 +136,26 @@ final class FsPath
     }
 
     /**
+     * Copy a file, overwriting whatever is at the target.
+     *
+     * The primitive next to {@see move()} for the case a rename cannot serve: a target on another
+     * device. Overwriting is deliberate — a caller repeating a copy that was interrupted has to be
+     * able to write the whole file again over the part of it that arrived.
+     *
+     * @param string $sourcePath Absolute source path
+     * @param string $targetPath Absolute target path
+     *
+     * @throws FileWriteException If the copy fails
+     */
+    public static function copy(string $sourcePath, string $targetPath): void
+    {
+        // warning-suppressed: false becomes FileWriteException on the next line
+        if (!@copy($sourcePath, $targetPath)) {
+            throw new FileWriteException("Cannot copy {$sourcePath} to {$targetPath}");
+        }
+    }
+
+    /**
      * Move a finished temp file into its final place, so readers never see a partial write.
      *
      * The temp file is fsynced first; that part is best-effort, because a failing

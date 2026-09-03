@@ -12,8 +12,9 @@ use PHPUnit\Framework\TestCase;
  * Unit tests for the log rotator's file moves over a fixture directory (HIL-379).
  *
  * Exercises the mechanics extracted from DockerManager::rotateLogs() against a throwaway temp
- * directory: moving the live *.log files into a timestamped archive batch, keeping back the
- * basenames the runtime rotator must not move, and no-op behavior when there is nothing to rotate.
+ * directory: moving the live *.log files into a timestamped staging batch (HIL-870 — the archive
+ * may be on another device, so rotation never writes there), keeping back the basenames the
+ * runtime rotator must not move, and no-op behavior when there is nothing to rotate.
  */
 final class LogRotatorTest extends TestCase
 {
@@ -32,7 +33,7 @@ final class LogRotatorTest extends TestCase
         $this->removeTree($this->dir);
     }
 
-    public function testRotateMovesLiveLogsIntoTimestampedArchiveBatch(): void
+    public function testRotateMovesLiveLogsIntoTimestampedStagingBatch(): void
     {
         file_put_contents($this->dir . '/daemon.log', 'one');
         file_put_contents($this->dir . '/worker.log', 'two');
@@ -44,9 +45,9 @@ final class LogRotatorTest extends TestCase
         // The live files are gone.
         $this->assertSame([], glob($this->dir . '/*.log'));
 
-        // A single timestamped batch directory now holds both files under the archive subdir.
-        $archiveDir = $this->dir . '/' . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
-        $batches = glob($archiveDir . '/*', GLOB_ONLYDIR);
+        // A single timestamped batch directory now holds both files under the staging subdir.
+        $stagingDir = $this->dir . '/' . LogRotationConstants::LOG_STAGING_SUBDIR_NAME;
+        $batches = glob($stagingDir . '/*', GLOB_ONLYDIR);
         $this->assertCount(1, $batches);
         $this->assertMatchesRegularExpression(
             LogRotationConstants::TIMESTAMP_DIR_NAME_PATTERN,
@@ -70,7 +71,7 @@ final class LogRotatorTest extends TestCase
         $this->assertSame([$this->dir . '/daemon-raw.log'], glob($this->dir . '/*.log'));
         $this->assertSame('raw', file_get_contents($this->dir . '/daemon-raw.log'));
 
-        $batches = glob($this->dir . '/' . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME . '/*', GLOB_ONLYDIR);
+        $batches = glob($this->dir . '/' . LogRotationConstants::LOG_STAGING_SUBDIR_NAME . '/*', GLOB_ONLYDIR);
         $this->assertCount(1, $batches);
         $this->assertSame([], glob($batches[0] . '/daemon-raw.log'));
     }
@@ -82,9 +83,9 @@ final class LogRotatorTest extends TestCase
         $report = new LogRotator($this->dir, ['daemon-raw.log'])->rotate();
 
         $this->assertSame(0, $report->movedCount);
-        // No batch directory: an empty folder in the archive is carried around by every later walk.
+        // No batch directory: an empty folder in staging is walked by the carrier on every tick.
         $this->assertNull($report->batchDirName);
-        $this->assertFalse(is_dir($this->dir . '/' . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME));
+        $this->assertFalse(is_dir($this->dir . '/' . LogRotationConstants::LOG_STAGING_SUBDIR_NAME));
     }
 
     public function testRotateIsNoOpWhenNoLiveLogs(): void
@@ -93,7 +94,7 @@ final class LogRotatorTest extends TestCase
 
         $this->assertSame(0, $report->movedCount);
         $this->assertNull($report->batchDirName);
-        $this->assertFalse(is_dir($this->dir . '/' . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME));
+        $this->assertFalse(is_dir($this->dir . '/' . LogRotationConstants::LOG_STAGING_SUBDIR_NAME));
     }
 
     public function testRotateIsNoOpWhenDirectoryMissing(): void

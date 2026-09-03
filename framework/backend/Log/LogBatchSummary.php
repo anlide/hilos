@@ -16,6 +16,11 @@ namespace Hilos\Log;
  * {@see $takenAt} is the one field of it that is not measured but READ: it comes from a marker file
  * the owner of the directory wrote ({@see LogBatchTakeoutMarker}), so a batch keeps its
  * confirmation across restarts, rescans and a change of the retention rule.
+ *
+ * {@see $carrying} is not measured either but WALKED: it says the batch is still in the staging
+ * directory rotation put it in and has not reached the archive yet (HIL-870). It is not a state of
+ * the files — every figure below is the same either way — but of where they are, which is why it
+ * overrides the retention verdict on the screen instead of joining it.
  */
 final class LogBatchSummary
 {
@@ -30,6 +35,7 @@ final class LogBatchSummary
      * @param int $daemonFileCount Number of daemon files in the batch (`daemon.log` and `daemon-error.log` by default)
      * @param int $daemonBytes Summed size in bytes of the daemon files
      * @param ?int $takenAt Unix timestamp an operator confirmed carrying the batch off at, or null while none has
+     * @param bool $carrying Whether the batch is still in the staging directory on its way to the archive
      */
     public function __construct(
         public readonly int $timestamp,
@@ -42,6 +48,7 @@ final class LogBatchSummary
         public readonly int $daemonFileCount,
         public readonly int $daemonBytes,
         public readonly ?int $takenAt = null,
+        public readonly bool $carrying = false,
     ) {
     }
 }

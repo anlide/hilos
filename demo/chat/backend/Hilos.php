@@ -164,6 +164,8 @@ use Hilos\Hilos as HilosFacade;
 use Hilos\HilosException;
 use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogAggregatorAgentDaemon;
+use Hilos\Log\LogCarrierAgent;
+use Hilos\Log\LogCarrierAgentDaemon;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Log\LogStoreAgentDaemon;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
@@ -400,6 +402,11 @@ final class Hilos extends HilosFacade
         LogStoreAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => LogStoreAgent::class,
             AgentRegistryKey::DAEMON => LogStoreAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        LogCarrierAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => LogCarrierAgent::class,
+            AgentRegistryKey::DAEMON => LogCarrierAgentDaemon::class,
             AgentRegistryKey::SCOPE => AgentScope::NODE,
         ],
         LogAggregatorAgent::AGENT_TYPE => [

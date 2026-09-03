@@ -363,6 +363,29 @@ describe('HilosLogsRotationsPage', () => {
     )
   })
 
+  /**
+   * A batch on its way to the archive is a fourth state, and it is the state in
+   * which neither action applies: it is not being recommended for carrying off, and
+   * nobody has said it was carried off. The badge has to say where it is instead.
+   */
+  it('shows a batch still being carried as such, and offers it neither action', async () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([
+      batch({ rowKey: 'a:1', batchAt: 1, retentionState: 'carrying' }),
+    ])
+    await nextTick()
+
+    expect(wrapper.text()).toContain('Moving to the archive')
+    expect(wrapper.find('.badge').classes()).toContain('text-bg-info')
+    expect(wrapper.findAll('[data-id="hilos-rotation-takeout"]')).toHaveLength(
+      0,
+    )
+    expect(wrapper.findAll('[data-id="hilos-rotation-undo"]')).toHaveLength(0)
+  })
+
   it('says where the batch lies and how to copy it off, node first in a cluster', async () => {
     const { connection, pushHeader, pushWindow } = makeConnection()
     const wrapper = mountPage(connection)

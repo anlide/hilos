@@ -13,6 +13,7 @@ import {
   rotationTakeoutAddress,
   rotationTakeoutCommand,
   HILOS_ROTATION_STATE_DUE,
+  HILOS_ROTATION_STATE_CARRYING,
   HILOS_ROTATION_STATE_TAKEN,
   LOGS_SIGNAL_SCHEMAS,
   LOGS_TAKEOUT_CONFIRM_ACTION,
@@ -238,6 +239,11 @@ describe('formatRotationState', () => {
     expect(
       formatRotationState(row({ retentionState: HILOS_ROTATION_STATE_TAKEN })),
     ).toBe('Taken — removed at the next cleanup')
+    expect(
+      formatRotationState(
+        row({ retentionState: HILOS_ROTATION_STATE_CARRYING }),
+      ),
+    ).toBe('Moving to the archive')
   })
 
   /**

@@ -34,17 +34,19 @@ use Hilos\Log\NodeLogIndex;
  * on both ends. {@see self::streamClass} is the one exception, and not by choice: `class` cannot
  * be a class-constant name in PHP.
  *
- * Four of the keys are not measurements at all. A batch carries {@see self::takenAt}, the
- * operator's own confirmation that it has been carried off; the index carries
+ * Five of the keys are not measurements at all. A batch carries {@see self::takenAt}, the
+ * operator's own confirmation that it has been carried off, and {@see self::carrying}, which says
+ * the batch has left the log root but has not reached the archive yet (HIL-870); the index carries
  * {@see self::logDirectory}, the absolute root the node measured (HIL-483),
  * {@see self::takeoutUndoWindowSeconds}, how long that node protects a confirmed batch from its
  * pruner (HIL-759), and {@see self::dueBatchTimestamps}, the retention verdict that node reached
- * over its own archive (HIL-871). All four exist because nobody else can supply them: the
+ * over its own archive (HIL-871). All five exist because nobody else can supply them: the
  * confirmation lives in a marker file on that machine, and a page worker holding the cluster
  * picture knows its own log root, its own window and its own settings and no other node's.
  *
- * The last of them is also the only one that is allowed to be absent, and
- * {@see self::dueFromArray()} says why.
+ * Two of them are allowed to be absent, both because a node running the previous build says
+ * nothing about them: {@see self::dueFromArray()} says why for the verdict, and
+ * {@see self::carrying} reads as "not being carried" when it is missing.
  */
 final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -107,6 +109,9 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
 
     /** Batch row key: instant an operator confirmed carrying the batch off, absent while none has. */
     public const string takenAt = 'takenAt';
+
+    /** Batch row key: whether the batch is still on its way from staging into the archive, absent when it is not. */
+    public const string carrying = 'carrying';
 
     /** Key and worker row key: file basename, stable across batches. */
     public const string key = 'key';
@@ -313,6 +318,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             self::daemonFileCount => $batch->daemonFileCount,
             self::daemonBytes => $batch->daemonBytes,
             self::takenAt => $batch->takenAt,
+            self::carrying => $batch->carrying,
         ];
     }
 
@@ -334,6 +340,10 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             daemonFileCount: self::requireInt($row, self::daemonFileCount),
             daemonBytes: self::requireInt($row, self::daemonBytes),
             takenAt: self::optionalInt($row, self::takenAt),
+            // Optional, and for the same reason as the due verdict beside it: a node still running
+            // the previous build sends a batch row without this key, and a batch nobody said was
+            // being carried is a batch sitting in the archive.
+            carrying: self::optionalBool($row, self::carrying) ?? false,
         );
     }
 

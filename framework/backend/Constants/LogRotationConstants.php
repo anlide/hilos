@@ -20,6 +20,26 @@ final class LogRotationConstants
     public const string LOG_ARCHIVE_SUBDIR_NAME = 'archive';
 
     /**
+     * Subdirectory under the daemon log root rotation renames the live logs into (HIL-870).
+     *
+     * Rotation always lands here, whatever the archive is: a rename inside the log root is on one
+     * device by construction, which is what keeps the moment of rotation instantaneous. The batch
+     * is carried on to the archive afterwards, out of that moment.
+     *
+     * Layout: `{dirname(DAEMON_LOG_FILE)}/{LOG_STAGING_SUBDIR_NAME}/{TIMESTAMP}/`
+     */
+    public const string LOG_STAGING_SUBDIR_NAME = 'staging';
+
+    /**
+     * Prefix of the half-carried copy of a batch inside the archive (HIL-870).
+     *
+     * The leading dot is deliberate: {@see self::TIMESTAMP_DIR_NAME_PATTERN} does not recognize
+     * such a name as a batch, so a batch that has not arrived whole reaches neither the archive
+     * index nor the cleanup.
+     */
+    public const string INCOMING_DIR_PREFIX = '.incoming-';
+
+    /**
      * Format string for a rotation batch directory name (PHP date/createFromFormat).
      *
      * Example folder name: 2026-03-23-19-01-20

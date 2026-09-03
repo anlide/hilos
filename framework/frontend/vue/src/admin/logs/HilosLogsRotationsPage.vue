@@ -32,6 +32,7 @@ import {
   rotationTakeoutAddress,
   rotationTakeoutCommand,
   HILOS_PAGE_ROUTES,
+  HILOS_ROTATION_STATE_CARRYING,
   HILOS_ROTATION_STATE_DUE,
   HILOS_ROTATION_STATE_OPTIONS,
   HILOS_ROTATION_STATE_TAKEN,
@@ -153,9 +154,12 @@ function batchTime(row: HilosLogRotationRow): string {
   return new Date(row.batchAt * 1000).toLocaleString()
 }
 
-// The retention badge: a recommendation is a warning and not a fault, a taken
-// batch is settled, and a kept one is the quiet default.
+// The retention badge: a batch on its way is in motion and not in trouble, a
+// recommendation is a warning and not a fault, a taken batch is settled, and a kept
+// one is the quiet default. Neither row action reads this map — both compare with
+// the state they act on, so a carrying row offers neither by construction.
 const RETENTION_CLASS: Record<string, string> = {
+  [HILOS_ROTATION_STATE_CARRYING]: 'text-bg-info',
   [HILOS_ROTATION_STATE_DUE]: 'text-bg-warning',
   [HILOS_ROTATION_STATE_TAKEN]: 'text-bg-secondary',
 }

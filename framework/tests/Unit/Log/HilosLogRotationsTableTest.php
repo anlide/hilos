@@ -183,6 +183,55 @@ final class HilosLogRotationsTableTest extends TestCase
     }
 
     /**
+     * Above even the operator's word: a batch that has not reached the archive yet. None of the
+     * other three states is true of it, and neither of the row's two actions applies to it.
+     */
+    public function testABatchStillBeingCarriedOverridesEveryOtherState(): void
+    {
+        $this->picture($this->node(
+            'node-1',
+            [self::NOW - self::DAY, self::NOW],
+            confirmed: [self::NOW - self::DAY],
+            due: [self::NOW - self::DAY, self::NOW],
+            carrying: [self::NOW - self::DAY, self::NOW],
+        ));
+
+        $states = array_map(static fn($row): string => $row->retentionState, $this->rows(new TableQueryDTO()));
+
+        $this->assertSame(
+            [HilosLogRotationsTable::STATE_CARRYING, HilosLogRotationsTable::STATE_CARRYING],
+            $states,
+        );
+    }
+
+    /**
+     * The address on the row is the address of the directory that exists, and for a batch on its
+     * way that is the staging one — which is exactly the address an administrator with a dead far
+     * volume needs.
+     */
+    public function testABatchStillBeingCarriedPrintsItsStagingAddress(): void
+    {
+        $this->picture($this->node(
+            'node-1',
+            [self::NOW],
+            logDirectory: '/var/log/hilos',
+            carrying: [self::NOW],
+        ));
+
+        $directory = date(LogRotationConstants::TIMESTAMP_FORMAT, self::NOW);
+        $rows = $this->rows(new TableQueryDTO());
+
+        $this->assertSame(
+            LogRotationConstants::LOG_STAGING_SUBDIR_NAME . '/' . $directory . '/',
+            $rows[0]->path,
+        );
+        $this->assertSame(
+            '/var/log/hilos/' . LogRotationConstants::LOG_STAGING_SUBDIR_NAME . '/' . $directory . '/',
+            $rows[0]->absolutePath,
+        );
+    }
+
+    /**
      * The list of what still has to be carried off is the one the screen's filter serves, so a
      * batch that has been carried off has to leave it - otherwise the operator is asked twice.
      */
@@ -419,6 +468,7 @@ final class HilosLogRotationsTableTest extends TestCase
      * @param ?string $logDirectory Log root this node reports, null when its build named none
      * @param int $takeoutUndoWindowSeconds Seconds this node protects a confirmed batch for
      * @param list<int> $due Batch timestamps this node's own retention rule recommends carrying off
+     * @param list<int> $carrying Batch timestamps still in this node's staging directory
      * @return ClusterLogNodeSlot Slot as the aggregator would hold it
      */
     private function node(
@@ -429,6 +479,7 @@ final class HilosLogRotationsTableTest extends TestCase
         ?string $logDirectory = null,
         int $takeoutUndoWindowSeconds = 0,
         array $due = [],
+        array $carrying = [],
     ): ClusterLogNodeSlot {
         $batches = array_map(
             static fn(int $timestamp): LogBatchSummary => new LogBatchSummary(
@@ -444,6 +495,7 @@ final class HilosLogRotationsTableTest extends TestCase
                 // The stamp says the batch was carried off, not when the run happened, so it is
                 // deliberately unlike the batch's own timestamp.
                 takenAt: in_array($timestamp, $confirmed, true) ? self::NOW : null,
+                carrying: in_array($timestamp, $carrying, true),
             ),
             $batchTimestamps,
         );

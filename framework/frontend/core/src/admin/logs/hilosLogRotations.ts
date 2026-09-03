@@ -139,6 +139,17 @@ export const HILOS_ROTATION_STATE_DUE = 'due'
 export const HILOS_ROTATION_STATE_TAKEN = 'taken'
 
 /**
+ * Where the batch is: still on its way from the staging directory into the archive.
+ *
+ * It outranks all three above it, the confirmation included, because it is not a
+ * verdict about the batch at all — it says the batch is not in the archive yet, and
+ * kept, due and taken are all readings of one that is. Nothing may be said about
+ * carrying off a directory that has not arrived, so a row in this state offers
+ * neither action, and the node refuses both if asked anyway.
+ */
+export const HILOS_ROTATION_STATE_CARRYING = 'carrying'
+
+/**
  * Client→server action `type` confirming one batch has been carried off (PHP
  * `LOGS_TAKEOUT_CONFIRM`). It names the batch by the pair that identifies it — the
  * node and the rotation stamp — because one rotation moment on two nodes is two
@@ -535,6 +546,8 @@ export function formatRotationState(row: HilosLogRotationRow): string {
       return 'Awaiting carry-off'
     case HILOS_ROTATION_STATE_TAKEN:
       return 'Taken — removed at the next cleanup'
+    case HILOS_ROTATION_STATE_CARRYING:
+      return 'Moving to the archive'
     default:
       return row.retentionState
   }

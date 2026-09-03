@@ -155,7 +155,7 @@ services:
       # run on regular workers. The framework default gives two, but the demos
       # prescribe it here (like chat) so the pool is explicit and not at the mercy
       # of env drift.
-      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-9}
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-10}
       # Mail: the transport is pinned to the stand's own interceptor rather than
       # auto-selected, so a stand that loses the relay fails loudly instead of
       # quietly writing .eml files into the work tree that nobody reads. A sender

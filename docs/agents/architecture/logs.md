@@ -6,13 +6,14 @@ setting, or changing what happens to an archived batch.
 
 The logs feature is the part of the framework that measures, shows, rotates and
 carries off the files every Hilos process writes. Its machinery is
-`framework/backend/Log/`; the two agents that do the work are `LogStoreAgent`
-(`hilos_log_store`, one per node) and `LogAggregatorAgent`
-(`hilos_log_aggregator`, one per cluster), and the page agent a project extends
-is `AbstractHilosLogsAgent` (`hilos_logs`). The feature is switched on by
-`HilosFeature::LOGS`, which requires the overview, keys, workers, rotations and
-viewer pages and all three agents together, so an operator never lands on a
-dead link inside it.
+`framework/backend/Log/`; the three agents that do the work are `LogStoreAgent`
+(`hilos_log_store`, one per node), `LogCarrierAgent` (`hilos_log_carrier`, one
+per node, which moves a rotated batch out of the staging directory and into the
+archive) and `LogAggregatorAgent` (`hilos_log_aggregator`, one per cluster), and
+the page agent a project extends is `AbstractHilosLogsAgent` (`hilos_logs`). The
+feature is switched on by `HilosFeature::LOGS`, which requires the overview,
+keys, workers, rotations and viewer pages and all four agents together, so an
+operator never lands on a dead link inside it.
 
 The document holds what the code does not put in one place: who may open the
 directory, how a picture of it travels to a screen without anybody else opening
@@ -23,11 +24,16 @@ all this come from. What each class does is documented on the class.
 
 A node's log directory has exactly one owner, and that owner runs on that node:
 `LogStoreAgent`, declared `AgentScope::NODE` and hosted in a monopolistic worker.
-Every read of a file in the directory, every rename into the archive, every
-deletion and every marker goes through it, addressed by node id. Nothing else
-opens the directory — not the cluster aggregator, not a page, not a table, not
-a test driver on some other node. Code that needs a file from another node asks
-that node's owner by signal; it never asks for the path.
+Every read of a file in the directory, every rotation, every deletion and every
+marker goes through it, addressed by node id. Nothing else opens the directory —
+not the cluster aggregator, not a page, not a table, not a test driver on some
+other node. Code that needs a file from another node asks that node's owner by
+signal; it never asks for the path.
+
+There is exactly one other process with its hands in the directory, and it is on
+the same node: `LogCarrierAgent` moves batches from `staging/` into the archive
+(HIL-870, below). It touches nothing else — no live file, no marker, no batch the
+owner has not already put there — and answers no question about any of it.
 
 ## The Node Agent Owns The Directory, Not The Lines (HIL-753)
 
@@ -59,19 +65,21 @@ I/O and a node needs exactly one reader of its own directory
 That worker is taken for the life of the node, so a project activating the
 feature has to leave room for it in its monopolistic pool minimum — HIL-753 found
 that out by an e2e run in which every page sat in `loading` because the fifteenth
-monopolistic agent had no worker to go to.
+monopolistic agent had no worker to go to. The carrier below is a second such
+agent on the same node, so the feature costs **two** monopolistic workers, not
+one.
 
 What the owner holds is a `NodeLogIndex` in its own memory, rebuilt by walks:
 
 - a **live walk** of the log root every five seconds
-  (`LogStoreReader::readLiveFiles()`), laid over the archive as the last full
-  walk saw it;
-- a **full walk** of root and archive every minute (`LogStoreReader::read()`),
-  the only kind that feeds the day windows;
+  (`LogStoreReader::readLiveFiles()`), laid over the batches as the last full
+  walk saw them — it reads the root alone and no batch subtree;
+- a **full walk** of root, staging and archive every minute
+  (`LogStoreReader::read()`), the only kind that feeds the day windows;
 - a full walk **out of turn** when a live key vanished or shrank — rotation has
-  just renamed it into a batch whole, and until the archive is re-read the index
-  would deny the batch exists — or when the last full walk failed, so recovery is
-  seconds rather than a minute.
+  just renamed it into a batch whole, and until the two batch subtrees are re-read
+  the index would deny the batch exists — or when the last full walk failed, so
+  recovery is seconds rather than a minute.
 
 The walk classifies a file by name and only by name: the daemon's own streams by
 exact basename taken from `DAEMON_LOG_FILE` and `DAEMON_ERROR_LOG_FILE` (each with
@@ -283,10 +291,11 @@ as a push, never as a re-request.
 ## Rotation Runs Under The Owner (HIL-480)
 
 Rotation is a rename and nothing else: `LogRotator::rotate()` creates
-`archive/<Y-m-d-H-i-s>/` under the log root and renames each live `*.log` into
+`staging/<Y-m-d-H-i-s>/` under the log root and renames each live `*.log` into
 it. The batch directory is created only once there is something to put in it,
-so a run with nothing to move leaves no empty folder for the cleanup to carry
-around. It has two callers, and they deliberately do not share a factory:
+so a run with nothing to move leaves no empty folder for the carrier to walk.
+Why staging and not the archive is the next section. It has two callers, and
+they deliberately do not share a factory:
 
 - **The start path.** The container watchdog rotates before the daemon is
   started (`LogRotator::forStartup()`, called from `DockerManager`), when no
@@ -323,19 +332,76 @@ is obeyed within seconds. The schedule is the one exception: its `CronRule`
 remembers when it last ran, so it is rebuilt only when the expression itself
 changes — rebuilt every check, the schedule would never fire.
 
-Before every rotation, and not once at start, the owner checks that the archive
-sits on the device of the live logs (a mount point can be put under a running
-node): across a device boundary a rename is not a rename, and doing it anyway
-would copy every byte, which is the cost this design exists to avoid. The gate
-says one line per crossing, and a directory that cannot be measured leaves it
-open — the rename reports its own failure, and refusing on a reading that never
-arrived would stop rotation for a reason nobody could name.
-
 After a rotation the owner writes the line under its own name (`LogRotator`
 reports and never logs, because a rotator running inside a worker used to write
 the rotation line into that worker's log rather than the journal of whoever
 asked), then walks and pushes out of turn, so the batch is on the screen now
 rather than a full walk and a push interval later.
+
+## The Archive May Live On Another Device (HIL-870)
+
+Keeping the archive on a large volume or a mounted share, with the live logs on
+the fast system disk, is ordinary operational practice. It is also the one layout
+a rename cannot serve: across a device boundary a rename is not a rename, and
+doing it anyway copies every byte — with the administrator waiting through it,
+because rotation happens in the owner's tick.
+
+So rotation lands in `staging/` and the archive is reached in a **second step**,
+outside the moment of rotation. Staging is inside the log root, therefore on the
+device of the live logs by construction, so step one is a rename whatever the
+archive is and the constraint HIL-480 set — the moment of rotation is O(1) for
+any destination — holds without a gate in front of it. There is no longer any
+check of where the archive sits: the device is not predicted, it is tried.
+
+`LogCarrierAgent` (`hilos_log_carrier`, `AgentScope::NODE`, monopolistic) is the
+second step. Once a second it takes the oldest batch in `staging/` and calls
+`LogBatchCarrier::carry()`, which:
+
+1. renames `staging/<batch>` to `archive/<batch>` — on the ordinary installation
+   this succeeds, one directory moves, nothing is copied, and that is the whole
+   carry;
+2. on refusal copies the batch file by file into `archive/.incoming-<batch>`,
+   removing each source file the moment its copy is there;
+3. renames `.incoming-<batch>` to `<batch>` — inside the archive, so on the far
+   device, so O(1) again;
+4. removes the emptied `staging/<batch>`.
+
+The batch therefore appears in the archive **whole or not at all**. The leading
+dot in `.incoming-` is what buys that: `TIMESTAMP_DIR_NAME_PATTERN` does not
+recognize such a name as a batch, so a half-arrived copy is invisible to the
+index the screen draws and to the cleanup that would otherwise delete it midway.
+
+Resuming an interrupted carry needs no record of how far it got, because the
+state IS the content of the directories: what is left in staging is what is left
+to do, and a file interrupted mid-copy is written again from the start, its
+source having outlived its incomplete copy by exactly one step.
+
+Why an agent rather than a child process, the shape the backup takes: a child
+process falls outside the framework — no agent journal, no place in the cluster,
+no restart with the node — and everyone who reaches for one writes those three by
+hand and differently. Long or blocking work in this framework lives in a
+monopolistic agent. That is also what lets the carrier spend a whole tick on a
+copy of any size: the worker is its own and nobody waits behind it.
+
+Why not the owner: a follow runs in its tick once a second and page reads are
+answered from the same one, so a single write to a hung share would stop both for
+as long as it hangs.
+
+When the far volume is full, unreachable or read-only, the node **complains but
+keeps rotating**. Batches pile up in staging on the system disk, and rotation
+stops at no limit: the alternative — stopping rotation past a threshold — spends
+the same disk on live files instead, and the other — a spare archive on the
+system disk — would leave the archive in two places for everything that reads it
+to join up. The carrier says one ERROR line when carrying stops working, one INFO
+line when it starts again, and one WARNING when the weight waiting in staging
+crosses a fixed size; nothing while a verdict holds.
+
+The carrier writes no runtime state and sends no signal, not even to the owner.
+Both read the same env value and walk the same directories, so there is nothing
+to tell, and nothing is hidden by the silence either: the batch is on the screen
+throughout, as a carrying row while it is in staging and as an ordinary one after.
+All a signal would buy is the instant the badge turns over, and the owner's next
+full walk does that.
 
 ## Nothing Leaves The Archive Silently (HIL-381, HIL-483, HIL-382)
 
@@ -656,6 +722,7 @@ Remember the outcome, speak on its change, clear on recovery.
   `LogStoreAgentFollowTest`, `LogLineReaderTest`, `LogLineReaderAppendedTest`),
   rotation under the owner and its trigger (`LogStoreAgentRotationTest`,
   `LogRotatorTest`, `LogRotationTriggerPolicyTest`, `DaemonRawStreamTest`),
+  the carry of a batch from staging into the archive (`LogBatchCarrierTest`),
   the recommend/confirm/delete chain (`LogArchiveRetentionPolicyTest`,
   `LogBatchTakeoutMarkerTest`, `LogStoreAgentTakeoutConfirmTest`,
   `LogArchivePrunerTest`), the circulation (`LogIndexPushTest`,
@@ -673,7 +740,7 @@ Remember the outcome, speak on its change, clear on recovery.
 - `composer run test:framework:integration` — the write level crossing
   processes without a restart (`LogWriteLevelPropagationTest`).
 - `demo/chat` `composer run test:phpunit` — a preset applied through the settings
-  doors (`SettingPresetApplyTest`) and the topology snapshot that pins the two
+  doors (`SettingPresetApplyTest`) and the topology snapshot that pins the log
   agents' scope and placement (`ChatTopologyRegistryTest`).
 - `composer run test:framework:frontend` — the six headless modules
   (`framework/frontend/core/test/admin/logs/`) and the preset screen's common

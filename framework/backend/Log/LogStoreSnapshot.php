@@ -7,8 +7,9 @@ namespace Hilos\Log;
 /**
  * Immutable result of one {@see LogStoreReader::read()} walk of the log store (HIL-383).
  *
- * Carries the classified live + archive index produced by a single directory walk and projects it
- * into typed read models on demand. Unavailability (missing env, unreadable archive) is part of the
+ * Carries the classified index of the log root and of both batch subtrees — staging and archive —
+ * produced by a single directory walk, and projects it
+ * into typed read models on demand. Unavailability (missing env, unreadable subtree) is part of the
  * result rather than an exception: {@see $available} is false and every projection returns an empty
  * list, mirroring the overview page's former `setUnavailableState`.
  *
@@ -22,16 +23,19 @@ final class LogStoreSnapshot
     /**
      * @param bool $available Whether the log store could be read
      * @param array<int, array{daemon: array<string, int>, agent: array<string, int>, worker: array<string, int>,
-     *     workerMonopolistic: array<string, int>}> $archiveBatches Batch Unix timestamp → classified basename → size in bytes
+     *     workerMonopolistic: array<string, int>}> $batchFiles Batch Unix timestamp → classified basename → size in bytes,
+     *     over the archive and staging together
      * @param array{daemon: array<string, int>, agent: array<string, int>, worker: array<string, int>,
      *     workerMonopolistic: array<string, int>} $liveFiles Live (non-archived) classified basename → size in bytes
      * @param array<int, ?int> $batchTakenAt Batch Unix timestamp → the stamp its takeout marker carries, null when it carries none
+     * @param list<int> $carryingTimestamps Batch Unix timestamps still in the staging directory, on their way to the archive
      */
     public function __construct(
         public readonly bool $available,
-        private readonly array $archiveBatches,
+        private readonly array $batchFiles,
         private readonly array $liveFiles,
         private readonly array $batchTakenAt = [],
+        private readonly array $carryingTimestamps = [],
     ) {
     }
 
@@ -54,8 +58,8 @@ final class LogStoreSnapshot
      * Copy of this snapshot carrying a fresh live-file index over the batches already walked.
      *
      * The cheap half of the split walk (HIL-753): {@see LogStoreReader::readLiveFiles()} resamples
-     * the log root every few seconds, while the archive — which only rotation and cleanup change —
-     * keeps the batches of the last full {@see LogStoreReader::read()}.
+     * the log root every few seconds, while the batches — which only rotation, the carry and the
+     * cleanup change — stay as the last full {@see LogStoreReader::read()} saw them.
      *
      * @param array{daemon: array<string, int>, agent: array<string, int>, worker: array<string, int>,
      *     workerMonopolistic: array<string, int>} $liveFiles Live (non-archived) classified basename → size in bytes
@@ -64,13 +68,19 @@ final class LogStoreSnapshot
      */
     public function withLiveFiles(array $liveFiles): self
     {
-        return new self($this->available, $this->archiveBatches, $liveFiles, $this->batchTakenAt);
+        return new self(
+            $this->available,
+            $this->batchFiles,
+            $liveFiles,
+            $this->batchTakenAt,
+            $this->carryingTimestamps,
+        );
     }
 
     /**
      * The live (non-archived) half of the walk, as classified.
      *
-     * The archive half is projected; this one is handed back whole because a caller watching for
+     * The batch half is projected; this one is handed back whole because a caller watching for
      * rotation compares live weights against live weights — a key's total, which counts its batches
      * too, would answer a different question (HIL-753).
      *
@@ -87,9 +97,10 @@ final class LogStoreSnapshot
      *
      * The takeout confirmation travels beside the figures rather than among them (HIL-483): it is
      * read off a marker file the walk does not weigh, so it changes what a batch IS without
-     * changing a single count or byte of it.
+     * changing a single count or byte of it. The carrying flag travels the same way and for the
+     * same reason (HIL-870): a batch weighs what it weighs wherever it currently sits.
      *
-     * @return list<LogBatchSummary> One entry per archive batch, ascending by timestamp
+     * @return list<LogBatchSummary> One entry per batch of the archive and of staging, ascending by timestamp
      */
     public function batches(): array
     {
@@ -97,10 +108,10 @@ final class LogStoreSnapshot
 
         $summaries = [];
         foreach ($timestamps as $timestamp) {
-            $agent = $this->archiveBatches[$timestamp][LogStoreReader::CLASS_AGENT];
-            $worker = $this->archiveBatches[$timestamp][LogStoreReader::CLASS_WORKER];
-            $workerMonopolistic = $this->archiveBatches[$timestamp][LogStoreReader::CLASS_WORKER_MONOPOLISTIC];
-            $daemon = $this->archiveBatches[$timestamp][LogStoreReader::CLASS_DAEMON];
+            $agent = $this->batchFiles[$timestamp][LogStoreReader::CLASS_AGENT];
+            $worker = $this->batchFiles[$timestamp][LogStoreReader::CLASS_WORKER];
+            $workerMonopolistic = $this->batchFiles[$timestamp][LogStoreReader::CLASS_WORKER_MONOPOLISTIC];
+            $daemon = $this->batchFiles[$timestamp][LogStoreReader::CLASS_DAEMON];
             $summaries[] = new LogBatchSummary(
                 timestamp: $timestamp,
                 agentFileCount: count($agent),
@@ -112,6 +123,7 @@ final class LogStoreSnapshot
                 daemonFileCount: count($daemon),
                 daemonBytes: array_sum($daemon),
                 takenAt: $this->batchTakenAt[$timestamp] ?? null,
+                carrying: in_array($timestamp, $this->carryingTimestamps, true),
             );
         }
 
@@ -119,7 +131,7 @@ final class LogStoreSnapshot
     }
 
     /**
-     * Per log key summary across live and archive, sorted by key.
+     * Per log key summary across the live files and every batch, sorted by key.
      *
      * The two worker prefixes are folded into {@see LogKeySummary::CLASS_WORKER}; use {@see workers()}
      * when the monopolistic distinction is needed. The daemon streams keep a class of their own.
@@ -210,7 +222,7 @@ final class LogStoreSnapshot
         }
         foreach ($this->sortedBatchTimestamps() as $timestamp) {
             foreach ($classes as $class) {
-                foreach ($this->archiveBatches[$timestamp][$class] as $name => $size) {
+                foreach ($this->batchFiles[$timestamp][$class] as $name => $size) {
                     ($streams[$name] ??= new LogStreamAggregate())->addBatchFile($timestamp, $size);
                 }
             }
@@ -220,13 +232,13 @@ final class LogStoreSnapshot
     }
 
     /**
-     * Archive batch timestamps in ascending order.
+     * Batch timestamps of the archive and of staging together, in ascending order.
      *
      * @return list<int> Sorted Unix timestamps
      */
     private function sortedBatchTimestamps(): array
     {
-        $timestamps = array_keys($this->archiveBatches);
+        $timestamps = array_keys($this->batchFiles);
         sort($timestamps);
 
         return $timestamps;

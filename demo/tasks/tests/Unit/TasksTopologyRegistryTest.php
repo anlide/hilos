@@ -342,11 +342,13 @@ final class TasksTopologyRegistryTest extends TestCase
             [
                 AgentType::HILOS_LOGS,
                 HilosAgentType::HILOS_LOG_STORE,
+                HilosAgentType::HILOS_LOG_CARRIER,
                 HilosAgentType::HILOS_LOG_AGGREGATOR,
             ],
             array_values(array_intersect(array_keys(Hilos::AGENTS), [
                 AgentType::HILOS_LOGS,
                 HilosAgentType::HILOS_LOG_STORE,
+                HilosAgentType::HILOS_LOG_CARRIER,
                 HilosAgentType::HILOS_LOG_AGGREGATOR,
             ])),
         );

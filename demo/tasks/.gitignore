@@ -7,8 +7,10 @@ tests/.env
 # Log files
 data/logs/*.log
 data/logs/archive/
+data/logs/staging/
 data/logs-test/*.log
 data/logs-test/archive/
+data/logs-test/staging/
 
 # PHPUnit
 tests/.phpunit.cache/

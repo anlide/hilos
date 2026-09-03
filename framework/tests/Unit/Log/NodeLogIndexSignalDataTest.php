@@ -39,8 +39,8 @@ final class NodeLogIndexSignalDataTest extends TestCase
             available: true,
             sampledAt: self::T0,
             batches: [
-                new LogBatchSummary(self::T0 - 7200, 1, 10, 2, 20, 3, 30, 4, 40),
-                new LogBatchSummary(self::T0 - 3600, 5, 50, 6, 60, 7, 70, 8, 80),
+                new LogBatchSummary(self::T0 - 7200, 1, 10, 2, 20, 3, 30, 4, 40, self::T0 - 60),
+                new LogBatchSummary(self::T0 - 3600, 5, 50, 6, 60, 7, 70, 8, 80, null, true),
             ],
             keys: [
                 new LogKeySummary('agent-a.log', LogKeySummary::CLASS_AGENT, true, [self::T0 - 7200], 100),
@@ -82,6 +82,24 @@ final class NodeLogIndexSignalDataTest extends TestCase
 
         $this->assertSame([], $restored->dueBatchTimestamps);
         $this->assertCount(1, $restored->batches);
+    }
+
+    /**
+     * The other key a node running the previous build honestly omits (HIL-870). A batch nobody
+     * said was being carried is a batch sitting in the archive, which is what every batch was
+     * before this key existed — so absence reads as false rather than as a broken frame.
+     */
+    public function testAPayloadWithoutTheCarryingFlagReadsAsArrived(): void
+    {
+        $payload = $this->payload();
+        $rows = $payload[NodeLogIndexSignalData::batches];
+        unset($rows[0][NodeLogIndexSignalData::carrying]);
+        $payload[NodeLogIndexSignalData::batches] = $rows;
+
+        $restored = NodeLogIndexSignalData::fromArray($payload)->toIndex();
+
+        $this->assertCount(1, $restored->batches);
+        $this->assertFalse($restored->batches[0]->carrying);
     }
 
     /**
