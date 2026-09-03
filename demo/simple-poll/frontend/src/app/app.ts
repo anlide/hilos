@@ -35,6 +35,12 @@ import { currentUserIsAdmin, currentUserName } from './bootstrap/session'
 import { PAGE_MAIN } from './pages/keys'
 import { About } from './views/about/about'
 import { License } from './views/license/license'
+import { LogKeys } from './views/hilos/logs/keys'
+import { LogRotations } from './views/hilos/logs/rotations'
+import { LogSettings } from './views/hilos/logs/settings'
+import { LogViewer } from './views/hilos/logs/view'
+import { LogWorkers } from './views/hilos/logs/workers'
+import { LogsOverview } from './views/hilos/logs/overview'
 import { Main } from './views/main/main'
 import { Privacy } from './views/privacy/privacy'
 import { Settings } from './views/hilos/settings/settings'
@@ -184,6 +190,16 @@ export class App {
     // entity + presence sources on the backend.
     [HilosPages.USERS]: Users,
     [HilosPages.USER]: User,
+    // The framework logs section, activated whole: the framework owns the six
+    // screens, their tables and every phrase on them; the project binds its
+    // connection, scope stores and action lifecycle (views/hilos/logs) and, on its
+    // backend, the pages, the three agents and the three browser tables.
+    [HilosPages.LOGS]: LogsOverview,
+    [HilosPages.LOGS_KEYS]: LogKeys,
+    [HilosPages.LOGS_WORKERS]: LogWorkers,
+    [HilosPages.LOGS_ROTATIONS]: LogRotations,
+    [HilosPages.LOGS_SETTINGS]: LogSettings,
+    [HilosPages.LOGS_VIEW]: LogViewer,
     [HilosPages.ABOUT]: About,
     [HilosPages.TERMS]: Terms,
     [HilosPages.PRIVACY]: Privacy,

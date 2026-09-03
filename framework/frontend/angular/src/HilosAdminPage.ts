@@ -6,8 +6,13 @@
 // it renders whichever key it is given, never choosing the page itself (that is
 // the app shell's page->view map). The default body is the section's
 // sub-navigation cards, or a stub empty-state for a leaf; a real page projects
-// its own content to replace the default while keeping the shell. Bootstrap
-// classes only (styling-rules.md).
+// its own content to replace the default while keeping the shell.
+//
+// A section ROOT that has content of its own projects it with the `body`
+// attribute instead, which is drawn after the default content: it needs both, the
+// cards to its children and its own figures beneath them, and replacing the
+// default content would cost it the cards. A leaf page goes on replacing the
+// default content as before. Bootstrap classes only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -88,6 +93,7 @@ import { hilosSignal } from './hilosSignal.js'
           </div>
         }
       </ng-content>
+      <ng-content select="[body]" />
     </section>
   `,
 })

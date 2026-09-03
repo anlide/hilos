@@ -139,18 +139,22 @@ services:
       # in this container (admin:create / admin:grant / admin:revoke /
       # protected-mode:open) reaches the command channel over loopback.
       - HILOS_DAEMON_HOST=127.0.0.1
-      # Seven monopolistic workers: the poll agent, the Hilos dashboard's hilos_index
+      # Nine monopolistic workers: the poll agent, the Hilos dashboard's hilos_index
       # agent the shell gear subscribes, the sessions library that resolves every
       # handshake (HIL-710), the notifications library that owns the notification
       # tables (HIL-771), and the three sign-in brought (HIL-634) - the users
-      # library, the OAuth agent and the code agent. A monopolistic singleton needs
-      # a worker of its own, so the pool is the agent count: one short and a
-      # handshake or a sign-in is addressed to an agent that never comes up. The
-      # pooled delivery channels (mail, SMS) and the node-scoped throttle agent are
-      # NOT among them - they run on regular workers. The framework default gives
-      # two, but the demos prescribe it here (like chat) so the pool is explicit
-      # and not at the mercy of env drift.
-      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-7}
+      # library, the OAuth agent and the code agent - and the two the logs feature
+      # brings (HIL-393): the hilos_logs agent every screen of the section
+      # subscribes, and the per-node hilos_log_store that reads the files. A
+      # monopolistic singleton needs a worker of its own, so the pool is the agent
+      # count: one short and a handshake or a sign-in is addressed to an agent that
+      # never comes up - the daemon throws NoSuitableWorkerException at the moment
+      # of the start and dies, because it cannot wait for one more worker to be
+      # forked. The pooled delivery channels (mail, SMS) and the node-scoped
+      # throttle agent are NOT among them - they run on regular workers. The
+      # framework default gives two, but the demos prescribe it here (like chat) so
+      # the pool is explicit and not at the mercy of env drift.
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-9}
       # Mail: the transport is pinned to the stand's own interceptor rather than
       # auto-selected, so a stand that loses the relay fails loudly instead of
       # quietly writing .eml files into the work tree that nobody reads. A sender

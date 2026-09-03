@@ -27,7 +27,12 @@ services:
       - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
       - WORKER_COMM_HOST=${WORKER_COMM_HOST:-0.0.0.0}
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
-      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-4}
+      # One worker per monopolistic singleton, the same nine the local and test
+      # stacks name. This file said four, which was already three short of the
+      # seven that stood here before the logs feature was activated (HIL-393): a
+      # stack starting under it dies with NoSuitableWorkerException as soon as the
+      # fifth agent asks for a worker.
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-9}
       - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
       - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
       # Trust this stand's own nginx, by address, to name the visitor behind it

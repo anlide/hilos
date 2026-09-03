@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\SimplePoll\Tests\Unit;
 
 use Demo\SimplePoll\Agents\Hilos\DemoHilosAgent;
+use Demo\SimplePoll\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\SimplePoll\Agents\Hilos\UsersLibraryAgent;
 use Demo\SimplePoll\Agents\OAuthAgent;
 use Demo\SimplePoll\Agents\PollAgent;
@@ -12,12 +13,20 @@ use Demo\SimplePoll\Browser\Table\UserDetailBrowserTable;
 use Demo\SimplePoll\Constants\AgentType;
 use Demo\SimplePoll\Constants\PageConstants;
 use Demo\SimplePoll\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\SimplePoll\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\SimplePoll\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\SimplePoll\Core\Agent\Daemon\OAuthAgentDaemon;
 use Demo\SimplePoll\Core\Agent\Daemon\PollAgentDaemon;
+use Demo\SimplePoll\Database\Settings\PollSettingsCatalog;
 use Demo\SimplePoll\Hilos;
 use Demo\SimplePoll\Groups\Hilos\NotificationsGroup;
 use Demo\SimplePoll\Pages\Hilos\DashboardPage;
+use Demo\SimplePoll\Pages\Hilos\Logs\LogsKeysPage;
+use Demo\SimplePoll\Pages\Hilos\Logs\LogsOverviewPage;
+use Demo\SimplePoll\Pages\Hilos\Logs\LogsRotationsPage;
+use Demo\SimplePoll\Pages\Hilos\Logs\LogsSettingsPage;
+use Demo\SimplePoll\Pages\Hilos\Logs\LogsViewPage;
+use Demo\SimplePoll\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\SimplePoll\Pages\Hilos\SettingsPage;
 use Demo\SimplePoll\Pages\Hilos\Users\UserPage;
 use Demo\SimplePoll\Pages\Hilos\Users\UsersPage;
@@ -32,9 +41,13 @@ use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Log\LogSettingsCatalog;
 use Hilos\Notification\NotificationAction;
 use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Push\PushSubscriptionAction;
+use Hilos\Tables\Logs\HilosLogKeysTable;
+use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use PHPUnit\Framework\TestCase;
 
@@ -114,7 +127,7 @@ final class PollTopologyRegistryTest extends TestCase
     {
         // The poll application's OWN surface stays transport-only: its main page
         // and worker push no server-driven data. The activated Hilos admin
-        // features (settings, users) own their actions/signals/browser tables —
+        // features (settings, users, logs) own their actions/signals/browser tables —
         // asserted separately below.
         //
         // The one frame the worker is addressed by is not its surface but the seam the
@@ -156,11 +169,22 @@ final class PollTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_ADMIN_RENAME => HilosAgentType::HILOS_USERS_LIBRARY,
+                // The logs section's own frames (HIL-393): the section agent takes the
+                // cluster picture in portions, the per-node store answers the reads the
+                // viewer and the rotations screen ask for, and the aggregator collects what
+                // each node reports and watches the index for the section agent.
+                HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => HilosAgentType::HILOS_LOGS,
                 HilosSignalConstants::HILOS_OAUTH_PENDING => HilosAgentType::HILOS_OAUTH,
                 HilosSignalConstants::HILOS_MAIL_DELIVER => HilosAgentType::HILOS_MAIL,
                 HilosSignalConstants::HILOS_MAIL_SEND => HilosAgentType::HILOS_MAIL,
                 HilosSignalConstants::HILOS_SMS_DELIVER => HilosAgentType::HILOS_SMS,
                 HilosSignalConstants::HILOS_SMS_SEND => HilosAgentType::HILOS_SMS,
+                HilosSignalConstants::LOGS_AGENT_READ_LINES => HilosAgentType::HILOS_LOG_STORE,
+                HilosSignalConstants::LOGS_AGENT_FOLLOW_START => HilosAgentType::HILOS_LOG_STORE,
+                HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP => HilosAgentType::HILOS_LOG_STORE,
+                HilosSignalConstants::LOGS_AGENT_TAKEOUT_CONFIRM => HilosAgentType::HILOS_LOG_STORE,
+                HilosSignalConstants::LOGS_NODE_INDEX_REPORT => HilosAgentType::HILOS_LOG_AGGREGATOR,
+                HilosSignalConstants::LOGS_INDEX_WATCH => HilosAgentType::HILOS_LOG_AGGREGATOR,
                 HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => HilosAgentType::HILOS_AUTH_THROTTLE,
                 HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => HilosAgentType::HILOS_AUTH_THROTTLE,
                 HilosSignalConstants::HILOS_AUTH_CODE_SEND => HilosAgentType::HILOS_AUTH_CODE,
@@ -179,6 +203,7 @@ final class PollTopologyRegistryTest extends TestCase
         $this->assertSame([
             HilosFeature::SETTINGS,
             HilosFeature::HILOS_USERS,
+            HilosFeature::LOGS,
             HilosFeature::NOTIFICATIONS,
             HilosFeature::AUTH,
             HilosFeature::AUTH_THROTTLE,
@@ -258,6 +283,9 @@ final class PollTopologyRegistryTest extends TestCase
         $this->assertSame([
             PollTableContext::settings => HilosSettingsTable::class,
             PollTableContext::hilosUsers => HilosUsersTable::class,
+            PollTableContext::hilosLogKeys => HilosLogKeysTable::class,
+            PollTableContext::hilosLogRotations => HilosLogRotationsTable::class,
+            PollTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
         ], Hilos::TABLES);
 
         $this->assertSame(
@@ -266,7 +294,14 @@ final class PollTopologyRegistryTest extends TestCase
         );
 
         $this->assertSame(
-            [SettingsPage::PAGE, UsersPage::PAGE, UserPage::PAGE],
+            [
+                SettingsPage::PAGE,
+                LogsKeysPage::PAGE,
+                LogsRotationsPage::PAGE,
+                LogsWorkersPage::PAGE,
+                UsersPage::PAGE,
+                UserPage::PAGE,
+            ],
             array_keys(Hilos::PAGE_TABLES),
         );
         $this->assertSame([PollTableContext::hilosUsers => []], Hilos::PAGE_TABLES[UsersPage::PAGE]);
@@ -275,6 +310,63 @@ final class PollTopologyRegistryTest extends TestCase
             UserPage::PAGE,
             Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_USER_UPDATE],
         );
+    }
+
+    public function testLogsAdminFeatureIsActivated(): void
+    {
+        // The logs section is a configure-only framework feature: the demo registers the six
+        // section pages against their framework abstracts, mounts the section agent with the
+        // per-node store and the cluster aggregator behind it, binds the three browser tables
+        // the list screens read, and writes not a line of the section itself.
+        $logPages = [
+            LogsOverviewPage::PAGE => LogsOverviewPage::class,
+            LogsKeysPage::PAGE => LogsKeysPage::class,
+            LogsWorkersPage::PAGE => LogsWorkersPage::class,
+            LogsRotationsPage::PAGE => LogsRotationsPage::class,
+            LogsViewPage::PAGE => LogsViewPage::class,
+            LogsSettingsPage::PAGE => LogsSettingsPage::class,
+        ];
+        $this->assertSame($logPages, array_intersect_key(Hilos::PAGES, $logPages));
+
+        $this->assertSame(
+            [
+                AgentType::HILOS_LOGS,
+                HilosAgentType::HILOS_LOG_STORE,
+                HilosAgentType::HILOS_LOG_AGGREGATOR,
+            ],
+            array_values(array_intersect(array_keys(Hilos::AGENTS), [
+                AgentType::HILOS_LOGS,
+                HilosAgentType::HILOS_LOG_STORE,
+                HilosAgentType::HILOS_LOG_AGGREGATOR,
+            ])),
+        );
+        $this->assertSame(DemoHilosLogsAgent::class, AgentRegistry::workerClass(
+            Hilos::AGENTS[AgentType::HILOS_LOGS],
+        ));
+        $this->assertSame(DemoHilosLogsAgentDaemon::class, AgentRegistry::daemonClass(
+            Hilos::AGENTS[AgentType::HILOS_LOGS],
+        ));
+
+        $this->assertSame(
+            [PollTableContext::hilosLogKeys => []],
+            Hilos::PAGE_TABLES[LogsKeysPage::PAGE],
+        );
+        $this->assertSame(
+            [PollTableContext::hilosLogRotations => []],
+            Hilos::PAGE_TABLES[LogsRotationsPage::PAGE],
+        );
+        $this->assertSame(
+            [PollTableContext::hilosLogWorkers => []],
+            Hilos::PAGE_TABLES[LogsWorkersPage::PAGE],
+        );
+
+        // The logging modes screen writes framework keys, and a key the project catalog does
+        // not know is written and then silently treated as an orphan (HIL-857). Merging the
+        // feature's own catalog in is the whole of the fix, and nothing else asserts it.
+        $this->assertSame([], array_diff_key(
+            LogSettingsCatalog::getCatalog(),
+            PollSettingsCatalog::getCatalog(),
+        ));
     }
 
     public function testProjectTopologyPassesStartupValidation(): void

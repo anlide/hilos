@@ -36,6 +36,7 @@ final class PollSignalRouter extends SignalRouter
     {
         return [
             AgentType::POLL,
+            AgentType::HILOS_LOGS,
         ];
     }
 
