@@ -28,12 +28,13 @@ const UNAUTHORIZED = 401
 
 /**
  * The slice of HilosConnection the manager touches; a test double only has to
- * implement these three members.
+ * implement these four members.
  */
 export interface PageSubscriptionConnection {
   readonly state: ConnectionState
   send(text: string): boolean
   on(event: 'state', listener: (state: ConnectionState) => void): () => void
+  forgetPageFrames(): void
 }
 
 export class PageSubscription {
@@ -118,6 +119,9 @@ export class PageSubscription {
    * goes out (immediately when connected, on the next `connected` transition
    * otherwise).
    *
+   * The frames the connection is holding are dropped before the frame goes out:
+   * what the previous page said describes a page nobody is standing on.
+   *
    * @param pageKey The page to subscribe.
    * @param params Route params for the subscription.
    */
@@ -126,6 +130,7 @@ export class PageSubscription {
     this.pageErrorSignal.set(null)
     this.pageLoadingSignal.set(true)
     const scope = this.scopes.openPage(pageKey)
+    this.connection.forgetPageFrames()
     this.sendSubscribe()
 
     return scope
@@ -188,7 +193,8 @@ export class PageSubscription {
    * it: waiting is not hiding, and a view reading the scope directly would keep
    * rendering rows decided for somebody who has gone. Its first caller, the grant
    * reaction, was standing on a refusal whose data had already been dropped, so
-   * nothing changes for it.
+   * nothing changes for it. The frames the connection holds are dropped with it,
+   * for the same reason: they too were decided for circumstances that are gone.
    *
    * No frame is sent. The subscription is already live and the server re-decides
    * it on its own; asking again from here would mean the judged party initiates
@@ -197,13 +203,17 @@ export class PageSubscription {
   awaitPageAnswer(): void {
     this.pageErrorSignal.set(null)
     this.pageLoadingSignal.set(true)
+    this.connection.forgetPageFrames()
     const pageKey = this.current?.pageKey
     if (pageKey !== undefined) {
       this.scopes.openPage(pageKey)
     }
   }
 
-  /** Leave to no page: drops the page scope and tells the backend. */
+  /**
+   * Leave to no page: drops the page scope and the frames held for it, and
+   * tells the backend.
+   */
   unsubscribe(): void {
     if (!this.current) {
       return
@@ -213,6 +223,7 @@ export class PageSubscription {
     this.pageErrorSignal.set(null)
     this.pageLoadingSignal.set(false)
     this.scopes.dropPage()
+    this.connection.forgetPageFrames()
     this.connection.send(
       JSON.stringify({
         [FIELD_TYPE]: SIGNAL_TYPE_PAGE_UNSUBSCRIBE,
@@ -299,12 +310,16 @@ export class PageSubscription {
    * subscribe, when the page scope had just been opened and was empty; this
    * re-open was a no-op then and stays one now for every one of those paths.
    *
+   * The frames the connection is holding go the same way as the scope, and for
+   * the same reason: a held frame is that same content in another pocket.
+   *
    * @param error The page, HTTP status, code, and message to show.
    */
   private refuse(error: PageSubscriptionError): void {
     this.pageErrorSignal.set(error)
     this.pageLoadingSignal.set(false)
     this.scopes.openPage(error.page)
+    this.connection.forgetPageFrames()
   }
 
   /**

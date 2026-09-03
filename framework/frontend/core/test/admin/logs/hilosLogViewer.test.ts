@@ -551,6 +551,33 @@ describe('logViewerPaneState', () => {
       'lines',
     )
   })
+
+  it('lets the lines in the pane outrank an empty catalog', () => {
+    // The tail follows the address in the URL and needs no catalog, so lines
+    // can be on screen while the picture is still on its way; a notice saying
+    // it has not arrived would be drawn over rows the operator can see.
+    expect(logViewerPaneState(null, selection(), 86, true, false)).toBe('lines')
+    expect(
+      logViewerPaneState(catalog({ nodes: [] }), selection(), 86, true, false),
+    ).toBe('lines')
+  })
+
+  it('keeps the catalog state when no stream is chosen', () => {
+    // Without a choice there can be no lines, so a junk count must not reach
+    // past the catalog — and must not make 'unchosen' unreachable either.
+    expect(
+      logViewerPaneState(null, selection({ stream: null }), 86, true, false),
+    ).toBe('unknown')
+    expect(
+      logViewerPaneState(
+        catalog(),
+        selection({ stream: null }),
+        86,
+        true,
+        false,
+      ),
+    ).toBe('unchosen')
+  })
 })
 
 describe('createHilosLogViewer', () => {

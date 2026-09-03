@@ -548,10 +548,21 @@ export type HilosLogViewerPaneState =
 /**
  * What the pane has to say, in the order the answers outrank each other.
  *
- * The states of the CATALOG come first: a pane empty because no picture arrived
- * is empty for a reason that has nothing to do with the file or the filter. Then
- * the file - unchosen, or chosen and unreadable - and only then the filter, which
- * is the one state that means the read worked and found nothing.
+ * CONTENT is asked first: lines in the pane of a chosen stream outrank every
+ * other answer, and the empty states of the catalog above all — they cancel
+ * "the cluster picture has not arrived yet". The tail is
+ * followed by the address in the URL and needs no catalog at all, so a pane
+ * holding lines while the picture is still on its way is a normal thing on a
+ * slow cluster — and drawing an empty-catalog notice over lines the operator can
+ * see says something plainly untrue. The stream has to be chosen for that to
+ * apply: without a choice there can be no lines, and asking about the choice
+ * first would make 'unchosen' unreachable behind a junk count.
+ *
+ * Otherwise the states of the CATALOG come first: a pane empty because no
+ * picture arrived is empty for a reason that has nothing to do with the file or
+ * the filter. Then the file - unchosen, or chosen and unreadable - and only then
+ * the filter, which is the one state that means the read worked and found
+ * nothing.
  *
  * @param catalog The latest catalog, or null before the first one arrives.
  * @param selection The file being read.
@@ -566,6 +577,9 @@ export function logViewerPaneState(
   readable: boolean,
   filtered: boolean,
 ): HilosLogViewerPaneState {
+  if (rowCount > 0 && selection.stream !== null) {
+    return 'lines'
+  }
   const state = logViewerCatalogState(catalog)
   if (state !== 'ready') {
     return state

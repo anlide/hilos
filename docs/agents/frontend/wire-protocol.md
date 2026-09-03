@@ -311,6 +311,16 @@ refused answers with `subscription_page_error` instead, and the client waits on
 that the same way; a page that answered neither would leave the client with
 nothing to wait for.
 
+**A frame a page sends under its own name before `page_response` is held for the
+view that was not there yet.** The view is mounted only after the answer
+releases the page, so a frame sent ahead of it has no listener at the moment it
+lands. The client keeps the last frame of every `subscription_page_*` type and
+replays it to a `projectSignal` listener that registers later, which is why such
+a frame must carry the page's **whole** state and never a delta: a replayed
+delta would double what was already delivered. `subscription_page_error` is the
+one name under the prefix that is not held — a refusal is not a description of
+the page, and replayed it would draw a ban the server has since lifted.
+
 A page contributes the payload from the framework's `onSubscribe` via the
 `buildPagePayload` hook, so a page never hand-rolls the signal. The `tables`
 section rides the same envelope but the frontend consumes it last (the heavy

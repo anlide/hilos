@@ -13,15 +13,6 @@ import { gotoPage } from '../helpers/page'
 // carrying a batch off (HIL-763) — belongs to its own specs and is not asserted
 // here. Nothing is mutated and nothing is typed, so the spec is idempotent across
 // runs on the shared database.
-//
-// What it deliberately does NOT assert is the state each screen is pushed: the
-// viewer's catalog and the modes screen's cards ride a frame the backend sends
-// ahead of page_response, and the routed outlet of every kit creates the page
-// component only after that answer, so the frame reaches no view at all (P-242,
-// proved by six attempts of this very spec). Asserting the empty state the screens
-// DO show would be worse than asserting nothing: it would write the defect into a
-// test and break the day it is fixed. When P-242 is closed, the three preset cards
-// and hilos-log-empty-unchosen come back here.
 
 test('renders every screen of the logs section over the live socket', async ({
   page,
@@ -63,11 +54,23 @@ test('renders every screen of the logs section over the live socket', async ({
   await expect(page.getByTestId('hilos-log-level')).toBeVisible()
   await expect(page.getByTestId('hilos-log-pane')).toBeVisible()
   await expect(page.getByTestId('hilos-log-count')).toHaveText('0 entries shown')
+  // The catalog rides a frame the backend sends ahead of page_response, and the
+  // outlet mounts the view only after that answer: the frame is held for the
+  // late listener (HIL-873), so the pane asks for a stream instead of saying
+  // the cluster picture has not arrived.
+  await expect(page.getByTestId('hilos-log-empty-unchosen')).toBeVisible()
 
   // The logging modes screen and the way out of it into the general settings.
   await gotoPage(page, '/hilos/logs/settings')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Settings')
   await expect(
     page.getByTestId('hilos-setting-preset-settings-link'),
+  ).toBeVisible()
+  // The three cards ride the same frame ahead of the answer: with it held, the
+  // screen an administrator opens to choose a mode has something to click.
+  await expect(page.getByTestId('hilos-setting-preset-frugal')).toBeVisible()
+  await expect(page.getByTestId('hilos-setting-preset-normal')).toBeVisible()
+  await expect(
+    page.getByTestId('hilos-setting-preset-investigation'),
   ).toBeVisible()
 })

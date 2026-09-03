@@ -27,6 +27,9 @@ function fakeConnection() {
 
       return true
     },
+    // The manager drops the held page frames on every page change; this fake
+    // buffers nothing, so there is nothing to drop.
+    forgetPageFrames(): void {},
     on(event: string, listener: (payload: never) => void): () => void {
       // The manager subscribes `state` in its constructor; this fake never
       // replays transitions, so only `projectSignal` listeners are recorded.

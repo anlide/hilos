@@ -132,6 +132,17 @@ answer arrives, discarding any state it gathered — the profile sign-in form th
 what shows: the placeholder gives way to content on a snapshot, or to the
 auth-gate surface on a 401 — the gate, not the page, owns the sign-in form.
 
+The gate stays as it is, and a frame sent ahead of the answer is no longer lost
+to it. A page that ships its own state frame before `page_response` is heard: the
+connection holds the last frame of each `subscription_page_*` type and hands it
+synchronously to a `projectSignal` listener that registers afterwards, so the
+view has the state before its first paint. The page subscription decides how long
+that lasts — it drops the held frames on subscribe, on unsubscribe, when the page
+is put back to waiting, and on a refusal — while a reconnect keeps them, because
+the backend re-sends the frame on the new subscribe and blanking the screen on
+every socket tremor is worse than slightly stale content. See
+[wire-protocol.md](wire-protocol.md) for what a frame under that name must carry.
+
 ## Authoritative backend — no optimistic updates
 
 This is the keystone rule of the runtime. Every user action does two things:

@@ -4,7 +4,10 @@ import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { type EntityRef } from '../../src/state/EntityStore.js'
 import { type ConnectionState } from '../../src/connection/HilosConnection.js'
 
-/** A connection double recording sent frames and replaying state changes. */
+/**
+ * A connection double recording sent frames, replaying state changes, and
+ * counting how often the page-frame buffer was dropped.
+ */
 function fakeConnection(initialState: ConnectionState = 'connected') {
   const listeners: Array<(state: ConnectionState) => void> = []
   const sent: Array<Record<string, unknown>> = []
@@ -12,6 +15,10 @@ function fakeConnection(initialState: ConnectionState = 'connected') {
   return {
     state: initialState,
     sent,
+    forgotPageFrames: 0,
+    forgetPageFrames(): void {
+      this.forgotPageFrames += 1
+    },
     setState(state: ConnectionState) {
       this.state = state
       for (const listener of listeners) {
@@ -418,6 +425,74 @@ describe('reacting to a rights change on the open page', () => {
     pages.denyCurrentPage()
 
     expect(pages.pageError.get()).toBeNull()
+  })
+})
+
+describe('page frame lifetime', () => {
+  it('subscribing drops the frames of the page being left', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.releaseOnSession()
+
+    pages.subscribe('hilos_logs')
+
+    expect(connection.forgotPageFrames).toBe(1)
+  })
+
+  it('unsubscribing drops the frames of the page being left', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.releaseOnSession()
+    pages.subscribe('hilos_logs')
+
+    pages.unsubscribe()
+
+    expect(connection.forgotPageFrames).toBe(2)
+  })
+
+  it('putting the page back to waiting drops its frames', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.releaseOnSession()
+    pages.subscribe('hilos_logs')
+    pages.ingestPageResponse('hilos_logs', { data: { nodes: 2 } })
+
+    pages.awaitPageAnswer()
+
+    expect(connection.forgotPageFrames).toBe(2)
+  })
+
+  it('a refusal drops the frames of the refused page', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.releaseOnSession()
+    pages.subscribe('hilos_users')
+
+    pages.handleSubscriptionError({
+      page: 'hilos_users',
+      httpCode: 403,
+      errorCode: 'forbidden',
+      message: 'Access denied',
+    })
+
+    expect(connection.forgotPageFrames).toBe(2)
+  })
+
+  it('a re-subscribe after a reconnect keeps the frames', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.releaseOnSession()
+    pages.subscribe('hilos_logs')
+
+    connection.setState('reconnecting')
+    connection.setState('connected')
+    pages.releaseOnSession()
+
+    // The socket dropped, the page did not: the backend re-sends the frame on
+    // the new subscribe, and blanking the screen on a tremor costs more than a
+    // moment of slightly stale content.
+    expect(connection.sent).toHaveLength(2)
+    expect(connection.forgotPageFrames).toBe(1)
   })
 })
 

@@ -466,6 +466,126 @@ describe('signal routing', () => {
   })
 })
 
+describe('page frame buffer', () => {
+  const PAGE_SCHEMAS: ProjectSignalSchemas = {
+    subscription_page_hilos_logs: z.looseObject({ node: z.string() }),
+    subscription_page_hilos_log_presets: z.looseObject({ preset: z.string() }),
+    subscription_page_error: z.looseObject({ page: z.string() }),
+    logs_lines_appended: z.looseObject({ line: z.string() }),
+  }
+
+  function connected(): HilosConnection {
+    const { connection } = createConnection({ projectSchemas: PAGE_SCHEMAS })
+    connection.connect()
+    MockWebSocket.last.open()
+    return connection
+  }
+
+  it('replays a page frame that arrived before the listener registered', () => {
+    const connection = connected()
+    MockWebSocket.last.message(
+      '{"type":"subscription_page_hilos_logs","data":{"node":"one"}}',
+    )
+
+    const received: { type: string; data: unknown }[] = []
+    connection.on('projectSignal', (signal) =>
+      received.push({ type: signal.type, data: signal.data }),
+    )
+
+    expect(received).toEqual([
+      { type: 'subscription_page_hilos_logs', data: { node: 'one' } },
+    ])
+  })
+
+  it('replays every buffered type once, in arrival order', () => {
+    const connection = connected()
+    MockWebSocket.last.message(
+      '{"type":"subscription_page_hilos_logs","data":{"node":"one"}}',
+    )
+    MockWebSocket.last.message(
+      '{"type":"subscription_page_hilos_log_presets","data":{"preset":"frugal"}}',
+    )
+
+    const received: string[] = []
+    connection.on('projectSignal', (signal) => received.push(signal.type))
+
+    expect(received).toEqual([
+      'subscription_page_hilos_logs',
+      'subscription_page_hilos_log_presets',
+    ])
+  })
+
+  it('keeps only the last frame of a type', () => {
+    const connection = connected()
+    MockWebSocket.last.message(
+      '{"type":"subscription_page_hilos_logs","data":{"node":"one"}}',
+    )
+    MockWebSocket.last.message(
+      '{"type":"subscription_page_hilos_logs","data":{"node":"two"}}',
+    )
+
+    const received: unknown[] = []
+    connection.on('projectSignal', (signal) => received.push(signal.data))
+
+    expect(received).toEqual([{ node: 'two' }])
+  })
+
+  it('buffers neither a delta frame nor a subscription refusal', () => {
+    const connection = connected()
+    MockWebSocket.last.message(
+      '{"type":"logs_lines_appended","data":{"line":"first"}}',
+    )
+    MockWebSocket.last.message(
+      '{"type":"subscription_page_error","data":{"page":"hilos_logs"}}',
+    )
+
+    const received: string[] = []
+    connection.on('projectSignal', (signal) => received.push(signal.type))
+
+    expect(received).toEqual([])
+  })
+
+  it('delivers live frames to a listener that already replayed', () => {
+    const connection = connected()
+    MockWebSocket.last.message(
+      '{"type":"subscription_page_hilos_logs","data":{"node":"one"}}',
+    )
+
+    const received: unknown[] = []
+    connection.on('projectSignal', (signal) => received.push(signal.data))
+    MockWebSocket.last.message(
+      '{"type":"subscription_page_hilos_logs","data":{"node":"two"}}',
+    )
+
+    expect(received).toEqual([{ node: 'one' }, { node: 'two' }])
+  })
+
+  it('replays nothing after forgetPageFrames()', () => {
+    const connection = connected()
+    MockWebSocket.last.message(
+      '{"type":"subscription_page_hilos_logs","data":{"node":"one"}}',
+    )
+    connection.forgetPageFrames()
+
+    const received: string[] = []
+    connection.on('projectSignal', (signal) => received.push(signal.type))
+
+    expect(received).toEqual([])
+  })
+
+  it('replays nothing to a listener of another event', () => {
+    const connection = connected()
+    MockWebSocket.last.message(
+      '{"type":"subscription_page_hilos_logs","data":{"node":"one"}}',
+    )
+
+    const kinds: string[] = []
+    connection.on('signal', (signal) => kinds.push(signal.kind))
+
+    expect(kinds).toEqual([])
+  })
+})
+
 describe('build-version check', () => {
   it('latches the first welcome build and flags a different one on reconnect', () => {
     const { connection } = createConnection()

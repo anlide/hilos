@@ -28,6 +28,9 @@ function fakeConnection() {
 
       return true
     },
+    // The page subscription drops the held page frames on every page change;
+    // this fake buffers nothing, so there is nothing to drop.
+    forgetPageFrames(): void {},
     on(event: string, listener: (payload: never) => void): () => void {
       if (event === 'projectSignal') {
         projectListeners.push(listener as (signal: ProjectSignal) => void)

@@ -19,6 +19,7 @@ import {
   SIGNAL_TYPE_ACTION,
   SIGNAL_TYPE_GROUP_SUBSCRIBE,
   SIGNAL_TYPE_GROUP_UNSUBSCRIBE,
+  SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
   SIGNAL_TYPE_TABLE_VIEWPORT,
   SESSION_ROTATE_COOKIE_SUFFIX,
 } from '../protocol/constants.js'
@@ -215,6 +216,17 @@ const ROTATION_REPLY_GRACE_MS = 10000
 const FIRST_FRAME_HOLD_TIMEOUT_MS = 1500
 
 /**
+ * The name prefix that marks a project signal as a page's own state frame.
+ *
+ * What rides under this prefix is the WHOLE state of the page, never a delta:
+ * a buffered frame is replayed to a listener that registered late, and a
+ * replayed delta would double what was already delivered. The counter-example
+ * is `'logs_lines_appended'` of the log viewer, which appends to what the view
+ * already holds and therefore has no right to this name.
+ */
+const PAGE_FRAME_PREFIX = 'subscription_page_'
+
+/**
  * One Hilos WebSocket connection.
  *
  * Owns the socket lifecycle: an explicit `connect()`, automatic reconnect with
@@ -280,6 +292,16 @@ export class HilosConnection {
    * the window this admission must die with.
    */
   private presentedPass: string | undefined
+  /**
+   * The last state frame of each page signal type seen on this connection.
+   *
+   * A page sends its own frame before the `page_response` that releases the
+   * view, so the view that wants it is not mounted yet when it arrives. Held
+   * here, it is replayed to every `projectSignal` listener that registers
+   * afterwards. Insertion order is the arrival order, which is the order the
+   * replay uses.
+   */
+  private readonly pageFrames = new Map<string, ProjectSignal>()
 
   constructor(options: HilosConnectionOptions) {
     this.url = options.url
@@ -367,11 +389,43 @@ export class HilosConnection {
     this.reconnectNow()
   }
 
+  /**
+   * Subscribe to a connection event; the returned function unsubscribes.
+   *
+   * A `projectSignal` listener is handed the buffered page frames right away,
+   * synchronously, before this call returns: the view has to hold the state
+   * before its first paint, or it draws one empty frame — the very flicker this
+   * buffer exists to remove. That the listener runs before the caller has
+   * stored the unsubscribe function is harmless; the function only ever governs
+   * frames still to come. Every other event stays live-only, because a replayed
+   * action reply or toast would answer a question nobody asked.
+   *
+   * @param event The connection event to listen to.
+   * @param listener Called with that event's payload.
+   */
   on<K extends keyof HilosConnectionEventMap>(
     event: K,
     listener: (payload: HilosConnectionEventMap[K]) => void,
   ): () => void {
-    return this.emitter.on(event, listener)
+    const unsubscribe = this.emitter.on(event, listener)
+    if (event === 'projectSignal') {
+      const replay = listener as (payload: ProjectSignal) => void
+      for (const frame of this.pageFrames.values()) {
+        replay(frame)
+      }
+    }
+    return unsubscribe
+  }
+
+  /**
+   * Drop every buffered page frame.
+   *
+   * Called by the page subscription alone: the connection has no idea when a
+   * page ends, and the subscription has no idea when a frame arrives, so the
+   * two halves of the buffer's life live where each is known.
+   */
+  forgetPageFrames(): void {
+    this.pageFrames.clear()
   }
 
   /** Open the connection. No-op unless currently `disconnected`. */
@@ -625,6 +679,7 @@ export class HilosConnection {
         this.replyArrived(signal.requestId)
         break
       case 'project':
+        this.rememberPageFrame(signal)
         this.emitter.emit('projectSignal', signal)
         break
       case 'tableWindow':
@@ -646,6 +701,24 @@ export class HilosConnection {
         assertNever(signal)
     }
     this.emitter.emit('signal', signal)
+  }
+
+  /**
+   * Keep a page's state frame for a listener that is not there yet.
+   *
+   * A refusal is left out although its name fits the prefix: it does not
+   * describe the page, it rides `pageError` of its own, and replayed later it
+   * would draw a ban the server has since lifted.
+   *
+   * @param signal The project signal just parsed off the wire.
+   */
+  private rememberPageFrame(signal: ProjectSignal): void {
+    if (
+      signal.type.startsWith(PAGE_FRAME_PREFIX) &&
+      signal.type !== SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR
+    ) {
+      this.pageFrames.set(signal.type, signal)
+    }
   }
 
   private handleHandshake(signal: HandshakeSignal): void {
