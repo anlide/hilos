@@ -807,6 +807,18 @@ enum EnvConstants
      */
     case LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS;
 
+    // ── Log takeout undo window (HIL-759) ────────────────────────────────────
+
+    /**
+     * @var string How long in seconds a batch an operator confirmed carrying off is still
+     * protected from the pruner, counted from the confirmation. Default 86400 (a day); 0 means
+     * the pruner does not wait at all and may remove the batch on its next pass. It promises
+     * nothing about WITHDRAWING the confirmation: that stays possible for as long as the batch
+     * directory is on the node, which is what the screen judges by.
+     * Serves as the default of the logs.takeout.undo_window_seconds setting, which overrides it.
+     */
+    case LOG_TAKEOUT_UNDO_WINDOW_SECONDS;
+
     // ── Log write level (HIL-761) ────────────────────────────────────────────
 
     /**

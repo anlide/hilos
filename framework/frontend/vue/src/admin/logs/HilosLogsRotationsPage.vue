@@ -6,11 +6,13 @@ machines is two directories, carried off apart — so the node column and the no
 filter exist only where nodes have names. Search, the node filter and the
 All / awaiting switch ride the open viewport filter map (server-side, no local
 filtering); the window is re-served by the page whenever the cluster picture or
-the rule moves. A recommended batch carries the one command of this screen: a
-modal saying where the batch lies and how to copy it off, and a confirmation that
-it was (HIL-483) — the badge then repaints when the holding node's next index
-arrives, not when the ack does. Deleting a taken batch is HIL-382, taking a
-confirmation back is HIL-759, and there is no way through to the viewer yet
+the rule moves. A recommended batch carries the first of this screen's two
+commands: a modal saying where the batch lies and how to copy it off, and a
+confirmation that it was (HIL-483) — the badge then repaints when the holding
+node's next index arrives, not when the ack does. A taken batch carries the other
+half of that (HIL-759): a trigger that takes the word back while the batch is
+still on disk, behind a modal naming when its node's cleaner may first delete it.
+Deleting a taken batch is HIL-382, and there is no way through to the viewer yet
 because it takes no batch address (HIL-388). All table logic, the row
 view-model, the empty-state discrimination and the wording are the core headless's
 (hilosLogRotations); this view owns only the markup, so a project mounts it by
@@ -214,6 +216,54 @@ async function submitTakeout(): Promise<void> {
   }
 }
 
+// Taking the word back (HIL-759). Offered on a taken batch and on no other, as a
+// link rather than a button: it is the correction of a click and not the action
+// the row is there for. The judge is the physical batch and never a timer in this
+// tab — the node refuses only when the directory is gone.
+const undoOpen = ref(false)
+const undoRow = ref<HilosLogRotationRow | null>(null)
+const undoAction = useTrackedAction()
+const {
+  loading: undoLoading,
+  busy: undoBusy,
+  run: runUndo,
+  clearError: clearUndoError,
+} = undoAction
+
+function offersUndo(row: HilosLogRotationRow): boolean {
+  return row.retentionState === HILOS_ROTATION_STATE_TAKEN
+}
+
+function openUndo(row: HilosLogRotationRow): void {
+  clearUndoError()
+  undoRow.value = row
+  undoOpen.value = true
+}
+
+// What the batch's own node promises: the instant its cleaner may first take it.
+// One word for one actor on this screen — the class behind it is a pruner, but
+// the operator has been reading "cleaner" since the takeout modal. Null is the
+// installation that told it not to wait, and that is said in words too: a blank
+// would read as "we do not know" rather than "at any moment".
+const undoDeadline = computed(() =>
+  undoRow.value?.pruneNotBefore == null
+    ? 'The cleaner may delete this batch as soon as it next runs.'
+    : `The cleaner may delete this batch after ${new Date(undoRow.value.pruneNotBefore * 1000).toLocaleString()}.`,
+)
+
+async function submitUndo(): Promise<void> {
+  const row = undoRow.value
+  if (row === null || undoBusy.value) {
+    return
+  }
+  // Closes on the server's word, like the confirmation: the one refusal this can
+  // meet — the batch is no longer on the node — is exactly what the operator has
+  // to see instead of a modal that closed as though it had worked.
+  if (await runUndo(rotationsActions.sendTakeoutUndo(row))) {
+    undoOpen.value = false
+  }
+}
+
 // The rule line leads to the general settings screen: the log settings page does
 // not exist in the registry yet (HIL-391 adds it and re-points this link).
 const settingsHref = HILOS_PAGE_ROUTES[HilosPages.SETTINGS] ?? '/'
@@ -333,6 +383,20 @@ const legendOpen = ref(false)
           >
             How to carry it off
           </button>
+          <!-- A link by sight and a button by nature, the way the legend trigger
+          below is: the design asks for a link because withdrawing is not the
+          action the row is there for, but this one opens a dialog and navigates
+          nowhere, so an <a href="#"> would answer a ctrl-click with a pointless
+          new tab and announce itself to a screen reader as a link. -->
+          <button
+            v-if="offersUndo(row)"
+            type="button"
+            class="btn btn-link btn-sm p-0 align-baseline"
+            data-id="hilos-rotation-undo"
+            @click="openUndo(row)"
+          >
+            I did not carry this one off
+          </button>
         </td>
       </template>
 
@@ -440,8 +504,9 @@ const legendOpen = ref(false)
         confirmation covers this batch on this node.
       </div>
       <div v-else class="alert alert-secondary small py-2 mb-0">
-        Once confirmed, the batch becomes available to the cleaner — until then
-        it will not be touched.
+        Once confirmed, the batch becomes available to the cleaner — but not
+        straight away: this node keeps a confirmed batch for a while, and you
+        can take the confirmation back for as long as the batch is there.
       </div>
       <template #actions="{ requestClose }">
         <button
@@ -459,6 +524,49 @@ const legendOpen = ref(false)
           @click="submitTakeout"
         >
           I have taken this batch
+        </LoadingButton>
+      </template>
+    </HilosModal>
+
+    <HilosModal
+      v-model="undoOpen"
+      title="Has the batch not been carried off?"
+      :close-on-backdrop="!undoBusy"
+      :close-on-esc="!undoBusy"
+    >
+      <HilosActionError :action="undoAction" />
+      <p>
+        Your word that you have taken it is the only thing that lets the cleaner
+        delete this batch. Take that word back and the batch returns to the list
+        of the ones recommended for carrying off.
+      </p>
+      <p
+        class="small text-body-secondary"
+        data-id="hilos-rotation-undo-deadline"
+      >
+        {{ undoDeadline }}
+      </p>
+      <div class="alert alert-secondary small py-2 mb-0">
+        It can only be taken back while the batch is still there. Once the
+        cleaner has passed there is nothing to bring back — which is exactly why
+        deleting waits for your word.
+      </div>
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="undoBusy"
+          @click="requestClose"
+        >
+          Leave it as it is
+        </button>
+        <LoadingButton
+          class="btn-primary"
+          :loading="undoLoading"
+          data-id="hilos-rotation-undo-confirm"
+          @click="submitUndo"
+        >
+          Withdraw the acknowledgement
         </LoadingButton>
       </template>
     </HilosModal>

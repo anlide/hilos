@@ -13,9 +13,10 @@
 // exist, and the rules in force — rides the page's own header signal.
 //
 // The screen judges nothing: the retention verdict is decided on the backend. It
-// does command one thing (HIL-483) — an operator's word that a recommended batch
-// has been carried off — and even that it only forwards: the confirmation is a
-// durable fact written by the node holding the directory, and the badge repaints
+// does command two things — an operator's word that a recommended batch has been
+// carried off (HIL-483), and that word taken back while the batch is still there
+// (HIL-759) — and even those it only forwards: both are the one durable fact
+// written and removed by the node holding the directory, and the badge repaints
 // when that node's next index arrives rather than when the ack does.
 
 import { z } from 'zod'
@@ -27,6 +28,7 @@ import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
   readNumber,
+  readNumberOrNull,
   readString,
   readStringOrNull,
 } from '../../state/fieldReaders.js'
@@ -62,6 +64,12 @@ export interface HilosLogRotationRow {
   readonly bytes: number
   /** Retention verdict: one of {@link HILOS_ROTATION_STATE_KEPT} and its neighbours. */
   readonly retentionState: string
+  /**
+   * Unix instant this batch's own node may first prune it, or null when there is
+   * no instant to name — the batch is unconfirmed, or that node's window is zero
+   * and its pruner will take a confirmed batch on its very next pass.
+   */
+  readonly pruneNotBefore: number | null
 }
 
 // Wire keys: the framework log-rotations table and its single inline `batch` slot.
@@ -105,6 +113,9 @@ export const ROTATION_BYTES_FIELD = 'bytes'
 /** Row payload key of the retention verdict. */
 const ROTATION_RETENTION_STATE_FIELD = 'retentionState'
 
+/** Row payload key of the instant the batch's own node may first prune it. */
+const ROTATION_PRUNE_NOT_BEFORE_FIELD = 'pruneNotBefore'
+
 /** Filter-map key: narrow the history to one node (absent in a single-node installation). */
 export const ROTATION_FILTER_NODE = 'node'
 
@@ -134,6 +145,14 @@ export const HILOS_ROTATION_STATE_TAKEN = 'taken'
  * directories and two confirmations.
  */
 export const LOGS_TAKEOUT_CONFIRM_ACTION = 'logs_takeout_confirm'
+
+/**
+ * Client→server action `type` withdrawing that word while the batch is still there
+ * (PHP `LOGS_TAKEOUT_UNDO`). Its own action rather than a direction on the one
+ * above: the two are checked differently on the node and refuse for different
+ * reasons, and it answers with a sentence and no data at all.
+ */
+export const LOGS_TAKEOUT_UNDO_ACTION = 'logs_takeout_undo'
 
 /**
  * Ack of {@link LOGS_TAKEOUT_CONFIRM_ACTION}: the instant the batch is now
@@ -188,7 +207,7 @@ export interface HilosLogRotationsContext {
   readonly connection: HilosConnection
   /** The scope manager owning the page scope the table window normalizes into. */
   readonly scopes: ScopeManager
-  /** The action lifecycle the takeout confirmation dispatches over. */
+  /** The action lifecycle the takeout confirmation and its withdrawal dispatch over. */
   readonly actions: ActionLifecycle
 }
 
@@ -230,6 +249,10 @@ export function resolveHilosLogRotationRow(row: TableRow): HilosLogRotationRow {
     ),
     bytes: readNumber(slot, ROTATION_BYTES_FIELD),
     retentionState: readString(slot, ROTATION_RETENTION_STATE_FIELD),
+    // Null is "there is no deadline to name", which the withdrawal modal says in
+    // words rather than as a blank: an unconfirmed batch is on its way nowhere, and
+    // a node whose window is zero has said it will not wait.
+    pruneNotBefore: readNumberOrNull(slot, ROTATION_PRUNE_NOT_BEFORE_FIELD),
   }
 }
 
@@ -305,7 +328,7 @@ export function createHilosLogRotationsTable(
   }
 }
 
-/** The takeout surface a rotations view binds to — the one thing this screen commands. */
+/** The takeout surface a rotations view binds to — the two things this screen commands. */
 export interface HilosLogRotationsActions {
   /**
    * Confirm that one batch has been carried off, as a tracked action.
@@ -318,6 +341,18 @@ export interface HilosLogRotationsActions {
    * @param row The batch being confirmed.
    */
   sendTakeoutConfirm(row: HilosLogRotationRow): ActionHandle
+
+  /**
+   * Withdraw that word while the batch is still there, as a tracked action.
+   *
+   * Answered by the same owner and with no reply payload: the row returns to its
+   * policy verdict when that node's next index reaches the mirror, so there is
+   * nothing an ack could carry that the index does not already say. What the
+   * success does carry is the node's own sentence, which the toast shows.
+   *
+   * @param row The batch whose confirmation is being withdrawn.
+   */
+  sendTakeoutUndo(row: HilosLogRotationRow): ActionHandle
 }
 
 /**
@@ -341,6 +376,12 @@ export function createHilosLogRotationsActions(
         },
         { replySchema: logsTakeoutConfirmReplySchema },
       )
+    },
+    sendTakeoutUndo(row) {
+      return context.actions.dispatch(LOGS_TAKEOUT_UNDO_ACTION, {
+        nodeId: row.node ?? '',
+        batchTimestamp: row.batchAt,
+      })
     },
   }
 }

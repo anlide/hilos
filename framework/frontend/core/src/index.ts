@@ -778,6 +778,7 @@ export {
   ROTATION_BYTES_FIELD,
   LOGS_SIGNAL_SCHEMAS,
   LOGS_TAKEOUT_CONFIRM_ACTION,
+  LOGS_TAKEOUT_UNDO_ACTION,
   type HilosLogRotationRow,
   type HilosLogRotationsActions,
   type HilosLogRotationsHeader,

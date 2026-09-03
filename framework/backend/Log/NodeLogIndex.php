@@ -19,6 +19,12 @@ namespace Hilos\Log;
  * its OWN log root and nobody else's, so the absolute address an operator is told to copy from
  * comes from here rather than from the settings of whoever happens to draw the screen (HIL-483).
  *
+ * {@see $takeoutUndoWindowSeconds} rides here for the same reason (HIL-759). The promise that a
+ * confirmed batch will not be pruned for a while bottoms out in this node's environment, so with
+ * no setting written three nodes of one cluster can honestly hold three different windows, and
+ * only the node itself can say which one it holds. Zero is a value and not an absence: it is the
+ * installation that wants the pruner to take a confirmed batch on its very next pass.
+ *
  * Unavailability is a state and not an exception, the same way {@see LogStoreSnapshot} carries it:
  * {@see $available} false comes with empty projections, which the overview draws as blank tiles
  * rather than as zeros — a zero would claim there were no rotations, and here we simply do not know.
@@ -34,6 +40,7 @@ final class NodeLogIndex
      * @param list<LogWorkerSummary> $workers Worker streams, ascending by key, monopolistic ones apart
      * @param array<string, ?int> $growthBytesPerDay Key → bytes written over the last day, null until the window fills
      * @param ?string $logDirectory Absolute log root of this node, or null when the environment cannot name one
+     * @param int $takeoutUndoWindowSeconds Seconds a confirmed batch is protected from the pruner on this node, 0 when it is not to wait
      */
     public function __construct(
         public readonly ?string $nodeId,
@@ -44,6 +51,7 @@ final class NodeLogIndex
         public readonly array $workers,
         public readonly array $growthBytesPerDay,
         public readonly ?string $logDirectory = null,
+        public readonly int $takeoutUndoWindowSeconds = 0,
     ) {
     }
 }

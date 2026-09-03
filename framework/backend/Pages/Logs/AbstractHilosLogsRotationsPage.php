@@ -28,11 +28,13 @@ use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndex;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
+use Hilos\Log\DTO\LogsTakeoutUndoSignalData;
 use Hilos\Log\LogBatchSummary;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Log\LogSettingsResolver;
 use Hilos\Pages\Logs\DTO\HilosLogsRotationsSignalData;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
+use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use JsonException;
@@ -56,13 +58,14 @@ use JsonException;
  * hand either — batches change once per rotation, and each connection's own descriptor (its sort,
  * filter and page) is what the window is rebuilt from, so an administrator stays where they stood.
  *
- * The one action of this screen — an operator's word that a batch has been carried off — is handed
- * on rather than answered (HIL-483). The directory belongs to one node's {@see LogStoreAgent}, and
- * this page runs wherever the browser happens to be attached, so it checks that the node the
- * request names is still there, sends the confirmation to that node's owner and steps out of its
- * own ack. The row the operator is looking at is repainted by the node's next index reaching the
- * mirror, not by the ack — which is why {@see self::rowsFingerprint()} counts the confirmation
- * among the things a window is rebuilt for.
+ * Both actions of this screen — an operator's word that a batch has been carried off (HIL-483),
+ * and the same word taken back while the batch is still there (HIL-759) — are handed on rather
+ * than answered. The directory belongs to one node's {@see LogStoreAgent}, and this page runs
+ * wherever the browser happens to be attached, so it checks that the node the request names is
+ * still there, sends the request to that node's owner and steps out of its own ack. The row the
+ * operator is looking at is repainted by the node's next index reaching the mirror, not by the
+ * ack — which is why {@see self::rowsFingerprint()} counts the takeout stamp among the things a
+ * window is rebuilt for.
  *
  * Projects register a concrete empty subclass in the page factory (wiring only).
  */
@@ -78,6 +81,7 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
 
     public const array ACTIONS = [
         HilosSignalConstants::LOGS_TAKEOUT_CONFIRM => LogsTakeoutConfirmActionDTO::class,
+        HilosSignalConstants::LOGS_TAKEOUT_UNDO => LogsTakeoutUndoActionDTO::class,
     ];
 
     /** Seconds between two tick refreshes, so a busy agent does not rebuild the header per loop pass. */
@@ -167,12 +171,13 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
     }
 
     /**
-     * Routes the one action of this screen: an operator's word that a batch has been carried off.
+     * Routes the two actions of this screen: the word that a batch has been carried off, and its
+     * withdrawal.
      *
      * @param string $acceptKey WebSocket accept key
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
-     * @return ?ActionReplyDTO Always null: the confirmation is acked by the node that writes it
+     * @return ?ActionReplyDTO Always null: both are acked by the node that owns the directory
      * @throws AgentUnknownActionException When the page does not support the action
      * @throws InvalidActionPayloadException When the payload is not the request its action declares
      * @throws TableActionException When the request names a node this cluster does not have, or one
@@ -189,6 +194,13 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
                 }
 
                 return $this->forwardTakeoutConfirm($acceptKey, $action, $dto);
+
+            case HilosSignalConstants::LOGS_TAKEOUT_UNDO:
+                if (!$dto instanceof LogsTakeoutUndoActionDTO) {
+                    throw new InvalidActionPayloadException($action, LogsTakeoutUndoActionDTO::class, $dto);
+                }
+
+                return $this->forwardTakeoutUndo($acceptKey, $action, $dto);
 
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
@@ -352,11 +364,13 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
      * because the retention badge of every row is judged from them: an edited threshold repaints
      * the column without a single batch having moved.
      *
-     * The takeout stamp and the node's log root are counted for the same reason and would be easy
-     * to leave out, because neither is a measurement of the archive. A confirmation moves nothing
-     * else about a batch, so without its stamp here the click an operator just made would reach
-     * the mirror and stop, leaving them looking at the badge they had before; and the log root is
-     * where every row's absolute address comes from ({@see HilosLogRotationsTable}).
+     * The takeout stamp, the node's log root and its undo window are counted for the same reason
+     * and would be easy to leave out, because none of them is a measurement of the archive. A
+     * confirmation — or its withdrawal — moves nothing else about a batch, so without the stamp
+     * here the click an operator just made would reach the mirror and stop, leaving them looking
+     * at the badge they had before; the log root is where every row's absolute address comes from,
+     * and the window is what every row's prune deadline is computed with
+     * ({@see HilosLogRotationsTable}).
      *
      * @param HilosLogsRotationsSignalData $header Header of this pass, for the rules it carries
      * @return string Stable fingerprint of what the rows are built from
@@ -370,6 +384,7 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
                 $slot->nodeId,
                 $slot->index->available,
                 $slot->index->logDirectory,
+                $slot->index->takeoutUndoWindowSeconds,
                 array_map(
                     static fn(LogBatchSummary $batch): array => [
                         $batch->timestamp,
@@ -471,6 +486,44 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
                 $requestId,
                 Hilos::$browser?->resolveActionUserId($acceptKey),
             ),
+        );
+        if ($requestId !== null) {
+            $this->deferActionReply();
+        }
+
+        return null;
+    }
+
+    /**
+     * Hands one withdrawal to the node that owns the batch directory and lets that node answer it.
+     *
+     * The twin of {@see self::forwardTakeoutConfirm()} minus the one field it fills in: the
+     * confirmation records WHO said the batch was carried off, and taking that word back leaves no
+     * fact behind to attribute, so there is nobody for this frame to name.
+     *
+     * @param string $acceptKey Accept key of the connection waiting for the withdrawal
+     * @param string $action Action name the reply acknowledges
+     * @param LogsTakeoutUndoActionDTO $dto Validated withdrawal request
+     * @return ?ActionReplyDTO Always null: the answer is owed by the owner, not by this page
+     * @throws TableActionException When the request names a node this cluster does not have, or one
+     *     the master last saw offline
+     * @throws RtActionsStateCollectionNullException When the cluster roster is unavailable
+     * @throws InvalidArgumentException When the frame to the owner cannot be named
+     */
+    private function forwardTakeoutUndo(
+        string $acceptKey,
+        string $action,
+        LogsTakeoutUndoActionDTO $dto,
+    ): ?ActionReplyDTO {
+        $this->requireLiveNode($dto->nodeId);
+
+        // Deferring is the promise that somebody else acks, so it is made only when there is an
+        // ack to make: an untracked withdrawal has nothing to correlate and the owner refuses to
+        // act for it, the same shape the confirmation is handed over in.
+        $requestId = $this->currentActionRequestId();
+        $this->sendToAgent(
+            HilosSignalConstants::LOGS_AGENT_TAKEOUT_UNDO,
+            LogsTakeoutUndoSignalData::fromAction($dto, $acceptKey, $action, $requestId),
         );
         if ($requestId !== null) {
             $this->deferActionReply();

@@ -21,6 +21,7 @@ final class NodeLogIndexDelta
      * @param list<int> $appearedBatchTimestamps Rotation batches present now and absent before
      * @param list<int> $vanishedBatchTimestamps Rotation batches present before and absent now
      * @param list<int> $confirmedBatchTimestamps Rotation batches an operator confirmed carrying off since the previous index
+     * @param list<int> $withdrawnBatchTimestamps Rotation batches whose confirmation an operator withdrew since the previous index
      * @param bool $availabilityChanged Whether the store crossed between readable and unreadable
      */
     public function __construct(
@@ -30,6 +31,7 @@ final class NodeLogIndexDelta
         public readonly array $appearedBatchTimestamps,
         public readonly array $vanishedBatchTimestamps,
         public readonly array $confirmedBatchTimestamps,
+        public readonly array $withdrawnBatchTimestamps,
         public readonly bool $availabilityChanged,
     ) {
     }
@@ -47,7 +49,12 @@ final class NodeLogIndexDelta
      * (HIL-483). Left out, the frame carrying the operator's own click would never be sent, and
      * the screen they clicked on would go on showing the batch as due.
      *
-     * @return bool True when nothing appeared, grew, vanished, was confirmed or changed side
+     * And so does its withdrawal, on an axis of its own rather than folded into the one above
+     * (HIL-759). The confirmed list answers "which batches gained a marker", a question with one
+     * direction; a marker that went away is the opposite news, and counting it in the same list
+     * would report a batch as confirmed at the very moment it stopped being.
+     *
+     * @return bool True when nothing appeared, grew, vanished, changed its confirmation or changed side
      */
     public function isEmpty(): bool
     {
@@ -57,6 +64,7 @@ final class NodeLogIndexDelta
             && $this->appearedBatchTimestamps === []
             && $this->vanishedBatchTimestamps === []
             && $this->confirmedBatchTimestamps === []
+            && $this->withdrawnBatchTimestamps === []
             && !$this->availabilityChanged;
     }
 }

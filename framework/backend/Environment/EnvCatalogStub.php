@@ -8,6 +8,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\DatabaseConnectionDefaults;
+use Hilos\Log\LogSettingsCatalog;
 use Hilos\Mail\SmtpSecurity;
 use Hilos\Utils\LogLevel;
 
@@ -351,6 +352,11 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name => self::entry(
                 EnvCatalogConstants::TYPE_INTEGER,
                 2592000,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::LOG_TAKEOUT_UNDO_WINDOW_SECONDS->name => self::entry(
+                EnvCatalogConstants::TYPE_INTEGER,
+                LogSettingsCatalog::TAKEOUT_UNDO_WINDOW_FALLBACK_SECONDS,
                 emptyIsMissing: true,
             ),
             EnvConstants::LOG_WRITE_LEVEL->name => self::entry(

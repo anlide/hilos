@@ -14,8 +14,8 @@ use Hilos\Hilos;
 use Hilos\Utils\LogLevel;
 
 /**
- * The framework settings-catalog fragment for log rotation, archive retention, index push, write
- * level and the applied logging mode (HIL-760).
+ * The framework settings-catalog fragment for log rotation, archive retention, the takeout undo
+ * window, index push, write level and the applied logging mode (HIL-760).
  *
  * Values an administrator could not reach before: they lived in the environment and were
  * read once, at agent start. A project folds this fragment into its own catalog with
@@ -47,6 +47,9 @@ final class LogSettingsCatalog implements CatalogProviderInterface
     /** Age in seconds beyond which an archived batch becomes an eviction candidate; 0 disables it. */
     public const string ARCHIVE_RETENTION_MAX_AGE_SECONDS = 'logs.archive_retention.max_age_seconds';
 
+    /** Seconds a confirmed batch stays protected from the pruner, counted from the confirmation (HIL-759). */
+    public const string TAKEOUT_UNDO_WINDOW_SECONDS = 'logs.takeout.undo_window_seconds';
+
     /** Smallest interval in milliseconds between two log-index frames a node sends the aggregator (HIL-754). */
     public const string INDEX_PUSH_INTERVAL_MS = 'logs.index.push_interval_ms';
 
@@ -58,6 +61,9 @@ final class LogSettingsCatalog implements CatalogProviderInterface
 
     /** Interval the index push falls back to when the environment cannot answer, in milliseconds. */
     public const int INDEX_PUSH_INTERVAL_FALLBACK_MS = 5000;
+
+    /** Window the takeout undo falls back to when the environment cannot answer, in seconds. */
+    public const int TAKEOUT_UNDO_WINDOW_FALLBACK_SECONDS = 86400;
 
     /**
      * Builds the log settings entries, each defaulting to its environment value.
@@ -86,6 +92,13 @@ final class LogSettingsCatalog implements CatalogProviderInterface
             ),
             self::ARCHIVE_RETENTION_MAX_AGE_SECONDS => self::integerEntry(
                 self::envInt(EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS, 2_592_000),
+            ),
+            // Outside the logging modes on purpose: a mode is a statement about how loudly the
+            // installation writes, and this key protects what is already written from being
+            // deleted — the same reason the keep-batches count and the push interval are
+            // outside them.
+            self::TAKEOUT_UNDO_WINDOW_SECONDS => self::integerEntry(
+                self::envInt(EnvConstants::LOG_TAKEOUT_UNDO_WINDOW_SECONDS, self::TAKEOUT_UNDO_WINDOW_FALLBACK_SECONDS),
             ),
             self::INDEX_PUSH_INTERVAL_MS => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
@@ -142,7 +155,7 @@ final class LogSettingsCatalog implements CatalogProviderInterface
     }
 
     /**
-     * Builds a catalog entry for one of the four numeric keys.
+     * Builds a catalog entry for one of the numeric keys whose values a plain rule can judge.
      *
      * @param int $default Default value, already read from the environment
      * @return array<string, mixed> Catalog entry

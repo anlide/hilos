@@ -49,6 +49,11 @@ use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
  * (HIL-483). That one IS a fact about one batch — a marker file inside its directory — so it
  * arrives with the batch instead of being decided from the picture, and it survives an
  * administrator raising the retention period after the fact.
+ *
+ * A confirmed row also carries the instant its node's pruner may first delete it (HIL-759). Added
+ * up here from the two halves the node reports — when it was confirmed, and how long that node
+ * protects a confirmed batch — because the sum is a reading rather than a fact, and the screen
+ * has to say it out loud to somebody deciding whether they still have time to change their mind.
  */
 final class HilosLogRotationsTable extends TableDefinition implements ViewportTable
 {
@@ -237,6 +242,10 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
                 HilosLogRotationsTableRow::bytes => $batch->agentBytes + $batch->workerBytes
                     + $batch->workerMonopolisticBytes + $batch->daemonBytes,
                 HilosLogRotationsTableRow::retentionState => self::retentionState($batch, isset($due[$batch->timestamp])),
+                HilosLogRotationsTableRow::pruneNotBefore => self::pruneNotBefore(
+                    $batch,
+                    $slot->index->takeoutUndoWindowSeconds,
+                ),
             ];
         }
 
@@ -381,6 +390,31 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
         }
 
         return $due ? self::STATE_DUE : self::STATE_KEPT;
+    }
+
+    /**
+     * The instant the pruner of the batch's own node may first delete it (HIL-759).
+     *
+     * Added up here rather than reported by the node, because both halves already travel and the
+     * sum is a reading rather than a fact: the confirmation stamp is the node's clock, the window
+     * is the node's promise, and a screen that showed either alone would leave the person to do
+     * the arithmetic.
+     *
+     * Null twice over, and both are the same sentence on screen — there is no deadline to name.
+     * A batch nobody has confirmed is not on its way anywhere, and a node whose window is zero has
+     * said it will not wait, so the earliest the pruner may act is its very next pass.
+     *
+     * @param LogBatchSummary $batch Batch as its node reported it
+     * @param int $windowSeconds Seconds that node protects a confirmed batch for
+     * @return ?int Unix instant the pruner may first delete this batch, or null when there is none
+     */
+    private static function pruneNotBefore(LogBatchSummary $batch, int $windowSeconds): ?int
+    {
+        if ($batch->takenAt === null || $windowSeconds === 0) {
+            return null;
+        }
+
+        return $batch->takenAt + $windowSeconds;
     }
 
     /**

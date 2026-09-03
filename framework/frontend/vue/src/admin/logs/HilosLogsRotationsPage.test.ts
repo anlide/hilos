@@ -174,6 +174,7 @@ function batch(
     workerMonopolisticFileCount: 2,
     bytes: 1536 * 1024 * 1024,
     retentionState: 'kept',
+    pruneNotBefore: null,
     ...overrides,
   }
 }
@@ -432,6 +433,94 @@ describe('HilosLogsRotationsPage', () => {
     await settled()
 
     expect(document.body.textContent).not.toContain('Where it lies')
+  })
+
+  it('offers the withdrawal only on a batch somebody said was carried off', async () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([
+      batch({ rowKey: 'a:1', batchAt: 1, retentionState: 'kept' }),
+      batch({ rowKey: 'a:2', batchAt: 2, retentionState: 'due' }),
+      batch({ rowKey: 'a:3', batchAt: 3, retentionState: 'taken' }),
+    ])
+    await nextTick()
+
+    expect(wrapper.findAll('[data-id="hilos-rotation-undo"]')).toHaveLength(1)
+  })
+
+  /**
+   * The deadline is the node's own promise, and the screen has to say it out loud:
+   * somebody reading this modal is deciding whether they still have time.
+   */
+  it('names the instant the batch stops being safe from the cleaner', async () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([batch({ retentionState: 'taken', pruneNotBefore: 1800086400 })])
+    await nextTick()
+    await wrapper.find('[data-id="hilos-rotation-undo"]').trigger('click')
+
+    expect(
+      document.querySelector('[data-id="hilos-rotation-undo-deadline"]')
+        ?.textContent,
+    ).toContain(
+      `The cleaner may delete this batch after ${new Date(1800086400 * 1000).toLocaleString()}.`,
+    )
+  })
+
+  /**
+   * A node whose window is zero told the pruner not to wait, so there is no instant
+   * to name — and saying nothing would read as "we do not know" rather than "now".
+   */
+  it('says the cleaner may come at its next pass when the node will not wait', async () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([batch({ retentionState: 'taken', pruneNotBefore: null })])
+    await nextTick()
+    await wrapper.find('[data-id="hilos-rotation-undo"]').trigger('click')
+
+    expect(
+      document.querySelector('[data-id="hilos-rotation-undo-deadline"]')
+        ?.textContent,
+    ).toContain('as soon as it next runs')
+  })
+
+  it("withdraws under its own action name, and closes only on the server's word", async () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const wrapper = mountPage(connection, actions)
+
+    pushHeader(header({ nodes: ['node-1'] }))
+    pushWindow([batch({ node: 'node-1', retentionState: 'taken' })])
+    await nextTick()
+    await wrapper.find('[data-id="hilos-rotation-undo"]').trigger('click')
+    const confirm = document.querySelector(
+      '[data-id="hilos-rotation-undo-confirm"]',
+    ) as HTMLElement
+    confirm.click()
+    await settled()
+
+    expect(dispatched).toMatchObject([
+      {
+        action: 'logs_takeout_undo',
+        payload: { nodeId: 'node-1', batchTimestamp: 1800000000 },
+      },
+    ])
+    expect(document.body.textContent).toContain(
+      'Has the batch not been carried off?',
+    )
+
+    dispatched[0]?.settle({ action: 'logs_takeout_undo' } as ActionResult)
+    await settled()
+
+    expect(document.body.textContent).not.toContain(
+      'Has the batch not been carried off?',
+    )
   })
 
   it('opens the legend modal, which is where the three numbers are explained', async () => {

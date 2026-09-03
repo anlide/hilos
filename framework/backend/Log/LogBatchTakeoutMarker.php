@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Log;
 
 use Hilos\Backup\BackupCreator;
+use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\Exception\FileMoveException;
 use Hilos\Fs\Exception\FileWriteException;
 use Hilos\Fs\FsException;
@@ -24,6 +25,10 @@ use JsonException;
  * The basename deliberately does NOT end in `.log`. The store walk globs `*.log`
  * ({@see LogStoreReader}), so a marker named otherwise is counted in no file count and weighed in
  * no batch weight — the batch an operator is looking at stays the batch that was rotated.
+ *
+ * The fact is withdrawable while the directory is still there ({@see self::remove()}, HIL-759):
+ * a confirmation is a word about a batch, and a word said by mistake is taken back rather than
+ * corrected by a second one.
  *
  * Static because a marker has no state of its own: it is addressed by the directory it lives in,
  * one call per batch per walk, the way {@see FsPath} addresses a file by its path.
@@ -94,6 +99,27 @@ final class LogBatchTakeoutMarker
             JSON_THROW_ON_ERROR,
         ));
         FsPath::publish($temporaryPath, self::pathIn($batchDirectory));
+    }
+
+    /**
+     * Withdraws the confirmation of one batch, leaving the batch itself untouched (HIL-759).
+     *
+     * The same durable fact taken back rather than a second fact written beside it: an operator
+     * who confirmed by mistake has one question about this batch — has it been carried off — and
+     * two files could answer it two ways. Removing the marker returns the batch to the verdict
+     * the retention rule reads for it, which the confirmation was only covering over.
+     *
+     * A batch that carries no marker is not an error to report: two administrators clicking in
+     * turn both meant the state this leaves behind, and {@see FsPath::delete()} says so by doing
+     * nothing. Atomicity needs no dance here either, unlike {@see self::write()} — a walk in
+     * progress either sees the file or does not, and both are whole answers.
+     *
+     * @param string $batchDirectory Absolute path of the rotation batch directory
+     * @throws FileDeleteException When the marker is there and cannot be removed
+     */
+    public static function remove(string $batchDirectory): void
+    {
+        FsPath::delete(self::pathIn($batchDirectory));
     }
 
     /**

@@ -200,7 +200,7 @@ final class LogIndexPushTest extends TestCase
      */
     public function testADeltaWithNothingInItIsEmpty(): void
     {
-        $this->assertTrue(new NodeLogIndexDelta([], [], [], [], [], [], false)->isEmpty());
+        $this->assertTrue(new NodeLogIndexDelta([], [], [], [], [], [], [], false)->isEmpty());
     }
 
     /**
@@ -210,7 +210,7 @@ final class LogIndexPushTest extends TestCase
      */
     public function testCrossingIntoUnavailabilityCountsAsAChangeOnItsOwn(): void
     {
-        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], true)->isEmpty());
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [], true)->isEmpty());
     }
 
     /**
@@ -220,7 +220,17 @@ final class LogIndexPushTest extends TestCase
      */
     public function testAConfirmedBatchCountsAsAChangeOnItsOwn(): void
     {
-        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [1756166400], false)->isEmpty());
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [1756166400], [], false)->isEmpty());
+    }
+
+    /**
+     * And so does its withdrawal, for the same reason read backwards: an operator taking a
+     * confirmation back moves nothing but the marker, so an axis of its own is what gets the frame
+     * out of the node at all (HIL-759).
+     */
+    public function testAWithdrawnBatchCountsAsAChangeOnItsOwn(): void
+    {
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [1756166400], false)->isEmpty());
     }
 
     public function testTheWrittenSettingSetsTheInterval(): void

@@ -226,6 +226,46 @@ final class HilosLogRotationsTableTest extends TestCase
         );
     }
 
+    /**
+     * The deadline the screen shows is the sum of what one node reported: when the operator
+     * confirmed, plus how long that node keeps a confirmed batch from its pruner. Two nodes of one
+     * cluster can honestly hold different windows, so the row takes its own node's.
+     */
+    public function testAConfirmedBatchCarriesItsOwnNodesPruneDeadline(): void
+    {
+        $this->picture(
+            $this->node('node-1', [self::NOW], confirmed: [self::NOW], takeoutUndoWindowSeconds: self::DAY),
+            $this->node('node-2', [self::NOW], confirmed: [self::NOW], takeoutUndoWindowSeconds: 3_600),
+        );
+
+        $this->assertSame(
+            [self::NOW + self::DAY, self::NOW + 3_600],
+            array_map(static fn($row): ?int => $row->pruneNotBefore, $this->rows(new TableQueryDTO())),
+        );
+    }
+
+    /**
+     * A node whose window is zero has said it will not wait, so there is no instant to name and
+     * the screen falls back to saying the pruner may act on its very next pass.
+     */
+    public function testAConfirmedBatchOnANodeThatWillNotWaitCarriesNoDeadline(): void
+    {
+        $this->picture($this->node('node-1', [self::NOW], confirmed: [self::NOW], takeoutUndoWindowSeconds: 0));
+
+        $this->assertNull($this->rows(new TableQueryDTO())[0]->pruneNotBefore);
+    }
+
+    /**
+     * An unconfirmed batch is not on its way anywhere: the pruner takes only what an operator has
+     * said was carried off, so there is no deadline to count from.
+     */
+    public function testAnUnconfirmedBatchCarriesNoDeadlineEvenWhereTheNodeWaits(): void
+    {
+        $this->picture($this->node('node-1', [self::NOW], takeoutUndoWindowSeconds: self::DAY));
+
+        $this->assertNull($this->rows(new TableQueryDTO())[0]->pruneNotBefore);
+    }
+
     public function testTheNodeFilterNarrowsToOneArchive(): void
     {
         $this->picture(
@@ -356,6 +396,7 @@ final class HilosLogRotationsTableTest extends TestCase
      * @param int $bytesPerBatch Weight of each stream class within a batch
      * @param list<int> $confirmed Batch timestamps an operator has confirmed carrying off
      * @param ?string $logDirectory Log root this node reports, null when its build named none
+     * @param int $takeoutUndoWindowSeconds Seconds this node protects a confirmed batch for
      * @return ClusterLogNodeSlot Slot as the aggregator would hold it
      */
     private function node(
@@ -364,6 +405,7 @@ final class HilosLogRotationsTableTest extends TestCase
         int $bytesPerBatch = 1_000,
         array $confirmed = [],
         ?string $logDirectory = null,
+        int $takeoutUndoWindowSeconds = 0,
     ): ClusterLogNodeSlot {
         $batches = array_map(
             static fn(int $timestamp): LogBatchSummary => new LogBatchSummary(
@@ -394,6 +436,7 @@ final class HilosLogRotationsTableTest extends TestCase
                 workers: [],
                 growthBytesPerDay: [],
                 logDirectory: $logDirectory,
+                takeoutUndoWindowSeconds: $takeoutUndoWindowSeconds,
             ),
             receivedAt: self::NOW,
         );

@@ -27,6 +27,7 @@ use Hilos\Log\DTO\LogsFollowStopSignalData;
 use Hilos\Log\DTO\LogsLinesAppendedSignalData;
 use Hilos\Log\DTO\LogsReadLinesSignalData;
 use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
+use Hilos\Log\DTO\LogsTakeoutUndoSignalData;
 use Hilos\Log\DTO\NodeLogIndexSignalData;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
 use Hilos\Pages\Logs\AbstractHilosLogsViewPage;
@@ -36,6 +37,7 @@ use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesReplyDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmReplyDTO;
+use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Runtime\ConnectionRosterReconciler;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Utils\Exception\LogRotationException;
@@ -77,7 +79,9 @@ use Throwable;
  * confirmation rests on (HIL-483): an operator who has carried a rotation batch off says so, and
  * the fact is a marker file inside the batch ({@see LogBatchTakeoutMarker}) rather than a row
  * anywhere else. The index carries it back out, so the screen that asked draws what the disk
- * actually holds.
+ * actually holds. The same word can be taken back while the batch is still here
+ * (HIL-759): the marker is removed, the row returns to the verdict the retention rule reads for
+ * it, and the only refusal is a batch the pruner has already carried away.
  */
 final class LogStoreAgent extends AbstractAgent
 {
@@ -103,6 +107,10 @@ final class LogStoreAgent extends AbstractAgent
         HilosSignalConstants::LOGS_AGENT_TAKEOUT_CONFIRM => [
             AgentSignalConfigKey::NODE_FIELD => LogsTakeoutConfirmActionDTO::nodeId,
             AgentSignalConfigKey::DTO => LogsTakeoutConfirmSignalData::class,
+        ],
+        HilosSignalConstants::LOGS_AGENT_TAKEOUT_UNDO => [
+            AgentSignalConfigKey::NODE_FIELD => LogsTakeoutUndoActionDTO::nodeId,
+            AgentSignalConfigKey::DTO => LogsTakeoutUndoSignalData::class,
         ],
     ];
 
@@ -241,7 +249,17 @@ final class LogStoreAgent extends AbstractAgent
         $this->nodeId = $clustered ? $cluster->identity()->nodeId : null;
         // Seeded as readable so the baseline walk stays silent on a healthy store and still says
         // one line on a broken one: a start is not a crossing, an unreadable directory is news.
-        $this->index = new NodeLogIndex($this->nodeId, true, time(), [], [], [], [], $this->reader->logDirectory());
+        $this->index = new NodeLogIndex(
+            $this->nodeId,
+            true,
+            time(),
+            [],
+            [],
+            [],
+            [],
+            $this->reader->logDirectory(),
+            $this->resolver->takeoutUndoWindowSeconds(),
+        );
         $this->snapshot = LogStoreSnapshot::unavailable();
         $this->lastFullScanAt = microtime(true);
         $this->lastLiveScanAt = $this->lastFullScanAt;
@@ -643,8 +661,8 @@ final class LogStoreAgent extends AbstractAgent
      * @param string $name Signal name
      * @throws AgentUnknownSignalException When the agent is reached by a signal it does not own
      * @throws InvalidAgentSignalPayloadException When a frame carries the wrong payload
-     * @throws InvalidArgumentException When the answer to the read, the follow or the confirmation
-     *     cannot be named
+     * @throws InvalidArgumentException When the answer to the read, the follow, the confirmation
+     *     or its withdrawal cannot be named
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
@@ -686,6 +704,16 @@ final class LogStoreAgent extends AbstractAgent
                 }
 
                 $this->handleTakeoutConfirm($confirm);
+
+                return;
+
+            case HilosSignalConstants::LOGS_AGENT_TAKEOUT_UNDO:
+                $undo = $data->data;
+                if (!$undo instanceof LogsTakeoutUndoSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, LogsTakeoutUndoSignalData::class, $undo);
+                }
+
+                $this->handleTakeoutUndo($undo);
 
                 return;
 
@@ -967,6 +995,88 @@ final class LogStoreAgent extends AbstractAgent
     }
 
     /**
+     * Takes one batch's takeout confirmation back, and answers the browser waiting on it.
+     *
+     * Guarded whole for the reason the confirmation is: this agent is the LAST step of somebody
+     * else's action ({@see AbstractHilosLogsRotationsPage} deferred its ack when it handed the
+     * request over), so a failure that only reached the log would leave a modal spinning on
+     * another machine until the browser gave up on itself.
+     *
+     * @param LogsTakeoutUndoSignalData $request Withdrawal request, carrying whom to answer
+     * @throws InvalidArgumentException When the success or failure ack cannot be named
+     */
+    private function handleTakeoutUndo(LogsTakeoutUndoSignalData $request): void
+    {
+        if ($request->requestId === null) {
+            // Nothing to answer: an untracked withdrawal has no ack to correlate, and taking a
+            // durable fact away for a reply nobody receives would leave the asker unable to see it.
+            $this->logAgentWarning('Ignoring an untracked takeout withdrawal: no request id to answer on');
+
+            return;
+        }
+
+        try {
+            $this->undoTakeout($request->batchTimestamp);
+            // The screen does not answer for this by itself either: the badge goes back to its
+            // policy verdict when this node's next index reaches the mirror, a moment later and
+            // somewhere else on the page. The sentence is what tells the person their click landed.
+            $this->setActionSuccessMessage('Acknowledgement withdrawn — the batch is waiting to be carried off again.');
+            $this->sendActionSuccess($request->acceptKey, $request->action, $request->requestId);
+        } catch (Throwable $e) {
+            $this->logAgentError('Log takeout withdrawal failed: ' . $e->getMessage());
+            $this->sendActionFailure($request->acceptKey, $request->action, $request->requestId, $e, detailAllowed: false);
+        }
+    }
+
+    /**
+     * Removes the marker of one batch, having asked the one question that can refuse it.
+     *
+     * Only one, and it is about the batch rather than about the rule: a confirmation covers the
+     * policy verdict over, so withdrawing it can uncover `due` or `kept` and neither is a reason
+     * to refuse — the invariant "only a recommended batch may be confirmed" guards against
+     * confirming too much, and withdrawing creates nothing to guard. What can honestly refuse is
+     * a batch that is no longer here: the pruner passed between the click and this frame, and
+     * there is nothing left to put back on the list.
+     *
+     * A batch that carries no marker is answered as a success with the same sentence. Two
+     * administrators clicking in turn both meant the state this leaves behind, and telling the
+     * second one off for a fact they were right about would be an error about nothing.
+     *
+     * The walk and the frame that follow are out of turn for the reason the confirmation's are:
+     * both would come round on their own within a minute, and for that minute the person who
+     * clicked would be looking at the row they just changed, unchanged.
+     *
+     * @param int $batchTimestamp Unix timestamp of the batch to withdraw the confirmation of
+     * @throws ValidationException When the batch is gone, or its marker cannot be removed — the
+     *     two refusals whose own text reaches the person who asked
+     * @throws InvalidArgumentException When the frame announcing the withdrawal cannot be named
+     */
+    private function undoTakeout(int $batchTimestamp): void
+    {
+        $directory = $this->batchDirectory($batchTimestamp);
+        if ($directory === null || !is_dir($directory)) {
+            throw new ValidationException('The batch is no longer on this node.');
+        }
+
+        if (LogBatchTakeoutMarker::read($directory) === null) {
+            return;
+        }
+
+        try {
+            LogBatchTakeoutMarker::remove($directory);
+        } catch (FsException $failure) {
+            throw new ValidationException('The batch directory cannot be written.', 0, $failure);
+        }
+
+        $this->logAgentInfo("Log takeout withdrawn for batch {$batchTimestamp}");
+        $now = microtime(true);
+        $this->lastFullScanAt = $now;
+        $this->lastLiveScanAt = $now;
+        $this->walkStore((int)$now);
+        $this->pushIndex();
+    }
+
+    /**
      * Whether the retention rule recommends carrying this batch off as things stand now.
      *
      * Judged over THIS node's archive alone, the way the screen judges it per node
@@ -1209,6 +1319,7 @@ final class LogStoreAgent extends AbstractAgent
             workers: $snapshot->workers(),
             growthBytesPerDay: $growth,
             logDirectory: $this->reader->logDirectory(),
+            takeoutUndoWindowSeconds: $this->resolver->takeoutUndoWindowSeconds(),
         );
         $this->lastDelta = self::diff($previous, $this->index);
         // Raised here and not where the frame is scheduled, because this is the one moment the
@@ -1294,6 +1405,9 @@ final class LogStoreAgent extends AbstractAgent
         }
         foreach ($delta->confirmedBatchTimestamps as $timestamp) {
             $this->logAgentDebug("Log store: batch {$timestamp} confirmed as carried off");
+        }
+        foreach ($delta->withdrawnBatchTimestamps as $timestamp) {
+            $this->logAgentDebug("Log store: batch {$timestamp} is no longer confirmed as carried off");
         }
     }
 
@@ -1461,6 +1575,7 @@ final class LogStoreAgent extends AbstractAgent
             appearedBatchTimestamps: array_values(array_diff($batchesAfter, $batchesBefore)),
             vanishedBatchTimestamps: array_values(array_diff($batchesBefore, $batchesAfter)),
             confirmedBatchTimestamps: self::newlyConfirmed($previous, $current),
+            withdrawnBatchTimestamps: self::newlyWithdrawn($previous, $current),
             availabilityChanged: $previous->available !== $current->available,
         );
     }
@@ -1516,6 +1631,42 @@ final class LogStoreAgent extends AbstractAgent
         }
 
         return $confirmed;
+    }
+
+    /**
+     * Batches that lost a takeout confirmation between two indexes (HIL-759).
+     *
+     * The mirror image of {@see self::newlyConfirmed()} and a list of its own, because the two are
+     * opposite news about the same field: folded together they would say a batch had been
+     * confirmed at the very moment its confirmation went away. Without this line the frame
+     * carrying an operator's withdrawal would be judged empty and never sent — the marker is the
+     * only thing between the two walks that moved, and the walk does not weigh it.
+     *
+     * A batch that vanished along with its marker is not counted: it is already reported as
+     * vanished, and naming it here as well would ask the screen to put a row back that has gone.
+     *
+     * @param NodeLogIndex $previous Older index
+     * @param NodeLogIndex $current Newer index
+     *
+     * @return list<int> Timestamps of batches confirmed in the older index and present but unconfirmed in the newer
+     */
+    private static function newlyWithdrawn(NodeLogIndex $previous, NodeLogIndex $current): array
+    {
+        $before = [];
+        foreach ($previous->batches as $batch) {
+            if ($batch->takenAt !== null) {
+                $before[$batch->timestamp] = true;
+            }
+        }
+
+        $withdrawn = [];
+        foreach ($current->batches as $batch) {
+            if ($batch->takenAt === null && isset($before[$batch->timestamp])) {
+                $withdrawn[] = $batch->timestamp;
+            }
+        }
+
+        return $withdrawn;
     }
 
     /**

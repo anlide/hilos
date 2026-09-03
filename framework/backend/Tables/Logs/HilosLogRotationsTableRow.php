@@ -58,6 +58,16 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
     public const string retentionState = 'retentionState';
 
     /**
+     * Payload key of the instant the pruner may first delete this batch, null when it need not wait.
+     *
+     * Computed rather than reported: the node says WHEN it was confirmed and HOW LONG it protects a
+     * confirmed batch, and the sum of the two is what the screen has to say out loud. Null covers
+     * both halves of "no deadline to name" — a batch nobody has confirmed, and a node whose window
+     * is zero, which is the installation that wants the pruner to take it on its next pass.
+     */
+    public const string pruneNotBefore = 'pruneNotBefore';
+
+    /**
      * @param string $rowKey Stable row key, `<node>:<timestamp>`
      * @param int $batchAt Unix timestamp of the rotation batch
      * @param ?string $node Cluster node holding the batch, null in a single-node installation
@@ -69,6 +79,8 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
      * @param int $workerMonopolisticFileCount Number of monopolistic worker files in the batch
      * @param int $bytes Weight of the whole batch directory, every stream class included
      * @param string $retentionState One of the {@see HilosLogRotationsTable} retention states
+     * @param ?int $pruneNotBefore Unix instant the pruner may first delete this batch, or null when
+     *     the batch is unconfirmed or its node protects a confirmed batch for no time at all
      */
     public function __construct(
         public string $rowKey,
@@ -81,6 +93,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
         public int $workerMonopolisticFileCount,
         public int $bytes,
         public string $retentionState,
+        public ?int $pruneNotBefore,
     ) {
     }
 
@@ -114,6 +127,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
             self::workerMonopolisticFileCount => $this->workerMonopolisticFileCount,
             self::bytes => $this->bytes,
             self::retentionState => $this->retentionState,
+            self::pruneNotBefore => $this->pruneNotBefore,
         ];
     }
 
@@ -137,6 +151,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
             workerMonopolisticFileCount: self::requireInt($data, self::workerMonopolisticFileCount),
             bytes: self::requireInt($data, self::bytes),
             retentionState: self::requireString($data, self::retentionState),
+            pruneNotBefore: self::optionalInt($data, self::pruneNotBefore),
         );
     }
 }

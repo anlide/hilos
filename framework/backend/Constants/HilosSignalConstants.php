@@ -28,6 +28,7 @@ use Hilos\Log\DTO\LogsIndexWatchSignalData;
 use Hilos\Log\DTO\LogsLinesAppendedSignalData;
 use Hilos\Log\DTO\LogsReadLinesSignalData;
 use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
+use Hilos\Log\DTO\LogsTakeoutUndoSignalData;
 use Hilos\Log\DTO\NodeLogIndexSignalData;
 use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogStoreAgent;
@@ -44,6 +45,7 @@ use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
 use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
+use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Push\Delivery\PushDeliveryChannel;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Sms\DTO\SmsSendSignalData;
@@ -433,6 +435,20 @@ final class HilosSignalConstants
      * viewer's read is named by. Carried by {@see LogsTakeoutConfirmActionDTO}.
      */
     public const string LOGS_TAKEOUT_CONFIRM = 'logs_takeout_confirm';
+
+    /**
+     * Client → server: withdraw the word that one rotation batch has been carried off (HIL-759).
+     *
+     * The twin of {@see self::LOGS_TAKEOUT_CONFIRM}, forwarded the same way and for the same
+     * reason: the fact is a marker file inside the batch directory, so only the node holding that
+     * directory can take it away, and only it can say whether the batch is still there at all.
+     *
+     * Its own action and not a flag on the confirmation: the two are checked differently — one
+     * refuses a batch the policy protects again, the other refuses nothing but a batch that is
+     * gone — and one payload with a direction in it would branch on the node in its first line.
+     * Carried by {@see LogsTakeoutUndoActionDTO}.
+     */
+    public const string LOGS_TAKEOUT_UNDO = 'logs_takeout_undo';
 
     // ── Hilos sign-in surface: guest commands (client → server) ──
     /** Client → server: look an identifier up while it is typed (public, anonymous-reachable). */
@@ -947,6 +963,18 @@ final class HilosSignalConstants
      * Carried by {@see LogsTakeoutConfirmSignalData}.
      */
     public const string LOGS_AGENT_TAKEOUT_CONFIRM = 'logs_agent_takeout_confirm';
+
+    /**
+     * Rotations page → {@see LogStoreAgent} on the named node: remove this batch's takeout marker (HIL-759).
+     *
+     * The cross-node half of {@see self::LOGS_TAKEOUT_UNDO}, routed by the same
+     * {@see AgentSignalConfigKey::NODE_FIELD} the confirmation is routed by. The owner asks one
+     * question before it removes: is the batch still on this node — because a batch the pruner has
+     * already taken has nothing to return to the list. It carries the accept key, the action name
+     * and the request id, because the page deferred its own ack and the owner answers the browser
+     * itself. Carried by {@see LogsTakeoutUndoSignalData}.
+     */
+    public const string LOGS_AGENT_TAKEOUT_UNDO = 'logs_agent_takeout_undo';
 
     // ── Mail subsystem: facade → sharded hilos_mail agent pool (agent signal) ──
     /**

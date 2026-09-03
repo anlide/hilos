@@ -23,11 +23,13 @@ use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
+use Hilos\Log\DTO\LogsTakeoutUndoSignalData;
 use Hilos\Log\LogBatchSummary;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
 use Hilos\Pages\Logs\DTO\HilosLogsRotationsSignalData;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
+use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -395,13 +397,66 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
         $this->assertFalse($page->actionReplyDeferred());
     }
 
+    /**
+     * The withdrawal travels the same road as the confirmation and for the same reason: the marker
+     * lies in a directory this page worker does not own. One field fewer rides along — nothing is
+     * written, so there is nobody to record as having written it.
+     */
+    public function testAWithdrawalForALiveNodeReachesItsOwnerWholeAndLeavesThePageOwingNothing(): void
+    {
+        $this->publishNode(self::PEER, online: true);
+        $page = $this->dispatchingPage();
+
+        $reply = $page->onAction(
+            self::ACCEPT_KEY,
+            HilosSignalConstants::LOGS_TAKEOUT_UNDO,
+            $this->withdrawal(self::PEER),
+        );
+
+        $this->assertNull($reply, 'The page answers with nothing: the owner answers instead');
+        $this->assertTrue($page->actionReplyDeferred(), 'Having handed the request over, the page must not also ack');
+        $this->assertEquals(
+            new LogsTakeoutUndoSignalData(
+                nodeId: self::PEER,
+                batchTimestamp: self::CONFIRMED_BATCH_AT,
+                acceptKey: self::ACCEPT_KEY,
+                action: HilosSignalConstants::LOGS_TAKEOUT_UNDO,
+                requestId: self::REQUEST_ID,
+            ),
+            $this->withdrawalSentToOwner(),
+        );
+    }
+
+    /**
+     * A node the master last saw offline cannot take the marker away, and the refusal is made here
+     * rather than travelling: the person is standing in front of an open modal.
+     */
+    public function testAWithdrawalNamingADeadNodeIsRefusedOnTheSpot(): void
+    {
+        $this->publishNode(self::PEER, online: false);
+        $page = $this->dispatchingPage();
+
+        try {
+            $page->onAction(
+                self::ACCEPT_KEY,
+                HilosSignalConstants::LOGS_TAKEOUT_UNDO,
+                $this->withdrawal(self::PEER),
+            );
+            $this->fail('Expected TableActionException');
+        } catch (TableActionException $e) {
+            $this->assertSame('Cluster node ' . self::PEER . ' is offline', $e->getMessage());
+        }
+
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal(), 'A refused withdrawal travels nowhere');
+    }
+
     public function testAnActionThePageDoesNotOwnIsRefusedByName(): void
     {
         $page = $this->dispatchingPage();
 
         $this->expectException(AgentUnknownActionException::class);
 
-        $page->onAction(self::ACCEPT_KEY, 'logs_takeout_undo', $this->confirmation(''));
+        $page->onAction(self::ACCEPT_KEY, HilosSignalConstants::LOGS_READ_LINES, $this->confirmation(''));
     }
 
     public function testAPayloadThatIsNotAConfirmationIsRefusedByType(): void
@@ -475,6 +530,36 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
     private function confirmation(string $nodeId): LogsTakeoutConfirmActionDTO
     {
         return new LogsTakeoutConfirmActionDTO(nodeId: $nodeId, batchTimestamp: self::CONFIRMED_BATCH_AT);
+    }
+
+    /**
+     * Builds one withdrawal request as the page receives it.
+     *
+     * @param string $nodeId Id of the node holding the batch, empty for this node
+     * @return LogsTakeoutUndoActionDTO Withdrawal request
+     */
+    private function withdrawal(string $nodeId): LogsTakeoutUndoActionDTO
+    {
+        return new LogsTakeoutUndoActionDTO(nodeId: $nodeId, batchTimestamp: self::CONFIRMED_BATCH_AT);
+    }
+
+    /**
+     * Reads back the one frame the page sent to the owner to withdraw a confirmation.
+     *
+     * @return LogsTakeoutUndoSignalData Payload of that frame
+     */
+    private function withdrawalSentToOwner(): LogsTakeoutUndoSignalData
+    {
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+
+        $this->assertNotNull($signal, 'The page forwards the withdrawal; nothing was queued');
+        $this->assertSame(SignalTypeConstants::AGENT_SIGNAL, $signal->signalType->getType());
+        $this->assertSame(HilosSignalConstants::LOGS_AGENT_TAKEOUT_UNDO, $signal->signalName->getName());
+        $this->assertInstanceOf(AgentSignalData::class, $signal->data);
+        $this->assertInstanceOf(LogsTakeoutUndoSignalData::class, $signal->data->data);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal(), 'One withdrawal is one frame');
+
+        return $signal->data->data;
     }
 
     /**

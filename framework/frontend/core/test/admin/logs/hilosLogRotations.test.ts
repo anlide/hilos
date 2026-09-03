@@ -16,6 +16,7 @@ import {
   HILOS_ROTATION_STATE_TAKEN,
   LOGS_SIGNAL_SCHEMAS,
   LOGS_TAKEOUT_CONFIRM_ACTION,
+  LOGS_TAKEOUT_UNDO_ACTION,
   ROTATIONS_HEADER_SIGNAL,
   type HilosLogRotationRow,
   type HilosLogRotationsContext,
@@ -38,6 +39,7 @@ function row(
     workerMonopolisticFileCount: 2,
     bytes: 1024,
     retentionState: 'kept',
+    pruneNotBefore: null,
     ...overrides,
   }
 }
@@ -77,6 +79,7 @@ describe('resolveHilosLogRotationRow', () => {
         workerMonopolisticFileCount: 2,
         bytes: 4096,
         retentionState: HILOS_ROTATION_STATE_DUE,
+        pruneNotBefore: 1800086400,
       }),
     )
 
@@ -91,6 +94,7 @@ describe('resolveHilosLogRotationRow', () => {
       workerMonopolisticFileCount: 2,
       bytes: 4096,
       retentionState: HILOS_ROTATION_STATE_DUE,
+      pruneNotBefore: 1800086400,
     })
   })
 
@@ -108,6 +112,14 @@ describe('resolveHilosLogRotationRow', () => {
     )
 
     expect(resolved.absolutePath).toBeNull()
+  })
+
+  it('keeps an absent prune deadline null, which the modal says in words', () => {
+    const resolved = resolveHilosLogRotationRow(
+      rotationTableRow('node-1:1800000000', { batchAt: 1800000000, bytes: 10 }),
+    )
+
+    expect(resolved.pruneNotBefore).toBeNull()
   })
 
   it('takes the identity from the row key, never from inside the slot', () => {
@@ -363,6 +375,34 @@ describe('createHilosLogRotationsActions', () => {
     const sent: Array<{ action: string; payload: unknown }> = []
 
     createHilosLogRotationsActions(dispatchContext(sent)).sendTakeoutConfirm(
+      row({ node: null }),
+    )
+
+    expect(sent[0]?.payload).toEqual({
+      nodeId: '',
+      batchTimestamp: 1800000000,
+    })
+  })
+
+  it('withdraws under its own action name, naming the same batch', () => {
+    const sent: Array<{ action: string; payload: unknown }> = []
+
+    createHilosLogRotationsActions(dispatchContext(sent)).sendTakeoutUndo(
+      row({ node: 'node-2', batchAt: 1800000000 }),
+    )
+
+    expect(sent).toEqual([
+      {
+        action: LOGS_TAKEOUT_UNDO_ACTION,
+        payload: { nodeId: 'node-2', batchTimestamp: 1800000000 },
+      },
+    ])
+  })
+
+  it('withdraws from a nameless node with the empty id too', () => {
+    const sent: Array<{ action: string; payload: unknown }> = []
+
+    createHilosLogRotationsActions(dispatchContext(sent)).sendTakeoutUndo(
       row({ node: null }),
     )
 

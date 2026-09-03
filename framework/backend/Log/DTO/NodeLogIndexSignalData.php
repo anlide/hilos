@@ -34,11 +34,13 @@ use Hilos\Log\NodeLogIndex;
  * on both ends. {@see self::streamClass} is the one exception, and not by choice: `class` cannot
  * be a class-constant name in PHP.
  *
- * Two of the keys are not measurements at all. A batch carries {@see self::takenAt}, the operator's
- * own confirmation that it has been carried off, and the index carries {@see self::logDirectory},
- * the absolute root the node measured (HIL-483). Both exist because nobody else can supply them:
- * the confirmation lives in a marker file on that machine, and a page worker holding the cluster
- * picture knows its own log root and no other node's.
+ * Three of the keys are not measurements at all. A batch carries {@see self::takenAt}, the
+ * operator's own confirmation that it has been carried off; the index carries
+ * {@see self::logDirectory}, the absolute root the node measured (HIL-483), and
+ * {@see self::takeoutUndoWindowSeconds}, how long that node protects a confirmed batch from its
+ * pruner (HIL-759). All three exist because nobody else can supply them: the confirmation lives in
+ * a marker file on that machine, and a page worker holding the cluster picture knows its own log
+ * root and its own window and no other node's.
  */
 final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -65,6 +67,9 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
 
     /** Payload key: absolute log root of the reporting node, absent when its environment names none. */
     public const string logDirectory = 'logDirectory';
+
+    /** Payload key: seconds a confirmed batch is protected from the pruner on the reporting node. */
+    public const string takeoutUndoWindowSeconds = 'takeoutUndoWindowSeconds';
 
     /** Batch row key: Unix timestamp of the rotation folder. */
     public const string timestamp = 'timestamp';
@@ -128,6 +133,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
      * @param list<LogWorkerSummary> $workers Worker streams, ascending by key
      * @param array<string, ?int> $growthBytesPerDay Key → bytes written over the last day, null until the window fills
      * @param ?string $logDirectory Absolute log root of the reporting node, or null when its environment names none
+     * @param int $takeoutUndoWindowSeconds Seconds a confirmed batch is protected from the pruner on the reporting node
      */
     public function __construct(
         public readonly ?string $nodeId,
@@ -138,6 +144,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
         public readonly array $workers,
         public readonly array $growthBytesPerDay,
         public readonly ?string $logDirectory = null,
+        public readonly int $takeoutUndoWindowSeconds = 0,
     ) {
     }
 
@@ -158,6 +165,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             workers: $index->workers,
             growthBytesPerDay: $index->growthBytesPerDay,
             logDirectory: $index->logDirectory,
+            takeoutUndoWindowSeconds: $index->takeoutUndoWindowSeconds,
         );
     }
 
@@ -184,6 +192,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             ),
             self::growthBytesPerDay => $this->growthBytesPerDay,
             self::logDirectory => $this->logDirectory,
+            self::takeoutUndoWindowSeconds => $this->takeoutUndoWindowSeconds,
         ];
     }
 
@@ -226,6 +235,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             workers: $workers,
             growthBytesPerDay: self::growthFromArray($data),
             logDirectory: self::optionalString($data, self::logDirectory),
+            takeoutUndoWindowSeconds: self::requireInt($data, self::takeoutUndoWindowSeconds),
         );
     }
 
@@ -245,6 +255,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             workers: $this->workers,
             growthBytesPerDay: $this->growthBytesPerDay,
             logDirectory: $this->logDirectory,
+            takeoutUndoWindowSeconds: $this->takeoutUndoWindowSeconds,
         );
     }
 

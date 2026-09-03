@@ -43,6 +43,9 @@ final class LogSettingsResolver
     /** Scope name under which the index-push outcome is remembered. */
     private const string SCOPE_INDEX_PUSH = 'index push';
 
+    /** Scope name under which the takeout-undo window outcome is remembered. */
+    private const string SCOPE_TAKEOUT_UNDO = 'takeout undo window';
+
     /** @var array<string, string> Last trouble text per scope, so an unchanged fault stays silent */
     private array $lastTrouble = [];
 
@@ -111,6 +114,32 @@ final class LogSettingsResolver
         $this->conclude(self::SCOPE_INDEX_PUSH);
 
         return $interval;
+    }
+
+    /**
+     * Reads how long a confirmed batch stays protected from the pruner (HIL-759).
+     *
+     * The ladder every other key here stands on, and the reason the NODE reports the answer
+     * rather than the screen working it out: with no row written the value bottoms out in the
+     * environment, which is per node, so three nodes of one cluster can honestly promise three
+     * different windows. A written row overrides all of them at once, and then the number is the
+     * same everywhere because the database is.
+     *
+     * One number and not two, and both sides of the promise are obliged to read THIS one: whoever
+     * deletes a confirmed batch and whoever tells an operator when that may happen. A second
+     * reading of the same promise could drift from the first and leave a screen offering to
+     * withdraw a batch that is already gone.
+     *
+     * @return int Seconds a confirmed batch is protected for, 0 when the pruner is not to wait
+     */
+    public function takeoutUndoWindowSeconds(): int
+    {
+        $written = $this->integerValue(LogSettingsCatalog::TAKEOUT_UNDO_WINDOW_SECONDS);
+        $window = $written ?? $this->takeoutUndoWindowFromEnv();
+
+        $this->conclude(self::SCOPE_TAKEOUT_UNDO);
+
+        return $window;
     }
 
     /**
@@ -280,6 +309,39 @@ final class LogSettingsResolver
         }
 
         return $interval;
+    }
+
+    /**
+     * Reads the takeout-undo window from the environment, falling back to the literal.
+     *
+     * A negative number is clamped to zero the way the numeric policies clamp theirs: below zero
+     * the promise has no reading other than "no wait at all", which is what zero already says.
+     *
+     * @return int Window from the environment, or the fallback when it cannot answer
+     */
+    private function takeoutUndoWindowFromEnv(): int
+    {
+        $fallback = LogSettingsCatalog::TAKEOUT_UNDO_WINDOW_FALLBACK_SECONDS;
+        $env = Hilos::$env;
+        if ($env === null) {
+            $this->trouble(
+                'log takeout undo window is unreadable: no environment in this process, using the fallback of '
+                . $fallback . ' s',
+            );
+
+            return $fallback;
+        }
+
+        try {
+            return max(0, $env->int(EnvConstants::LOG_TAKEOUT_UNDO_WINDOW_SECONDS));
+        } catch (EnvException $exception) {
+            $this->trouble(
+                'log takeout undo window is unreadable: ' . $exception->getMessage()
+                . ', using the fallback of ' . $fallback . ' s',
+            );
+
+            return $fallback;
+        }
     }
 
     /**

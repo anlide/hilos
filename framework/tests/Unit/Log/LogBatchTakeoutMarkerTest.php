@@ -16,6 +16,10 @@ use PHPUnit\Framework\TestCase;
  * that never had one, or has a damaged one, answers "not confirmed" rather than raising — because
  * this read runs for every batch of every walk, and one unreadable directory must not cost the
  * node its whole index.
+ *
+ * The same file is what the withdrawal takes away (HIL-759), so the cases about removing it live
+ * here beside the ones about writing it: one file, one question about a batch, and no second fact
+ * anywhere that could answer it differently.
  */
 final class LogBatchTakeoutMarkerTest extends TestCase
 {
@@ -153,6 +157,46 @@ final class LogBatchTakeoutMarkerTest extends TestCase
         $this->expectException(FileWriteException::class);
 
         LogBatchTakeoutMarker::write($this->dir . DIRECTORY_SEPARATOR . 'gone', self::TAKEN_AT, self::TAKEN_BY);
+    }
+
+    /**
+     * The withdrawal, and the whole of what the screen above it promises: the fact goes away and
+     * the batch is left exactly as it was (HIL-759).
+     */
+    public function testARemovedMarkerLeavesTheBatchUnconfirmedAndUntouched(): void
+    {
+        file_put_contents($this->dir . DIRECTORY_SEPARATOR . 'worker-0.log', "archived\n");
+        LogBatchTakeoutMarker::write($this->dir, self::TAKEN_AT, self::TAKEN_BY);
+
+        LogBatchTakeoutMarker::remove($this->dir);
+
+        $this->assertNull(LogBatchTakeoutMarker::read($this->dir));
+        $this->assertSame(
+            ['worker-0.log'],
+            array_values(array_diff((array)scandir($this->dir), ['.', '..'])),
+        );
+    }
+
+    /**
+     * Two administrators withdrawing in turn both meant the state this leaves behind, so the
+     * second one is not told off for a fact they were right about.
+     */
+    public function testRemovingAMarkerThatIsNotThereIsNotAFailure(): void
+    {
+        LogBatchTakeoutMarker::remove($this->dir);
+
+        $this->assertNull(LogBatchTakeoutMarker::read($this->dir));
+    }
+
+    /**
+     * A batch directory the pruner carried away is the caller's business to tell apart, exactly as
+     * it is for the read: nothing is there to remove, and there is nothing to report about that.
+     */
+    public function testRemovingFromAMissingDirectoryIsNotAFailure(): void
+    {
+        LogBatchTakeoutMarker::remove($this->dir . DIRECTORY_SEPARATOR . 'gone');
+
+        $this->assertDirectoryDoesNotExist($this->dir . DIRECTORY_SEPARATOR . 'gone');
     }
 
     /**
