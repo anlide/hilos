@@ -7,6 +7,7 @@ namespace Hilos\Log;
 use Hilos\Constants\EnvConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Socket\Server\WorkerServer;
 use Hilos\Utils\Logger;
 
 /**
@@ -34,7 +35,9 @@ use Hilos\Utils\Logger;
  * the next read picks it up whole once the writer has finished it.
  *
  * A missing/unreadable file, or a path escaping the log root via {@see realpath()} validation, yields
- * {@see LogLinePage::unavailable()} rather than a fatal.
+ * {@see LogLinePage::unavailable()} rather than a fatal. Every answer the reader gives about a file is
+ * taken from the OS live rather than from this process's stat cache: the log file is written by the master
+ * while this worker reads it, so the growth of a followed file would otherwise be invisible here (HIL-874).
  */
 final class LogLineReader
 {
@@ -139,6 +142,19 @@ final class LogLineReader
      * The traversal guard is `realpath()`-based: both the root and the candidate are canonicalized and
      * the candidate must sit under the root, defeating `..` escapes and symlinks pointing outside.
      *
+     * The stat cache is dropped for the canonical path before anything is asked about the file (HIL-874).
+     * PHP caches the OS answer per path and refreshes it only on calls that change the file from this same
+     * process — but a daemon log file is appended to by the master, which harvests the line from the
+     * worker's output ({@see WorkerServer}), so a worker that asked once is served its own first answer and
+     * watches the file stand still while it grows. {@see size()} is where that is felt: the live tail
+     * compares it against the follower's position each round, and a stale one holds the tail a tick or two
+     * behind. A {@see read()} happens to escape it today only because opening the file drops the cache as a
+     * side effect — an implementation detail of the engine, not a contract, so the flush sits on the entry
+     * both public calls share rather than inside `size()` alone. Exactly one path is flushed, not the whole
+     * cache: agents, the ORM and `Fs\Watch` share this process, and their cached answers are not ours to
+     * pay with. The flush sits after the root check so a path that escaped the log root is refused without
+     * a single extra stat.
+     *
      * @param string $relativePath Path relative to the log root
      *
      * @return ?string Canonical absolute file path, or null when unresolved, outside the root or not a readable file
@@ -161,6 +177,8 @@ final class LogLineReader
         if (!str_starts_with($real, $realRoot . DIRECTORY_SEPARATOR)) {
             return null;
         }
+
+        clearstatcache(true, $real);
         if (!is_file($real) || !is_readable($real)) {
             return null;
         }

@@ -16,10 +16,12 @@ use PHPUnit\Framework\TestCase;
  *
  * Where {@see LogLineReaderTest} locks paging over a file that sits still, this drives a file the way a
  * live tail meets one: read, let the writer append, read again from where the last read stopped. It locks
- * the three properties a follower stands on — {@see LogLinePage::$endCursor} advances only over complete
- * lines so a half-written trailing line is never split in two, {@see LogLinePage::$endLevel} carries the
- * running entry level across the cut so a stack trace keeps its ERROR, and {@see LogLineReader::size()}
- * answers through the same traversal guard as a read.
+ * the properties a follower stands on — {@see LogLinePage::$endCursor} advances only over complete lines
+ * so a half-written trailing line is never split in two, {@see LogLinePage::$endLevel} carries the
+ * running entry level across the cut so a stack trace keeps its ERROR, {@see LogLineReader::size()}
+ * answers through the same traversal guard as a read, and {@see LogLineReader::size()} reports growth
+ * appended by another process — the master writes an agent's log — on the very next call rather than
+ * from this process's stat cache (HIL-874).
  */
 final class LogLineReaderAppendedTest extends TestCase
 {
@@ -180,6 +182,26 @@ final class LogLineReaderAppendedTest extends TestCase
     }
 
     /**
+     * Nothing may sit between the foreign append and the second {@see LogLineReader::size()} — a PHPUnit
+     * assertion in that gap drops the stat cache by itself and the case goes green on the broken code.
+     */
+    public function testSizeSeesGrowthAppendedByAnotherProcess(): void
+    {
+        $this->write('worker-1.log', "[2026-07-28 12:00:00.001] first\n");
+        $reader = new LogLineReader($this->root);
+        $path = $this->root . DIRECTORY_SEPARATOR . 'worker-1.log';
+
+        $warmed = $reader->size('worker-1.log');
+        $this->appendFromAnotherProcess('worker-1.log', "[2026-07-28 12:00:00.002] second\n");
+        $grown = $reader->size('worker-1.log');
+
+        clearstatcache(true, $path);
+        $this->assertSame(strlen("[2026-07-28 12:00:00.001] first\n"), $warmed);
+        $this->assertGreaterThan($warmed, filesize($path), 'The other process must really have appended');
+        $this->assertSame(filesize($path), $grown);
+    }
+
+    /**
      * Create a log file with the given body under the temp root.
      *
      * @param string $name File basename
@@ -199,6 +221,39 @@ final class LogLineReaderAppendedTest extends TestCase
     private function append(string $name, string $body): void
     {
         file_put_contents($this->root . DIRECTORY_SEPARATOR . $name, $body, FILE_APPEND);
+    }
+
+    /**
+     * Append raw bytes to a log file from a separate process, the way the master appends an agent's log.
+     *
+     * The defect the case above locks is a cross-process one: PHP refreshes its per-path stat cache only
+     * for changes made from the running process, so the in-process {@see append()} could never reproduce
+     * it. Three details of this helper are load-bearing rather than taste, all three measured on PHP
+     * 8.4.24 (HIL-874): the child is spawned through `proc_open()` and not `exec()`/`popen()`, which talk
+     * to the child over a plain-file stream and drop the stat cache on the way; it is given no pipes, for
+     * the same reason; and it is not asserted about here, because a PHPUnit assertion drops the cache too
+     * and the caller has not asked its question yet. A spawn that fails is caught in place; a spawn that
+     * writes nothing is caught by the caller, which asserts the file really grew before it compares the
+     * reader's answer with it — without that the case would go green on the broken reader, both sides
+     * holding the old size. `printf` takes the format as its own argument and the body as the next one,
+     * or a percent sign inside a logged line would be eaten by it.
+     *
+     * @param string $name File basename
+     * @param string $body Raw bytes to append
+     */
+    private function appendFromAnotherProcess(string $name, string $body): void
+    {
+        $pipes = [];
+        $process = proc_open(
+            ['sh', '-c', 'printf %s "$1" >> "$2"', 'sh', $body, $this->root . DIRECTORY_SEPARATOR . $name],
+            [],
+            $pipes,
+        );
+        if ($process === false) {
+            self::fail('Spawning the process that appends to the log must succeed');
+        }
+
+        proc_close($process);
     }
 
     /**
