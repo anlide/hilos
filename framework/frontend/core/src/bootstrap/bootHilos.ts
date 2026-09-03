@@ -24,6 +24,8 @@ import {
   sessionUserIsAdmin,
   type SessionScopeOptions,
 } from '../session/sessionScope.js'
+import { bindSessionToasts } from '../session/sessionToasts.js'
+import { hilosToasts } from '../state/toasts.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { bindAccessReaction } from '../subscription/bindAccessReaction.js'
 import { bindPageScope } from '../subscription/bindPageScope.js'
@@ -81,6 +83,10 @@ export interface BootHilosConfig {
  */
 export function bootHilos(config: BootHilosConfig): HilosRouter {
   bindSessionScope(config.connection, config.scopes, config.session)
+  // No option to switch on: a project that carries sessions carries their toasts
+  // (HIL-768), and a project without them is never sent a frame. One behavior
+  // rather than a flag nobody would ever want off.
+  bindSessionToasts(config.connection, hilosToasts)
   if (config.notifications === true) {
     bindNotificationsScope(
       config.connection,

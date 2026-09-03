@@ -14,9 +14,11 @@ use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
+use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Auth\Session\DTO\SessionToastsSignalData;
 use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
@@ -528,6 +530,38 @@ final class HilosSignalConstants
     public const string HILOS_DISMISS_SESSION_ACK = 'hilos_dismiss_session_ack';
 
     /**
+     * Client → agent (page-independent): the person closed a toast the server raised, so take
+     * it off every tab of this session (HIL-768).
+     *
+     * It names the card because a session can be shown several at once. Closing is not
+     * optimistic: the tab sends this and keeps drawing the card until the frame that carries
+     * the shortened stack arrives, so two windows never disagree about what is on screen.
+     */
+    public const string HILOS_TOAST_DISMISS = 'hilos_toast_dismiss';
+
+    /**
+     * Client → agent (page-independent): this tab's countdown for that card has burned down
+     * (HIL-768).
+     *
+     * A report and not a removal. Each tab counts its own twenty seconds - the countdown is
+     * deliberately unsynchronized, because a cursor resting on the stack here and not there is
+     * two tabs rather than a fault - so the card goes only when a live socket has finished
+     * counting AND no live socket is reading. The tab goes on showing it meanwhile.
+     */
+    public const string HILOS_TOAST_EXPIRED = 'hilos_toast_expired';
+
+    /**
+     * Client → agent (page-independent): the stack is (or is no longer) being read in this tab
+     * (HIL-768).
+     *
+     * One name for both edges, because what it writes is a state rather than an event. Reading
+     * is a cursor over the stack or the keyboard focus inside it, and a hidden tab is not
+     * reading: it freezes its own countdown, but a background tab of the admin panel that held
+     * the stack would make every toast immortal in the window being used.
+     */
+    public const string HILOS_TOAST_READING = 'hilos_toast_reading';
+
+    /**
      * Client → sessions library (page-independent): revert this session to anonymous.
      *
      * Framework-owned since HIL-710, where the sign-out control stopped addressing a project
@@ -808,6 +842,30 @@ final class HilosSignalConstants
      * the identity it announces.
      */
     public const string HILOS_SESSION_STATE = 'hilos_session_state';
+
+    /**
+     * Sessions library → every tab of one browser session: this is the whole toast stack now
+     * (HIL-768).
+     *
+     * Addressed to the SESSION rather than to a socket, because that is the thing the tabs of
+     * one browser have to agree about: a card closed in the second window is closed in the
+     * first, and one whose countdown ran out somewhere is gone from both. It carries the list
+     * whole, so a reconnect, a second tab and an ordinary removal are one sentence; an empty
+     * list is the legal frame that takes the last card away. Carried by
+     * {@see SessionToastsSignalData}.
+     */
+    public const string HILOS_SESSION_TOASTS = 'hilos_session_toasts';
+
+    /**
+     * Sender → sessions library: raise this toast for that browser session (HIL-768).
+     *
+     * The one door a toast of the session is born through. Whoever has something to say names
+     * the session by the hash of its cookie token and the sentence to show; the library mints
+     * the card's name, counts a repeat of an identical one, and judges when it goes away -
+     * being the only process that knows which sockets the session has. Carried by
+     * {@see RaiseSessionToastSignalData}.
+     */
+    public const string HILOS_SESSION_TOAST_RAISE = 'hilos_session_toast_raise';
 
     /**
      * Project agent → sessions library: make this session say this instead.

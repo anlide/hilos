@@ -1,6 +1,7 @@
 import { createHilosToastStore, createSignal } from '@hilos/core'
 import type {
   HilosRouter,
+  HilosSessionToast,
   HilosToastSeverity,
   HilosToastStore,
   PageRouteMatch,
@@ -21,6 +22,18 @@ import type { HilosToastCorner } from '../src/hilosToastCorner.js'
 // project is a node environment without jsdom (HIL-491).
 function byId(container: HTMLElement, id: string): HTMLElement | null {
   return container.querySelector(`[data-id="${id}"]`)
+}
+
+/** The one card of the session used by the cases about a signed, leading notice. */
+function sessionToast(): HilosSessionToast {
+  return {
+    key: 'toast-key',
+    message: 'The export is ready',
+    severity: 'info',
+    source: 'Backup',
+    destination: '/hilos/backup',
+    repeats: 1,
+  }
 }
 
 /**
@@ -233,11 +246,7 @@ describe('HilosToastHost', () => {
 
   it('signs a background notice and leaves the connection its own', () => {
     const store = createHilosToastStore()
-    store.push('The export is ready', {
-      scope: 'session',
-      source: 'Backup',
-      destination: '/hilos/backup',
-    })
+    store.syncSession([sessionToast()])
     store.push('Saved', { severity: 'success' })
     const { container } = renderHost(store)
 
@@ -266,11 +275,7 @@ describe('HilosToastHost', () => {
 
   it('makes the whole card a link only when the notice leads somewhere', () => {
     const store = createHilosToastStore()
-    store.push('The export is ready', {
-      scope: 'session',
-      source: 'Backup',
-      destination: '/hilos/backup',
-    })
+    store.syncSession([sessionToast()])
     store.push('Saved', { severity: 'success' })
     const { container } = renderHost(store)
 
@@ -287,11 +292,7 @@ describe('HilosToastHost', () => {
   it('closes the card whose link took the reader away', () => {
     const store = createHilosToastStore()
     const visited: string[] = []
-    store.push('The export is ready', {
-      scope: 'session',
-      source: 'Backup',
-      destination: '/hilos/backup',
-    })
+    store.syncSession([sessionToast()])
     const { container } = renderHost(store, visited)
 
     fireEvent.click(
@@ -299,17 +300,17 @@ describe('HilosToastHost', () => {
     )
 
     expect(visited).toEqual(['/hilos/backup'])
-    expect(store.toasts.get()).toHaveLength(0)
+    // Reading it by following the link is closing it, and closing a card of the
+    // session is an answer rather than a removal (HIL-768): it leaves every tab
+    // on the frame that follows, or leaves none of them.
+    expect(store.dismissedSessionKeys.get()).toEqual(['toast-key'])
+    expect(store.toasts.get()).toHaveLength(1)
   })
 
   it('keeps the card when the click only opened another tab', () => {
     const store = createHilosToastStore()
     const visited: string[] = []
-    store.push('The export is ready', {
-      scope: 'session',
-      source: 'Backup',
-      destination: '/hilos/backup',
-    })
+    store.syncSession([sessionToast()])
     const { container } = renderHost(store, visited)
 
     fireEvent.click(
@@ -393,11 +394,7 @@ describe('HilosToastHost', () => {
   it('announces a measured notice, an error apart from the rest', () => {
     const store = createHilosToastStore()
     store.push('The report could not be built', { severity: 'error' })
-    store.push('The export is ready', {
-      scope: 'session',
-      source: 'Backup',
-      destination: '/hilos/backup',
-    })
+    store.syncSession([sessionToast()])
     const { container } = renderHost(store)
 
     // Both regions exist from the first frame — that is the point of declaring
@@ -424,6 +421,25 @@ describe('HilosToastHost', () => {
     expect((byId(container, 'hilos-toasts') as HTMLElement).textContent).toBe(
       'Saved',
     )
+  })
+
+  it('tells the store which hold it is taking, not just that it took one', () => {
+    const store = createHilosToastStore()
+    const { container } = render(<HilosToastHost store={store} />)
+    const stack = byId(container, 'hilos-toasts') as HTMLElement
+
+    fireEvent.mouseOver(stack)
+    expect(store.reading.get()).toBe(true)
+
+    fireEvent.mouseLeave(stack)
+    expect(store.reading.get()).toBe(false)
+
+    // A hidden tab freezes the countdown like the other two and is reported like
+    // neither: nobody is reading it, and a background tab of the admin panel that
+    // said otherwise would make every toast immortal in the window in use.
+    switchTab(true)
+    expect(store.reading.get()).toBe(false)
+    switchTab(false)
   })
 
   it('gives back the cursor hold when the toast under it closes itself', () => {

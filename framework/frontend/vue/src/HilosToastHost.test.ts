@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createHilosToastStore, createSignal } from '@hilos/core'
 import type {
   HilosRouter,
+  HilosSessionToast,
   HilosToastSeverity,
   HilosToastStore,
   PageRouteMatch,
@@ -12,6 +13,18 @@ import type {
 import HilosToastHost from './HilosToastHost.vue'
 import type { HilosToastCorner } from './hilosToastCorner.js'
 import { hilosRouterKey } from './hilosRouterKey.js'
+
+/** The one card of the session used by the cases about a signed, leading notice. */
+function sessionToast(): HilosSessionToast {
+  return {
+    key: 'toast-key',
+    message: 'The export is ready',
+    severity: 'info',
+    source: 'Backup',
+    destination: '/hilos/backup',
+    repeats: 1,
+  }
+}
 
 /**
  * A router that only records where it was asked to go.
@@ -107,11 +120,7 @@ describe('HilosToastHost', () => {
     const store = createHilosToastStore()
     const wrapper = mountHost(store)
 
-    store.push('The export is ready', {
-      scope: 'session',
-      source: 'Backup',
-      destination: '/hilos/backup',
-    })
+    store.syncSession([sessionToast()])
     store.push('Saved', { severity: 'success' })
     await nextTick()
 
@@ -143,11 +152,7 @@ describe('HilosToastHost', () => {
     const store = createHilosToastStore()
     const wrapper = mountHost(store)
 
-    store.push('The export is ready', {
-      scope: 'session',
-      source: 'Backup',
-      destination: '/hilos/backup',
-    })
+    store.syncSession([sessionToast()])
     store.push('Saved', { severity: 'success' })
     await nextTick()
 
@@ -164,16 +169,16 @@ describe('HilosToastHost', () => {
     const visited: string[] = []
     const wrapper = mountHost(store, visited)
 
-    store.push('The export is ready', {
-      scope: 'session',
-      source: 'Backup',
-      destination: '/hilos/backup',
-    })
+    store.syncSession([sessionToast()])
     await nextTick()
     await wrapper.find('[data-id="hilos-toast-info"] a').trigger('click')
 
     expect(visited).toEqual(['/hilos/backup'])
-    expect(store.toasts.get()).toHaveLength(0)
+    // Reading it by following the link is closing it, and closing a card of the
+    // session is an answer rather than a removal (HIL-768): it leaves every tab
+    // on the frame that follows, or leaves none of them.
+    expect(store.dismissedSessionKeys.get()).toEqual(['toast-key'])
+    expect(store.toasts.get()).toHaveLength(1)
   })
 
   it('keeps the card when the click only opened another tab', async () => {
@@ -181,11 +186,7 @@ describe('HilosToastHost', () => {
     const visited: string[] = []
     const wrapper = mountHost(store, visited)
 
-    store.push('The export is ready', {
-      scope: 'session',
-      source: 'Backup',
-      destination: '/hilos/backup',
-    })
+    store.syncSession([sessionToast()])
     await nextTick()
     await wrapper
       .find('[data-id="hilos-toast-info"] a')
@@ -240,6 +241,19 @@ describe('HilosToastHost', () => {
       wrapper.find('[data-id="hilos-toast-life"]').classes(),
     ).not.toContain('hilos-toast-life-paused')
   })
+  it('tells the store which hold it is taking, not just that it took one', async () => {
+    const store = createHilosToastStore()
+    const wrapper = mountHost(store)
+    await nextTick()
+    const stack = wrapper.find('[data-id="hilos-toasts"]')
+
+    await stack.trigger('mouseover')
+    expect(store.reading.get()).toBe(true)
+
+    await stack.trigger('mouseleave')
+    expect(store.reading.get()).toBe(false)
+  })
+
   it('sits in the bottom end corner until a shell moves it', () => {
     const store = createHilosToastStore()
     const bottomEnd = mountHost(store).find('[data-id="hilos-toasts"]')
@@ -256,11 +270,7 @@ describe('HilosToastHost', () => {
   it('announces a measured notice, an error apart from the rest', async () => {
     const store = createHilosToastStore()
     store.push('The report could not be built', { severity: 'error' })
-    store.push('The export is ready', {
-      scope: 'session',
-      source: 'Backup',
-      destination: '/hilos/backup',
-    })
+    store.syncSession([sessionToast()])
     const wrapper = mountHost(store)
     const assertive = '[data-id="hilos-toast-live-assertive"]'
     const polite = '[data-id="hilos-toast-live-polite"]'

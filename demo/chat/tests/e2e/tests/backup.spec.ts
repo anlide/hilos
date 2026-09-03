@@ -182,6 +182,71 @@ test('creates a backup, shows it as a completed row, and deletes it', async ({
   )
 })
 
+// HIL-768 acceptance, and the reason the leaf landed a sender at all: a finished
+// create is the first toast addressed to a SESSION rather than to the socket that
+// asked. Two tabs of one browser is where the promise is either kept or broken -
+// the card reaches both, and closing it in either takes it out of the other.
+//
+// What this does NOT assert is the countdown or the reading hold: both are timing,
+// and a browser spec that sat still for twenty seconds to watch a card would be
+// slow and flaky on a loaded box (toasts.md, "Not e2e, on purpose").
+test('agrees between two tabs about the card a finished backup raised', async ({
+  context,
+}) => {
+  // Two tabs of the same context share the session cookie, so the admin grant in
+  // the first signs the second in as the same browser.
+  const tabA = await context.newPage()
+  await openBackups(tabA)
+
+  const tabB = await context.newPage()
+  await gotoPage(tabB, '/')
+  await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
+
+  // The run is started from tab A, which has to be in front for the click. That
+  // also freezes tab B's countdown while it waits, so neither tab burns the card
+  // down before the close below.
+  await tabA.bringToFront()
+  await tabA.getByTestId('hilos-backup-create-scope').selectOption('schema-only')
+  await tabA.getByTestId('hilos-backup-create').click()
+  await expect(tabA.getByTestId('hilos-toast-error')).toHaveCount(0)
+
+  // The card arrives in the tab that did NOT ask, on a page that knows nothing
+  // about backups: the addressee is the browser, not the screen.
+  const cardInB = tabB.getByTestId('hilos-toasts').getByText('is ready.')
+  await expect(cardInB).toBeVisible({ timeout: 60_000 })
+  await expect(
+    tabA.getByTestId('hilos-toasts').getByText('is ready.'),
+  ).toBeVisible()
+
+  // Closing is one person's answer, and the person is one per session. Tab B goes
+  // to the front to click, which freezes tab A's countdown - so what takes the
+  // card out of tab A can only be the close.
+  await tabB.bringToFront()
+  await tabB.getByTestId('hilos-toast-close').click()
+  await expect(
+    tabA.getByTestId('hilos-toasts').getByText('is ready.'),
+  ).toHaveCount(0, { timeout: 15_000 })
+
+  // Delete the backup this test made, so the suite stays idempotent on a shared
+  // storage directory. The page is opened AFRESH first: the row a tab created does
+  // not reach that same tab live today (HIL-432, which is what parks the create
+  // test above), and a cleanup must not stand on the defect it is not about.
+  await tabA.bringToFront()
+  await gotoPage(tabA, '/hilos/backup')
+  await expect(tabA.getByTestId('hilos-viewport-table')).toBeVisible()
+  const created = tabA.locator('[data-id^="hilos-table-row-"]').first()
+  const createdKey = await created.getAttribute('data-id')
+  await created.locator('[data-id^="hilos-backup-delete-"]').click()
+  await tabA.getByTestId('hilos-backup-delete-confirm').click()
+  // A removal leaves a placeholder in the row's slot rather than collapsing the
+  // window under the reader (table-subscription.md); what must be gone is the
+  // backup, which stops offering its actions.
+  await expect(tabA.locator(`[data-id="${createdKey}"]`)).toContainText(
+    'Removed',
+    { timeout: 20_000 },
+  )
+})
+
 test('offers a restore on this stand and holds it behind the typed id', async ({
   page,
 }) => {

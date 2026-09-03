@@ -14,6 +14,7 @@ import { ingest } from '../state/normalizer.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { computedSignal, type ReadonlySignal } from '../state/signal.js'
 import { applyServerTime, toLocal } from './serverClock.js'
+import { SIGNAL_SESSION_TOASTS, sessionToastsSchema } from './sessionToasts.js'
 
 /**
  * The session-scope response the backend sends after the handshake, carrying the
@@ -88,6 +89,7 @@ export const SESSION_ACK_SIGNED_IN = 'auth_signed_in'
  */
 export const SESSION_SIGNAL_SCHEMAS = {
   [SIGNAL_HANDSHAKE_RESPONSE]: scopePayloadSchema,
+  [SIGNAL_SESSION_TOASTS]: sessionToastsSchema,
 }
 
 /** Where the current user sits in the session scope, and which field names it. */

@@ -4,15 +4,22 @@
 // run that failed after its action was already acked, a late reply reconciling
 // after a timeout (actionLifecycle.ts), a background job reporting back.
 //
-// The backend never asks for a toast: it reports domain outcomes and failures,
-// and the frontend decides what deserves one (wire-protocol.md). Nothing here
-// is durable — a toast that expires is gone, so anything a user may need later
-// belongs in the feature's own record, not in this store.
-//
 // A notice has exactly two addressees, and the type says which (toasts.md):
 // the connection that acted knows what it pressed, so it names no source and
 // need lead nowhere; the session the server is answering did not ask for the
 // news, so it must name its sender and lead to the record it announces.
+//
+// The two are BORN in different places, and that is the leaf's whole point
+// (HIL-768). A toast of one's own action is pushed here and lives and dies here:
+// the frontend decides what an outcome deserves (wire-protocol.md). A toast
+// addressed to the SESSION is raised on the backend and arrives whole through
+// {@link HilosToastStore.syncSession}; the tabs of one browser have to agree
+// about it, so this store neither invents one nor takes one away by itself. What
+// it does instead is answer — closed here, counted down here, being read here —
+// and wait for the next frame.
+//
+// Nothing here is durable — a toast that expires is gone, so anything a user may
+// need later belongs in the feature's own record, not in this store.
 //
 // This module owns the POLICY of the stack — how long a notice lives, when the
 // countdown runs, what happens when the corner is full, when two pushes are one
@@ -23,7 +30,11 @@
 //
 // Nothing here touches the DOM or knows about the connection.
 
-import { createSignal, type ReadonlySignal } from './signal.js'
+import {
+  createSignal,
+  type ReadonlySignal,
+  type WritableSignal,
+} from './signal.js'
 
 /**
  * How a toast reads: an outcome that failed, one that worked, one that worked
@@ -55,7 +66,46 @@ export interface HilosToast {
   readonly repeats: number
   /** Whether a host has reported this card's height yet. */
   readonly measured: boolean
+  /**
+   * The server's own name for this card, which is what an answer about it names;
+   * `null` for a toast of one's own action, which the server never heard of.
+   */
+  readonly sessionKey: string | null
 }
+
+/**
+ * One card of the stack the server says this session is being shown, as it
+ * arrives on `hilos_session_toasts`.
+ *
+ * The frame carries the LIST rather than a change, so this is also the whole of
+ * what {@link HilosToastStore.syncSession} is given: what is not in it is not
+ * owed any more.
+ */
+export interface HilosSessionToast {
+  /** The server's name for the card; what an answer about it names. */
+  readonly key: string
+  /** The line shown to the user. */
+  readonly message: string
+  /** How it reads. */
+  readonly severity: HilosToastSeverity
+  /** Which subsystem sent it, shown as the card's signature. */
+  readonly source: string
+  /** The route the whole card leads to. */
+  readonly destination: string
+  /** How many times the server has counted this exact card. */
+  readonly repeats: number
+}
+
+/**
+ * Why a host is holding the countdown of the stack.
+ *
+ * The store freezes on all three alike — a card must not burn down unseen — but
+ * only the two READING holds are reported to the server: they are a person
+ * looking at the stack, and a neighbouring tab's finished countdown waits for
+ * them. A hidden tab is nobody looking, and treating it as a reader would make
+ * every toast immortal in the window actually in use (HIL-768).
+ */
+export type HilosToastHoldReason = 'cursor' | 'focus' | 'tab'
 
 /** What did not fit in the corner: the service line's two numbers. */
 export interface HilosToastOverflow {
@@ -68,28 +118,17 @@ export interface HilosToastOverflow {
 /**
  * Options for {@link HilosToastStore.push}.
  *
- * A discriminated union rather than one shape with a runtime check: a background
- * notice with nowhere to lead is a subsystem that failed to create a record, and
- * such a call must not compile in the first place (toasts.md). The lifetime is
- * not here — time belongs to the store.
+ * Severity and nothing else: a push is always the connection's own action. The
+ * session scope was a member of this union until HIL-768 and is gone from it,
+ * because the truth about a session's stack lives in RT — a second door into it
+ * on the client would be state the server does not know about, in the one place
+ * the leaf promises the tabs agree. The lifetime is not here either: time belongs
+ * to the store.
  */
-export type HilosToastOptions =
-  | {
-      /** How the notice reads; defaults to `info`. */
-      severity?: HilosToastSeverity
-      /** The user's own action; the default. */
-      scope?: 'connection'
-    }
-  | {
-      /** How the notice reads; defaults to `info`. */
-      severity?: HilosToastSeverity
-      /** The server answering this browser. */
-      scope: 'session'
-      /** Which subsystem sent it, shown as the card's signature. */
-      source: string
-      /** The route the whole card leads to — a path, not a record id. */
-      destination: string
-    }
+export interface HilosToastOptions {
+  /** How the notice reads; defaults to `info`. */
+  severity?: HilosToastSeverity
+}
 
 /**
  * A host's handle on the stack: what it reports, and how it holds the countdown.
@@ -116,10 +155,18 @@ export interface HilosToastViewer {
    * @param pixels The card's height plus its spacing.
    */
   reportHeight(id: number, pixels: number): void
-  /** Take one hold on the countdown of the whole stack. */
-  hold(): void
-  /** Give one hold back; the last one resumes the countdown from what is left. */
-  release(): void
+  /**
+   * Take one hold on the countdown of the whole stack.
+   *
+   * @param reason What is holding it — see {@link HilosToastHoldReason}.
+   */
+  hold(reason: HilosToastHoldReason): void
+  /**
+   * Give one hold back; the last one resumes the countdown from what is left.
+   *
+   * @param reason The reason the matching {@link hold} named.
+   */
+  release(reason: HilosToastHoldReason): void
   /** Detach this viewer; idempotent, so a double cleanup is harmless. */
   detach(): void
 }
@@ -143,6 +190,12 @@ export interface HilosToastStore {
    * it). A queued notice cannot be dismissed: closing is the user's answer to
    * something read, and nobody has seen it yet.
    *
+   * A card of the SESSION is not removed here — its key joins
+   * {@link dismissedSessionKeys} and the card stays until the server's next frame
+   * takes it off every tab at once. The cost is named and accepted: on a dead
+   * connection the card stands under the finger until the answer arrives, whereas
+   * hiding it locally would bring it back on the very next frame (HIL-768).
+   *
    * @param id The id {@link push} returned.
    */
   dismiss(id: number): void
@@ -150,6 +203,24 @@ export interface HilosToastStore {
   clear(): void
   /** Attach a host to the stack; see {@link HilosToastViewer}. */
   attach(): HilosToastViewer
+  /**
+   * Bring the session's cards in line with the whole list the server sent.
+   *
+   * New keys are admitted with a full countdown of their own — the countdown is
+   * deliberately not synchronized between tabs, so a card only just seen here is
+   * given the whole time to read it. A key whose count moved restarts its
+   * countdown, because the server has just said the same thing again. A key that
+   * is not in the list is taken away wherever it stood, screen or waiting queue.
+   *
+   * @param toasts The whole stack the session is being shown.
+   */
+  syncSession(toasts: readonly HilosSessionToast[]): void
+  /** Keys of the session's cards a person closed here, awaiting the server's word. */
+  readonly dismissedSessionKeys: ReadonlySignal<readonly string[]>
+  /** Keys of the session's cards whose countdown burned down in THIS tab. */
+  readonly expiredSessionKeys: ReadonlySignal<readonly string[]>
+  /** Whether the stack is being read here — a cursor over it or the focus inside it. */
+  readonly reading: ReadonlySignal<boolean>
 }
 
 /** How long a notice that is not an error stays on screen — time to read it. */
@@ -186,6 +257,15 @@ interface PendingToast {
 export function createHilosToastStore(): HilosToastStore {
   const toasts = createSignal<readonly HilosToast[]>([])
   const overflow = createSignal<HilosToastOverflow>({ waiting: 0, missed: 0 })
+  // The three answers this tab owes the server about the session's cards. The two
+  // key sets are what it has said and not yet seen taken back; they are sets
+  // rather than events so a binder that reconnected can send them again without
+  // the store having to remember who heard what.
+  const dismissedSessionKeys = createSignal<readonly string[]>([])
+  const expiredSessionKeys = createSignal<readonly string[]>([])
+  const reading = createSignal(false)
+  const dismissed = new Set<string>()
+  const expired = new Set<string>()
   // Only a card that is measured, on screen and not an error is tracked here:
   // an error has no countdown at all, and an unmeasured card is not yet visible.
   const pending = new Map<number, PendingToast>()
@@ -200,6 +280,10 @@ export function createHilosToastStore(): HilosToastStore {
   let anyHeightReported = false
   let sequence = 0
   let holds = 0
+  // Of the holds above, the ones a person is behind. The countdown freezes on all
+  // of them alike; only these are reported, and only these veto a neighbour's
+  // finished countdown.
+  let readingHolds = 0
   let viewers = 0
 
   /** Whether the countdown of the stack is allowed to run right now. */
@@ -213,6 +297,49 @@ export function createHilosToastStore(): HilosToastStore {
     if (current.waiting !== queued.length || current.missed !== missed) {
       overflow.set({ waiting: queued.length, missed })
     }
+  }
+
+  /**
+   * Publish one of the answer sets, and only when it moved.
+   *
+   * Sorted so that the same set is always the same array: the signal fires on
+   * `Object.is`, and a binder woken by a reordering would send an answer twice.
+   *
+   * @param signal The signal carrying that set.
+   * @param keys The set as it now stands.
+   */
+  function publishKeys(
+    signal: WritableSignal<readonly string[]>,
+    keys: ReadonlySet<string>,
+  ): void {
+    const next = [...keys].sort()
+    const current = signal.get()
+    if (
+      current.length === next.length &&
+      current.every((key, index) => key === next[index])
+    ) {
+      return
+    }
+    signal.set(next)
+  }
+
+  /** Publish whether somebody is reading the stack here. */
+  function publishReading(): void {
+    reading.set(readingHolds > 0)
+  }
+
+  /**
+   * Forget what this tab had said about one card, because it is not that card any
+   * more: it was taken away, or the server counted it again and every tab starts
+   * counting afresh.
+   *
+   * @param key The card's server-side key.
+   */
+  function forgetAnswers(key: string): void {
+    dismissed.delete(key)
+    expired.delete(key)
+    publishKeys(dismissedSessionKeys, dismissed)
+    publishKeys(expiredSessionKeys, expired)
   }
 
   /**
@@ -247,7 +374,7 @@ export function createHilosToastStore(): HilosToastStore {
   function arm(id: number, entry: PendingToast): void {
     entry.deadline = Date.now() + entry.remainingMs
     entry.timer = setTimeout(() => {
-      freeSlot(id)
+      expire(id)
     }, entry.remainingMs)
   }
 
@@ -387,6 +514,64 @@ export function createHilosToastStore(): HilosToastStore {
   }
 
   /**
+   * A countdown has burned down. A card of one's own action goes; a card of the
+   * SESSION stays and the server is told instead.
+   *
+   * Hiding the session's card here would be the very desynchronization the leaf
+   * was written against: the countdown is each tab's own, so the first tab to
+   * finish counting would empty its corner while the neighbour still shows the
+   * card. What leaves the screen leaves it on the frame that follows, in every
+   * tab at once — or does not leave at all, because somebody is reading.
+   *
+   * @param id The toast's id.
+   */
+  function expire(id: number): void {
+    const toast = onScreen(id)
+    if (toast === undefined || toast.sessionKey === null) {
+      freeSlot(id)
+
+      return
+    }
+    // The timer has fired, so the entry is spent: dropping it stops retime() from
+    // arming a countdown this tab has already reported.
+    pending.delete(id)
+    expired.add(toast.sessionKey)
+    publishKeys(expiredSessionKeys, expired)
+  }
+
+  /**
+   * Give one card its full time back, because it has just been said again.
+   *
+   * A card with no countdown is left alone unless it is one that BURNED DOWN and
+   * the server kept it up: an error has no countdown by design, and one the host
+   * has not measured yet gets its first when it reports its height.
+   *
+   * @param id The toast's id.
+   */
+  function restartCountdown(id: number): void {
+    const drawn = onScreen(id)
+    if (drawn === undefined) {
+      return
+    }
+    const entry = pending.get(id)
+    if (entry === undefined) {
+      if (drawn.measured) {
+        startCountdown(drawn)
+      }
+
+      return
+    }
+    if (entry.timer !== null) {
+      clearTimeout(entry.timer)
+      entry.timer = null
+    }
+    entry.remainingMs = TOAST_TTL_MS
+    if (ticking()) {
+      arm(id, entry)
+    }
+  }
+
+  /**
    * The identical notice already known, on screen or waiting, if there is one.
    *
    * @param candidate The notice about to be pushed.
@@ -416,34 +601,84 @@ export function createHilosToastStore(): HilosToastStore {
       return
     }
     rewrite(twin.id, { repeats: twin.repeats + 1 })
-    const entry = pending.get(twin.id)
-    if (entry === undefined) {
+    restartCountdown(twin.id)
+  }
+
+  /**
+   * The card standing for one server-side key, on screen or waiting.
+   *
+   * @param key The card's server-side key.
+   */
+  function bySessionKey(key: string): HilosToast | undefined {
+    const same = (other: HilosToast): boolean => other.sessionKey === key
+
+    return toasts.get().find(same) ?? queued.find(same)
+  }
+
+  /**
+   * Put one newly arrived card of the session up, with a full countdown of its
+   * own once a host has measured it.
+   *
+   * @param arrival The card as the server sent it.
+   */
+  function admitSession(arrival: HilosSessionToast): void {
+    sequence += 1
+    const card: HilosToast = {
+      id: sequence,
+      message: arrival.message,
+      severity: arrival.severity,
+      scope: 'session',
+      source: arrival.source,
+      destination: arrival.destination,
+      repeats: arrival.repeats,
+      measured: false,
+      sessionKey: arrival.key,
+    }
+    toasts.set([...toasts.get(), card])
+    if (!anyHeightReported && !withinBudget()) {
+      overflowed(card)
+    }
+  }
+
+  /**
+   * Take the server's count for a card already up, and start its time over.
+   *
+   * The count is TAKEN rather than incremented: the server is the one counting,
+   * and a tab that had not been listening for a while would otherwise show a
+   * number of its own.
+   *
+   * @param card The card as it stands here.
+   * @param repeats The count the server now gives it.
+   */
+  function recountSession(card: HilosToast, repeats: number): void {
+    if (onScreen(card.id) === undefined) {
+      queued = queued.map((other) =>
+        other.id === card.id ? { ...other, repeats } : other,
+      )
+
       return
     }
-    if (entry.timer !== null) {
-      clearTimeout(entry.timer)
-      entry.timer = null
-    }
-    entry.remainingMs = TOAST_TTL_MS
-    if (ticking()) {
-      arm(twin.id, entry)
-    }
+    rewrite(card.id, { repeats })
+    restartCountdown(card.id)
   }
 
   return {
     toasts,
     overflow,
+    dismissedSessionKeys,
+    expiredSessionKeys,
+    reading,
     push(message, options = {}) {
-      const session = options.scope === 'session'
       const candidate: HilosToast = {
         id: sequence + 1,
         message,
         severity: options.severity ?? 'info',
-        scope: session ? 'session' : 'connection',
-        source: session ? options.source : null,
-        destination: session ? options.destination : null,
+        scope: 'connection',
+        source: null,
+        destination: null,
         repeats: 1,
         measured: false,
+        sessionKey: null,
       }
       const twin = twinOf(candidate)
       if (twin !== undefined) {
@@ -464,10 +699,50 @@ export function createHilosToastStore(): HilosToastStore {
       return candidate.id
     },
     dismiss(id) {
-      if (onScreen(id) === undefined) {
+      const toast = onScreen(id)
+      if (toast === undefined) {
+        return
+      }
+      if (toast.sessionKey !== null) {
+        // Not optimistic, on purpose: the card leaves every tab of the session on
+        // one frame or leaves none of them.
+        dismissed.add(toast.sessionKey)
+        publishKeys(dismissedSessionKeys, dismissed)
+
         return
       }
       freeSlot(id)
+    },
+    syncSession(arrivals) {
+      const arrived = new Set(arrivals.map((arrival) => arrival.key))
+      for (const card of [...toasts.get(), ...queued]) {
+        const key = card.sessionKey
+        if (key === null || arrived.has(key)) {
+          continue
+        }
+        forgetAnswers(key)
+        if (onScreen(card.id) === undefined) {
+          queued = queued.filter((other) => other.id !== card.id)
+
+          continue
+        }
+        freeSlot(card.id)
+      }
+      for (const arrival of arrivals) {
+        const known = bySessionKey(arrival.key)
+        if (known === undefined) {
+          admitSession(arrival)
+
+          continue
+        }
+        if (known.repeats !== arrival.repeats) {
+          // Said again, so every tab starts counting afresh - including this one,
+          // whose report of the previous showing is void.
+          forgetAnswers(arrival.key)
+          recountSession(known, arrival.repeats)
+        }
+      }
+      publishOverflow()
     },
     clear() {
       for (const entry of pending.values()) {
@@ -479,6 +754,12 @@ export function createHilosToastStore(): HilosToastStore {
       heights.clear()
       queued = []
       missed = 0
+      // The answers go with the cards they were about: nothing is left to answer
+      // for, and a key kept here would be reported about a card nobody can see.
+      dismissed.clear()
+      expired.clear()
+      publishKeys(dismissedSessionKeys, dismissed)
+      publishKeys(expiredSessionKeys, expired)
       // The holds are deliberately left alone: each one belongs to a viewer that
       // is still holding its own half of the count, and zeroing them here would
       // make that viewer's next release drive the total below zero — after which
@@ -490,7 +771,10 @@ export function createHilosToastStore(): HilosToastStore {
     attach() {
       viewers += 1
       retime()
-      let held = 0
+      // Counted apart because they mean different things: both freeze the
+      // countdown, only the reading one is a person and only it is reported.
+      let heldReading = 0
+      let heldTab = 0
       let attached = true
 
       return {
@@ -528,19 +812,37 @@ export function createHilosToastStore(): HilosToastStore {
           overflowed(drawn)
           publishOverflow()
         },
-        hold() {
+        hold(reason) {
           if (!attached) {
             return
           }
-          held += 1
+          if (reason === 'tab') {
+            heldTab += 1
+          } else {
+            heldReading += 1
+            readingHolds += 1
+            publishReading()
+          }
           holds += 1
           retime()
         },
-        release() {
-          if (!attached || held === 0) {
+        release(reason) {
+          if (!attached) {
             return
           }
-          held -= 1
+          if (reason === 'tab') {
+            if (heldTab === 0) {
+              return
+            }
+            heldTab -= 1
+          } else {
+            if (heldReading === 0) {
+              return
+            }
+            heldReading -= 1
+            readingHolds -= 1
+            publishReading()
+          }
           holds -= 1
           retime()
         },
@@ -549,9 +851,12 @@ export function createHilosToastStore(): HilosToastStore {
             return
           }
           attached = false
-          holds -= held
-          held = 0
+          holds -= heldReading + heldTab
+          readingHolds -= heldReading
+          heldReading = 0
+          heldTab = 0
           viewers -= 1
+          publishReading()
           retime()
         },
       }

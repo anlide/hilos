@@ -9,11 +9,13 @@ use DateTimeInterface;
 use DateTimeZone;
 use Exception;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\DTO\SessionCarryOverDeferredSignalData;
 use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
 use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Auth\Session\SessionCarryover;
 use Hilos\Auth\Session\SessionIdentityRef;
+use Hilos\Auth\Session\SessionToastSeverity;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
 use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
@@ -199,6 +201,16 @@ final class BackupAgent extends AbstractAgent
      */
     private const int RESTORE_FREEZE_WAIT_SECONDS = 60;
 
+    /**
+     * @var string Where the "your backup is ready" card leads (HIL-768)
+     *
+     * The path is declared on the frontend, which owns the routing table
+     * (`framework/frontend/core/src/routing/hilosPages.ts`); it is spelled here because a
+     * toast carries a path rather than a page key, and there is no backend route registry to
+     * ask. The two are kept byte-equal by hand, as every other wire value is.
+     */
+    private const string BACKUP_PAGE_PATH = '/hilos/backup';
+
     /** The in-flight backup child, or null when idle (the single-flight lock). */
     private ?Process $childProcess = null;
 
@@ -351,6 +363,18 @@ final class BackupAgent extends AbstractAgent
      * is interrupted over it.
      */
     private ?string $currentInitiator = null;
+
+    /**
+     * Hash of the session token behind {@see self::$currentInitiator}, or null when the run
+     * is unattended or that connection carried no session.
+     *
+     * Read at ADMISSION rather than when the run ends, which is the same moment a restore
+     * photographs its own ({@see self::$pendingRestoreInitiatorSessionTokenHash}). A create
+     * outlives the socket that asked for it - a reload during the dump mints a new accept
+     * key, and the row the token would be read off is gone - so resolving it at the finish
+     * would fail in exactly the case the session address exists for (HIL-768).
+     */
+    private ?string $currentInitiatorSessionTokenHash = null;
 
     /**
      * @var list<BackupCronJob> Agent-mechanism cron jobs (rule paired with scope); empty when
@@ -1560,6 +1584,7 @@ final class BackupAgent extends AbstractAgent
         $this->currentBackupId = $id;
         $this->currentScope = $scope;
         $this->currentInitiator = $initiatorAcceptKey;
+        $this->currentInitiatorSessionTokenHash = $this->resolveInitiatorSessionTokenHash($initiatorAcceptKey);
         $this->startedAt = microtime(true);
         $this->timeoutSeconds = (float)Hilos::$env->int(EnvConstants::BACKUP_TIMEOUT);
         $this->runKind = BackupRunKind::CREATE;
@@ -2729,6 +2754,7 @@ final class BackupAgent extends AbstractAgent
 
         if ($success) {
             $this->logAgentInfo("Backup {$id} completed in {$durationSeconds}s");
+            $this->announceCreatedBackup($id);
         } else {
             $detail = $stderr !== null ? "{$failureReason}: {$stderr}" : (string)$failureReason;
             $this->logAgentError("Backup {$id} failed: {$detail}");
@@ -2769,6 +2795,47 @@ final class BackupAgent extends AbstractAgent
         $this->pendingInitiator = null;
         $this->logAgentInfo("Running pending backup create (scope={$scope->value})");
         $this->startBackup($scope, $initiator);
+    }
+
+    /**
+     * Tells the browser that asked for this run that its backup is there (HIL-768).
+     *
+     * The first real sender of a toast addressed to a SESSION, and the reason the leaf
+     * landed a sender at all: today a finished create says nothing to the person who started
+     * it. A row appears in the table by itself, but the run outlives both the action - which
+     * was acked at acceptance, because a dump outlives any request timeout - and often the
+     * tab, so whoever asked has nothing to watch.
+     *
+     * It is addressed to the session rather than to the socket for that same reason: the
+     * person may be in the second tab by now, or in the first one after a reload. An
+     * unattended run (schedule, CLI) has no session to name and says nothing, exactly as its
+     * failure says nothing today.
+     *
+     * The card is sent even when the person is standing on the backup page. The canon's
+     * "the screen answered for itself" covers the result of an action taken on that screen,
+     * and this is neither: the addressee is a browser, and the server does not know what is
+     * open in it.
+     *
+     * @param string $id Backup id that has just been written
+     * @throws InvalidArgumentException When the raise cannot be named or queued
+     */
+    private function announceCreatedBackup(string $id): void
+    {
+        $sessionTokenHash = $this->currentInitiatorSessionTokenHash;
+        if ($sessionTokenHash === null) {
+            return;
+        }
+
+        $this->sendToAgent(
+            HilosSignalConstants::HILOS_SESSION_TOAST_RAISE,
+            new RaiseSessionToastSignalData(
+                sessionTokenHash: $sessionTokenHash,
+                message: "Backup \"{$id}\" is ready.",
+                severity: SessionToastSeverity::SUCCESS,
+                source: 'Backup',
+                destination: self::BACKUP_PAGE_PATH,
+            ),
+        );
     }
 
     /**
@@ -3003,6 +3070,7 @@ final class BackupAgent extends AbstractAgent
         $this->currentBackupId = null;
         $this->currentScope = null;
         $this->currentInitiator = null;
+        $this->currentInitiatorSessionTokenHash = null;
         $this->startedAt = 0.0;
         $this->timeoutSeconds = 0.0;
         $this->pendingRestoreId = null;

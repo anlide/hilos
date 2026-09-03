@@ -25,6 +25,7 @@ import type { FocusEvent, MouseEvent } from 'react'
 import { hilosToasts } from '@hilos/core'
 import type {
   HilosToast,
+  HilosToastHoldReason,
   HilosToastSeverity,
   HilosToastStore,
   HilosToastViewer,
@@ -71,8 +72,14 @@ const TOAST_VISUAL: Record<HilosToastSeverity, ToastVisual> = {
   },
 }
 
-/** Which of the three holds on the countdown this host owns is changing. */
-type HoldKind = 'cursor' | 'focus' | 'tab'
+/**
+ * Which of the three holds on the countdown this host owns is changing.
+ *
+ * The store's own name for it since HIL-768: it freezes on all three alike but
+ * reports only the two a person is behind, so the kind has to travel with the
+ * hold rather than being flattened into a count here.
+ */
+type HoldKind = HilosToastHoldReason
 
 // A focus move inside the stack — tabbing from one close button to the next — is
 // neither an arrival nor a leave, and relatedTarget is what tells those apart;
@@ -161,9 +168,9 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
     const { cursor, focus, tab } = held.current
     setFrozen(cursor || focus || tab)
     if (taken) {
-      attached?.hold()
+      attached?.hold(kind)
     } else {
-      attached?.release()
+      attached?.release(kind)
     }
   }
 

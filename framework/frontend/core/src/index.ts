@@ -20,7 +20,9 @@ export {
 export {
   createHilosToastStore,
   hilosToasts,
+  type HilosSessionToast,
   type HilosToast,
+  type HilosToastHoldReason,
   type HilosToastOptions,
   type HilosToastOverflow,
   type HilosToastScope,
@@ -117,6 +119,13 @@ export {
   type SessionScopeOptions,
 } from './session/sessionScope.js'
 export { applyServerTime, offsetMs, toLocal } from './session/serverClock.js'
+export {
+  bindSessionToasts,
+  SIGNAL_SESSION_TOASTS,
+  TOAST_ACTION_DISMISS,
+  TOAST_ACTION_EXPIRED,
+  TOAST_ACTION_READING,
+} from './session/sessionToasts.js'
 export {
   bindNotificationsScope,
   createHilosNotificationStore,

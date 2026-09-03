@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createHilosToastStore } from './toasts.js'
-import type { HilosToastStore, HilosToastViewer } from './toasts.js'
+import type {
+  HilosSessionToast,
+  HilosToastStore,
+  HilosToastViewer,
+} from './toasts.js'
 
 // A card is only really on screen once a host has drawn it and reported how tall
 // it is, so almost every case here needs a stand-in host. The window is 600px, a
@@ -43,6 +47,25 @@ function draw(
     if (!toast.measured) {
       viewer.reportHeight(toast.id, cardHeight)
     }
+  }
+}
+
+/**
+ * One card of the session's stack as the server would send it.
+ *
+ * @param fields What this case cares about; the rest is the backup card the first
+ *   real sender raises.
+ */
+function sessionToast(
+  fields: Partial<HilosSessionToast> & { key: string },
+): HilosSessionToast {
+  return {
+    message: 'Backup "2026-09-03" is ready.',
+    severity: 'success',
+    source: 'Backup',
+    destination: '/hilos/backup',
+    repeats: 1,
+    ...fields,
   }
 }
 
@@ -91,17 +114,15 @@ describe('createHilosToastStore', () => {
 
   it('carries the sender and the route of a notice the session was sent', () => {
     const store = createHilosToastStore()
-    store.push('Backup finished.', {
-      severity: 'success',
-      scope: 'session',
-      source: 'Backup',
-      destination: '/admin/backups',
-    })
+    store.syncSession([
+      sessionToast({ key: 'k1', message: 'Backup finished.' }),
+    ])
 
     const [toast] = store.toasts.get()
     expect(toast.scope).toBe('session')
     expect(toast.source).toBe('Backup')
-    expect(toast.destination).toBe('/admin/backups')
+    expect(toast.destination).toBe('/hilos/backup')
+    expect(toast.sessionKey).toBe('k1')
   })
 
   it('does not run the countdown of a card nobody has measured yet', () => {
@@ -176,7 +197,7 @@ describe('createHilosToastStore', () => {
     store.push('read me', { severity: 'success' })
     draw(store, viewer)
 
-    viewer.hold()
+    viewer.hold('cursor')
     vi.advanceTimersByTime(60_000)
 
     expect(store.toasts.get()).toHaveLength(1)
@@ -189,9 +210,9 @@ describe('createHilosToastStore', () => {
     draw(store, viewer)
 
     vi.advanceTimersByTime(8000)
-    viewer.hold()
+    viewer.hold('cursor')
     vi.advanceTimersByTime(60_000)
-    viewer.release()
+    viewer.release('cursor')
 
     vi.advanceTimersByTime(11_999)
     expect(store.toasts.get()).toHaveLength(1)
@@ -206,14 +227,14 @@ describe('createHilosToastStore', () => {
     store.push('read me', { severity: 'success' })
     draw(store, viewer)
 
-    viewer.hold()
-    viewer.hold()
-    viewer.release()
+    viewer.hold('tab')
+    viewer.hold('cursor')
+    viewer.release('cursor')
 
     vi.advanceTimersByTime(60_000)
     expect(store.toasts.get()).toHaveLength(1)
 
-    viewer.release()
+    viewer.release('tab')
     vi.advanceTimersByTime(20_000)
     expect(store.toasts.get()).toEqual([])
   })
@@ -225,13 +246,13 @@ describe('createHilosToastStore', () => {
     store.push('read me', { severity: 'success' })
     draw(store, first)
 
-    first.hold()
-    second.release()
+    first.hold('cursor')
+    second.release('cursor')
 
     vi.advanceTimersByTime(60_000)
     expect(store.toasts.get()).toHaveLength(1)
 
-    first.release()
+    first.release('cursor')
     vi.advanceTimersByTime(20_000)
     expect(store.toasts.get()).toEqual([])
   })
@@ -243,7 +264,7 @@ describe('createHilosToastStore', () => {
     store.push('read me', { severity: 'success' })
     draw(store, second)
 
-    first.hold()
+    first.hold('cursor')
     first.detach()
 
     vi.advanceTimersByTime(20_000)
@@ -253,14 +274,14 @@ describe('createHilosToastStore', () => {
   it('starts a notice pushed into a held stack only once the hold is released', () => {
     const store = createHilosToastStore()
     const viewer = watch(store)
-    viewer.hold()
+    viewer.hold('cursor')
     store.push('late arrival', { severity: 'success' })
     draw(store, viewer)
 
     vi.advanceTimersByTime(60_000)
     expect(store.toasts.get()).toHaveLength(1)
 
-    viewer.release()
+    viewer.release('cursor')
     vi.advanceTimersByTime(19_999)
     expect(store.toasts.get()).toHaveLength(1)
 
@@ -414,17 +435,13 @@ describe('createHilosToastStore', () => {
 
   it('keeps two notices apart when only their sender differs', () => {
     const store = createHilosToastStore()
-    store.push('Finished.', {
-      scope: 'session',
-      source: 'Backup',
-      destination: '/admin/backups',
-    })
-    store.push('Finished.', {
-      scope: 'session',
-      source: 'Delivery',
-      destination: '/admin/deliveries',
-    })
+    store.syncSession([
+      sessionToast({ key: 'k1', message: 'Finished.', source: 'Backup' }),
+      sessionToast({ key: 'k2', message: 'Finished.', source: 'Delivery' }),
+    ])
 
+    // Two keys are two cards, whatever they say: what is one notice and what is
+    // two is the server's judgement for a card of the session, not the store's.
     expect(store.toasts.get()).toHaveLength(2)
   })
 
@@ -484,9 +501,9 @@ describe('createHilosToastStore', () => {
   it('leaves a host holding its hold across a clear of the stack', () => {
     const store = createHilosToastStore()
     const viewer = watch(store)
-    viewer.hold()
+    viewer.hold('cursor')
     store.clear()
-    viewer.release()
+    viewer.release('cursor')
 
     // The release above has to land on the hold the host actually took: zeroed
     // out by the clear, it would drive the count below zero and leave the stack
@@ -502,5 +519,128 @@ describe('createHilosToastStore', () => {
     const store = createHilosToastStore()
 
     expect(store.push('a')).not.toBe(store.push('b'))
+  })
+
+  it('takes away the card the server no longer sends', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    store.syncSession([sessionToast({ key: 'k1' })])
+    draw(store, viewer)
+
+    store.syncSession([])
+
+    expect(store.toasts.get()).toEqual([])
+  })
+
+  it('takes a session card out of the waiting queue too', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    store.push('first error', { severity: 'error' })
+    store.push('second error', { severity: 'error' })
+    store.syncSession([sessionToast({ key: 'k1', severity: 'error' })])
+    draw(store, viewer)
+    expect(store.overflow.get().waiting).toBe(1)
+
+    store.syncSession([])
+
+    // A card can be waiting for a slot when the answer arrives, and one left
+    // there would walk back onto the screen the moment a slot came free.
+    expect(store.overflow.get().waiting).toBe(0)
+    store.dismiss(store.toasts.get()[0].id)
+    expect(messages(store)).toEqual(['second error'])
+  })
+
+  it('gives a card its time back when the server counts it again', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    store.syncSession([sessionToast({ key: 'k1' })])
+    draw(store, viewer)
+
+    vi.advanceTimersByTime(15_000)
+    store.syncSession([sessionToast({ key: 'k1', repeats: 2 })])
+
+    expect(store.toasts.get()[0].repeats).toBe(2)
+    vi.advanceTimersByTime(19_999)
+    expect(store.toasts.get()).toHaveLength(1)
+    vi.advanceTimersByTime(1)
+    expect(store.expiredSessionKeys.get()).toEqual(['k1'])
+  })
+
+  it('reports a burned-down countdown instead of hiding the card', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    store.syncSession([sessionToast({ key: 'k1' })])
+    draw(store, viewer)
+
+    vi.advanceTimersByTime(20_000)
+
+    // Hiding it here is exactly the disagreement the leaf was written against:
+    // this tab's twenty seconds are its own, and the neighbour may be reading.
+    expect(store.toasts.get()).toHaveLength(1)
+    expect(store.expiredSessionKeys.get()).toEqual(['k1'])
+  })
+
+  it('never reports a countdown for an error, which has none', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    store.syncSession([sessionToast({ key: 'k1', severity: 'error' })])
+    draw(store, viewer)
+
+    vi.advanceTimersByTime(60_000)
+
+    expect(store.toasts.get()).toHaveLength(1)
+    expect(store.expiredSessionKeys.get()).toEqual([])
+  })
+
+  it('answers a close of a session card instead of taking it off the screen', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    store.syncSession([sessionToast({ key: 'k1' })])
+    draw(store, viewer)
+
+    store.dismiss(store.toasts.get()[0].id)
+
+    expect(store.toasts.get()).toHaveLength(1)
+    expect(store.dismissedSessionKeys.get()).toEqual(['k1'])
+
+    store.syncSession([])
+    expect(store.toasts.get()).toEqual([])
+    expect(store.dismissedSessionKeys.get()).toEqual([])
+  })
+
+  it('reports only the holds a person is behind', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+
+    viewer.hold('tab')
+    expect(store.reading.get()).toBe(false)
+
+    viewer.hold('cursor')
+    expect(store.reading.get()).toBe(true)
+
+    viewer.release('cursor')
+    expect(store.reading.get()).toBe(false)
+  })
+
+  it('freezes the countdown for a hidden tab even though nobody is reading', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    store.syncSession([sessionToast({ key: 'k1' })])
+    draw(store, viewer)
+
+    viewer.hold('tab')
+    vi.advanceTimersByTime(60_000)
+
+    expect(store.expiredSessionKeys.get()).toEqual([])
+  })
+
+  it('gives the reading answer back when the host that held it goes away', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    viewer.hold('focus')
+
+    viewer.detach()
+
+    expect(store.reading.get()).toBe(false)
   })
 })

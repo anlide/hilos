@@ -148,7 +148,9 @@ const stack = ref<HTMLElement | null>(null)
 
 // The three holds this host owns, and whether it is holding each right now: the
 // cursor over the stack, the keyboard focus inside it, and a tab nobody is
-// looking at — walk away and everything is still there when you come back. It
+// looking at — walk away and everything is still there when you come back. The
+// kind travels with each hold (HIL-768): the store freezes on all three alike
+// but reports only the two a person is behind. It
 // tracks them because the host owes the store exactly one hold of each kind
 // (mouseover and visibilitychange both fire more than once), and it keeps them
 // reactive because the life bar draws the freeze from this very counter: the
@@ -167,11 +169,11 @@ function onVisibility(): void {
   }
   held.tab = document.hidden
   if (held.tab) {
-    viewer.hold()
+    viewer.hold('tab')
 
     return
   }
-  viewer.release()
+  viewer.release('tab')
 }
 
 /**
@@ -254,28 +256,28 @@ onUnmounted(() => {
 function holdOnCursor(): void {
   if (viewer !== null && !held.cursor) {
     held.cursor = true
-    viewer.hold()
+    viewer.hold('cursor')
   }
 }
 
 function releaseCursorHold(): void {
   if (held.cursor) {
     held.cursor = false
-    viewer?.release()
+    viewer?.release('cursor')
   }
 }
 
 function releaseFocusHold(): void {
   if (held.focus) {
     held.focus = false
-    viewer?.release()
+    viewer?.release('focus')
   }
 }
 
 function holdOnFocus(event: FocusEvent): void {
   if (viewer !== null && !held.focus && !movesWithin(event)) {
     held.focus = true
-    viewer.hold()
+    viewer.hold('focus')
   }
 }
 

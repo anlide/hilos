@@ -36,6 +36,7 @@ import {
 import { hilosToasts, subscribeSignal } from '@hilos/core'
 import type {
   HilosToast,
+  HilosToastHoldReason,
   HilosToastSeverity,
   HilosToastStore,
   HilosToastViewer,
@@ -418,12 +419,13 @@ export class HilosToastHost {
    *
    * The one writing path: it records the hold and tells the store in the same
    * breath, so the life bar — which reads these very signals — cannot drift
-   * apart from what the store was told.
+   * apart from what the store was told. The kind travels with it (HIL-768): the
+   * store freezes on all three alike but reports only the two a person is behind.
    *
    * @param kind Which hold is changing.
    * @param taken Whether the host is holding it from now on.
    */
-  protected setHold(kind: 'cursor' | 'focus' | 'tab', taken: boolean): void {
+  protected setHold(kind: HilosToastHoldReason, taken: boolean): void {
     const viewer = this.viewer
     const held = this.held[kind]
     if (held() === taken || (taken && viewer === null)) {
@@ -431,11 +433,11 @@ export class HilosToastHost {
     }
     held.set(taken)
     if (taken) {
-      viewer?.hold()
+      viewer?.hold(kind)
 
       return
     }
-    viewer?.release()
+    viewer?.release(kind)
   }
 
   /**

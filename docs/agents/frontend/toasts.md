@@ -7,10 +7,13 @@ deciding that the corner stack is the right surface at all.
 
 A **toast** is a short notice that something happened. It demands no reply,
 blocks no work, and expires on its own — except an error, which stays until the
-user closes it. It is presentation only: the backend reports domain outcomes
-and failures, and the frontend decides which of them deserve a toast
-([wire-protocol.md](wire-protocol.md)). Nothing shown in a toast may be the
-only copy of that information — a toast that expires is gone.
+user closes it. It is presentation only for the toast of **my own action**: the
+backend reports domain outcomes and failures, and the frontend decides which of
+them deserve a toast ([wire-protocol.md](wire-protocol.md)). A toast addressed to
+the **session** is the other way round — the backend authors it and the backend
+stores it, because the tabs of one browser have to agree about it (see *Tabs of
+one session* below). Nothing shown in a toast may be the only copy of that
+information — a toast that expires is gone.
 
 Rules that the code does not implement yet end with a literal marker
 `(not in the code yet — HIL-<n>)` naming the leaf that will land them. The leaf
@@ -71,7 +74,13 @@ The two addressees look different on screen:
 - **A background one** (the session) **names its sender** and is **obliged to
   lead to the record** it announces. A background toast with nowhere to lead
   is a subsystem that failed to create a record — fix the subsystem, not the
-  toast.
+  toast. It is also raised somewhere else entirely: not by `push()`, which has
+  no session form at all, but by the backend — an agent sends
+  `hilos_session_toast_raise` to the sessions library, naming the session by the
+  hash of its cookie token
+  (`AbstractAgent::resolveInitiatorSessionTokenHash()`), the sentence, the
+  sender and the path. `BackupAgent::announceCreatedBackup()` is the worked
+  example.
 
 Leading is the whole card as one click target (a stretched link, like a list
 row) — never a button inside the card.
@@ -202,11 +211,24 @@ A project may render its own stack by creating an independent store
   the corner.
 - **Tabs of one session.** Each tab runs its own countdown — the cursor
   hovers in one tab and not in another, and that is two tabs, not a desync.
-  Closing is the person's answer, and the person is one per session:
-  dismissed in one tab — gone in all, and a countdown that burns out anywhere
-  ends the toast everywhere. A frozen stack outranks another tab's
-  extinguishing: while the countdown stands here, nothing disappears from
-  under the cursor (not in the code yet — HIL-768).
+  What IS shared is the card's existence, and it is shared through the server:
+  the stack of a session is an RT row the sessions library owns
+  (`hilosSessionToastStacks`), it reaches every tab as one frame carrying the
+  whole list (`hilos_session_toasts`), and a tab answers about it rather than
+  deciding — `hilos_toast_dismiss`, `hilos_toast_expired`,
+  `hilos_toast_reading`. Closing is the person's answer, and the person is one
+  per session: dismissed in one tab — gone in all, and a countdown that burned
+  out anywhere ends the toast everywhere. **Reading outranks another tab's
+  extinguishing:** while a cursor rests on the stack or the keyboard focus is
+  inside it, a neighbour's finished countdown waits, and it fires the moment the
+  last reader lets go. A hidden tab is not reading — it freezes its own
+  countdown, but a background tab of the admin panel that held the stack would
+  make every toast immortal in the window actually in use.
+  Two consequences worth knowing: **closing is not optimistic** — the card
+  leaves on the frame that follows, so on a dead connection it stands under the
+  finger — and **a tab opened later** is shown what the session is still owed,
+  with a fresh countdown of its own, because the card has only now come into
+  view.
 
 ## Where the stack sits
 

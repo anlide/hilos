@@ -23,18 +23,24 @@ use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Registration\RegistrationReservationSweeper;
 use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
 use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
+use Hilos\Auth\Session\DTO\DismissSessionToastActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStartActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Auth\Session\DTO\LogoutActionDTO;
+use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\DTO\SessionCarryOverDoneSignalData;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Auth\Session\DTO\SessionToastExpiredActionDTO;
+use Hilos\Auth\Session\DTO\SessionToastReadingActionDTO;
+use Hilos\Auth\Session\DTO\SessionToastsSignalData;
 use Hilos\Auth\Session\Exception\SessionNotOnConnectionException;
 use Hilos\Auth\Session\Exception\SessionTokenExhaustedException;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Auth\Session\SessionRebindConstants;
 use Hilos\Auth\Session\SessionRotationTicket;
+use Hilos\Auth\Session\SessionToastSeverity;
 use Hilos\Auth\Session\SessionToken;
 use Hilos\Auth\Throttle\ThrottleGate;
 use Hilos\Auth\Verification\VerificationService;
@@ -74,6 +80,8 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
+use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 use Hilos\Runtime\View\Actions\Collection\RecoveryWaitersActions;
@@ -86,6 +94,7 @@ use Hilos\Users\AccountMergeSummary;
 use Hilos\Users\AdminCommandConstants;
 use Hilos\Users\DTO\AccountMergeResultSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
+use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 use Random\RandomException;
 use Throwable;
@@ -134,7 +143,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /**
      * The frames this library is addressed by: seven from the users library, two from the
-     * project holding the sockets.
+     * project holding the sockets, and one from anybody with something to say to a browser.
      *
      * Routing takes the destination from whoever declares a name here, so this list IS the
      * move: the frames the users library has always sent to "the holder" now arrive at an
@@ -142,6 +151,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * {@see HilosSignalConstants::HILOS_SESSION_STATE} is deliberately absent - it is the
      * frame this library SENDS, and the project declares it. So is
      * {@see HilosSignalConstants::HILOS_ACCOUNT_MERGE_RESULT}, the answer to the ninth.
+     *
+     * The tenth has no fixed sender at all (HIL-768): a toast addressed to a session may be
+     * raised by any agent that finished something a person is waiting on, and it arrives here
+     * because the stack it lands on is the session's.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
@@ -153,14 +166,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => AuthRecoveryWaitMovedSignalData::class,
         HilosSignalConstants::HILOS_SESSION_REBIND => SessionRebindSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_MERGE => AccountMergeSignalData::class,
+        HilosSignalConstants::HILOS_SESSION_TOAST_RAISE => RaiseSessionToastSignalData::class,
     ];
 
     /**
-     * The page-independent controls of the sign-in surface, by wire name.
+     * The page-independent controls a browser has over its own session, by wire name.
      *
      * Every one of them resolves its session from the ACTING connection, so a client can
-     * only ever end, dismiss or vacate its own; the one payload among them names whom to
-     * become and still cannot name who is asking. They are the library's rather than a
+     * only ever end, dismiss or vacate its own; the one payload that names somebody says whom
+     * to become and still cannot say who is asking. They are the library's rather than a
      * project's because what they write is a session (HIL-710, HIL-729).
      *
      * The impersonation pair judges a project field on the way in - the flag that says
@@ -168,12 +182,20 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * reason to own the action, only to ask: the question goes back over
      * {@see self::assertImpersonationAllowed()} while the write stays here, which is the
      * same split the grant pair above already runs on.
+     *
+     * The last three are the tabs of one session answering about the toasts the server raised
+     * for it (HIL-768): closed, counted down, being read. They sit here for the plainest
+     * version of the same reason - the stack they answer about is stored on the session, and
+     * an answer given in one tab has to reach the others.
      */
     public const array AGENT_ACTIONS = [
         HilosSignalConstants::HILOS_LOGOUT => LogoutActionDTO::class,
         HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
         HilosSignalConstants::HILOS_IMPERSONATE_START => ImpersonateStartActionDTO::class,
         HilosSignalConstants::HILOS_IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
+        HilosSignalConstants::HILOS_TOAST_DISMISS => DismissSessionToastActionDTO::class,
+        HilosSignalConstants::HILOS_TOAST_EXPIRED => SessionToastExpiredActionDTO::class,
+        HilosSignalConstants::HILOS_TOAST_READING => SessionToastReadingActionDTO::class,
     ];
 
     /**
@@ -223,6 +245,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** @var int Times a rotation re-mints a token another session already holds before giving up */
     private const int TOKEN_MINT_ATTEMPTS = 3;
 
+    /**
+     * @var int Byte length of a session toast's name; the name is these bytes in hex
+     *
+     * Not a secret - a browser only ever answers about the cards its own session's row holds -
+     * but drawn on the rotation ticket's form for want of a reason to invent a second one.
+     */
+    private const int TOAST_KEY_RANDOM_BYTES = 16;
+
     /** Name of the cron rule that clears abandoned registrations off session rows. */
     private const string PENDING_REGISTRATION_SWEEP_RULE = 'hilos_sweep_pending_registrations';
 
@@ -252,10 +282,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Claims the session set and arms the two sweeps that keep it honest.
      *
-     * The session set and the rotations are claimed OUTRIGHT: a session belongs to this
-     * library whole. Nothing may write a framework collection until somebody says who owns
-     * it, so a project that never registers this agent simply has no sessions rather than
-     * sessions changing in a process no one else hears.
+     * The session set, the rotations and the toast stacks are claimed OUTRIGHT: a session
+     * belongs to this library whole. Nothing may write a framework collection until somebody
+     * says who owns it, so a project that never registers this agent simply has no sessions
+     * rather than sessions changing in a process no one else hears. The stacks (HIL-768) are
+     * claimed unconditionally like the rotations and for the same reason: what a browser is
+     * being shown is decided by its session, which every project carrying this agent has.
      *
      * The two WAIT collections are claimed only where they exist. They are mounted by
      * {@see AuthFeature::mount()} and by nothing else, so in a project with no sign-in
@@ -280,6 +312,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     {
         $this->registerDbTruthSource(HilosDbContext::sessions);
         $this->registerRtTruthSource(StateHilosSessionRotation::RT_COLLECTION);
+        $this->registerRtTruthSource(StateHilosSessionToastStack::RT_COLLECTION);
         if ($this->hasSignInSurface()) {
             $this->registerRtTruthSource(StateRegistrationWaiter::RT_COLLECTION);
             $this->registerRtTruthSource(StateRecoveryWaiter::RT_COLLECTION);
@@ -414,8 +447,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * recovering - which is almost always. The two that read the database are behind cron
      * rules of their own instead of running every pass.
      *
-     * Everything but the rotations is behind the sign-in surface, because everything but the
-     * rotations is a row the surface makes. A project without one reaches this method just
+     * Everything but the rotations and the toast stacks is behind the sign-in surface, because
+     * everything but those two is a row the surface makes. A project without one reaches this method just
      * as often - it has sessions like any other - and the walk it would take there is over a
      * collection that was never mounted, which raises rather than answering empty. That is
      * the runtime collections doing their job: an unmounted collection is not an empty one.
@@ -427,6 +460,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     public function onTick(): void
     {
         $this->sweepSessionRotations();
+        $this->sweepSessionToasts();
         if (!$this->hasSignInSurface()) {
             return;
         }
@@ -553,6 +587,122 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Re-decides every session's toast stack once a tick, and tells the tabs when one changed.
+     *
+     * The third of the three entrances to the removal rule, and the only one nobody asks for.
+     * The other two are a tab speaking - a countdown finished, a cursor left - and both leave
+     * a case they cannot close: the tab that was HOLDING the stack simply closes. Nothing
+     * arrives to say so, its hold would veto for the life of the process, and a card burned
+     * down in the other window would hang on screen under nobody's eyes. Here the hold stops
+     * counting because it is intersected with the sockets that are actually there.
+     *
+     * The same pass takes away the row of a session with no live socket left. A toast lives
+     * only while somebody may be looking at it, and the next tab to open is a person arriving
+     * after the fact rather than the person who was told.
+     *
+     * The live sockets are grouped ONCE for the whole pass rather than asked for per row: the
+     * question is answered by hashing the token of every live connection, and doing that per
+     * row would repeat the whole walk for each session being shown something.
+     *
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When the toast frame cannot be named
+     */
+    private function sweepSessionToasts(): void
+    {
+        $stacks = Hilos::$rt?->hilosSessionToastStacks;
+        if ($stacks === null || count($stacks) === 0) {
+            return;
+        }
+
+        $sessionTokenHashes = [];
+        foreach ($stacks as $sessionTokenHash => $stack) {
+            $sessionTokenHashes[] = $sessionTokenHash;
+        }
+
+        $liveByHash = $this->liveAcceptKeysBySessionTokenHash();
+        foreach ($sessionTokenHashes as $sessionTokenHash) {
+            $liveAcceptKeys = $liveByHash[$sessionTokenHash] ?? [];
+            if (!$stacks->actions->settle($sessionTokenHash, $liveAcceptKeys)) {
+                continue;
+            }
+            if ($liveAcceptKeys === []) {
+                // The row went because the session has no socket left: there is nobody to tell.
+                continue;
+            }
+
+            $this->publishSessionToasts($sessionTokenHash);
+        }
+    }
+
+    /**
+     * Groups the live connections by the hash of the session token they carry.
+     *
+     * The lookup the toast stacks need and the session rows do not: a stack is addressed by the
+     * HASH of a token, because whoever raised it never held the token itself
+     * ({@see AbstractAgent::resolveInitiatorSessionTokenHash()}), and a hash cannot be turned
+     * back into the token {@see self::sessionConnectionKeys()} asks by. So the walk goes the
+     * other way - every live connection's token is hashed and the keys collected under it.
+     *
+     * A project with no session-stage connections answers empty, which is the same
+     * nothing-to-do as a project with no sockets at all.
+     *
+     * @return array<string, list<string>> Session token hash => accept keys of its live connections
+     */
+    private function liveAcceptKeysBySessionTokenHash(): array
+    {
+        $connections = Hilos::$rt?->sessionConnectionsSource();
+        if ($connections === null) {
+            return [];
+        }
+
+        $byHash = [];
+        foreach ($connections as $acceptKey => $connection) {
+            $sessionToken = $connection->sessionToken;
+            if ($sessionToken === null || $sessionToken === '') {
+                continue;
+            }
+
+            $byHash[StateProtectedModeRuntime::hashSessionToken($sessionToken)][] = $acceptKey;
+        }
+
+        return $byHash;
+    }
+
+    /**
+     * Sends one session's whole toast stack to every tab of it.
+     *
+     * Addressed by hash through {@see AbstractAgent::sendToSession()}, so the master matches it
+     * against the connections it holds and this library needs no roster of sockets to write the
+     * address with. The frame carries the LIST rather than the change: a reconnect, a second
+     * tab and an ordinary removal are then one sentence, and an empty list is the legal frame
+     * that takes the last card away.
+     *
+     * Every handshake gets one, INCLUDING the empty one, and that is not a waste to optimize
+     * away. A session whose last socket dropped loses its row to the tick; the tab that comes
+     * back is then owed nothing, and it is still showing the card it had - with its countdown
+     * already reported, so nothing would ever take it off. Silence and "you are owed nothing"
+     * look the same from here and mean opposite things to the browser.
+     *
+     * @param string $sessionTokenHash Hash of the session cookie token being told
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When the frame cannot be named or queued
+     */
+    private function publishSessionToasts(string $sessionTokenHash): void
+    {
+        $stacks = Hilos::$rt?->hilosSessionToastStacks;
+        if ($stacks === null) {
+            return;
+        }
+
+        $this->sendToSession(
+            HilosSignalConstants::HILOS_SESSION_TOASTS,
+            $sessionTokenHash,
+            SessionToastsSignalData::fromStack($stacks[$sessionTokenHash]),
+        );
+    }
+
+
+    /**
      * Opens a socket's session and tells the project what that socket now is.
      *
      * The handshake is addressed HERE and nowhere else since HIL-710: it is the one moment
@@ -570,6 +720,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * exist yet (HIL-423). Only a handshake that spent a rotation ticket carries one: the
      * socket that replaces the one a login rotated away is the same browser mid-flow, not a
      * reload, and it inherits what its predecessor had not shown yet.
+     *
+     * The toast stack rides beside the frame rather than on it (HIL-768), because it is a
+     * sentence to a different audience: the state frame is read by the project holding the
+     * socket, and the stack is read by the browser. A tab opened after a card was raised is a
+     * legitimate reader of it and starts its own countdown from the full time - it has only
+     * now come into view.
      *
      * A socket with no ticket is owed whatever its SESSION still owes (HIL-649). The other
      * tabs a login drops carry no ticket - only the initiator trades one - so until now they
@@ -606,6 +762,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             pendingAck: $data->inheritedAck ?? $this->sessionPendingAck($session->token),
             pendingAuthStep: $this->pendingAuthStepFor($session),
         ));
+        $this->publishSessionToasts(StateProtectedModeRuntime::hashSessionToken($session->token));
     }
 
     /**
@@ -1804,7 +1961,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /**
      * Routes one frame addressed to this library - seven from the users library, two back
-     * over the project seam (HIL-622, HIL-710, HIL-729).
+     * over the project seam (HIL-622, HIL-710, HIL-729), and one from whoever has something to
+     * say to a browser (HIL-768).
      *
      * The switch is the framework's rather than a project's because what each frame means
      * is: the users library ends a ceremony by saying what happened, and the order this
@@ -1929,8 +2087,143 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_SESSION_TOAST_RAISE:
+                if (!$data->data instanceof RaiseSessionToastSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        RaiseSessionToastSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->raiseSessionToast($data->data);
+
+                return;
+
             default:
                 throw new AgentUnknownSignalException($name);
+        }
+    }
+
+    /**
+     * Puts one card on a session's stack and shows it to every tab of that session (HIL-768).
+     *
+     * The card's name is minted HERE, which is what stops a sender from addressing one that
+     * already exists: the sender says what to show and to whom, and everything about which
+     * card that becomes - a new one, or one more count on the identical one already up - is
+     * decided where the stack is stored. The form is the rotation ticket's, for want of a
+     * reason to invent a second one.
+     *
+     * A session with no live socket is told NOTHING, and no row is made for it. A toast lives
+     * only while somebody may be looking at it, so a card for a browser that has closed would
+     * be a row waiting for a reader who, by the time they arrive, is being told about
+     * something that finished long ago.
+     *
+     * @param RaiseSessionToastSignalData $frame Session to tell, and what to say
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When the toast frame cannot be named or queued
+     * @throws RandomException When the platform CSPRNG cannot mint the card's name
+     */
+    private function raiseSessionToast(RaiseSessionToastSignalData $frame): void
+    {
+        $stacks = Hilos::$rt?->hilosSessionToastStacks;
+        if ($stacks === null) {
+            return;
+        }
+
+        $liveAcceptKeys = $this->liveAcceptKeysBySessionTokenHash()[$frame->sessionTokenHash] ?? [];
+        if ($liveAcceptKeys === []) {
+            return;
+        }
+
+        $stacks->actions->raise(
+            $frame->sessionTokenHash,
+            RandomHelper::secureHex(self::TOAST_KEY_RANDOM_BYTES),
+            $frame->message,
+            $frame->severity,
+            $frame->source,
+            $frame->destination,
+        );
+        $this->publishSessionToasts($frame->sessionTokenHash);
+    }
+
+    /**
+     * Takes one card off a session's stack because a person closed it.
+     *
+     * @param string $sessionToken Session cookie token of the acting connection
+     * @param string $key Name of the card being closed
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When the toast frame cannot be named or queued
+     */
+    private function dismissSessionToast(string $sessionToken, string $key): void
+    {
+        $stacks = Hilos::$rt?->hilosSessionToastStacks;
+        if ($stacks === null) {
+            return;
+        }
+
+        $sessionTokenHash = StateProtectedModeRuntime::hashSessionToken($sessionToken);
+        if ($stacks->actions->dismiss($sessionTokenHash, $key)) {
+            $this->publishSessionToasts($sessionTokenHash);
+        }
+    }
+
+    /**
+     * Notes that one tab's countdown for a card has finished, then re-decides the stack.
+     *
+     * The write and the judgement are two steps because they answer different questions, and
+     * the second one has to weigh what the first tab cannot see: a cursor resting on the stack
+     * in another window holds every card in it, so a countdown that finished here waits.
+     *
+     * @param string $sessionToken Session cookie token of the acting connection
+     * @param string $key Name of the card whose countdown finished
+     * @param string $acceptKey Accept key of the tab reporting it
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When the toast frame cannot be named or queued
+     */
+    private function reportSessionToastExpired(string $sessionToken, string $key, string $acceptKey): void
+    {
+        $stacks = Hilos::$rt?->hilosSessionToastStacks;
+        if ($stacks === null) {
+            return;
+        }
+
+        $sessionTokenHash = StateProtectedModeRuntime::hashSessionToken($sessionToken);
+        $stacks->actions->markExpired($sessionTokenHash, $key, $acceptKey);
+        if ($stacks->actions->settle($sessionTokenHash, $this->sessionConnectionKeys($sessionToken))) {
+            $this->publishSessionToasts($sessionTokenHash);
+        }
+    }
+
+    /**
+     * Notes whether the stack is being read in one tab, and lets go of what was waiting on it.
+     *
+     * A hold ending is re-decided at once rather than left to the next tick: the ticket says a
+     * neighbour's finished countdown WAITS instead of firing, so the moment the last reader
+     * leaves is the moment it fires. Taking a hold changes nothing by itself - nothing can go
+     * away while somebody is reading - so only the releasing edge asks for a judgement.
+     *
+     * @param string $sessionToken Session cookie token of the acting connection
+     * @param string $acceptKey Accept key of the tab that started or stopped reading
+     * @param bool $reading Whether that tab is reading the stack now
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When the toast frame cannot be named or queued
+     */
+    private function setSessionToastReading(string $sessionToken, string $acceptKey, bool $reading): void
+    {
+        $stacks = Hilos::$rt?->hilosSessionToastStacks;
+        if ($stacks === null) {
+            return;
+        }
+
+        $sessionTokenHash = StateProtectedModeRuntime::hashSessionToken($sessionToken);
+        $stacks->actions->setReading($sessionTokenHash, $acceptKey, $reading);
+        if ($reading) {
+            return;
+        }
+
+        if ($stacks->actions->settle($sessionTokenHash, $this->sessionConnectionKeys($sessionToken))) {
+            $this->publishSessionToasts($sessionTokenHash);
         }
     }
 
@@ -2030,24 +2323,26 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Runs one of the page-independent controls of the sign-in surface.
+     * Runs one of the page-independent controls a browser has over its own session.
      *
      * Every one of them takes its session from the ACTING connection, read off the project's
      * own connection rows - which this library may read but never write. A connection carrying
-     * no session is refused for all four, because there is nothing to end, dismiss or vacate
-     * and returning was read by the browser as having done it (HIL-730). Signing out is not the
-     * exception it looks like: the token is gone from the runtime but the cookie is still in the
-     * browser, so "you are signed out" would be undone by the next reload.
+     * no session is refused for all seven, because there is nothing to end, dismiss, vacate or
+     * answer about, and returning was read by the browser as having done it (HIL-730). Signing
+     * out is not the exception it looks like: the token is gone from the runtime but the cookie
+     * is still in the browser, so "you are signed out" would be undone by the next reload.
      *
-     * One sentence covers all four, because the reason is not about the action: the connection
+     * One sentence covers all seven, because the reason is not about the action: the connection
      * does not carry a session.
      *
-     * None of them answers here. What each ends in is a session state, which the project
+     * None of them answers here. The first four end in a session state, which the project
      * puts on the wire, so the answer is carried in that frame and leaves behind the
      * identity it announces (HIL-622). The impersonation pair is the same shape - a takeover
      * a browser asked for is answered by the identity it gets back, not by an ack - so the
      * correlation id it hands the core is null; only an operator on the command socket has
-     * one (HIL-729).
+     * one (HIL-729). The three toast controls end in a toast frame instead (HIL-768), and it
+     * goes to the whole SESSION rather than to the tab that spoke: the tabs agreeing is the
+     * answer, and a tab that only heard about its own click would be the disagreement again.
      *
      * A refused takeover is the exception, and it needs no frame of its own: a guard throws,
      * and the dispatcher turns that into the action-fail ack the caller is already awaiting.
@@ -2055,7 +2350,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param string $acceptKey Accept key of the connection that submitted
      * @param string $action Owned action name from {@see AGENT_ACTIONS}
      * @param ActionPayloadDTO $dto Parsed action payload
-     * @return ?ActionReplyDTO Always null: the project answers on the state frame instead
+     * @return ?ActionReplyDTO Always null: the answer travels on a state or toast frame instead
      * @throws SessionNotOnConnectionException When the acting connection carries no session
      * @throws AgentUnknownActionException When the action is not one this library owns
      * @throws InvalidActionPayloadException When the payload does not match the action name
@@ -2101,6 +2396,30 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     throw new InvalidActionPayloadException($action, ImpersonateStopActionDTO::class, $dto);
                 }
                 $this->stopImpersonation($sessionToken, $acceptKey, null);
+
+                return null;
+
+            case HilosSignalConstants::HILOS_TOAST_DISMISS:
+                if (!$dto instanceof DismissSessionToastActionDTO) {
+                    throw new InvalidActionPayloadException($action, DismissSessionToastActionDTO::class, $dto);
+                }
+                $this->dismissSessionToast($sessionToken, $dto->key);
+
+                return null;
+
+            case HilosSignalConstants::HILOS_TOAST_EXPIRED:
+                if (!$dto instanceof SessionToastExpiredActionDTO) {
+                    throw new InvalidActionPayloadException($action, SessionToastExpiredActionDTO::class, $dto);
+                }
+                $this->reportSessionToastExpired($sessionToken, $dto->key, $acceptKey);
+
+                return null;
+
+            case HilosSignalConstants::HILOS_TOAST_READING:
+                if (!$dto instanceof SessionToastReadingActionDTO) {
+                    throw new InvalidActionPayloadException($action, SessionToastReadingActionDTO::class, $dto);
+                }
+                $this->setSessionToastReading($sessionToken, $acceptKey, $dto->reading);
 
                 return null;
 
