@@ -14,6 +14,10 @@ FROM php:8.4-cli
 # - rsync, openssh-client: what the backup agent spawns to copy an archive off
 #   this machine (BACKUP_SHIP_TARGET); without them a configured destination
 #   fails per transfer instead of at deployment
+# - age: what the agent spawns to encrypt that copy when a recipient set is
+#   configured (BACKUP_SHIP_ENCRYPT_RECIPIENTS); same bargain as rsync - its
+#   absence is a failed transfer rather than a refused start, because an
+#   installation that ships nowhere never calls it
 # -----------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libevent-dev \
@@ -24,6 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     default-mysql-client \
     rsync \
     openssh-client \
+    age \
  && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------

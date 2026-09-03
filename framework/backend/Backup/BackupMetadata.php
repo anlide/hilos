@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Backup;
 
 use Hilos\Backup\Exception\BackupMetadataIncompleteException;
+use Hilos\Backup\Ship\BackupShipPlanner;
 use Hilos\BaseDTO;
 use Hilos\Runtime\RtSyncApplicator;
 
@@ -37,6 +38,7 @@ final class BackupMetadata extends BaseDTO
     public const string shippedAt = 'shippedAt';
     public const string shipOutcome = 'shipOutcome';
     public const string shipError = 'shipError';
+    public const string shipEncryption = 'shipEncryption';
 
     /**
      * @param string $id Backup id (also the archive/sidecar base name)
@@ -67,6 +69,11 @@ final class BackupMetadata extends BaseDTO
      * @param ?BackupShipOutcome $shipOutcome Outcome of the last copy attempt; only ok/failed are ever
      *     stored, and an unknown stored value reads back as null
      * @param ?string $shipError Why the last copy attempt failed; null when none has
+     * @param ?string $shipEncryption Fingerprint of the recipient set the last copy was encrypted
+     *     to; null means that copy left in the clear, which is also what a sidecar written before
+     *     encryption existed says. It is the SHAPE of the last copy rather than a property of the
+     *     archive - the stored archive is never encrypted - so a change of recipients makes the
+     *     backup owed a copy again ({@see BackupShipPlanner::plan()})
      */
     public function __construct(
         public readonly string $id,
@@ -89,6 +96,7 @@ final class BackupMetadata extends BaseDTO
         public readonly ?string $shippedAt = null,
         public readonly ?BackupShipOutcome $shipOutcome = null,
         public readonly ?string $shipError = null,
+        public readonly ?string $shipEncryption = null,
     ) {
     }
 
@@ -121,6 +129,7 @@ final class BackupMetadata extends BaseDTO
             $this->shippedAt,
             $this->shipOutcome,
             $this->shipError,
+            $this->shipEncryption,
         );
     }
 
@@ -156,6 +165,7 @@ final class BackupMetadata extends BaseDTO
             $this->shippedAt,
             $this->shipOutcome,
             $this->shipError,
+            $this->shipEncryption,
         );
     }
 
@@ -189,6 +199,7 @@ final class BackupMetadata extends BaseDTO
             $this->shippedAt,
             $this->shipOutcome,
             $this->shipError,
+            $this->shipEncryption,
         );
     }
 
@@ -225,6 +236,7 @@ final class BackupMetadata extends BaseDTO
             $this->shippedAt,
             $this->shipOutcome,
             $this->shipError,
+            $this->shipEncryption,
         );
     }
 
@@ -238,10 +250,16 @@ final class BackupMetadata extends BaseDTO
      * @param ?string $shippedAt ISO-8601 instant of the last successful copy; null means never
      * @param ?BackupShipOutcome $outcome What that attempt concluded
      * @param ?string $error Why it failed; null on success
+     * @param ?string $encryption Fingerprint of the recipient set that copy was encrypted to; null
+     *     when it left in the clear
      * @return self Copy with the shipping recorded
      */
-    public function withShipping(?string $shippedAt, ?BackupShipOutcome $outcome, ?string $error): self
-    {
+    public function withShipping(
+        ?string $shippedAt,
+        ?BackupShipOutcome $outcome,
+        ?string $error,
+        ?string $encryption,
+    ): self {
         return new self(
             $this->id,
             $this->createdAt,
@@ -263,6 +281,7 @@ final class BackupMetadata extends BaseDTO
             $shippedAt,
             $outcome,
             $error,
+            $encryption,
         );
     }
 
@@ -317,6 +336,7 @@ final class BackupMetadata extends BaseDTO
                 isset($data[self::shipOutcome]) ? (string)$data[self::shipOutcome] : null,
             ),
             isset($data[self::shipError]) ? (string)$data[self::shipError] : null,
+            isset($data[self::shipEncryption]) ? (string)$data[self::shipEncryption] : null,
         );
     }
 
@@ -379,6 +399,7 @@ final class BackupMetadata extends BaseDTO
             self::shippedAt => $this->shippedAt,
             self::shipOutcome => $this->shipOutcome?->value,
             self::shipError => $this->shipError,
+            self::shipEncryption => $this->shipEncryption,
         ];
     }
 }

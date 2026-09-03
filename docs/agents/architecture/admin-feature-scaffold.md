@@ -204,15 +204,18 @@ also registers those. Generate, in any order:
    `BACKUP_DIR` is a local directory, so every archive lives on the same host and
    disk as the application it protects — and, in a cluster, on whichever node
    currently holds the monopoly agent. Shipping is what takes a copy off that
-   machine, and it activates through four more values: `BACKUP_SHIP_TARGET` — the
+   machine, and it activates through five more values: `BACKUP_SHIP_TARGET` — the
    destination, `ssh://<user>@<host>[:<port>]/<abs-path>` or `file:///<abs-path>`
    (a mounted network share is served by the second, so it needs no scheme of its
    own); `BACKUP_SHIP_SSH_KEY` and `BACKUP_SHIP_SSH_KNOWN_HOSTS` — the private key
    and the file the receiver's host key is pinned against, both read by the ssh
    scheme only, and the ssh scheme refuses to ship without the second (shipping is
    unattended, so there is nobody to answer a first-connection prompt, and the
-   payload is an unencrypted dump of the whole database); `BACKUP_SHIP_TIMEOUT` —
-   seconds before the agent kills a hung transfer, default 3600, beside
+   payload is a dump of the whole database — encrypted or not, a receiver that is
+   whoever answered is a problem of its own); `BACKUP_SHIP_ENCRYPT_RECIPIENTS` — an
+   absolute path to a file of `age` public keys, one per line, which the copy that
+   leaves is encrypted to; `BACKUP_SHIP_TIMEOUT` — seconds before the agent kills
+   a hung transfer, default 3600, beside
    `BACKUP_TIMEOUT` and `BACKUP_RESTORE_TIMEOUT`. **No target = no shipping**: an
    empty or unparseable destination leaves the subsystem behaving exactly as it
    does without one, and the admin list says so in its Copy column. The
@@ -222,6 +225,33 @@ also registers those. Generate, in any order:
    turns a valid archive into an error row; the destination is a mirror, so both
    deletion paths — rotation and the row's delete action — take the remote pair
    away too.
+
+   **Encryption is one behaviour, not a switch.** An empty
+   `BACKUP_SHIP_ENCRYPT_RECIPIENTS` — the default — is the *absence* of encryption:
+   the copy leaves in the clear, exactly as it did before the value existed. A
+   configured file makes what leaves ciphertext. The local archive is never
+   encrypted, so a local restore is untouched, and the sidecar travels in the clear
+   because it carries no personal data and is how the far side knows what is lying
+   there. The file holds **public** keys only: the machine can encrypt and not
+   decrypt, so breaking into it does not open what has already left — and, as the
+   deliberate other half of that, the framework cannot restore from the remote copy
+   at all. A file that is configured but unreadable, empty, or naming no recipient
+   turns shipping off **altogether** rather than falling back to a clear copy: the
+   fallback is the exposure the value was configured against. The agent says so
+   once in its log, and the Copy column reads such an installation as `none`.
+   Changing the value re-sends the whole store — turning a key on, off, or over is
+   the same event, and one mark beside the shipping outcome closes all three
+   without a migration command of its own.
+
+   **Restoring from the remote copy is an operator procedure, not code**, and one
+   step longer than it was: `age -d -i <private key> -o <base>.tar.gz <what was
+   fetched>`, then put the decrypted archive into `BACKUP_DIR` under its scope
+   directory and run `backup:restore` as usual. The name on the receiver does not
+   change — the file is called `<base>.tar.gz` whether or not it is ciphertext — so
+   what says which it is are the sidecar beside it and the file's own first bytes,
+   the text header `age-encryption.org/v1`. The `sha256` in the sidecar describes
+   the **decrypted** archive, so it matches again after the round trip and
+   `backup:verify` checks it the way it always did.
 4. A `mysqldump` binary on `PATH` in the runtime image that hosts the agent — the
    `backup:run` child shells out to it — and the `mysql` client beside it, which
    the `backup:restore-run` child replays dumps through (Debian:
@@ -230,7 +260,11 @@ also registers those. Generate, in any order:
    deployment that configures shipping needs `rsync` on `PATH` as well, and
    `openssh-client` beside it for the ssh scheme (Debian: the two packages of those
    names) — the transfer is a spawned child exactly as the dump is, and a missing
-   binary is likewise a failed transfer rather than a refused start.
+   binary is likewise a failed transfer rather than a refused start. One that also
+   configures `BACKUP_SHIP_ENCRYPT_RECIPIENTS` needs `age` (Debian: the package of
+   that name, which carries `age-keygen` too), on the same bargain: an installation
+   that ships nowhere never calls it, so its absence is a failed transfer and not a
+   refused start.
 5. Register the framework `BackupAgent` + `BackupAgentDaemon` in the project
    `AGENTS` under `BackupAgent::AGENT_TYPE` — it is monopolistic, so it claims a
    monopolistic worker slot ([../../new-project/README.md](../../new-project/README.md),

@@ -53,7 +53,7 @@ final class BackupShipPlannerTest extends TestCase
             $this->row('middle', createdAt: '2026-08-10T00:00:00+00:00'),
         ];
 
-        $plan = new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0);
+        $plan = new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, null);
 
         $this->assertNotNull($plan);
         $this->assertSame('new', $plan->backupId);
@@ -73,8 +73,56 @@ final class BackupShipPlannerTest extends TestCase
 
         $this->assertSame(
             'owed',
-            new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0)?->backupId,
+            new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, null)?->backupId,
         );
+    }
+
+    public function testACopyThatLeftInAShapeNoLongerShippedIsOwedAnother(): void
+    {
+        // Turning a key on is what this covers, and turning it off and turning it over are the
+        // same question asked the other way round: what the receiver holds no longer matches what
+        // this installation ships, so the whole store is owed a copy again. No migration command,
+        // and no state beyond the mark the last copy left.
+        $rows = [$this->row('done', shipOutcome: BackupShipOutcome::OK)];
+
+        $this->assertNull(new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, null));
+        $this->assertSame(
+            'done',
+            new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, 'a1b2c3d4e5f6')?->backupId,
+        );
+
+        $encrypted = [$this->row('done', shipOutcome: BackupShipOutcome::OK, shipEncryption: 'a1b2c3d4e5f6')];
+        $this->assertNull(
+            new BackupShipPlanner()->plan($encrypted, $this->root, [], false, 1_000_000.0, 'a1b2c3d4e5f6'),
+        );
+        // A rotated key: the copy over there is ciphertext the new key cannot open, so it goes again.
+        $this->assertSame(
+            'done',
+            new BackupShipPlanner()->plan($encrypted, $this->root, [], false, 1_000_000.0, '0f1e2d3c4b5a')?->backupId,
+        );
+        // And a key turned off sends the store back in the clear.
+        $this->assertSame(
+            'done',
+            new BackupShipPlanner()->plan($encrypted, $this->root, [], false, 1_000_000.0, null)?->backupId,
+        );
+    }
+
+    public function testEncryptionPutsItsOwnStepBeforeTheArchiveGoesAcross(): void
+    {
+        // With no recipients the pass starts where it always did, so an installation that ships
+        // in the clear sees byte-for-byte the behaviour it had before encryption existed.
+        $rows = [$this->row('owed')];
+
+        $this->assertSame(
+            BackupShipStep::PUSH_ARCHIVE,
+            new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, null)?->step,
+        );
+
+        $encrypted = new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, 'a1b2c3d4e5f6');
+        $this->assertSame(BackupShipStep::ENCRYPT_ARCHIVE, $encrypted?->step);
+        // The plan keeps naming the STORED archive whichever step it is: the staged ciphertext is
+        // the agent's business, and the sidecar half is derived from this path.
+        $this->assertSame($this->root . '/full/owed-test-full.tar.gz', $encrypted->localPath);
     }
 
     public function testAFailedAttemptStaysInTheQueue(): void
@@ -84,7 +132,7 @@ final class BackupShipPlannerTest extends TestCase
 
         $this->assertSame(
             'retried',
-            new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0)?->backupId,
+            new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, null)?->backupId,
         );
     }
 
@@ -93,7 +141,7 @@ final class BackupShipPlannerTest extends TestCase
         // An error record has a sidecar and no archive: there is nothing to copy.
         $rows = [$this->row('failed-run', status: BackupStatus::ERROR, withArchive: false)];
 
-        $this->assertNull(new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0));
+        $this->assertNull(new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, null));
     }
 
     public function testARowWhoseArchiveIsGoneIsSkipped(): void
@@ -107,7 +155,7 @@ final class BackupShipPlannerTest extends TestCase
 
         $this->assertSame(
             'present',
-            new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0)?->backupId,
+            new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, null)?->backupId,
         );
     }
 
@@ -122,14 +170,14 @@ final class BackupShipPlannerTest extends TestCase
 
         $this->assertSame(
             'older',
-            new BackupShipPlanner()->plan($rows, $this->root, $lastAttemptAt, false, $now)?->backupId,
+            new BackupShipPlanner()->plan($rows, $this->root, $lastAttemptAt, false, $now, null)?->backupId,
         );
 
         // Once the interval has elapsed the newest backup takes the link back.
         $elapsed = ['just-tried' => $now - BackupShipPlanner::RETRY_SECONDS];
         $this->assertSame(
             'just-tried',
-            new BackupShipPlanner()->plan($rows, $this->root, $elapsed, false, $now)?->backupId,
+            new BackupShipPlanner()->plan($rows, $this->root, $elapsed, false, $now, null)?->backupId,
         );
     }
 
@@ -138,7 +186,7 @@ final class BackupShipPlannerTest extends TestCase
         // The remote publish order mirrors the local one: an interrupted transfer can leave a
         // remote archive without a sidecar, never a sidecar without its archive.
         $planner = new BackupShipPlanner();
-        $archive = $planner->plan([$this->row('paired')], $this->root, [], false, 1_000_000.0);
+        $archive = $planner->plan([$this->row('paired')], $this->root, [], false, 1_000_000.0, null);
         $this->assertNotNull($archive);
 
         $sidecar = $planner->sidecarStep($archive);
@@ -168,12 +216,12 @@ final class BackupShipPlannerTest extends TestCase
         ]);
         $rows = [new BackupHistory($state)];
 
-        $this->assertNull(new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0));
+        $this->assertNull(new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, null));
     }
 
     public function testAnIdleQueueWithNothingDeletedPlansNothing(): void
     {
-        $this->assertNull(new BackupShipPlanner()->plan([], $this->root, [], false, 1_000_000.0));
+        $this->assertNull(new BackupShipPlanner()->plan([], $this->root, [], false, 1_000_000.0, null));
     }
 
     public function testAMirrorRunsOnlyOnceTheQueueIsEmpty(): void
@@ -182,10 +230,10 @@ final class BackupShipPlannerTest extends TestCase
         // removing files in the same pass that is trying to add them.
         $rows = [$this->row('owed')];
 
-        $withWork = new BackupShipPlanner()->plan($rows, $this->root, [], true, 1_000_000.0);
+        $withWork = new BackupShipPlanner()->plan($rows, $this->root, [], true, 1_000_000.0, null);
         $this->assertSame(BackupShipStep::PUSH_ARCHIVE, $withWork?->step);
 
-        $idle = new BackupShipPlanner()->plan([], $this->root, [], true, 1_000_000.0);
+        $idle = new BackupShipPlanner()->plan([], $this->root, [], true, 1_000_000.0, null);
         $this->assertSame(BackupShipStep::MIRROR, $idle?->step);
         $this->assertNull($idle->backupId);
         $this->assertSame($this->root . '/full', $idle->localPath);
@@ -200,7 +248,7 @@ final class BackupShipPlannerTest extends TestCase
         $lastAttemptAt = [];
 
         $mirrored = [];
-        while (($plan = $planner->plan([], $this->root, $lastAttemptAt, true, $now)) !== null) {
+        while (($plan = $planner->plan([], $this->root, $lastAttemptAt, true, $now, null)) !== null) {
             $mirrored[] = $plan->scope;
             $lastAttemptAt[BackupShipPlanner::MIRROR_ATTEMPT_PREFIX . $plan->scope] = $now;
         }
@@ -218,7 +266,7 @@ final class BackupShipPlannerTest extends TestCase
         $lastAttemptAt = [];
 
         $mirrored = [];
-        while (($plan = $planner->plan([], $this->root, $lastAttemptAt, true, $now)) !== null) {
+        while (($plan = $planner->plan([], $this->root, $lastAttemptAt, true, $now, null)) !== null) {
             $mirrored[] = $plan->scope;
             $lastAttemptAt[BackupShipPlanner::MIRROR_ATTEMPT_PREFIX . $plan->scope] = $now;
             // Every scope takes longer to send than the interval a failing push is re-tried on.
@@ -234,7 +282,7 @@ final class BackupShipPlannerTest extends TestCase
         // operation than mirroring what rotation removed.
         rmdir($this->root . '/full');
 
-        $plan = new BackupShipPlanner()->plan([], $this->root, [], true, 1_000_000.0);
+        $plan = new BackupShipPlanner()->plan([], $this->root, [], true, 1_000_000.0, null);
 
         $this->assertSame('schema-seed', $plan?->scope);
 
@@ -250,6 +298,7 @@ final class BackupShipPlannerTest extends TestCase
      * @param ?BackupShipOutcome $shipOutcome Recorded outcome of the last copy attempt
      * @param bool $withArchive Whether the archive file exists locally
      * @param BackupScope $scope Scope the backup belongs to
+     * @param ?string $shipEncryption Shape the last copy of it left in; null means in the clear
      * @return BackupHistory Index row for the planner
      */
     private function row(
@@ -259,6 +308,7 @@ final class BackupShipPlannerTest extends TestCase
         ?BackupShipOutcome $shipOutcome = null,
         bool $withArchive = true,
         BackupScope $scope = BackupScope::FULL,
+        ?string $shipEncryption = null,
     ): BackupHistory {
         if ($withArchive) {
             $base = BackupCreator::archiveBaseName($id, 'test', $scope);
@@ -277,6 +327,7 @@ final class BackupShipPlannerTest extends TestCase
             status: $status,
             shippedAt: $shipOutcome === BackupShipOutcome::OK ? $createdAt : null,
             shipOutcome: $shipOutcome,
+            shipEncryption: $shipEncryption,
         ));
 
         return new BackupHistory($state);

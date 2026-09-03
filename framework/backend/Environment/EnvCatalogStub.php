@@ -262,6 +262,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::BACKUP_SHIP_TARGET->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::BACKUP_SHIP_SSH_KEY->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::BACKUP_SHIP_SSH_KNOWN_HOSTS->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::BACKUP_SHIP_ENCRYPT_RECIPIENTS->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::BACKUP_SHIP_TIMEOUT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 3600, emptyIsMissing: true),
             EnvConstants::CLUSTER_ENABLED->name => self::entry(EnvCatalogConstants::TYPE_BOOLEAN, false, emptyIsMissing: true),
             EnvConstants::CLUSTER_NODE_ID->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),

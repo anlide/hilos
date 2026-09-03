@@ -430,6 +430,8 @@ final class BackupCreator
      * @param ?string $shippedAt ISO-8601 instant of the last successful copy; null means never
      * @param ?BackupShipOutcome $outcome What the attempt concluded
      * @param ?string $error Why the attempt failed; null on success
+     * @param ?string $encryption Fingerprint of the recipient set the copy was encrypted to; null
+     *     when it left in the clear
      * @return ?string The error as it was actually stored, so the index half records the same
      *     text this file does rather than an uncapped copy of it
      * @throws BackupException When the scope, root, or stored sidecar is invalid or missing
@@ -441,6 +443,7 @@ final class BackupCreator
         ?string $shippedAt,
         ?BackupShipOutcome $outcome,
         ?string $error,
+        ?string $encryption,
     ): ?string {
         $sidecarPath = $this->storedSidecarPath($row->getId(), $row->env, $row->scope, $root);
         $metadata = $this->readSidecar($sidecarPath);
@@ -449,7 +452,7 @@ final class BackupCreator
         $this->republishSidecar(
             $sidecarPath,
             self::TEMP_KIND_SHIP,
-            $metadata->withShipping($shippedAt, $outcome, $stored),
+            $metadata->withShipping($shippedAt, $outcome, $stored, $encryption),
         );
 
         return $stored;

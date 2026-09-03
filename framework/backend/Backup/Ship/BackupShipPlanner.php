@@ -61,6 +61,8 @@ final class BackupShipPlanner
      *     which {@see MIRROR_ATTEMPT_PREFIX} scopes have had their pass
      * @param bool $mirrorDirty Whether something was deleted locally since the last mirror pass
      * @param float $now Current time as a unix timestamp
+     * @param ?string $encryption Fingerprint of the recipient set copies are encrypted to now;
+     *     null when this installation ships in the clear
      * @return ?BackupShipPlan The transfer to run next, or null when there is nothing to do
      */
     public function plan(
@@ -69,8 +71,9 @@ final class BackupShipPlanner
         array $lastAttemptAt,
         bool $mirrorDirty,
         float $now,
+        ?string $encryption,
     ): ?BackupShipPlan {
-        $candidate = $this->nextCandidate($rows, $root, $lastAttemptAt, $now);
+        $candidate = $this->nextCandidate($rows, $root, $lastAttemptAt, $now, $encryption);
         if ($candidate !== null) {
             return $candidate;
         }
@@ -115,18 +118,31 @@ final class BackupShipPlanner
     /**
      * The newest backup owed a copy whose retry interval has elapsed.
      *
+     * A backup is owed one when the last attempt did not succeed, and equally when it did but left
+     * in a SHAPE the installation no longer ships in. That second half is the whole of what makes
+     * turning a key on re-send the store as ciphertext, turning it off re-send it in the clear,
+     * and turning it over re-send copies the old key can no longer open - no migration command,
+     * and no state beyond the mark the last copy left.
+     *
      * @param list<BackupHistory> $rows Current backup index rows
      * @param string $root Local storage root
      * @param array<string, float> $lastAttemptAt When each backup id was last attempted
      * @param float $now Current time as a unix timestamp
-     * @return ?BackupShipPlan Archive step of that backup, or null when none is due
+     * @param ?string $encryption Fingerprint copies are encrypted to now; null for a clear copy
+     * @return ?BackupShipPlan First step of that backup, or null when none is due
      */
-    private function nextCandidate(array $rows, string $root, array $lastAttemptAt, float $now): ?BackupShipPlan
-    {
+    private function nextCandidate(
+        array $rows,
+        string $root,
+        array $lastAttemptAt,
+        float $now,
+        ?string $encryption,
+    ): ?BackupShipPlan {
         $candidates = array_values(array_filter(
             $rows,
             static fn(BackupHistory $row): bool => BackupStatus::fromString($row->status) === BackupStatus::SUCCESS
-                && BackupShipOutcome::fromString($row->shipOutcome) !== BackupShipOutcome::OK,
+                && (BackupShipOutcome::fromString($row->shipOutcome) !== BackupShipOutcome::OK
+                    || $row->shipEncryption !== $encryption),
         ));
 
         usort($candidates, static fn(BackupHistory $a, BackupHistory $b): int => strcmp($b->createdAt, $a->createdAt));
@@ -141,7 +157,9 @@ final class BackupShipPlanner
                 continue;
             }
 
-            return new BackupShipPlan(BackupShipStep::PUSH_ARCHIVE, $row->getId(), (string)$row->scope, $archivePath);
+            $step = $encryption === null ? BackupShipStep::PUSH_ARCHIVE : BackupShipStep::ENCRYPT_ARCHIVE;
+
+            return new BackupShipPlan($step, $row->getId(), (string)$row->scope, $archivePath);
         }
 
         return null;

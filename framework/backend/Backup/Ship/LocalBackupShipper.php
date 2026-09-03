@@ -33,7 +33,7 @@ final class LocalBackupShipper implements BackupShipperInterface
     {
         return new BackupShipCommand(self::BINARY, [
             '-a',
-            '--partial',
+            '--partial-dir=' . self::PARTIAL_DIR,
             $localPath,
             $this->destination($scope),
         ]);
@@ -47,9 +47,12 @@ final class LocalBackupShipper implements BackupShipperInterface
     public function mirrorCommand(string $localScopeDir, string $scope): BackupShipCommand
     {
         return new BackupShipCommand(self::BINARY, [
-            '-a',
+            '-r',
             '--delete',
+            '--existing',
+            '--ignore-existing',
             self::EXCLUDE_TEMP,
+            self::EXCLUDE_PARTIAL_DIR,
             rtrim($localScopeDir, '/') . '/',
             $this->destination($scope),
         ]);

@@ -9,6 +9,7 @@ use Hilos\Backup\BackupHistoryScanner;
 use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupStatus;
+use Hilos\Backup\Ship\BackupArchiveEncryptor;
 use Hilos\Backup\Ship\BackupShipCommand;
 use Hilos\Backup\Ship\BackupShipPlan;
 use Hilos\Backup\Ship\BackupShipPlanner;
@@ -98,6 +99,12 @@ final class BackupShipperIntegrationTest extends TestCase
 
     private string $storeRoot = '';
 
+    /** Private half of the throwaway age pair; it stands in for the operator, never the machine. */
+    private string $agePrivateKey = '';
+
+    /** Recipients file the encryptor is pointed at: the public half, one key on a line. */
+    private string $ageRecipients = '';
+
     private ?EnvAccessor $previousEnv = null;
 
     /**
@@ -131,6 +138,7 @@ final class BackupShipperIntegrationTest extends TestCase
             self::RECEIVER_ROOT,
         ));
 
+        $this->mintAgeKeyPair();
         $this->waitForReceiver();
         $this->clearReceiver();
     }
@@ -153,7 +161,9 @@ final class BackupShipperIntegrationTest extends TestCase
         putenv('BACKUP_SHIP_TARGET');
         putenv('BACKUP_SHIP_SSH_KEY');
         putenv('BACKUP_SHIP_SSH_KNOWN_HOSTS');
+        putenv('BACKUP_SHIP_ENCRYPT_RECIPIENTS');
         $this->removeTree($this->storeRoot);
+        $this->removeTree(dirname($this->agePrivateKey));
 
         parent::tearDown();
     }
@@ -231,6 +241,7 @@ final class BackupShipperIntegrationTest extends TestCase
             [],
             mirrorDirty: true,
             now: microtime(true),
+            encryption: null,
         );
         self::assertNotNull($mirror, 'a local deletion left nothing for the mirror to do');
         self::assertSame(BackupShipStep::MIRROR, $mirror->step);
@@ -289,6 +300,98 @@ final class BackupShipperIntegrationTest extends TestCase
     }
 
     /**
+     * The encrypted half, end to end: what leaves is ciphertext, and the operator gets the archive
+     * back from it with a private key this machine never held.
+     *
+     * The only place the round trip is proven at all. Every other statement about encryption is
+     * about argv - which flags `age` is handed, which step the planner picks - and argv cannot say
+     * whether the bytes survive. If they do not, the failure surfaces on the day the original
+     * machine is gone, which is the one day nothing can be done about it.
+     *
+     * @throws CouldNotStartException When a command cannot be spawned
+     * @throws EnvInvalidValueException When a configured value cannot be read as a string
+     * @throws EnvKeyInvalidException When an environment key is malformed
+     * @throws EnvNotInCatalogException When the catalog declares no shipping destination
+     * @throws EnvTypeMismatchException When the catalog declares a shipping value as another type
+     * @throws FailedToClosePipeException When a command's pipes cannot be closed
+     * @throws FailedToGetStatusException When a command's status cannot be read
+     * @throws FailedToReadStdOutException When a command's stdout cannot be read
+     * @throws FailedToSetNonBlockingException When a command's pipes cannot be made non-blocking
+     * @throws FailedToSetStdErrException When a command's stderr cannot be read
+     * @throws FailedToTerminateProcessException When a command cannot be terminated
+     * @throws FailedToWriteStdInException When a command's stdin cannot be written
+     * @throws JsonException When the fixture sidecar cannot be encoded
+     * @throws MissingEnvironmentVariableException When a shipping value is required and unset
+     */
+    public function testTheEncryptedCopyCrossesAndComesBackWhole(): void
+    {
+        putenv('BACKUP_SHIP_ENCRYPT_RECIPIENTS=' . $this->ageRecipients);
+        $encryptor = BackupArchiveEncryptor::fromEnv();
+        self::assertNotNull($encryptor, 'the minted recipients file was not usable');
+
+        $archivePath = $this->storeFixtureBackup();
+        $planner = new BackupShipPlanner();
+        $step = $planner->plan(
+            [$this->row()],
+            $this->storeRoot,
+            [],
+            false,
+            microtime(true),
+            $encryptor->fingerprint(),
+        );
+        self::assertNotNull($step, 'the stored backup was not offered for shipping');
+        self::assertSame(BackupShipStep::ENCRYPT_ARCHIVE, $step->step);
+
+        $staged = $this->stageAndEncrypt($encryptor, $step->localPath);
+
+        // The stored archive is untouched: a local restore is the same operation it always was,
+        // which is the whole reason the key is not part of this deployment.
+        self::assertSame($this->fixturePayload(), file_get_contents($archivePath));
+        self::assertStringStartsWith(
+            'age-encryption.org/v1',
+            (string)file_get_contents($staged),
+            'the staged copy is not age ciphertext',
+        );
+
+        $shipper = $this->shipper();
+        $this->runToSuccess($shipper->pushCommand($staged, $step->scope));
+        $sidecarStep = $planner->sidecarStep($step);
+        $this->runToSuccess($shipper->pushCommand($sidecarStep->localPath, $sidecarStep->scope));
+
+        // The name on the receiver does not change, which is what makes turning a key on overwrite
+        // the clear copy that is already sitting there instead of leaving both.
+        self::assertSame(
+            [basename($sidecarStep->localPath), basename($archivePath)],
+            $this->remoteNames(BackupScope::FULL->value),
+        );
+
+        $landed = $this->storeRoot . '/landed.tar.gz';
+        file_put_contents($landed, $this->remoteContents(basename($archivePath)));
+        $recovered = $this->storeRoot . '/recovered.tar.gz';
+        $this->runToSuccess(new BackupShipCommand(BackupArchiveEncryptor::BINARY, [
+            '-d',
+            '-i',
+            $this->agePrivateKey,
+            '-o',
+            $recovered,
+            $landed,
+        ]));
+
+        self::assertSame(
+            $this->fixturePayload(),
+            file_get_contents($recovered),
+            'the archive did not survive the encrypt-ship-decrypt round trip',
+        );
+        // The sidecar travels in the clear and describes the ARCHIVE, so the digest an operator
+        // checks after decrypting is the one that was written before encrypting.
+        self::assertSame(
+            hash('sha256', $this->fixturePayload()),
+            hash_file('sha256', $recovered),
+        );
+        self::assertSame($this->metadata()->sha256, hash_file('sha256', $recovered));
+    }
+
+    /**
      * Stores a fixture backup and ships its archive the way the agent would: ask the planner what
      * is due, run what the driver builds for it.
      *
@@ -314,7 +417,7 @@ final class BackupShipperIntegrationTest extends TestCase
         $shipper = $this->shipper();
 
         $planner = new BackupShipPlanner();
-        $archiveStep = $planner->plan([$this->row()], $this->storeRoot, [], false, microtime(true));
+        $archiveStep = $planner->plan([$this->row()], $this->storeRoot, [], false, microtime(true), null);
         self::assertNotNull($archiveStep, 'the stored backup was not offered for shipping');
         self::assertSame(BackupShipStep::PUSH_ARCHIVE, $archiveStep->step);
 
@@ -351,10 +454,6 @@ final class BackupShipperIntegrationTest extends TestCase
     /**
      * Writes the fixture archive and its sidecar where {@see BackupCreator} publishes them.
      *
-     * The archive carries every byte value rather than a line of text: a transfer that mangles
-     * one is the failure this test exists to catch, and text survives most of the ways that go
-     * wrong.
-     *
      * @return string Absolute path of the stored archive
      * @throws JsonException When the fixture sidecar cannot be encoded
      */
@@ -363,13 +462,8 @@ final class BackupShipperIntegrationTest extends TestCase
         $base = $this->storeRoot . '/' . BackupScope::FULL->value . '/'
             . BackupCreator::archiveBaseName(self::BACKUP_ID, self::BACKUP_ENV, BackupScope::FULL);
 
-        $payload = '';
-        for ($byte = 0; $byte < self::BYTE_VALUES; $byte++) {
-            $payload .= str_repeat(chr($byte), self::ARCHIVE_PATTERN_REPEAT);
-        }
-
         $archivePath = $base . BackupHistoryScanner::ARCHIVE_EXTENSION;
-        file_put_contents($archivePath, $payload);
+        file_put_contents($archivePath, $this->fixturePayload());
         file_put_contents(
             $base . BackupHistoryScanner::SIDECAR_EXTENSION,
             json_encode($this->metadata()->toArray(), JSON_THROW_ON_ERROR),
@@ -379,11 +473,89 @@ final class BackupShipperIntegrationTest extends TestCase
     }
 
     /**
+     * Mints the throwaway age pair the encrypted round trip is run with.
+     *
+     * The private half lives outside the store and stands in for the operator, who is the only
+     * one who ever has it: the machine holds nothing but the public recipient, so a test that
+     * planted a private key in the installation would prove a setup this leaf does not have.
+     *
+     * @throws CouldNotStartException When age-keygen cannot be spawned
+     * @throws FailedToClosePipeException When age-keygen's pipes cannot be closed
+     * @throws FailedToGetStatusException When age-keygen's status cannot be read
+     * @throws FailedToReadStdOutException When age-keygen's stdout cannot be read
+     * @throws FailedToSetNonBlockingException When age-keygen's pipes cannot be made non-blocking
+     * @throws FailedToSetStdErrException When age-keygen's stderr cannot be read
+     * @throws FailedToTerminateProcessException When age-keygen cannot be terminated
+     * @throws FailedToWriteStdInException When age-keygen's stdin cannot be written
+     */
+    private function mintAgeKeyPair(): void
+    {
+        $keyDir = $this->storeRoot . '-age';
+        $this->removeTree($keyDir);
+        mkdir($keyDir, 0700, true);
+
+        $this->agePrivateKey = $keyDir . '/identity.txt';
+        $this->ageRecipients = $keyDir . '/recipients.txt';
+
+        $minted = $this->execute('age-keygen', ['-o', $this->agePrivateKey]);
+        self::assertSame(0, $minted['code'], 'age-keygen failed: ' . $minted['stderr']);
+
+        // Derived from the private half rather than scraped out of the line age-keygen prints,
+        // so the recipients file cannot end up naming a key the identity does not open.
+        $public = $this->execute('age-keygen', ['-y', $this->agePrivateKey]);
+        self::assertSame(0, $public['code'], 'age-keygen -y failed: ' . $public['stderr']);
+        file_put_contents($this->ageRecipients, trim($public['stdout']) . "\n");
+    }
+
+    /**
+     * Encrypts one stored archive into the staging directory the agent would use.
+     *
+     * @param BackupArchiveEncryptor $encryptor Encryptor over the minted recipients file
+     * @param string $archivePath Absolute path of the stored archive
+     * @return string Absolute path of the staged ciphertext
+     * @throws CouldNotStartException When age cannot be spawned
+     * @throws FailedToClosePipeException When age's pipes cannot be closed
+     * @throws FailedToGetStatusException When age's status cannot be read
+     * @throws FailedToReadStdOutException When age's stdout cannot be read
+     * @throws FailedToSetNonBlockingException When age's pipes cannot be made non-blocking
+     * @throws FailedToSetStdErrException When age's stderr cannot be read
+     * @throws FailedToTerminateProcessException When age cannot be terminated
+     * @throws FailedToWriteStdInException When age's stdin cannot be written
+     */
+    private function stageAndEncrypt(BackupArchiveEncryptor $encryptor, string $archivePath): string
+    {
+        $scopeDir = dirname($archivePath);
+        $base = basename($archivePath, BackupHistoryScanner::ARCHIVE_EXTENSION);
+        $staged = BackupArchiveEncryptor::stagedArchivePath($scopeDir, $base, getmypid());
+        mkdir(dirname($staged), 0700, true);
+
+        $this->runToSuccess($encryptor->encryptCommand($archivePath, $staged));
+
+        return $staged;
+    }
+
+    /**
      * @return BackupHistory Index row of the fixture backup, as the agent would hold it
      */
     private function row(): BackupHistory
     {
         return new BackupHistory(StateBackupHistory::fromMetadata($this->metadata()));
+    }
+
+    /**
+     * The fixture archive's bytes: every value a byte can take, so a transfer or an encryption
+     * that mangles one is caught. Text survives most of the ways either goes wrong.
+     *
+     * @return string Fixture archive payload
+     */
+    private function fixturePayload(): string
+    {
+        $payload = '';
+        for ($byte = 0; $byte < self::BYTE_VALUES; $byte++) {
+            $payload .= str_repeat(chr($byte), self::ARCHIVE_PATTERN_REPEAT);
+        }
+
+        return $payload;
     }
 
     /**
@@ -401,6 +573,9 @@ final class BackupShipperIntegrationTest extends TestCase
             durationSeconds: 1,
             keep: false,
             status: BackupStatus::SUCCESS,
+            // The digest describes the ARCHIVE, not the copy: it is written before the copy is
+            // encrypted and checked after it is decrypted, so it survives the round trip.
+            sha256: hash('sha256', $this->fixturePayload()),
         );
     }
 
@@ -643,6 +818,10 @@ final class BackupShipperIntegrationTest extends TestCase
     /**
      * Removes a directory tree, ignoring one that is not there.
      *
+     * Walked with `scandir` rather than `glob('*')`, which is what the store scan uses and which
+     * is exactly why the staging directory is dotted: invisible to the scanner is also invisible
+     * to a teardown that asks the same question, and the leftover would outlive the run.
+     *
      * @param string $path Absolute path of the tree to remove
      */
     private function removeTree(string $path): void
@@ -651,8 +830,13 @@ final class BackupShipperIntegrationTest extends TestCase
             return;
         }
 
-        foreach (glob($path . '/*') ?: [] as $entry) {
-            is_dir($entry) ? $this->removeTree($entry) : unlink($entry);
+        foreach (scandir($path) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $child = $path . '/' . $entry;
+            is_dir($child) ? $this->removeTree($child) : unlink($child);
         }
 
         rmdir($path);

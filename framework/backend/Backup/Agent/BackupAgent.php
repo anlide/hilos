@@ -40,6 +40,7 @@ use Hilos\Backup\BackupSpaceDecision;
 use Hilos\Backup\BackupSpaceGuard;
 use Hilos\Backup\BackupSpacePolicy;
 use Hilos\Backup\BackupStatus;
+use Hilos\Backup\Ship\BackupArchiveEncryptor;
 use Hilos\Backup\Ship\BackupShipCommand;
 use Hilos\Backup\Ship\BackupShipPlan;
 use Hilos\Backup\Ship\BackupShipPlanner;
@@ -69,6 +70,8 @@ use Hilos\Core\Exception\ProcessException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsPath;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Core\Daemon\Cron\CronRule;
@@ -226,6 +229,24 @@ final class BackupAgent extends AbstractAgent
     /** What that transfer is doing, or null when none is in flight. */
     private ?BackupShipPlan $shipPlan = null;
 
+    /**
+     * Absolute path of the staged ciphertext the pass in flight is sending, or null when the copy
+     * leaves in the clear.
+     *
+     * It lives exactly one pass. Holding it until the transfer succeeds would be worse than
+     * re-encrypting on a retry: a full-size second copy of the archive would sit in the store for
+     * as long as the link is down, quietly eating the headroom rotation exists to protect. Age
+     * ciphertext differs on every run anyway, so a resumed transfer of an old one is worthless.
+     */
+    private ?string $shipStagedPath = null;
+
+    /**
+     * Fingerprint of the recipient set the pass in flight encrypts to, or null when it ships in
+     * the clear. Read once when the pass is planned, so every step of the chain records the shape
+     * the copy actually left in even if the value changes underneath mid-pass.
+     */
+    private ?string $shipEncryption = null;
+
     /** Instant (microtime) the in-flight transfer was spawned; 0.0 when none is. */
     private float $shipStartedAt = 0.0;
 
@@ -247,6 +268,12 @@ final class BackupAgent extends AbstractAgent
 
     /** Whether an unusable shipping destination has already been reported; it is a standing state. */
     private bool $shipTargetReported = false;
+
+    /**
+     * Whether an unusable encryption recipient set has already been reported; a standing state of
+     * its own, so the operator is told which of the two values is the one that stopped shipping.
+     */
+    private bool $shipEncryptionReported = false;
 
     /**
      * The part of the child's last stdout chunk that had no line break yet.
@@ -503,9 +530,12 @@ final class BackupAgent extends AbstractAgent
             $this->childProcess->halt();
         }
         // A killed transfer loses nothing: the local archive is untouched, the sidecar still says
-        // the copy has not landed, and the next pass starts it over.
+        // the copy has not landed, and the next pass starts it over. The staged ciphertext goes
+        // with it - full-size and useless to a resumed transfer, since age writes a different one
+        // every time.
         if ($this->shipProcess !== null) {
             $this->shipProcess->halt();
+            $this->discardStagedCiphertext();
         }
         if ($this->restoreEngaged()) {
             // The pending create slot is dropped first: the finalizer drains it into
@@ -782,15 +812,24 @@ final class BackupAgent extends AbstractAgent
             $planner = new BackupShipPlanner();
             $attempts = [];
             $now = microtime(true);
+            $encryptor = BackupArchiveEncryptor::fromEnv();
+            $this->shipEncryption = $encryptor?->fingerprint();
 
             while (true) {
-                $plan = $planner->plan($this->indexRows(), $root, $attempts, $this->mirrorDirty, $now);
+                $plan = $planner->plan(
+                    $this->indexRows(),
+                    $root,
+                    $attempts,
+                    $this->mirrorDirty,
+                    $now,
+                    $this->shipEncryption,
+                );
                 if ($plan === null) {
                     break;
                 }
 
                 $attempts[self::shipAttemptKey($plan)] = $now;
-                $error = $this->shipStepNow($shipper, $planner, $plan);
+                $error = $this->shipStepNow($shipper, $planner, $plan, $encryptor);
 
                 if ($plan->step === BackupShipStep::MIRROR) {
                     $mirrorFailed = $mirrorFailed || $error !== null;
@@ -819,11 +858,17 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
-     * Runs one planned transfer to completion, its sidecar half included, and records the outcome.
+     * Runs one planned transfer to completion, its encryption and sidecar halves included, and
+     * records the outcome.
+     *
+     * It walks the same steps the ticking pass does rather than a shorter path of its own: this is
+     * what an integration run against a real receiver proves, and a forced pass that skipped the
+     * encryption would prove the wrong thing.
      *
      * @param BackupShipperInterface $shipper Driver for the configured destination
      * @param BackupShipPlanner $planner Planner the sidecar half is derived from
      * @param BackupShipPlan $plan Transfer to run
+     * @param ?BackupArchiveEncryptor $encryptor Encryptor of this pass; null when it ships in the clear
      * @return ?string Failure detail, or null when the backup reached the destination whole
      * @throws EnvException When a backup env value is missing or cannot be read as its type
      */
@@ -831,15 +876,12 @@ final class BackupAgent extends AbstractAgent
         BackupShipperInterface $shipper,
         BackupShipPlanner $planner,
         BackupShipPlan $plan,
+        ?BackupArchiveEncryptor $encryptor,
     ): ?string {
         $timeout = (float)Hilos::$env->int(EnvConstants::BACKUP_SHIP_TIMEOUT);
-        $command = $plan->step === BackupShipStep::MIRROR
-            ? $shipper->mirrorCommand($plan->localPath, $plan->scope)
-            : $shipper->pushCommand($plan->localPath, $plan->scope);
-
-        $error = $this->runToCompletion($command, $timeout);
 
         if ($plan->step === BackupShipStep::MIRROR) {
+            $error = $this->runToCompletion($shipper->mirrorCommand($plan->localPath, $plan->scope), $timeout);
             if ($error !== null) {
                 $this->logAgentWarning("Backup mirror of scope {$plan->scope} failed: {$error}");
             }
@@ -847,7 +889,21 @@ final class BackupAgent extends AbstractAgent
             return $error;
         }
 
-        if ($error === null && $plan->step === BackupShipStep::PUSH_ARCHIVE) {
+        $error = null;
+        if ($plan->step === BackupShipStep::ENCRYPT_ARCHIVE) {
+            $command = $this->encryptionCommand($plan, $encryptor);
+            $error = $command === null
+                ? 'no room to stage the encrypted copy'
+                : $this->runToCompletion($command, $timeout);
+        }
+
+        if ($error === null) {
+            $archive = $shipper->pushCommand($this->shipStagedPath ?? $plan->localPath, $plan->scope);
+            $error = $this->runToCompletion($archive, $timeout);
+        }
+        $this->discardStagedCiphertext();
+
+        if ($error === null) {
             $sidecar = $planner->sidecarStep($plan);
             $error = $this->runToCompletion($shipper->pushCommand($sidecar->localPath, $sidecar->scope), $timeout);
         }
@@ -1886,13 +1942,15 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
-     * Closes out the transfer that just ended, recording what it means for the backup.
+     * Closes out the step that just ended, recording what it means for the backup.
      *
      * A finished archive step spawns its sidecar step straight away rather than going back to the
      * planner: the pair is one publish, and leaving the gap open for a tick would let a rotation
-     * or a restart strand an archive on the receiver with no sidecar beside it.
+     * or a restart strand an archive on the receiver with no sidecar beside it. A finished
+     * encryption step chains into the archive push the same way and for the same reason - the
+     * staged ciphertext lives one pass, and a tick's gap is a tick in which nothing is holding it.
      *
-     * @param ?string $error Failure detail, or null when the transfer succeeded
+     * @param ?string $error Failure detail, or null when the step succeeded
      * @throws EnvException When a backup env value is missing or cannot be read as its type
      * @throws ProcessException When the follow-up transfer child cannot be started
      */
@@ -1921,21 +1979,64 @@ final class BackupAgent extends AbstractAgent
         }
 
         if ($error !== null) {
+            // A failed encryption is an ordinary failure of this backup's copy: `age` names the
+            // culprit in its own stderr, and the operator's question is the same one either way -
+            // the copy did not leave, and here is why.
+            $this->discardStagedCiphertext();
             $this->recordShipOutcome($plan, false, $error);
 
             return;
         }
 
+        if ($plan->step === BackupShipStep::ENCRYPT_ARCHIVE) {
+            $this->chainShipStep(new BackupShipPlan(
+                BackupShipStep::PUSH_ARCHIVE,
+                $plan->backupId,
+                $plan->scope,
+                $plan->localPath,
+            ));
+
+            return;
+        }
+
         if ($plan->step === BackupShipStep::PUSH_ARCHIVE) {
-            $shipper = $this->shipper();
-            if ($shipper !== null) {
-                $this->spawnShipStep($shipper, new BackupShipPlanner()->sidecarStep($plan));
-            }
+            // Whatever the sidecar half does, the ciphertext has served its one pass: the archive
+            // is across, and a retry would encrypt afresh anyway.
+            $this->discardStagedCiphertext();
+            $this->chainShipStep(new BackupShipPlanner()->sidecarStep($plan));
 
             return;
         }
 
         $this->recordShipOutcome($plan, true, null);
+    }
+
+    /**
+     * Spawns the step that follows a finished one, within the same pass.
+     *
+     * The encryptor is re-read rather than held from the pass start, so a recipients file that
+     * became unusable mid-pass stops the chain here instead of pushing under a driver that no
+     * longer exists. What is RECORDED still comes from {@see self::$shipEncryption}, which was
+     * read when the pass was planned: the shape written down is the shape that actually left.
+     *
+     * @param BackupShipPlan $plan Next step of the pass
+     * @throws EnvException When a backup env value is missing or cannot be read as its type
+     * @throws ProcessException When the transfer child cannot be started
+     */
+    private function chainShipStep(BackupShipPlan $plan): void
+    {
+        $shipper = $this->shipper();
+        if ($shipper === null) {
+            // The pass ends here, so the ciphertext staged for it has nowhere left to go. Leaving
+            // it would leave a full-size copy of the archive under a dotted name the store scan
+            // never sees, and the sweep that reclaims one runs only on the next encryption of the
+            // same archive - which never comes if the key was removed rather than replaced.
+            $this->discardStagedCiphertext();
+
+            return;
+        }
+
+        $this->spawnShipStep($shipper, $plan, BackupArchiveEncryptor::fromEnv());
     }
 
     /**
@@ -1977,12 +2078,20 @@ final class BackupAgent extends AbstractAgent
             return;
         }
 
+        // Read once per pass rather than per step: the chain records the shape the copy left in,
+        // and a recipients file rewritten between two steps of one copy must not make the record
+        // describe a mixture of both.
+        $encryptor = BackupArchiveEncryptor::fromEnv();
+        $this->shipEncryption = $encryptor?->fingerprint();
+        $this->shipStagedPath = null;
+
         $plan = new BackupShipPlanner()->plan(
             $this->indexRows(),
             $root,
             $this->shipAttemptAt,
             $this->mirrorDirty,
             microtime(true),
+            $this->shipEncryption,
         );
 
         if ($plan === null) {
@@ -1993,32 +2102,53 @@ final class BackupAgent extends AbstractAgent
             return;
         }
 
-        $this->spawnShipStep($shipper, $plan);
+        $this->spawnShipStep($shipper, $plan, $encryptor);
     }
 
     /**
-     * Spawns one transfer and takes the slot.
+     * Spawns one step of the pass and takes the slot.
      *
      * @param BackupShipperInterface $shipper Driver for the configured destination
-     * @param BackupShipPlan $plan Transfer to run
+     * @param BackupShipPlan $plan Step to run
+     * @param ?BackupArchiveEncryptor $encryptor Encryptor of this pass; null when it ships in the clear
      * @throws EnvException When a backup env value is missing or cannot be read as its type
      */
-    private function spawnShipStep(BackupShipperInterface $shipper, BackupShipPlan $plan): void
-    {
-        $command = $plan->step === BackupShipStep::MIRROR
-            ? $shipper->mirrorCommand($plan->localPath, $plan->scope)
-            : $shipper->pushCommand($plan->localPath, $plan->scope);
-
-        // Stamped before the spawn, so the mark names when this transfer started looking at the
-        // store rather than when it stopped. A transfer that failed after running for a while is
-        // owed an immediate retry; one that failed instantly is what the interval paces.
+    private function spawnShipStep(
+        BackupShipperInterface $shipper,
+        BackupShipPlan $plan,
+        ?BackupArchiveEncryptor $encryptor,
+    ): void {
+        // Stamped before the spawn, so the mark names when this step started looking at the store
+        // rather than when it stopped. A transfer that failed after running for a while is owed an
+        // immediate retry; one that failed instantly is what the interval paces. It is stamped
+        // even when the step never spawns, so a store with no room paces its retries too.
         $this->shipAttemptAt[self::shipAttemptKey($plan)] = microtime(true);
 
+        if ($plan->step === BackupShipStep::ENCRYPT_ARCHIVE) {
+            $command = $this->encryptionCommand($plan, $encryptor);
+            if ($command === null) {
+                return;
+            }
+        } else {
+            $command = match ($plan->step) {
+                BackupShipStep::MIRROR => $shipper->mirrorCommand($plan->localPath, $plan->scope),
+                // The archive that goes across is the staged ciphertext when there is one, while
+                // the plan keeps naming the STORED archive: that is what the sidecar step is
+                // derived from, and what the record is written against.
+                BackupShipStep::PUSH_ARCHIVE => $shipper->pushCommand(
+                    $this->shipStagedPath ?? $plan->localPath,
+                    $plan->scope,
+                ),
+                default => $shipper->pushCommand($plan->localPath, $plan->scope),
+            };
+        }
+
         try {
-            // cwd stays null: rsync is given absolute paths on both sides.
+            // cwd stays null: every binary is given absolute paths on both sides.
             $this->shipProcess = new Process($command->binary, $command->args);
         } catch (Throwable $e) {
             $this->shipProcess = null;
+            $this->discardStagedCiphertext();
             $this->recordShipOutcome($plan, false, 'failed to spawn ' . $command->binary . ': ' . $e->getMessage());
 
             return;
@@ -2026,6 +2156,131 @@ final class BackupAgent extends AbstractAgent
 
         $this->shipPlan = $plan;
         $this->shipStartedAt = microtime(true);
+    }
+
+    /**
+     * Stages the ciphertext of one archive and builds the command writing it.
+     *
+     * Null means the step does not happen this time round: there is no encryptor, no room, or the
+     * staging directory cannot be made. None of the three is a failure of the copy - nothing was
+     * attempted - so the outcome is left alone and the stamped attempt brings the backup back
+     * after {@see BackupShipPlanner::RETRY_SECONDS}. A full disk stops the product, not the copy.
+     *
+     * @param BackupShipPlan $plan Step naming the stored archive to encrypt
+     * @param ?BackupArchiveEncryptor $encryptor Encryptor of this pass
+     * @return ?BackupShipCommand Command writing the staged ciphertext, or null when it is not staged
+     * @throws EnvException When the free-space floor cannot be read
+     */
+    private function encryptionCommand(BackupShipPlan $plan, ?BackupArchiveEncryptor $encryptor): ?BackupShipCommand
+    {
+        if ($encryptor === null) {
+            return null;
+        }
+
+        $scopeDir = dirname($plan->localPath);
+        $base = basename($plan->localPath, BackupCreator::ARCHIVE_EXTENSION);
+        // A previous pass killed mid-encryption left its directory behind; it is named by that
+        // pid, so it is swept by prefix rather than found by name.
+        $this->sweepStagedCiphertext($scopeDir, $base);
+
+        if (!$this->hasRoomForCiphertext($plan->localPath, $scopeDir)) {
+            return null;
+        }
+
+        $stageDir = BackupArchiveEncryptor::stageDir($scopeDir, $base, getmypid());
+
+        try {
+            FsPath::ensureDirectory($stageDir, 0755);
+        } catch (FsException $failure) {
+            $this->logAgentWarning(
+                "Backup {$plan->backupId} could not be staged for encryption: " . $failure->getMessage(),
+            );
+
+            return null;
+        }
+
+        $this->shipStagedPath = BackupArchiveEncryptor::stagedArchivePath($scopeDir, $base, getmypid());
+
+        return $encryptor->encryptCommand($plan->localPath, $this->shipStagedPath);
+    }
+
+    /**
+     * Whether the store can hold a second, ciphertext-sized copy of one archive.
+     *
+     * Held to the same floor a backup run is ({@see EnvConstants::BACKUP_MIN_FREE_BYTES}), because
+     * the staged copy is as real as the archive: writing it into the last free bytes would leave
+     * the disk full for the rotation and the next run rather than merely failing this copy. An
+     * unmeasurable size or free space reads as "proceed", the way the create path's guard does.
+     *
+     * @param string $archivePath Absolute path of the stored archive to be encrypted
+     * @param string $scopeDir Directory the ciphertext would be written into
+     * @return bool True when the ciphertext fits with the floor left over
+     * @throws EnvException When the free-space floor cannot be read
+     */
+    private function hasRoomForCiphertext(string $archivePath, string $scopeDir): bool
+    {
+        $free = $this->freeSpaceAt($scopeDir);
+        if ($free === false) {
+            return true;
+        }
+
+        try {
+            $required = FsPath::size($archivePath) + Hilos::$env->int(EnvConstants::BACKUP_MIN_FREE_BYTES);
+        } catch (FsException) {
+            return true;
+        }
+
+        if ($free >= $required) {
+            return true;
+        }
+
+        $this->logAgentWarning(sprintf(
+            'Backup encryption postponed: %d free bytes under %s, %d needed for the staged copy',
+            $free,
+            $scopeDir,
+            $required,
+        ));
+
+        return false;
+    }
+
+    /**
+     * Removes the staged ciphertext of the pass in flight, whatever became of it.
+     */
+    private function discardStagedCiphertext(): void
+    {
+        $staged = $this->shipStagedPath;
+        $this->shipStagedPath = null;
+        if ($staged === null) {
+            return;
+        }
+
+        // warning-suppressed: teardown of a staged ciphertext, and a leftover is swept by prefix
+        @unlink($staged);
+        // warning-suppressed: teardown of a staged ciphertext, and a leftover is swept by prefix
+        @rmdir(dirname($staged));
+    }
+
+    /**
+     * Removes the staging directories a killed pass left behind for one archive (best effort).
+     *
+     * Named by the pid of the process that made it, so leftovers are found by prefix the way
+     * {@see BackupCreator} finds the create path's own. They are invisible to the store scan and
+     * excluded from the mirror, so nothing but this reclaims them.
+     *
+     * @param string $scopeDir Scope directory holding the staging directories
+     * @param string $base Archive base name whose staging directories are swept
+     */
+    private function sweepStagedCiphertext(string $scopeDir, string $base): void
+    {
+        foreach (glob(BackupArchiveEncryptor::stageDirPrefix($scopeDir, $base) . '*') ?: [] as $path) {
+            foreach (glob($path . '/*') ?: [] as $file) {
+                // warning-suppressed: sweeping leftovers of a dead pass, an undeletable one stays
+                @unlink($file);
+            }
+            // warning-suppressed: sweeping leftovers of a dead pass, an undeletable one stays
+            @rmdir($path);
+        }
     }
 
     /**
@@ -2057,6 +2312,10 @@ final class BackupAgent extends AbstractAgent
         $shippedAt = $succeeded
             ? new DateTimeImmutable()->format(DateTimeInterface::ATOM)
             : $row->shippedAt;
+        // The shape is kept the same way and for a sharper reason: it describes a copy that is
+        // over there, and a failed attempt did not replace it. Overwriting it on failure would
+        // tell the planner the receiver already holds the new shape and end the re-send.
+        $encryption = $succeeded ? $this->shipEncryption : $row->shipEncryption;
         $outcome = $succeeded ? BackupShipOutcome::OK : BackupShipOutcome::FAILED;
 
         try {
@@ -2066,8 +2325,9 @@ final class BackupAgent extends AbstractAgent
                 $shippedAt,
                 $outcome,
                 $error,
+                $encryption,
             );
-            $row->actions->recordShipping($shippedAt, $outcome->value, $stored);
+            $row->actions->recordShipping($shippedAt, $outcome->value, $stored, $encryption);
         } catch (Throwable $e) {
             $this->logAgentError("Failed to record shipping of backup {$plan->backupId}: " . $e->getMessage());
 
@@ -2094,6 +2354,15 @@ final class BackupAgent extends AbstractAgent
      */
     private function shipper(): ?BackupShipperInterface
     {
+        // Asked before the destination, because the factory refuses on this too and would other-
+        // wise be reported as a destination problem - which is the one thing the operator would
+        // then go and check.
+        if (BackupArchiveEncryptor::isConfigured() && BackupArchiveEncryptor::fromEnv() === null) {
+            $this->reportUnusableShipEncryption();
+
+            return null;
+        }
+
         $target = BackupShipTarget::fromEnv();
         if ($target === null) {
             $this->reportUnusableShipTarget(
@@ -2118,6 +2387,23 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
+     * Whether this installation has a destination something can actually be shipped to.
+     *
+     * The same two questions {@see self::shipper()} asks, without its reporting: the ceiling
+     * guard needs the answer on every rotation pass, and a pass is not the place to name a
+     * standing configuration state a second time.
+     *
+     * @return bool True when a driver exists for the configured destination
+     * @throws EnvException When a shipping env value is missing or cannot be read as its type
+     */
+    private function usableShipTarget(): bool
+    {
+        $target = BackupShipTarget::fromEnv();
+
+        return $target !== null && BackupShipperFactory::fromTarget($target) !== null;
+    }
+
+    /**
      * Says once that a configured destination cannot be used, staying silent when there is none.
      *
      * @param string $detail What is wrong with the value, as a phrase following the key name
@@ -2135,6 +2421,34 @@ final class BackupAgent extends AbstractAgent
 
         $this->shipTargetReported = true;
         $this->logAgentError(EnvConstants::BACKUP_SHIP_TARGET->name . ' ' . $detail . '; backups stay on this machine');
+    }
+
+    /**
+     * Says once that the configured recipient set cannot be used, so nothing is shipped at all.
+     *
+     * Fail-closed on purpose, and this line is the whole of what says so: the alternative to
+     * refusing is a clear copy leaving under a setting configured to prevent exactly that. Silent
+     * when no destination is configured, the way {@see self::reportUnusableShipTarget()} is -
+     * an installation that ships nowhere is not misconfigured for failing to encrypt.
+     *
+     * @throws EnvException When a shipping env value cannot be read
+     */
+    private function reportUnusableShipEncryption(): void
+    {
+        if ($this->shipEncryptionReported) {
+            return;
+        }
+        if (Hilos::$env->string(EnvConstants::BACKUP_SHIP_TARGET) === '') {
+            return;
+        }
+
+        $this->shipEncryptionReported = true;
+        $this->logAgentError(
+            EnvConstants::BACKUP_SHIP_ENCRYPT_RECIPIENTS->name
+            . ' is set but names no usable age recipient (the file must be readable and carry at '
+            . 'least one public key); nothing is shipped at all, because the copy it would leave '
+            . 'in the clear is what it was configured against',
+        );
     }
 
     /**
@@ -3309,12 +3623,16 @@ final class BackupAgent extends AbstractAgent
                 $rows,
                 static fn(BackupHistory $row): bool => !isset($pruned[$row->getId()]),
             ));
-            // A destination that is configured but unparsable reads as "not configured" here, and
-            // honestly so: there is nowhere to ship to. The shipper itself is not asked - it logs.
+            // Asked as "is there a destination that can be shipped to", not "does the value
+            // parse": the awaiting_shipment guard holds a row until its copy has left, so an
+            // installation whose destination parses and serves nothing would hold every row for
+            // ever and the ceiling could never free the disk. A recipient set that is configured
+            // and unusable is a new way into exactly that state, which is why the question is
+            // sharpened here rather than left as it was.
             $plan = $pruner->selectForCeiling(
                 $survivors,
                 $policy->maxTotalBytes,
-                BackupShipTarget::fromEnv() !== null,
+                $this->usableShipTarget(),
             );
             $overflow = $plan->doomed;
             $freed = $pruner->occupiedBytes($overflow);

@@ -208,24 +208,30 @@ final class BackupMetadataTest extends TestCase
             shippedAt: '2026-08-16T04:05:06+00:00',
             shipOutcome: BackupShipOutcome::OK,
             shipError: null,
+            shipEncryption: 'a1b2c3d4e5f6',
         );
 
         $restored = BackupMetadata::fromArray($metadata->toArray());
         $this->assertSame('2026-08-16T04:05:06+00:00', $restored->shippedAt);
         $this->assertSame(BackupShipOutcome::OK, $restored->shipOutcome);
         $this->assertNull($restored->shipError);
+        $this->assertSame('a1b2c3d4e5f6', $restored->shipEncryption);
 
-        // All three keys are always written, so "not copied anywhere" is told apart from
+        // All four keys are always written, so "not copied anywhere" is told apart from
         // "written before shipping existed" by the presence of the key alone.
         $payload = $metadata->toArray();
         $this->assertArrayHasKey(BackupMetadata::shippedAt, $payload);
         $this->assertArrayHasKey(BackupMetadata::shipOutcome, $payload);
         $this->assertArrayHasKey(BackupMetadata::shipError, $payload);
+        $this->assertArrayHasKey(BackupMetadata::shipEncryption, $payload);
 
         $legacy = BackupMetadata::fromArray($this->minimalSidecar());
         $this->assertNull($legacy->shippedAt);
         $this->assertNull($legacy->shipOutcome);
         $this->assertNull($legacy->shipError);
+        // A sidecar written before encryption existed reads as "that copy left in the clear",
+        // which is exactly what it did - so the planner owes it a copy the moment a key appears.
+        $this->assertNull($legacy->shipEncryption);
     }
 
     public function testAnUnknownStoredShipOutcomeReadsBackAsNull(): void
@@ -256,21 +262,23 @@ final class BackupMetadataTest extends TestCase
             verifyOutcome: BackupVerifyOutcome::OK,
         );
 
-        $failed = $original->withShipping(null, BackupShipOutcome::FAILED, 'ssh: connect timed out');
+        $failed = $original->withShipping(null, BackupShipOutcome::FAILED, 'ssh: connect timed out', null);
         $this->assertNull($failed->shippedAt);
         $this->assertSame(BackupShipOutcome::FAILED, $failed->shipOutcome);
         $this->assertSame('ssh: connect timed out', $failed->shipError);
+        $this->assertNull($failed->shipEncryption);
         $this->assertTrue($failed->keep);
         $this->assertSame($original->sha256, $failed->sha256);
         $this->assertSame($original->verifiedAt, $failed->verifiedAt);
         $this->assertSame($original->warnings, $failed->warnings);
         $this->assertSame($original->connections, $failed->connections);
 
-        // The retry clears the error the same way it sets the instant: one call writes all three.
-        $shipped = $failed->withShipping('2026-08-16T06:00:00+00:00', BackupShipOutcome::OK, null);
+        // The retry clears the error the same way it sets the instant: one call writes all four.
+        $shipped = $failed->withShipping('2026-08-16T06:00:00+00:00', BackupShipOutcome::OK, null, 'a1b2c3d4e5f6');
         $this->assertSame('2026-08-16T06:00:00+00:00', $shipped->shippedAt);
         $this->assertSame(BackupShipOutcome::OK, $shipped->shipOutcome);
         $this->assertNull($shipped->shipError);
+        $this->assertSame('a1b2c3d4e5f6', $shipped->shipEncryption);
         $this->assertSame(BackupScope::SCHEMA_ONLY, $shipped->scope);
     }
 
@@ -289,6 +297,7 @@ final class BackupMetadataTest extends TestCase
             status: BackupStatus::SUCCESS,
             shippedAt: '2026-08-16T02:00:00+00:00',
             shipOutcome: BackupShipOutcome::OK,
+            shipEncryption: 'a1b2c3d4e5f6',
         );
 
         foreach ([
@@ -298,6 +307,8 @@ final class BackupMetadataTest extends TestCase
         ] as $clone) {
             $this->assertSame('2026-08-16T02:00:00+00:00', $clone->shippedAt);
             $this->assertSame(BackupShipOutcome::OK, $clone->shipOutcome);
+            // Dropping the shape would make the next pass re-send a copy that is already there.
+            $this->assertSame('a1b2c3d4e5f6', $clone->shipEncryption);
         }
     }
 

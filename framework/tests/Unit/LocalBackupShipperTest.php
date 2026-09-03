@@ -24,21 +24,24 @@ final class LocalBackupShipperTest extends TestCase
         $this->assertSame('rsync', $command->binary);
         $this->assertSame([
             '-a',
-            '--partial',
+            '--partial-dir=.tmp-ship-partial',
             '/var/backups/full/20260816-full-01.tar.gz',
             '/mnt/nas/backups/full/',
         ], $command->args);
         $this->assertNotContains('-e', $command->args);
     }
 
-    public function testMirrorAddsDeleteAndSendsTheDirectoryItself(): void
+    public function testMirrorOnlyDeletesAndSendsTheDirectoryItself(): void
     {
         $command = $this->shipper()->mirrorCommand('/var/backups/schema-only', 'schema-only');
 
         $this->assertSame([
-            '-a',
+            '-r',
             '--delete',
+            '--existing',
+            '--ignore-existing',
             '--exclude=.tmp-*',
+            '--exclude=.tmp-ship-partial',
             '/var/backups/schema-only/',
             '/mnt/nas/backups/schema-only/',
         ], $command->args);
@@ -53,6 +56,21 @@ final class LocalBackupShipperTest extends TestCase
 
         $this->assertContains('--exclude=' . BackupCreator::TEMP_PREFIX . '*', $args);
         $this->assertNotContains('--partial', $args);
+        $this->assertNotContains('--partial-dir=' . LocalBackupShipper::PARTIAL_DIR, $args);
+    }
+
+    public function testMirrorWritesNothingAtAll(): void
+    {
+        // It is the deletion half and only that: the push steps do the copying and the index
+        // repeats them until they land. A pass that also re-stated the directory would overwrite
+        // ciphertext with the plaintext of the same name, which rsync's quick check cannot tell
+        // apart - same name, same mtime, and a size that need not differ enough to notice.
+        $args = $this->shipper()->mirrorCommand('/var/backups/full', 'full')->args;
+
+        $this->assertContains('--existing', $args);
+        $this->assertContains('--ignore-existing', $args);
+        // `-a` is about the attributes of what is copied, and nothing is copied any more.
+        $this->assertNotContains('-a', $args);
     }
 
     public function testEachScopeGetsItsOwnDirectoryOnTheReceiver(): void

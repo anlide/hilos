@@ -379,6 +379,7 @@ final class BackupCreatorTest extends TestCase
             '2026-08-16T06:00:00+00:00',
             BackupShipOutcome::OK,
             null,
+            'f0e1d2c3b4a5',
         );
 
         $this->assertNull($stored);
@@ -386,6 +387,9 @@ final class BackupCreatorTest extends TestCase
         $this->assertSame('2026-08-16T06:00:00+00:00', $reloaded->shippedAt);
         $this->assertSame(BackupShipOutcome::OK, $reloaded->shipOutcome);
         $this->assertNull($reloaded->shipError);
+        // The shape the copy left in is stamped beside the outcome: it is what tells a later pass
+        // that the recipients have not changed since.
+        $this->assertSame('f0e1d2c3b4a5', $reloaded->shipEncryption);
         // The shipping stamp is the only change: the digest, the pin, and the size stay put.
         $this->assertSame($original->sha256, $reloaded->sha256);
         $this->assertTrue($reloaded->keep);
@@ -406,6 +410,7 @@ final class BackupCreatorTest extends TestCase
             null,
             BackupShipOutcome::FAILED,
             str_repeat('x', 5000),
+            null,
         );
 
         $reloaded = $this->readSidecar($root, $original);
@@ -427,6 +432,7 @@ final class BackupCreatorTest extends TestCase
             null,
             BackupShipOutcome::FAILED,
             'unreachable',
+            null,
         );
     }
 

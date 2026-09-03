@@ -39,6 +39,8 @@ use Hilos\Runtime\View\Actions\Item\BackupHistoryActions;
  * @property-read ?string $shippedAt ISO-8601 instant of the last copy off this machine; null means never
  * @property-read ?string $shipOutcome Outcome value of that copy; null means never attempted
  * @property-read ?string $shipError Why the last copy attempt failed; null when none has
+ * @property-read ?string $shipEncryption Fingerprint of the recipient set the last copy was
+ *     encrypted to; null means it left in the clear
  * @property-read BackupHistoryActions $actions Write operations for this index row
  */
 final class BackupHistory extends RtItem
@@ -79,6 +81,7 @@ final class BackupHistory extends RtItem
             StateBackupHistory::shippedAt => $this->_state->shippedAt,
             StateBackupHistory::shipOutcome => $this->_state->shipOutcome,
             StateBackupHistory::shipError => $this->_state->shipError,
+            StateBackupHistory::shipEncryption => $this->_state->shipEncryption,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

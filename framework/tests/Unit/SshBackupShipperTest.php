@@ -25,7 +25,7 @@ final class SshBackupShipperTest extends TestCase
         $this->assertSame('rsync', $command->binary);
         $this->assertSame([
             '-a',
-            '--partial',
+            '--partial-dir=.tmp-ship-partial',
             '-e',
             'ssh -i /etc/hilos/ship.key -o UserKnownHostsFile=/etc/hilos/known_hosts '
             . '-o StrictHostKeyChecking=yes -p 2222',
@@ -34,15 +34,18 @@ final class SshBackupShipperTest extends TestCase
         ], $command->args);
     }
 
-    public function testMirrorAddsDeleteAndSendsTheDirectoryItself(): void
+    public function testMirrorOnlyDeletesAndSendsTheDirectoryItself(): void
     {
         $command = $this->shipper()->mirrorCommand('/var/backups/full', 'full');
 
         $this->assertSame('rsync', $command->binary);
         $this->assertSame([
-            '-a',
+            '-r',
             '--delete',
+            '--existing',
+            '--ignore-existing',
             '--exclude=.tmp-*',
+            '--exclude=.tmp-ship-partial',
             '-e',
             'ssh -i /etc/hilos/ship.key -o UserKnownHostsFile=/etc/hilos/known_hosts '
             . '-o StrictHostKeyChecking=yes -p 2222',
@@ -67,8 +70,29 @@ final class SshBackupShipperTest extends TestCase
     {
         // A mirror walks names, so '.json' crosses before '.tar.gz': kept partial data would put a
         // complete sidecar beside a truncated archive. A push may resume; a mirror may not.
-        $this->assertNotContains('--partial', $this->shipper()->mirrorCommand('/var/backups/full', 'full')->args);
-        $this->assertContains('--partial', $this->shipper()->pushCommand('/var/backups/full/a.tar.gz', 'full')->args);
+        $mirror = $this->shipper()->mirrorCommand('/var/backups/full', 'full')->args;
+        $push = $this->shipper()->pushCommand('/var/backups/full/a.tar.gz', 'full')->args;
+
+        $this->assertNotContains('--partial-dir=' . SshBackupShipper::PARTIAL_DIR, $mirror);
+        $this->assertContains('--partial-dir=' . SshBackupShipper::PARTIAL_DIR, $push);
+        // A resume that parks the fragment under the REAL name is what the staging directory
+        // replaces: a push now overwrites a copy whose sidecar is already there, so an interrupted
+        // one would leave a truncated archive wearing a complete passport.
+        $this->assertNotContains('--partial', $push);
+    }
+
+    public function testAMirrorWritesNothingAtAll(): void
+    {
+        // The deletion half and only that. Re-stating the directory would also be wrong rather
+        // than merely redundant now: a receiver holding ciphertext of one recipient set and a
+        // local archive in the clear share a name, and rsync's quick check looks at nothing that
+        // tells them apart.
+        $args = $this->shipper()->mirrorCommand('/var/backups/full', 'full')->args;
+
+        $this->assertContains('--existing', $args);
+        $this->assertContains('--ignore-existing', $args);
+        // `-a` is about the attributes of what is copied, and nothing is copied any more.
+        $this->assertNotContains('-a', $args);
     }
 
     public function testAnUnconfiguredKeyLeavesTheIdentityOutRatherThanPassingAnEmptyOne(): void
@@ -98,8 +122,9 @@ final class SshBackupShipperTest extends TestCase
 
     public function testHostKeyCheckingIsPinnedOnAndNotNegotiable(): void
     {
-        // The payload is an unencrypted dump of the whole database: an unverified receiver is not
-        // a lesser evil than no copy at all, so no branch of this driver may relax the check.
+        // The payload is a dump of the whole database: an unverified receiver is not a lesser
+        // evil than no copy at all, so no branch of this driver may relax the check - not even
+        // the one where the copy that leaves is ciphertext.
         $transport = $this->shipper()->pushCommand('/var/backups/full/a.tar.gz', 'full')->args[3];
 
         $this->assertStringContainsString('-o StrictHostKeyChecking=yes', $transport);

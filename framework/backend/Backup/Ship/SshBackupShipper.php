@@ -14,8 +14,10 @@ use Hilos\Constants\EnvConstants;
  * over a socket would have to grow on its own.
  *
  * Host-key checking is pinned on, against an explicit `known_hosts` file
- * ({@see EnvConstants::BACKUP_SHIP_SSH_KNOWN_HOSTS}) - the payload is an unencrypted dump of the
- * whole database, so an unverified receiver is not a lesser evil than no copy at all.
+ * ({@see EnvConstants::BACKUP_SHIP_SSH_KNOWN_HOSTS}) - the payload is a dump of the whole
+ * database, so an unverified receiver is not a lesser evil than no copy at all. Encrypting the
+ * copy ({@see BackupArchiveEncryptor}) does not relax this: it is optional, and the receiver being
+ * whoever answered is a problem of its own even when what lands there cannot be read.
  */
 final class SshBackupShipper implements BackupShipperInterface
 {
@@ -43,7 +45,7 @@ final class SshBackupShipper implements BackupShipperInterface
     {
         return new BackupShipCommand(self::BINARY, [
             '-a',
-            '--partial',
+            '--partial-dir=' . self::PARTIAL_DIR,
             '-e',
             $this->transportArgument(),
             $localPath,
@@ -59,9 +61,12 @@ final class SshBackupShipper implements BackupShipperInterface
     public function mirrorCommand(string $localScopeDir, string $scope): BackupShipCommand
     {
         return new BackupShipCommand(self::BINARY, [
-            '-a',
+            '-r',
             '--delete',
+            '--existing',
+            '--ignore-existing',
             self::EXCLUDE_TEMP,
+            self::EXCLUDE_PARTIAL_DIR,
             '-e',
             $this->transportArgument(),
             rtrim($localScopeDir, '/') . '/',

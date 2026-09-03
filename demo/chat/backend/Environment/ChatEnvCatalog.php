@@ -76,6 +76,7 @@ final class ChatEnvCatalog implements CatalogProviderInterface
             EnvConstants::BACKUP_SHIP_TARGET->name => self::stringEntry(''),
             EnvConstants::BACKUP_SHIP_SSH_KEY->name => self::stringEntry(''),
             EnvConstants::BACKUP_SHIP_SSH_KNOWN_HOSTS->name => self::stringEntry(''),
+            EnvConstants::BACKUP_SHIP_ENCRYPT_RECIPIENTS->name => self::stringEntry(''),
             EnvConstants::BACKUP_SHIP_TIMEOUT->name => self::intEntry(3600, emptyIsMissing: true),
             ChatEnvConstants::CHAT_FILES_QUARANTINE_DIR => self::stringEntry(''),
             ChatEnvConstants::CHAT_FILES_PUBLISHED_DIR => self::stringEntry(''),

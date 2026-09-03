@@ -7,13 +7,22 @@ namespace Hilos\Backup\Ship;
 /**
  * BackupShipStep - what one spawned transfer is doing.
  *
- * Three steps and no more, because the destination is a mirror of the local store: two of them
- * put a backup there in the order the local store publishes it, and the third takes away what
- * the local store no longer has.
+ * Four steps and no more, because the destination is a mirror of the local store: two of them put
+ * a backup there in the order the local store publishes it, the third takes away what the local
+ * store no longer has, and the first transfers nothing at all - it is the local preparation of
+ * what the others carry. It is a step of the pass rather than work done inline because encrypting
+ * gigabytes is as long a child as sending them, and it has to be polled by the same code under
+ * the same timeout instead of blocking the agent's tick.
  */
 enum BackupShipStep: string
 {
-    /** Copying the archive, which always goes first. */
+    /**
+     * Encrypting the archive into a staged ciphertext, which goes first when a recipient set is
+     * configured and does not happen at all when none is ({@see BackupArchiveEncryptor}).
+     */
+    case ENCRYPT_ARCHIVE = 'encrypt-archive';
+
+    /** Copying the archive, which always goes first among the transfers. */
     case PUSH_ARCHIVE = 'push-archive';
 
     /**

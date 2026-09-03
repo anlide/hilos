@@ -643,7 +643,7 @@ final class BackupPrunerTest extends TestCase
         if ($shipOutcome !== null) {
             // Only a successful copy stamps an instant, so a failed row carries the outcome alone.
             $shippedAt = $shipOutcome === BackupShipOutcome::OK ? $createdAt : null;
-            $metadata = $metadata->withShipping($shippedAt, $shipOutcome, null);
+            $metadata = $metadata->withShipping($shippedAt, $shipOutcome, null, null);
         }
         $state = StateBackupHistory::fromMetadata($metadata);
 

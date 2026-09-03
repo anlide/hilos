@@ -482,6 +482,18 @@ enum EnvConstants
     case BACKUP_SHIP_SSH_KNOWN_HOSTS;
 
     /**
+     * Absolute path to the file of `age` recipients the copy leaving this machine is encrypted to,
+     * one public key per line. Default empty, and an empty value is the ABSENCE of encryption
+     * rather than a third mode: the copy leaves in the clear, exactly as it did before this
+     * existed. A configured file that cannot be read, is empty, or names no recipient turns
+     * shipping OFF altogether rather than falling back to a clear copy - the fallback is the very
+     * exposure the key was configured against. The file holds PUBLIC keys only: this machine can
+     * encrypt and not decrypt, so breaking into it does not open what has already left, and a
+     * restore from the remote copy is the operator's own `age -d -i <private key>`.
+     */
+    case BACKUP_SHIP_ENCRYPT_RECIPIENTS;
+
+    /**
      * Seconds after which the agent kills a hung transfer, modelled on {@see BACKUP_TIMEOUT} and
      * {@see BACKUP_RESTORE_TIMEOUT}. Default 3600 (60 min) - a copy crosses a link the local run
      * never touches, so it gets the wider of the two. Killing it is not a data loss: the local

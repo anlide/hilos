@@ -14,6 +14,11 @@ FROM php:8.4-cli
 # rsync and openssh-client are the shipping drivers' own binaries: the integration
 # run really copies an archive to sshd-framework-test, which is only a proof if the
 # runner ships with what a deployment would have to install.
+#
+# age is the same kind of proof for the encrypted half: the integration run really
+# encrypts the archive it ships and really decrypts it back, so the package has to be
+# here and not mocked. It also carries age-keygen, which is what mints the throwaway
+# key pair that round trip is run with.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libevent-dev \
     libssl-dev \
@@ -24,6 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     default-mysql-client \
     rsync \
     openssh-client \
+    age \
  && rm -rf /var/lib/apt/lists/*
 
 # Align with root composer.json (ext-posix, pcntl, sockets, mbstring, mysqli, …)

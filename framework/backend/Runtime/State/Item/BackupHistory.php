@@ -46,6 +46,7 @@ final class BackupHistory extends RtState
     public const string shippedAt = 'shippedAt';
     public const string shipOutcome = 'shipOutcome';
     public const string shipError = 'shipError';
+    public const string shipEncryption = 'shipEncryption';
 
     /** Backup id (also the archive/sidecar base name). */
     private(set) string $id = '';
@@ -113,6 +114,14 @@ final class BackupHistory extends RtState
     public ?string $shipError = null;
 
     /**
+     * Fingerprint of the recipient set the last copy was encrypted to; null means it left in the
+     * clear. The shipping planner compares it with the fingerprint configured now, which is what
+     * makes turning a key on, off, or over re-send the store without a migration command of its
+     * own.
+     */
+    public ?string $shipEncryption = null;
+
+    /**
      * Builds a history row from a scanned sidecar's metadata.
      *
      * @param BackupMetadata $metadata Sidecar metadata
@@ -140,6 +149,7 @@ final class BackupHistory extends RtState
         $instance->shippedAt = $metadata->shippedAt;
         $instance->shipOutcome = $metadata->shipOutcome?->value;
         $instance->shipError = $metadata->shipError;
+        $instance->shipEncryption = $metadata->shipEncryption;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -172,6 +182,7 @@ final class BackupHistory extends RtState
         $instance->shippedAt = self::optionalString($row, self::shippedAt);
         $instance->shipOutcome = self::optionalString($row, self::shipOutcome);
         $instance->shipError = self::optionalString($row, self::shipError);
+        $instance->shipEncryption = self::optionalString($row, self::shipEncryption);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -208,6 +219,7 @@ final class BackupHistory extends RtState
         $this->shippedAt = self::patchOptionalString($diff, self::shippedAt, $this->shippedAt);
         $this->shipOutcome = self::patchOptionalString($diff, self::shipOutcome, $this->shipOutcome);
         $this->shipError = self::patchOptionalString($diff, self::shipError, $this->shipError);
+        $this->shipEncryption = self::patchOptionalString($diff, self::shipEncryption, $this->shipEncryption);
     }
 
     /**
@@ -254,6 +266,7 @@ final class BackupHistory extends RtState
             self::shippedAt => $this->shippedAt,
             self::shipOutcome => $this->shipOutcome,
             self::shipError => $this->shipError,
+            self::shipEncryption => $this->shipEncryption,
         ];
     }
 
