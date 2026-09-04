@@ -27,7 +27,7 @@ class WorkerSessionCarryOverDoneDTO extends WorkerDTO
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_SESSION_CARRY_OVER_DONE;
 
     /**
-     * @param SessionCarryOverDoneSignalData $data Logins carried and logins lost
+     * @param SessionCarryOverDoneSignalData $data Logins carried, logins lost and logins that came back with the archive
      */
     public function __construct(
         public readonly SessionCarryOverDoneSignalData $data,

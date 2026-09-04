@@ -19,8 +19,8 @@ use Hilos\ProtectedMode\ProtectedModeLiftAnnouncer;
  * no. What went wrong is the library's own log line; holding the lift over it would only delay the
  * reload by the full timeout and tell the operator the same thing twice.
  *
- * The two numbers are {@see SessionCarryResult}'s, unchanged, so the line the master logs about a
- * held lift reads the same as the one the library logs about the pass.
+ * The three numbers are {@see SessionCarryResult}'s, unchanged, so the line the master logs about
+ * a held lift reads the same as the one the library logs about the pass.
  */
 final class SessionCarryOverDoneSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -30,13 +30,18 @@ final class SessionCarryOverDoneSignalData extends BaseDTO implements SignalData
     /** Payload key: logins that will not survive the restore. */
     public const string dropped = 'dropped';
 
+    /** Payload key: logins that came back inside the archive. */
+    public const string kept = 'kept';
+
     /**
      * @param int $carried Logins written into the restored database
      * @param int $dropped Logins that will not survive the restore
+     * @param int $kept Logins that came back inside the archive
      */
     public function __construct(
         public readonly int $carried,
         public readonly int $dropped,
+        public readonly int $kept,
     ) {
     }
 
@@ -48,6 +53,7 @@ final class SessionCarryOverDoneSignalData extends BaseDTO implements SignalData
         return [
             self::carried => $this->carried,
             self::dropped => $this->dropped,
+            self::kept => $this->kept,
         ];
     }
 
@@ -60,6 +66,7 @@ final class SessionCarryOverDoneSignalData extends BaseDTO implements SignalData
         return new static(
             carried: (int)$data[self::carried],
             dropped: (int)$data[self::dropped],
+            kept: (int)$data[self::kept],
         );
     }
 }

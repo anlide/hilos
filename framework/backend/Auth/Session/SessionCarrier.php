@@ -113,13 +113,14 @@ final class SessionCarrier
      * be written.
      *
      * @param list<SessionCarryover> $snapshot Sessions captured before the swap
-     * @return SessionCarryResult Sessions written and sessions lost
+     * @return SessionCarryResult Sessions written, sessions lost and sessions that needed no carrying
      */
     public static function carryOver(array $snapshot): SessionCarryResult
     {
         $now = TimeHelper::getSqlDateTime();
         $carried = 0;
         $dropped = 0;
+        $kept = 0;
 
         foreach ($snapshot as $carryover) {
             if ($carryover->expiresAt !== null && $carryover->expiresAt <= $now) {
@@ -149,13 +150,16 @@ final class SessionCarrier
             }
 
             // A token that already holds a row came back inside the archive: its owner stays
-            // logged in without this pass, so it is neither carried nor lost.
+            // logged in without this pass, so it is neither carried nor lost, and the third
+            // number is what says so out loud (HIL-726).
             if ($session !== null) {
                 $carried++;
+            } else {
+                $kept++;
             }
         }
 
-        return new SessionCarryResult($carried, $dropped);
+        return new SessionCarryResult($carried, $dropped, $kept);
     }
 
     /**

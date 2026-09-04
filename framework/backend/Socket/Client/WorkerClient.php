@@ -671,13 +671,14 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * where the library came back during the verification window and the operator opened the node
      * long afterwards.
      *
-     * @param WorkerSessionCarryOverDoneDTO $dto DTO with the logins carried and the logins lost
+     * @param WorkerSessionCarryOverDoneDTO $dto DTO with the logins carried, the logins lost and the logins that came back with the archive
      */
     private function handleSessionCarryOverDoneMessage(WorkerSessionCarryOverDoneDTO $dto): void
     {
         Hilos::$cluster?->protectedModeLiftAnnouncer()?->noteSessionsCarriedOver(
             $dto->data->carried,
             $dto->data->dropped,
+            $dto->data->kept,
         );
     }
 

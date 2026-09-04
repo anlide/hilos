@@ -373,14 +373,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             // Reported all the same, with nothing carried: what the master is holding the lift for
             // is whether anything more is coming, and after this catch the answer is no. Silence
             // here would cost the browsers the whole timeout and tell the operator, in a second
-            // log line, what the one above already said.
-            $this->reportCarriedOverSessions(0, count($snapshot));
+            // log line, what the one above already said. Nothing was kept either - a pass that
+            // broke on the drain or on a row never reached the branch that leaves one untouched.
+            $this->reportCarriedOverSessions(0, count($snapshot), 0);
 
             return;
         }
 
-        $this->logAgentInfo("Carried over {$result->carried} restored session(s), dropped {$result->dropped}");
-        $this->reportCarriedOverSessions($result->carried, $result->dropped);
+        $this->logAgentInfo("Carried over {$result->carried} restored session(s), kept {$result->kept}, dropped {$result->dropped}");
+        $this->reportCarriedOverSessions($result->carried, $result->dropped, $result->kept);
     }
 
     /**
@@ -398,15 +399,16 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * @param int $carried Logins written into the restored database
      * @param int $dropped Logins that will not survive the restore
+     * @param int $kept Logins that came back inside the archive
      */
-    private function reportCarriedOverSessions(int $carried, int $dropped): void
+    private function reportCarriedOverSessions(int $carried, int $dropped, int $kept): void
     {
         try {
             Hilos::$sr?->queueSignal(
                 signalSource: $this->getAgentSignalSource(),
                 signalType: new SignalType(SignalTypeConstants::SESSION_CARRY_OVER_DONE),
                 signalName: new SignalName(SignalTypeConstants::SESSION_CARRY_OVER_DONE),
-                signalData: new SessionCarryOverDoneSignalData($carried, $dropped),
+                signalData: new SessionCarryOverDoneSignalData($carried, $dropped, $kept),
             );
         } catch (InvalidArgumentException $e) {
             $this->logAgentError('Carried-over sessions could not be reported: ' . $e->getMessage());

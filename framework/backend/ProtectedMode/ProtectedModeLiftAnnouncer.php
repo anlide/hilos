@@ -96,8 +96,9 @@ final class ProtectedModeLiftAnnouncer
      *
      * @param int $carried Logins written into the restored database
      * @param int $dropped Logins that will not survive the restore
+     * @param int $kept Logins that came back inside the archive
      */
-    public function noteSessionsCarriedOver(int $carried, int $dropped): void
+    public function noteSessionsCarriedOver(int $carried, int $dropped, int $kept): void
     {
         $this->sessionsOwed = 0;
 
@@ -107,7 +108,7 @@ final class ProtectedModeLiftAnnouncer
 
         Logger::logAgentInfo(
             self::LOG_AGENT_ID,
-            "Lift held for the restored logins, released after {$carried} carried and {$dropped} dropped",
+            "Lift held for the restored logins, released after {$carried} carried, {$kept} kept and {$dropped} dropped",
         );
         $this->release();
     }

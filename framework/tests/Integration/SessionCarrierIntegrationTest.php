@@ -84,6 +84,7 @@ final class SessionCarrierIntegrationTest extends HilosSessionIntegrationTestCas
 
         $this->assertSame(1, $result->carried);
         $this->assertSame(0, $result->dropped);
+        $this->assertSame(0, $result->kept, 'The third number stays at zero where the pass did the work');
         $row = self::sessionRow(self::TOKEN);
         $this->assertNotNull($row, 'The token resolves again after the restore');
         $this->assertSame((string)self::NEW_USER_ID, (string)$row['user_id'], 'The identity, not the old id, decides');
@@ -145,7 +146,7 @@ final class SessionCarrierIntegrationTest extends HilosSessionIntegrationTestCas
     /**
      * @throws HilosException When a step against the database fails
      */
-    public function testASessionThatCameBackWithTheArchiveIsCountedAsNeither(): void
+    public function testASessionThatCameBackWithTheArchiveIsCountedOnItsOwn(): void
     {
         $snapshot = $this->captureLiveSession();
         $this->swapDatabase([[self::NEW_USER_ID, self::EMAIL_TYPE, self::EMAIL]]);
@@ -155,6 +156,7 @@ final class SessionCarrierIntegrationTest extends HilosSessionIntegrationTestCas
 
         $this->assertSame(0, $result->carried, 'Nothing was written');
         $this->assertSame(0, $result->dropped, 'Nobody was logged out either');
+        $this->assertSame(1, $result->kept, 'The outcome has a number of its own now');
         $row = self::sessionRow(self::TOKEN);
         $this->assertNotNull($row);
         $this->assertSame('2026-07-07 07:07:07', (string)$row['created_at'], 'The archived row is left as it is');

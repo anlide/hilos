@@ -128,7 +128,7 @@ final class ProtectedModeLiftWaitTest extends TestCase
         $this->executor->enterDeactivating();
         $this->executor->enterInactive();
 
-        $this->announcer->noteSessionsCarriedOver(2, 1);
+        $this->announcer->noteSessionsCarriedOver(2, 1, 0);
 
         $this->assertCount(1, $this->notifier->frames);
         $this->assertFalse($this->notifier->frames[0]->active);
@@ -144,7 +144,7 @@ final class ProtectedModeLiftWaitTest extends TestCase
         $this->executor->enterDeactivating();
         $this->executor->enterInactive();
 
-        $this->announcer->noteSessionsCarriedOver(0, 3);
+        $this->announcer->noteSessionsCarriedOver(0, 3, 0);
 
         $this->assertCount(1, $this->notifier->frames);
     }
@@ -174,12 +174,12 @@ final class ProtectedModeLiftWaitTest extends TestCase
         $this->notifier->frames = [];
         $this->executor->enterDeactivating();
         $this->executor->enterInactive();
-        $this->announcer->noteSessionsCarriedOver(3, 0);
+        $this->announcer->noteSessionsCarriedOver(3, 0, 0);
 
         // Both exits stay armed until one of them fires, and neither may fire twice: a second
         // "reload" would be a second reload.
         $this->announcer->tick(time() + self::PAST_THE_WAIT);
-        $this->announcer->noteSessionsCarriedOver(3, 0);
+        $this->announcer->noteSessionsCarriedOver(3, 0, 0);
 
         $this->assertCount(1, $this->notifier->frames);
     }
@@ -202,7 +202,7 @@ final class ProtectedModeLiftWaitTest extends TestCase
         // the verification window opens, and the operator opens the node long afterwards.
         $this->executor->enterActivating($this->freeze(), 'accept-7', null);
         $this->announcer->noteSessionsDeferred(3);
-        $this->announcer->noteSessionsCarriedOver(3, 0);
+        $this->announcer->noteSessionsCarriedOver(3, 0, 0);
         $this->notifier->frames = [];
 
         $this->executor->enterDeactivating();
@@ -217,7 +217,7 @@ final class ProtectedModeLiftWaitTest extends TestCase
             (new WorkerSessionCarryOverDeferredDTO(new SessionCarryOverDeferredSignalData(3)))->toArray(),
         ));
         $done = WorkerDTO::factoryWorkerDTO((string)json_encode(
-            (new WorkerSessionCarryOverDoneDTO(new SessionCarryOverDoneSignalData(2, 1)))->toArray(),
+            (new WorkerSessionCarryOverDoneDTO(new SessionCarryOverDoneSignalData(2, 1, 1)))->toArray(),
         ));
 
         $this->assertInstanceOf(WorkerSessionCarryOverDeferredDTO::class, $deferred);
@@ -225,6 +225,7 @@ final class ProtectedModeLiftWaitTest extends TestCase
         $this->assertInstanceOf(WorkerSessionCarryOverDoneDTO::class, $done);
         $this->assertSame(2, $done->data->carried);
         $this->assertSame(1, $done->data->dropped);
+        $this->assertSame(1, $done->data->kept);
     }
 
     /**
