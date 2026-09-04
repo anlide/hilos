@@ -13,6 +13,7 @@ use Hilos\Pages\AbstractHilosNotificationsPage;
 use Hilos\Runtime\State\Collection\HilosConnections as StateHilosConnections;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\HilosConnection as StateHilosConnection;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Context\RtContext;
 use PHPUnit\Framework\TestCase;
@@ -49,6 +50,9 @@ final class FrameworkReadDeclarationTest extends TestCase
         SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(FrameworkReadRtContext::rows));
         SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(FrameworkReadRtContext::row));
         SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(FrameworkReadRtContext::alias));
+        SourceInterestRegistry::releaseConsumer(
+            SourceConsumer::feature(StateProtectedModeRuntime::RT_ITEM),
+        );
         SourceInterestRegistry::releaseConsumer(SourceConsumer::agent(self::AGENT_CONSUMER));
         SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(HilosDbContext::settings));
         SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(HilosDbContext::identities));
@@ -127,6 +131,27 @@ final class FrameworkReadDeclarationTest extends TestCase
         $this->assertTrue(
             SourceInterestRegistry::isDeclared(SourceChange::KIND_RT, FrameworkReadRtContext::row),
             'An item syncs under its own key, and a frame addressed to nobody reaches nobody',
+        );
+    }
+
+    /**
+     * The freeze row in particular, and the first link of the chain a restarted node is driven
+     * over (HIL-699). The master restores the row off disk before any server binds, so it holds
+     * it by the time a worker exists at all; the worker hosting the initiator agent is handed a
+     * copy only because this declaration puts the process on the address list of that key. Held
+     * for being mounted rather than for being asked for, because nothing asks: the operator
+     * ladder is a trait on an agent, and an agent names no runtime state it merely refuses on.
+     */
+    public function testTheFreezeRowIsReadInEveryProcessSoARestartedNodeCanBeDriven(): void
+    {
+        $rt = new FrameworkReadRtContext();
+        $rt->configure();
+
+        $rt->declareProcessWideReads();
+
+        $this->assertTrue(
+            SourceInterestRegistry::isDeclared(SourceChange::KIND_RT, StateProtectedModeRuntime::RT_ITEM),
+            'A worker off the address list of the freeze row answers "no freeze is active here"',
         );
     }
 
@@ -343,6 +368,10 @@ final class FrameworkReadRtContext extends RtContext
 
     /**
      * Mounts one of each shape, so the cases can tell the declared ones from the untouched one.
+     *
+     * The freeze row is mounted the way the framework mounts it for a project that declared the
+     * feature ({@see RtContext::mountFeatureRuntime()}), because the case standing on it asks
+     * about that exact key rather than about items in general.
      */
     public function configure(): void
     {
@@ -350,6 +379,7 @@ final class FrameworkReadRtContext extends RtContext
         $this->_stateCollections[self::rows] = FrameworkReadRows::init();
         $this->_stateItems[self::row] = FrameworkReadRow::create();
         $this->_stateItems[self::alias] = static fn(): ?RtState => null;
+        $this->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::create());
     }
 }
 

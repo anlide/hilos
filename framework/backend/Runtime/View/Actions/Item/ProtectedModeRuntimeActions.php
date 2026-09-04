@@ -31,14 +31,24 @@ final class ProtectedModeRuntimeActions extends RtActions
      * database whose restore never finished. It runs during startup, before any server binds, so
      * the first handshake after the restart is already locked out.
      *
-     * **Everything a connection was recognized by is dropped rather than carried.** The initiator's
-     * own key goes first: an accept key is minted on the 101 and cannot outlive the process that
-     * minted it. The passes, the sessions they admitted and the initiator's session hash go the
-     * same way, and those three are a decision rather than a consequence - the cookies behind them
-     * do outlive the daemon, so keeping them would hand those browsers the run of a node whose
-     * operation nobody is driving any more. What is left behind instead is a row that locks out
-     * everybody - the honest state of a node whose operation is gone - and the operator lifts it
-     * by the ladder ({@see enterInactive()}) once they have looked at the data.
+     * **The browser the freeze was started from is carried; everything else a connection was
+     * recognized by is dropped.** The accept key cannot be anything but dropped: it is minted on
+     * the 101 and does not outlive the process that minted it. The passes and the sessions they
+     * admitted are a decision rather than a consequence - a pass lasts minutes and is read out to
+     * a verifier by voice, so one who was already inside asks for another instead of keeping the
+     * run of a node over a cookie that outlived the daemon.
+     *
+     * The initiator's session hash stays for the reason the other three go: the exit from the
+     * verification window stopped being terminal-only. Since HIL-676 it is a button on the backup
+     * page, gated on {@see StateProtectedModeRuntime::belongsToInitiator()}, which refuses null -
+     * so dropping the hash locked out no stranger, it locked out the one operator who started the
+     * operation and left them a terminal as their only door. What comes back is therefore a row
+     * that locks out everybody except that browser, and the operator lifts it either by the
+     * button or by the ladder ({@see enterInactive()}) once they have looked at the data.
+     *
+     * TODO(HIL-93): the right to enter a frozen node belongs to the roles subsystem (HIL-93
+     * anchors it, HIL-97 enforces it); until it exists this half of the decision is a session
+     * hash, which names a browser rather than a person.
      *
      * @param StateProtectedModeRuntime $row Freeze row as it was left on disk
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
@@ -51,7 +61,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->phase = $row->phase;
         $this->state->operation = $row->operation;
         $this->state->initiatorAcceptKey = null;
-        $this->state->initiatorSessionTokenHash = null;
+        $this->state->initiatorSessionTokenHash = $row->initiatorSessionTokenHash;
         $this->state->initiatorAgentType = $row->initiatorAgentType;
         $this->state->initiatorAgentIndex = $row->initiatorAgentIndex;
         $this->state->initiatorNodeId = $row->initiatorNodeId;

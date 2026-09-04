@@ -10,16 +10,21 @@ use Hilos\Constants\CommandConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
 use Hilos\ProtectedMode\ProtectedModeAdmissionConstants;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -56,6 +61,7 @@ final class ProtectedModeOperatorTest extends TestCase
 
     protected function tearDown(): void
     {
+        RtTruthSourceRegistry::unregisterDaemon(StateProtectedModeRuntime::RT_ITEM);
         Hilos::$sr = null;
         Hilos::$rt = null;
         Hilos::$env = $this->previousEnv;
@@ -311,6 +317,35 @@ final class ProtectedModeOperatorTest extends TestCase
         $this->assertNull($this->nextExitRequest(), 'A refused close must queue no refreeze.');
     }
 
+    /**
+     * The ladder on a freeze nobody in this process transitioned into (HIL-699).
+     *
+     * Every case above stands on a row a phase change wrote. After a restart there was no phase
+     * change: the row was read off disk by the master before any worker existed, and the agent
+     * that meets it was started under a freeze already in force. That is the state the ticket
+     * reported as "Refused: no freeze is active here", so the ladder is driven here off
+     * {@see ProtectedModeRuntimeActions::restoreFromDisk()} and off nothing else.
+     *
+     * @throws InvalidFormatException When the fixture row is not one the state can be built from
+     * @throws RtActionsCollectionNameNullException When the mounted item has no collection name
+     * @throws RtTruthSourceWriteNotAllowedException When this process is not the row's writer
+     */
+    public function testTheOperatorLadderAnswersOnAFreezeThatCameBackFromDisk(): void
+    {
+        $this->freezeRestoredFromDisk();
+        $agent = new OperatorTestAgent(null);
+
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_OPEN));
+
+        $this->assertSame(
+            SignalTypeConstants::PROTECTED_MODE_DISABLE,
+            $this->nextExitRequest(),
+            'A node that came up frozen must be openable by the ladder, not answered "no freeze"',
+        );
+        $agent->onTick();
+        $this->assertSame([], $this->replies(), 'Still frozen, so there is nothing to report yet.');
+    }
+
     public function testACommandWithNoFreezeIsRefused(): void
     {
         $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null, []);
@@ -362,6 +397,34 @@ final class ProtectedModeOperatorTest extends TestCase
             StateProtectedModeRuntime::initiatorAgentType => $initiatorType,
             StateProtectedModeRuntime::initiatorAgentIndex => $initiatorIndex,
             StateProtectedModeRuntime::passHashes => $passHashes,
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+        ]));
+    }
+
+    /**
+     * Mounts the freeze the way a restarted node comes back under it, and nothing else.
+     *
+     * The row is put in place by the restore rather than by a transition, and this process is
+     * made its writer for the same reason the master is: the restore is a write, and a write
+     * asks who owns the row.
+     *
+     * @throws InvalidFormatException When the fixture row is not one the state can be built from
+     * @throws RtActionsCollectionNameNullException When the mounted item has no collection name
+     * @throws RtTruthSourceWriteNotAllowedException When this process is not the row's writer
+     */
+    private function freezeRestoredFromDisk(): void
+    {
+        Hilos::$rt = new OperatorTestRtContext();
+        Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::create());
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+
+        Hilos::$rt->hilosProtectedModeRuntime?->actions->restoreFromDisk(StateProtectedModeRuntime::fromRow([
+            StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_VERIFYING,
+            StateProtectedModeRuntime::operation => 'restore',
+            StateProtectedModeRuntime::initiatorAcceptKey => 'accept-7',
+            StateProtectedModeRuntime::initiatorSessionTokenHash => 'session-hash-of-the-operator',
+            StateProtectedModeRuntime::initiatorAgentType => self::INITIATOR_TYPE,
+            StateProtectedModeRuntime::passHashes => ['hash-of-a-pass'],
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
         ]));
     }

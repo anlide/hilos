@@ -6,12 +6,17 @@ namespace Hilos\Tests\Unit\ProtectedMode;
 
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\Exception\ProtectedModeFreezeUnreadableException;
 use Hilos\ProtectedMode\ProtectedModeFreezeStore;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -38,6 +43,9 @@ final class ProtectedModeFreezeStoreTest extends TestCase
 
     /** @var string Agent type recorded as the initiator */
     private const string INITIATOR_TYPE = 'hilos_backup';
+
+    /** @var string Session token hash of the browser the operator started the freeze from */
+    private const string INITIATOR_SESSION_HASH = 'session-hash-of-the-operator';
 
     /** @var int Epoch second the freeze in these cases began at */
     private const int STARTED_AT = 1_700_000_000;
@@ -199,24 +207,22 @@ final class ProtectedModeFreezeStoreTest extends TestCase
         $this->assertFileDoesNotExist($this->freezeFile());
     }
 
-    public function testARestoredFreezeKeepsNoKeyOfTheConnectionsThatDied(): void
+    /**
+     * @throws InvalidFormatException When the fixture row is not one the state can be built from
+     * @throws RtActionsCollectionNameNullException When the mounted item has no collection name
+     * @throws RtTruthSourceWriteNotAllowedException When this process is not the row's writer
+     */
+    public function testARestoredFreezeKeepsTheOperatorsBrowserAndNothingElse(): void
     {
-        // Every accept key on the row was minted on a 101 that died with the daemon - the passes,
-        // the browsers they admitted, and the initiator's own. What comes back is a freeze that
-        // locks out everybody, which is the honest state of a node whose operation is gone.
+        // Every accept key on the row was minted on a 101 that died with the daemon, and the
+        // passes with them. The one thing that does come back is the browser the operator asked
+        // from: the exit out of the window is theirs to press (HIL-676), and a row without their
+        // session hash shows it to nobody at all.
         $this->mountNode();
         $view = Hilos::$rt?->hilosProtectedModeRuntime;
         $this->assertNotNull($view);
 
-        $view->actions->restoreFromDisk(StateProtectedModeRuntime::fromRow([
-            StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_VERIFYING,
-            StateProtectedModeRuntime::operation => self::OPERATION,
-            StateProtectedModeRuntime::initiatorAcceptKey => 'accept-7',
-            StateProtectedModeRuntime::initiatorAgentType => self::INITIATOR_TYPE,
-            StateProtectedModeRuntime::startedAt => self::STARTED_AT,
-            StateProtectedModeRuntime::passHashes => ['hash-of-a-pass'],
-            StateProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-9'],
-        ]));
+        $view->actions->restoreFromDisk($this->restoredRow());
 
         $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, $view->phase);
         $this->assertSame(self::OPERATION, $view->operation);
@@ -224,8 +230,45 @@ final class ProtectedModeFreezeStoreTest extends TestCase
         $this->assertNull($view->initiatorAcceptKey);
         $this->assertSame([], $view->passHashes);
         $this->assertSame([], $view->admittedSessionTokenHashes);
+        $this->assertSame(self::INITIATOR_SESSION_HASH, $view->initiatorSessionTokenHash);
+        $this->assertTrue($view->belongsToInitiator(self::INITIATOR_SESSION_HASH));
+        $this->assertFalse($view->locksOut('accept-new', self::INITIATOR_SESSION_HASH));
         $this->assertTrue($view->locksOut('accept-7', null));
         $this->assertTrue($view->locksOut('accept-9', 'session-hash-9'));
+    }
+
+    /**
+     * The hand-over the restored row is only ever seen through (HIL-699).
+     *
+     * The restore runs before any server binds, so the master holds the row alone and every
+     * worker that comes up afterwards is told about it by the snapshot answered to its declared
+     * interest - not by a frame, because there was nobody to send one to. This is that pair
+     * taken on its own: what the owner reads out, and what the joining side ends up holding.
+     * No socket is raised; the two sides are two mounted contexts.
+     *
+     * @throws InvalidFormatException When the fixture row is not one the state can be built from
+     * @throws RtActionsCollectionNameNullException When the mounted item has no collection name
+     * @throws RtTruthSourceWriteNotAllowedException When this process is not the row's writer
+     * @throws HilosException When the joining side refuses the row it was handed
+     */
+    public function testTheRestoredFreezeIsWhatANewWorkerIsHandedOver(): void
+    {
+        $this->mountNode();
+        $master = Hilos::$rt?->hilosProtectedModeRuntime;
+        $this->assertNotNull($master);
+        $master->actions->restoreFromDisk($this->restoredRow());
+
+        $handedOver = RtSnapshot::rows(StateProtectedModeRuntime::RT_ITEM);
+
+        Hilos::$rt = new FreezeStoreTestRtContext();
+        Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::create());
+        RtSnapshot::replace(StateProtectedModeRuntime::RT_ITEM, $handedOver);
+
+        $worker = Hilos::$rt->hilosProtectedModeRuntime;
+        $this->assertNotNull($worker);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, $worker->phase);
+        $this->assertSame(self::INITIATOR_TYPE, $worker->initiatorAgentType);
+        $this->assertSame(self::INITIATOR_SESSION_HASH, $worker->initiatorSessionTokenHash);
     }
 
     /**
@@ -248,6 +291,30 @@ final class ProtectedModeFreezeStoreTest extends TestCase
             StateProtectedModeRuntime::passHashes => [],
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
         ])->toArray();
+    }
+
+    /**
+     * The freeze a node is handed back at startup, in the shape the executor left on disk.
+     *
+     * Carries the initiator's session hash because the file does: the phase is written by
+     * {@see DaemonProtectedModeExecutor} handing the whole row over, not a chosen subset of it.
+     * What the restore keeps of it is the decision under test, not what the disk offers.
+     *
+     * @return StateProtectedModeRuntime Freeze row as the store reads it back
+     * @throws InvalidFormatException When the fixture row is not one the state can be built from
+     */
+    private function restoredRow(): StateProtectedModeRuntime
+    {
+        return StateProtectedModeRuntime::fromRow([
+            StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_VERIFYING,
+            StateProtectedModeRuntime::operation => self::OPERATION,
+            StateProtectedModeRuntime::initiatorAcceptKey => 'accept-7',
+            StateProtectedModeRuntime::initiatorSessionTokenHash => self::INITIATOR_SESSION_HASH,
+            StateProtectedModeRuntime::initiatorAgentType => self::INITIATOR_TYPE,
+            StateProtectedModeRuntime::startedAt => self::STARTED_AT,
+            StateProtectedModeRuntime::passHashes => ['hash-of-a-pass'],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-9'],
+        ]);
     }
 
     /**
