@@ -20,16 +20,22 @@ use Hilos\Database\SqlParamCollection;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Utils\Logger;
 
 /**
- * One password per account, and what a merge does with two of them (HIL-692).
+ * One password per account, and what a merge does with two of them (HIL-692, HIL-713).
  *
  * A rule about the SHAPE of a table is only worth what the table says, so this runs
  * against a real one. Two things are pinned here that no mock could answer: that the
  * second password is refused by the write itself, whichever address it arrives on, and
- * that a password which did not survive a merge stops being a credential while its
- * address stays the person's - a demoted row, not a deleted one, is the difference
- * between "you have one password now" and "you have lost that address".
+ * what happens to the password that did not survive a merge. That second one turns on
+ * whether the address was ever PROVEN. A proven one is demoted, not deleted - the
+ * difference between "you have one password now" and "you have lost that address". An
+ * unproven one is deleted, because a row nobody proved holds the address without being
+ * able to open it, and a password on it could then be minted for any account at all.
+ *
+ * Either deletion is logged, so the log file is swapped for a temporary one the way
+ * {@see VerificationConsumeLogIntegrationTest} does it, and the lines are read back.
  *
  * The secret is read back with a query of its own because the column is deliberately
  * not ORM-mapped: nothing on the object surface could show whether an erase happened.
@@ -53,6 +59,9 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
     /** @var int Rolling source of user ids; a framework table carries no FK to a project user */
     private int $nextUserId = 1;
 
+    /** Temporary main log file the assertions read the written lines back from */
+    private string $logFile = '';
+
     /**
      * @throws HilosException When a stub statement fails or the context cannot be configured
      */
@@ -70,6 +79,9 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
         $db->configure();
         Hilos::$db = $db;
         Hilos::$sr = new SignalRouter();
+
+        $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-account-password-identity-log');
+        Logger::setLogFile($this->logFile);
     }
 
     /**
@@ -77,6 +89,11 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
      */
     protected function tearDown(): void
     {
+        Logger::resetLogFile();
+        if ($this->logFile !== '' && file_exists($this->logFile)) {
+            unlink($this->logFile);
+        }
+
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$db = $this->previousDb;
 
@@ -192,11 +209,11 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
     }
 
     /**
-     * The loser's password moves across and the survivor's own is the one demoted.
+     * The loser's password moves across and the survivor's unproven address goes with it.
      *
      * @throws HilosException When an identity query, write, or the merge fails
      */
-    public function testKeepingTheLosersPasswordMovesItAndDemotesTheSurvivors(): void
+    public function testKeepingTheLosersPasswordMovesItAndDropsTheSurvivorsUnprovenRow(): void
     {
         $survivorId = $this->nextUserId();
         $loserId = $this->nextUserId();
@@ -210,15 +227,18 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
         $kept = $this->identities()->findPasswordByUser($survivorId);
         self::assertSame($loserEmail, $kept?->identifier);
         self::assertTrue($kept?->verifyPassword(self::OTHER_PASSWORD));
-        self::assertNotNull($this->identities()->findByIdentity(IdentityType::MAGIC_LINK, $survivorEmail));
+        self::assertNull(
+            $this->identities()->findByIdentity(IdentityType::MAGIC_LINK, $survivorEmail),
+            'An address nobody proved must not be left behind as a row that only holds it',
+        );
     }
 
     /**
-     * Neither secret survives, and the person keeps both addresses to set one anew with.
+     * Neither secret survives and neither address was proven, so no row survives either.
      *
      * @throws HilosException When an identity query, write, or the merge fails
      */
-    public function testKeepingNeitherPasswordLeavesTheAccountWithBothAddressesAndNoSecret(): void
+    public function testKeepingNeitherUnprovenPasswordLeavesTheAccountWithNoRowsAtAll(): void
     {
         $survivorId = $this->nextUserId();
         $loserId = $this->nextUserId();
@@ -230,9 +250,35 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
         $this->identities()->rePointToUser($loserId, $survivorId, PasswordFate::NONE);
 
         self::assertNull($this->identities()->findPasswordByUser($survivorId));
+        self::assertCount(0, $this->identities()->listByUser($survivorId));
+        foreach ([$survivorEmail, $loserEmail] as $email) {
+            self::assertNull($this->identities()->findByIdentity(IdentityType::MAGIC_LINK, $email));
+        }
+    }
+
+    /**
+     * The same merge over PROVEN addresses: both stay, as the rule HIL-692 wrote says.
+     *
+     * @throws HilosException When an identity query, write, or the merge fails
+     */
+    public function testKeepingNeitherProvenPasswordLeavesBothAddressesAndNoSecret(): void
+    {
+        $survivorId = $this->nextUserId();
+        $loserId = $this->nextUserId();
+        $survivorEmail = $this->uniqueEmail();
+        $loserEmail = $this->uniqueEmail();
+        $this->identities()->createPasswordIdentity($survivorId, $survivorEmail, self::PASSWORD)->markVerified();
+        $this->identities()->createPasswordIdentity($loserId, $loserEmail, self::OTHER_PASSWORD)->markVerified();
+
+        $this->identities()->rePointToUser($loserId, $survivorId, PasswordFate::NONE);
+
+        self::assertNull($this->identities()->findPasswordByUser($survivorId));
         self::assertCount(2, $this->identities()->listByUser($survivorId));
         foreach ([$survivorEmail, $loserEmail] as $email) {
-            self::assertNotNull($this->identities()->findByIdentity(IdentityType::MAGIC_LINK, $email));
+            $demoted = $this->identities()->findByIdentity(IdentityType::MAGIC_LINK, $email);
+            self::assertNotNull($demoted, 'A proven address stays the person\'s, as a row of another type');
+            self::assertSame($survivorId, $demoted->userId);
+            self::assertNull($this->readSecret($demoted), 'A demoted row must carry no secret at all');
         }
     }
 
@@ -288,6 +334,10 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
     /**
      * An address the survivor already reaches by link keeps the row it already has.
      *
+     * The demoted row is proven here on purpose: an unproven one would be dropped for
+     * the other reason before the duplicate is ever looked for, and this case is about
+     * the duplicate.
+     *
      * @throws HilosException When an identity query, write, or the merge fails
      */
     public function testADemotionOntoAnExistingLinkAddressDropsTheRowInstead(): void
@@ -296,7 +346,7 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
         $loserId = $this->nextUserId();
         $shared = $this->uniqueEmail();
         $this->identities()->createPasswordIdentity($survivorId, $this->uniqueEmail(), self::PASSWORD);
-        $this->identities()->createPasswordIdentity($loserId, $shared, self::OTHER_PASSWORD);
+        $this->identities()->createPasswordIdentity($loserId, $shared, self::OTHER_PASSWORD)->markVerified();
         $this->seedMagicLinkRow($survivorId, $shared);
 
         $this->identities()->rePointToUser($loserId, $survivorId, PasswordFate::SURVIVOR);
@@ -305,6 +355,93 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
         self::assertSame(
             $survivorId,
             $this->identities()->findByIdentity(IdentityType::MAGIC_LINK, $shared)?->userId,
+        );
+
+        $written = $this->log();
+        self::assertStringContainsString('Account merge deleted an identity row instead of demoting it', $written);
+        self::assertStringContainsString('"reason":"magic_link_exists"', $written);
+        self::assertStringContainsString('"identifier":"' . $shared . '"', $written);
+    }
+
+    /**
+     * The hole the leaf closes: the freed address is free, for anybody, including a stranger.
+     *
+     * Before this, the unproven row stayed as a `magic_link` nobody could sign in with,
+     * while (password, address) was still vacant - so the address answered "taken" to a
+     * person and "free" to the write, and the write is the one that decides.
+     *
+     * Which is why the row itself is what the first assertion is about. The two reads
+     * below it answered exactly this way while the hole was open: an unverified row of
+     * another type is not an account to {@see ObjectIdentities::findAccountIdByEmail()}, and the
+     * write only ever looked for a (password, address) row. Only "no row mentions it at
+     * all" tells the freed address apart from the half-taken one.
+     *
+     * @throws HilosException When an identity query, write, or the merge fails
+     */
+    public function testAnAddressFreedByTheMergeIsFreeForAnotherAccountToTake(): void
+    {
+        $survivorId = $this->nextUserId();
+        $loserId = $this->nextUserId();
+        $strangerId = $this->nextUserId();
+        $survivorEmail = $this->uniqueEmail();
+        $this->identities()->createPasswordIdentity($survivorId, $survivorEmail, self::PASSWORD);
+        $this->identities()->createPasswordIdentity($loserId, $this->uniqueEmail(), self::OTHER_PASSWORD);
+
+        $this->identities()->rePointToUser($loserId, $survivorId, PasswordFate::LOSER);
+
+        self::assertNull(
+            $this->identities()->findUserIdByEmail($survivorEmail),
+            'A freed address must be mentioned by no row at all, not by one nobody can use',
+        );
+        self::assertNull($this->identities()->findAccountIdByEmail($survivorEmail));
+        self::assertSame(
+            $strangerId,
+            $this->identities()->createPasswordIdentity($strangerId, $survivorEmail, self::PASSWORD)->userId,
+        );
+    }
+
+    /**
+     * The line the leaf was written for: a deleted sign-in row nobody asked to delete.
+     *
+     * @throws HilosException When an identity query, write, or the merge fails
+     */
+    public function testDeletingAnUnprovenRowIsWrittenDownWithItsAddressAndBothAccounts(): void
+    {
+        $survivorId = $this->nextUserId();
+        $loserId = $this->nextUserId();
+        $survivorEmail = $this->uniqueEmail();
+        $doomedId = $this->identities()->createPasswordIdentity($survivorId, $survivorEmail, self::PASSWORD)->id;
+        $this->identities()->createPasswordIdentity($loserId, $this->uniqueEmail(), self::OTHER_PASSWORD);
+
+        $this->identities()->rePointToUser($loserId, $survivorId, PasswordFate::LOSER);
+
+        $written = $this->log();
+        self::assertStringContainsString('Account merge deleted an identity row instead of demoting it', $written);
+        self::assertStringContainsString('"reason":"unverified"', $written);
+        self::assertStringContainsString('"identityId":' . $doomedId, $written);
+        self::assertStringContainsString('"identifier":"' . $survivorEmail . '"', $written);
+        self::assertStringContainsString('"ownerUserId":' . $survivorId, $written);
+        self::assertStringContainsString('"fromUserId":' . $loserId, $written);
+        self::assertStringContainsString('"toUserId":' . $survivorId, $written);
+    }
+
+    /**
+     * A demotion that kept the row says nothing: the line is about a row that went away.
+     *
+     * @throws HilosException When an identity query, write, or the merge fails
+     */
+    public function testADemotionThatKeptTheRowIsNotWrittenDownAsADeletion(): void
+    {
+        $survivorId = $this->nextUserId();
+        $loserId = $this->nextUserId();
+        $this->identities()->createPasswordIdentity($survivorId, $this->uniqueEmail(), self::PASSWORD)->markVerified();
+        $this->identities()->createPasswordIdentity($loserId, $this->uniqueEmail(), self::OTHER_PASSWORD);
+
+        $this->identities()->rePointToUser($loserId, $survivorId, PasswordFate::LOSER);
+
+        self::assertStringNotContainsString(
+            'Account merge deleted an identity row instead of demoting it',
+            $this->log(),
         );
     }
 
@@ -332,6 +469,14 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
                 "signing in through {$email} must check the account's one secret",
             );
         }
+    }
+
+    /**
+     * @return string Everything written to the log so far in this case
+     */
+    private function log(): string
+    {
+        return (string)file_get_contents($this->logFile);
     }
 
     /**

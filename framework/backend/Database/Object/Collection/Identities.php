@@ -47,6 +47,12 @@ final class Identities extends Objects
     public const string ENTITY_COLLECTION_CLASS = EntityIdentities::class;
     public const string COLLECTION_KEY = HilosDbContext::identities;
 
+    /** Logged reason: the demoted row proved nothing about the address it carried */
+    private const string DELETE_REASON_UNVERIFIED = 'unverified';
+
+    /** Logged reason: a `magic_link` for that address is already there to carry it */
+    private const string DELETE_REASON_LINK_EXISTS = 'magic_link_exists';
+
     /**
      * Finds the identity for a (type, identifier) pair.
      *
@@ -573,37 +579,68 @@ final class Identities extends Objects
      * "a password row with an empty secret": a row is counted by its TYPE
      * ({@see IdentifierDetector}), so an emptied password row would keep offering a
      * password field that nothing can answer - the exact dead end the one-password rule
-     * exists to close. The row becomes a `magic_link` for the same address and keeps its
-     * `verified` flag, so the address stays proven and stays the person's.
+     * exists to close. A proven row becomes a `magic_link` for the same address and keeps
+     * its `verified` flag, so the address stays proven and stays the person's.
      *
      * The secret is erased before the type flips, so no window exists in which a
-     * `magic_link` row carries one. Should a `magic_link` for that address already exist,
-     * the row is deleted instead - (type, identifier) is globally unique and the address
-     * is already carried by the row that is there, which is the same reasoning
-     * {@see rePointToUser()} uses for a duplicate it declines to move.
+     * `magic_link` row carries one.
+     *
+     * Two cases end in a deleted row rather than a demoted one, and both are exceptions
+     * to that rule stated on purpose (HIL-713). An UNVERIFIED row is deleted because
+     * `verified` is the claim that somebody proved this address, a merge proved nothing,
+     * and a row nobody proved leaves the address half-taken: dead for signing in
+     * ({@see findAccountIdByEmail()} does not see it) yet solid enough to hold the pair
+     * (`magic_link`, address), so a password on that address can then be minted for any
+     * account at all. A row whose address ALREADY has a `magic_link` is deleted because
+     * (type, identifier) is globally unique and the address is carried by the row that is
+     * there - the same reasoning {@see rePointToUser()} uses for a duplicate it declines
+     * to move. Either deletion is written to the log with the address and both merged
+     * accounts: it takes a sign-in row away, and no operator asked for that by name. The
+     * line goes down inside the merge transaction, so a rollback leaves it standing as
+     * the record of an attempt.
      *
      * @param ObjectIdentity $identity Password identity that did not survive the merge
+     * @param int $fromUserId Loser user id of the merge, for the log line
+     * @param int $toUserId Survivor user id of the merge, for the log line
      * @throws DatabaseException If a lookup, erase, delete, or update query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
-    public function demotePasswordToMagicLink(ObjectIdentity $identity): void
+    public function demotePasswordToMagicLink(ObjectIdentity $identity, int $fromUserId, int $toUserId): void
     {
-        if ($this->findByIdentity(IdentityType::MAGIC_LINK, $identity->identifier) !== null) {
-            $id = $identity->id;
-            $identity->delete();
-            if ($id !== null) {
-                unset($this[$id]);
-            }
+        $deleteReason = null;
+        if (!$identity->verified) {
+            $deleteReason = self::DELETE_REASON_UNVERIFIED;
+        } elseif ($this->findByIdentity(IdentityType::MAGIC_LINK, $identity->identifier) !== null) {
+            $deleteReason = self::DELETE_REASON_LINK_EXISTS;
+        }
+
+        if ($deleteReason === null) {
+            $identity->clearPassword();
+            $identity->type = IdentityType::MAGIC_LINK;
+            $identity->sync();
 
             return;
         }
 
-        $identity->clearPassword();
-        $identity->type = IdentityType::MAGIC_LINK;
-        $identity->sync();
+        $id = $identity->id;
+        $ownerUserId = $identity->userId;
+        $identifier = $identity->identifier;
+        $identity->delete();
+        if ($id !== null) {
+            unset($this[$id]);
+        }
+
+        Logger::warning('Account merge deleted an identity row instead of demoting it', [
+            'reason' => $deleteReason,
+            'identityId' => $id,
+            'identifier' => $identifier,
+            'ownerUserId' => $ownerUserId,
+            'fromUserId' => $fromUserId,
+            'toUserId' => $toUserId,
+        ]);
     }
 
     /**
@@ -636,11 +673,11 @@ final class Identities extends Objects
         }
 
         if ($survivorPassword !== null && $passwordFate !== PasswordFate::SURVIVOR) {
-            $this->demotePasswordToMagicLink($survivorPassword);
+            $this->demotePasswordToMagicLink($survivorPassword, $fromUserId, $toUserId);
         }
 
         if ($loserPassword !== null && $passwordFate !== PasswordFate::LOSER) {
-            $this->demotePasswordToMagicLink($loserPassword);
+            $this->demotePasswordToMagicLink($loserPassword, $fromUserId, $toUserId);
         }
     }
 
