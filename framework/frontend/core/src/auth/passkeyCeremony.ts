@@ -37,6 +37,7 @@ import {
   PASSKEY_CEREMONY_REGISTER,
   PASSKEY_OPTIONS_SIGNAL,
   passkeyOptionsSignalSchema,
+  type PasskeyCeremony,
   type PasskeyOptionsSignalData,
 } from './passkeySignals.js'
 
@@ -61,6 +62,19 @@ const PASSKEY_UNSUPPORTED_MESSAGE = 'This browser does not support passkeys.'
 const PASSKEY_FAILED_MESSAGE =
   'Could not complete the passkey request. Please try again.'
 
+// The browser reports a dialog the person closed and a dialog that had nothing to
+// offer as the same DOMException, so one phrasing has to cover both (HIL-658).
+// What it must NOT also cover is both ceremonies: the advice ends by naming what
+// the person was doing, and on the profile's "Add a passkey" button the sign-in
+// wording told someone already signed in how to sign in (HIL-725).
+/** Shown when the login ceremony was cancelled or had nothing to offer. */
+const PASSKEY_CANCELLED_LOGIN_MESSAGE =
+  'The passkey request was cancelled, or this device had no matching way to sign in — try a security key or your phone.'
+
+/** Shown when the register ceremony was cancelled or had nothing to offer. */
+const PASSKEY_CANCELLED_REGISTER_MESSAGE =
+  'The passkey request was cancelled, or this device had no way to add one — try a security key or your phone.'
+
 /**
  * Dispatch an options action and resolve the options signal it triggers.
  * Subscribes before dispatching so the WS_USER signal cannot be missed, then
@@ -83,7 +97,7 @@ function requestOptions(
   context: HilosAuthContext,
   action: string,
   payload: Record<string, string>,
-  ceremony: string,
+  ceremony: PasskeyCeremony,
   abort?: AbortSignal,
 ): Promise<PasskeyOptionsSignalData> {
   return new Promise((resolve, reject) => {
@@ -193,7 +207,10 @@ export async function runPasskeyDiscoverableLogin(
 
     return { ok: true }
   } catch (error) {
-    return { ok: false, message: describePasskeyError(error) }
+    return {
+      ok: false,
+      message: describePasskeyError(error, PASSKEY_CEREMONY_LOGIN),
+    }
   }
 }
 
@@ -235,7 +252,10 @@ async function runPasskeyRegister(
 
     return { ok: true }
   } catch (error) {
-    return { ok: false, message: describePasskeyError(error) }
+    return {
+      ok: false,
+      message: describePasskeyError(error, PASSKEY_CEREMONY_REGISTER),
+    }
   }
 }
 
@@ -245,14 +265,20 @@ async function runPasskeyRegister(
  * outcomes, and a generic fallback otherwise.
  *
  * @param error The caught failure from the ceremony.
+ * @param ceremony The ceremony the failure belongs to, which is what the cancelled-branch copy names.
  */
-function describePasskeyError(error: unknown): string {
+function describePasskeyError(
+  error: unknown,
+  ceremony: PasskeyCeremony,
+): string {
   if (error instanceof ActionError && error.outcome === 'fail') {
     return error.message
   }
   if (error instanceof DOMException) {
     if (error.name === 'NotAllowedError' || error.name === 'AbortError') {
-      return 'The passkey request was cancelled, or this device had no matching way to sign in — try a security key or your phone.'
+      return ceremony === PASSKEY_CEREMONY_REGISTER
+        ? PASSKEY_CANCELLED_REGISTER_MESSAGE
+        : PASSKEY_CANCELLED_LOGIN_MESSAGE
     }
     if (error.name === 'InvalidStateError') {
       return 'This device already has a passkey for this account.'

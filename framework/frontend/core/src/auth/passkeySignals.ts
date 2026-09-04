@@ -25,6 +25,11 @@ export const PASSKEY_CEREMONY_REGISTER = 'register'
 /** Ceremony discriminator for a login reply (PHP `WebAuthnChallengeSigner::PURPOSE_LOGIN`). */
 export const PASSKEY_CEREMONY_LOGIN = 'login'
 
+/** Either ceremony, narrow enough that a caller cannot name a third one. */
+export type PasskeyCeremony =
+  | typeof PASSKEY_CEREMONY_LOGIN
+  | typeof PASSKEY_CEREMONY_REGISTER
+
 /**
  * The options-reply payload: the ceremony discriminator, the opaque WebAuthn
  * `publicKey` options wire shape (spec-defined keys, binary fields base64url —
