@@ -456,14 +456,27 @@ onto one node.
 - **Failover re-placement (leader).** `onNodeLeft` arms a failover for each placed agent the
   lost node hosted; after `CLUSTER_FAILOVER_GRACE_MS` (flap tolerance) the leader re-runs
   the `ClusterPlacement::placeAgentOnNode()` primitive onto another capable+online node
-  (capability gate only). A node back before its grace cancels its own failover.
+  (capability gate only). A node back before its grace cancels its own failover. The deadline
+  carries the node whose loss armed it, and firing it re-places only an agent the registry
+  still puts there: inside one grace period the fleet's own supervisor may restart the agent
+  on a neighbour, and a deadline outliving that move would start a second copy on the node it
+  names — which the HIL-696 guard then refuses for good, leaving the agent running nowhere
+  (HIL-719).
 - **Slave self-fence (no double-run).** A slave that loses the link to the leader that
   placed its work stops those agents after `CLUSTER_SLAVE_WORK_GRACE_MS`, then reconnects
   via the existing peer dial. The self-fence grace is held **at or below** the failover
   grace, so the old copy of a truth source is stopped before the leader starts a new one.
   On rejoin the node reports what it still hosts (`PeerPlacementReportDTO`) and the leader
-  reconciles against its view (leader = truth), issuing `peer_stop_agent` for anything
-  already re-placed elsewhere — a returning node never resurrects a moved agent.
+  reconciles against its view in both directions. The report is a COMPLETE snapshot and goes
+  out on every new link, empty set included. For what it NAMES, leader = truth: a
+  `peer_stop_agent` goes back for anything already re-placed elsewhere, so a returning node
+  never resurrects a moved agent. For what it does NOT name, the node is truth: an agent the
+  leader still tracks `Started` there is running nowhere, so the record is forgotten and the
+  agent re-placed best-fit at once, with no grace waited out (HIL-719) — the emptied node is
+  the least loaded candidate, so its own fleet comes back to it. A container recreated faster
+  than the failover grace is exactly that case, and until it was made to speak up the leader
+  reported a dead fleet as started for the rest of the term. `Placing` (its place frame may
+  still be in flight), `Refused` (HIL-696), `Failed` and `Unplaced` records are left alone.
 - **Degrade gracefully.** When re-placement finds no capable+online node, the agent is
   marked `PlacementState::Unplaced`, logged, and the project `onPlacementDegraded()` hook
   fires; the leader retries automatically when a capable node joins (`onNodeJoined`).

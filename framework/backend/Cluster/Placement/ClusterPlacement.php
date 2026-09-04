@@ -111,7 +111,13 @@ final class ClusterPlacement implements WorkerPlacement
     /** @var bool True while this node holds leadership and owns the placement view */
     private bool $isLeader = false;
 
-    /** @var array<string, float> Failover deadline (microtime) per orphaned agent id awaiting re-placement */
+    /**
+     * Failover deadline per orphaned agent id awaiting re-placement, with the node it was armed
+     * for: by the time it elapses the agent may sit on another node, and only the armed node
+     * tells the leader whether that deadline still speaks about where the agent is.
+     *
+     * @var array<string, array{nodeId: string, deadline: float}>
+     */
     private array $failoverDeadlines = [];
 
     /** @var array<string, string> Hosting node id per agent id, as the leader last published it; empty on the leader */
@@ -558,13 +564,16 @@ final class ClusterPlacement implements WorkerPlacement
      * against the leader-owned truth.
      *
      * Two callers land here: a fresh leader's rebuild broadcast ({@see onBecameLeader()}) and
-     * a node's rejoin report ({@see onPeerHandshaked()}). For each reported agent the leader
-     * is the arbiter — if it already tracks that agent on a different node (it was re-placed
-     * there while this node was gone, or another node hosts it), the reporting node is told to
-     * stop its stale copy so a moved agent is never resurrected; otherwise the report is
+     * a node's rejoin report ({@see onPeerHandshaked()}). The frame is a COMPLETE snapshot of
+     * what the reporting node hosts, so it is read in both directions. For each agent it NAMES
+     * the leader is the arbiter — if it already tracks that agent on a different node (it was
+     * re-placed there while this node was gone, or another node hosts it), the reporting node is
+     * told to stop its stale copy so a moved agent is never resurrected; otherwise the report is
      * accepted, which both rebuilds the view and lets a returning node re-adopt an agent that
-     * failover had left {@see PlacementState::Unplaced}. Ignored on a non-leader, whose
-     * placement view is inert.
+     * failover had left {@see PlacementState::Unplaced}. What the frame does NOT name is then
+     * settled by {@see reconcileMissingAgents()}, in that order: an accepted report can move an
+     * agent ONTO this node, and the pass that follows must not take away what the pass before it
+     * just granted. Ignored on a non-leader, whose placement view is inert.
      *
      * @param string $fromNodeId Id of the node that reported
      * @param PeerPlacementReportDTO $frame Received placement report
@@ -594,6 +603,11 @@ final class ClusterPlacement implements WorkerPlacement
 
             $this->registry->put(new PlacementRecord($entry->agentType, $entry->agentIndex, $fromNodeId, PlacementState::Started));
         }
+
+        $this->reconcileMissingAgents($fromNodeId, array_map(
+            fn(PeerPlacedAgentEntry $entry): string => $this->agentId($entry->agentType, $entry->agentIndex),
+            $frame->agents,
+        ));
     }
 
     /**
@@ -702,7 +716,10 @@ final class ClusterPlacement implements WorkerPlacement
                 if ($record->nodeId === $nodeId
                     && $record->state !== PlacementState::Unplaced
                     && !isset($this->failoverDeadlines[$record->agentId()])) {
-                    $this->failoverDeadlines[$record->agentId()] = $now + $this->failoverGraceSec;
+                    $this->failoverDeadlines[$record->agentId()] = [
+                        'nodeId' => $nodeId,
+                        'deadline' => $now + $this->failoverGraceSec,
+                    ];
                 }
             }
         }
@@ -749,10 +766,10 @@ final class ClusterPlacement implements WorkerPlacement
      */
     public function tick(float $now): void
     {
-        foreach ($this->failoverDeadlines as $agentId => $deadline) {
+        foreach ($this->failoverDeadlines as $agentId => ['nodeId' => $lostNodeId, 'deadline' => $deadline]) {
             if ($now >= $deadline) {
                 unset($this->failoverDeadlines[$agentId]);
-                $this->failOver($agentId);
+                $this->failOver($agentId, $lostNodeId);
             }
         }
 
@@ -770,8 +787,13 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * Node side is the reconcile-on-rejoin safety net: after a partition a node may still host
      * agents the leader re-placed elsewhere, so on every new link it sends what it hosts and
-     * lets the leader ({@see onPlacementReport()}) stop the stale copies. A no-op when this node
-     * hosts nothing; a non-leader peer that receives the report simply ignores it.
+     * lets the leader ({@see onPlacementReport()}) stop the stale copies. What it sends is a
+     * COMPLETE snapshot of its hosted set, which is why the frame goes out even when that set is
+     * EMPTY (HIL-719): a node whose container was recreated inside the failover grace hosts
+     * nothing, and the silence it used to answer with is exactly what left the leader calling a
+     * dead fleet started. Handing over the whole of what one side holds on this hook is what the
+     * connection index, the RT claims and the RT snapshots already do. A non-leader peer that
+     * receives the report simply ignores it.
      *
      * Leader side hands the newcomer the whole placement view (HIL-668), because that is the one
      * thing the per-tick publish cannot do for it: the publish speaks only on CHANGE, so a node
@@ -783,10 +805,6 @@ final class ClusterPlacement implements WorkerPlacement
     {
         if ($this->isLeader) {
             $this->mesh->sendToNode($nodeId, new PeerPlacementViewDTO($this->selfNodeId, $this->placementViewAgents()));
-        }
-
-        if ($this->hosted === []) {
-            return;
         }
 
         $this->mesh->sendToNode($nodeId, new PeerPlacementReportDTO($this->hostedEntries()));
@@ -922,12 +940,25 @@ final class ClusterPlacement implements WorkerPlacement
      * re-placement fails, the agent is degraded to {@see PlacementState::Unplaced}. Any error
      * is caught so a bad failover never tears down the daemon loop.
      *
+     * "Moved" is judged against the node the deadline was armed for, not against the registry
+     * alone: within one grace period the agent may have been re-placed onto a neighbour — by
+     * the project that supervises the fleet, or by a report the returning node sent — and a
+     * deadline that outlived that move speaks about a node the agent no longer sits on. Firing
+     * it would start a second copy on the node it names, which the guard from HIL-696 refuses
+     * for good, leaving the agent unable to run anywhere for the rest of the term.
+     *
      * @param string $agentId Agent id whose failover grace has elapsed
+     * @param string $lostNodeId Node id whose loss armed the deadline
      */
-    private function failOver(string $agentId): void
+    private function failOver(string $agentId, string $lostNodeId): void
     {
         $record = $this->registry->get($agentId);
         if ($record === null || $record->state->runsNowhere()) {
+            return;
+        }
+
+        if ($record->nodeId !== $lostNodeId) {
+            Logger::info("Failover: '{$agentId}' already moved from '{$lostNodeId}' onto '{$record->nodeId}'; stale deadline dropped");
             return;
         }
 
@@ -945,6 +976,60 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         $this->degrade($record);
+    }
+
+    /**
+     * Re-places every agent the leader still tracks on a node whose report did not name it
+     * (HIL-719).
+     *
+     * The other half of {@see failOver()}: both answer "the agent is not where it is written
+     * down", one because the node went silent, this one because the node itself said so. A
+     * placement report is a complete snapshot, so an agent this leader calls
+     * {@see PlacementState::Started} on the reporting node and the snapshot leaves out is not
+     * running anywhere — the container came back as a fresh process, faster than the grace that
+     * would have noticed it gone. This is the case that used to end in a fleet running nowhere
+     * while the leader answered started for the rest of the term.
+     *
+     * Only a Started record of the reporting node is judged. {@see PlacementState::Placing} is
+     * spared because its place-agent frame may still be in flight, and dropping the record would
+     * make the copy that lands a second source of truth; {@see PlacementState::Refused} is
+     * spared because the leader took that agent down on purpose (HIL-696);
+     * {@see PlacementState::Failed} is retried by whoever placed it; {@see PlacementState::Unplaced}
+     * is not about a node at all and belongs to {@see retryUnplaced()}.
+     *
+     * The record is forgotten BEFORE the re-placement, because {@see pickBestNode()} counts
+     * occupancy from the registry: a record left standing would credit the emptied node with a
+     * load it does not carry and push its own agent onto a neighbour. Each agent is guarded on
+     * its own, since the frame is dispatched on the master loop, where an escaping exception
+     * ends run().
+     *
+     * @param string $fromNodeId Id of the node that reported
+     * @param list<string> $reportedIds Agent ids the report named
+     */
+    private function reconcileMissingAgents(string $fromNodeId, array $reportedIds): void
+    {
+        foreach ($this->registry->all() as $record) {
+            $agentId = $record->agentId();
+            if ($record->nodeId !== $fromNodeId
+                || $record->state !== PlacementState::Started
+                || in_array($agentId, $reportedIds, true)
+            ) {
+                continue;
+            }
+
+            Logger::warning("Reconcile: node '{$fromNodeId}' no longer hosts '{$agentId}'; re-placing");
+            $this->registry->forget($agentId);
+
+            try {
+                if ($this->placeAgentOnBestNode($record->agentType, $record->agentIndex) !== null) {
+                    continue;
+                }
+            } catch (Throwable $e) {
+                Logger::warning("Reconcile of '{$agentId}' could not re-place: {$e->getMessage()}");
+            }
+
+            $this->degrade($record);
+        }
     }
 
     /**

@@ -38,7 +38,7 @@ composer -d demo/cluster run install-deps      # generate the lock (once)
 composer -d demo/cluster run test:unit         # topology + placement-contract unit tests
 demo/cluster/docker/cluster up                 # build + start mysql, 5 nodes, cli
 demo/cluster/docker/cluster status             # roster + leader + placements per node
-demo/cluster/docker/cluster scenarios          # the 15-scenario matrix
+demo/cluster/docker/cluster scenarios          # the 16-scenario matrix
 demo/cluster/docker/cluster down --volumes     # tear everything down
 ```
 
@@ -69,11 +69,17 @@ scenario matrix. From the repo root: `composer run test:cluster:all`.
    is named, stopped, and never re-placed; the fleet keeps its rows (HIL-696)
 15. db interest addressing — a database fact hops only to the nodes that read the
    collection it names, and each node reports which those are (HIL-750)
+16. recreated node leaves no phantom fleet — a data-plane container replaced faster
+   than the failover grace comes back hosting nothing and says so, the fleet ends up
+   running again, and the leader names no node that runs none of it (HIL-719)
 
 They run in the order the driver lists them, which is not the order they are
 numbered: the three RT scenarios go right after placement, while the fleet the
-leader just placed is still alive. Every run starts from a fresh stack, because
-the matrix leaves that fleet dead behind it (P-152).
+leader just placed is still alive. That order was forced by a defect — the matrix
+used to leave the fleet dead behind it (P-152) — and it is kept now that the defect
+is gone, because moving a scenario moves its timing with it. Every run still starts
+from a fresh stack: the matrix kills, partitions and recreates every node it
+touches, so there is nothing in a used one worth keeping.
 
 ### Timing on a loaded host (HIL-367)
 

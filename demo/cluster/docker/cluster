@@ -254,15 +254,15 @@ cmd_heal() { local n="${1:-}"; valid_node "$n"; docker network connect --ip "${N
 cmd_logs() { local n="${1:-}"; valid_node "$n"; dc logs -f "cluster-$n"; }
 
 cmd_scenarios() {
-  # A FRESH stack, not merely a running one. The matrix leaves the fleet dead behind it -
-  # scenario 9 recreates a data-plane container faster than the failover grace, so its agents
-  # never come back and the leader goes on reporting them `started` (P-152) - and the two RT
-  # scenarios are the only ones that need agents actually running rather than a topology that
-  # converged. Run twice over one stack, the second run reads that lie and fails them on a stand
-  # whose collection has no owner at all. Reusing the stack was the older behaviour and it was
-  # never right; nothing survives this matrix anyway, since it kills, partitions and recreates
-  # every node it touches. The image build behind `up` is a cache hit, so the price is one
-  # container recreate.
+  # A FRESH stack, not merely a running one. The matrix used to leave the fleet dead behind it -
+  # scenario 9 recreates a data-plane container faster than the failover grace, and its agents
+  # never came back while the leader went on reporting them `started` (P-152) - so a second run
+  # over the same stack read that lie and failed the RT scenarios, the only ones that need agents
+  # actually running rather than a topology that converged. Since HIL-719 the fleet survives a
+  # recreate, and scenario 16 asserts it does. The stack is still replaced every time, because
+  # reusing it was never right on its own terms: nothing survives this matrix anyway, since it
+  # kills, partitions and recreates every node it touches. The image build behind `up` is a cache
+  # hit, so the price is one container recreate.
   #
   # `--volumes` on top of that since HIL-712: the schema of this stand is created by
   # the mariadb image from MYSQL_DATABASE, and an image only does that on the FIRST

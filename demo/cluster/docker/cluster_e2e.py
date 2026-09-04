@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-cluster_e2e.py - the 15-scenario assertion matrix for the daemon-cluster e2e
+cluster_e2e.py - the 16-scenario assertion matrix for the daemon-cluster e2e
 harness (HIL-185).
 
 It assumes the stack is already up (via `cluster up`) and drives it: for each
@@ -46,6 +46,8 @@ Plus scenarios beyond that matrix:
  13 rt partition converges     a cut-off node serves its replica frozen and catches up (HIL-589)
  14 rt claim refused           a second owner of one collection is named and kept down (HIL-696)
  15 db interest addressing     a db fact hops only to the nodes that read its collection (HIL-750)
+ 16 recreated node leaves      a data-plane container replaced faster than the failover grace
+    no phantom fleet           leaves the leader naming no node that runs nothing (HIL-719)
 
 Exit code 0 when every scenario passes, 1 otherwise.
 """
@@ -501,16 +503,19 @@ def summarize(views):
 def wait_fleet_rows():
     """Wait until every node holds a status row for every fleet member.
 
-    Rows rather than the leader's placement table, because the table can lie: a data-plane
-    container recreated faster than the failover grace comes back WITHOUT its agents, and
-    nothing re-places them - the leader goes on reporting them `started` on a node that runs
-    nothing (P-152). A row is written by a live member, so waiting for rows waits for the
-    fleet itself, which is what the two RT scenarios are about.
+    Rows rather than the leader's placement table, and that distinction outlives the defect
+    that taught it: a row is written by a live member, so waiting for rows waits for the fleet
+    itself, which is what the RT scenarios are about, while the table says only where the
+    leader has written an agent down. The table used to be able to lie outright - a data-plane
+    container recreated faster than the failover grace came back WITHOUT its agents and nothing
+    re-placed them (P-152) - and since HIL-719 it cannot: the returning node reports the empty
+    set, the fleet is put back to work, and the table stops naming a node that runs none of it,
+    which scenario 16 holds it to.
 
-    That defect is also why they run where they do (see SCENARIOS): once the fleet is dead
-    the collection has no owner at all, and then nothing can repair it - the nodes still
-    holding a copy may not hand it over, since passing on somebody else's rows is precisely
-    what makes a second source of them.
+    That defect is also why the RT scenarios run where they do (see SCENARIOS), and their order
+    is kept now that it no longer has to be: once the fleet was dead the collection had no owner
+    at all and nothing could repair it, because the nodes still holding a copy may not hand it
+    over - passing on somebody else's rows is precisely what makes a second source of them.
     """
     try:
         return wait_until(fleet_rows_where_read, CONVERGE_TIMEOUT,
@@ -1214,11 +1219,77 @@ def scenario_15_db_interest_addressing():
             f"which none of them reads, reached none of them")
 
 
+def scenario_16_recreated_node_leaves_no_phantom_fleet():
+    """A data-plane container replaced faster than the failover grace leaves no phantom fleet (HIL-719).
+
+    The state this closes was stable and silent. A recreated container comes back inside the
+    grace, so no failover ever fires for it - and it used to come back saying nothing at all,
+    because a node with an empty hosted set skipped its placement report. The leader therefore
+    kept every agent of that node written down as `started` while not one of them ran anywhere:
+    a dashboard showing the record of work instead of the work.
+
+    So the assertion is deliberately not about the leader's table alone - the table is what
+    lied. Every node the table NAMES has to be holding the collection its fleet members WRITE,
+    which only a live member fills. Before the fix the victim came back with a placement table
+    that read exactly right and a collection with no rows in it at all.
+
+    What it deliberately does NOT assert is that the agents land back on the victim, because
+    which node ends up with them is not this leaf's business and is not even the same answer
+    twice. A recreate shuts the node down gracefully when it gets the chance, and then its
+    agents report Stopped before the container goes: the leader forgets those records, and the
+    demo's own fleet supervisor places the members it no longer tracks onto the survivor while
+    the victim is still down. When instead the node dies without a word, the records live on and
+    the rejoin report is what clears them - and there the emptied node is the least loaded
+    candidate, so its own share does come home. Both endings are healthy, and the one thing
+    that must be true of either is what this scenario asks for: the fleet is running, and the
+    leader is not naming a node that runs none of it.
+    """
+    views = wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet is placed before the recreate")
+    # The victim is picked rather than named, so that a rerun after an earlier attempt moved the
+    # fleet does not fail on the premise instead of on the assertion.
+    carriers = sorted(n for n in SLAVES if hosted_by(views, n))
+    assert carriers, "no data-plane node carries the fleet, so replacing one would prove nothing"
+    victim = carriers[0]
+    before_id = container_id(victim)
+    assert before_id, f"could not read the container id of {victim}"
+    lost = hosted_by(views, victim)
+
+    print(f"    recreating {victim}, which carries {len(lost)} agent(s) the leader calls started")
+    ctl("recreate", victim)
+    wait_converge(ALL_NODES)
+
+    after_id = container_id(victim)
+    assert after_id and after_id != before_id, \
+        f"{victim} was not replaced ({after_id[:12]} == {before_id[:12]}); the recreate did not take"
+
+    wait_until(fleet_started, FAILOVER_TIMEOUT,
+               f"the whole fleet started again after {victim} was replaced")
+
+    # And the table has to be about running agents rather than about records of them: every node
+    # it names is a node whose fleet members are writing their rows again.
+    views = wait_fleet_rows()
+    for node in sorted({row["nodeId"] for row in worker_placements(views).values()}):
+        assert rt_read_by(views, node), \
+            f"the leader places fleet members on {node}, which reports reading no '{WORKER_STATUSES}' at all"
+        held = len(rt_rows(views, node))
+        assert held == WORKER_FLEET_SIZE, \
+            (f"{node} hosts fleet members by the leader's table but holds {held} of "
+             f"{WORKER_FLEET_SIZE} rows: the table is naming a node that runs nothing")
+
+    hosts = ", ".join(f"{n}={len(hosted_by(views, n))}" for n in sorted(SLAVES))
+    return (f"{victim} came back as {after_id[:12]} without the {len(lost)} agent(s) it had; the "
+            f"whole fleet runs again ({hosts}) and every node the leader names writes its rows")
+
+
 # Numbered by when they were written, ORDERED by what they need. The three RT scenarios run
 # right after placement, while the fleet the leader just placed is still alive: they are the
-# only ones that need running agents rather than a converged topology, and scenario 9 leaves
-# the fleet dead behind it (P-152 - a recreated data-plane container comes back without its
-# agents, and the leader goes on calling them started). Everything from 4 on perturbs the
+# only ones that need running agents rather than a converged topology. That order was once
+# forced on them - a recreated data-plane container came back without its agents and the leader
+# went on calling them started (P-152), so everything after scenario 9 met a dead fleet. Since
+# HIL-719 it does not: the returning node reports its empty hosted set, the fleet goes back to
+# work, and the table names no node that runs none of it - which is what scenario 16 asserts.
+# The order is left exactly as it was all the same, because moving a scenario moves its timing
+# with it and none of them is owed a different place. Everything from 4 on perturbs the
 # topology and cares nothing about who is writing.
 #
 # 14 also has to come after 12 rather than before it: it deliberately makes a second owner of the
@@ -1240,6 +1311,7 @@ SCENARIOS = [
     ("10 cross-node browser", scenario_10_cross_node_browser),
     ("11 cross-node db fact", scenario_11_cross_node_db_fact),
     ("15 db interest addressing", scenario_15_db_interest_addressing),
+    ("16 recreated node leaves no phantom fleet", scenario_16_recreated_node_leaves_no_phantom_fleet),
 ]
 
 # Park a scenario here (name -> reason) to skip it as known timing-flaky -- the

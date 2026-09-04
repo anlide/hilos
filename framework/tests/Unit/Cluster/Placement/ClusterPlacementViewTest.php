@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Cluster\Placement;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
+use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Placement\AgentLocationKind;
 use Hilos\Cluster\Placement\ClusterPlacement;
@@ -228,8 +229,10 @@ final class ClusterPlacementViewTest extends TestCase
     }
 
     /**
-     * A node that does not lead hands over nothing: the picture is not its to give, and a stale
-     * copy passed on as fact is how two nodes end up forwarding to different places.
+     * A node that does not lead hands over no VIEW: the picture is not its to give, and a stale
+     * copy passed on as fact is how two nodes end up forwarding to different places. What it does
+     * hand over is its own placement report (HIL-719) — that one is its to give, being the list
+     * of agents it hosts itself.
      */
     public function testANonLeaderHandsOverNoViewOnALink(): void
     {
@@ -239,7 +242,10 @@ final class ClusterPlacementViewTest extends TestCase
 
         $placement->onPeerHandshaked('node-c');
 
-        $this->assertSame([], $mesh->sent);
+        $handed = array_map(static fn(array $sent): PeerDTO => $sent[1], $mesh->sent);
+        $this->assertCount(1, $handed);
+        $this->assertInstanceOf(PeerPlacementReportDTO::class, $handed[0], 'A node speaks for what it hosts');
+        $this->assertSame([], $handed[0]->agents, 'This one hosts nothing, and the copied view is not its own');
     }
 
     /**

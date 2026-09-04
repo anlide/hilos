@@ -303,6 +303,33 @@ final class ClusterPlacementTest extends TestCase
         $this->assertSame('node-b', $placement->registry()->get('render:9')?->nodeId);
     }
 
+    public function testAFailoverDeadlineSparesAnAgentAlreadyMovedOffTheLostNode(): void
+    {
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            linked: ['node-b', 'node-c'],
+            online: [self::SELF, 'node-b', 'node-c'],
+        );
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']), null, failoverGraceMs: 500);
+        $placement->onBecameLeader();
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+
+        // node-b is recreated: it leaves, the fleet's own supervisor restarts the agent on
+        // node-c while the grace runs, and node-b comes back with nothing left to cancel —
+        // the record the deadline was armed for no longer names it.
+        $mesh->online = [self::SELF, 'node-c'];
+        $placement->noteNodeOffline('node-b', 1000.0);
+        $placement->placeAgentOnNode('render', '9', 'node-c');
+        $mesh->online = [self::SELF, 'node-b', 'node-c'];
+        $placement->noteNodeOnline('node-b', 1000.3);
+        $mesh->sent = [];
+
+        $placement->tick(1000.6);
+
+        $this->assertSame([], $mesh->sent, 'Re-placing onto node-b would start the second copy HIL-696 refuses for good');
+        $this->assertSame('node-c', $placement->registry()->get('render:9')?->nodeId);
+    }
+
     public function testFailoverDegradesToUnplacedThenRetriesWhenACapableNodeJoins(): void
     {
         // No capable node besides the dead one: failover has nowhere to go.
@@ -403,6 +430,126 @@ final class ClusterPlacementTest extends TestCase
         // ...but a non-leader that receives a report folds nothing into its inert view.
         $placement->onPlacementReport('other', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('ghost', null)]));
         $this->assertNull($placement->registry()->get('ghost'));
+    }
+
+    public function testAReturningNodeReportsAnEmptyHostedSetToo(): void
+    {
+        // A container recreated inside the failover grace comes back hosting nothing at all.
+        $mesh = new FakePlacementMesh([], linked: ['leader']);
+        $placement = new ClusterPlacement('slave', $mesh, new FakePlacementExecutor(workerId: 5));
+
+        $placement->onPeerHandshaked('leader');
+
+        [$nodeId, $report] = $mesh->sent[0];
+        $this->assertSame('leader', $nodeId);
+        $this->assertInstanceOf(PeerPlacementReportDTO::class, $report);
+        $this->assertSame([], $report->agents, 'An empty hosted set is reported rather than kept quiet');
+    }
+
+    public function testTheLeaderRePlacesAnAgentTheReturningNodeNoLongerHosts(): void
+    {
+        // 'leader' lacks the gpu tag, so the agent can only land back on a data-plane node.
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            linked: ['node-b', 'node-c'],
+            online: [self::SELF, 'node-b', 'node-c'],
+        );
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']));
+        $placement->onBecameLeader();
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        $mesh->sent = [];
+
+        // node-b returns as a fresh process and says it hosts nothing.
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+
+        [, $frame] = $mesh->sent[0];
+        $this->assertInstanceOf(PeerPlaceAgentDTO::class, $frame, 'The agent nobody hosts is placed again at once');
+        $this->assertSame(
+            PlacementState::Placing,
+            $placement->registry()->get('render:9')?->state,
+            'The leader stops calling started an agent the node does not host',
+        );
+    }
+
+    public function testTheEmptiedNodeGetsItsOwnAgentsBack(): void
+    {
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            linked: ['node-b', 'node-c'],
+            online: [self::SELF, 'node-b', 'node-c'],
+        );
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']));
+        $placement->onBecameLeader();
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([
+            new PeerPlacedAgentEntry('chat', '1'),
+            new PeerPlacedAgentEntry('chat', '2'),
+        ]));
+
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+
+        $this->assertSame(
+            'node-b',
+            $placement->registry()->get('render:9')?->nodeId,
+            'The emptied node is the least loaded of the two, so the fleet comes home instead of piling on a neighbour',
+        );
+    }
+
+    public function testAPlacingRecordSurvivesAReportThatDoesNotNameIt(): void
+    {
+        $mesh = new FakePlacementMesh([], linked: ['node-b'], online: [self::SELF, 'node-b']);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $placement->onBecameLeader();
+        $placement->placeAgentOnNode('render', '9', 'node-b');
+        $mesh->sent = [];
+
+        // The report may well have crossed the place frame on the wire.
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+
+        $record = $placement->registry()->get('render:9');
+        $this->assertSame(PlacementState::Placing, $record?->state, 'A placement still in flight is not taken back');
+        $this->assertSame('node-b', $record?->nodeId);
+        $this->assertSame([], $mesh->sent, 'Nothing is re-placed on account of a frame that has not landed yet');
+    }
+
+    public function testARefusedRecordSurvivesAReportThatDoesNotNameIt(): void
+    {
+        $mesh = new FakePlacementMesh([], linked: ['node-b'], online: [self::SELF, 'node-b']);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $placement->onBecameLeader();
+        $placement->refusePlacement('render', '9', 'node-b');
+        $mesh->sent = [];
+
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+
+        $this->assertSame(
+            PlacementState::Refused,
+            $placement->registry()->get('render:9')?->state,
+            'A refusal is a decision to keep the agent down, not a placement to redo (HIL-696)',
+        );
+        $this->assertSame([], $mesh->sent);
+    }
+
+    public function testAnAgentTheReportStillNamesIsLeftWhereItIs(): void
+    {
+        $mesh = new FakePlacementMesh([], linked: ['node-b'], online: [self::SELF, 'node-b']);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $placement->onBecameLeader();
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([
+            new PeerPlacedAgentEntry('render', '9'),
+            new PeerPlacedAgentEntry('chat', '1'),
+        ]));
+        $mesh->sent = [];
+
+        // A flap that changed nothing: the node comes back hosting exactly what it hosted.
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([
+            new PeerPlacedAgentEntry('render', '9'),
+            new PeerPlacedAgentEntry('chat', '1'),
+        ]));
+
+        $this->assertSame([], $mesh->sent, 'A node that still hosts its agents is left alone');
+        $this->assertSame('node-b', $placement->registry()->get('render:9')?->nodeId);
+        $this->assertSame(PlacementState::Started, $placement->registry()->get('chat:1')?->state);
     }
 
     public function testPlaceAgentOnBestNodePicksTheStrongestCapableNodeAndPlaces(): void

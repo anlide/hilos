@@ -11,8 +11,15 @@ use Hilos\Cluster\Exception\PeerTransportException;
  *
  * The reply to a {@see PeerPlacementQueryDTO}: on a leadership change the fresh leader
  * broadcasts a query and each node answers with this frame, letting the leader rebuild
- * its placement view from the live mesh rather than from persisted state. Mirrors
+ * its placement view from the live mesh rather than from persisted state. A node also
+ * sends it unprompted on every new link, which is the rejoin path. Mirrors
  * {@see PeerRosterDTO}'s role for membership.
+ *
+ * The frame is a COMPLETE snapshot of the agents the sending node hosts at the moment it
+ * is sent, and an empty list is a statement rather than a lack of one: an agent the frame
+ * does NOT name is an agent the sender does NOT host, and the leader re-places whatever it
+ * still tracked there (HIL-719). A future sender that reports only a part of what it hosts
+ * would therefore have the rest taken away from it, silently — the whole set or nothing.
  */
 final class PeerPlacementReportDTO extends PeerDTO
 {
