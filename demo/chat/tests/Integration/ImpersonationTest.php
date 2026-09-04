@@ -14,10 +14,8 @@ use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Constants\CliCommands;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
-use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
-use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -296,39 +294,6 @@ final class ImpersonationTest extends IntegrationTestCase
     {
         $this->sessionsLibrary()->onAgentAction($acceptKey, $dto->getAction(), $dto);
         $this->deliverLibraryFrames($agent);
-    }
-
-    /**
-     * Empties the signal-router queue so a later {@see self::lastHandshakeResponseFor()}
-     * observes only signals emitted after this point.
-     */
-    private function drainSignals(): void
-    {
-        while (Hilos::$sr->getNextQueuedSignal() !== null) {
-            // discard
-        }
-    }
-
-    /**
-     * Drains the signal-router queue and returns the last handshake response
-     * targeted at the given connection, or null when none was emitted.
-     *
-     * @param string $acceptKey Target connection accept key
-     * @return ?HandshakeResponseSignalData Last handshake response for the connection
-     */
-    private function lastHandshakeResponseFor(string $acceptKey): ?HandshakeResponseSignalData
-    {
-        $found = null;
-        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
-            $data = $signal->data;
-            if ($data instanceof WebSocketSignalData
-                && $data->targetAcceptKey === $acceptKey
-                && $data->data instanceof HandshakeResponseSignalData) {
-                $found = $data->data;
-            }
-        }
-
-        return $found;
     }
 
     /**

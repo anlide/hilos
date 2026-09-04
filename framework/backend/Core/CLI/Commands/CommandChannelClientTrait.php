@@ -169,8 +169,28 @@ trait CommandChannelClientTrait
      */
     protected function printToStandardError(string $text): int
     {
-        fwrite(STDERR, $text . "\n");
+        $this->writeToStandardError($text);
 
         return ExitCode::ERROR;
+    }
+
+    /**
+     * Writes one sentence to stderr and says nothing about how the command ends.
+     *
+     * The half of {@see printToStandardError()} that only writes (HIL-849). A command can have
+     * something to complain about and still succeed - a grant whose flag was written but whose
+     * announcement did not reach every tab is exactly that - and it needs the complaint on
+     * stderr without also being told it failed.
+     *
+     * Split rather than loosened: {@see printToStandardError()} keeps answering
+     * {@see ExitCode::ERROR} and every one of its callers keeps behaving as it did, because the
+     * two streams and the exit code answer different questions and only the callers know which
+     * they are asking. This continues the wording-from-writing split HIL-730 began.
+     *
+     * @param string $text Sentence to write, without its line break
+     */
+    protected function writeToStandardError(string $text): void
+    {
+        fwrite(STDERR, $text . "\n");
     }
 }

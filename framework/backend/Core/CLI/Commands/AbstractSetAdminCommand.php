@@ -78,8 +78,28 @@ abstract class AbstractSetAdminCommand implements CommandInterface, DatabaseFree
         }
 
         $state = ((bool)($reply->payload[AdminCommandConstants::FIELD_ADMIN] ?? false)) ? 'admin' : 'not admin';
-        echo "Reply (ok): user #{$userId} is now {$state}\n";
+        $sessions = (int)($reply->payload[AdminCommandConstants::FIELD_ANNOUNCED_SESSIONS] ?? 0);
+        // A reply WITHOUT the key is read as nothing to complain about, not as a failure: this
+        // process is new on every invocation while the daemon it asks is long-running, so a
+        // deploy that has not restarted the daemon yet gets answers from the older one - which
+        // announces perfectly well and merely does not report it. Defaulting the other way
+        // would print an alarm, with no reason after the colon, over a grant that went fine.
+        if (!(bool)($reply->payload[AdminCommandConstants::FIELD_ANNOUNCED] ?? true)) {
+            // external-boundary: the daemon's reply, whose announced=false always names its reason
+            $announceError = (string)($reply->payload[AdminCommandConstants::FIELD_ANNOUNCE_ERROR] ?? '');
+            // Said before the outcome, for the reason AdminCreateCommand says its expiry line
+            // there: the result is what stays last on the screen and reads as the verdict.
+            $this->writeToStandardError("The change was not announced to every tab: {$announceError}.");
+            $this->writeToStandardError(
+                'The tabs that were not told keep the previous rights until they reconnect.',
+            );
+        }
+        $told = $sessions > 0 ? "{$sessions} open session(s) told" : 'no open session to tell';
+        echo "Reply (ok): user #{$userId} is now {$state}, {$told}\n";
 
+        // Success even when the announcement failed: the flag IS written, and the exit code
+        // answers whether anything is left to do rather than whether everything worked - a
+        // repeat of this command would write the same flag and fix nothing.
         return ExitCode::SUCCESS;
     }
 

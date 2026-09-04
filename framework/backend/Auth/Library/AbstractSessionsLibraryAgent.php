@@ -1171,9 +1171,17 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * re-sends the identity from it and re-asks its open pages the access question
      * ({@see PageAccessReassessment}), once per frame, as it already does for a sign-in.
      *
+     * That announcement can no longer eat the reply (HIL-849). It used to stand outside any
+     * try with the ok reply behind it, so a failure in it left the operator with a written
+     * flag and no answer at all, until his CLI gave up waiting. It now hands back what it
+     * managed to do, and the reply stays ok - the write really did happen, and calling it an
+     * error would be the more misleading of the two lies - carrying the announcement's
+     * outcome as three keys of its own. The try around {@see self::applyAdminGrant()} is
+     * deliberately NOT widened over it: the two halves answer the operator differently, and
+     * one catch for both would have to work out which of them it had caught.
+     *
      * @param CommandRequestDTO $data Command request carrying the target user id and admin flag
      * @throws InvalidArgumentException When the reply carries an empty correlation id
-     * @throws HilosException On runtime failure while reading the person's live connections
      */
     private function handleAdminGrantCommand(CommandRequestDTO $data): void
     {
@@ -1202,11 +1210,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        $this->announceAdminGrant($userId);
+        $announcement = $this->announceAdminGrant($userId);
 
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
             AdminCommandConstants::FIELD_USER_ID => $userId,
             AdminCommandConstants::FIELD_ADMIN => $admin,
+            AdminCommandConstants::FIELD_ANNOUNCED => $announcement->error === null,
+            AdminCommandConstants::FIELD_ANNOUNCED_SESSIONS => $announcement->sessions,
+            AdminCommandConstants::FIELD_ANNOUNCE_ERROR => $announcement->error,
         ]));
     }
 
@@ -1232,34 +1243,55 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * The registration step is null throughout, and truthfully so: the frame reaches sockets
      * that carry a signed-in person, and signing in is what releases that step.
      *
+     * Nothing here throws, and that is the point (HIL-849): the flag is already written by the
+     * time this runs, so a failure to say it out loud must not swallow the operator's reply.
+     * The whole pass is caught instead and reported as a result - a count of what got through
+     * plus the reason it stopped - which an exception could not carry. The catch stands
+     * OUTSIDE the loop because a failure on this path is a failure of the runtime or of the
+     * signal router rather than of one session, so carrying on would meet it again once per
+     * tab and write the log line as many times, for the same one answer to the operator.
+     *
+     * A node holding no connections at all is not a failure: there was nobody to tell, the
+     * count says zero, and the reason stays null.
+     *
      * @param int $userId User whose sessions are restated
-     * @throws InvalidArgumentException When the state frame cannot be named
-     * @throws HilosException On runtime failure
+     * @return AdminGrantAnnouncement Sessions told, and why the pass stopped if it did
      */
-    private function announceAdminGrant(int $userId): void
+    private function announceAdminGrant(int $userId): AdminGrantAnnouncement
     {
         $connections = Hilos::$rt?->sessionConnectionsSource();
         if ($connections === null) {
-            return;
+            return new AdminGrantAnnouncement(0, null);
         }
 
-        $keysByToken = [];
-        foreach ($connections->findByUser($userId) as $acceptKey => $connection) {
-            $sessionToken = $connection->sessionToken;
-            if ($sessionToken !== null) {
-                $keysByToken[$sessionToken][] = $acceptKey;
+        $sessions = 0;
+
+        try {
+            $keysByToken = [];
+            foreach ($connections->findByUser($userId) as $acceptKey => $connection) {
+                $sessionToken = $connection->sessionToken;
+                if ($sessionToken !== null) {
+                    $keysByToken[$sessionToken][] = $acceptKey;
+                }
             }
+
+            foreach ($keysByToken as $sessionToken => $acceptKeys) {
+                $session = Hilos::$db?->sessions->findByToken((string)$sessionToken);
+                $this->publishSessionState(new SessionStateSignalData(
+                    sessionToken: (string)$sessionToken,
+                    userId: $userId,
+                    acceptKeys: $acceptKeys,
+                    pendingAck: $session === null ? null : $this->sessionPendingAck($session),
+                ));
+                $sessions++;
+            }
+        } catch (Throwable $e) {
+            $this->logAgentError("Admin grant for user #{$userId} was not announced: {$e->getMessage()}");
+
+            return new AdminGrantAnnouncement($sessions, $e->getMessage());
         }
 
-        foreach ($keysByToken as $sessionToken => $acceptKeys) {
-            $session = Hilos::$db?->sessions->findByToken((string)$sessionToken);
-            $this->publishSessionState(new SessionStateSignalData(
-                sessionToken: (string)$sessionToken,
-                userId: $userId,
-                acceptKeys: $acceptKeys,
-                pendingAck: $session === null ? null : $this->sessionPendingAck($session),
-            ));
-        }
+        return new AdminGrantAnnouncement($sessions, null);
     }
 
     /**

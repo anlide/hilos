@@ -54,7 +54,9 @@ Arguments:
   <userId>   Target user id (positive integer)
 
 Exit codes:
-  0  the user is now an admin
+  0  the user is now an admin; this is also the answer when the change could not
+     be announced to every open tab, which stderr reports on its own lines. The
+     flag is written either way, so repeating the command would change nothing
   1  the daemon did not answer, or refused the command
   2  the user id argument is missing or not positive
   3  the daemon host/port environment values are missing or invalid

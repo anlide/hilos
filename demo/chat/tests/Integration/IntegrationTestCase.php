@@ -19,6 +19,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -29,6 +30,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
+use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
@@ -316,6 +318,44 @@ abstract class IntegrationTestCase extends TestCase
         }
 
         return $outcome;
+    }
+
+    /**
+     * Empties the signal-router queue, so a later read observes only what came after.
+     *
+     * The setup of a case queues frames of its own - a handshake, a sign-in - and they carry
+     * the same shape the case is about to assert on. Without this, the assertion could be
+     * answered by the arrangement instead of by the act.
+     */
+    protected function drainSignals(): void
+    {
+        while (Hilos::$sr?->getNextQueuedSignal() !== null) {
+            // discard
+        }
+    }
+
+    /**
+     * Drains the queue and returns the last handshake response addressed to one connection.
+     *
+     * The LAST one rather than the first: a single act can re-send the greeting more than once,
+     * and what a tab ends up showing is the one that arrived last.
+     *
+     * @param string $acceptKey Target connection accept key
+     * @return ?HandshakeResponseSignalData Last handshake response for the connection, or null when none was sent
+     */
+    protected function lastHandshakeResponseFor(string $acceptKey): ?HandshakeResponseSignalData
+    {
+        $found = null;
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $data = $signal->data;
+            if ($data instanceof WebSocketSignalData
+                && $data->targetAcceptKey === $acceptKey
+                && $data->data instanceof HandshakeResponseSignalData) {
+                $found = $data->data;
+            }
+        }
+
+        return $found;
     }
 
     /**

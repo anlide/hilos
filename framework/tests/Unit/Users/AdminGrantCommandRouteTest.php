@@ -12,6 +12,7 @@ use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\View\Context\RtContext;
@@ -37,6 +38,10 @@ use PHPUnit\Framework\TestCase;
  * frame and the same handler a sign-in travels through. The refusing branches read their reply
  * straight off the queue, which is what pins that nothing was announced for a write that never
  * happened.
+ *
+ * An announcement that FAILS is pinned here too (HIL-849): the write stands, so the operator is
+ * owed an ok reply naming the half that did not happen, rather than the silence he used to get
+ * while his CLI waited out its budget.
  */
 final class AdminGrantCommandRouteTest extends TestCase
 {
@@ -85,6 +90,9 @@ final class AdminGrantCommandRouteTest extends TestCase
         self::assertSame([self::LIVE_USER_ID, true], $agent->applied);
         self::assertSame(self::LIVE_USER_ID, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_ADMIN]);
+        self::assertTrue($reply->payload[AdminCommandConstants::FIELD_ANNOUNCED]);
+        self::assertSame(1, $reply->payload[AdminCommandConstants::FIELD_ANNOUNCED_SESSIONS]);
+        self::assertNull($reply->payload[AdminCommandConstants::FIELD_ANNOUNCE_ERROR]);
     }
 
     public function testRevokeCarriesItsFlagThroughTheSameHandler(): void
@@ -103,6 +111,9 @@ final class AdminGrantCommandRouteTest extends TestCase
         self::assertTrue($reply->isOk());
         self::assertSame([self::LIVE_USER_ID, false], $agent->applied);
         self::assertFalse($reply->payload[AdminCommandConstants::FIELD_ADMIN]);
+        self::assertTrue($reply->payload[AdminCommandConstants::FIELD_ANNOUNCED]);
+        self::assertSame(1, $reply->payload[AdminCommandConstants::FIELD_ANNOUNCED_SESSIONS]);
+        self::assertNull($reply->payload[AdminCommandConstants::FIELD_ANNOUNCE_ERROR]);
     }
 
     public function testAnUnwiredProjectRefusesAsAnErrorReply(): void
@@ -160,6 +171,27 @@ final class AdminGrantCommandRouteTest extends TestCase
         $reply = $this->consumeReply();
         self::assertFalse($reply->isOk());
         self::assertNull($agent->applied);
+    }
+
+    public function testAFailedAnnouncementStillAnswersTheOperator(): void
+    {
+        // The flag is written by the time the announcement runs, so a failure there used to
+        // leave the operator with no reply at all and a CLI parked until its budget ran out.
+        Hilos::$rt = new AdminGrantRouteTestFailingRtContext();
+        Hilos::$rt->configure();
+        $agent = new AdminGrantRouteTestAgent();
+
+        $this->sendCommand($agent, CliCommands::ADMIN_GRANT, [
+            AdminCommandConstants::FIELD_USER_ID => self::LIVE_USER_ID,
+            AdminCommandConstants::FIELD_ADMIN => true,
+        ]);
+
+        $reply = $this->consumeReply();
+        self::assertTrue($reply->isOk(), 'A written flag is not reported as an error');
+        self::assertSame([self::LIVE_USER_ID, true], $agent->applied);
+        self::assertFalse($reply->payload[AdminCommandConstants::FIELD_ANNOUNCED]);
+        self::assertSame(0, $reply->payload[AdminCommandConstants::FIELD_ANNOUNCED_SESSIONS]);
+        self::assertNotSame('', (string)$reply->payload[AdminCommandConstants::FIELD_ANNOUNCE_ERROR]);
     }
 
     /**
@@ -323,5 +355,44 @@ final class AdminGrantRouteTestConnection extends HilosSessionConnection
      */
     protected function applyOwnDiff(array $diff): void
     {
+    }
+}
+
+/**
+ * Runtime whose connection lookup fails, standing in for a broken announcement path.
+ *
+ * The failure is mounted on the COLLECTION rather than on the context because
+ * {@see RtContext::sessionConnectionsSource()} is final: what a test can make throw here is
+ * the lookup the announcement calls, which is also the honest place for a runtime failure.
+ */
+final class AdminGrantRouteTestFailingRtContext extends RtContext
+{
+    public function configure(): void
+    {
+        $this->_stateCollections[AdminGrantRouteTestFailingConnections::RT_COLLECTION]
+            = AdminGrantRouteTestFailingConnections::init();
+    }
+}
+
+/**
+ * Session-stage connection collection that refuses to name anybody's connections.
+ */
+final class AdminGrantRouteTestFailingConnections extends HilosSessionConnections
+{
+    /** @var string Runtime collection name this fixture mounts under */
+    public const string RT_COLLECTION = 'adminGrantRouteTestFailingConnections';
+
+    public const string STATE_CLASS = AdminGrantRouteTestConnection::class;
+
+    /**
+     * Fails the way the announcement path fails: on the very first thing it asks the runtime.
+     *
+     * @param ?int $userId User id the announcement is asking about
+     * @return array<string, AdminGrantRouteTestConnection> Never returned
+     * @throws HilosException Always, which is the whole point of this fixture
+     */
+    public function findByUser(?int $userId): array
+    {
+        throw new HilosException('Runtime connections are unreadable');
     }
 }

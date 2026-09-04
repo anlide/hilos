@@ -376,18 +376,6 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
     }
 
     /**
-     * Drains any signals the completion queued so they do not bleed into the next test.
-     *
-     * @throws HilosException When the queue cannot be read
-     */
-    private function drainSignals(): void
-    {
-        while (Hilos::$sr->getNextQueuedSignal() !== null) {
-            continue;
-        }
-    }
-
-    /**
      * Builds a unique suffix for one test's identifiers.
      *
      * @return string Unique hex suffix
