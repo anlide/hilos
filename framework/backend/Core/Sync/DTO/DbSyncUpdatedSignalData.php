@@ -21,6 +21,7 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
      * @param string $idString ID from Object::getIdString()
      * @param array<string, mixed> $row Changed columns and values
      * @param ?string $origin Accept key of the writing connection, or null when unattended
+     * @param ?string $originRequestId Request id of the action behind the write, or null when no action is behind it
      * @param ?string $emitter Identity of the process that sent this fact, or null when unstamped
      */
     public function __construct(
@@ -28,6 +29,7 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
         public readonly string $idString,
         public readonly array $row,
         public readonly ?string $origin = null,
+        public readonly ?string $originRequestId = null,
         public readonly ?string $emitter = null,
     ) {
     }
@@ -45,6 +47,7 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
             idString: $this->idString,
             row: $this->row,
             origin: $this->origin,
+            originRequestId: $this->originRequestId,
             emitter: $emitter,
         );
     }
@@ -61,6 +64,7 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
             SyncSignalDataKey::ID_STRING => $this->idString,
             SyncSignalDataKey::ROW => $this->row,
             SyncSignalDataKey::ORIGIN => $this->origin,
+            SyncSignalDataKey::ORIGIN_REQUEST_ID => $this->originRequestId,
             SyncSignalDataKey::EMITTER => $this->emitter,
         ];
     }
@@ -79,6 +83,7 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
             idString: self::requireString($data, SyncSignalDataKey::ID_STRING),
             row: self::requireArray($data, SyncSignalDataKey::ROW),
             origin: self::optionalString($data, SyncSignalDataKey::ORIGIN),
+            originRequestId: self::optionalString($data, SyncSignalDataKey::ORIGIN_REQUEST_ID),
             emitter: self::optionalString($data, SyncSignalDataKey::EMITTER),
         );
     }

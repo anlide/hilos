@@ -23,12 +23,15 @@ use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableViewportAppendDTO;
 use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
+use Hilos\Core\Table\DTO\TableViewportOwnCreateDTO;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use PHPUnit\Framework\TestCase;
@@ -119,7 +122,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
     public function testDeltaNotOwnForUnattendedWrite(): void
     {
         // An agent write with no accept key set (origin null) is nobody's own; the
-        // agent-origin setter (ExecutionContext::withAcceptKey) would supply the
+        // agent-origin setter (ExecutionContext::withOrigin) would supply the
         // initiator to flip this to own.
         $context = $this->boot([new ViewportDeltaUnitRow('alpha', 'Alpha')], ['alpha'], 1);
         $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Alpha']));
@@ -183,6 +186,146 @@ final class BrowserContextViewportDeltaTest extends TestCase
             $append->row,
         );
         $this->assertTrue($viewport->hasRow('beta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testOwnCreateArrivesPlacedWhereTheSortPutsIt(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            offset: 0,
+            limit: 10,
+            sort: new TableSortDTO('key', TableConstants::ORDER_ASC),
+        );
+        $viewport->recordWindow(['alpha', 'gamma'], 2);
+        $context = $this->bootWithViewport(
+            [
+                new ViewportDeltaUnitRow('alpha', 'Alpha'),
+                new ViewportDeltaUnitRow('beta', 'Beta'),
+                new ViewportDeltaUnitRow('gamma', 'Gamma'),
+            ],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbCreated(
+            ViewportDeltaUnitTable::SOURCE_KEY,
+            'beta',
+            ['key' => 'beta', 'label' => 'Beta'],
+            'ak-1',
+            'req-1',
+        ));
+        $context->flushToSignalRouter();
+
+        $ownCreate = $this->nextOwnCreate();
+        $this->assertSame(1, $ownCreate->position);
+        $this->assertSame(3, $ownCreate->totalCount);
+        $this->assertSame(1, $ownCreate->pageCount);
+        $this->assertSame('req-1', $ownCreate->requestId);
+        $this->assertSame(
+            [
+                PagePayload::rowKey => 'beta',
+                PagePayload::slots => [
+                    ViewportDeltaUnitTable::SLOT => ['key' => 'beta', 'label' => 'Beta'],
+                ],
+            ],
+            $ownCreate->row,
+        );
+        $this->assertTrue($viewport->hasRow('beta'));
+        // One road only: the tail append never runs for the author.
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testOwnCreateWithNoActionBehindItCarriesNoRequestId(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, offset: 0, limit: 10);
+        $viewport->recordWindow(['alpha'], 1);
+        $context = $this->bootWithViewport(
+            [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbCreated(
+            ViewportDeltaUnitTable::SOURCE_KEY,
+            'beta',
+            ['key' => 'beta', 'label' => 'Beta'],
+            'ak-1',
+        ));
+        $context->flushToSignalRouter();
+
+        $this->assertNull($this->nextOwnCreate()->requestId);
+    }
+
+    public function testNeighborOnTheSameCreateKeepsTheGeneralRules(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, offset: 0, limit: 10);
+        $viewport->recordWindow(['alpha'], 1);
+        $context = $this->bootWithViewport(
+            [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
+            $viewport,
+        );
+
+        // Someone else's tab created the row; this window is the last page with room.
+        $context->record(SourceChange::dbCreated(
+            ViewportDeltaUnitTable::SOURCE_KEY,
+            'beta',
+            ['key' => 'beta', 'label' => 'Beta'],
+            'ak-2',
+            'req-2',
+        ));
+        $context->flushToSignalRouter();
+
+        $this->assertSame(2, $this->nextAppend()->totalCount);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testOwnCreateOutsideTheAuthorSearchShowsNothing(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            offset: 0,
+            limit: 10,
+            filter: [TableConstants::FILTER_KEY_SEARCH => 'alpha'],
+        );
+        $viewport->recordWindow(['alpha'], 1);
+        $context = $this->bootWithViewport(
+            [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbCreated(
+            ViewportDeltaUnitTable::SOURCE_KEY,
+            'beta',
+            ['key' => 'beta', 'label' => 'Beta'],
+            'ak-1',
+            'req-1',
+        ));
+        $context->flushToSignalRouter();
+
+        // The row is not in this window's set at all, so neither it nor the count moves.
+        $this->assertFalse($viewport->hasRow('beta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testOwnCreateOnAFurtherPageLeavesOnlyTheCount(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, offset: 0, limit: 1);
+        $viewport->recordWindow(['alpha'], 5);
+        $context = $this->bootWithViewport(
+            [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbCreated(
+            ViewportDeltaUnitTable::SOURCE_KEY,
+            'beta',
+            ['key' => 'beta', 'label' => 'Beta'],
+            'ak-1',
+            'req-1',
+        ));
+        $context->flushToSignalRouter();
+
+        $this->assertSame(6, $this->nextCount()->totalCount);
+        $this->assertFalse($viewport->hasRow('beta'));
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
@@ -309,6 +452,24 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
         $this->assertSame('ak-1', $signal->data->targetAcceptKey);
         $this->assertInstanceOf(TableViewportAppendDTO::class, $signal->data->data);
+
+        return $signal->data->data;
+    }
+
+    /**
+     * Asserts the next queued signal is an addressed table viewport own create and returns it.
+     *
+     * @return TableViewportOwnCreateDTO The own-create payload
+     */
+    private function nextOwnCreate(): TableViewportOwnCreateDTO
+    {
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::WS_USER, $signal->signalType->getType());
+        $this->assertSame(SignalTypeConstants::TABLE_VIEWPORT_OWN_CREATE, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertSame('ak-1', $signal->data->targetAcceptKey);
+        $this->assertInstanceOf(TableViewportOwnCreateDTO::class, $signal->data->data);
 
         return $signal->data->data;
     }

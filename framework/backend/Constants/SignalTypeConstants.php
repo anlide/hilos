@@ -93,6 +93,9 @@ final class SignalTypeConstants
     /** @var string Table viewport append signal type (server-to-client live tail append for one table) */
     public const string TABLE_VIEWPORT_APPEND = 'table_viewport_append';
 
+    /** @var string Table viewport own-create signal type (server-to-client live placed insert of the author's own row) */
+    public const string TABLE_VIEWPORT_OWN_CREATE = 'table_viewport_own_create';
+
     /** @var string Group subscribe signal type */
     public const string GROUP_SUBSCRIBE = 'group_subscribe';
 

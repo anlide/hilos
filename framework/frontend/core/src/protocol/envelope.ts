@@ -191,3 +191,25 @@ export const tableViewportAppendSignalDataSchema = z.looseObject({
 export type TableViewportAppendSignalData = z.infer<
   typeof tableViewportAppendSignalDataSchema
 >
+
+/**
+ * Payload of the framework table viewport own-create
+ * (`type: 'table_viewport_own_create'`, PHP `TableViewportOwnCreateDTO`): the
+ * addressed live row the receiver itself created, the index it takes in that
+ * receiver's window, and the new counts. `requestId` names the action that
+ * created it, so a surface can tell which of its own presses this answers; it is
+ * absent when the write was not tracked. The row rides the `{rowKey, slots}` shape.
+ */
+export const tableViewportOwnCreateSignalDataSchema = z.looseObject({
+  page: z.string(),
+  tableKey: z.string(),
+  row: tableRowFragmentSchema,
+  position: z.number().int(),
+  totalCount: z.number().int(),
+  pageCount: z.number().int(),
+  requestId: z.string().nullish(),
+})
+
+export type TableViewportOwnCreateSignalData = z.infer<
+  typeof tableViewportOwnCreateSignalDataSchema
+>

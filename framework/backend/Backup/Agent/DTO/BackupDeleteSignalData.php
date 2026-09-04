@@ -16,7 +16,7 @@ use Hilos\Core\Router\SignalDataInterface;
  * delete path and drops the matching runtime index row.
  *
  * It also carries who asked, so the agent can stamp that connection as the origin
- * of the index write ({@see ExecutionContext::withAcceptKey()}):
+ * of the index write ({@see ExecutionContext::withOrigin()}):
  * the requester's own row-removed delta then applies at once while other tabs keep
  * the pending gate. Null when the delete has no connection behind it.
  */

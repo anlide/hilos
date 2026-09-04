@@ -210,7 +210,7 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
 
         $this->agent->sendToAgent(
             HilosSignalConstants::BACKUP_AGENT_CREATE,
-            new BackupCreateSignalData($scope->value, $acceptKey),
+            new BackupCreateSignalData($scope->value, $acceptKey, $this->currentActionRequestId()),
         );
     }
 

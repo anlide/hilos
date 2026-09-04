@@ -1,12 +1,13 @@
 // The per-table viewport binder: wires ONE server-windowed table to the
-// connection by its (page, tableKey) address. A table's controller only ever
-// sees the windows, deltas, counts, and appends addressed to it — there is no
-// central switchboard holding every table and handing each its data
+// connection by its (page, tableKey) address. A table's controller only ever sees
+// the windows, deltas, counts, appends, and own-creates addressed to it — there is
+// no central switchboard holding every table and handing each its data
 // (table-subscription.md). The binder subscribes the connection's table_window /
-// table_viewport_delta / table_viewport_count / table_viewport_append signals,
-// drops everything not addressed to this table or whose page is no longer current,
-// normalizes the rows into the page scope, and feeds the sink. The returned unbind
-// drops every subscription on the view's unmount.
+// table_viewport_delta / table_viewport_count / table_viewport_append /
+// table_viewport_own_create signals, drops everything not addressed to this table
+// or whose page is no longer current, normalizes the rows into the page scope, and
+// feeds the sink. The returned unbind drops every subscription on the view's
+// unmount.
 
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import { type TableViewportDeltaSignalData } from '../protocol/envelope.js'
@@ -108,11 +109,32 @@ export function bindTableViewport(
     )
   })
 
+  const unsubscribeOwnCreate = connection.on(
+    'tableViewportOwnCreate',
+    (signal) => {
+      const data = signal.data
+      if (data.tableKey !== address.tableKey || data.page !== address.page) {
+        return
+      }
+      const scope = currentScope()
+      if (!scope) {
+        return
+      }
+      sink.ingestOwnCreate(
+        normalizeTableRow(scope, data.row, options),
+        data.position,
+        data.totalCount,
+        data.requestId,
+      )
+    },
+  )
+
   return () => {
     unsubscribeWindow()
     unsubscribeDelta()
     unsubscribeCount()
     unsubscribeAppend()
+    unsubscribeOwnCreate()
   }
 }
 

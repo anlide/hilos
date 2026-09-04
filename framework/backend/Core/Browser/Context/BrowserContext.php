@@ -59,6 +59,7 @@ use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableViewportAppendDTO;
 use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
+use Hilos\Core\Table\DTO\TableViewportOwnCreateDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\TableConstants;
@@ -516,6 +517,9 @@ abstract class BrowserContext
      * The later writer's origin wins, consistent with the row array_replace
      * last-wins: the connection whose value survives the merge is the one that
      * gets "own", so the loser's edit gates as pending against the winning value.
+     * The action behind that write travels with it: an origin merged away from
+     * one press and a request id left behind from another would name a result
+     * the surviving value is not.
      *
      * @param SourceChange $current Earlier grouped source change
      * @param SourceChange $next Later source change to fold in
@@ -535,6 +539,7 @@ abstract class BrowserContext
             mutationType: $this->mergeMutationType($current->mutationType, $next->mutationType),
             row: $row,
             origin: $next->origin,
+            originRequestId: $next->originRequestId,
         );
     }
 
@@ -1336,6 +1341,11 @@ abstract class BrowserContext
      * into one grouped change whose origin is the later writer's, so exactly one
      * author gets `own` and the loser gates against the winning value.
      *
+     * The author of a CREATE takes one road and only one: its own, placed where the
+     * live sort puts it. The tail append is deliberately out of reach there — reached
+     * as a fallback it would send the same row a second time when the placed insert
+     * succeeded, and show a row the author's filter excludes when it did not.
+     *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its row-id set and total are updated in place
      * @param SourceChange $change Grouped DB/RT source change
@@ -1373,17 +1383,125 @@ abstract class BrowserContext
             return;
         }
 
-        if ($this->tryEmitViewportAppend($table, $viewport, $mutation, $acceptKey, $page, $browserKey)) {
+        $own = $change->origin !== null && $change->origin === $acceptKey;
+
+        if ($own && $mutation->type === TableMutationType::Create) {
+            if ($this->tryEmitViewportOwnCreate(
+                $table,
+                $viewport,
+                $mutation,
+                $acceptKey,
+                $page,
+                $browserKey,
+                $change->originRequestId,
+            )) {
+                return;
+            }
+        } elseif ($this->tryEmitViewportAppend($table, $viewport, $mutation, $acceptKey, $page, $browserKey)) {
             return;
         }
 
         $this->emitViewportCount($table, $viewport, $mutation, $acceptKey, $page, $browserKey);
 
-        $own = $change->origin !== null && $change->origin === $acceptKey;
         $delta = $this->rowDeltaForMutation($viewport, $table, $mutation, $page, $browserKey, $own);
         if ($delta !== null) {
             $this->queueAddressedTableSignal(SignalTypeConstants::TABLE_VIEWPORT_DELTA, $delta, $acceptKey);
         }
+    }
+
+    /**
+     * Sends the author its own new row already placed in its window, or returns false.
+     *
+     * The author is the one person who is looking at the result of a press, so its row
+     * goes in at once and at the index a reload would give it. That index is not guessed:
+     * the window is re-selected with the live filter, search, sort and page
+     * ({@see self::viewportQuery()} builds the very query the window was built from), and
+     * the row is looked up among the keys that come back. Missing from them means the row
+     * belongs to another page or falls outside the filter, and then this window gets only
+     * a count — announcing a row it cannot show is HIL-794's job, not this one's.
+     *
+     * The whole-window re-select is the expensive road, taken because the event is one
+     * person's single press rather than a stream of foreign writes. HIL-791 replaces it
+     * with a classifier over the window's boundary sort keys, and this path goes away.
+     *
+     * @param ViewportTable $table Viewport table the window is on
+     * @param TableViewportSubscription $viewport Connection's window; its row-id set and total are updated in place
+     * @param TableRowMutationDTO $mutation Mutation the table built for the change
+     * @param string $acceptKey Target accept key, which is also the author of the create
+     * @param string $page Subscribed page key
+     * @param string $browserKey Browser table key
+     * @param ?string $requestId Request id of the action that created the row, or null when it was not tracked
+     * @return bool Whether the row was sent placed (and no further signal is needed)
+     * @throws TableRowKeyMissingException When the mutated row is a placeholder and carries no key
+     */
+    private function tryEmitViewportOwnCreate(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        TableRowMutationDTO $mutation,
+        string $acceptKey,
+        string $page,
+        string $browserKey,
+        ?string $requestId,
+    ): bool {
+        if ($mutation->row === null || $viewport->hasRow((string) $mutation->rowKey)) {
+            return false;
+        }
+
+        try {
+            $snapshot = $table->getPage($this->viewportQuery($viewport));
+        } catch (Throwable $e) {
+            // False here means "not placed", and the author then gets the count path -
+            // the same answer a row on another page gets. Without this line the two are
+            // indistinguishable, and a table that refuses its own query looks like a
+            // table whose author simply scrolled away.
+            Logger::error(
+                "Viewport own-create fell back to the count after its re-query failed: "
+                    . "table={$viewport->tableKey}, page={$page}, acceptKey={$acceptKey}, "
+                    . 'exception=' . $e::class . ", message={$e->getMessage()}, "
+                    . 'at=' . basename($e->getFile()) . ':' . $e->getLine(),
+            );
+
+            return false;
+        }
+
+        $rowKey = (string) $mutation->rowKey;
+        $rowIds = [];
+        $position = null;
+        $wireRow = null;
+        foreach ($snapshot->rows as $row) {
+            if (!$row instanceof AbstractTableRow) {
+                continue;
+            }
+            $browserRow = $table->browserRow($row);
+            $windowRowKey = (string) $browserRow[BrowserPageSignalData::rowKey];
+            if ($windowRowKey === $rowKey) {
+                $position = count($rowIds);
+                $wireRow = $this->browserRowToWire($browserRow);
+            }
+            $rowIds[] = $windowRowKey;
+        }
+
+        if ($position === null || $wireRow === null) {
+            return false;
+        }
+
+        $viewport->recordWindow($rowIds, $snapshot->totalCount);
+
+        $this->queueAddressedTableSignal(
+            SignalTypeConstants::TABLE_VIEWPORT_OWN_CREATE,
+            new TableViewportOwnCreateDTO(
+                $page,
+                $browserKey,
+                $wireRow,
+                $position,
+                $snapshot->totalCount,
+                $this->pageCount($snapshot->totalCount, $viewport->limit),
+                $requestId,
+            ),
+            $acceptKey,
+        );
+
+        return true;
     }
 
     /**

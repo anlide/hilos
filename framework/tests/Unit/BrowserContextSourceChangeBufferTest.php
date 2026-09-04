@@ -81,6 +81,23 @@ final class BrowserContextSourceChangeBufferTest extends TestCase
         $this->assertSame(['name' => 'Lin'], $changes[1]->row);
     }
 
+    public function testFlushCarriesTheLaterWriterActionAlongWithItsOrigin(): void
+    {
+        $context = new BrowserContextSourceChangeBufferTestContext();
+
+        // Two presses landing on the same row in one tick: the later one wins the row,
+        // so it must also be the one the echo names.
+        $context->record(SourceChange::dbUpdated('users', '1', ['name' => 'Ada'], 'ak-2', 'req-2'));
+        $context->record(SourceChange::dbUpdated('users', '1', ['name' => 'Grace'], 'ak-1', 'req-1'));
+
+        $context->flushToSignalRouter();
+
+        $changes = $context->emittedChangeSets[0]->all();
+        $this->assertCount(1, $changes);
+        $this->assertSame('ak-1', $changes[0]->origin);
+        $this->assertSame('req-1', $changes[0]->originRequestId);
+    }
+
     public function testFlushKeepsCreateWhenCreatedSourceItemIsUpdated(): void
     {
         $context = new BrowserContextSourceChangeBufferTestContext();

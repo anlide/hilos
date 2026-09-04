@@ -26,11 +26,13 @@ class DbSyncClearedSignalData extends BaseDTO implements EmitterStampedSyncSigna
      *
      * @param string $collectionKey Collection key whose rows were all removed
      * @param ?string $origin Accept key of the writing connection, or null when unattended
+     * @param ?string $originRequestId Request id of the action behind the write, or null when no action is behind it
      * @param ?string $emitter Identity of the process that sent this clear, or null when unstamped
      */
     public function __construct(
         public readonly string $collectionKey,
         public readonly ?string $origin = null,
+        public readonly ?string $originRequestId = null,
         public readonly ?string $emitter = null,
     ) {
     }
@@ -49,6 +51,7 @@ class DbSyncClearedSignalData extends BaseDTO implements EmitterStampedSyncSigna
         return new static(
             collectionKey: $this->collectionKey,
             origin: $this->origin,
+            originRequestId: $this->originRequestId,
             emitter: $emitter,
         );
     }
@@ -63,6 +66,7 @@ class DbSyncClearedSignalData extends BaseDTO implements EmitterStampedSyncSigna
         return [
             SyncSignalDataKey::COLLECTION_KEY => $this->collectionKey,
             SyncSignalDataKey::ORIGIN => $this->origin,
+            SyncSignalDataKey::ORIGIN_REQUEST_ID => $this->originRequestId,
             SyncSignalDataKey::EMITTER => $this->emitter,
         ];
     }
@@ -79,6 +83,7 @@ class DbSyncClearedSignalData extends BaseDTO implements EmitterStampedSyncSigna
         return new static(
             collectionKey: self::requireString($data, SyncSignalDataKey::COLLECTION_KEY),
             origin: self::optionalString($data, SyncSignalDataKey::ORIGIN),
+            originRequestId: self::optionalString($data, SyncSignalDataKey::ORIGIN_REQUEST_ID),
             emitter: self::optionalString($data, SyncSignalDataKey::EMITTER),
         );
     }

@@ -330,4 +330,43 @@ describe('parseSignal', () => {
       })
     }
   })
+
+  it('parses a table_viewport_own_create frame', () => {
+    const result = parseSignal(
+      '{"type":"table_viewport_own_create","data":{"page":"p","tableKey":"t","row":{"rowKey":"x","slots":{}},"position":2,"totalCount":4,"pageCount":1,"requestId":"req-1"}}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok && result.signal.kind === 'tableViewportOwnCreate') {
+      expect(result.signal.data).toMatchObject({
+        row: { rowKey: 'x', slots: {} },
+        position: 2,
+        totalCount: 4,
+        pageCount: 1,
+        requestId: 'req-1',
+      })
+    }
+  })
+
+  it('parses a table_viewport_own_create frame whose write was not tracked', () => {
+    const result = parseSignal(
+      '{"type":"table_viewport_own_create","data":{"page":"p","tableKey":"t","row":{"rowKey":"x","slots":{}},"position":0,"totalCount":1,"pageCount":1,"requestId":null}}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok && result.signal.kind === 'tableViewportOwnCreate') {
+      expect(result.signal.data.requestId).toBeNull()
+    }
+  })
+
+  it('rejects a table_viewport_own_create frame missing its position', () => {
+    const result = parseSignal(
+      '{"type":"table_viewport_own_create","data":{"page":"p","tableKey":"t","row":{"rowKey":"x","slots":{}},"totalCount":4,"pageCount":1}}',
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.failure).toMatchObject({
+        kind: 'invalid-signal-data',
+        type: 'table_viewport_own_create',
+      })
+    }
+  })
 })

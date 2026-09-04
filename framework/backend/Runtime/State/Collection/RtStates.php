@@ -132,6 +132,7 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
             $state->getId(),
             $state->toArray(),
             ExecutionContext::currentAcceptKey(),
+            ExecutionContext::currentRequestId(),
         ));
     }
 
@@ -157,6 +158,7 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
             $id,
             $previous?->toArray() ?? [],
             ExecutionContext::currentAcceptKey(),
+            ExecutionContext::currentRequestId(),
         ));
     }
 

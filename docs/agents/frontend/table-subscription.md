@@ -17,9 +17,10 @@
 >    arrives on its own only when its place is the end of the window and the window
 >    has room. Landing inside or above the window it is announced ("N new rows")
 >    and nothing moves until the reader asks for it; landing on a later page it
->    moves only the count. The author's own create applies at once wherever it
->    lands, which is what the `own` tag is for — it must therefore cover a create,
->    whose key the server mints.
+>    moves only the count. The author's own create applies at once and takes the
+>    place the sort gives it, which is what the `own` tag is for; since HIL-792 it
+>    covers a create whose key the server mints, over a signal of its own
+>    (`table_viewport_own_create`).
 > 4. **Running work is a progress bar, not a row.** The live-row exception below is
 >    withdrawn. Work shows as a bar under its own row, above the table, or inside
 >    the selection panel, and never as a synthetic row in the set.
@@ -111,7 +112,8 @@ next explicit re-navigation or re-filter.
 
 > **Superseded** (see the block at the top): the live-row exception — a synthetic
 > `__running__` status row — is withdrawn, and running work is a progress bar. The
-> own-change exception stays and must be widened to cover a create.
+> own-change exception stays, and since HIL-792 it covers a create: the author gets
+> its own new row placed where the live sort puts it.
 
 The gate freezes the **rows on screen** — their position and membership — not
 always the **value inside a cell**. Four changes are deliberately not gated:

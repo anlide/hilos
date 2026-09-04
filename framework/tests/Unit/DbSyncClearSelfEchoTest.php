@@ -131,7 +131,7 @@ final class DbSyncClearSelfEchoTest extends TestCase
 
         // A row was written after the clear; then the same clear is applied once more.
         $objectCollection->setTableRows([7]);
-        DbSyncApplicator::applyCleared(new DbSyncClearedSignalData(self::COLLECTION_KEY, null, 'other-process'));
+        DbSyncApplicator::applyCleared(new DbSyncClearedSignalData(self::COLLECTION_KEY, emitter: 'other-process'));
 
         $this->assertSame(1, $objectCollection->count());
         $this->assertNotNull($objectCollection->get('7'));
@@ -146,7 +146,7 @@ final class DbSyncClearSelfEchoTest extends TestCase
         // the echo of its own clear.
         $objectCollection->setTableRows([]);
         DbSyncApplicator::applyCleared(
-            new DbSyncClearedSignalData(self::COLLECTION_KEY, null, $router->getEmitter()),
+            new DbSyncClearedSignalData(self::COLLECTION_KEY, emitter: $router->getEmitter()),
         );
 
         $this->assertSame(1, $objectCollection->count());
@@ -159,7 +159,7 @@ final class DbSyncClearSelfEchoTest extends TestCase
         $objectCollection->failNextLoad();
 
         // Runs inside the worker message loop and the daemon signal loop: it must not throw.
-        DbSyncApplicator::applyCleared(new DbSyncClearedSignalData(self::COLLECTION_KEY, null, 'other-process'));
+        DbSyncApplicator::applyCleared(new DbSyncClearedSignalData(self::COLLECTION_KEY, emitter: 'other-process'));
 
         $this->assertSame(0, $objectCollection->count());
         // Not "loaded and empty" — otherwise the mirror would stay empty over a live table.

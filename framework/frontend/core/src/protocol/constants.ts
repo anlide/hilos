@@ -82,6 +82,9 @@ export const SIGNAL_TYPE_TABLE_VIEWPORT_COUNT = 'table_viewport_count'
 /** Server frame `type` carrying a live table tail append (PHP `SignalTypeConstants::TABLE_VIEWPORT_APPEND`). */
 export const SIGNAL_TYPE_TABLE_VIEWPORT_APPEND = 'table_viewport_append'
 
+/** Server frame `type` carrying the author's own new row, already placed (PHP `SignalTypeConstants::TABLE_VIEWPORT_OWN_CREATE`). */
+export const SIGNAL_TYPE_TABLE_VIEWPORT_OWN_CREATE = 'table_viewport_own_create'
+
 /** Frame envelope key carrying the message type (PHP `SignalPayloadConstants::FIELD_TYPE`). */
 export const FIELD_TYPE = 'type'
 

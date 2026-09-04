@@ -7,15 +7,16 @@ namespace Hilos\Core\Execution;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
 
 /**
- * Process-global record of the worker callback in flight: which agent is running
- * and which WebSocket accept key it serves.
+ * Process-global record of the worker callback in flight: which agent is running,
+ * which WebSocket accept key it serves and which client-minted action it answers.
  *
  * Two scoping idioms share one current frame. The worker event loop sets the
  * top-level scope imperatively with setCurrentAgentId() / setCurrentAcceptKey();
  * nested callbacks use run() / push() / pop(), which restore the previous frame
  * on return. Truth-source registries and runtime view contexts read
  * currentAgentId() and currentAcceptKey() to decide who may write or which
- * connection is "self".
+ * connection is "self"; a write announces currentRequestId() beside the origin so
+ * the browser can tell which of its own button presses this echo answers.
  */
 final class ExecutionContext
 {
@@ -46,23 +47,30 @@ final class ExecutionContext
     }
 
     /**
-     * Runs a callback with the given accept key stamped on a pushed frame, then restores the previous frame.
+     * Runs a callback with the given origin stamped on a pushed frame, then restores the previous frame.
      *
      * Lets an agent acting on behalf of a connection (the backup initiator) stamp
      * that connection as the origin of the DB/RT writes it performs inside the
-     * callback, so the initiator's own table deltas apply at once. The current
-     * agent id is preserved; outside such a scope an agent write carries no accept
-     * key and its origin stays null (nobody's own).
+     * callback, so the initiator's own table deltas apply at once. The request id
+     * travels beside the accept key and answers the other question: which press of
+     * which button this write is the result of. The current agent id is preserved;
+     * outside such a scope an agent write carries no origin at all (nobody's own).
+     *
+     * One method takes both because they are one statement — "I am writing on
+     * someone's behalf". A second entry point for the accept key alone would let a
+     * caller stamp half an origin and leave the request id of an unrelated action
+     * standing on the frame.
      *
      * @template T
      * @param ?string $acceptKey Accept key to scope writes to, or null for an unattended scope
+     * @param ?string $requestId Request id of the action being carried out, or null when no action is behind the write
      * @param callable(): T $callback Work to execute in this scope
      * @return T Callback result
      * @throws FramePopOrderException When the callback leaves the frame stack imbalanced
      */
-    public static function withAcceptKey(?string $acceptKey, callable $callback): mixed
+    public static function withOrigin(?string $acceptKey, ?string $requestId, callable $callback): mixed
     {
-        return self::run(self::currentFrame()->withAcceptKey($acceptKey), $callback);
+        return self::run(self::currentFrame()->withAcceptKey($acceptKey)->withRequestId($requestId), $callback);
     }
 
     /**
@@ -141,6 +149,14 @@ final class ExecutionContext
     public static function currentAcceptKey(): ?string
     {
         return self::currentFrame()->acceptKey;
+    }
+
+    /**
+     * @return ?string Request id of the action the current callback answers, or null when none
+     */
+    public static function currentRequestId(): ?string
+    {
+        return self::currentFrame()->requestId;
     }
 
     /**

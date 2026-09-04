@@ -574,6 +574,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             (string)$offset,
             $value->toArray(),
             ExecutionContext::currentAcceptKey(),
+            ExecutionContext::currentRequestId(),
         ));
     }
 
@@ -634,6 +635,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             (string)$offset,
             $previous->toArray(),
             ExecutionContext::currentAcceptKey(),
+            ExecutionContext::currentRequestId(),
         ));
     }
 
@@ -771,7 +773,11 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         $collectionKey = static::COLLECTION_KEY;
         if ($collectionKey !== '') {
             Hilos::$sr?->queueDbSyncClearedSignal(
-                new DbSyncClearedSignalData($collectionKey, ExecutionContext::currentAcceptKey()),
+                new DbSyncClearedSignalData(
+                    $collectionKey,
+                    ExecutionContext::currentAcceptKey(),
+                    ExecutionContext::currentRequestId(),
+                ),
             );
         }
     }

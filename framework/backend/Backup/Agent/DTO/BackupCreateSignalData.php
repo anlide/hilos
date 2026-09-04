@@ -21,6 +21,11 @@ use Hilos\Core\Router\SignalDataInterface;
  * to that one connection. Only a human create carries it — a scheduled or CLI run
  * has no initiator, and its failure is deliberately told to nobody (it is recorded
  * in the storage index and the agent log instead).
+ *
+ * The press itself rides beside the connection: the request id of the action, kept
+ * with the run so the record the run finally writes announces which button produced
+ * it. The ack said only "accepted", and by the time the record exists the tab has
+ * nothing left to match it against.
  */
 final class BackupCreateSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -30,13 +35,18 @@ final class BackupCreateSignalData extends BaseDTO implements SignalDataInterfac
     /** Payload key: the requesting connection's accept key. */
     public const string initiatorAcceptKey = 'initiatorAcceptKey';
 
+    /** Payload key: the request id of the action that asked. */
+    public const string initiatorRequestId = 'initiatorRequestId';
+
     /**
      * @param string $scope Backup scope value
      * @param ?string $initiatorAcceptKey Accept key of the connection that asked, or null when unattended
+     * @param ?string $initiatorRequestId Request id of the action that asked, or null when it was not tracked
      */
     public function __construct(
         public readonly string $scope,
         public readonly ?string $initiatorAcceptKey = null,
+        public readonly ?string $initiatorRequestId = null,
     ) {
     }
 
@@ -48,6 +58,7 @@ final class BackupCreateSignalData extends BaseDTO implements SignalDataInterfac
         return [
             self::scope => $this->scope,
             self::initiatorAcceptKey => $this->initiatorAcceptKey,
+            self::initiatorRequestId => $this->initiatorRequestId,
         ];
     }
 
@@ -61,6 +72,7 @@ final class BackupCreateSignalData extends BaseDTO implements SignalDataInterfac
         return new static(
             scope: self::requireString($data, self::scope),
             initiatorAcceptKey: self::optionalString($data, self::initiatorAcceptKey),
+            initiatorRequestId: self::optionalString($data, self::initiatorRequestId),
         );
     }
 }

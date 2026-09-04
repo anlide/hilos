@@ -12,6 +12,7 @@ import {
   SIGNAL_TYPE_RT_STALENESS,
   SIGNAL_TYPE_SESSION_ROTATE,
   SIGNAL_TYPE_TABLE_VIEWPORT_APPEND,
+  SIGNAL_TYPE_TABLE_VIEWPORT_OWN_CREATE,
   SIGNAL_TYPE_TABLE_VIEWPORT_COUNT,
   SIGNAL_TYPE_TABLE_VIEWPORT_DELTA,
   SIGNAL_TYPE_TABLE_WINDOW,
@@ -25,12 +26,14 @@ import {
   tableViewportDeltaSignalDataSchema,
   tableViewportCountSignalDataSchema,
   tableViewportAppendSignalDataSchema,
+  tableViewportOwnCreateSignalDataSchema,
   sessionRotateSignalDataSchema,
   type SignalEnvelope,
   type TableWindowSignalData,
   type TableViewportDeltaSignalData,
   type TableViewportCountSignalData,
   type TableViewportAppendSignalData,
+  type TableViewportOwnCreateSignalData,
 } from './envelope.js'
 import {
   protectedModeBlockSchema,
@@ -114,6 +117,11 @@ export type ParsedSignal =
       data: TableViewportAppendSignalData
       envelope: SignalEnvelope
     }
+  | {
+      kind: 'tableViewportOwnCreate'
+      data: TableViewportOwnCreateSignalData
+      envelope: SignalEnvelope
+    }
   | { kind: 'project'; type: string; data: unknown; envelope: SignalEnvelope }
   | { kind: 'unknown'; type: string; envelope: SignalEnvelope }
 
@@ -144,6 +152,10 @@ export type TableViewportCountSignal = Extract<
 export type TableViewportAppendSignal = Extract<
   ParsedSignal,
   { kind: 'tableViewportAppend' }
+>
+export type TableViewportOwnCreateSignal = Extract<
+  ParsedSignal,
+  { kind: 'tableViewportOwnCreate' }
 >
 export type ProjectSignal = Extract<ParsedSignal, { kind: 'project' }>
 export type UnknownSignal = Extract<ParsedSignal, { kind: 'unknown' }>
@@ -453,6 +465,31 @@ export function parseSignal(
         ok: true,
         signal: {
           kind: 'tableViewportAppend',
+          data: data.data,
+          envelope: envelope.data,
+        },
+      }
+    }
+
+    case SIGNAL_TYPE_TABLE_VIEWPORT_OWN_CREATE: {
+      const data = tableViewportOwnCreateSignalDataSchema.safeParse(
+        envelope.data.data,
+      )
+      if (!data.success) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'invalid-signal-data',
+            type: SIGNAL_TYPE_TABLE_VIEWPORT_OWN_CREATE,
+            message: data.error.message,
+          },
+        }
+      }
+
+      return {
+        ok: true,
+        signal: {
+          kind: 'tableViewportOwnCreate',
           data: data.data,
           envelope: envelope.data,
         },

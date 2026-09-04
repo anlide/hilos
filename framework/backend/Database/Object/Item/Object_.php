@@ -130,6 +130,7 @@ abstract class Object_
                 $idString,
                 $row,
                 ExecutionContext::currentAcceptKey(),
+                ExecutionContext::currentRequestId(),
             ));
         });
     }
@@ -344,6 +345,7 @@ abstract class Object_
             $idString,
             $result,
             ExecutionContext::currentAcceptKey(),
+            ExecutionContext::currentRequestId(),
         ));
     }
 
@@ -358,7 +360,13 @@ abstract class Object_
     {
         Hilos::$sr?->queueDbSyncSignal(
             SignalConstants::DB_SYNC_CREATED,
-            new DbSyncCreatedSignalData($collectionKey, $idString, $row, ExecutionContext::currentAcceptKey()),
+            new DbSyncCreatedSignalData(
+                $collectionKey,
+                $idString,
+                $row,
+                ExecutionContext::currentAcceptKey(),
+                ExecutionContext::currentRequestId(),
+            ),
         );
     }
 
@@ -373,7 +381,13 @@ abstract class Object_
     {
         Hilos::$sr?->queueDbSyncSignal(
             SignalConstants::DB_SYNC_UPDATED,
-            new DbSyncUpdatedSignalData($collectionKey, $idString, $row, ExecutionContext::currentAcceptKey()),
+            new DbSyncUpdatedSignalData(
+                $collectionKey,
+                $idString,
+                $row,
+                ExecutionContext::currentAcceptKey(),
+                ExecutionContext::currentRequestId(),
+            ),
         );
     }
 
@@ -388,7 +402,13 @@ abstract class Object_
     {
         Hilos::$sr?->queueDbSyncSignal(
             SignalConstants::DB_SYNC_DELETED,
-            new DbSyncDeletedSignalData($collectionKey, $idString, $row, ExecutionContext::currentAcceptKey()),
+            new DbSyncDeletedSignalData(
+                $collectionKey,
+                $idString,
+                $row,
+                ExecutionContext::currentAcceptKey(),
+                ExecutionContext::currentRequestId(),
+            ),
         );
     }
 

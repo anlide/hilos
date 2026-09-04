@@ -316,6 +316,103 @@ describe('TableViewportController', () => {
     expect(controller.pendingCount.get()).toBe(0)
   })
 
+  it('inserts the author own new row at the position the server computed', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: {} },
+        { rowKey: 'c', slots: {} },
+      ],
+      2,
+    )
+    controller.ingestOwnCreate({ rowKey: 'b', slots: {} }, 1, 3, 'req-1')
+
+    const rows = controller.rows.get()
+    expect(rows.map((row) => row.rowKey)).toEqual(['a', 'b', 'c'])
+    expect(controller.totalCount.get()).toBe(3)
+    expect(controller.pendingCount.get()).toBe(0)
+    expect(controller.ownCreateRequestId.get()).toBe('req-1')
+  })
+
+  it('keeps the window at its page size, dropping what the insert pushes past the end', () => {
+    const { controller } = makeController(2)
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: {} },
+        { rowKey: 'c', slots: {} },
+      ],
+      2,
+    )
+    controller.ingestOwnCreate({ rowKey: 'b', slots: {} }, 1, 3)
+
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a', 'b'])
+    expect(controller.totalCount.get()).toBe(3)
+  })
+
+  it('an evicted row takes its pending change and its placeholder with it', () => {
+    const { controller } = makeController(2)
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: {} },
+        { rowKey: 'c', slots: {} },
+      ],
+      2,
+    )
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'c',
+      row: { rowKey: 'c', slots: { name: 'edited' } },
+    })
+    expect(controller.pendingCount.get()).toBe(1)
+
+    controller.ingestOwnCreate({ rowKey: 'b', slots: {} }, 1, 3)
+
+    // 'c' left the window, so the change waiting on it is no longer anyone's to apply.
+    expect(controller.pendingCount.get()).toBe(0)
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a', 'b'])
+  })
+
+  it('an own create clears the tombstone a reused row key left in the window', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: {} },
+        { rowKey: 'theme', slots: {} },
+      ],
+      2,
+    )
+    // The row is deleted and its removal applied, so a placeholder stands in its slot.
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'theme',
+      reason: 'deleted',
+      own: true,
+    })
+    expect(controller.rows.get()[1]?.placeholder).toBe(true)
+
+    // The same key is created again. The server forgot the deleted row, so it sends
+    // this as an own create rather than as an update.
+    controller.ingestOwnCreate(
+      { rowKey: 'theme', slots: { name: 'dark' } },
+      1,
+      2,
+    )
+
+    const rows = controller.rows.get()
+    expect(rows.map((row) => row.rowKey)).toEqual(['a', 'theme'])
+    expect(rows[1]?.placeholder).toBe(false)
+    expect(rows[1]?.row).toEqual({ rowKey: 'theme', slots: { name: 'dark' } })
+  })
+
+  it('an own create with no action behind it reports no request id', () => {
+    const { controller } = makeController()
+    controller.ingestWindow([], 0)
+    controller.ingestOwnCreate({ rowKey: 'a', slots: {} }, 0, 1, null)
+
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a'])
+    expect(controller.ownCreateRequestId.get()).toBeNull()
+  })
+
   it('ignores a delta for a row outside the window', () => {
     const { controller } = makeController()
     controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1)

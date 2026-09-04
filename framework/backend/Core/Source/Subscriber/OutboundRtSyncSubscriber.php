@@ -63,7 +63,13 @@ final class OutboundRtSyncSubscriber implements SourceChangeSubscriberInterface
     {
         Hilos::$sr?->queueRtSyncSignal(
             SignalConstants::RT_SYNC_CREATED,
-            new RtSyncCreatedSignalData($change->sourceKey, $change->sourceId, $change->row, $change->origin),
+            new RtSyncCreatedSignalData(
+                $change->sourceKey,
+                $change->sourceId,
+                $change->row,
+                $change->origin,
+                $change->originRequestId,
+            ),
         );
     }
 
@@ -77,7 +83,13 @@ final class OutboundRtSyncSubscriber implements SourceChangeSubscriberInterface
     {
         Hilos::$sr?->queueRtSyncSignal(
             SignalConstants::RT_SYNC_DELETED,
-            new RtSyncDeletedSignalData($change->sourceKey, $change->sourceId, $change->row, $change->origin),
+            new RtSyncDeletedSignalData(
+                $change->sourceKey,
+                $change->sourceId,
+                $change->row,
+                $change->origin,
+                $change->originRequestId,
+            ),
         );
     }
 }

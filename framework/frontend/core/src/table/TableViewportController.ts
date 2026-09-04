@@ -103,6 +103,12 @@ export interface TableWindowSink {
   ingestDelta(delta: TableViewportDelta): void
   ingestCount(totalCount: number): void
   ingestAppend(row: TableRow, totalCount: number): void
+  ingestOwnCreate(
+    row: TableRow,
+    position: number,
+    totalCount: number,
+    requestId?: string | null,
+  ): void
 }
 
 export interface TableViewportControllerOptions<R> {
@@ -145,6 +151,9 @@ export class TableViewportController<R> implements TableWindowSink {
   )
 
   private readonly pendingCountSignal = createSignal(0)
+
+  /** Request id of the last own-create ingested, or null when it was not tracked. */
+  private readonly ownCreateRequestIdSignal = createSignal<string | null>(null)
 
   private readonly searchSignal: ReadonlySignal<string>
 
@@ -223,6 +232,15 @@ export class TableViewportController<R> implements TableWindowSink {
   /** The current zero-based page index. */
   get page(): ReadonlySignal<number> {
     return this.pageSignal
+  }
+
+  /**
+   * The action behind the last of this receiver's own creates to land in the
+   * window, or null when none has or the write was not tracked. A surface reads it
+   * to recognize the result of a press it is still showing as in flight.
+   */
+  get ownCreateRequestId(): ReadonlySignal<string | null> {
+    return this.ownCreateRequestIdSignal
   }
 
   /**
@@ -377,6 +395,64 @@ export class TableViewportController<R> implements TableWindowSink {
   ingestAppend(row: TableRow, totalCount: number): void {
     this.windowSignal.set([...this.windowSignal.get(), row])
     this.totalCountSignal.set(Math.max(0, totalCount))
+  }
+
+  /**
+   * Ingest the receiver's own new row (`table_viewport_own_create`): insert it at
+   * the index the server computed and set the total. Sent only to the connection
+   * that created the row, and only when the row lands inside this window, so it
+   * applies at once — the author is looking at the result of its own press and has
+   * nothing to gate against.
+   *
+   * The window keeps its size: an insert pushes the last row past the end, exactly
+   * as a reload would, and that row leaves with whatever was queued against it -
+   * a pending change nobody can apply any more, or a placeholder standing where a
+   * row used to be. The row is already normalized to refs.
+   *
+   * The arriving key is cleared of whatever the window still holds under it, the
+   * same way {@link applyOwnDelta} clears an own update. A create may reuse the key
+   * of a row deleted in this very window: the server has forgotten that row and
+   * sends the create, while here its tombstone is still standing — placeholders
+   * live until the next window — and without this the key would sit in the window
+   * twice, the fresh row rendering as the removed one.
+   *
+   * `requestId` names the action behind the row and is kept on
+   * {@link ownCreateRequestId}, so a surface can tell which of its own presses this
+   * row answers — an ack only ever said "accepted", and for a backup the record
+   * arrives minutes later. The window itself does not read it.
+   *
+   * @param row The new row to insert, in reference form.
+   * @param position Zero-based index the row takes in the window.
+   * @param totalCount Total rows matching the filter.
+   * @param requestId Request id of the action that created the row, when it was tracked.
+   */
+  ingestOwnCreate(
+    row: TableRow,
+    position: number,
+    totalCount: number,
+    requestId?: string | null,
+  ): void {
+    this.ownCreateRequestIdSignal.set(requestId ?? null)
+    const rows = this.windowSignal
+      .get()
+      .filter((shown) => shown.rowKey !== row.rowKey)
+    rows.splice(
+      Math.min(Math.max(0, Math.trunc(position)), rows.length),
+      0,
+      row,
+    )
+    const evicted = rows.splice(this.pageSize)
+    this.windowSignal.set(rows)
+    this.totalCountSignal.set(Math.max(0, totalCount))
+
+    const placeholders = new Set(this.placeholderKeysSignal.get())
+    for (const gone of [...evicted, row]) {
+      this.pendingUpdates.delete(gone.rowKey)
+      this.pendingRemoved.delete(gone.rowKey)
+      placeholders.delete(gone.rowKey)
+    }
+    this.placeholderKeysSignal.set(placeholders)
+    this.refreshPendingSignals()
   }
 
   /**

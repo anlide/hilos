@@ -148,7 +148,13 @@ abstract class RtState
             RtTruthSourceRegistry::checkCanWriteState($collectionKey, $this->getId(), TruthSourceOperation::Update);
             Hilos::$sr->queueRtSyncSignal(
                 SignalConstants::RT_SYNC_UPDATED,
-                new RtSyncUpdatedSignalData($collectionKey, $this->getId(), $diff, ExecutionContext::currentAcceptKey()),
+                new RtSyncUpdatedSignalData(
+                    $collectionKey,
+                    $this->getId(),
+                    $diff,
+                    ExecutionContext::currentAcceptKey(),
+                    ExecutionContext::currentRequestId(),
+                ),
             );
         }
 

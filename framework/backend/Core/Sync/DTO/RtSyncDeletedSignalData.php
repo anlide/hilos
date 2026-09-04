@@ -21,12 +21,14 @@ class RtSyncDeletedSignalData extends BaseDTO implements RtSyncSignalDataInterfa
      * @param string $stateId State ID
      * @param array<string, mixed> $row Previous runtime row, when available
      * @param ?string $origin Accept key of the writing connection, or null when unattended
+     * @param ?string $originRequestId Request id of the action behind the write, or null when no action is behind it
      */
     public function __construct(
         public readonly string $collectionKey,
         public readonly string $stateId,
         public readonly array $row = [],
         public readonly ?string $origin = null,
+        public readonly ?string $originRequestId = null,
     ) {
     }
 
@@ -42,6 +44,7 @@ class RtSyncDeletedSignalData extends BaseDTO implements RtSyncSignalDataInterfa
             SyncSignalDataKey::STATE_ID => $this->stateId,
             SyncSignalDataKey::ROW => $this->row,
             SyncSignalDataKey::ORIGIN => $this->origin,
+            SyncSignalDataKey::ORIGIN_REQUEST_ID => $this->originRequestId,
         ];
     }
 
@@ -59,6 +62,7 @@ class RtSyncDeletedSignalData extends BaseDTO implements RtSyncSignalDataInterfa
             stateId: self::requireString($data, SyncSignalDataKey::STATE_ID),
             row: self::requireArray($data, SyncSignalDataKey::ROW),
             origin: self::optionalString($data, SyncSignalDataKey::ORIGIN),
+            originRequestId: self::optionalString($data, SyncSignalDataKey::ORIGIN_REQUEST_ID),
         );
     }
 }

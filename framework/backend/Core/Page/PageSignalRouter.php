@@ -36,6 +36,7 @@ use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Router\ActionErrorSignalDataInterface;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
@@ -624,6 +625,11 @@ class PageSignalRouter
      * A handler that finishes its action somewhere else says so, and then nothing is sent
      * from here: the request id went with the work, and the process doing it answers.
      *
+     * The handler runs inside an origin scope carrying both the connection and the request
+     * id, so every row it writes announces which press of which button produced it. The
+     * accept key is already on the frame by the time we get here; restating it costs
+     * nothing and keeps the two halves of an origin from being set in two places.
+     *
      * @param ActionHostInterface $host Owner the action was routed to
      * @param string $acceptKey Acting connection accept key
      * @param string $action Action name
@@ -631,6 +637,7 @@ class PageSignalRouter
      * @param ?string $requestId Client-minted request id, or null for an untracked action
      * @throws ActionForbiddenException When the page's ADMIN level denies the acting user
      * @throws ActionUnauthorizedException When the page or the action requires a session the caller has not got
+     * @throws FramePopOrderException When the handler leaves the execution frame stack imbalanced
      * @throws Throwable Whatever the action handler raises
      */
     private function runAction(
@@ -646,7 +653,11 @@ class PageSignalRouter
         $this->assertActionAuthorized($host, $action, $acceptKey);
         $host->beginActionDispatch($requestId);
         try {
-            $reply = $host->runAction($acceptKey, $action, $dto);
+            $reply = ExecutionContext::withOrigin(
+                $acceptKey,
+                $requestId,
+                fn (): ?ActionReplyDTO => $host->runAction($acceptKey, $action, $dto),
+            );
             if ($host->actionReplyDeferred()) {
                 // The handler passed the request id to whoever finishes this action, and
                 // that process answers when it is done. Acking here would put "done" on the
@@ -858,7 +869,7 @@ class PageSignalRouter
      */
     private function resumeDeferredAction(DeferredAction $entry, ?int $refusalSeconds): void
     {
-        ExecutionContext::withAcceptKey($entry->acceptKey, function () use ($entry, $refusalSeconds): void {
+        ExecutionContext::withOrigin($entry->acceptKey, null, function () use ($entry, $refusalSeconds): void {
             try {
                 if ($refusalSeconds !== null) {
                     throw new ActionRateLimitedException($refusalSeconds);
@@ -1071,7 +1082,7 @@ class PageSignalRouter
      */
     private function runPendingFrame(PendingFrame $frame): void
     {
-        ExecutionContext::withAcceptKey($frame->acceptKey, function () use ($frame): void {
+        ExecutionContext::withOrigin($frame->acceptKey, null, function () use ($frame): void {
             $data = $frame->data;
 
             try {

@@ -280,7 +280,13 @@ abstract class RtActions
         }
         Hilos::$sr?->queueRtSyncSignal(
             SignalConstants::RT_SYNC_UPDATED,
-            new RtSyncUpdatedSignalData($collectionName, $stateId, $diff, ExecutionContext::currentAcceptKey()),
+            new RtSyncUpdatedSignalData(
+                $collectionName,
+                $stateId,
+                $diff,
+                ExecutionContext::currentAcceptKey(),
+                ExecutionContext::currentRequestId(),
+            ),
         );
     }
 
@@ -304,7 +310,13 @@ abstract class RtActions
         }
         Hilos::$sr?->queueRtSyncSignal(
             SignalConstants::RT_SYNC_DELETED,
-            new RtSyncDeletedSignalData($collectionName, $stateId, $row, ExecutionContext::currentAcceptKey()),
+            new RtSyncDeletedSignalData(
+                $collectionName,
+                $stateId,
+                $row,
+                ExecutionContext::currentAcceptKey(),
+                ExecutionContext::currentRequestId(),
+            ),
         );
     }
 }

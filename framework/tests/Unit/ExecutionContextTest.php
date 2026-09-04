@@ -75,6 +75,43 @@ final class ExecutionContextTest extends TestCase
         $this->assertNull(ExecutionContext::currentAcceptKey());
     }
 
+    public function testWithOriginScopesBothHalvesOfAnOriginAndRestoresThem(): void
+    {
+        ExecutionContext::setCurrentAgentId('backup');
+
+        ExecutionContext::withOrigin('initiator-ak', 'req-9', static function (): void {
+            self::assertSame('backup', ExecutionContext::currentAgentId());
+            self::assertSame('initiator-ak', ExecutionContext::currentAcceptKey());
+            self::assertSame('req-9', ExecutionContext::currentRequestId());
+        });
+
+        $this->assertSame('backup', ExecutionContext::currentAgentId());
+        $this->assertNull(ExecutionContext::currentAcceptKey());
+        $this->assertNull(ExecutionContext::currentRequestId());
+    }
+
+    public function testWithOriginTakesAnAcceptKeyWithoutAnAction(): void
+    {
+        // A resumed frame stamps the connection back on and nothing else: the write it is
+        // about to make belongs to that tab, but to no press of any button.
+        ExecutionContext::withOrigin('initiator-ak', null, static function (): void {
+            self::assertSame('initiator-ak', ExecutionContext::currentAcceptKey());
+            self::assertNull(ExecutionContext::currentRequestId());
+        });
+    }
+
+    public function testSettingTheAcceptKeyLeavesTheRunningActionInPlace(): void
+    {
+        // The worker loop restores agent and connection around a wait; the action it is in
+        // the middle of answering is not its to forget.
+        ExecutionContext::withOrigin('ak-1', 'req-1', static function (): void {
+            ExecutionContext::setCurrentAcceptKey('ak-2');
+
+            self::assertSame('ak-2', ExecutionContext::currentAcceptKey());
+            self::assertSame('req-1', ExecutionContext::currentRequestId());
+        });
+    }
+
     public function testClearCurrentAgentIdIfOnlyClearsMatchingAgent(): void
     {
         ExecutionContext::setCurrentAgentId('agent-a');

@@ -75,6 +75,7 @@ use Hilos\Fs\FsPath;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Execution\Exception\FramePopOrderException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Process;
@@ -393,6 +394,13 @@ final class BackupAgent extends AbstractAgent
     private ?string $currentInitiator = null;
 
     /**
+     * Request id of the action that asked for the in-flight backup, or null when it started
+     * unattended or the action was not tracked. Kept for as long as the run itself, so the
+     * index rescan that finally writes the record can say which press it answers.
+     */
+    private ?string $currentInitiatorRequestId = null;
+
+    /**
      * Hash of the session token behind {@see self::$currentInitiator}, or null when the run
      * is unattended or that connection carried no session.
      *
@@ -423,6 +431,9 @@ final class BackupAgent extends AbstractAgent
 
     /** Accept key of the connection whose create is parked in {@see $pendingScope}. */
     private ?string $pendingInitiator = null;
+
+    /** Request id of the action whose create is parked in {@see $pendingScope}. */
+    private ?string $pendingInitiatorRequestId = null;
 
     /**
      * Takes storage under watch, registers truth sources, rebuilds the runtime backup index,
@@ -543,6 +554,7 @@ final class BackupAgent extends AbstractAgent
             // startBackup, and a stopping agent must not spawn a child nobody will poll.
             $this->pendingScope = null;
             $this->pendingInitiator = null;
+            $this->pendingInitiatorRequestId = null;
             // Only when the child half has not run yet. Past it the outcome is already recorded
             // and only the barrier is outstanding, and putting the run through the finalizer a
             // second time would re-announce the swap and overwrite what the child actually did
@@ -590,6 +602,7 @@ final class BackupAgent extends AbstractAgent
      * @param string $source Signal source (unused)
      * @param string $name Fired cron name, matched against the backup schedule
      * @throws EnvException When a backup env value is missing or cannot be read as its type
+     * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
      * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
@@ -618,6 +631,7 @@ final class BackupAgent extends AbstractAgent
      * @param string $name Signal name (unused; the routing is on $data->command)
      * @throws EnvException When a backup env value is missing or cannot be read as its type
      * @throws ClusterConfigurationException When the restore request cannot read the cluster layout
+     * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
      * @throws InvalidArgumentException When the handler cannot name its reply to the command
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
@@ -960,6 +974,7 @@ final class BackupAgent extends AbstractAgent
      * with an error; the reply is immediate (the backup runs asynchronously in the child).
      *
      * @param CommandRequestDTO $data Command request carrying the optional schedule name
+     * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
      */
     private function handleRunScheduleCommand(CommandRequestDTO $data): void
     {
@@ -1329,6 +1344,7 @@ final class BackupAgent extends AbstractAgent
      * @throws AgentUnknownSignalException When the signal name is not a backup list action
      * @throws EnvException When a backup env value is missing or cannot be read as its type
      * @throws ClusterConfigurationException When the restore request cannot read the cluster layout
+     * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
      * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
@@ -1378,6 +1394,7 @@ final class BackupAgent extends AbstractAgent
      * Runs a manual create now, or coalesces it into the single pending slot when busy.
      *
      * @param BackupCreateSignalData $data Create request carrying the scope value
+     * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
      */
     private function handleCreateRequest(BackupCreateSignalData $data): void
     {
@@ -1398,12 +1415,13 @@ final class BackupAgent extends AbstractAgent
             // be lost, instead of running the moment the restore lets go.
             $this->pendingScope = $scope;
             $this->pendingInitiator = $data->initiatorAcceptKey;
+            $this->pendingInitiatorRequestId = $data->initiatorRequestId;
             $this->logAgentInfo("Backup busy; queued pending create (scope={$scope->value})");
 
             return;
         }
 
-        $this->startBackup($scope, $data->initiatorAcceptKey);
+        $this->startBackup($scope, $data->initiatorAcceptKey, $data->initiatorRequestId);
     }
 
     /**
@@ -1442,8 +1460,9 @@ final class BackupAgent extends AbstractAgent
             new BackupPruner()->deleteStored($row, Hilos::$env->string(EnvConstants::BACKUP_DIR));
             // Stamp the requester as the origin of the index write so its own row
             // removal applies at once while other tabs keep the pending gate.
-            ExecutionContext::withAcceptKey(
+            ExecutionContext::withOrigin(
                 $data->initiatorAcceptKey,
+                null,
                 fn () => $histories->actions->forget($id),
             );
             // The receiver is a mirror: what left here has to leave there too. Raised after the
@@ -1497,7 +1516,7 @@ final class BackupAgent extends AbstractAgent
             // Re-mirror the index from the rewritten sidecar (files=truth): the cleared +
             // recreated rows carry the new keep pin to every reader over RT sync. Stamp the
             // requester as the origin so its own row update applies at once, other tabs gate.
-            ExecutionContext::withAcceptKey($data->initiatorAcceptKey, fn () => $this->refreshHistory());
+            ExecutionContext::withOrigin($data->initiatorAcceptKey, null, fn () => $this->refreshHistory());
             $this->logAgentInfo("Backup keep set: {$id} keep=" . ($data->keep ? 'true' : 'false'));
         } catch (Throwable $e) {
             $this->logAgentError("Failed to set keep on backup {$id}: " . $e->getMessage());
@@ -1589,11 +1608,16 @@ final class BackupAgent extends AbstractAgent
      *
      * @param BackupScope $scope What the backup should capture
      * @param ?string $initiatorAcceptKey Connection to tell when the run fails, or null when unattended
+     * @param ?string $initiatorRequestId Action the run answers, or null when unattended or untracked
      * @throws EnvException When a backup env value is missing or cannot be read as its type
+     * @throws FramePopOrderException When the stamped index rescan leaves the execution frame stack imbalanced
      * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
      */
-    public function startBackup(BackupScope $scope, ?string $initiatorAcceptKey = null): void
-    {
+    public function startBackup(
+        BackupScope $scope,
+        ?string $initiatorAcceptKey = null,
+        ?string $initiatorRequestId = null,
+    ): void {
         if (!Hilos::$env->bool(EnvConstants::BACKUP_ENABLED)) {
             $this->logAgentWarning('Backup is disabled; ignoring create request');
 
@@ -1641,6 +1665,7 @@ final class BackupAgent extends AbstractAgent
         $this->currentBackupId = $id;
         $this->currentScope = $scope;
         $this->currentInitiator = $initiatorAcceptKey;
+        $this->currentInitiatorRequestId = $initiatorRequestId;
         $this->currentInitiatorSessionTokenHash = $this->resolveInitiatorSessionTokenHash($initiatorAcceptKey);
         $this->startedAt = microtime(true);
         $this->timeoutSeconds = (float)Hilos::$env->int(EnvConstants::BACKUP_TIMEOUT);
@@ -2781,6 +2806,7 @@ final class BackupAgent extends AbstractAgent
      *
      * @param bool $complete Whether every process confirmed re-reading the replaced database
      * @param list<string> $problems Processes that failed to re-read or never answered
+     * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
      */
     private function completeRestore(bool $complete, array $problems): void
     {
@@ -2980,6 +3006,7 @@ final class BackupAgent extends AbstractAgent
      *
      * @param DbReHydrateOutcome $outcome Whether every process re-read, and who did not
      * @throws EnvException When a backup env value is missing or cannot be read as its type
+     * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
      * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
      */
     public function onDbReHydrateComplete(DbReHydrateOutcome $outcome): void
@@ -3050,6 +3077,7 @@ final class BackupAgent extends AbstractAgent
      *
      * @param bool $success Whether the child exited cleanly
      * @param ?string $failureReason Human-readable reason when the run failed
+     * @throws FramePopOrderException When the stamped index rescan leaves the execution frame stack imbalanced
      */
     private function finishRun(bool $success, ?string $failureReason): void
     {
@@ -3080,7 +3108,15 @@ final class BackupAgent extends AbstractAgent
         }
 
         // Rescan storage either way: success adds the new archive, failure adds the error sidecar.
-        $this->refreshHistory();
+        // The requester is stamped as the origin of THIS scan and of nothing else: the record it
+        // writes is the result of a press, so the tab that pressed sees its own row at once and
+        // in its place. Rotation below stays unstamped - nobody asked for old copies to go, and
+        // their rows wait behind the gate like any other change.
+        ExecutionContext::withOrigin(
+            $this->currentInitiator,
+            $this->currentInitiatorRequestId,
+            fn () => $this->refreshHistory(),
+        );
         if ($success) {
             // Rotation runs only after a successful create (HIL-273 also crons it); a failed
             // run added nothing prunable, so there is nothing to rotate.
@@ -3097,6 +3133,7 @@ final class BackupAgent extends AbstractAgent
      * Called once the lock is released at the end of {@see finishRun()}: the slot holds at
      * most one scope (last manual request wins), so it starts exactly one follow-up backup.
      * Its requester travels with it, so a queued create still reports its own failure.
+     * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
      */
     private function drainPendingCreate(): void
     {
@@ -3106,10 +3143,12 @@ final class BackupAgent extends AbstractAgent
 
         $scope = $this->pendingScope;
         $initiator = $this->pendingInitiator;
+        $initiatorRequestId = $this->pendingInitiatorRequestId;
         $this->pendingScope = null;
         $this->pendingInitiator = null;
+        $this->pendingInitiatorRequestId = null;
         $this->logAgentInfo("Running pending backup create (scope={$scope->value})");
-        $this->startBackup($scope, $initiator);
+        $this->startBackup($scope, $initiator, $initiatorRequestId);
     }
 
     /**
@@ -3385,6 +3424,7 @@ final class BackupAgent extends AbstractAgent
         $this->currentBackupId = null;
         $this->currentScope = null;
         $this->currentInitiator = null;
+        $this->currentInitiatorRequestId = null;
         $this->currentInitiatorSessionTokenHash = null;
         $this->startedAt = 0.0;
         $this->timeoutSeconds = 0.0;

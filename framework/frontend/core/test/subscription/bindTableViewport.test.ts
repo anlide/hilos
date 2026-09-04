@@ -11,16 +11,20 @@ import {
 import {
   type TableViewportAppendSignal,
   type TableViewportCountSignal,
+  type TableViewportOwnCreateSignal,
   type TableViewportDeltaSignal,
   type TableWindowSignal,
 } from '../../src/protocol/parseSignal.js'
 
-/** A connection double emitting the four table signals, with real unsubscribe. */
+/** A connection double emitting the five table signals, with real unsubscribe. */
 function fakeConnection() {
   const windowListeners = new Set<(signal: TableWindowSignal) => void>()
   const deltaListeners = new Set<(signal: TableViewportDeltaSignal) => void>()
   const countListeners = new Set<(signal: TableViewportCountSignal) => void>()
   const appendListeners = new Set<(signal: TableViewportAppendSignal) => void>()
+  const ownCreateListeners = new Set<
+    (signal: TableViewportOwnCreateSignal) => void
+  >()
 
   return {
     on(event: string, listener: (signal: never) => void): () => void {
@@ -48,6 +52,14 @@ function fakeConnection() {
           appendListeners.add(typed)
 
           return () => appendListeners.delete(typed)
+        }
+        case 'tableViewportOwnCreate': {
+          const typed = listener as unknown as (
+            signal: TableViewportOwnCreateSignal,
+          ) => void
+          ownCreateListeners.add(typed)
+
+          return () => ownCreateListeners.delete(typed)
         }
         default: {
           const typed = listener as unknown as (
@@ -79,26 +91,44 @@ function fakeConnection() {
         listener({ data } as unknown as TableViewportAppendSignal)
       }
     },
+    emitOwnCreate(data: TableViewportOwnCreateSignal['data']): void {
+      for (const listener of ownCreateListeners) {
+        listener({ data } as unknown as TableViewportOwnCreateSignal)
+      }
+    },
   }
 }
 
-/** A controller double recording the windows, deltas, counts and appends fed to it. */
+/** A controller double recording the windows, deltas, counts, appends and own creates fed to it. */
 function fakeSink(): TableWindowSink & {
   windows: Array<{ rows: readonly TableRow[]; totalCount: number }>
   deltas: TableViewportDelta[]
   counts: number[]
   appends: Array<{ row: TableRow; totalCount: number }>
+  ownCreates: Array<{
+    row: TableRow
+    position: number
+    totalCount: number
+    requestId?: string | null
+  }>
 } {
   const windows: Array<{ rows: readonly TableRow[]; totalCount: number }> = []
   const deltas: TableViewportDelta[] = []
   const counts: number[] = []
   const appends: Array<{ row: TableRow; totalCount: number }> = []
+  const ownCreates: Array<{
+    row: TableRow
+    position: number
+    totalCount: number
+    requestId?: string | null
+  }> = []
 
   return {
     windows,
     deltas,
     counts,
     appends,
+    ownCreates,
     ingestWindow(rows, totalCount): void {
       windows.push({ rows, totalCount })
     },
@@ -110,6 +140,9 @@ function fakeSink(): TableWindowSink & {
     },
     ingestAppend(row, totalCount): void {
       appends.push({ row, totalCount })
+    },
+    ingestOwnCreate(row, position, totalCount, requestId): void {
+      ownCreates.push({ row, position, totalCount, requestId })
     },
   }
 }
@@ -341,6 +374,53 @@ describe('bindTableViewport', () => {
     })
 
     expect(sink.counts).toEqual([9])
+  })
+
+  it('routes an own create addressed to the table, normalizing the row', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitOwnCreate({
+      page: 'main',
+      tableKey: 'settings',
+      row: { rowKey: 'a', slots: { user: { id: 7, name: 'Ada' } } },
+      position: 2,
+      totalCount: 13,
+      pageCount: 2,
+      requestId: 'req-1',
+    })
+
+    expect(sink.ownCreates).toHaveLength(1)
+    expect(sink.ownCreates[0]?.position).toBe(2)
+    expect(sink.ownCreates[0]?.totalCount).toBe(13)
+    expect(sink.ownCreates[0]?.requestId).toBe('req-1')
+    expect(sink.ownCreates[0]?.row).toEqual({
+      rowKey: 'a',
+      slots: { user: { type: 'user', id: 7 } },
+    })
+  })
+
+  it('drops an own create addressed to another table', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitOwnCreate({
+      page: 'main',
+      tableKey: 'other',
+      row: { rowKey: 'a', slots: {} },
+      position: 0,
+      totalCount: 1,
+      pageCount: 1,
+      requestId: null,
+    })
+
+    expect(sink.ownCreates).toHaveLength(0)
   })
 
   it('routes an append addressed to the table, normalizing the row', () => {
