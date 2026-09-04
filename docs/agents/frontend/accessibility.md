@@ -94,20 +94,27 @@ The rules to apply when building a view or an SDK component:
   `aria-hidden="true"`.
 - **Busy state** — a control performing an action sets `aria-busy` while in
   flight (`LoadingButton`).
-- **Live regions** — transient status that should be announced uses
-  `role="status" aria-live="polite"` (the connection indicator, the page-change
-  announcement and the toast stack are the references). Use sparingly, and reserve
-  `role="alert" aria-live="assertive"` for a failure: a toast earns the interrupt
-  only at `error` severity, while `success` and `info` go polite rather than cut
-  into what the user is listening to.
+- **Live regions** — a live region is a **permanent** node that stands there
+  before it has anything to say, and what changes is its **content**. A node
+  carrying `aria-live` that is inserted together with its own text guarantees no
+  announcement at all: part of the screen readers stay silent, because there was
+  no change to a region they were already watching. The visible block that shows
+  the same sentence carries **no** role and no `aria-live` of its own — the
+  region announces, the block shows; both, and the reader says it twice. Transient
+  status that should be announced uses `role="status" aria-live="polite"`. Use
+  sparingly, and reserve `role="alert" aria-live="assertive"` for a failure: a
+  toast earns the interrupt only at `error` severity, while `success` and `info`
+  go polite rather than cut into what the user is listening to. Four references,
+  all of them permanent nodes: the page-change announcement and the connection
+  indicator (`framework/frontend/vue/src/HilosLayout.vue`), the toast stack
+  (`framework/frontend/vue/src/HilosToastHost.vue`) and the sign-in screen
+  (`framework/frontend/vue/src/auth/HilosAuthSurface.vue`).
 - **A timed notice is readable or it does not exist (2.2.1 Timing Adjustable).**
   A toast that expires before it is read is nothing to a screen-reader user, so
   the toast stack lives 20 seconds — an error does not expire until dismissed —
   and freezes its countdown while it is under the cursor or holds keyboard
-  focus, continuing from what is left. The live region is declared in advance,
-  on the stack itself, not on the appearing card.
-  That is the success criterion being met, not a nicety; a new timed surface
-  owes the same ([toasts.md](toasts.md)).
+  focus, continuing from what is left. That is the success criterion being met,
+  not a nicety; a new timed surface owes the same ([toasts.md](toasts.md)).
 
 ## What Bootstrap already covers — leave it alone
 
@@ -146,3 +153,5 @@ it. See [testing.md](../testing.md).
 7. If the page has a tab title, it flows from `pageTitles`; add the key there
    rather than setting `document.title` by hand.
 8. Extend `a11y.spec.ts` for the new structure where it is worth a guard.
+9. A live region is declared in advance and stands there permanently; the
+   visible block showing the same text does not repeat its role.

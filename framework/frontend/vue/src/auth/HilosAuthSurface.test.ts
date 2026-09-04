@@ -11,6 +11,7 @@
 // One more registry is mounted below, the magic-link one (HIL-606), for the screen
 // that has no equivalent anywhere else: a waiting screen that also takes a code.
 import {
+  ActionError,
   ActionLifecycle,
   AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE,
   AUTH_ACTION_DETECT_IDENTIFIER,
@@ -48,9 +49,10 @@ type Dispatched = Array<{ action: string; payload: Record<string, unknown> }>
  * The connection answers every subscription with an unsubscribe and never delivers
  * a signal; the action lifecycle records what was dispatched and resolves it.
  *
+ * @param refuseLogin Answer the sign-in with a refusal instead of a success.
  * @returns The context to mount with, and the dispatch log to assert on.
  */
-function passwordOnlyContext(): {
+function passwordOnlyContext(refuseLogin = false): {
   context: HilosAuthContext
   dispatched: Dispatched
 } {
@@ -79,7 +81,12 @@ function passwordOnlyContext(): {
       return {
         requestId: `req-${dispatched.length}`,
         loading: createSignal(false),
-        done: Promise.resolve({ reply }),
+        done:
+          refuseLogin && action === AUTH_ACTION_LOGIN
+            ? Promise.reject(
+                new ActionError(action, 'fail', 'Incorrect password'),
+              )
+            : Promise.resolve({ reply }),
       } as unknown as ActionHandle
     },
   } as unknown as ActionLifecycle
@@ -321,6 +328,70 @@ describe('HilosAuthSurface', () => {
 
     expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
     expect(dismissed).not.toHaveBeenCalled()
+  })
+
+  it('stands both live regions up empty before anything has been said', () => {
+    const { context } = passwordOnlyContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    // The point of the leaf: the region is there BEFORE its text, so the reader
+    // announces the change of content rather than the arrival of a node.
+    const urgent = wrapper.find('[data-id="auth-live-assertive"]')
+    const calm = wrapper.find('[data-id="auth-live-polite"]')
+    expect(urgent.exists()).toBe(true)
+    expect(calm.exists()).toBe(true)
+    expect(urgent.text()).toBe('')
+    expect(calm.text()).toBe('')
+  })
+
+  it('speaks a refusal from the urgent region while the visible block stays mute', async () => {
+    vi.useFakeTimers()
+    const { context } = passwordOnlyContext(true)
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('someone@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+
+    await wrapper.find('[data-id="auth-password"]').setValue('wrong horse')
+    await wrapper.find('form').trigger('submit')
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-live-assertive"]').text()).toBe(
+      'Incorrect password',
+    )
+    // The same sentence is on the screen for the eye — and carries no role of
+    // its own, or the reader would say it twice.
+    const visible = wrapper.find('[data-id="auth-error"]')
+    expect(visible.text()).toBe('Incorrect password')
+    expect(visible.attributes('role')).toBeUndefined()
+    expect(visible.attributes('aria-live')).toBeUndefined()
+  })
+
+  it('puts the letter, address and all, into the calm region', async () => {
+    vi.useFakeTimers()
+    const { context } = magicLinkContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('someone@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+
+    await wrapper.find('[data-id="auth-icon-magic-link"]').trigger('click')
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-live-polite"]').text()).toBe(
+      "We've sent a sign-in link to someone@example.com. Open it to continue.",
+    )
+    // News belongs to the region now; the plaque that shows it is a colored
+    // line and nothing more.
+    expect(
+      wrapper.find('[data-id="auth-link-sent"]').attributes('role'),
+    ).toBeUndefined()
   })
 
   it('refuses a registry with no method at all, at wiring time', () => {

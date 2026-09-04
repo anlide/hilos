@@ -196,6 +196,16 @@ const CODE_MESSAGES: Record<string, string> = {
 const GENERIC_ERROR = 'That did not work. Please try again.'
 
 /**
+ * The two sentences the screen hard-codes in its markup. They live here because
+ * the live region says them a second time, and two copies of a sentence drift.
+ * The letter's line is split around the address the visible block prints in bold.
+ */
+const LINK_PROMPT_MESSAGE =
+  'That email already has an account. Sign in to finish linking it.'
+const LINK_SENT_LEAD = "We've sent a sign-in link to"
+const LINK_SENT_TAIL = 'Open it to continue.'
+
+/**
  * The identifier-first sign-in surface: one field, and whatever the lookup makes
  * of it.
  */
@@ -207,17 +217,38 @@ const GENERIC_ERROR = 'That did not work. Please try again.'
     <section data-id="auth-surface" class="mx-auto" style="max-width: 24rem">
       <h2 class="h5 mb-3" data-id="auth-heading">{{ heading() }}</h2>
 
+      <!-- The two live regions of the screen, declared in advance and on the
+      section rather than inside a form: the five forms replace one another as
+      the machine steps, so a region living in one of them would die with its
+      step — the very illness this cures. Two of them, because only a refusal is
+      allowed to interrupt what the listener is hearing. The visible blocks below
+      carry the same words for the eye and no role of their own. -->
+      <div
+        class="visually-hidden"
+        role="alert"
+        aria-live="assertive"
+        data-id="auth-live-assertive"
+      >
+        {{ errorMessage() }}
+      </div>
+      <div
+        class="visually-hidden"
+        role="status"
+        aria-live="polite"
+        data-id="auth-live-polite"
+      >
+        @for (item of announcedNews(); track item.key) {
+          <div>{{ item.text }}</div>
+        }
+      </div>
+
       <!-- OAuth email-collision re-auth prompt (HIL-282): the provider address
       already has an account, so ask the person to sign in with an existing
       method to finish linking. The pending link token is redeemed globally once
       the session upgrades. -->
       @if (linkPrompt() && state().step === 'identifier') {
-        <div
-          class="alert alert-info py-2"
-          role="status"
-          data-id="auth-link-prompt"
-        >
-          That email already has an account. Sign in to finish linking it.
+        <div class="alert alert-info py-2" data-id="auth-link-prompt">
+          {{ linkPromptMessage }}
         </div>
       }
 
@@ -226,11 +257,7 @@ const GENERIC_ERROR = 'That did not work. Please try again.'
       usually the identifier field, where the error region belongs to what is
       typed next. -->
       @if (notice(); as message) {
-        <div
-          class="alert alert-warning py-2"
-          role="status"
-          data-id="auth-notice"
-        >
+        <div class="alert alert-warning py-2" data-id="auth-notice">
           {{ message }}
         </div>
       }
@@ -345,12 +372,7 @@ const GENERIC_ERROR = 'That did not work. Please try again.'
           }
 
           @if (errorMessage(); as message) {
-            <div
-              class="alert alert-danger py-2"
-              role="alert"
-              aria-live="polite"
-              data-id="auth-error"
-            >
+            <div class="alert alert-danger py-2" data-id="auth-error">
               {{ message }}
             </div>
           }
@@ -470,12 +492,7 @@ const GENERIC_ERROR = 'That did not work. Please try again.'
           </div>
 
           @if (errorMessage(); as message) {
-            <div
-              class="alert alert-danger py-2"
-              role="alert"
-              aria-live="polite"
-              data-id="auth-error"
-            >
+            <div class="alert alert-danger py-2" data-id="auth-error">
               {{ message }}
             </div>
           }
@@ -543,13 +560,12 @@ const GENERIC_ERROR = 'That did not work. Please try again.'
           @if (screenKey() === 'check_inbox') {
             <div
               class="alert alert-success small py-2"
-              role="status"
               data-id="auth-link-sent"
             >
               <i class="bi bi-envelope-check me-1" aria-hidden="true"></i>
-              We've sent a sign-in link to
+              {{ linkSentLead }}
               <strong>{{ form().identifier }}</strong
-              >. Open it to continue.
+              >. {{ linkSentTail }}
             </div>
           }
 
@@ -577,12 +593,7 @@ const GENERIC_ERROR = 'That did not work. Please try again.'
           </div>
 
           @if (errorMessage(); as message) {
-            <div
-              class="alert alert-danger py-2"
-              role="alert"
-              aria-live="polite"
-              data-id="auth-error"
-            >
+            <div class="alert alert-danger py-2" data-id="auth-error">
               {{ message }}
             </div>
           }
@@ -650,12 +661,7 @@ const GENERIC_ERROR = 'That did not work. Please try again.'
           </div>
 
           @if (errorMessage(); as message) {
-            <div
-              class="alert alert-danger py-2"
-              role="alert"
-              aria-live="polite"
-              data-id="auth-error"
-            >
+            <div class="alert alert-danger py-2" data-id="auth-error">
               {{ message }}
             </div>
           }
@@ -677,11 +683,11 @@ const GENERIC_ERROR = 'That did not work. Please try again.'
         cancelling ends the ceremony itself rather than merely forgetting its
         outcome. -->
         @if (screenKey() === 'check_inbox') {
-          <div class="alert alert-success small py-2" role="status">
+          <div class="alert alert-success small py-2">
             <i class="bi bi-envelope-check me-1" aria-hidden="true"></i>
-            We've sent a sign-in link to
+            {{ linkSentLead }}
             <strong>{{ form().identifier }}</strong
-            >. Open it to continue.
+            >. {{ linkSentTail }}
           </div>
         } @else {
           <div class="text-center py-4">
@@ -698,12 +704,7 @@ const GENERIC_ERROR = 'That did not work. Please try again.'
         }
 
         @if (errorMessage(); as message) {
-          <div
-            class="alert alert-danger py-2"
-            role="alert"
-            aria-live="polite"
-            data-id="auth-error"
-          >
+          <div class="alert alert-danger py-2" data-id="auth-error">
             {{ message }}
           </div>
         }
@@ -910,6 +911,39 @@ export class HilosAuthSurface {
       (shown.code === null ? null : CODE_MESSAGES[shown.code]) ??
       GENERIC_ERROR
     )
+  })
+
+  // A module constant is invisible to the template, so the two sentences the
+  // visible blocks print reach it as fields — the way the rest of this file
+  // already hands its tables over.
+  protected readonly linkPromptMessage = LINK_PROMPT_MESSAGE
+  protected readonly linkSentLead = LINK_SENT_LEAD
+  protected readonly linkSentTail = LINK_SENT_TAIL
+
+  // What the calm region says: the screen's news, in the order they stand on it
+  // from the top down. More than one can be true at once, so it is a list and
+  // not a sentence — each line keyed by the source it came from, the way the
+  // toast stack keys its cards.
+  protected readonly announcedNews = computed<
+    readonly { key: string; text: string }[]
+  >(() => {
+    const news: { key: string; text: string }[] = []
+
+    if (this.linkPrompt() && this.state().step === 'identifier') {
+      news.push({ key: 'link_prompt', text: LINK_PROMPT_MESSAGE })
+    }
+    const moved = this.notice()
+    if (moved !== null) {
+      news.push({ key: 'notice', text: moved })
+    }
+    if (this.screenKey() === 'check_inbox') {
+      news.push({
+        key: 'link_sent',
+        text: `${LINK_SENT_LEAD} ${this.form().identifier}. ${LINK_SENT_TAIL}`,
+      })
+    }
+
+    return news
   })
 
   // The icon row above the field, and the passwordless exits that live next to

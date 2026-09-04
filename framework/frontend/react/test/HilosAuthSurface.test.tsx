@@ -9,6 +9,7 @@
 // machine's own behavior is covered by core's authFlow spec and is not
 // re-tested here.
 import {
+  ActionError,
   ActionLifecycle,
   AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE,
   AUTH_ACTION_DETECT_IDENTIFIER,
@@ -39,9 +40,13 @@ type Dispatched = Array<{ action: string; payload: Record<string, unknown> }>
  * `methods`; every other dispatch is recorded and resolved with nothing.
  *
  * @param methods The methods the answered account signs in with.
+ * @param refuseLogin Answer the sign-in with a refusal instead of a success.
  * @returns The context to mount with, and the dispatch log to assert on.
  */
-function contextAnswering(methods: readonly string[]): {
+function contextAnswering(
+  methods: readonly string[],
+  refuseLogin = false,
+): {
   context: HilosAuthContext
   dispatched: Dispatched
 } {
@@ -70,7 +75,12 @@ function contextAnswering(methods: readonly string[]): {
       return {
         requestId: `req-${dispatched.length}`,
         loading: createSignal(false),
-        done: Promise.resolve({ reply }),
+        done:
+          refuseLogin && action === AUTH_ACTION_LOGIN
+            ? Promise.reject(
+                new ActionError(action, 'fail', 'Incorrect password'),
+              )
+            : Promise.resolve({ reply }),
       } as unknown as ActionHandle
     },
   } as unknown as ActionLifecycle
@@ -210,6 +220,65 @@ describe('HilosAuthSurface', () => {
       email: 'someone@example.com',
       code: '135790',
     })
+  })
+
+  it('stands both live regions up empty before anything has been said', () => {
+    const { context } = contextAnswering([PASSWORD_METHOD_KEY])
+    render(<HilosAuthSurface context={context} />)
+
+    // The point of the leaf: the region is there BEFORE its text, so the reader
+    // announces the change of content rather than the arrival of a node.
+    expect(byId('auth-live-assertive')?.textContent).toBe('')
+    expect(byId('auth-live-polite')?.textContent).toBe('')
+  })
+
+  it('speaks a refusal from the urgent region while the visible block stays mute', async () => {
+    vi.useFakeTimers()
+    const { context } = contextAnswering([PASSWORD_METHOD_KEY], true)
+    render(<HilosAuthSurface context={context} />)
+
+    type('auth-identifier', 'someone@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+
+    type('auth-password', 'wrong horse')
+    fireEvent.submit(document.querySelector('form') as Element)
+    await flush()
+
+    expect(byId('auth-live-assertive')?.textContent).toBe('Incorrect password')
+    // The same sentence is on the screen for the eye — and carries no role of
+    // its own, or the reader would say it twice.
+    const visible = byId('auth-error')
+    expect(visible?.textContent).toBe('Incorrect password')
+    expect(visible?.getAttribute('role')).toBeNull()
+    expect(visible?.getAttribute('aria-live')).toBeNull()
+  })
+
+  it('puts the letter, address and all, into the calm region', async () => {
+    vi.useFakeTimers()
+    const { context } = contextAnswering([
+      PASSWORD_METHOD_KEY,
+      MAGIC_LINK_METHOD_KEY,
+    ])
+    render(<HilosAuthSurface context={context} />)
+
+    type('auth-identifier', 'someone@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+
+    fireEvent.click(byId('auth-icon-magic-link') as Element)
+    await flush()
+
+    expect(byId('auth-live-polite')?.textContent).toBe(
+      "We've sent a sign-in link to someone@example.com. Open it to continue.",
+    )
+    // News belongs to the region now; the plaque that shows it is a colored
+    // line and nothing more.
+    expect(byId('auth-link-sent')?.getAttribute('role')).toBeNull()
   })
 
   it('refuses a registry with no method at all, at wiring time', () => {

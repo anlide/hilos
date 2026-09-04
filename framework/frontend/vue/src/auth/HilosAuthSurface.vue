@@ -166,6 +166,16 @@ const CODE_MESSAGES: Record<string, string> = {
 /** What is shown when a refusal carried neither a sentence nor a known code. */
 const GENERIC_ERROR = 'That did not work. Please try again.'
 
+/**
+ * The two sentences the screen hard-codes in its markup. They live here because
+ * the live region says them a second time, and two copies of a sentence drift.
+ * The letter's line is split around the address the visible block prints in bold.
+ */
+const LINK_PROMPT_MESSAGE =
+  'That email already has an account. Sign in to finish linking it.'
+const LINK_SENT_LEAD = "We've sent a sign-in link to"
+const LINK_SENT_TAIL = 'Open it to continue.'
+
 const auth = createAuthFlow({
   methods: context.methods,
   channels: context.channels,
@@ -247,6 +257,29 @@ const errorMessage = computed(() => {
     (shown.code === null ? null : CODE_MESSAGES[shown.code]) ??
     GENERIC_ERROR
   )
+})
+
+// What the calm region says: the screen's news, in the order they stand on it
+// from the top down. More than one can be true at once, so it is a list and not
+// a sentence — each line keyed by the source it came from, the way the toast
+// stack keys its cards.
+const announcedNews = computed(() => {
+  const news: { key: string; text: string }[] = []
+
+  if (linkPrompt.value && state.value.step === 'identifier') {
+    news.push({ key: 'link_prompt', text: LINK_PROMPT_MESSAGE })
+  }
+  if (notice.value !== null) {
+    news.push({ key: 'notice', text: notice.value })
+  }
+  if (screenKey.value === 'check_inbox') {
+    news.push({
+      key: 'link_sent',
+      text: `${LINK_SENT_LEAD} ${form.value.identifier}. ${LINK_SENT_TAIL}`,
+    })
+  }
+
+  return news
 })
 
 // The icon row above the field, and the passwordless exits that live next to the
@@ -789,6 +822,29 @@ onUnmounted(() => {
   <section data-id="auth-surface" class="mx-auto" style="max-width: 24rem">
     <h2 class="h5 mb-3" data-id="auth-heading">{{ heading }}</h2>
 
+    <!-- The two live regions of the screen, declared in advance and on the
+    section rather than inside a form: the five forms replace one another as the
+    machine steps, so a region living in one of them would die with its step —
+    the very illness this cures. Two of them, because only a refusal is allowed
+    to interrupt what the listener is hearing. The visible blocks below carry the
+    same words for the eye and no role of their own. -->
+    <div
+      class="visually-hidden"
+      role="alert"
+      aria-live="assertive"
+      data-id="auth-live-assertive"
+    >
+      {{ errorMessage }}
+    </div>
+    <div
+      class="visually-hidden"
+      role="status"
+      aria-live="polite"
+      data-id="auth-live-polite"
+    >
+      <div v-for="item in announcedNews" :key="item.key">{{ item.text }}</div>
+    </div>
+
     <!-- OAuth email-collision re-auth prompt (HIL-282): the provider address
     already has an account, so ask the person to sign in with an existing method
     to finish linking. The pending link token is redeemed globally once the
@@ -796,21 +852,15 @@ onUnmounted(() => {
     <div
       v-if="linkPrompt && state.step === 'identifier'"
       class="alert alert-info py-2"
-      role="status"
       data-id="auth-link-prompt"
     >
-      That email already has an account. Sign in to finish linking it.
+      {{ LINK_PROMPT_MESSAGE }}
     </div>
 
     <!-- News about a move nobody on this screen asked for. Its own region, above
     the form: it is not this step's refusal, and the step it lands on is usually
     the identifier field, where the error region belongs to what is typed next. -->
-    <div
-      v-if="notice"
-      class="alert alert-warning py-2"
-      role="status"
-      data-id="auth-notice"
-    >
+    <div v-if="notice" class="alert alert-warning py-2" data-id="auth-notice">
       {{ notice }}
     </div>
 
@@ -924,8 +974,6 @@ onUnmounted(() => {
       <div
         v-if="errorMessage"
         class="alert alert-danger py-2"
-        role="alert"
-        aria-live="polite"
         data-id="auth-error"
       >
         {{ errorMessage }}
@@ -1053,8 +1101,6 @@ onUnmounted(() => {
       <div
         v-if="errorMessage"
         class="alert alert-danger py-2"
-        role="alert"
-        aria-live="polite"
         data-id="auth-error"
       >
         {{ errorMessage }}
@@ -1119,12 +1165,11 @@ onUnmounted(() => {
       <div
         v-if="screenKey === 'check_inbox'"
         class="alert alert-success small py-2"
-        role="status"
         data-id="auth-link-sent"
       >
         <i class="bi bi-envelope-check me-1" aria-hidden="true" />
-        We've sent a sign-in link to <strong>{{ form.identifier }}</strong
-        >. Open it to continue.
+        {{ LINK_SENT_LEAD }} <strong>{{ form.identifier }}</strong
+        >. {{ LINK_SENT_TAIL }}
       </div>
 
       <div class="mb-3">
@@ -1149,8 +1194,6 @@ onUnmounted(() => {
       <div
         v-if="errorMessage"
         class="alert alert-danger py-2"
-        role="alert"
-        aria-live="polite"
         data-id="auth-error"
       >
         {{ errorMessage }}
@@ -1223,8 +1266,6 @@ onUnmounted(() => {
       <div
         v-if="errorMessage"
         class="alert alert-danger py-2"
-        role="alert"
-        aria-live="polite"
         data-id="auth-error"
       >
         {{ errorMessage }}
@@ -1248,11 +1289,10 @@ onUnmounted(() => {
       <div
         v-if="screenKey === 'check_inbox'"
         class="alert alert-success small py-2"
-        role="status"
       >
         <i class="bi bi-envelope-check me-1" aria-hidden="true" />
-        We've sent a sign-in link to <strong>{{ form.identifier }}</strong
-        >. Open it to continue.
+        {{ LINK_SENT_LEAD }} <strong>{{ form.identifier }}</strong
+        >. {{ LINK_SENT_TAIL }}
       </div>
 
       <div v-else class="text-center py-4">
@@ -1270,8 +1310,6 @@ onUnmounted(() => {
       <div
         v-if="errorMessage"
         class="alert alert-danger py-2"
-        role="alert"
-        aria-live="polite"
         data-id="auth-error"
       >
         {{ errorMessage }}

@@ -152,6 +152,16 @@ const CODE_MESSAGES: Record<string, string> = {
 const GENERIC_ERROR = 'That did not work. Please try again.'
 
 /**
+ * The two sentences the screen hard-codes in its markup. They live here because
+ * the live region says them a second time, and two copies of a sentence drift.
+ * The letter's line is split around the address the visible block prints in bold.
+ */
+const LINK_PROMPT_MESSAGE =
+  'That email already has an account. Sign in to finish linking it.'
+const LINK_SENT_LEAD = "We've sent a sign-in link to"
+const LINK_SENT_TAIL = 'Open it to continue.'
+
+/**
  * A server moment read as the `m:ss` still to run, or null once it is spent.
  *
  * @param moment The local-scale epoch-ms moment, or null when nothing is armed.
@@ -333,6 +343,29 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
       : (error.message ??
         (error.code === null ? null : CODE_MESSAGES[error.code]) ??
         GENERIC_ERROR)
+
+  // What the calm region says: the screen's news, in the order they stand on it
+  // from the top down. More than one can be true at once, so it is a list and
+  // not a sentence — each line keyed by the source it came from, the way the
+  // toast stack keys its cards.
+  const announcedNews = useMemo(() => {
+    const news: { key: string; text: string }[] = []
+
+    if (linkPrompt && state.step === 'identifier') {
+      news.push({ key: 'link_prompt', text: LINK_PROMPT_MESSAGE })
+    }
+    if (notice !== null) {
+      news.push({ key: 'notice', text: notice })
+    }
+    if (screenKey === 'check_inbox') {
+      news.push({
+        key: 'link_sent',
+        text: `${LINK_SENT_LEAD} ${form.identifier}. ${LINK_SENT_TAIL}`,
+      })
+    }
+
+    return news
+  }, [linkPrompt, state.step, notice, screenKey, form.identifier])
 
   // The icon row above the field, and the passwordless exits that live next to
   // the password itself. Both are the machine's visible set split by placement —
@@ -730,17 +763,39 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
         {heading}
       </h2>
 
+      {/* The two live regions of the screen, declared in advance and on the
+          section rather than inside a form: the five forms replace one another
+          as the machine steps, so a region living in one of them would die with
+          its step — the very illness this cures. Two of them, because only a
+          refusal is allowed to interrupt what the listener is hearing. The
+          visible blocks below carry the same words for the eye and no role of
+          their own. */}
+      <div
+        className="visually-hidden"
+        role="alert"
+        aria-live="assertive"
+        data-id="auth-live-assertive"
+      >
+        {errorMessage}
+      </div>
+      <div
+        className="visually-hidden"
+        role="status"
+        aria-live="polite"
+        data-id="auth-live-polite"
+      >
+        {announcedNews.map((item) => (
+          <div key={item.key}>{item.text}</div>
+        ))}
+      </div>
+
       {/* OAuth email-collision re-auth prompt (HIL-282): the provider address
           already has an account, so ask the person to sign in with an existing
           method to finish linking. The pending link token is redeemed globally
           once the session upgrades. */}
       {linkPrompt && state.step === 'identifier' ? (
-        <div
-          className="alert alert-info py-2"
-          role="status"
-          data-id="auth-link-prompt"
-        >
-          That email already has an account. Sign in to finish linking it.
+        <div className="alert alert-info py-2" data-id="auth-link-prompt">
+          {LINK_PROMPT_MESSAGE}
         </div>
       ) : null}
 
@@ -749,11 +804,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
           is usually the identifier field, where the error region belongs to what
           is typed next. */}
       {notice ? (
-        <div
-          className="alert alert-warning py-2"
-          role="status"
-          data-id="auth-notice"
-        >
+        <div className="alert alert-warning py-2" data-id="auth-notice">
           {notice}
         </div>
       ) : null}
@@ -881,12 +932,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
           ) : null}
 
           {errorMessage ? (
-            <div
-              className="alert alert-danger py-2"
-              role="alert"
-              aria-live="polite"
-              data-id="auth-error"
-            >
+            <div className="alert alert-danger py-2" data-id="auth-error">
               {errorMessage}
             </div>
           ) : null}
@@ -1029,12 +1075,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
           </div>
 
           {errorMessage ? (
-            <div
-              className="alert alert-danger py-2"
-              role="alert"
-              aria-live="polite"
-              data-id="auth-error"
-            >
+            <div className="alert alert-danger py-2" data-id="auth-error">
               {errorMessage}
             </div>
           ) : null}
@@ -1101,12 +1142,11 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
           {screenKey === 'check_inbox' ? (
             <div
               className="alert alert-success small py-2"
-              role="status"
               data-id="auth-link-sent"
             >
               <i className="bi bi-envelope-check me-1" aria-hidden="true" />
-              We've sent a sign-in link to <strong>{form.identifier}</strong>.
-              Open it to continue.
+              {LINK_SENT_LEAD} <strong>{form.identifier}</strong>.{' '}
+              {LINK_SENT_TAIL}
             </div>
           ) : null}
 
@@ -1134,12 +1174,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
           </div>
 
           {errorMessage ? (
-            <div
-              className="alert alert-danger py-2"
-              role="alert"
-              aria-live="polite"
-              data-id="auth-error"
-            >
+            <div className="alert alert-danger py-2" data-id="auth-error">
               {errorMessage}
             </div>
           ) : null}
@@ -1213,12 +1248,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
           </div>
 
           {errorMessage ? (
-            <div
-              className="alert alert-danger py-2"
-              role="alert"
-              aria-live="polite"
-              data-id="auth-error"
-            >
+            <div className="alert alert-danger py-2" data-id="auth-error">
               {errorMessage}
             </div>
           ) : null}
@@ -1242,10 +1272,10 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
       {state.step === 'external' ? (
         <>
           {screenKey === 'check_inbox' ? (
-            <div className="alert alert-success small py-2" role="status">
+            <div className="alert alert-success small py-2">
               <i className="bi bi-envelope-check me-1" aria-hidden="true" />
-              We've sent a sign-in link to <strong>{form.identifier}</strong>.
-              Open it to continue.
+              {LINK_SENT_LEAD} <strong>{form.identifier}</strong>.{' '}
+              {LINK_SENT_TAIL}
             </div>
           ) : (
             <div className="text-center py-4">
@@ -1262,12 +1292,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
           )}
 
           {errorMessage ? (
-            <div
-              className="alert alert-danger py-2"
-              role="alert"
-              aria-live="polite"
-              data-id="auth-error"
-            >
+            <div className="alert alert-danger py-2" data-id="auth-error">
               {errorMessage}
             </div>
           ) : null}
