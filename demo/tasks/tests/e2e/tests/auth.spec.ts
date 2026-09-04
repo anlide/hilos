@@ -25,24 +25,49 @@ import {
 // this project's seams and comes back with an account in this project's own
 // users table.
 //
-// Three ceremonies carry that: registering by the mailed code, signing back in
-// with the password, and recovering a forgotten one. Two more pin the frame the
-// surface arrives in — over the page as a modal, and in place of a page a guest
-// is refused — because that frame is this demo's App, not the framework's.
+// Four cases carry that: registering by the mailed code — which also pins the
+// frame the surface arrives in over the page, as a modal, because that frame is
+// this demo's App and not the framework's — signing back in with the password
+// after a wrong one, recovering a forgotten one, and the surface standing in
+// place of a page a guest is refused.
 //
 // The exhaustive per-method coverage (phone codes, magic links, passkeys, OAuth)
 // belongs to the parity leaf HIL-426; repeating it here would prove the
 // framework twice and this activation once.
 
-test('registers a guest and signs the session in on the mailed code', async ({
+test('holds the address in a modal over the page, and signs the session in on the mailed code', async ({
   page,
 }) => {
   const email = uniqueEmail()
 
   await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('self-user')).not.toBeEmpty()
+
   await openSignIn(page)
-  await register(page, email)
+
+  // A modal, not a replacement: the page underneath is still mounted and still
+  // showing the guest's own identity line. The dialog's name is asserted on the
+  // first screen only — it follows the surface heading, which moves with the
+  // step (HIL-832).
+  await expect(page.getByRole('dialog', { name: 'Sign in' })).toBeVisible()
+  await expect(page.getByTestId('self-user')).toBeVisible()
+
+  // Dismissing it leaves the guest exactly where they were.
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+  await expect(page.getByTestId('self-user')).toBeVisible()
+
+  await openSignIn(page)
+  await submitRegistration(page, email)
+
+  // The surface is on the code step and the session is still a guest: the
+  // submit reserved the address, it did not create an account (HIL-415).
+  await expect(page.getByTestId('auth-code')).toBeVisible()
+  await expect(page.getByTestId('self-user-id')).toBeEmpty()
+
+  await submitCode(page, await readRegisterCode(email))
+  await continueFromDone(page)
 
   // The account exists in this demo's own users table and the session carries
   // it: the identity line switches from the guest branch to the account one.
@@ -55,26 +80,7 @@ test('registers a guest and signs the session in on the mailed code', async ({
   await expect(page.getByTestId('nav-signin')).toHaveCount(0)
 })
 
-test('holds the address on submit and creates nothing until the code comes back', async ({
-  page,
-}) => {
-  const email = uniqueEmail()
-
-  await gotoPage(page, '/')
-  await openSignIn(page)
-  await submitRegistration(page, email)
-
-  // The surface is on the code step and the session is still a guest: the
-  // submit reserved the address, it did not create an account (HIL-415).
-  await expect(page.getByTestId('auth-code')).toBeVisible()
-  await expect(page.getByTestId('self-user-id')).toBeEmpty()
-
-  await submitCode(page, await readRegisterCode(email))
-  await continueFromDone(page)
-  await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
-})
-
-test('signs an account back in with its password, after a sign-out', async ({
+test('answers a wrong password inline, then signs the account back in', async ({
   page,
 }) => {
   const email = uniqueEmail()
@@ -91,6 +97,16 @@ test('signs an account back in with its password, after a sign-out', async ({
   await expect(page.getByTestId('self-user-id')).toBeEmpty()
 
   await openSignIn(page)
+  await enterIdentifierAndPassword(page, email, 'not the password')
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await waitAuthSettled(page)
+
+  await expect(page.getByTestId('auth-error')).toBeVisible()
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await expect(page.getByTestId('self-user-id')).toBeEmpty()
+
+  // The surface is still standing, so the right password goes into the same
+  // form the wrong one was refused on.
   await login(page, email)
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 })
@@ -134,25 +150,6 @@ test('recovers a forgotten password and signs in with the new one', async ({
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 })
 
-test('opens the surface as a modal over the page the guest was standing on', async ({
-  page,
-}) => {
-  await gotoPage(page, '/')
-  await expect(page.getByTestId('self-user')).not.toBeEmpty()
-
-  await openSignIn(page)
-
-  // A modal, not a replacement: the page underneath is still mounted and still
-  // showing the guest's own identity line.
-  await expect(page.getByRole('dialog', { name: 'Sign in' })).toBeVisible()
-  await expect(page.getByTestId('self-user')).toBeVisible()
-
-  // Dismissing it leaves the guest exactly where they were.
-  await page.keyboard.press('Escape')
-  await expect(page.getByTestId('auth-surface')).toHaveCount(0)
-  await expect(page.getByTestId('self-user')).toBeVisible()
-})
-
 test('shows the surface in place of an admin page a guest is refused', async ({
   page,
 }) => {
@@ -175,24 +172,4 @@ test('shows the surface in place of an admin page a guest is refused', async ({
     'data-error-code',
     '403',
   )
-})
-
-test('answers a wrong password inline and leaves the surface standing', async ({
-  page,
-}) => {
-  const email = uniqueEmail()
-
-  await gotoPage(page, '/')
-  await openSignIn(page)
-  await register(page, email)
-  await logout(page)
-
-  await openSignIn(page)
-  await enterIdentifierAndPassword(page, email, 'not the password')
-  await clickSubmit(page.getByTestId('auth-submit'))
-  await waitAuthSettled(page)
-
-  await expect(page.getByTestId('auth-error')).toBeVisible()
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await expect(page.getByTestId('self-user-id')).toBeEmpty()
 })

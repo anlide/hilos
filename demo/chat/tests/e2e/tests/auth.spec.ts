@@ -59,7 +59,7 @@ const SECONDS_PER_MINUTE = 60
 /** The passphrase a recovery saves, told apart from the one it replaces. */
 const RECOVERED_PASSWORD = 'a whole new passphrase'
 
-test('registers through the gated profile surface, auto-logs-in, and resumes it in place', async ({
+test('registers and signs back in through the gated profile surface, resuming it in place', async ({
   page,
 }) => {
   const email = uniqueEmail()
@@ -94,29 +94,18 @@ test('registers through the gated profile surface, auto-logs-in, and resumes it 
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
-})
-
-test('signs in through the gated profile surface and resumes the preserved subscription', async ({
-  page,
-}) => {
-  const email = uniqueEmail()
-
-  // Seed an account through the surface, then return to anonymous.
-  await gotoPage(page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await register(page, email)
-  await expect(page.getByTestId('profile-name')).toBeVisible()
-  await logout(page)
 
   // Anonymous again: the gated profile re-mounts the surface (login mode by
-  // default). Signing in with the seeded credentials resumes the same preserved
-  // subscription in place — no navigation.
-  await gotoPage(page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  // default). Signing in with the credentials just registered resumes the same
+  // preserved subscription in place — no navigation. Reaching the gated page
+  // again was a full load on purpose (gotoPage), so the counter starts over
+  // here and vouches for the sign-in the way it vouched for the registration.
+  fullLoads = 0
   await login(page, email, PASSWORD)
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
   expect(new URL(page.url()).pathname).toBe('/profile')
+  expect(fullLoads).toBe(0)
 })
 
 // HIL-281: disabled — cold-first OAuth login hangs. On the first callback after a
@@ -187,9 +176,11 @@ test('answers a wrong password inline, and an unknown address with the registrat
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 })
 
-test('lets an anonymous visitor read the chat but gates sending behind the sign-in surface', async ({
+test('gates sending behind the surface, and returns the identity line to anonymous on logout', async ({
   page,
 }) => {
+  const email = uniqueEmail()
+
   await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
@@ -210,26 +201,20 @@ test('lets an anonymous visitor read the chat but gates sending behind the sign-
 
   // Registering through the modal upgrades the session; the gate closes the modal
   // off the session upgrade and the composer un-gates in place.
-  await register(page, uniqueEmail())
+  await register(page, email)
   await expect(modal).toBeHidden()
   await expect(page.getByTestId('message-input')).toBeEnabled()
   await expect(page.getByTestId('message-signin')).toHaveCount(0)
-})
+  await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
-// The identity line's live transition (HIL-625). Logging out is one of the four
-// ways into the anonymous state named in the ticket — purge, expiry and an
-// anonymized restore are the others — and on the wire all four are the same thing:
-// a handshake response with no current user. This is the one of them a browser can
-// walk into, and it walks into it WITHOUT a navigation: the session scope drops the
-// user, and the line re-renders off that ref the same way the shell drops the
-// profile link. What the line must not do is keep the "Signed in as" sentence with
-// the name gone from it.
-test('returns the identity line to anonymous when the session logs out', async ({
-  page,
-}) => {
-  const user = await signUp(page)
-  await expect(page.getByTestId('self-user')).toHaveText(user.name)
-
+  // The identity line's live transition (HIL-625). Logging out is one of the
+  // four ways into the anonymous state named in the ticket — purge, expiry and
+  // an anonymized restore are the others — and on the wire all four are the
+  // same thing: a handshake response with no current user. This is the one of
+  // them a browser can walk into, and it walks into it WITHOUT a navigation: the
+  // session scope drops the user, and the line re-renders off that ref the same
+  // way the shell drops the profile link. What the line must not do is keep the
+  // "Signed in as" sentence with the name gone from it.
   await logout(page)
 
   await expect(page.getByTestId('self-anonymous')).toHaveText(
