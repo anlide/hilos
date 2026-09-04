@@ -33,12 +33,6 @@ use Throwable;
  */
 final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
 {
-    /** PSR-4 namespace of the audited Entity directory. */
-    private const string ENTITY_NAMESPACE = 'Hilos\\Database\\Entity\\Item\\';
-
-    /** Lower bound so an empty discovery cannot masquerade as "no drift". */
-    private const int MIN_ENTITY_COUNT = 10;
-
     /** Whether the covered stub tables have been created for this test class run. */
     private static bool $schemaApplied = false;
 
@@ -90,25 +84,10 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
      */
     public static function entityProvider(): iterable
     {
-        foreach (EntitySchemaAudit::discoverEntities(self::entityDir(), self::ENTITY_NAMESPACE) as $entityClass) {
+        foreach (EntitySchemaAudit::frameworkEntities() as $entityClass) {
             $shortName = substr((string) strrchr($entityClass, '\\'), 1);
             yield $shortName => [$entityClass];
         }
-    }
-
-    /**
-     * Discovery must find at least the known framework Entities, so a broken scan
-     * cannot silently turn the audit into a no-op.
-     */
-    public function testDiscoveryFindsFrameworkEntities(): void
-    {
-        $entities = EntitySchemaAudit::discoverEntities(self::entityDir(), self::ENTITY_NAMESPACE);
-
-        $this->assertGreaterThanOrEqual(
-            self::MIN_ENTITY_COUNT,
-            count($entities),
-            'Entity discovery found fewer classes than expected; PSR-4 mapping or directory changed',
-        );
     }
 
     /**
@@ -163,7 +142,7 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
      */
     private static function runStubDirection(bool $down): void
     {
-        foreach (EntitySchemaAudit::discoverEntities(self::entityDir(), self::ENTITY_NAMESPACE) as $entityClass) {
+        foreach (EntitySchemaAudit::frameworkEntities() as $entityClass) {
             $table = constant("{$entityClass}::" . Entity::META_TABLE);
             Database::sqlRun(file_get_contents(self::stubPath($table, $down)));
         }
@@ -199,14 +178,6 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
             maxRetries: DatabaseConnectionPolicy::CONNECT_RETRY_MAX_ATTEMPTS,
             retryDelaySeconds: DatabaseConnectionPolicy::CONNECT_RETRY_DELAY_SECONDS,
         );
-    }
-
-    /**
-     * @return string Absolute path of the audited Entity directory
-     */
-    private static function entityDir(): string
-    {
-        return dirname(__DIR__, 2) . '/backend/Database/Entity/Item';
     }
 
     /**

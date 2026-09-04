@@ -10,6 +10,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 use Hilos\Database\SqlParamCollection;
+use LogicException;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use ReflectionClass;
@@ -65,49 +66,38 @@ final class EntitySchemaAudit
     private const string INDEX_PRIMARY = 'PRIMARY';
 
     /**
-     * Discover concrete Entity classes under a directory via PSR-4.
+     * Discover concrete Entity classes under a project directory via PSR-4.
      *
      * Recurses `$dir`, maps each `*.php` file to a class name by prefixing the
      * path-relative namespace, and keeps only autoloadable, non-abstract Entity
      * subclasses. No text parsing of file bodies.
      *
+     * A project's own catalog is what this door is for. The framework's own list has
+     * exactly one source, {@see EntitySchemaAudit::frameworkEntities()}, so the
+     * framework namespace is refused here rather than served: a second hand-kept pair
+     * of directory and namespace is precisely what drifts apart in silence. The
+     * refusal reads the namespace and never the directory, because the directory
+     * legitimately arrives through a demo's `vendor/anlide/hilos` symlink, as a
+     * relative path, and with a trailing separator - a false refusal there would cost
+     * more than the miss it prevents. It reads the namespace the way PHP resolves a
+     * class name - case-insensitively - because a miscased prefix reaches the very same
+     * classes and would otherwise walk past the lock.
+     *
      * @param string $dir Directory to scan (absolute path recommended)
-     * @param string $namespacePrefix PSR-4 namespace of `$dir`, e.g. `Hilos\Database\Entity\Item\`
+     * @param string $namespacePrefix PSR-4 namespace of `$dir`, e.g. `App\Database\Entity\Item\`
      * @return list<class-string<Entity>> Discovered concrete Entity classes, sorted by class name
+     * @throws LogicException When the framework Entity namespace is passed instead of a project one
      */
     public static function discoverEntities(string $dir, string $namespacePrefix): array
     {
-        $prefix = rtrim($namespacePrefix, '\\') . '\\';
-        $baseDir = rtrim($dir, DIRECTORY_SEPARATOR);
-
-        $iterator = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($baseDir, FilesystemIterator::SKIP_DOTS),
-        );
-
-        $classes = [];
-        foreach ($iterator as $fileInfo) {
-            if (!$fileInfo->isFile() || $fileInfo->getExtension() !== 'php') {
-                continue;
-            }
-
-            $relativePath = substr($fileInfo->getPathname(), strlen($baseDir) + 1, -strlen('.php'));
-            $class = $prefix . str_replace(DIRECTORY_SEPARATOR, '\\', $relativePath);
-
-            if (!class_exists($class) || !is_subclass_of($class, Entity::class)) {
-                continue;
-            }
-            // Reflection asks whether the class is declared abstract. Plain PHP has no answer:
-            // `class_exists()` is true for an abstract class, and nothing else in the language
-            // reports the declaration - only instantiating it, which is what must be avoided.
-            if ((new ReflectionClass($class))->isAbstract()) {
-                continue;
-            }
-
-            $classes[] = $class;
+        if (strcasecmp(rtrim($namespacePrefix, '\\') . '\\', self::FRAMEWORK_ENTITY_NAMESPACE) === 0) {
+            throw new LogicException(
+                'The framework Entity namespace has a single source: call '
+                . 'EntitySchemaAudit::frameworkEntities() instead of discovering it by hand',
+            );
         }
 
-        sort($classes);
-        return $classes;
+        return self::scanEntities($dir, $namespacePrefix);
     }
 
     /**
@@ -187,7 +177,7 @@ final class EntitySchemaAudit
      */
     public static function frameworkEntities(): array
     {
-        return self::discoverEntities(
+        return self::scanEntities(
             dirname(__DIR__) . self::FRAMEWORK_ENTITY_DIR,
             self::FRAMEWORK_ENTITY_NAMESPACE,
         );
@@ -236,6 +226,52 @@ final class EntitySchemaAudit
             );
         }
         return $mismatches;
+    }
+
+    /**
+     * Walk a PSR-4 directory and collect the concrete Entity classes under it.
+     *
+     * The body of {@see EntitySchemaAudit::discoverEntities()} with no refusal in
+     * front of it, so {@see EntitySchemaAudit::frameworkEntities()} reaches the walk
+     * without tripping over the lock that exists to keep everyone else out of it.
+     *
+     * @param string $dir Directory to scan (absolute path recommended)
+     * @param string $namespacePrefix PSR-4 namespace of `$dir`, e.g. `Hilos\Database\Entity\Item\`
+     * @return list<class-string<Entity>> Discovered concrete Entity classes, sorted by class name
+     */
+    private static function scanEntities(string $dir, string $namespacePrefix): array
+    {
+        $prefix = rtrim($namespacePrefix, '\\') . '\\';
+        $baseDir = rtrim($dir, DIRECTORY_SEPARATOR);
+
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($baseDir, FilesystemIterator::SKIP_DOTS),
+        );
+
+        $classes = [];
+        foreach ($iterator as $fileInfo) {
+            if (!$fileInfo->isFile() || $fileInfo->getExtension() !== 'php') {
+                continue;
+            }
+
+            $relativePath = substr($fileInfo->getPathname(), strlen($baseDir) + 1, -strlen('.php'));
+            $class = $prefix . str_replace(DIRECTORY_SEPARATOR, '\\', $relativePath);
+
+            if (!class_exists($class) || !is_subclass_of($class, Entity::class)) {
+                continue;
+            }
+            // Reflection asks whether the class is declared abstract. Plain PHP has no answer:
+            // `class_exists()` is true for an abstract class, and nothing else in the language
+            // reports the declaration - only instantiating it, which is what must be avoided.
+            if ((new ReflectionClass($class))->isAbstract()) {
+                continue;
+            }
+
+            $classes[] = $class;
+        }
+
+        sort($classes);
+        return $classes;
     }
 
     /**

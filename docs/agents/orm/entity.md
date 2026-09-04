@@ -81,7 +81,10 @@ table whose DDL the project carries in its own migrations, the INDEX axis is not
 checked: a project may add an index of its own for its own queries. It may extend the
 schema, not diverge from the metadata. The framework Entities a project audits are not
 listed by hand: `EntitySchemaAudit::frameworkEntities()` discovers them all, and the one
-whose table this project never creates is skipped against `EntitySchemaAudit::liveTables()`.
+whose table this project never creates is skipped against
+`EntitySchemaAudit::liveTables()`. `EntitySchemaAudit::discoverEntities()` takes a
+**project's** directory and refuses the framework namespace, naming
+`frameworkEntities()` as the replacement.
 
 The audit runs in **both directions**, and the second one is what a hand-written list
 cannot give. `EntitySchemaAudit::auditTableCoverage()` asks the opposite question: every
