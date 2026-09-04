@@ -53,12 +53,13 @@ read the canonical spec before editing.
 
 ## Hard Rules
 
-- Every row change is gated behind Apply by default. Only a report about work — a
-  progress / live-status row, with a synthetic key, carrying nothing the user could
-  lose — may be emitted live (`TableRowMutationDTO::$live`), and then **both** its
-  arrival and its removal must be live. Data rows stay gated even when this
-  feature's own action created them (`docs/agents/frontend/table-subscription.md`,
-  *Rule — what may bypass the Apply gate*).
+- The Apply gate holds a row's position and membership, not its values. A change
+  to a value in a shown row applies at once; only a move and a removal wait. The
+  reader's own change is the single exception, and a backend may not declare an
+  ordinary mutation live to step around the gate. Running work is not a row at
+  all — it shows as a progress bar. Data rows stay gated even when this feature's
+  own action created them (`docs/agents/frontend/table-subscription.md`,
+  *What applies at once and what waits*).
 
 - Never run `git commit` or `git push`.
 - Do not copy a framework admin table's query/merge/mutation/action code into a

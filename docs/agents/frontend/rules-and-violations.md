@@ -159,8 +159,12 @@ Topic documents are referenced by filename; several are still being authored.
   template — not a binding that spans pages. See [table-subscription.md](table-subscription.md).
 - **The viewport changes only by explicit user action.** Filter, sort,
   paginate, or navigate change the viewport; applying pending changes never moves
-  it (no auto-jump, no backfill). Conversely, any explicit viewport change
-  applies pending first. Anchor the window by row-id, not raw offset. See
+  it (no auto-jump, no backfill). Conversely, any explicit viewport change is
+  authoritative — the snapshot it brings already carries what was waiting, so the
+  pending queue is emptied rather than replayed. Anchor the window by its **sort
+  key**, not a raw offset: a key says where the window is, an offset only how far
+  in. A change to a value inside a shown row applies at once; only a move and a
+  removal wait behind Apply. See
   [table-subscription.md](table-subscription.md).
 - **Search is a table filter, not a framework feature.** There is no
   framework-level page search or command palette; the only framework search is a

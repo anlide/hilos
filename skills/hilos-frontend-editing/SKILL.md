@@ -11,8 +11,8 @@ rules below. Every edit surface is a modal — never an inline form.
 
 ## Read First
 
-- What an edit does to a live table — the pending/Apply gate, own-change
-  correlation, and the narrow live exception:
+- What an edit does to a live table — a value applies at once, only a move or a
+  removal waits behind Apply, plus own-change correlation:
   `docs/agents/frontend/table-subscription.md`
 - Editing and modals (rule catalog, section E): `docs/agents/frontend/rules-and-violations.md`
 - The modal edit session and three-way merge (canonical): `docs/agents/frontend/conflict-resolution.md`

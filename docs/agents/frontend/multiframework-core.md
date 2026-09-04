@@ -13,7 +13,7 @@ A single core, plain TypeScript, owns everything that is not rendering:
   [core-and-connection.md](core-and-connection.md));
 - the signal / action protocol and its discriminated-union parsers
   ([wire-protocol.md](wire-protocol.md));
-- the subscription manager — page, group, and row-id viewport
+- the subscription manager — page, group, and the sort-key table window
   ([table-subscription.md](table-subscription.md));
 - the normalized entity store and the per-scope stores ([data-model.md](data-model.md));
 - table logic (filter / sort / paginate / pending) as **headless state

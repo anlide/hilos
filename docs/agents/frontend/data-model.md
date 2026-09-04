@@ -124,8 +124,9 @@ for free.
 
 Three keys are distinct and must never be conflated:
 
-- **`rowKey`** — a row's identity *within a table* (used for ordering and pending
-  changes; unique per table; **not** a DB id, though it may coincide).
+- **`rowKey`** — a row's identity *within a table*: what a live change, a
+  selection, and a progress bar are addressed by. The order is the sort key's,
+  not the `rowKey`'s. Unique per table; **not** a DB id, though it may coincide.
 - **`sourceKey`** — the name of a fragment **slot** composing a row. A row is a
   composition of several source slots (anchor + relations + computed), not one DB
   row. A `sourceKey` is a binding-local alias, **not** a global type.

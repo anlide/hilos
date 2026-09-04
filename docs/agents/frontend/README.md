@@ -28,7 +28,7 @@ document.
 | connection / authentication / authorization state, the authoritative-backend rule, per-datum loading and placeholder state, disconnect and stale-data UX, the protected-mode exception to no-refresh | [core-and-connection.md](core-and-connection.md) |
 | the handshake and cookie auth, the server-side session store, signals / actions / subscribe, discriminated-union parsing, requestId correlation, build-version forced refresh | [wire-protocol.md](wire-protocol.md) |
 | the entity store, the four scopes (page / session / user / group), the normalizer boundary, entity references, the rowKey / sourceKey / entityType keys | [data-model.md](data-model.md) |
-| tables: viewport subscriptions, pending changes and Apply, row-id deltas, custom filters, search-as-filter | [table-subscription.md](table-subscription.md) |
+| tables: viewport subscriptions, the live-change taxonomy and Apply, sort-key window deltas, selection and bulk actions, progress bars, custom filters, search-as-filter | [table-subscription.md](table-subscription.md) |
 | editing in a modal, the baseline / draft / incoming 3-way merge, surfacing conflicts, entity-deleted-while-open | [conflict-resolution.md](conflict-resolution.md) |
 | SDK packaging, the monorepo workspace, the two-tier component model and slots, Composer / tarball distribution | [sdk-packaging.md](sdk-packaging.md) |
 | the framework-agnostic core, the signal primitive, Vue / React / Angular adapters, the conformance demos | [multiframework-core.md](multiframework-core.md) |
@@ -62,7 +62,7 @@ before editing.
 - [data-model.md](data-model.md) — the scope-partitioned entity store, the single normalizer
   boundary, entity references, and the keying invariants.
 - [table-subscription.md](table-subscription.md) — viewport-scoped table subscriptions, the
-  pending / Apply taxonomy, and row-id-anchored deltas.
+  live-change taxonomy and Apply, and a window anchored by its sort key.
 - [conflict-resolution.md](conflict-resolution.md) — modal-owned editing with a baseline / draft /
   incoming 3-way merge and its edge cases.
 - [sdk-packaging.md](sdk-packaging.md) — the dev monorepo, the two-tier SDK, the slot-first
