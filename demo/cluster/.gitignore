@@ -4,13 +4,6 @@
 tests/.env
 .env.*.local
 
-# Log files
-data/logs/*.log
-data/logs/archive/
-
-# MySQL datadir (shared across node schemas)
-data/mysql/
-
 # PHPUnit
 tests/.phpunit.cache/
 

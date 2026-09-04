@@ -1,8 +1,4 @@
-mysql/
-ollama/
-
-# Chat file uploads (quarantine + published); keep .gitkeep so empty dirs stay tracked
-chat_attachments/quarantine/*
-chat_attachments/published/*
-!chat_attachments/quarantine/.gitkeep
-!chat_attachments/published/.gitkeep
+# Everything under data/ is written by the runtime, so the default is to ignore it
+# and let a directory that must exist in a clone carry its own tracked marker.
+*
+!.gitignore

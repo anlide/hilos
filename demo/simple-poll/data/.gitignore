@@ -1,1 +1,4 @@
-mysql/
+# Everything under data/ is written by the runtime, so the default is to ignore it
+# and let a directory that must exist in a clone carry its own tracked marker.
+*
+!.gitignore

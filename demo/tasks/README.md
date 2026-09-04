@@ -60,9 +60,15 @@ The daemon applies migrations on startup. Endpoints (defaults):
 |---|---|
 | Frontend dev server (HMR) | http://localhost:5174 |
 | phpMyAdmin | http://localhost:8081 |
+| Mailpit (mail, SMS and Telegram of the stand) | http://localhost:8026 |
 | Daemon status API | http://localhost:8098/status |
 | Daemon WebSocket | ws://localhost:8100 |
 | MySQL (from host) | localhost:33063 |
+
+Every channel of the stand ends in that inbox: mail goes to Mailpit over SMTP,
+and an SMS or Telegram message is caught by the stand gateway and forwarded
+there as a letter to `<number>@sms.stand` or `<number>@telegram.stand`, with
+the message text as its subject. There is no file with the code on disk.
 
 ## Stack commands
 

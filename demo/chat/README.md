@@ -80,7 +80,15 @@ From `demo/chat/`, everything in containers:
    - **Frontend (Vite dev, HMR):** http://localhost:5173
    - **phpMyAdmin:** http://localhost:8080 — server `mysql-local`, user `root` /
      `hilos_root_pass`, database `hilos-demo-chat`
+   - **Mailpit (mail, SMS and Telegram of the stand):** http://localhost:8025
    - Daemon HTTP status: http://localhost:8090 · WebSocket: `ws://localhost:8092`
+
+   Every channel of the stand ends in that inbox: mail goes to Mailpit over
+   SMTP, and an SMS or Telegram message is caught by the stand gateway and
+   forwarded there as a letter to `<number>@sms.stand` or
+   `<number>@telegram.stand`, with the message text as its subject. There is no
+   file with the code on disk; the dev stack (`docker-compose.dev.yml`)
+   publishes its own Mailpit on http://localhost:8028.
 
 ### Stop the stack
 

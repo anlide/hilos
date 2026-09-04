@@ -72,9 +72,15 @@ The daemon applies migrations on startup. Endpoints (defaults):
 | Frontend dev server (HMR) | http://localhost:5175 |
 | Built frontend behind nginx (`daemon-start-build`) | https://localhost:8445 |
 | phpMyAdmin | http://localhost:8082 |
+| Mailpit (mail, SMS and Telegram of the stand) | http://localhost:8027 |
 | Daemon status API | http://localhost:8104/status |
 | Daemon WebSocket | ws://localhost:8106 |
 | MySQL (from host) | localhost:33065 |
+
+Every channel of the stand ends in that inbox: mail goes to Mailpit over SMTP,
+and an SMS or Telegram message is caught by the stand gateway and forwarded
+there as a letter to `<number>@sms.stand` or `<number>@telegram.stand`, with
+the message text as its subject. There is no file with the code on disk.
 
 The nginx certificate is self-signed, so the browser warns once. Only HTTPS is
 published locally: the container's plain-HTTP vhost redirects to `https://$host`
