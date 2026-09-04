@@ -19,6 +19,13 @@ const NOT_FOUND: PageSubscriptionError = {
   message: 'Resource #9 not found',
 }
 
+const FORBIDDEN: PageSubscriptionError = {
+  page: 'user',
+  httpCode: 403,
+  errorCode: 'forbidden',
+  message: 'Access forbidden',
+}
+
 describe('ErrorPage', () => {
   afterEach(cleanup)
 
@@ -39,6 +46,22 @@ describe('ErrorPage', () => {
     expect(
       container.querySelector('[data-id="page-error"]')?.textContent,
     ).toContain('Error')
+  })
+
+  // The 403 row answers every refusal, so it must not name the refused person:
+  // an administrator whose privilege was revoked under an open page used to read
+  // that they were a guest (HIL-779). The literal lives here on purpose — read
+  // from the component, the assertion would follow a rewording silently.
+  it('refuses a 403 without calling the reader a guest', () => {
+    const { container } = render(<ErrorPage error={FORBIDDEN} />)
+
+    const surface = container.querySelector('[data-id="page-error"]')
+    expect(surface?.getAttribute('data-error-code')).toBe('403')
+    expect(surface?.textContent).toContain('Forbidden')
+    expect(surface?.textContent).toContain(
+      'You do not have access to this page.',
+    )
+    expect(surface?.textContent).not.toMatch(/guest/i)
   })
 })
 

@@ -20,6 +20,13 @@ const NOT_FOUND: PageSubscriptionError = {
   message: 'Resource #9 not found',
 }
 
+const FORBIDDEN: PageSubscriptionError = {
+  page: 'user',
+  httpCode: 403,
+  errorCode: 'forbidden',
+  message: 'Access forbidden',
+}
+
 describe('ErrorPage', () => {
   it('renders the HTTP code and a mapped title', () => {
     const wrapper = mount(ErrorPage, { props: { error: NOT_FOUND } })
@@ -36,6 +43,20 @@ describe('ErrorPage', () => {
     })
 
     expect(wrapper.find('[data-id="page-error"]').text()).toContain('Error')
+  })
+
+  // The 403 row answers every refusal, so it must not name the refused person:
+  // an administrator whose privilege was revoked under an open page used to read
+  // that they were a guest (HIL-779). The literal lives here on purpose — read
+  // from the component, the assertion would follow a rewording silently.
+  it('refuses a 403 without calling the reader a guest', () => {
+    const wrapper = mount(ErrorPage, { props: { error: FORBIDDEN } })
+
+    const surface = wrapper.find('[data-id="page-error"]')
+    expect(surface.attributes('data-error-code')).toBe('403')
+    expect(surface.text()).toContain('Forbidden')
+    expect(surface.text()).toContain('You do not have access to this page.')
+    expect(surface.text()).not.toMatch(/guest/i)
   })
 })
 

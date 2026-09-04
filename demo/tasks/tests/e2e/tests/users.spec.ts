@@ -205,6 +205,15 @@ test('a revoked admin loses the gear and the door', async ({ page }) => {
   // by, run backwards.
   await expect(page.getByTestId('nav-admin')).toHaveCount(0)
 
+  // The page standing open is refused where it stands - no navigation, no
+  // reload - and the refusal must not call this visitor a guest: the session is
+  // the same signed-in one, only the flag went (HIL-776). The word alone is
+  // asserted here; the sentence is pinned by the SDK unit.
+  const refusal = page.getByTestId('page-error')
+  await expect(refusal).toBeVisible()
+  await expect(refusal).toHaveAttribute('data-error-code', '403')
+  await expect(refusal).not.toContainText(/guest/i)
+
   // And the page itself is shut again, not merely unlinked: the access gate
   // refuses the subscription on the next visit.
   await gotoPage(page, '/hilos/users', PAGE_REFUSED)

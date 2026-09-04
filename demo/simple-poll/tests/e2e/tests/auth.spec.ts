@@ -190,6 +190,10 @@ test('shows the surface in place of an admin page a guest is refused', async ({
     'data-error-code',
     '403',
   )
+  // The account is signed in, so the refusal must not call it a guest. The
+  // sentence itself is pinned by the SDK unit; e2e pins only the word, so that
+  // rewording the copy stays one file of work (HIL-776).
+  await expect(page.getByTestId('page-error')).not.toContainText(/guest/i)
 })
 
 // The sign-in link (HIL-417, HIL-606). One letter carries two secrets, and the
