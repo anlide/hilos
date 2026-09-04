@@ -347,6 +347,14 @@ final class AnalyticsCollector
     /**
      * Records IPv4/IPv6 changes for an open WS connection against its cached state.
      *
+     * Nothing calls this, and that is what HIL-706 settled. An address cannot change
+     * inside a TCP connection, so the per-frame hook this method once had compared the
+     * handshake address against the cache that same address had filled - the two tables
+     * could not receive a row. They are kept, and this writer with them: a caller arrives
+     * together with a source where one connection's address can really change, and both
+     * candidates - MPTCP paths, or the visitor's address read from the handshake header -
+     * bring their own, so neither grows on top of this code.
+     *
      * @param string $acceptKey WebSocket accept key; empty is ignored
      * @param ?string $clientIp Current client IP address; null is ignored
      */

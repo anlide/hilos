@@ -7,9 +7,10 @@ namespace Hilos\Core\Analytics;
 /**
  * Mutable in-memory snapshot of a WebSocket connection row.
  *
- * Caches the persisted id together with the currently known client IP so the
- * collector can record IP changes without re-reading the row. The current*
- * fields are updated in place on each change.
+ * Caches the persisted id together with the currently known client IP. The current*
+ * fields stay writable for a change of address, but nothing moves them: an address
+ * cannot change inside a connection, so the only writer that would has no caller
+ * (HIL-706, {@see AnalyticsCollector::trackWsConnectionIpChange()}).
  *
  * The owning browser session is not cached here: the row is opened by the master,
  * which never resolves a session, and attached by a worker that reaches the row by

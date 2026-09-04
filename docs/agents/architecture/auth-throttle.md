@@ -208,6 +208,25 @@ The address settled here is the connection's for as long as it lives, and it is 
 one both consumers see — this layer's `ip` scope and the analytics journal. Changing
 the environment under a running daemon does not rewrite connections already open.
 
+Nothing re-reads it afterwards, and that is why a change of address inside a live
+connection is not something the framework can observe. A TCP connection's peer is
+fixed from the accept to the close; IPv4 cannot turn into IPv6 inside it, because
+the socket was created for one address family, and `::ffff:1.2.3.4` on a dual-stack
+socket is the same address written another way. A visitor who moves between networks
+does not change the address of a connection — the connection breaks, and the next one
+is a new connection with a new journal row. Behind a proxy the visitor's address is
+not visible at all: nginx holds two independent TCP connections, and the one we see
+is nginx's own, unchanging because it is a separate connection between two servers.
+The visitor's address arrives once, in a handshake header, and the framework does not
+read it.
+
+`hilos_analytics_ws_connection_ipv4_change` and `hilos_analytics_ws_connection_ipv6_change`
+exist and are empty on purpose. They get a writer again only when an address of a
+different nature is available: multipath TCP, which counts by a connection's paths
+rather than by its peer and needs an explicit socket type on both ends, or the
+visitor's own address read out of the handshake header. Neither is built on top of
+today's code, so nothing here stands in the way of either.
+
 What a deployment has to do:
 
 - **Facing the network directly.** Nothing. The empty default is already correct,

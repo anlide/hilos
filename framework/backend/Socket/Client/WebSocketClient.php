@@ -60,7 +60,6 @@ use Hilos\Core\Exception\InvalidStateException;
 use Hilos\Core\Exception\UnsupportedOperationException;
 use Hilos\Environment\Exception\EnvException;
 use Random\RandomException;
-use Throwable;
 use Hilos\Runtime\View\Collection\HilosSessionRotations;
 
 /**
@@ -172,6 +171,10 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * Held rather than asked for per frame: the peer of an established connection cannot
      * change, and `socket_getpeername()` is a syscall the master would otherwise pay on
      * every action frame it forwards.
+     *
+     * Nothing re-reads it, and no address change is ever recorded against a connection:
+     * a visitor who changes network gets a disconnect and a new connection, which
+     * analytics opens a new row for (HIL-706).
      */
     private ?string $handshakeClientIp = null;
 
@@ -1068,7 +1071,6 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     protected function onFrame(string $payload): void
     {
-        $this->trackCurrentClientIp();
         $acceptKey = $this->acceptKey;
         $decoded = JsonHelper::tryDecode($payload);
         if (!is_array($decoded)) {
@@ -1399,7 +1401,6 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     protected function onFrameBinary(string $payload): void
     {
-        $this->trackCurrentClientIp();
         $dto = new WebSocketFrameBinarySignalDTO(
             acceptKey: $this->acceptKey,
             payload: $payload,
@@ -1576,26 +1577,5 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $forwarded = HttpHeaderHelper::get($headers, HttpConstants::HEADER_X_REAL_IP);
 
         return $forwarded !== null && filter_var($forwarded, FILTER_VALIDATE_IP) !== false ? $forwarded : $peerIp;
-    }
-
-    /**
-     * Reports the connection's effective address to analytics, which is the one settled on the 101.
-     *
-     * The peer is deliberately not re-read here. Behind a trusted proxy every frame of
-     * every visitor arrives from the same peer, so re-reading it would record a change of
-     * address on the first frame of anyone the proxy speaks for - the effective address
-     * belongs to the connection and was fixed when the connection was accepted.
-     */
-    private function trackCurrentClientIp(): void
-    {
-        if ($this->acceptKey === '') {
-            return;
-        }
-
-        try {
-            Hilos::$ac?->trackWsConnectionIpChange($this->acceptKey, $this->handshakeClientIp);
-        } catch (Throwable) {
-            // Ignore analytics tracking errors; they must not cost the connection a frame.
-        }
     }
 }
