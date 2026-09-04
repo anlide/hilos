@@ -26,6 +26,7 @@ import { hilosToasts } from '@hilos/core'
 import type {
   HilosToast,
   HilosToastHoldReason,
+  HilosToastOverflow,
   HilosToastSeverity,
   HilosToastStore,
   HilosToastViewer,
@@ -71,6 +72,15 @@ const TOAST_VISUAL: Record<HilosToastSeverity, ToastVisual> = {
     icon: 'bi-info-circle-fill',
   },
 }
+
+// The measuring layer: a card the store has not measured yet is still rendered —
+// it has to be, to be measured — but it is taken out of the flow and out of
+// sight until the store admits it. Not `d-none`, which reports zero height and
+// breaks the measurement, and not `invisible`, which drops the card out of the
+// accessibility tree and silences the announcement; `opacity-0` does neither.
+// `pe-none` so a card nobody can see cannot take the cursor from the ones that
+// are visible and hand the store a hold on their countdown.
+const MEASURING_LAYER = 'position-absolute opacity-0 pe-none'
 
 /**
  * Which of the three holds on the countdown this host owns is changing.
@@ -121,6 +131,29 @@ function spoken(toast: HilosToast): string {
 }
 
 /**
+ * What the service line under the stack says: the errors still queued and the
+ * notices that were dropped.
+ *
+ * A piece appears only when it has something to report, and the joined pieces
+ * are the canon's wording rather than this host's
+ * (docs/agents/frontend/toasts.md).
+ *
+ * @param overflow What the store did not fit on the screen.
+ */
+function overflowLine(overflow: HilosToastOverflow): string {
+  const pieces: string[] = []
+
+  if (overflow.waiting > 0) {
+    pieces.push(`${overflow.waiting} more waiting`)
+  }
+  if (overflow.missed > 0) {
+    pieces.push(`${overflow.missed} missed`)
+  }
+
+  return pieces.join(' · ')
+}
+
+/**
  * The application's transient notice stack.
  *
  * @param props The store to render (defaults to the shared one) and the corner
@@ -129,6 +162,7 @@ function spoken(toast: HilosToast): string {
 export function HilosToastHost({ store, corner }: HilosToastHostProps) {
   const target = store ?? hilosToasts
   const toasts = useSignal(target.toasts)
+  const overflow = useSignal(target.overflow)
   const viewer = useRef<HilosToastViewer | null>(null)
   const cards = useRef(new Map<number, HTMLDivElement>())
   const stack = useRef<HTMLDivElement | null>(null)
@@ -350,7 +384,7 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
           <div
             key={toast.id}
             ref={keep(toast.id)}
-            className="toast fade show overflow-hidden"
+            className={`toast fade show overflow-hidden${toast.measured ? '' : ` ${MEASURING_LAYER}`}`}
             data-id={`hilos-toast-${toast.severity}`}
           >
             {/* The card's one positioned box: the rail, the icon and the text
@@ -420,6 +454,22 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
             )}
           </div>
         ))}
+        {/* The service line: how many errors are still queued and how many
+        notices were dropped, under the newest card. It carries no ref, so it
+        never reaches reportHeight() and never counts toward the height cap — a
+        line that says what did not fit must not push out what did. It carries
+        `pe-auto` because `.toast-container` turns pointer events off and only
+        `.toast` turns them back on: without it the line would be the one part of
+        the stack that the cursor resting on it does not count as reading. */}
+        {(overflow.waiting > 0 || overflow.missed > 0) && (
+          <div
+            className="bg-body border rounded-3 shadow-sm px-2 py-1 small text-body-secondary pe-auto"
+            data-id="hilos-toast-overflow"
+          >
+            <i className="bi bi-hourglass-split me-1" aria-hidden="true"></i>
+            {overflowLine(overflow)}
+          </div>
+        )}
       </div>
     </>
   )

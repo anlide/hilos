@@ -352,6 +352,56 @@ describe('HilosToastHost', () => {
     expect(bar.className).not.toContain('hilos-toast-life-paused')
   })
 
+  it('keeps a card out of the flow until the store has measured it', () => {
+    const store = createHilosToastStore()
+    store.push('Saved', { severity: 'success' })
+    let classesBeforeMeasurement = ''
+    const { container } = renderHost(
+      watchFirstReport(store, () => {
+        classesBeforeMeasurement =
+          document.querySelector('[data-id="hilos-toast-success"]')
+            ?.className ?? ''
+      }),
+    )
+
+    // Rendered — it has to be rendered to be measured — but out of the flow and
+    // out of sight, so a burst does not grow the stack past its own cap for a
+    // frame. The classes come off with the render that follows the report.
+    expect(classesBeforeMeasurement).toContain('position-absolute')
+    expect(classesBeforeMeasurement).toContain('opacity-0')
+    expect(classesBeforeMeasurement).toContain('pe-none')
+    const card = byId(container, 'hilos-toast-success') as HTMLElement
+    expect(card.className).not.toContain('position-absolute')
+    expect(card.className).not.toContain('opacity-0')
+    expect(card.className).not.toContain('pe-none')
+  })
+
+  it('says under the stack how much of the burst never reached it', () => {
+    const store = createHilosToastStore()
+    // Pushed before the host is mounted: with no height reported yet the store
+    // counts its budget in cards, and that is the only way a stack overflows in
+    // jsdom, where every box measures zero pixels.
+    for (const message of ['One', 'Two', 'Three', 'Four', 'Five']) {
+      store.push(message, { severity: 'info' })
+    }
+    store.push('The report could not be built', { severity: 'error' })
+    const { container } = renderHost(store)
+
+    const line = byId(container, 'hilos-toast-overflow') as HTMLElement
+    expect(line.textContent).toBe('1 more waiting · 1 missed')
+    // The cursor resting on the line counts as reading the stack, and only
+    // pe-auto gives it back the pointer events .toast-container turns off.
+    expect(line.className).toContain('pe-auto')
+  })
+
+  it('draws no service line while everything that arrived is on screen', () => {
+    const store = createHilosToastStore()
+    store.push('Backup created.', { severity: 'success' })
+    const { container } = renderHost(store)
+
+    expect(byId(container, 'hilos-toast-overflow')).toBeNull()
+  })
+
   it('draws no life bar on an error, because an error does not expire', () => {
     const store = createHilosToastStore()
     store.push('The report could not be built', { severity: 'error' })

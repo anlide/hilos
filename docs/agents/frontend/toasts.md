@@ -197,8 +197,8 @@ A project may render its own stack by creating an independent store
   carries one service line of the shape "N more waiting · M missed"; the line
   does not count toward the height cap and resets once the stack empties. The
   count is honest and expands into nothing — there is no history. The store
-  keeps both numbers and publishes them; no host draws the line yet
-  (not in the code yet — HIL-777).
+  keeps both numbers and publishes them, and every host draws the line from
+  that one signal.
 - **A repeat does not multiply cards.** A push whose text *and* severity
   exactly match a visible card bumps a ×N counter on that card and restarts
   its countdown; the merge itself is in the store, the ×N badge on the card in

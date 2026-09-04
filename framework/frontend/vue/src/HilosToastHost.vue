@@ -43,6 +43,16 @@ const props = defineProps<{
 
 const store = props.store ?? hilosToasts
 const toasts = useSignal(store.toasts)
+const overflow = useSignal(store.overflow)
+
+// The measuring layer: a card the store has not measured yet is still rendered —
+// it has to be, to be measured — but it is taken out of the flow and out of
+// sight until the store admits it. Not `d-none`, which reports zero height and
+// breaks the measurement, and not `invisible`, which drops the card out of the
+// accessibility tree and silences the announcement; `opacity-0` does neither.
+// `pe-none` so a card nobody can see cannot take the cursor from the ones that
+// are visible and hand the store a hold on their countdown.
+const MEASURING_LAYER = 'position-absolute opacity-0 pe-none'
 
 // What names a severity on the light card: the color of the rail down its left
 // edge, the color of its icon, and the icon itself. One table of the three
@@ -83,6 +93,24 @@ const cornerClasses = computed(() => [
     ? 'hilos-toast-stack-bottom'
     : 'hilos-toast-stack-top',
 ])
+
+// What the service line under the stack says: the errors still queued and the
+// notices that were dropped. A piece appears only when it has something to
+// report, and the joined pieces are the canon's wording rather than this host's
+// (docs/agents/frontend/toasts.md). The store zeroes both numbers itself once
+// the stack empties, so the line goes away without the host doing anything.
+const overflowLine = computed(() => {
+  const pieces: string[] = []
+
+  if (overflow.value.waiting > 0) {
+    pieces.push(`${overflow.value.waiting} more waiting`)
+  }
+  if (overflow.value.missed > 0) {
+    pieces.push(`${overflow.value.missed} missed`)
+  }
+
+  return pieces.join(' · ')
+})
 
 // What the live regions say. A notice reaches them only once it is measured:
 // until then the store may still take it into the queue or into the missed
@@ -350,6 +378,7 @@ function dismissIfNavigated(event: MouseEvent, id: number): void {
       :key="toast.id"
       :ref="(element) => keep(toast.id, element)"
       class="toast fade show overflow-hidden"
+      :class="toast.measured ? '' : MEASURING_LAYER"
       :data-id="`hilos-toast-${toast.severity}`"
     >
       <!-- The card's one positioned box: the rail, the icon and the text sit in
@@ -419,6 +448,21 @@ function dismissIfNavigated(event: MouseEvent, id: number): void {
         ]"
         data-id="hilos-toast-life"
       ></div>
+    </div>
+    <!-- The service line: how many errors are still queued and how many notices
+    were dropped, under the newest card. It carries no ref, so it never reaches
+    reportHeight() and never counts toward the height cap — a line that says what
+    did not fit must not push out what did. It carries `pe-auto` because
+    `.toast-container` turns pointer events off and only `.toast` turns them back
+    on: without it the line would be the one part of the stack that the cursor
+    resting on it does not count as reading. -->
+    <div
+      v-if="overflow.waiting > 0 || overflow.missed > 0"
+      class="bg-body border rounded-3 shadow-sm px-2 py-1 small text-body-secondary pe-auto"
+      data-id="hilos-toast-overflow"
+    >
+      <i class="bi bi-hourglass-split me-1" aria-hidden="true"></i
+      >{{ overflowLine }}
     </div>
   </div>
 </template>

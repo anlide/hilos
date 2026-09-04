@@ -37,6 +37,7 @@ import { hilosToasts, subscribeSignal } from '@hilos/core'
 import type {
   HilosToast,
   HilosToastHoldReason,
+  HilosToastOverflow,
   HilosToastSeverity,
   HilosToastStore,
   HilosToastViewer,
@@ -73,6 +74,15 @@ const TOAST_VISUAL: Record<HilosToastSeverity, ToastVisual> = {
     icon: 'bi-info-circle-fill',
   },
 }
+
+// The measuring layer: a card the store has not measured yet is still rendered —
+// it has to be, to be measured — but it is taken out of the flow and out of
+// sight until the store admits it. Not `d-none`, which reports zero height and
+// breaks the measurement, and not `invisible`, which drops the card out of the
+// accessibility tree and silences the announcement; `opacity-0` does neither.
+// `pe-none` so a card nobody can see cannot take the cursor from the ones that
+// are visible and hand the store a hold on their countdown.
+const MEASURING_LAYER = 'position-absolute opacity-0 pe-none'
 
 /**
  * Whether a focus event only moved focus inside the stack.
@@ -153,6 +163,7 @@ function occupiedHeight(element: HTMLElement): number {
         <div
           #card
           class="toast fade show overflow-hidden"
+          [class]="measuring(toast)"
           [attr.data-id]="'hilos-toast-' + toast.severity"
         >
           <!-- The card's one positioned box: the rail, the icon and the text sit
@@ -224,6 +235,23 @@ function occupiedHeight(element: HTMLElement): number {
           }
         </div>
       }
+      <!-- The service line: how many errors are still queued and how many
+      notices were dropped, under the newest card. It carries no #card, so the
+      measuring effect never pairs it with a toast and it never reaches
+      reportHeight() — a line that says what did not fit must not push out what
+      did. It carries pe-auto because .toast-container turns pointer events off
+      and only .toast turns them back on: without it the line would be the one
+      part of the stack that the cursor resting on it does not count as
+      reading. -->
+      @if (overflow().waiting > 0 || overflow().missed > 0) {
+        <div
+          class="bg-body border rounded-3 shadow-sm px-2 py-1 small text-body-secondary pe-auto"
+          data-id="hilos-toast-overflow"
+        >
+          <i class="bi bi-hourglass-split me-1" aria-hidden="true"></i
+          >{{ overflowLine() }}
+        </div>
+      }
     </div>
   `,
 })
@@ -235,6 +263,11 @@ export class HilosToastHost {
   readonly corner = input<HilosToastCorner>('bottom-end')
 
   protected readonly toasts = signal<readonly HilosToast[]>([])
+
+  protected readonly overflow = signal<HilosToastOverflow>({
+    waiting: 0,
+    missed: 0,
+  })
 
   // Where the stack sits: the horizontal edge is a stock Bootstrap utility, the
   // vertical one is not, because the narrow screen overrides it and the stock
@@ -266,6 +299,26 @@ export class HilosToastHost {
   protected readonly spokenRest = computed(() =>
     this.announced().filter((toast) => toast.severity !== 'error'),
   )
+
+  // What the service line under the stack says: the errors still queued and the
+  // notices that were dropped. A piece appears only when it has something to
+  // report, and the joined pieces are the canon's wording rather than this
+  // host's (docs/agents/frontend/toasts.md). The store zeroes both numbers
+  // itself once the stack empties, so the line goes away without the host doing
+  // anything.
+  protected readonly overflowLine = computed(() => {
+    const overflow = this.overflow()
+    const pieces: string[] = []
+
+    if (overflow.waiting > 0) {
+      pieces.push(`${overflow.waiting} more waiting`)
+    }
+    if (overflow.missed > 0) {
+      pieces.push(`${overflow.missed} missed`)
+    }
+
+    return pieces.join(' · ')
+  })
 
   // The rendered cards, in the order the `@for` laid them out — which is the
   // order of `toasts()`, because they come from the same loop. Anything the
@@ -301,17 +354,23 @@ export class HilosToastHost {
   )
 
   constructor() {
-    // Mirror the store's stack, re-subscribing if the input is swapped. Done in an
-    // effect rather than a field initializer because an input is not readable until
-    // it is bound.
+    // Mirror the store's stack and what did not fit in it, re-subscribing if the
+    // input is swapped. Done in an effect rather than a field initializer because
+    // an input is not readable until it is bound.
     effect((onCleanup) => {
       const store = this.store()
       this.toasts.set(store.toasts.get())
-      onCleanup(
-        subscribeSignal(store.toasts, (list) => {
-          this.toasts.set(list)
-        }),
-      )
+      this.overflow.set(store.overflow.get())
+      const unsubscribeStack = subscribeSignal(store.toasts, (list) => {
+        this.toasts.set(list)
+      })
+      const unsubscribeOverflow = subscribeSignal(store.overflow, (counts) => {
+        this.overflow.set(counts)
+      })
+      onCleanup(() => {
+        unsubscribeStack()
+        unsubscribeOverflow()
+      })
     })
     // Attached for as long as this host is rendered. While no viewer is attached
     // the store's countdown does not run at all, which is what keeps a notice that
@@ -383,6 +442,18 @@ export class HilosToastHost {
    */
   protected visual(severity: HilosToastSeverity): ToastVisual {
     return TOAST_VISUAL[severity]
+  }
+
+  /**
+   * The classes that keep one card out of sight while it is being measured.
+   *
+   * Only a rendered card can be measured, so the card stays in the loop and the
+   * classes come off the moment the store admits it.
+   *
+   * @param toast The card being drawn.
+   */
+  protected measuring(toast: HilosToast): string {
+    return toast.measured ? '' : MEASURING_LAYER
   }
 
   /**
