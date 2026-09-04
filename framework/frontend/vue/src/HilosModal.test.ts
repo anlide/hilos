@@ -30,6 +30,11 @@ describe('HilosModal', () => {
     expect(wrapper.emitted('ok')).toHaveLength(1)
   })
 
+  it('renders no footer at all when showFooter is false', () => {
+    mount(HilosModal, { props: { modelValue: true, showFooter: false } })
+    expect(document.querySelector('.modal-footer')).toBeNull()
+  })
+
   it('closes via the close button when not guarding', async () => {
     const wrapper = mount(HilosModal, { props: { modelValue: true } })
     document

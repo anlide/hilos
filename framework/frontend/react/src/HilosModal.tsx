@@ -2,7 +2,9 @@
 // docs/agents/frontend/conflict-resolution.md). A slot-first dialog: the parent
 // fills `header` (defaults to the title), the body (children), and `actions`
 // (defaults to Cancel/OK, and receives `requestClose` so a custom footer can
-// close through the confirm guard). Open state is controlled (`open` +
+// close through the confirm guard). showFooter=false renders no footer element
+// at all — that, not an empty actions declaration, is how a dialog says it has
+// no footer. Open state is controlled (`open` +
 // `onClose`); the dialog portals to <body>, traps Tab focus and returns focus to
 // the opener on close, and is keyboard- and ARIA-labelled (a11y ships in v1).
 // With confirmOnClose, an Esc/backdrop/close attempt raises an inline confirm
@@ -58,6 +60,12 @@ export interface HilosModalProps {
   children?: ReactNode
   /** Replace the footer; receives `requestClose` to close through the guard. */
   actions?: (args: { requestClose: () => void }) => ReactNode
+  /**
+   * Whether the dialog has a footer at all. False draws no footer element —
+   * neither buttons nor the bordered strip: a surface that ends with its own
+   * last button says so here instead of declaring empty actions.
+   */
+  showFooter?: boolean
 }
 
 /**
@@ -82,6 +90,7 @@ export function HilosModal({
   header,
   children,
   actions,
+  showFooter = true,
 }: HilosModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const confirmRef = useRef<HTMLDivElement>(null)
@@ -183,28 +192,30 @@ export function HilosModal({
               />
             </div>
             <div className="modal-body">{children}</div>
-            <div className="modal-footer">
-              {actions ? (
-                actions({ requestClose: () => modal.requestClose() })
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => modal.requestClose()}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => onOk?.()}
-                  >
-                    OK
-                  </button>
-                </>
-              )}
-            </div>
+            {showFooter ? (
+              <div className="modal-footer">
+                {actions ? (
+                  actions({ requestClose: () => modal.requestClose() })
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => modal.requestClose()}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => onOk?.()}
+                    >
+                      OK
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

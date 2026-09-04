@@ -47,6 +47,11 @@ describe('HilosModal', () => {
     expect(oks).toBe(1)
   })
 
+  it('renders no footer at all when showFooter is false', () => {
+    render(<HilosModal open showFooter={false} />)
+    expect(document.querySelector('.modal-footer')).toBeNull()
+  })
+
   it('calls onClose from the close button when not guarding', () => {
     let closes = 0
     render(

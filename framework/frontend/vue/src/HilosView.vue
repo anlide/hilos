@@ -92,9 +92,9 @@ function onModalToggle(open: boolean): void {
     v-if="props.authSurface && props.authGate && !showAuthInPlace"
     :model-value="modalOpen"
     aria-label="Sign in"
+    :show-footer="false"
     @update:model-value="onModalToggle"
   >
     <component :is="props.authSurface" />
-    <template #actions />
   </HilosModal>
 </template>
