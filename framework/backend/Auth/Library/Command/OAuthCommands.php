@@ -56,8 +56,11 @@ final class OAuthCommands extends AbstractLibraryCommands
      * delivered on the OAUTH_AUTHORIZE signal (WS_USER) to the initiating connection;
      * the SPA navigates there. An unknown provider is a synchronous rejection.
      *
+     * The trip id is echoed back with the provider and never read here: which trip
+     * the browser is still running is the browser's own question (HIL-707).
+     *
      * @param string $acceptKey Accept key the action arrived on
-     * @param OAuthStartActionDTO $dto Parsed start payload (provider)
+     * @param OAuthStartActionDTO $dto Parsed start payload (provider, trip id)
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws ValidationException When the project has no OAuth wiring, or the provider is not configured
      * @throws InvalidArgumentException When the authorize signal cannot be named or queued
@@ -77,7 +80,7 @@ final class OAuthCommands extends AbstractLibraryCommands
         $this->library->sendToUser(
             HilosSignalConstants::HILOS_OAUTH_AUTHORIZE,
             $acting->acceptKey,
-            new OAuthAuthorizeSignalData($acting->acceptKey, $authorizeUrl),
+            new OAuthAuthorizeSignalData($acting->acceptKey, $authorizeUrl, $dto->tripId, $dto->provider),
         );
     }
 

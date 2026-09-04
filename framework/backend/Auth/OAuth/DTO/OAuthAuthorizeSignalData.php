@@ -18,16 +18,26 @@ use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
  * initiating connection's accept key instead; the SPA callback surface navigates the
  * browser to {@see authorizeUrl} on receipt (the "client action = loading + signal,
  * never fire-forget" pattern applied to the redirect start).
+ *
+ * It also carries the trip the start named back to the browser (HIL-707): the
+ * accept key addresses the connection, not the attempt, so without {@see tripId}
+ * a late answer to an abandoned trip steers the window of the current one. The
+ * {@see provider} rides along for the log line naming whose tail was dropped —
+ * the window knows its own trip, not the one it just refused.
  */
 final class OAuthAuthorizeSignalData extends BaseDTO implements SignalDataInterface, WebSocketAcceptKeySignalDTO
 {
     /**
      * @param string $acceptKey Initiating connection accept key the signal targets
      * @param string $authorizeUrl Absolute provider authorization URL to navigate to
+     * @param string $tripId The trip id the start named, echoed back untouched
+     * @param string $provider Provider key the start named, e.g. 'oauth:github'
      */
     public function __construct(
         public readonly string $acceptKey,
         public readonly string $authorizeUrl,
+        public readonly string $tripId,
+        public readonly string $provider,
     ) {
     }
 
@@ -47,19 +57,23 @@ final class OAuthAuthorizeSignalData extends BaseDTO implements SignalDataInterf
         return [
             'acceptKey' => $this->acceptKey,
             'authorizeUrl' => $this->authorizeUrl,
+            'tripId' => $this->tripId,
+            'provider' => $this->provider,
         ];
     }
 
     /**
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When the payload carries no accept key or no authorize URL
+     * @throws InvalidFormatException When the payload carries no accept key, authorize URL, trip id or provider
      */
     public static function fromArray(array $data): static
     {
         return new static(
             acceptKey: self::requireString($data, 'acceptKey'),
             authorizeUrl: self::requireString($data, 'authorizeUrl'),
+            tripId: self::requireString($data, 'tripId'),
+            provider: self::requireString($data, 'provider'),
         );
     }
 }

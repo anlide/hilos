@@ -5,13 +5,18 @@
 // the machine IS browser code — a window, a message listener, a poll — even though
 // it lives in the framework-agnostic core; `window.open` is stubbed rather than
 // exercised, so what is tested is the machine's reaction to a window, not the
-// emulator's idea of one.
+// emulator's idea of one. The trip id deciding whose authorize URL the window
+// follows came later (HIL-707).
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import {
   type ActionHandle,
   type ActionLifecycle,
 } from '../../src/connection/actionLifecycle.js'
+import {
+  AUTH_ACTION_LINK_OAUTH_START,
+  AUTH_ACTION_OAUTH_START,
+} from '../../src/auth/authProtocol.js'
 import { PASSWORD_FLOW_METHOD } from '../../src/auth/authFlow.js'
 import { createHilosAuthContext } from '../../src/auth/authContext.js'
 import {
@@ -279,6 +284,22 @@ function tripWorld(): TripWorld {
 }
 
 /**
+ * The trip id the machine last put on the wire.
+ *
+ * Read back from the dispatch rather than written as a literal: the trip counter
+ * is module state of `oauthLogin`, so it keeps counting across the tests of this
+ * file and no test can know its own number in advance.
+ *
+ * @param world The world whose last dispatch to read.
+ * @returns The trip id that dispatch carried.
+ */
+function lastTripId(world: TripWorld): string {
+  const last = world.dispatched[world.dispatched.length - 1]
+
+  return String(last.payload.tripId)
+}
+
+/**
  * Take a trip to the point where the provider window is showing its consent
  * screen: started, accepted, authorize URL delivered.
  *
@@ -297,6 +318,8 @@ async function reachProvider(
   world.emit(OAUTH_AUTHORIZE_SIGNAL, {
     acceptKey: 'accept-1',
     authorizeUrl: AUTHORIZE_URL,
+    tripId: lastTripId(world),
+    provider: GITHUB,
   })
 }
 
@@ -380,6 +403,75 @@ describe('the OAuth trip machine', () => {
       intent: 'login',
     })
     expect(world.opened?.visited).toEqual([AUTHORIZE_URL])
+  })
+
+  it('leaves the live trip alone when the frame names an abandoned one', async () => {
+    // The race the trip id exists for: GitHub, cancel, Google. The answer to the
+    // first start arrives late, and the window it would steer is the one the
+    // person is now waiting at. Without the comparison the second window leaves
+    // for the first provider's consent screen.
+    const world = tripWorld()
+    await world.oauth.startOAuthLogin(GITHUB)
+    const abandoned = lastTripId(world)
+
+    world.oauth.cancelOAuthTrip()
+    world.opened = providerWindow()
+    await world.oauth.startOAuthLogin(GITHUB)
+    const live = world.opened
+
+    world.emit(OAUTH_AUTHORIZE_SIGNAL, {
+      acceptKey: 'accept-1',
+      authorizeUrl: AUTHORIZE_URL,
+      tripId: abandoned,
+      provider: GITHUB,
+    })
+
+    expect(live?.visited).toEqual([])
+    expect(world.oauth.trip.get()?.phase).toBe('authorizing')
+  })
+
+  it("names the dropped frame's provider in the log", async () => {
+    // The window knows the trip it is running; whose tail just arrived is only
+    // in the frame, so the frame is where the log has to read it from.
+    const world = tripWorld()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    world.emit(OAUTH_AUTHORIZE_SIGNAL, {
+      acceptKey: 'accept-1',
+      authorizeUrl: AUTHORIZE_URL,
+      tripId: 'trip-nobody-is-running',
+      provider: GITHUB,
+    })
+
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0][0])).toContain(GITHUB)
+  })
+
+  it('gives both halves a trip id, and a different one per trip', async () => {
+    const world = tripWorld()
+
+    await world.oauth.startOAuthLogin(GITHUB)
+    const login = lastTripId(world)
+
+    world.oauth.cancelOAuthTrip()
+    world.opened = providerWindow()
+    await world.oauth.startOAuthLink(GITHUB)
+    const link = lastTripId(world)
+
+    expect(world.dispatched).toEqual([
+      {
+        action: AUTH_ACTION_OAUTH_START,
+        payload: { provider: GITHUB, tripId: login },
+      },
+      {
+        action: AUTH_ACTION_LINK_OAUTH_START,
+        payload: { provider: GITHUB, tripId: link },
+      },
+    ])
+    // Not `not.toBe('')`: an absent field reads back as the string 'undefined',
+    // which an emptiness check would let through.
+    expect(login).toMatch(/^\d+$/)
+    expect(link).not.toBe(login)
   })
 
   it('closes the window and drops the trip when the start is refused', async () => {

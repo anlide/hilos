@@ -53,13 +53,19 @@ export const OAUTH_REASON_LINK_DUPLICATE = 'oauth_link_duplicate'
 export const OAUTH_REASON_LINK_FAILED = 'oauth_link_failed'
 
 /**
- * The authorize-reply payload: the absolute provider URL to navigate to. The
- * wire also carries the targeting `acceptKey`, kept here for validation fidelity
- * though the reaction ignores it (WS_USER already targets this connection).
+ * The authorize-reply payload: the absolute provider URL to navigate to, and the
+ * `tripId` the start named, echoed back so the reaction can tell an answer to the
+ * trip it is running from a late answer to one it abandoned (HIL-707). The
+ * `provider` rides along for the log line naming whose tail was dropped — the
+ * window knows its own trip, not the one it just refused. The wire also carries
+ * the targeting `acceptKey`, kept here for validation fidelity though the reaction
+ * ignores it (WS_USER already targets this connection).
  */
 export const oauthAuthorizeSignalSchema = z.object({
   acceptKey: z.string(),
   authorizeUrl: z.string().min(1),
+  tripId: z.string().min(1),
+  provider: z.string(),
 })
 
 /**

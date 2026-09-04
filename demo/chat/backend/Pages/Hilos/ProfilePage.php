@@ -143,7 +143,7 @@ final class ProfilePage extends AbstractHilosProfilePage
      * (the framework `action_success` carries no domain payload); the SPA navigates
      * there. An unknown provider is a synchronous rejection.
      *
-     * @param LinkOAuthStartActionDTO $dto Parsed link-start payload (provider)
+     * @param LinkOAuthStartActionDTO $dto Parsed link-start payload (provider, trip id)
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
      * @throws ValidationException When the provider is not configured
      * @throws InvalidArgumentException When the authorize-URL signal cannot be named or queued
@@ -167,7 +167,7 @@ final class ProfilePage extends AbstractHilosProfilePage
         $this->sendToUser(
             HilosSignalConstants::HILOS_OAUTH_AUTHORIZE,
             $connection->acceptKey,
-            new OAuthAuthorizeSignalData($connection->acceptKey, $authorizeUrl),
+            new OAuthAuthorizeSignalData($connection->acceptKey, $authorizeUrl, $dto->tripId, $dto->provider),
         );
     }
 }

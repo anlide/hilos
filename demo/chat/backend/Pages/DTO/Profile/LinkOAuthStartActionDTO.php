@@ -16,6 +16,9 @@ use Hilos\Core\Exception\InvalidFormatException;
  * initiator's user id is bound server-side into the signed state, never taken from
  * this payload) and returns it on the OAUTH_AUTHORIZE signal for the browser to
  * navigate to.
+ *
+ * The client also names the trip the start belongs to (HIL-707); the handler echoes
+ * it back on that signal so the browser can drop an answer to a trip it abandoned.
  */
 final class LinkOAuthStartActionDTO extends ChatActionPayloadDTO
 {
@@ -23,9 +26,11 @@ final class LinkOAuthStartActionDTO extends ChatActionPayloadDTO
      * Creates OAuth link-start action DTO.
      *
      * @param string $provider Requested provider key, e.g. 'oauth:github'
+     * @param string $tripId The browser's id for this trip, echoed back on the authorize signal
      */
     public function __construct(
         public readonly string $provider,
+        public readonly string $tripId,
     ) {
     }
 
@@ -50,18 +55,20 @@ final class LinkOAuthStartActionDTO extends ChatActionPayloadDTO
     {
         return new static(
             provider: self::requireString($data, 'provider'),
+            tripId: self::requireString($data, 'tripId'),
         );
     }
 
     /**
      * Convert to array for transport.
      *
-     * @return array{provider: string} OAuth link-start payload
+     * @return array{provider: string, tripId: string} OAuth link-start payload
      */
     public function toArray(): array
     {
         return [
             'provider' => $this->provider,
+            'tripId' => $this->tripId,
         ];
     }
 }

@@ -291,9 +291,25 @@ interface OAuthTripAttempt {
   intent: OAuthTripIntent
   phase: OAuthTripPhase
   window: Window
+  /**
+   * This document's name for the trip, sent with the start and echoed back on the
+   * authorize signal. Not part of {@link OAuthTrip}: nothing a person is shown
+   * depends on it, and the only reader is the signal reaction below.
+   */
+  tripId: string
 }
 
 let attempt: OAuthTripAttempt | null = null
+
+/**
+ * Numbers the trips this document starts, so a trip can recognize its own answer
+ * (HIL-707). A counter rather than a random token for the same reason
+ * `actionLifecycle` numbers its requests: this is not a secret and not a key —
+ * the frame is already addressed by accept key, and a second tab reads its own
+ * frames on its own connection, so the number only has to be unique among the
+ * trips of ONE document.
+ */
+let tripSequence = 0
 
 /** The live trip as the waiting surfaces read it; mirrors {@link attempt}. */
 const tripSignal = createSignal<OAuthTrip | null>(null)
@@ -412,6 +428,10 @@ function beginTrip(
     intent,
     phase: 'authorizing',
     window: opened,
+    // Numbered here rather than at the top of the call: a trip the browser
+    // refused a window returned above, never went on the wire, and has no answer
+    // coming that anybody would have to match.
+    tripId: String(++tripSequence),
   }
   attempt = started
   publishTrip()
@@ -484,7 +504,9 @@ function startTrip(
     return Promise.reject(new OAuthWindowBlockedError())
   }
 
-  return context.actions.dispatch(action, { provider }).done.then(
+  const payload = { provider, tripId: started.tripId }
+
+  return context.actions.dispatch(action, payload).done.then(
     () => undefined,
     (error: unknown) => {
       // Refused before the trip could start: shut the window we opened on
@@ -559,20 +581,33 @@ function bindOAuthTrip(context: HilosAuthContext): () => void {
   const stopAuthorize = context.connection.on(
     'projectSignal',
     (signal: ProjectSignal) => {
-      // Past the authorizing leg the window has closed itself, and an authorize
-      // URL is an answer to a question nobody is still asking.
-      if (
-        signal.type !== OAUTH_AUTHORIZE_SIGNAL ||
-        attempt === null ||
-        attempt.phase !== 'authorizing'
-      ) {
+      if (signal.type !== OAUTH_AUTHORIZE_SIGNAL) {
         return
       }
       // Validated against the schema at the parse boundary; this is the typed
-      // selector for that schema's output.
+      // selector for that schema's output. Read BEFORE the decision, not after:
+      // a frame that turns out to belong to somebody else is the one the log has
+      // to name, and naming it needs the frame.
       const data = signal.data as ReturnType<
         typeof oauthAuthorizeSignalSchema.parse
       >
+      // Three ways an authorize URL is not this window's to follow, and the same
+      // answer to all three. No trip at all, or a trip that is not the one the
+      // frame names: the frame belongs to a trip that was abandoned, and the
+      // window it would steer is one the person is standing in front of right
+      // now. The frame's own trip past the authorizing leg: the window has closed
+      // itself, and an authorize URL answers a question nobody is still asking.
+      if (
+        attempt === null ||
+        attempt.tripId !== data.tripId ||
+        attempt.phase !== 'authorizing'
+      ) {
+        console.warn(
+          `[hilos] dropped an authorize URL for ${data.provider} trip ${data.tripId}: this window is not waiting on it`,
+        )
+
+        return
+      }
       // `replace`, not `assign`: the blank page the window opened on is not
       // somewhere its Back button should be able to return to.
       attempt.window.location.replace(data.authorizeUrl)
