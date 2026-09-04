@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Server;
 
 use Hilos\Constants\SocketConstants;
+use Hilos\Core\Daemon\ClientSocketDetacher;
 use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\ContainedFailureSink;
 use Hilos\Core\Daemon\Master\MasterFailureUnit;
@@ -44,6 +45,9 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     /** @var ?ContainedFailureSink Master seam a contained failure is reported through, wired at registration */
     private ?ContainedFailureSink $containedFailureSink = null;
 
+    /** @var ?ClientSocketDetacher Master seam a departing client is announced to, wired at registration */
+    private ?ClientSocketDetacher $clientSocketDetacher = null;
+
     /**
      * Create server with host and port.
      *
@@ -68,6 +72,21 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     public function setContainedFailureSink(ContainedFailureSink $sink): void
     {
         $this->containedFailureSink = $sink;
+    }
+
+    /**
+     * Wires the seam a departing client's socket is taken off the master's watch through.
+     *
+     * Held by the server for the same reason the sink above is: the server knows it must
+     * announce a departure before closing, and nothing about who watches on the far side.
+     * A server that was never handed one ticks exactly as it did before there was a seam,
+     * and leaks nothing by it - registration is the only way its sockets reach the watch.
+     *
+     * @param ClientSocketDetacher $detacher Master seam a departing client is announced to
+     */
+    public function setClientSocketDetacher(ClientSocketDetacher $detacher): void
+    {
+        $this->clientSocketDetacher = $detacher;
     }
 
     /**
@@ -147,7 +166,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     public function stop(): void
     {
         foreach ($this->clients as $client) {
-            $client->close();
+            $this->dropClient($client);
         }
         $this->clients = [];
 
@@ -181,6 +200,29 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
         $key = array_search($client, $this->clients, true);
         if ($key !== false) {
             unset($this->clients[$key]);
+        }
+    }
+
+    /**
+     * The one way a client leaves this server: off the watch, closed, then forgotten.
+     *
+     * The detach is deliberately outside the try - if it fails, the close must not
+     * happen, because a closed socket under a live event is the very thing this door
+     * exists to prevent. The removal is in finally instead, so a client whose close
+     * throws does not stay in the list and keep being ticked.
+     *
+     * @param ClientInterface $client Client to drop
+     * @throws SocketException When closing the client's socket fails
+     * @throws HilosException When the client fails to announce its close
+     */
+    public function dropClient(ClientInterface $client): void
+    {
+        $this->clientSocketDetacher?->detachClientSocket($client);
+
+        try {
+            $client->close();
+        } finally {
+            $this->removeClient($client);
         }
     }
 
@@ -270,9 +312,10 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      * Tick method - process all clients
      *
      * Reads from and writes to all connected clients. A failure that belongs to one
-     * client is contained here - logged, the client closed and dropped - so the rest
-     * of the connections keep ticking. Only a failure that means the node itself
-     * cannot continue leaves this loop.
+     * client is contained here - logged and the client dropped - so the rest of the
+     * connections keep ticking. Only a failure that means the node itself cannot
+     * continue leaves this loop. Either way the client leaves through the one door,
+     * {@see dropClient()}, and leaves at once rather than after the walk.
      * Should be called regularly in main loop.
      *
      * @throws RandomException When the secure random source refuses a handshake secret
@@ -280,8 +323,6 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      */
     public function onTick(): void
     {
-        $clientsToRemove = [];
-
         foreach ($this->clients as $client) {
             try {
                 // Read from client
@@ -295,8 +336,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
 
                 // Check if client should be closed
                 if ($client->shouldClose()) {
-                    $client->close();
-                    $clientsToRemove[] = $client;
+                    $this->dropClient($client);
                 }
             } catch (RandomException $refusal) {
                 // The connection asked for a secret and the secure source refused. The
@@ -330,19 +370,13 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
                     $exception
                 ));
 
-                // If client has error, close it
+                // If client has error, drop it
                 try {
-                    $client->close();
+                    $this->dropClient($client);
                 } catch (Throwable) {
                     // Ignore errors during close
                 }
-                $clientsToRemove[] = $client;
             }
-        }
-
-        // Remove closed clients after iteration
-        foreach ($clientsToRemove as $client) {
-            $this->removeClient($client);
         }
     }
 

@@ -8,6 +8,7 @@ use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\HilosException;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\Socket\Client\CommandClient;
 use Hilos\Socket\Client\Interface\CommandClientInterface;
@@ -124,6 +125,7 @@ class CommandServer extends AbstractServer
      * @param string $acceptKey Daemon-minted identifier of the connection to close
      * @return bool True when a matching live connection was found and closed, false otherwise
      * @throws SocketException When closing the matched connection's socket fails
+     * @throws HilosException When the matched connection fails to announce its close
      */
     public function dropWebSocketConnection(string $acceptKey): bool
     {

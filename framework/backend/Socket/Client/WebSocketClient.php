@@ -557,7 +557,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             foreach ($keysToDrop as $acceptKey) {
                 $this->connectionDropper?->dropWebSocketConnection($acceptKey);
             }
-        } catch (SocketException $exception) {
+        } catch (HilosException $exception) {
             Logger::error('Session rotation could not drop a connection', ['error' => $exception->getMessage()]);
         }
     }

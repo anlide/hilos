@@ -11,15 +11,21 @@ Wraps `EventBase` from the event extension. Lives in `DaemonManager`.
 ```
 EventLoop::registerRead($socket, $callback)  ← watch socket for incoming data
 EventLoop::tick()                            ← process all ready events (non-blocking)
-EventLoop::unregister($socket)               ← MUST be called before closing socket
+EventLoop::unregister($socket)               ← master seam only, never called by hand
+EventLoop::registeredCount()                 ← how many sockets are on the watch
 ```
 
-**Critical order for socket close:**
+**One way out for a client.** A socket must come off the watch before it is closed,
+or libevent keeps a dangling reference to a closed descriptor — and to the dead
+client behind its read callback. That order is not repeated at each exit; every one
+of them goes through the server's door:
 ```php
-$this->eventLoop->unregister($socket); // 1. unregister FIRST
-$client->close();                      // 2. close after
+$server->dropClient($client); // off the watch, closed, forgotten — in that order
 ```
-Never close a socket before unregistering — event loop will hold a dangling reference.
+`AbstractServer::dropClient()` announces the departure through
+`ClientSocketDetacher`, the seam `DaemonManager` implements and hands to every server
+in `registerServer()`. So `unregister()` has exactly one caller in production, inside
+that seam: do not call it by hand, and do not close a client's socket outside the door.
 
 ## What runs in the event loop
 

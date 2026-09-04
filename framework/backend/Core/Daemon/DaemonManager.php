@@ -206,6 +206,7 @@ abstract class DaemonManager extends BaseManager implements
     RtClaimSink,
     PlacementObserver,
     ConnectionDropper,
+    ClientSocketDetacher,
     LiveConnectionRoster,
     ContainedFailureSink,
     AgentLossSink,
@@ -975,6 +976,12 @@ abstract class DaemonManager extends BaseManager implements
         // leave a server outside the hierarchy silently unable to report one.
         $server->setContainedFailureSink($this);
 
+        // Every server for the same reason: this is the only place a server's client
+        // sockets reach the master's watch, so a server handed the seam by type would be
+        // the one closing watched sockets without telling anyone - and a watch nobody
+        // takes off holds the dead client until the master goes down.
+        $server->setClientSocketDetacher($this);
+
         // The command channel needs the master to force-close a WebSocket connection for the
         // test-only drop command; wire this manager in as the dropper so the handler stays
         // decoupled from the concrete manager.
@@ -1059,14 +1066,15 @@ abstract class DaemonManager extends BaseManager implements
     /**
      * Force-closes the live WebSocket connection whose acceptKey matches, if any.
      *
-     * Mirrors the disconnect cleanup {@see onClientRead()} performs on a dead socket:
-     * unregister from the event loop before closing (so libevent drops its reference first),
-     * then close - which runs {@see WebSocketClient::onClose()} reconcile - and remove the
-     * client from its server.
+     * Leaves through the same door as any other departure ({@see ServerInterface::dropClient()}),
+     * so the close - which runs the {@see WebSocketClient::onClose()} reconcile - is
+     * preceded by the socket coming off the master's watch, and this path cannot drift
+     * away from the one the connection would have taken had it died on its own.
      *
      * @param string $acceptKey Daemon-minted identifier of the connection to close
      * @return bool True when a matching live connection was found and closed, false otherwise
      * @throws SocketException When closing the matched connection's socket fails
+     * @throws HilosException When the matched connection fails to announce its close
      */
     public function dropWebSocketConnection(string $acceptKey): bool
     {
@@ -1080,12 +1088,7 @@ abstract class DaemonManager extends BaseManager implements
                     continue;
                 }
 
-                $socket = $client->getSocket();
-                if ($socket !== null) {
-                    $this->eventLoop->unregister($socket);
-                }
-                $client->close();
-                $server->removeClient($client);
+                $server->dropClient($client);
 
                 return true;
             }
@@ -1686,16 +1689,7 @@ abstract class DaemonManager extends BaseManager implements
 
             // Check if client should be closed
             if ($client->shouldClose()) {
-                // CRITICAL: Unregister from event loop BEFORE closing socket
-                // Event loop must not reference the socket after it's closed
-                $socket = $client->getSocket();
-                if ($socket !== null) {
-                    $this->eventLoop->unregister($socket);
-                }
-
-                // Now safe to close the socket
-                $client->close();
-                $server->removeClient($client);
+                $server->dropClient($client);
             }
         } catch (RandomException $exception) {
             // The connection asked for a secret and the secure source refused, so this
@@ -1731,10 +1725,27 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Drops a client the manager is done with: out of the event loop first, because
-     * it must not reference the socket after the close, then closed and forgotten by
-     * its server. Errors on the way out are ignored - the socket may be gone already,
-     * and this runs on a path that is already handling a failure.
+     * Takes a departing client's socket off the master's watch, ahead of its close.
+     *
+     * Implements {@see ClientSocketDetacher}, and after this is the only place the loop
+     * is asked to forget a client socket: the exit paths reach it through the server's
+     * door and none of them names the loop. A client already closed, or one that never
+     * reached the watch - an outgoing peer link, say - falls out on the null check.
+     *
+     * @param ClientInterface $client Client whose socket is about to be closed
+     */
+    public function detachClientSocket(ClientInterface $client): void
+    {
+        $socket = $client->getSocket();
+        if ($socket !== null) {
+            $this->eventLoop->unregister($socket);
+        }
+    }
+
+    /**
+     * Drops a client the manager is done with, through the server's one exit door.
+     * Errors on the way out are ignored - the socket may be gone already, and this runs
+     * on a path that is already handling a failure.
      *
      * @param ServerInterface $server Server the client belongs to
      * @param ClientInterface $client Client to discard
@@ -1742,12 +1753,7 @@ abstract class DaemonManager extends BaseManager implements
     private function discardClient(ServerInterface $server, ClientInterface $client): void
     {
         try {
-            $socket = $client->getSocket();
-            if ($socket !== null) {
-                $this->eventLoop->unregister($socket);
-            }
-            $client->close();
-            $server->removeClient($client);
+            $server->dropClient($client);
         } catch (Throwable $cleanupError) {
             // Ignore errors during cleanup - socket may be already closed
         }

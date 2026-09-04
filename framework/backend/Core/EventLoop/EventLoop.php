@@ -6,6 +6,7 @@ namespace Hilos\Core\EventLoop;
 
 use EventBase;
 use Event;
+use Hilos\Core\Daemon\ClientSocketDetacher;
 use Throwable;
 
 /**
@@ -14,9 +15,11 @@ use Throwable;
  * per non-blocking tick, and frees the underlying events on close.
  *
  * Read callbacks are wrapped so a throwing handler is swallowed instead of
- * aborting the loop; the originating handler logs the failure. Always
- * unregister() a socket before closing it, otherwise libevent keeps a dangling
- * reference to a closed descriptor.
+ * aborting the loop; the originating handler logs the failure. A socket must
+ * come off the watch before it is closed, otherwise libevent keeps a dangling
+ * reference to a closed descriptor - but that order is nobody's to repeat here:
+ * the only caller of unregister() is the master's detach seam
+ * ({@see ClientSocketDetacher}), which every exit path goes through.
  */
 final class EventLoop
 {
@@ -85,6 +88,20 @@ final class EventLoop
         /** @noinspection PhpExpressionResultUnusedInspection */
         $this->events[$socketKey]->free();
         unset($this->events[$socketKey]);
+    }
+
+    /**
+     * Counts the sockets currently on the watch.
+     *
+     * Exists to be measured: a registration a departing client leaves behind is
+     * invisible from the outside, and this is what a test reads to tell a client that
+     * left from one that only looks gone.
+     *
+     * @return int Number of registered read events
+     */
+    public function registeredCount(): int
+    {
+        return count($this->events);
     }
 
     /**

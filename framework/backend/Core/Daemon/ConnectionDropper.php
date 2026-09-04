@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\HilosException;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\Server\WebSocketServer;
@@ -37,6 +38,7 @@ interface ConnectionDropper
      * @param string $acceptKey Daemon-minted identifier of the connection to close
      * @return bool True when a matching live connection was found and closed, false otherwise
      * @throws SocketException When closing the matched connection's socket fails
+     * @throws HilosException When the matched connection fails to announce its close
      */
     public function dropWebSocketConnection(string $acceptKey): bool;
 }

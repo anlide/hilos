@@ -8,13 +8,16 @@ use Hilos\Cluster\ClusterContext;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
+use Hilos\Core\Daemon\ClientSocketDetacher;
 use Hilos\Core\Daemon\ContainedFailureSink;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Server\ServerInterface;
+use Hilos\Socket\SocketException;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use ReflectionProperty;
@@ -197,6 +200,13 @@ final class DaemonManagerClusterReactionTestServer implements ServerInterface
     }
 
     /**
+     * @param ClientSocketDetacher $detacher Master seam this server would announce a departure to
+     */
+    public function setClientSocketDetacher(ClientSocketDetacher $detacher): void
+    {
+    }
+
+    /**
      * @throws Throwable The refusal this server was built with, when it was built with one
      */
     public function prepareShutdown(): void
@@ -249,6 +259,22 @@ final class DaemonManagerClusterReactionTestServer implements ServerInterface
      */
     public function removeClient(ClientInterface $client): void
     {
+    }
+
+    /**
+     * The one exit door, as the real servers spell it: closed, then handed back.
+     *
+     * @param ClientInterface $client Client to drop
+     * @throws SocketException When closing the client's socket fails
+     * @throws HilosException When the client fails to announce its close
+     */
+    public function dropClient(ClientInterface $client): void
+    {
+        try {
+            $client->close();
+        } finally {
+            $this->removeClient($client);
+        }
     }
 
     /**

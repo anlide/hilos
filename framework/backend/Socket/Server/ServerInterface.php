@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Core\Daemon\ClientSocketDetacher;
 use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\ContainedFailureSink;
 use Hilos\HilosException;
@@ -60,6 +61,20 @@ interface ServerInterface
     public function removeClient(ClientInterface $client): void;
 
     /**
+     * The one way a client leaves: off the master's watch, closed, then forgotten.
+     *
+     * Every exit path calls this instead of assembling the three steps again, because
+     * the order between them is not a local detail - a socket closed while still watched
+     * leaves the master holding a dead descriptor and the client behind it. Idempotent:
+     * entering twice for the same client is normal on a path that is already failing.
+     *
+     * @param ClientInterface $client Client to drop
+     * @throws SocketException When closing the client's socket fails
+     * @throws HilosException When the client fails to announce its close
+     */
+    public function dropClient(ClientInterface $client): void;
+
+    /**
      * Accept new connection.
      *
      * @return ?ClientInterface New client instance or null if no connection available (EWOULDBLOCK in non-blocking mode)
@@ -86,6 +101,19 @@ interface ServerInterface
      * @param ContainedFailureSink $sink Master seam a contained failure is handed to
      */
     public function setContainedFailureSink(ContainedFailureSink $sink): void;
+
+    /**
+     * Wires the seam a departing client's socket is taken off the master's watch through.
+     *
+     * Every server is handed it at registration, whatever it descends from, for the
+     * reason the sink above is: a server that closes watched sockets without saying so
+     * leaves the master holding them, and holding them looks exactly like being idle.
+     * A server whose clients never reach the master's loop still implements this - an
+     * empty body says so out loud.
+     *
+     * @param ClientSocketDetacher $detacher Master seam a departing client is announced to
+     */
+    public function setClientSocketDetacher(ClientSocketDetacher $detacher): void;
 
     /**
      * Tick method - called regularly to process clients.

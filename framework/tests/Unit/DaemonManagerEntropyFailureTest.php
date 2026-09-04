@@ -7,10 +7,12 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
+use Hilos\Core\Daemon\ClientSocketDetacher;
 use Hilos\Core\Daemon\ContainedFailureSink;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Server\AbstractServer;
 use Hilos\Socket\Server\ServerInterface;
@@ -222,6 +224,13 @@ final class DaemonManagerEntropyFailureTestServer implements ServerInterface
     }
 
     /**
+     * @param ClientSocketDetacher $detacher Master seam this server would announce a departure to
+     */
+    public function setClientSocketDetacher(ClientSocketDetacher $detacher): void
+    {
+    }
+
+    /**
      * @throws RandomException When the server was built to refuse
      */
     public function onTick(): void
@@ -267,6 +276,22 @@ final class DaemonManagerEntropyFailureTestServer implements ServerInterface
     public function removeClient(ClientInterface $client): void
     {
         $this->removedClients[] = $client;
+    }
+
+    /**
+     * The one exit door, as the real servers spell it: closed, then handed back.
+     *
+     * @param ClientInterface $client Client to drop
+     * @throws SocketException When closing the client's socket fails
+     * @throws HilosException When the client fails to announce its close
+     */
+    public function dropClient(ClientInterface $client): void
+    {
+        try {
+            $client->close();
+        } finally {
+            $this->removeClient($client);
+        }
     }
 
     /**
