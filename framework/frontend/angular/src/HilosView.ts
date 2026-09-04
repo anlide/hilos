@@ -28,7 +28,7 @@ import {
   signal,
 } from '@angular/core'
 import type { Type } from '@angular/core'
-import { subscribeSignal } from '@hilos/core'
+import { AUTH_SURFACE_HEADING_ID, subscribeSignal } from '@hilos/core'
 import type { AuthGate } from '@hilos/core'
 
 import { ErrorPage } from './ErrorPage.js'
@@ -61,9 +61,13 @@ import { HILOS_ROUTER } from './hilosRouterToken.js'
     <!-- No title of its own: the sign-in surface is identifier-first (HIL-423),
     so what the screen is called changes with the step the person is on, and only
     the surface knows that. It renders its own heading in the body. The dialog is
-    still NAMED — the name says what it is for, which does not change with the
-    step, and the mandated rule (docs/agents/frontend/accessibility.md) has every
-    modal expose role=dialog + aria-modal + an accessible name.
+    still NAMED — the mandated rule (docs/agents/frontend/accessibility.md) has
+    every modal expose role=dialog + aria-modal + an accessible name — and it
+    takes that name from the very heading the surface draws (HIL-832), so the
+    name a screen reader announces is the text a sighted person reads, on every
+    step. The fixed ariaLabel stays behind it as the fallback: authSurface is a
+    public extension point, and a project surface that carries no such heading
+    has to degrade to a dialog named "Sign in", not to a dialog named nothing.
 
     Never while the same surface is already shown IN PLACE: the gate opens the
     modal for an ack as well as for a gated action (HIL-422), and on a 401'd page
@@ -74,6 +78,7 @@ import { HILOS_ROUTER } from './hilosRouterToken.js'
       <hilos-modal
         [open]="modalOpen()"
         [ariaLabel]="'Sign in'"
+        [ariaLabelledby]="headingId"
         [showFooter]="false"
         (cancel)="onModalDismiss()"
       >
@@ -104,6 +109,10 @@ export class HilosView {
   readonly authSurface = input<Type<unknown>>()
   /** The auth gate driving the sign-in modal and the resume-on-auth. */
   readonly authGate = input<AuthGate>()
+
+  // A module constant is invisible to an Angular template, so the id the auth
+  // surface names this modal by reaches the markup through a field.
+  protected readonly headingId = AUTH_SURFACE_HEADING_ID
 
   private readonly router = inject(HILOS_ROUTER)
   private readonly route = hilosSignal(this.router.currentRoute)

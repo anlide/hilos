@@ -2,10 +2,11 @@
 // before this spec: the gate's modal must not draw a SECOND copy of the sign-in
 // surface while the same surface already stands in place of a 401'd page, and
 // the dialog must name itself without hard-coding a visible title the
-// identifier-first surface owns itself.
+// identifier-first surface owns itself — and since HIL-832 that name is the
+// heading the surface draws, not a fixed string of the frame's own.
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
-import { createSignal } from '@hilos/core'
+import { AUTH_SURFACE_HEADING_ID, createSignal } from '@hilos/core'
 import type {
   AuthGate,
   HilosRouter,
@@ -27,6 +28,16 @@ const PAGES = { user: () => <div data-id="user-page" /> }
 
 function AuthSurface() {
   return <div data-id="auth-surface" />
+}
+
+// The real surface names itself with a heading it owns; this one stands in for
+// it, id and all, so the frame has something to point at.
+function HeadedAuthSurface() {
+  return (
+    <div data-id="auth-surface">
+      <h2 id={AUTH_SURFACE_HEADING_ID}>Confirm your email</h2>
+    </div>
+  )
 }
 
 function routerWith(pageError: PageSubscriptionError | null): HilosRouter {
@@ -87,7 +98,29 @@ describe('HilosView auth modal', () => {
     expect(document.querySelector('[data-id="modal"]')).toBeNull()
   })
 
-  it('names the dialog without giving it a visible title', () => {
+  it('names the dialog with the heading the surface draws', () => {
+    render(
+      <HilosRouterContext.Provider value={routerWith(null)}>
+        <HilosView
+          pages={PAGES}
+          authSurface={HeadedAuthSurface}
+          authGate={fakeAuthGate(true)}
+        />
+      </HilosRouterContext.Provider>,
+    )
+
+    const dialog = document.querySelector('[data-id="modal"]')
+    expect(dialog?.getAttribute('aria-labelledby')).toBe(
+      AUTH_SURFACE_HEADING_ID,
+    )
+    expect(document.getElementById(AUTH_SURFACE_HEADING_ID)?.textContent).toBe(
+      'Confirm your email',
+    )
+    expect(dialog?.getAttribute('aria-label')).toBe('Sign in')
+    expect(dialog?.querySelector('.modal-title')).toBeNull()
+  })
+
+  it('keeps the Sign in name for a surface that carries no heading', () => {
     render(
       <HilosRouterContext.Provider value={routerWith(null)}>
         <HilosView
@@ -98,6 +131,10 @@ describe('HilosView auth modal', () => {
       </HilosRouterContext.Provider>,
     )
 
+    // Nothing carries the id, so aria-labelledby resolves to nothing and the
+    // accessible name falls through to the label the frame keeps as a safety
+    // net for a project surface of its own.
+    expect(document.getElementById(AUTH_SURFACE_HEADING_ID)).toBeNull()
     const dialog = document.querySelector('[data-id="modal"]')
     expect(dialog?.getAttribute('aria-label')).toBe('Sign in')
     expect(dialog?.querySelector('.modal-title')).toBeNull()

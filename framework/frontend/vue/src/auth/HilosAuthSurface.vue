@@ -30,6 +30,7 @@ import {
 } from 'vue'
 import {
   AUTH_CONVERGE_SIGNAL,
+  AUTH_SURFACE_HEADING_ID,
   authAckToFlowPatch,
   authConvergeSignalSchema,
   createAuthActions,
@@ -820,7 +821,9 @@ onUnmounted(() => {
 
 <template>
   <section data-id="auth-surface" class="mx-auto" style="max-width: 24rem">
-    <h2 class="h5 mb-3" data-id="auth-heading">{{ heading }}</h2>
+    <h2 :id="AUTH_SURFACE_HEADING_ID" class="h5 mb-3" data-id="auth-heading">
+      {{ heading }}
+    </h2>
 
     <!-- The two live regions of the screen, declared in advance and on the
     section rather than inside a form: the five forms replace one another as the

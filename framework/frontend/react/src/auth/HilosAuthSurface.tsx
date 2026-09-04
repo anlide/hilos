@@ -29,6 +29,7 @@ import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import {
   AUTH_CONVERGE_SIGNAL,
+  AUTH_SURFACE_HEADING_ID,
   authAckToFlowPatch,
   authConvergeSignalSchema,
   createAuthActions,
@@ -759,7 +760,11 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
 
   return (
     <section data-id="auth-surface" className="mx-auto" style={MAX_WIDTH}>
-      <h2 className="h5 mb-3" data-id="auth-heading">
+      <h2
+        id={AUTH_SURFACE_HEADING_ID}
+        className="h5 mb-3"
+        data-id="auth-heading"
+      >
         {heading}
       </h2>
 

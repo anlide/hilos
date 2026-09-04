@@ -36,6 +36,16 @@ export interface HilosModalProps {
    * set: a visible title names the dialog already.
    */
   ariaLabel?: string
+  /**
+   * The id of the node that carries the dialog's name, when that name is
+   * written somewhere else — the heading a surface draws in the body. The
+   * accessible name is then the very text a sighted person reads, and it
+   * follows that text when it changes. Ignored when `title` is set, for the
+   * same reason `ariaLabel` is. Given together with `ariaLabel`, this wins
+   * while the node exists, and `ariaLabel` stays as the fallback name for a
+   * surface that carries no such heading.
+   */
+  ariaLabelledby?: string
   /** Close on the Escape key (through the confirm guard). Defaults to true. */
   closeOnEsc?: boolean
   /** Close on a backdrop click (through the confirm guard). Defaults to true. */
@@ -78,6 +88,7 @@ export function HilosModal({
   open,
   title = '',
   ariaLabel = '',
+  ariaLabelledby = '',
   closeOnEsc = true,
   closeOnBackdrop = true,
   confirmOnClose = false,
@@ -166,6 +177,7 @@ export function HilosModal({
         role="dialog"
         aria-modal="true"
         aria-label={title || ariaLabel || undefined}
+        aria-labelledby={!title && ariaLabelledby ? ariaLabelledby : undefined}
         data-id="modal"
         onKeyDown={(event) => onKeyDown(event, dialogRef.current)}
         onClick={(event) => {

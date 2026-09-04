@@ -39,6 +39,7 @@ import {
 import type { WritableSignal } from '@angular/core'
 import {
   AUTH_CONVERGE_SIGNAL,
+  AUTH_SURFACE_HEADING_ID,
   authAckToFlowPatch,
   authConvergeSignalSchema,
   createAuthActions,
@@ -215,7 +216,9 @@ const LINK_SENT_TAIL = 'Open it to continue.'
   imports: [LoadingButton],
   template: `
     <section data-id="auth-surface" class="mx-auto" style="max-width: 24rem">
-      <h2 class="h5 mb-3" data-id="auth-heading">{{ heading() }}</h2>
+      <h2 [id]="headingId" class="h5 mb-3" data-id="auth-heading">
+        {{ heading() }}
+      </h2>
 
       <!-- The two live regions of the screen, declared in advance and on the
       section rather than inside a form: the five forms replace one another as
@@ -758,6 +761,9 @@ export class HilosAuthSurface {
   readonly context = input.required<HilosAuthContext>()
 
   protected readonly passwordMinLength = PASSWORD_MIN_LENGTH
+  // A module constant is invisible to an Angular template, so the id the frame
+  // names this surface by reaches the markup through a field.
+  protected readonly headingId = AUTH_SURFACE_HEADING_ID
 
   // Everything born from the context is a computed over it, so it is built once
   // per context and never per change detection: `createAuthFlow` carries the

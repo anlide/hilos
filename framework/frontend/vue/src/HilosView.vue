@@ -19,7 +19,7 @@ pair and behavior is unchanged: a 401 renders ErrorPage like any status. -->
 <script setup lang="ts">
 import { computed, inject } from 'vue'
 import type { Component } from 'vue'
-import { createSignal } from '@hilos/core'
+import { AUTH_SURFACE_HEADING_ID, createSignal } from '@hilos/core'
 import type { AuthGate } from '@hilos/core'
 
 import ErrorPage from './ErrorPage.vue'
@@ -79,9 +79,13 @@ function onModalToggle(open: boolean): void {
   <!-- No title of its own: the sign-in surface is identifier-first (HIL-423), so
   what the screen is called changes with the step the person is on, and only the
   surface knows that. It renders its own heading in the body. The dialog is still
-  NAMED — the name says what it is for, which does not change with the step, and
-  the mandated rule (docs/agents/frontend/accessibility.md) has every modal expose
-  role=dialog + aria-modal + an accessible name.
+  NAMED — the mandated rule (docs/agents/frontend/accessibility.md) has every
+  modal expose role=dialog + aria-modal + an accessible name — and it takes that
+  name from the very heading the surface draws (HIL-832), so the name a screen
+  reader announces is the text a sighted person reads, on every step. The fixed
+  aria-label stays behind it as the fallback: authSurface is a public extension
+  point, and a project surface that carries no such heading has to degrade to a
+  dialog named "Sign in", not to a dialog named nothing.
 
   Never while the same surface is already shown IN PLACE: the gate opens the modal
   for an ack as well as for a gated action (HIL-422), and on a 401'd page that
@@ -92,6 +96,7 @@ function onModalToggle(open: boolean): void {
     v-if="props.authSurface && props.authGate && !showAuthInPlace"
     :model-value="modalOpen"
     aria-label="Sign in"
+    :aria-labelledby="AUTH_SURFACE_HEADING_ID"
     :show-footer="false"
     @update:model-value="onModalToggle"
   >

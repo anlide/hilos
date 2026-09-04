@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { markRaw } from 'vue'
-import { describe, expect, it } from 'vitest'
-import { createSignal } from '@hilos/core'
+import { afterEach, describe, expect, it } from 'vitest'
+import { AUTH_SURFACE_HEADING_ID, createSignal } from '@hilos/core'
 import type {
   AuthGate,
   HilosRouter,
@@ -121,6 +121,19 @@ const AUTH_SURFACE = markRaw({
   template: '<div data-id="auth-surface"></div>',
 })
 
+// The real surface names itself with a heading it owns; this one stands in for
+// it, id and all, so the frame has something to point at.
+const HEADED_AUTH_SURFACE = markRaw({
+  template: `<div data-id="auth-surface"><h2 id="${AUTH_SURFACE_HEADING_ID}">Confirm your email</h2></div>`,
+})
+
+// HilosModal teleports to <body>, so these assertions query the document and
+// the document has to start each case empty.
+afterEach(() => {
+  document.body.innerHTML = ''
+  document.body.classList.remove('modal-open')
+})
+
 function fakeAuthGate(open = false): AuthGate {
   return {
     modalOpen: createSignal(open),
@@ -191,5 +204,52 @@ describe('HilosView auth gate', () => {
     expect(
       document.body.querySelector('[data-id="auth-surface"]'),
     ).not.toBeNull()
+  })
+
+  it('names the modal with the heading the surface draws', () => {
+    mount(HilosView, {
+      props: {
+        pages: PAGES,
+        authSurface: HEADED_AUTH_SURFACE,
+        authGate: fakeAuthGate(true),
+      },
+      global: {
+        provide: { [hilosRouterKey as symbol]: routerWith(null) },
+      },
+      attachTo: document.body,
+    })
+
+    const dialog = document.body.querySelector('[data-id="modal"]')
+    expect(dialog?.getAttribute('aria-labelledby')).toBe(
+      AUTH_SURFACE_HEADING_ID,
+    )
+    expect(document.getElementById(AUTH_SURFACE_HEADING_ID)?.textContent).toBe(
+      'Confirm your email',
+    )
+    expect(dialog?.getAttribute('aria-label')).toBe('Sign in')
+  })
+
+  it('keeps the Sign in name for a surface that carries no heading', () => {
+    mount(HilosView, {
+      props: {
+        pages: PAGES,
+        authSurface: AUTH_SURFACE,
+        authGate: fakeAuthGate(true),
+      },
+      global: {
+        provide: { [hilosRouterKey as symbol]: routerWith(null) },
+      },
+      attachTo: document.body,
+    })
+
+    // Nothing carries the id, so aria-labelledby resolves to nothing and the
+    // accessible name falls through to the label the frame keeps as a safety
+    // net for a project surface of its own.
+    expect(document.getElementById(AUTH_SURFACE_HEADING_ID)).toBeNull()
+    expect(
+      document.body
+        .querySelector('[data-id="modal"]')
+        ?.getAttribute('aria-label'),
+    ).toBe('Sign in')
   })
 })

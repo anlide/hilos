@@ -17,6 +17,7 @@ import {
   AUTH_ACTION_DETECT_IDENTIFIER,
   AUTH_ACTION_LOGIN,
   AUTH_ACTION_REQUEST_MAGIC_LINK,
+  AUTH_SURFACE_HEADING_ID,
   createHilosAuthContext,
   createSignal,
   DEFAULT_DETECT_DEBOUNCE_MS,
@@ -201,6 +202,11 @@ describe('HilosAuthSurface', () => {
     const wrapper = mount(HilosAuthSurface, { props: { context } })
 
     expect(wrapper.find('[data-id="auth-surface"]').exists()).toBe(true)
+    // The frame showing this surface names itself with that heading, so the id
+    // is part of the surface's contract, not decoration (HIL-832).
+    expect(wrapper.find('[data-id="auth-heading"]').attributes('id')).toBe(
+      AUTH_SURFACE_HEADING_ID,
+    )
     expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
     // Identifier-first: the whole sign-in surface is that one field until the
     // lookup answers (HIL-423), so neither the password nor a submit shows yet.

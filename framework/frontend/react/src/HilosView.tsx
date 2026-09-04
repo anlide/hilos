@@ -18,7 +18,11 @@
 // the pair and behavior is unchanged: a 401 renders ErrorPage like any status.
 import { useContext } from 'react'
 import type { ComponentType, ReactNode } from 'react'
-import { createSignal, type AuthGate } from '@hilos/core'
+import {
+  AUTH_SURFACE_HEADING_ID,
+  createSignal,
+  type AuthGate,
+} from '@hilos/core'
 
 import { ErrorPage } from './ErrorPage.js'
 import { HilosModal } from './HilosModal.js'
@@ -89,10 +93,15 @@ export function HilosView({ pages, authSurface, authGate }: HilosViewProps) {
       {/* No title of its own: the sign-in surface is identifier-first (HIL-423),
           so what the screen is called changes with the step the person is on,
           and only the surface knows that. It renders its own heading in the
-          body. The dialog is still NAMED — the name says what it is for, which
-          does not change with the step, and the mandated rule
+          body. The dialog is still NAMED — the mandated rule
           (docs/agents/frontend/accessibility.md) has every modal expose
-          role=dialog + aria-modal + an accessible name.
+          role=dialog + aria-modal + an accessible name — and it takes that name
+          from the very heading the surface draws (HIL-832), so the name a
+          screen reader announces is the text a sighted person reads, on every
+          step. The fixed ariaLabel stays behind it as the fallback:
+          authSurface is a public extension point, and a project surface that
+          carries no such heading has to degrade to a dialog named "Sign in",
+          not to a dialog named nothing.
 
           Never while the same surface is already shown IN PLACE: the gate opens
           the modal for an ack as well as for a gated action (HIL-422), and on a
@@ -104,6 +113,7 @@ export function HilosView({ pages, authSurface, authGate }: HilosViewProps) {
         <HilosModal
           open={modalOpen}
           ariaLabel="Sign in"
+          ariaLabelledby={AUTH_SURFACE_HEADING_ID}
           onClose={() => authGate.dismiss()}
           showFooter={false}
         >

@@ -37,7 +37,9 @@ The baseline, mandated since the first spec:
 - **Focus trap and focus return in modals.** Every edit surface is a modal
   (`HilosModal`); it traps focus while open, restores focus to the trigger on
   close, closes on Esc, and exposes `role="dialog"` + `aria-modal` + an
-  accessible name from its title. See [conflict-resolution.md](conflict-resolution.md).
+  accessible name — from its title when it draws one, and otherwise from the
+  heading that names it elsewhere (see below). See
+  [conflict-resolution.md](conflict-resolution.md).
 - **Full keyboard operability.** Every interactive element is a real `<button>`,
   `<a>`, or form control (stock Bootstrap), so it is focusable and operable from
   the keyboard with no extra work. Never wire a click onto a non-interactive
@@ -48,6 +50,38 @@ The baseline, mandated since the first spec:
 - **Visible focus and adequate contrast.** Delivered by Bootstrap's
   `:focus-visible` rings and AA-tuned theme — kept intact by building from stock
   classes and never suppressing outlines.
+
+## A name that lives in another component
+
+A dialog or a region whose name is written by a **different** component points at
+that component with `aria-labelledby` and a stable id. It does not keep a copy of
+the text, and it does not have the other side publish the string to it: two
+values that must say the same thing drift apart on exactly the step nobody
+remembered to update, and the drift is invisible to whoever reads the screen with
+their eyes.
+
+The id itself is a **named constant declared where the contract lives**, and both
+sides import it from there — never a string written into two templates, and never
+a generated id (`useId` and friends), which the referring side cannot see.
+
+The sign-in screen is the worked example. The surface is identifier-first, so its
+heading changes with the step (`Confirm your email`, `Choose a new password`,
+`Your account is ready`), and the modal `HilosView` shows it in has no title of
+its own. The heading carries `AUTH_SURFACE_HEADING_ID` (`@hilos/core`), the modal
+gets it as `ariaLabelledby`, and the announced name is the very text on screen —
+on every step, with no second place to keep in sync.
+
+Two things come with that shape:
+
+- **The fixed `aria-label` stays as the fallback.** `authSurface` is a public
+  extension point: a project may mount a surface of its own that carries no such
+  heading. Name computation reads `aria-labelledby` first and falls through to
+  `aria-label` when it resolves to nothing, so the dialog is named either way —
+  by its content when the content offers a name, by the fixed string otherwise.
+- **A stable id is unique only while one copy is mounted.** The framework
+  guarantees that for the sign-in surface: the modal renders only when the
+  surface is not already shown in place. A project that mounts a second copy of
+  the surface itself breaks that uniqueness, and fixing it is its own job.
 
 ## The application shell
 

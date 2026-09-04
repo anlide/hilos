@@ -272,6 +272,7 @@ export {
 } from './auth/authProtocol.js'
 export {
   createAuthGate,
+  AUTH_SURFACE_HEADING_ID,
   type AuthGate,
   type AuthGateOptions,
   type AuthGateRouter,

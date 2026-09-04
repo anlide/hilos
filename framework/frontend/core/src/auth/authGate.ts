@@ -33,6 +33,14 @@ import {
 const UNAUTHORIZED_ERROR_CODE = 'unauthorized'
 
 /**
+ * The id the sign-in surface puts on its own heading, so the frame showing that
+ * surface can name itself with the very node a sighted person reads (HIL-832).
+ * The frame and the surface are different components, so the identifier has to
+ * be a stable string both sides take from here rather than a generated one.
+ */
+export const AUTH_SURFACE_HEADING_ID = 'hilos-auth-heading'
+
+/**
  * The router slice the gate touches: read the current page error and clear it
  * on a successful upgrade. {@link HilosRouter} satisfies it structurally.
  */

@@ -30,6 +30,34 @@ describe('HilosModal', () => {
     expect(wrapper.emitted('ok')).toHaveLength(1)
   })
 
+  it('names the dialog from ariaLabelledby when it carries no visible title', () => {
+    mount(HilosModal, {
+      props: {
+        modelValue: true,
+        ariaLabel: 'Sign in',
+        ariaLabelledby: 'body-heading',
+      },
+    })
+    const dialog = document.querySelector('[data-id="modal"]')
+    expect(dialog?.getAttribute('aria-labelledby')).toBe('body-heading')
+    // The fallback name stays put: a surface carrying no such heading leaves
+    // aria-labelledby resolving to nothing, and the name falls back to it.
+    expect(dialog?.getAttribute('aria-label')).toBe('Sign in')
+  })
+
+  it('drops ariaLabelledby when the dialog has a visible title', () => {
+    mount(HilosModal, {
+      props: {
+        modelValue: true,
+        title: 'Edit',
+        ariaLabelledby: 'body-heading',
+      },
+    })
+    const dialog = document.querySelector('[data-id="modal"]')
+    expect(dialog?.getAttribute('aria-labelledby')).toBeNull()
+    expect(dialog?.getAttribute('aria-label')).toBe('Edit')
+  })
+
   it('renders no footer at all when showFooter is false', () => {
     mount(HilosModal, { props: { modelValue: true, showFooter: false } })
     expect(document.querySelector('.modal-footer')).toBeNull()
