@@ -147,7 +147,7 @@ The three conformance demos exercise the registry at different sizes:
 - **tasks (React)** — `pages/keys.ts`, `pages/routes.ts`, and
   `pages/pageTitles.ts`. One page, no entity-bearing page slots, so there is no
   `entityTypes.ts` and the bind is `bindPageScope(connection, scopes)`.
-- **simple-poll (Angular)** — the same registry as tasks, kept under
+- **polls (Angular)** — the same registry as tasks, kept under
   `src/app/pages/` per the Angular layout.
 
 ## Violations

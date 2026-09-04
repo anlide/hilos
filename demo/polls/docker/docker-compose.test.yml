@@ -1,0 +1,337 @@
+# Docker Compose configuration for tests (unit, Playwright e2e)
+# Isolated from the local stack (different ports, volumes, network).
+#
+# e2e runs against the BUILT frontend artifact served by polls-nginx-test with a
+# booted daemon behind it (docs/agents/frontend/testing-strategy.md). The e2e
+# stack (mysql + daemon + nginx) starts via `composer run test:e2e-up`, then any
+# number of `composer run test:e2e` invocations drive it, then `test:e2e-down`.
+# Frontend services sit behind profiles so the PHP-only test commands never
+# start them.
+
+name: hilos-polls-test
+
+services:
+  polls-mysql-test:
+    image: mariadb:11.4
+    container_name: polls-mysql-test
+    # How the runner's artifact collector finds this container: the three demos spell
+    # their database service three different ways, so it is asked for by role rather
+    # than guessed at by name, which would have broken silently on the fourth (HIL-841).
+    labels:
+      hilos.role: database
+    ports:
+      # Host-side of every publish binds to loopback by default; set
+      # HILOS_BIND_HOST in docker/.env to expose this stack to a LAN/tailnet.
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${MYSQL_TEST_HOST_PORT:-33066}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      MYSQL_DATABASE: ${MYSQL_TEST_DATABASE:-hilos-demo-polls-test}
+      MYSQL_USER: ${MYSQL_USER:-hilos}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hilos_pass}
+      TZ: UTC
+    volumes:
+      - mysql-test-data:/var/lib/mysql
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    networks:
+      - hilos-polls-test-network
+
+  # Mail interceptor for the e2e stand, kept identical across the three demos so a
+  # stand is never a special case (P-062). This demo mails nothing today — it
+  # activates NOTIFICATIONS without NOTIFICATION_DELIVERY — so the catcher is here
+  # for the day it does, and meanwhile it gives a stray message somewhere to land
+  # other than the work tree. No host ports: nothing outside the stack talks to it.
+  polls-mailpit-test:
+    image: axllent/mailpit:v1.21
+    container_name: polls-mailpit-test
+    environment:
+      # A test relay authenticates nobody and encrypts nothing; the daemon
+      # connects with MAIL_SMTP_SECURITY=none and no credentials.
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      TZ: UTC
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    networks:
+      - hilos-polls-test-network
+
+  # The stand's gateway for every non-mail channel (HIL-492, HIL-653): the daemon
+  # points the SMS and Telegram transports here, so a login over either is a real
+  # HTTP exchange, and everything the gateway catches it forwards to
+  # polls-mailpit-test as a letter. That is why there is no reader beside it - what
+  # arrived is read in the same inbox as mail, by the runner and by a person alike.
+  # Built from the framework so all three demos can adopt it unchanged. No host
+  # ports: nothing outside the stack talks to it.
+  polls-stand-gateway-test:
+    build:
+      context: ../../../framework/docker/stand-gateway
+    container_name: polls-stand-gateway-test
+    environment:
+      MAILPIT_SMTP_HOST: polls-mailpit-test
+      MAILPIT_SMTP_PORT: 1025
+      TZ: UTC
+    depends_on:
+      polls-mailpit-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"http://127.0.0.1:18000/test/health\") === false ? 1 : 0);'"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 3s
+    networks:
+      - hilos-polls-test-network
+
+  polls-daemon-test:
+    build: .
+    env_file:
+      - path: ../tests/.env
+        required: false
+    container_name: polls-daemon-test
+    # Found by role for the same reason the database is (HIL-841): the collector runs
+    # this demo's own db:migration:status inside a container that is ALREADY up, never
+    # starting one, because a stand it raised is no longer the stand that failed.
+    labels:
+      hilos.role: app
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs-test:/var/log/hilos
+    working_dir: /app
+    environment:
+      - APP_ENV=test
+      - DB_HOST=polls-mysql-test
+      - DB_PORT=3306
+      - DB_DATABASE=${MYSQL_TEST_DATABASE:-hilos-demo-polls-test}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+      - HTTP_STATUS_HOST=0.0.0.0
+      - HTTP_STATUS_PORT=8090
+      - WORKER_COMM_HOST=0.0.0.0
+      - WORKER_COMM_PORT=8091
+      - WEBSOCKET_HOST=0.0.0.0
+      - WEBSOCKET_PORT=8092
+      # Trust this stand's own nginx, by address, to name the visitor behind it
+      # (HIL-680). One address and not a pool: the websocket port below is published
+      # as well, and a connection that reaches it without passing through nginx
+      # arrives from the docker network's gateway - a peer that must never be
+      # trusted to name anyone.
+      - HILOS_TRUSTED_PROXIES=${DOCKER_TEST_NGINX_IP:-10.188.0.12}/32
+      # The CLI command channel, the socket admin:grant / admin:revoke speak.
+      # In-network only: the e2e runner shares the compose network, so no host
+      # port is published.
+      - COMMAND_HOST=0.0.0.0
+      - COMMAND_PORT=8094
+      # The daemon addresses itself, so an operator command run with `docker exec`
+      # in this container (admin:create / admin:grant / admin:revoke /
+      # protected-mode:open) reaches the command channel over loopback.
+      - HILOS_DAEMON_HOST=127.0.0.1
+      # Nine monopolistic workers: the poll agent, the Hilos dashboard's hilos_index
+      # agent the shell gear subscribes, the sessions library that resolves every
+      # handshake (HIL-710), the notifications library that owns the notification
+      # tables (HIL-771), and the three sign-in brought (HIL-634) - the users
+      # library, the OAuth agent and the code agent - and the two the logs feature
+      # brings (HIL-393): the hilos_logs agent every screen of the section
+      # subscribes, and the per-node hilos_log_store that reads the files. A
+      # monopolistic singleton needs a worker of its own, so the pool is the agent
+      # count: one short and a handshake or a sign-in is addressed to an agent that
+      # never comes up - the daemon throws NoSuitableWorkerException at the moment
+      # of the start and dies, because it cannot wait for one more worker to be
+      # forked. The pooled delivery channels (mail, SMS) and the node-scoped
+      # throttle agent are NOT among them - they run on regular workers. The
+      # framework default gives two, but the demos prescribe it here (like chat) so
+      # the pool is explicit and not at the mercy of env drift.
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-10}
+      # Mail: the transport is pinned to the stand's own interceptor rather than
+      # auto-selected, so a stand that loses the relay fails loudly instead of
+      # quietly writing .eml files into the work tree that nobody reads. A sender
+      # identity is mandatory — without it a message cannot be encoded at all.
+      - MAIL_TRANSPORT=smtp
+      - MAIL_SMTP_HOST=polls-mailpit-test
+      - MAIL_SMTP_PORT=1025
+      - MAIL_SMTP_SECURITY=none
+      - MAIL_FROM_ADDRESS=notifications@polls.test
+      - MAIL_FROM_NAME=Hilos Polls
+      # WebAuthn / passkey (HIL-284): pin the Relying Party to the in-network e2e
+      # host, so a device key enrolled in a spec verifies. The runner reaches the
+      # app as https://polls-nginx-test, so the browser scopes the credential to
+      # that RP id and sends that origin in clientDataJSON; the daemon matches
+      # rpId hash and origin exactly, and the defaults (localhost /
+      # http://localhost) reject it.
+      - HILOS_WEBAUTHN_RP_ID=polls-nginx-test
+      - HILOS_WEBAUTHN_ORIGIN=https://polls-nginx-test
+      - HILOS_WEBAUTHN_CHALLENGE_SECRET=e2e-webauthn-challenge-secret
+      # SMS (HIL-653): a non-empty endpoint is what selects the generic HTTP
+      # provider over the stub, so the daemon really posts the message and the
+      # stand gateway really mails it on. The URL is the send route in full - the
+      # generic provider posts to the endpoint exactly as configured, the way a
+      # real gateway's endpoint is a whole address rather than a base.
+      - SMS_ENDPOINT_URL=http://polls-stand-gateway-test:18000/sms/send
+      # Telegram Gateway (HIL-492): the stand's own gateway, which is the only
+      # reason the endpoint is configurable at all. The channel prefix is the base
+      # the client appends its method paths to. The token is what makes the channel
+      # configured - the gateway refuses a call that carries no bearer, so a daemon
+      # that forgot its credentials fails here rather than in production.
+      - TELEGRAM_GATEWAY_ENDPOINT_URL=http://polls-stand-gateway-test:18000/telegram
+      - TELEGRAM_GATEWAY_TOKEN=stand-gateway-token
+      - TELEGRAM_GATEWAY_SENDER_USERNAME=HilosPolls
+    command: ["php", "backend/Bootstrap/docker.php"]
+    depends_on:
+      polls-mysql-test:
+        condition: service_healthy
+      polls-mailpit-test:
+        condition: service_healthy
+      polls-stand-gateway-test:
+        condition: service_healthy
+    ports:
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${HTTP_TEST_PORT:-8107}:8090"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WORKER_TEST_PORT:-8108}:8091"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WEBSOCKET_TEST_PORT:-8109}:8092"
+    networks:
+      - hilos-polls-test-network
+
+  # On-demand Node toolchain for the polls frontend (npm install / build /
+  # check). Mounts the whole repo at /hilos so the @hilos/angular `file:`
+  # dependency into framework/frontend resolves. Used by
+  # `composer run test:e2e-build` to produce the dist that polls-nginx-test
+  # serves.
+  polls-frontend-cli-test:
+    image: node:22-bookworm-slim
+    container_name: polls-frontend-cli-test
+    volumes:
+      - ../../..:/hilos
+      # A private Angular disk cache, separate from both the repo copy (owned by
+      # the local dev server) and the local cli container's own volume: lmdb
+      # opened from two containers at once corrupts its reader lock table (PID
+      # namespaces overlap) and crashes ng build. Isolated this way the cache
+      # stays ENABLED here too, which is worth ~35% of the e2e build.
+      - ng-cache-cli-test:/hilos/demo/polls/frontend/.angular
+    working_dir: /hilos/demo/polls/frontend
+    environment:
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+    profiles:
+      - cli
+
+  # Serves the built frontend artifact (`ng build` emits a flat dist — see
+  # outputPath in frontend/angular.json) over the same nginx image and config
+  # template as prod (test what you ship) and proxies /ws to the daemon. The
+  # e2e runner reaches it in-network as https://polls-nginx-test; host ports are
+  # only for manual inspection and default away from the chat test stack's
+  # 8086/8446 and the tasks test stack's 8087/8447.
+  polls-nginx-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    container_name: polls-nginx-test
+    volumes:
+      - ../frontend/dist:/usr/share/nginx/html:ro
+      - nginx-ssl-test:/etc/nginx/ssl
+    ports:
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${NGINX_TEST_HTTP_PORT:-8088}:80"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${NGINX_TEST_HTTPS_PORT:-8448}:443"
+    environment:
+      - FRONTEND_HTML_UPSTREAM=polls-daemon-test
+    depends_on:
+      - polls-daemon-test
+    profiles:
+      - e2e
+    networks:
+      hilos-polls-test-network:
+        ipv4_address: ${DOCKER_TEST_NGINX_IP:-10.188.0.12}
+
+  polls-cli-test:
+    build: .
+    env_file:
+      - path: ../tests/.env
+        required: false
+    container_name: polls-cli-test
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+    working_dir: /app
+    environment:
+      - APP_ENV=test
+      # Where the daemon answers, so a command that writes state the daemon owns can ask
+      # whether one is running before it starts (HIL-728). The check is fail-closed: without
+      # this pair the CLI refuses such a command rather than risk a second writer, so
+      # test:db-prepare needs it even though it runs before the daemon exists.
+      - HILOS_DAEMON_HOST=polls-daemon-test
+      - COMMAND_PORT=8094
+      - DB_HOST=polls-mysql-test
+      - DB_PORT=3306
+      - DB_DATABASE=${MYSQL_TEST_DATABASE:-hilos-demo-polls-test}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+    profiles:
+      - cli
+    depends_on:
+      polls-mysql-test:
+        condition: service_healthy
+    networks:
+      - hilos-polls-test-network
+
+  # Playwright e2e runner. The official image ships the browsers — its version
+  # tag MUST match `@playwright/test` in tests/e2e/package.json, otherwise
+  # Playwright cannot locate its browser executables. BASE_URL points at the
+  # in-network nginx, so the run never depends on host ports. No depends_on:
+  # the stack is started explicitly via `composer run test:e2e-up`, never as a
+  # side effect of running tests. node_modules installs onto the host
+  # bind-mount (docs/agents/frontend/build-and-docker.md).
+  polls-e2e-runner:
+    image: mcr.microsoft.com/playwright:v1.60.0-noble
+    container_name: polls-e2e-runner
+    volumes:
+      - ../../..:/hilos
+    working_dir: /hilos/demo/polls/tests/e2e
+    environment:
+      BASE_URL: https://polls-nginx-test
+      # The admin-gated /hilos specs take the grant over the daemon command
+      # channel before they navigate (helpers/adminGrant.ts).
+      COMMAND_HOST: polls-daemon-test
+      COMMAND_PORT: "8094"
+      CI: "1"
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      # How far the run wants every Playwright cap stretched. Set by
+      # scripts/run-test-suite.php from the lane count it resolved; the default is
+      # deliberately EMPTY rather than "1", because empty means "no override" to
+      # the scale and leaves a hand-raised stand on the host heuristic (HIL-853).
+      HILOS_E2E_TIMEOUT_SCALE: ${HILOS_E2E_TIMEOUT_SCALE:-}
+    profiles:
+      - e2e
+    networks:
+      - hilos-polls-test-network
+
+volumes:
+  mysql-test-data:
+    name: hilos-polls-mysql-test-data
+  nginx-ssl-test:
+  ng-cache-cli-test:
+
+networks:
+  hilos-polls-test-network:
+    driver: bridge
+    ipam:
+      config:
+        # Deliberately outside 172.16.0.0/12 and 192.168.0.0/16 - Docker's default
+        # address pools. nginx needs a fixed address (the daemon trusts it by that
+        # address and nothing else), so this subnet is claimed, not assigned. Inside
+        # a default pool that claim loses a race: any other stack whose network came
+        # up first may already hold the range, and then the stand fails to start with
+        # "Pool overlaps with other one on this address space". 10.0.0.0/8 is never
+        # auto-assigned (demo/cluster/docker/docker-compose.cluster.yml).
+        - subnet: ${DOCKER_TEST_NETWORK_SUBNET:-10.188.0.0/16}

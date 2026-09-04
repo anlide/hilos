@@ -8,7 +8,7 @@ minimal to full:
 | Project | Backend | Frontend | Role |
 |---|---|---|---|
 | [demo/tasks](../../demo/tasks) | minimal (1 agent, 1 page) | React | the smallest complete shape — copy this |
-| [demo/simple-poll](../../demo/simple-poll) | minimal (1 agent, 1 page) | Angular | same shape, Angular toolchain |
+| [demo/polls](../../demo/polls) | minimal (1 agent, 1 page) | Angular | same shape, Angular toolchain |
 | [demo/chat](../../demo/chat) | full | Vue | every subsystem in real use |
 
 The frontend specifics are split per view framework:
@@ -112,7 +112,7 @@ Calling `Hilos::init()` before migrations breaks first boot on an empty DB.
 ## Docker stacks
 
 Two compose files per project; every `container_name` is prefixed with the
-app key (`chat-…`, `poll-…`, `tasks-…`) so it stays globally unique
+app key (`chat-…`, `polls-…`, `tasks-…`) so it stays globally unique
 (`container_name` and explicitly named volumes are docker-GLOBAL, not
 project-scoped — never reuse another project's).
 
@@ -144,8 +144,8 @@ registry of taken host ports:
 | framework test | 33062 | — | — | — | — |
 | tasks local | 33063 | 8098/8099/8100 | 8081 | 81/444 | 5174 |
 | tasks test | 33064 | 8101/8102/8103 | — | 8087/8447 | — |
-| simple-poll local | 33065 | 8104/8105/8106 | 8082 | 82/445 | 5175 |
-| simple-poll test | 33066 | 8107/8108/8109 | — | 8088/8448 | — |
+| polls local | 33065 | 8104/8105/8106 | 8082 | 82/445 | 5175 |
+| polls test | 33066 | 8107/8108/8109 | — | 8088/8448 | — |
 
 A new project takes the next free block. Each network also needs its own subnet,
 because the cli reaches the daemon by a static IP (`HILOS_DAEMON_HOST`), and that
@@ -180,7 +180,7 @@ dashboard, owned by the monopolistic `hilos_index` agent (a concrete
 `AbstractHilosIndexAgent` + an `AbstractHilosDashboardPage`; see
 demo/tasks). The app agent plus the dashboard therefore needs
 `WORKER_MIN_MONOPOLISTIC` ≥ 2 — which is also the catalog default. The demos pin
-it in compose regardless, so the pool is explicit: tasks and simple-poll use 10
+it in compose regardless, so the pool is explicit: tasks and polls use 10
 on every stack, chat 16 for its larger agent roster.
 
 Every framework feature a project activates can raise that floor, and the logs

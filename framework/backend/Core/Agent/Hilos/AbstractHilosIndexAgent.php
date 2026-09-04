@@ -44,7 +44,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * the command sits beside the tables it writes.
      *
      * The protected-mode names (HIL-344, HIL-481, HIL-616, HIL-704) ride the same inheritance for the
-     * same reason - chat, tasks and simple-poll get a freeze they can drive by extending this
+     * same reason - chat, tasks and polls get a freeze they can drive by extending this
      * class alone. The inspector is not among them: it is answered by the master, because a
      * freeze stops every agent but the initiator. The operator commands are not either: they
      * belong to the agent that runs real operations, and a command routes to exactly one agent

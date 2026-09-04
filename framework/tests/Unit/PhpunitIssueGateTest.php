@@ -31,7 +31,7 @@ final class PhpunitIssueGateTest extends TestCase
             $root . '/framework/tests/phpunit.xml',
             $root . '/demo/chat/tests/phpunit.xml',
             $root . '/demo/cluster/tests/phpunit.xml',
-            $root . '/demo/simple-poll/tests/phpunit.xml',
+            $root . '/demo/polls/tests/phpunit.xml',
             $root . '/demo/tasks/tests/phpunit.xml',
         ];
 

@@ -1,0 +1,97 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Demo\Polls\Database\Actions\Item;
+
+use Demo\Polls\Database\Object\Item\User as ObjectUser;
+use Demo\Polls\Database\View\Item\User;
+use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\ValueTooLongException;
+use Hilos\Core\Exception\ValueTooShortException;
+use Hilos\Database\Actions\Item\DbActions;
+use Hilos\HilosException;
+use Hilos\Utils\Helpers\TimeHelper;
+
+/**
+ * UserActions - write operations for a single User item.
+ *
+ * @extends DbActions<User, ObjectUser>
+ * @property-read ObjectUser $object
+ */
+final class UserActions extends DbActions
+{
+    /**
+     * Shortest display name a user may carry.
+     *
+     * Public because the frame is one, not two: a name arriving from an OAuth
+     * provider is measured against the very frame the rename applies, instead of a
+     * second copy of the numbers (HIL-573).
+     */
+    public const int NAME_MIN_LENGTH = 2;
+
+    /** Longest display name a user may carry - the same frame, read from the other end. */
+    public const int NAME_MAX_LENGTH = 64;
+
+    /**
+     * Renames current user item (only editable field). Validates and persists.
+     *
+     * @param string $newName New display name (trimmed)
+     * @throws ItemNotFoundForUpdateException When user not found for rename (id is null)
+     * @throws EmptyValueException When name is empty
+     * @throws ValueTooShortException When name is too short
+     * @throws ValueTooLongException When name exceeds maximum length
+     * @throws HilosException On database error or other failure
+     */
+    public function rename(string $newName): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('User not found for rename (id is null)');
+        }
+
+        $name = trim($newName);
+        if ($name === '') {
+            throw new EmptyValueException('User name cannot be empty');
+        }
+        if (mb_strlen($name) < self::NAME_MIN_LENGTH) {
+            throw new ValueTooShortException('User name is too short');
+        }
+        if (mb_strlen($name) > self::NAME_MAX_LENGTH) {
+            throw new ValueTooLongException('User name exceeds maximum length of ' . self::NAME_MAX_LENGTH . ' characters');
+        }
+
+        if ($this->object->name === $name) {
+            return;
+        }
+
+        $this->object->name = $name;
+        $this->object->lastActivity = TimeHelper::getSqlDateTime();
+        $this->object->sync();
+    }
+
+    /**
+     * Sets the panel-admin flag on the current user item. Persists only on change.
+     *
+     * @param bool $admin New admin flag
+     * @throws ItemNotFoundForUpdateException When the user is not found (id is null)
+     * @throws HilosException On database error or other failure
+     */
+    public function setAdmin(bool $admin): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('User not found for setAdmin (id is null)');
+        }
+
+        if ($this->object->admin === $admin) {
+            return;
+        }
+
+        $this->object->admin = $admin;
+        $this->object->sync();
+    }
+}

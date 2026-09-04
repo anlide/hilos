@@ -1,0 +1,285 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Demo\Polls;
+
+use Demo\Polls\Agents\Hilos\DemoHilosAgent;
+use Demo\Polls\Agents\Hilos\DemoHilosLogsAgent;
+use Demo\Polls\Agents\Hilos\NotificationsLibraryAgent;
+use Demo\Polls\Agents\Hilos\SessionsLibraryAgent;
+use Demo\Polls\Agents\Hilos\UsersLibraryAgent;
+use Demo\Polls\Agents\OAuthAgent;
+use Demo\Polls\Agents\PollsAgent;
+use Demo\Polls\Auth\PollsCodeChannelRegistry;
+use Demo\Polls\Browser\PollsBrowserContext;
+use Demo\Polls\Browser\PollsBrowserRef;
+use Demo\Polls\Browser\Table\UserDetailBrowserTable;
+use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
+use Demo\Polls\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
+use Demo\Polls\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
+use Demo\Polls\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
+use Demo\Polls\Core\Agent\Daemon\OAuthAgentDaemon;
+use Demo\Polls\Core\Agent\Daemon\PollsAgentDaemon;
+use Demo\Polls\Database\PollsDbContext;
+use Demo\Polls\Database\Settings\PollsSettingsCatalog;
+use Demo\Polls\Environment\PollsEnvCatalog;
+use Demo\Polls\Pages\Hilos\AboutPage;
+use Demo\Polls\Pages\Hilos\DashboardPage;
+use Demo\Polls\Pages\Hilos\LicensePage;
+use Demo\Polls\Pages\Hilos\Logs\LogsKeysPage;
+use Demo\Polls\Pages\Hilos\Logs\LogsOverviewPage;
+use Demo\Polls\Pages\Hilos\Logs\LogsRotationsPage;
+use Demo\Polls\Pages\Hilos\Logs\LogsSettingsPage;
+use Demo\Polls\Pages\Hilos\Logs\LogsViewPage;
+use Demo\Polls\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\Polls\Pages\Hilos\PrivacyPage;
+use Demo\Polls\Pages\Hilos\SettingsPage;
+use Demo\Polls\Pages\Hilos\TermsPage;
+use Demo\Polls\Groups\Hilos\NotificationsGroup;
+use Demo\Polls\Pages\Hilos\NotificationsPage;
+use Demo\Polls\Pages\Hilos\Users\UserPage;
+use Demo\Polls\Pages\Hilos\Users\UsersPage;
+use Demo\Polls\Pages\MainPage;
+use Demo\Polls\Runtime\View\Context\PollsRtContext;
+use Demo\Polls\Tables\HilosUser\HilosUsersTable;
+use Demo\Polls\Tables\PollsTableContext;
+use Hilos\Auth\Code\AuthCodeAgent;
+use Hilos\Auth\Code\AuthCodeAgentDaemon;
+use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
+use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
+use Hilos\Constants\HilosPageRouteParams;
+use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Config\AgentScope;
+use Hilos\Core\Browser\Config\BrowserParamKey;
+use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\Table\Context\TableContext;
+use Hilos\Database\Context\DbContext;
+use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Hilos as HilosFacade;
+use Hilos\Log\LogAggregatorAgent;
+use Hilos\Log\LogAggregatorAgentDaemon;
+use Hilos\Log\LogCarrierAgent;
+use Hilos\Log\LogCarrierAgentDaemon;
+use Hilos\Log\LogStoreAgent;
+use Hilos\Log\LogStoreAgentDaemon;
+use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
+use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
+use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
+use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
+use Hilos\Tables\Logs\HilosLogKeysTable;
+use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Logs\HilosLogWorkersTable;
+use Hilos\Tables\Settings\HilosSettingsTable;
+
+/**
+ * Hilos - Main app facade for data access.
+ *
+ * Usage:
+ * - Hilos::$env[EnvConstants::HTTP_STATUS_HOST]
+ * - Hilos::$db->settings
+ * - Hilos::$setting->catalog()
+ * - Hilos::$rt->connections
+ * - Hilos::$table->settings
+ *
+ * @property-read PollsDbContext $db Database context (narrows parent's DbContext for IDE)
+ * @property-read EnvAccessor $env Environment accessor (narrows parent's EnvAccessor for IDE)
+ * @property-read SettingsAccessor $setting Settings accessor (narrows parent's SettingsAccessor for IDE)
+ * @property-read PollsRtContext $rt Runtime context (narrows parent's RtContext for IDE)
+ * @property-read PollsTableContext $table Table context (narrows parent's TableContext for IDE)
+ * @property-read PollsBrowserContext $browser Browser context (narrows parent's BrowserContext for IDE)
+ */
+final class Hilos extends HilosFacade
+{
+    protected const string ENV_CATALOG = PollsEnvCatalog::class;
+
+    protected const string SETTINGS_CATALOG = PollsSettingsCatalog::class;
+
+    protected const string CODE_CHANNEL_REGISTRY = PollsCodeChannelRegistry::class;
+
+    protected const array FEATURES = [
+        HilosFeature::SETTINGS,
+        HilosFeature::HILOS_USERS,
+        HilosFeature::LOGS,
+        HilosFeature::NOTIFICATIONS,
+        HilosFeature::AUTH,
+        HilosFeature::AUTH_THROTTLE,
+        HilosFeature::CODE_CHANNELS,
+    ];
+
+    public const array PAGES = [
+        MainPage::PAGE => MainPage::class,
+        DashboardPage::PAGE => DashboardPage::class,
+        SettingsPage::PAGE => SettingsPage::class,
+        LogsOverviewPage::PAGE => LogsOverviewPage::class,
+        LogsKeysPage::PAGE => LogsKeysPage::class,
+        LogsWorkersPage::PAGE => LogsWorkersPage::class,
+        LogsRotationsPage::PAGE => LogsRotationsPage::class,
+        LogsViewPage::PAGE => LogsViewPage::class,
+        LogsSettingsPage::PAGE => LogsSettingsPage::class,
+        UsersPage::PAGE => UsersPage::class,
+        UserPage::PAGE => UserPage::class,
+        NotificationsPage::PAGE => NotificationsPage::class,
+        AboutPage::PAGE => AboutPage::class,
+        TermsPage::PAGE => TermsPage::class,
+        PrivacyPage::PAGE => PrivacyPage::class,
+        LicensePage::PAGE => LicensePage::class,
+    ];
+
+    public const array GROUPS = [
+        NotificationsGroup::GROUP => NotificationsGroup::class,
+    ];
+
+    public const array AGENTS = [
+        PollsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => PollsAgent::class,
+            AgentRegistryKey::DAEMON => PollsAgentDaemon::class,
+        ],
+        SessionsLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => SessionsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => SessionsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        NotificationsLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => NotificationsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => NotificationsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        UsersLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => UsersLibraryAgent::class,
+            AgentRegistryKey::DAEMON => UsersLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        DemoHilosAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosAgentDaemon::class,
+        ],
+        DemoHilosLogsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosLogsAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosLogsAgentDaemon::class,
+        ],
+        OAuthAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => OAuthAgent::class,
+            AgentRegistryKey::DAEMON => OAuthAgentDaemon::class,
+        ],
+        MailDeliveryChannelAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => MailDeliveryChannelAgent::class,
+            AgentRegistryKey::DAEMON => MailDeliveryChannelAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        SmsDeliveryChannelAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => SmsDeliveryChannelAgent::class,
+            AgentRegistryKey::DAEMON => SmsDeliveryChannelAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        LogStoreAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => LogStoreAgent::class,
+            AgentRegistryKey::DAEMON => LogStoreAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        LogCarrierAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => LogCarrierAgent::class,
+            AgentRegistryKey::DAEMON => LogCarrierAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        LogAggregatorAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => LogAggregatorAgent::class,
+            AgentRegistryKey::DAEMON => LogAggregatorAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        AuthThrottleAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => AuthThrottleAgent::class,
+            AgentRegistryKey::DAEMON => AuthThrottleAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        AuthCodeAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => AuthCodeAgent::class,
+            AgentRegistryKey::DAEMON => AuthCodeAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+    ];
+
+    public const array TABLES = [
+        PollsTableContext::settings => HilosSettingsTable::class,
+        PollsTableContext::hilosUsers => HilosUsersTable::class,
+        PollsTableContext::hilosLogKeys => HilosLogKeysTable::class,
+        PollsTableContext::hilosLogRotations => HilosLogRotationsTable::class,
+        PollsTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
+    ];
+
+    public const array BROWSER_TABLES = [
+        UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class,
+    ];
+
+    public const array PAGE_TABLES = [
+        SettingsPage::PAGE => [
+            PollsTableContext::settings => [],
+        ],
+        LogsKeysPage::PAGE => [
+            PollsTableContext::hilosLogKeys => [],
+        ],
+        LogsRotationsPage::PAGE => [
+            PollsTableContext::hilosLogRotations => [],
+        ],
+        LogsWorkersPage::PAGE => [
+            PollsTableContext::hilosLogWorkers => [],
+        ],
+        UsersPage::PAGE => [
+            PollsTableContext::hilosUsers => [],
+        ],
+        UserPage::PAGE => [
+            UserDetailBrowserTable::TABLE => [
+                BrowserParamKey::PARAMS => [
+                    HilosPageRouteParams::HILOS_USER_USER_ID => PollsBrowserRef::HILOS_USER_ID,
+                ],
+            ],
+        ],
+    ];
+
+    /**
+     * Creates the polls database context.
+     *
+     * @return PollsDbContext Polls database context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new PollsDbContext();
+    }
+
+    /**
+     * Creates the polls runtime context.
+     *
+     * @return ?PollsRtContext Polls runtime context
+     */
+    protected static function createRuntime(): ?RtContext
+    {
+        return new PollsRtContext();
+    }
+
+    /**
+     * Creates the polls table context.
+     *
+     * @return ?PollsTableContext Polls table context
+     */
+    protected static function createTable(): ?TableContext
+    {
+        return new PollsTableContext();
+    }
+
+    /**
+     * Creates the polls browser-facing context.
+     *
+     * @return ?PollsBrowserContext Polls browser context
+     */
+    protected static function createBrowser(): ?BrowserContext
+    {
+        return new PollsBrowserContext();
+    }
+}

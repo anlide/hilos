@@ -1,7 +1,7 @@
 # Docker Compose configuration for Chat Demo Project
 # Load environment variables from .env file in project root
 #
-# Only this demo has a dev stack at all: tasks and simple-poll go local -> test -> prod.
+# Only this demo has a dev stack at all: tasks and polls go local -> test -> prod.
 # It is kept because it is the stand this demo's own development runs on, and adding the
 # same stack to the others would be work nobody has asked for.
 

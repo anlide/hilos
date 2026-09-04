@@ -420,7 +420,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * Whether this project draws a sign-in surface, and therefore has the rows to sweep.
      *
      * The one question three of the sweeps below have to ask, named once so they ask it the
-     * same way. Sessions are NOT a feature - the tasks and simple-poll demos carry them with
+     * same way. Sessions are NOT a feature - the tasks and polls demos carry them with
      * no login at all - but the browsers parked on a confirmation code are: the collections
      * holding them are mounted by {@see AuthFeature::mount()}, and the reservation table the
      * hold sweep reads is declared by the same feature. Asked of the registry rather than of
@@ -902,7 +902,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * The sign-in surface is asked about FIRST, and this is the one gate that has to be
      * here: the waiter collection is mounted by {@see AuthFeature::mount()}, so a project
-     * that carries sessions without a login (tasks, simple-poll) holds no such collection,
+     * that carries sessions without a login (tasks, polls) holds no such collection,
      * and reading it would fail every handshake of a project that has no recovery to
      * describe. Registration's half needs no such gate - it asks the session row, which
      * every project has.

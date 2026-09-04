@@ -81,7 +81,7 @@ leave and open; the mint and the close are answered by `ProtectedModeOperatorTra
 under their second names (see the operator section below). A trait, because its two
 carriers share no ancestor but `AbstractAgent`, and putting the commands there
 would hand a test-drive of the freeze to every agent of every project. The
-carriers are `AbstractHilosIndexAgent` (so chat, tasks and simple-poll get
+carriers are `AbstractHilosIndexAgent` (so chat, tasks and polls get
 it by inheritance) and the cluster demo's `WorkerAgent` (that demo is headless
 and has no Hilos index, so without it the clustered entry path — the leader's
 quiesce round and a follower's fail-closed refusal — has no live carrier).

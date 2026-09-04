@@ -745,7 +745,7 @@ Remember the outcome, speak on its change, clear on recovery.
 - `composer run test:framework:frontend` — the six headless modules
   (`framework/frontend/core/test/admin/logs/`) and the preset screen's common
   half (`admin/settings/hilosSettingPresets.test.ts`).
-- `demo/simple-poll` e2e `logs.spec.ts` — every screen of the section rendered
+- `demo/polls` e2e `logs.spec.ts` — every screen of the section rendered
   over the live socket. A follow driven end to end from a browser is
   `(not in the code yet — HIL-395)`; rotation, takeout and pruning driven end to
   end are `(not in the code yet — HIL-763)`.

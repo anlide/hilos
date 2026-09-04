@@ -215,7 +215,7 @@ const DATABASE_DUMP_QUERY = <<<'SH'
 /**
  * How a demo says which of its containers holds the database. A label rather than a
  * name, because the three demos call that service three different things
- * (`mysql-test`, `tasks-mysql-test`, `poll-mysql-test`) and a rule written on the
+ * (`mysql-test`, `tasks-mysql-test`, `polls-mysql-test`) and a rule written on the
  * suffix of a name would break silently the first time a fourth demo spelled it
  * differently.
  */

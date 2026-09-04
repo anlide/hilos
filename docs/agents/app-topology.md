@@ -201,7 +201,7 @@ declaration; a project must not mount it in `configure()`. See
 13. **Update the topology registry test snapshot whenever a project registry
     changes** — this is a shared, cross-ticket guard, not optional cleanup. Each
     demo has a `*TopologyRegistryTest` (`ChatTopologyRegistryTest`,
-    `TasksTopologyRegistryTest`, `PollTopologyRegistryTest`,
+    `TasksTopologyRegistryTest`, `PollsTopologyRegistryTest`,
     `ClusterTopologyRegistryTest`) whose hardcoded snapshots — e.g.
     `testComputedPageActionRoutesMatchChatActionOwnership`,
     `testComputedActionAgentRoutesUseOwningPageSubscriptionAgents`,

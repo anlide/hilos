@@ -1,7 +1,7 @@
 # New Hilos frontend: Angular
 
 Reference implementation:
-[demo/simple-poll/frontend](../../demo/simple-poll/frontend).
+[demo/polls/frontend](../../demo/polls/frontend).
 Common ground (containers, connection, e2e, stable ids) is in
 [README.md](README.md); this part covers only what is Angular-specific.
 

@@ -156,7 +156,7 @@ document defends it rather than introducing it:
 The shape being replaced is equally visible: a view collection that wants the
 whole set calls `Objects::loadAllFromDB()` on the spot — `listAll()` in
 `demo/chat/backend/Database/View/Collection/Users.php` and its counterparts in
-the tasks and simple-poll demos. That loads the entire table into whichever
+the tasks and polls demos. That loads the entire table into whichever
 process asked. A library is the answer to that: one holder keeps the set, and
 everybody else asks it or queries the database.
 

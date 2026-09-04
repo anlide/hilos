@@ -78,20 +78,20 @@ status.tasks.hilos {
 	reverse_proxy 127.0.0.1:8098
 }
 
-# --- simple-poll ---
+# --- polls ---
 # Angular serves the app and proxies its own same-origin /ws to the daemon, so a
-# single route carries both the page and the WebSocket — no ws.poll.hilos needed.
-poll.hilos {
+# single route carries both the page and the WebSocket — no ws.polls.hilos needed.
+polls.hilos {
 	import demo
 	reverse_proxy 127.0.0.1:5175
 }
 
-pma.poll.hilos {
+pma.polls.hilos {
 	import demo
 	reverse_proxy 127.0.0.1:8082
 }
 
-status.poll.hilos {
+status.polls.hilos {
 	import demo
 	reverse_proxy 127.0.0.1:8104
 }

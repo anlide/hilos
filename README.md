@@ -104,7 +104,7 @@ composer run install-deps
 - [hilos-website](demo/hilos-website/README.md) — Static site with dynamic content
 - [simple-booking-system](demo/simple-booking-system/README.md) — Resource booking (rooms, equipment)
 - [simple-event-calendar](demo/simple-event-calendar/README.md) — Event calendar with synchronization
-- [simple-poll](demo/simple-poll/README.md) — Polls with real-time results display
+- [polls](demo/polls/README.md) — Polls with real-time results display
 - [tasks](demo/tasks/README.md) — Task list with cross-user synchronization
 
 **3/5 — Intermediate level**

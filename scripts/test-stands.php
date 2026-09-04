@@ -70,10 +70,10 @@ return [
         'containers' => [],
     ],
     [
-        'id' => 'simple-poll',
-        'cwd' => 'demo/simple-poll',
+        'id' => 'polls',
+        'cwd' => 'demo/polls',
         'composeFile' => 'docker/docker-compose.test.yml',
-        'project' => 'hilos-simple-poll-test',
+        'project' => 'hilos-polls-test',
         'mode' => 'project',
         'services' => [],
         'containers' => [],

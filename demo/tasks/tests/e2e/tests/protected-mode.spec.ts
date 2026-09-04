@@ -15,7 +15,7 @@ import {
 //
 // One case, and the freeze is the whole of it: this demo has no other
 // protected-mode spec, and the surface's own behaviour under the mode is proven
-// on the chat and simple-poll demos.
+// on the chat and polls demos.
 //
 // The whole node freezes for the duration, so this spec must never leave one
 // behind: the runner is serialized (CI=1 -> workers: 1), and the teardown lifts

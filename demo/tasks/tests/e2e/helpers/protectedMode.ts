@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto'
 // the agent-side driver, and the one entry the mode has (the initiator agent
 // asking its daemon), because nothing here forces any state.
 //
-// Narrower than the chat and simple-poll peers on purpose: this demo has one
+// Narrower than the chat and polls peers on purpose: this demo has one
 // protected-mode case, and it needs the freeze on and the freeze off. The rest
 // of the command set (leave, mint, inspect) is added by the spec that first has
 // something to assert with it.

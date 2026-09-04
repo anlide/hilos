@@ -58,7 +58,7 @@ container the env_file would feed ever exists.
 defaults. It is optional: every knob has a `:-default` in the compose file, so a
 fresh clone with no `docker/.env` publishes the demo's default host ports and
 needs no setup step. The same split holds across all three reference demos
-(simple-poll, tasks, chat); `docker/.env` is also where a host keeps other
+(polls, tasks, chat); `docker/.env` is also where a host keeps other
 non-committable interpolation overrides (e.g. the chat demo's `LLM_LOCAL_URL`).
 
 ## Published ports bind to loopback (the bind-host knob)
@@ -136,7 +136,7 @@ Each demo ships as **one application chunk** — there is no per-page splitting.
 Route components are resolved **statically** through the page registry:
 `createAppPageRouter` builds a page-key → path map from the pages declared in
 `@hilos/core`, and there is no dynamic `import()` anywhere in the source, so the
-bundler emits a single chunk (measured 2026-07-27: simple-poll ~596 KB, chat
+bundler emits a single chunk (measured 2026-07-27: polls ~596 KB, chat
 ~336 KB, tasks similar). For demos this size a single chunk is the right
 default; there is no per-page chunk and no chunk-fetch loading state.
 
@@ -262,7 +262,7 @@ machine (WSL2, docker, `node:22-bookworm-slim`):
 
 | | app build | typecheck | together |
 |---|---|---|---|
-| Angular (simple-poll) | 7.3–8.4s `ng build` | inside the build | **~8s** |
+| Angular (polls) | 7.3–8.4s `ng build` | inside the build | **~8s** |
 | React (tasks) | 5.3s (2.60 + 1.91 + 0.76) | 3.0s `tsc` | **8.3s** |
 | Vue (chat) | 5.8s (3.14 + 1.90 + 0.75) | 4.3s `vue-tsc` | **10.1s** |
 
@@ -282,7 +282,7 @@ Read those numbers with three rules:
   does no type checking at all — the Vite demos keep it in a separate `check`
   script — while Angular's is inside the compiler. Only build+check is a
   like-for-like pair, and on that basis Angular is not the slow one.
-- **Angular's AOT cost is fixed, not size-driven.** simple-poll is 573 source
+- **Angular's AOT cost is fixed, not size-driven.** polls is 573 source
   lines and chat is 7 764, and they still land within seconds of each other.
   Expect the gap to close, not widen, as an app grows.
 - **Measure alone on an idle machine, or do not record the figure.** A dev-start

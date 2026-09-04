@@ -3,7 +3,7 @@
 
   GET  /api/status                          -> live status JSON
   POST /api/preview/up | /api/preview/down
-  POST /api/demo/<chat|tasks|poll>/<start|stop|restart>
+  POST /api/demo/<chat|tasks|polls>/<start|stop|restart>
   POST /api/ollama/<start|stop|unload>
   POST /api/ollama/pull/<0.5b|3b>
 
@@ -32,9 +32,8 @@ PREVIEW = f"{REPO}/framework/docker/preview"
 CLUSTER = f"{REPO}/demo/cluster/docker/cluster"
 OLLAMA = "hilos-ollama-local"
 
-DEMOS = {"chat", "tasks", "poll"}
+DEMOS = {"chat", "tasks", "polls"}
 DEMO_OPS = {"start", "stop", "restart"}
-DEMO_DIR = {"chat": "chat", "tasks": "tasks", "poll": "simple-poll"}
 MODELS = {"0.5b": "qwen2.5:0.5b", "3b": "qwen2.5:3b"}
 
 _lock = threading.Lock()
@@ -66,7 +65,7 @@ def cluster(*args, timeout=600):
 def demo_compose(key, *op, timeout=600):
     # Drive the demo's own stack directly (local + preview overlay) so per-demo
     # actions never touch the shared Caddy/DNS infra the preview script bounces.
-    d = f"{REPO}/demo/{DEMO_DIR[key]}/docker"
+    d = f"{REPO}/demo/{key}/docker"
     return run(["docker", "compose",
                 "-f", f"{d}/docker-compose.local.yml",
                 "-f", f"{d}/docker-compose.preview.yml", *op], timeout=timeout)

@@ -99,7 +99,7 @@ services:
       - hilos-demo-chat-local-network
 
   # The daemon. Named after the demo rather than <demo>-daemon-local the way tasks and
-  # simple-poll name theirs: the name is a deliberate difference between the stacks, kept
+  # polls name theirs: the name is a deliberate difference between the stacks, kept
   # because renaming a service renames its container and every command that reaches for it.
   chat-local:
     build: .

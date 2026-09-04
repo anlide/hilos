@@ -34,7 +34,7 @@ declare(strict_types=1);
 $demos = [
     'chat' => ['check' => 19, 'php' => 169, 'e2e' => 618],
     'tasks' => ['check' => 14, 'php' => 15, 'e2e' => 104],
-    'simple-poll' => ['check' => 34, 'php' => 15, 'e2e' => 117],
+    'polls' => ['check' => 34, 'php' => 15, 'e2e' => 117],
 ];
 
 $steps = [

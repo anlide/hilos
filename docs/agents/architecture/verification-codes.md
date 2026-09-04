@@ -147,7 +147,7 @@ person alike.
   the stack's gateway service, `http://<gateway>:18000/sms/send`, and its
   `TELEGRAM_GATEWAY_ENDPOINT_URL` at `http://<gateway>:18000/telegram`, where
   `<gateway>` is `stand-gateway-local` in chat's local stack and
-  `tasks-stand-gateway-local` / `poll-stand-gateway-local` in the other two
+  `tasks-stand-gateway-local` / `polls-stand-gateway-local` in the other two
   (the daemon's environment in each demo's `docker/docker-compose.local.yml`;
   the dev and test stacks follow the same shape). The gateway forwards every
   caught message to the same Mailpit as a letter before it answers the daemon:

@@ -14,7 +14,7 @@
 #   preview down [demo ...]    stop the demos and the DNS + proxy (default: all)
 #   preview status             show what is running and the URLs
 #
-# demo is one of: chat tasks poll
+# demo is one of: chat tasks polls
 #
 # Host binding defaults to nova-lt's Tailscale IP; override for another host:
 #   HILOS_PREVIEW_BIND=<ip> HILOS_DEV_DNS_IP=<ip> preview up
@@ -23,9 +23,7 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 
-# demo key -> directory under demo/
-declare -A DEMO_DIR=([chat]=chat [tasks]=tasks [poll]=simple-poll)
-ALL_DEMOS=(chat tasks poll)
+ALL_DEMOS=(chat tasks polls)
 
 BIND="${HILOS_PREVIEW_BIND:-${HILOS_DEV_DNS_IP:-100.111.250.126}}"
 
@@ -36,6 +34,17 @@ dc() {
 die() {
   echo "preview: $*" >&2
   exit 1
+}
+
+# Is the argument one of the demos this lane serves?
+is_demo() {
+  local known
+  for known in "${ALL_DEMOS[@]}"; do
+    if [ "$known" = "$1" ]; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 # Resolve the demo arguments into a validated list, defaulting to all demos.
@@ -49,24 +58,22 @@ resolve_demos() {
   out=()
   local key
   for key in "$@"; do
-    [ -n "${DEMO_DIR[$key]:-}" ] || die "unknown demo '$key' (want: ${ALL_DEMOS[*]})"
+    is_demo "$key" || die "unknown demo '$key' (want: ${ALL_DEMOS[*]})"
     out+=("$key")
   done
 }
 
 # The local stack requires a .env; a fresh checkout has only .env.example.
 ensure_env() {
-  local dir="${DEMO_DIR[$1]}"
-  local envf="$repo/demo/$dir/.env"
+  local envf="$repo/demo/$1/.env"
   if [ ! -f "$envf" ] && [ -f "$envf.example" ]; then
     cp "$envf.example" "$envf"
-    echo "  created demo/$dir/.env from .env.example"
+    echo "  created demo/$1/.env from .env.example"
   fi
 }
 
 demo_compose() {
-  local dir="${DEMO_DIR[$1]}"
-  (cd "$repo/demo/$dir/docker" &&
+  (cd "$repo/demo/$1/docker" &&
     dc -f docker-compose.local.yml -f docker-compose.preview.yml "${@:2}")
 }
 
@@ -87,7 +94,7 @@ cmd_up() {
   infra_up
   local key
   for key in "${demos[@]}"; do
-    echo "==> ${key} (demo/${DEMO_DIR[$key]})"
+    echo "==> demo/${key}"
     ensure_env "$key"
     demo_compose "$key" up -d
   done
@@ -114,20 +121,19 @@ cmd_status() {
   docker ps --filter name=hilos-dev-dns --filter name=hilos-preview-caddy \
     --format 'table {{.Names}}\t{{.Status}}' | tail -n +1
   echo
-  local key dir
+  local key
   for key in "${ALL_DEMOS[@]}"; do
-    dir="${DEMO_DIR[$key]}"
-    echo "-- ${key} (hilos-${dir}-local) --"
-    docker ps --filter "label=com.docker.compose.project=hilos-${dir}-local" \
+    echo "-- ${key} (hilos-${key}-local) --"
+    docker ps --filter "label=com.docker.compose.project=hilos-${key}-local" \
       --format 'table {{.Names}}\t{{.Status}}' | tail -n +2 || true
   done
   echo
-  echo "URLs: https://home.hilos  https://chat.hilos  https://tasks.hilos  https://poll.hilos"
+  echo "URLs: https://home.hilos  https://chat.hilos  https://tasks.hilos  https://polls.hilos"
 }
 
 case "${1:-}" in
   up)     shift; cmd_up "$@" ;;
   down)   shift; cmd_down "$@" ;;
   status) shift; cmd_status ;;
-  *)      die "usage: preview {up|down|status} [chat|tasks|poll ...]" ;;
+  *)      die "usage: preview {up|down|status} [chat|tasks|polls ...]" ;;
 esac

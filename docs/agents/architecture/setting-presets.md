@@ -265,5 +265,5 @@ only then.
 - `composer run test:framework:frontend` — the common headless module
   (`framework/frontend/core/test/admin/settings/hilosSettingPresets.test.ts`)
   and the Logs vocabulary (`admin/logs/hilosLogSettings.test.ts`).
-- `demo/simple-poll` e2e `logs.spec.ts` — the logging-modes screen rendered over
+- `demo/polls` e2e `logs.spec.ts` — the logging-modes screen rendered over
   the live socket and the way out of it into the general settings.

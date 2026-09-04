@@ -124,13 +124,13 @@ final class UnstableLineTest extends TestCase
         $byStep = [
             'framework' => noUnstableTests(),
             'chat-e2e' => ['count' => 2, 'tests' => ['tests/chat.spec.ts:42', 'tests/table.spec.ts:7']],
-            'simple-poll-e2e' => ['count' => 1, 'tests' => ['tests/poll.spec.ts:3']],
+            'polls-e2e' => ['count' => 1, 'tests' => ['tests/polls.spec.ts:3']],
         ];
 
         $this->assertSame(
             "=== unstable: 2 step(s), 3 retried test(s) ===\n"
                 . "  chat-e2e             tests/chat.spec.ts:42, tests/table.spec.ts:7\n"
-                . "  simple-poll-e2e      tests/poll.spec.ts:3\n",
+                . "  polls-e2e            tests/polls.spec.ts:3\n",
             unstableSummarySection($byStep),
         );
     }
