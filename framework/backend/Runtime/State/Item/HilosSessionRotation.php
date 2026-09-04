@@ -25,13 +25,11 @@ use Hilos\Runtime\State\Collection\HilosSessionRotations;
  * to apply beyond the one an inbound sync brings, and they leave the collection in one of
  * two ways: burned by the exchange, or swept once their moment has passed.
  *
- * The row also carries the success ack the initiating connection still owed when the
- * rotation was announced (HIL-423). An ack lives on the CONNECTION (HIL-422), and the
- * rotation kills the connection that earned it: the browser comes back on a socket that
- * owes nothing, and the sentence the person just earned is gone before it was read. The
- * ticket is what mends that, and only the ticket - a socket that presents one is the same
- * browser continuing the flow it started, whereas a bare reopened socket is a reload and
- * still owes nothing.
+ * The row says which token the browser will answer to and which of its sockets to drop, and
+ * nothing about the person behind them. It used to carry the success ack the initiating
+ * connection still owed (HIL-423), because the mark lived on that connection and the
+ * rotation was what killed it; since HIL-875 the mark lives on the session row, which a
+ * rotation renames rather than replaces, so there is nothing left for the ticket to rescue.
  */
 final class HilosSessionRotation extends RtState
 {
@@ -42,7 +40,6 @@ final class HilosSessionRotation extends RtState
     public const string sessionToken = 'sessionToken';
     public const string acceptKeysToDrop = 'acceptKeysToDrop';
     public const string expiresAtMs = 'expiresAtMs';
-    public const string pendingAck = 'pendingAck';
 
     /** One-time ticket naming this rotation; also the row id. */
     private(set) string $ticket = '';
@@ -58,9 +55,6 @@ final class HilosSessionRotation extends RtState
     /** Unix milliseconds after which the ticket is no longer honoured. */
     private(set) float $expiresAtMs = 0.0;
 
-    /** Ack the initiating connection still owed when the rotation was announced, or null. */
-    private(set) ?string $pendingAck = null;
-
     /**
      * Builds a pending rotation row.
      *
@@ -68,7 +62,6 @@ final class HilosSessionRotation extends RtState
      * @param string $sessionToken Session token the bearer receives
      * @param list<string> $acceptKeysToDrop Accept keys dropped once the exchange happens
      * @param float $expiresAtMs Unix milliseconds after which the ticket stops being honoured
-     * @param ?string $pendingAck Ack the initiating connection still owed (a SessionAck value), or null
      * @return static Fresh rotation row
      */
     public static function create(
@@ -76,14 +69,12 @@ final class HilosSessionRotation extends RtState
         string $sessionToken,
         array $acceptKeysToDrop,
         float $expiresAtMs,
-        ?string $pendingAck = null,
     ): static {
         $instance = new static();
         $instance->ticket = $ticket;
         $instance->sessionToken = $sessionToken;
         $instance->acceptKeysToDrop = $acceptKeysToDrop;
         $instance->expiresAtMs = $expiresAtMs;
-        $instance->pendingAck = $pendingAck;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -101,7 +92,6 @@ final class HilosSessionRotation extends RtState
         $instance->sessionToken = self::requireString($row, self::sessionToken);
         $instance->acceptKeysToDrop = self::requireStringList($row, self::acceptKeysToDrop);
         $instance->expiresAtMs = self::requireFloat($row, self::expiresAtMs);
-        $instance->pendingAck = self::optionalString($row, self::pendingAck);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -123,7 +113,6 @@ final class HilosSessionRotation extends RtState
         $this->sessionToken = self::patchString($diff, self::sessionToken, $this->sessionToken);
         $this->acceptKeysToDrop = self::patchStringList($diff, self::acceptKeysToDrop, $this->acceptKeysToDrop);
         $this->expiresAtMs = self::patchFloat($diff, self::expiresAtMs, $this->expiresAtMs);
-        $this->pendingAck = self::patchOptionalString($diff, self::pendingAck, $this->pendingAck);
     }
 
     /**
@@ -163,7 +152,6 @@ final class HilosSessionRotation extends RtState
             self::sessionToken => $this->sessionToken,
             self::acceptKeysToDrop => $this->acceptKeysToDrop,
             self::expiresAtMs => $this->expiresAtMs,
-            self::pendingAck => $this->pendingAck,
         ];
     }
 }

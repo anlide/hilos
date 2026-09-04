@@ -69,6 +69,7 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Identity\PasswordFate;
@@ -718,24 +719,17 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * library's own row (HIL-486): a socket that opens into a session with an unfinished
      * registration joins the converge broadcast without having submitted anything itself.
      *
-     * The inherited ack rides the frame instead of being written on a row that does not
-     * exist yet (HIL-423). Only a handshake that spent a rotation ticket carries one: the
-     * socket that replaces the one a login rotated away is the same browser mid-flow, not a
-     * reload, and it inherits what its predecessor had not shown yet.
+     * The ack the frame carries is the SESSION's (HIL-875). A handshake used to be told it by
+     * the rotation ticket it spent, because the mark lived on the socket the rotation had just
+     * killed; it lives on the session row now, so every socket of a session - the initiator's
+     * replacement, a sibling the rotation dropped, a tab opened a minute later - reads the
+     * same answer out of the same place.
      *
      * The toast stack rides beside the frame rather than on it (HIL-768), because it is a
      * sentence to a different audience: the state frame is read by the project holding the
      * socket, and the stack is read by the browser. A tab opened after a card was raised is a
      * legitimate reader of it and starts its own countdown from the full time - it has only
      * now come into view.
-     *
-     * A socket with no ticket is owed whatever its SESSION still owes (HIL-649). The other
-     * tabs a login drops carry no ticket - only the initiator trades one - so until now they
-     * came back on the new cookie owing nothing, and the sentence the flow had earned was
-     * lost one frame before anyone could read it. The ticket is asked FIRST and the session
-     * second because the initiator's replacement arrives when its session owes nothing yet:
-     * its own row died with the rotation and no sibling was ever marked, so only the ticket
-     * can answer for it.
      *
      * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
      * @param string $source Framework signal source identifier (unused)
@@ -761,7 +755,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             sessionToken: $session->token,
             userId: $session->userId,
             acceptKeys: [$data->acceptKey],
-            pendingAck: $data->inheritedAck ?? $this->sessionPendingAck($session->token),
+            pendingAck: $this->sessionPendingAck($session),
             pendingAuthStep: $this->pendingAuthStepFor($session),
         ));
         $this->publishSessionToasts(StateProtectedModeRuntime::hashSessionToken($session->token));
@@ -788,29 +782,20 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Reads the ack the live sockets of one session are carrying.
+     * Reads the announcement one session still owes its person (HIL-875).
      *
-     * Asked of the sockets because that is where the mark lives, and answered with the
-     * first one found because the mark is written per SESSION: everything that raises or
-     * clears one walks every socket of the session in one pass. They diverge on the ordinary
-     * path and not by accident (HIL-649): a login marks the initiator alone and drops the
-     * session's other tabs, which reconnect owing nothing until this very read hands them
-     * what the session still owes. So the question is what the SESSION owes, and any live
-     * socket of it is an equally good witness.
+     * One field off the session row, asked exactly as {@see pendingAuthStepFor()} asks for the
+     * unfinished step beside it. It used to be a walk over the session's live sockets, because
+     * that is where the mark was written - and the walk was the shape of the defect rather
+     * than a detail of it: a mark whose owner is a socket outlives the session on every path
+     * where the two part company, and the panel it raises is then answered by nobody.
      *
-     * @param string $sessionToken Session cookie token whose sockets are read
+     * @param Session $session Session whose mark is read
      * @return ?string Ack the session owes (a {@see SessionAck} value), or null for none
      */
-    private function sessionPendingAck(string $sessionToken): ?string
+    private function sessionPendingAck(Session $session): ?string
     {
-        foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
-            $ack = $this->connectionPendingAck($acceptKey);
-            if ($ack !== null) {
-                return $ack;
-            }
-        }
-
-        return null;
+        return $session->pendingAck;
     }
 
     /**
@@ -1048,24 +1033,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Returns the success ack one live connection still owes its person (HIL-422).
-     *
-     * Every handshake response has to be re-addressed with this before it goes out,
-     * including the ones that have nothing to do with acks: the payload states the
-     * mark rather than amending it, so a response that left the key out of its own
-     * ignorance would clear an announcement the person has not read yet. A socket
-     * this node does not hold owes nothing, which is also what a project without
-     * session-stage connections answers.
-     *
-     * @param string $acceptKey Connection accept key
-     * @return ?string Ack the connection owes (a {@see SessionAck} value), or null for none
-     */
-    private function connectionPendingAck(string $acceptKey): ?string
-    {
-        return Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey)?->pendingAck;
-    }
-
-    /**
      * Makes one browser session an administrator - the agent half of
      * {@see CliCommands::ADMIN_CREATE} (HIL-609).
      *
@@ -1249,16 +1216,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * A restatement rather than a change: the frame carries the session as it is now, and
      * the project handler on the other end re-sends the identity and re-decides the pages
      * from it. Nothing about the session itself moved, which is why no rotation is named and
-     * no action is answered - what the frame does carry is the ack the sockets are already
-     * holding, because a response that left it out would clear an announcement the person has
-     * not read yet (HIL-422).
+     * no action is answered - what the frame does carry is the ack the session is holding,
+     * because a response that left it out would clear an announcement the person has not read
+     * yet (HIL-422). Since HIL-875 that ack is a field of the session row, so the row behind
+     * each token is read here, for that one field and nothing else - and a process that
+     * answers this command without a session table to read states no mark, which is the only
+     * answer it has.
      *
-     * The sessions are found through the LIVE CONNECTIONS rather than through the session
+     * WHICH sessions to tell is still asked of the LIVE CONNECTIONS rather than of the session
      * table, and the two are not the same question: what has to be told is the tabs that are
      * open, and a session row this node holds no socket for names nobody while still costing
      * the project a page sweep. It is also the node limit the sign-out seam has - a tab held
-     * open elsewhere in a cluster learns the flag when its own node reads the row - and it is
-     * what lets the grant answer in a worker that has no session table loaded.
+     * open elsewhere in a cluster learns the flag when its own node reads the row.
      *
      * The registration step is null throughout, and truthfully so: the frame reaches sockets
      * that carry a signed-in person, and signing in is what releases that step.
@@ -1283,11 +1252,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         foreach ($keysByToken as $sessionToken => $acceptKeys) {
+            $session = Hilos::$db?->sessions->findByToken((string)$sessionToken);
             $this->publishSessionState(new SessionStateSignalData(
                 sessionToken: (string)$sessionToken,
                 userId: $userId,
                 acceptKeys: $acceptKeys,
-                pendingAck: $this->sessionPendingAck((string)$sessionToken),
+                pendingAck: $session === null ? null : $this->sessionPendingAck($session),
             ));
         }
     }
@@ -1396,13 +1366,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * saying "no initiator" is deliberate: a silent default would put the hole back for
      * every future caller that forgot.
      *
-     * The ack a flow just earned is STATED here rather than written a frame earlier, and
-     * that is the split doing its work (HIL-710). Before it, a caller marked the sockets and
-     * then signed the session in, and the second step read the mark back off the rows it had
-     * just written. Those rows belong to another process now: it has not applied the first
-     * frame by the time this one is built, so reading them would answer with the ack of a
-     * moment ago and this frame would state it away. One frame carries both, which is also
-     * what the surface needs - the identity and the sentence about it arrive together.
+     * The ack a flow just earned is written on the session row and stated in the same step
+     * (HIL-710, HIL-875). The write lands on a row this library owns, which is what lets it
+     * happen here at all; what it must not do is travel by being read back, as it did before
+     * HIL-710 - the caller marked sockets living in another process, and this frame, built
+     * before that process had applied anything, would have answered with the ack of a moment
+     * ago and stated it away. So one frame carries the identity and the sentence about it,
+     * and the row behind it answers every tab this frame does not name.
      *
      * @param string $sessionToken Session cookie token to authenticate
      * @param int $userId Durable user id to bind the session to
@@ -1452,6 +1422,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // screen it just left.
         $session->actions->releasePendingRegistration();
 
+        // The announcement this ending earned is written on the session before any frame
+        // states it (HIL-875). The row owes it from here on, so a tab that is not on the frame
+        // below - a sibling the rotation is about to drop, a device that reconnects a minute
+        // later - is answered by the session rather than by a socket that no longer exists.
+        if ($ack !== null) {
+            $session->actions->holdPendingAck($ack);
+        }
+
         if ($rotated !== null) {
             // Analytics names a browser session by the token, not by the session row, so
             // the rotation has to be told - exactly as the runtime connection rows are.
@@ -1471,7 +1449,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 sessionToken: $sessionToken,
                 userId: $userId,
                 acceptKeys: $this->sessionConnectionKeys($sessionToken),
-                pendingAck: $ack ?? $this->sessionPendingAck($sessionToken),
+                pendingAck: $ack ?? $this->sessionPendingAck($session),
                 pendingAuthStep: $this->pendingAuthStepFor($session),
                 requestId: $requestId,
                 action: $action,
@@ -1492,14 +1470,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             static fn(string $acceptKey): bool => $acceptKey !== $initiatorAcceptKey,
         ));
 
-        $pendingAck = $ack ?? $this->connectionPendingAck($initiatorAcceptKey);
         $this->publishSessionState(new SessionStateSignalData(
             sessionToken: $rotated,
             userId: $userId,
             acceptKeys: [$initiatorAcceptKey],
-            pendingAck: $pendingAck,
+            pendingAck: $ack ?? $this->sessionPendingAck($session),
             pendingAuthStep: $this->pendingAuthStepFor($session),
-            rotationTicket: $this->announceRotation($rotated, $keysToDrop, $pendingAck),
+            rotationTicket: $this->announceRotation($rotated, $keysToDrop),
             requestId: $requestId,
             action: $action,
             outcome: $outcome,
@@ -1551,24 +1528,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * sending it is how that order survives the split (HIL-710): the row is written here,
      * where the collection lives, and the frame carrying the ticket leaves after it.
      *
-     * The initiator's pending ack rides on the row (HIL-423). The rotation ends the very
-     * connection the ack was written on, so without this the sentence a flow just earned
-     * dies with the socket that earned it, and the surface closes on a person who never
-     * read it. The ticket is the one thing that says "the same browser, still in the flow
-     * it started" — which is why the ack travels with it and not with the token.
-     *
-     * The ack is passed in rather than read off the initiator's row, and for the same reason
-     * the frame states it (HIL-710): the row lives in another process and does not yet carry
-     * what this very ending has just decided.
+     * The rotation carries the token and nothing else (HIL-875). It used to carry the mark
+     * the initiating connection still owed, because the mark lived on that connection and the
+     * rotation was what killed it; now the mark lives on the session, which the rotation
+     * renames rather than replaces, so there is nothing left for the ticket to rescue.
      *
      * @param string $newToken Token the session was rotated onto
      * @param list<string> $keysToDrop Accept keys of the session's other connections
-     * @param ?string $pendingAck Ack the browser carries across the rotation, or null when it owes none
      * @return string One-time ticket the initiating browser trades for the rotated cookie
      * @throws HilosException On runtime failure
      * @throws RandomException When the platform's secure random source refuses a mint
      */
-    private function announceRotation(string $newToken, array $keysToDrop, ?string $pendingAck): string
+    private function announceRotation(string $newToken, array $keysToDrop): string
     {
         $ticket = SessionRotationTicket::mint();
         Hilos::$rt?->hilosSessionRotations->actions->register(
@@ -1576,7 +1547,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $newToken,
             $keysToDrop,
             SessionRotationTicket::expiryFromNow(),
-            $pendingAck,
         );
 
         return $ticket;
@@ -1596,6 +1566,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * and the recovery drop of the other sessions — which is why every one of them ends in
      * exactly one frame, and why the page re-decision of HIL-652 has exactly one place to
      * stand on the far side of it.
+     *
+     * It is also where an announcement nobody read is taken down (HIL-875). The mark is
+     * lowered inside {@see SessionActions::unbindUser()}, so the frame below states null
+     * rather than restating a sentence about an account this session no longer has - which
+     * is what used to leave a logged-out tab holding a panel it could not answer.
      *
      * @param string $sessionToken Session cookie token to revert to anonymous
      * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
@@ -1619,7 +1594,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             sessionToken: $sessionToken,
             userId: null,
             acceptKeys: $this->sessionConnectionKeys($sessionToken),
-            pendingAck: $this->sessionPendingAck($sessionToken),
+            pendingAck: $this->sessionPendingAck($session),
             requestId: $requestId,
             action: $action,
         ));
@@ -1681,22 +1656,23 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * States one ack on every live socket of a session, in the frame that re-publishes it.
+     * Writes one ack on the session row and states it in the frame that re-publishes it.
      *
      * The write and the re-publish are one step on purpose: the frontend draws from the
      * projection alone, so a mark nobody published is a mark nobody sees, and the two
-     * drifting apart is the only way this mechanism can fail silently. Since HIL-710 that
-     * is guaranteed by there being one frame rather than by two calls kept side by side -
-     * the project writes the row and sends the response out of the same handler.
+     * drifting apart is the only way this mechanism can fail silently. Since HIL-875 the row
+     * being written is the session's, so a tab that was not on this frame is answered by the
+     * session the next time it asks.
      *
      * A token no session answers to is a no-op, the same guard {@see deauthenticateSession()}
      * takes and for a sharper reason: sockets CAN outlive their token. The login rotation
      * re-points only the connection that initiated it, so the session's other sockets go on
      * naming a token the row no longer has — and building the response anyway would resolve
      * that token to no session and publish `currentUser: null`, signing those tabs out of
-     * their own shell to tell them an announcement was dismissed. They are dropped by the
-     * rotation moments later and come back knowing who they are; saying nothing until then
-     * is the honest answer.
+     * their own shell to tell them an announcement was dismissed. Nothing is left behind by
+     * the refusal: the mark belongs to the session, which is still holding it under the name
+     * it answers to now, and the tab that dismissed it is dropped by the rotation moments
+     * later and comes back to a session that owes nothing.
      *
      * @param string $sessionToken Session cookie token whose sockets are written
      * @param ?string $ack Ack kind to show (a {@see SessionAck} value), or null to clear it
@@ -1714,6 +1690,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session === null) {
             return;
+        }
+
+        if ($ack === null) {
+            $session->actions->releasePendingAck();
+        } else {
+            $session->actions->holdPendingAck($ack);
         }
 
         $this->publishSessionState(new SessionStateSignalData(
@@ -3280,7 +3262,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             sessionToken: $sessionToken,
             userId: $session?->userId,
             acceptKeys: [$acceptKey],
-            pendingAck: $this->connectionPendingAck($acceptKey),
+            pendingAck: $session === null ? null : $this->sessionPendingAck($session),
             pendingAuthStep: $this->pendingAuthStepFor($session),
             requestId: $requestId,
             action: $action,

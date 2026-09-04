@@ -157,10 +157,10 @@ final class ChatAgent extends AbstractAgent
      * here, and the analytics identity is attached here, exactly where the handshake handler
      * used to do both.
      *
-     * Each of the three writes happens only where it changes something. That is not thrift
-     * but fidelity: a row written is a row synced to every reader of it, and a frame that
-     * merely restates an unchanged session - an ack dismissed, an action answered - has no
-     * business telling the rest of the node that the connections moved.
+     * Each write happens only where it changes something. That is not thrift but fidelity: a
+     * row written is a row synced to every reader of it, and a frame that merely restates an
+     * unchanged session - an ack dismissed, an action answered - has no business telling the
+     * rest of the node that the connections moved.
      *
      * @param string $acceptKey Accept key of the connection being brought up to date
      * @param SessionStateSignalData $frame What the session is now
@@ -184,13 +184,6 @@ final class ChatAgent extends AbstractAgent
             if ($connection->userId !== $frame->userId) {
                 $connection->actions->bindUser($frame->userId);
             }
-        }
-
-        // The frame STATES the ack rather than amending it, so a socket that owes nothing is
-        // told so too; a socket born of a rotation inherits what the one it replaced had not
-        // shown yet (HIL-423), and that arrives here as the ack of a row that does not exist.
-        if ($connection?->pendingAck !== $frame->pendingAck) {
-            Hilos::$rt->connections->actions->markAck($acceptKey, $frame->pendingAck);
         }
     }
 

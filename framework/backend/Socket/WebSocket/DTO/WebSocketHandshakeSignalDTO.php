@@ -24,7 +24,6 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
     public const string CLIENT_IP = 'clientIp';
     public const string QUERY_PARAMS = 'queryParams';
     public const string SESSION_TOKEN = 'sessionToken';
-    public const string INHERITED_ACK = 'inheritedAck';
 
     /**
      * Creates WebSocket handshake signal DTO.
@@ -35,7 +34,6 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
      * @param ?string $clientIp Client IP address, or null when the transport exposes none
      * @param RequestQueryParams $queryParams Query string params
      * @param string $sessionToken Session token resolved by the daemon (from the cookie, or freshly issued on the handshake)
-     * @param ?string $inheritedAck Success ack the traded rotation carried over to this socket, or null for the ordinary handshake
      */
     public function __construct(
         public readonly array $headers,
@@ -44,7 +42,6 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
         public readonly ?string $clientIp,
         public readonly RequestQueryParams $queryParams = new RequestQueryParams(),
         public readonly string $sessionToken = '',
-        public readonly ?string $inheritedAck = null,
     ) {
     }
 
@@ -67,7 +64,6 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
             self::CLIENT_IP => $this->clientIp,
             self::QUERY_PARAMS => $this->queryParams->toArray(),
             self::SESSION_TOKEN => $this->sessionToken,
-            self::INHERITED_ACK => $this->inheritedAck,
         ];
     }
 
@@ -76,10 +72,9 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
      *
      * Every field toArray() writes unconditionally is required here, headers and
      * cookies included: a request carrying neither is written as two empty maps,
-     * so an absent key is a truncated payload rather than a bare request. Two
-     * fields are genuinely absent rather than truncated: the client IP the
-     * transport may not expose, and the ack only a handshake that traded a
-     * rotation ticket carries.
+     * so an absent key is a truncated payload rather than a bare request. One
+     * field is genuinely absent rather than truncated: the client IP the transport
+     * may not expose.
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
@@ -94,7 +89,6 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
             clientIp: self::optionalString($data, self::CLIENT_IP),
             queryParams: RequestQueryParams::fromStringMap(self::requireArray($data, self::QUERY_PARAMS)),
             sessionToken: self::requireString($data, self::SESSION_TOKEN),
-            inheritedAck: self::optionalString($data, self::INHERITED_ACK),
         );
     }
 }

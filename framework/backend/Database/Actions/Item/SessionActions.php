@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Item;
 
+use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Session\SessionToken;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -93,6 +94,15 @@ final class SessionActions extends DbActions
     /**
      * Reverts this session to anonymous (logout), keeping the token alive.
      *
+     * The pending ack goes with the person, in this write and not beside it (HIL-875). The
+     * mark is raised together with {@see bindUser()} and it is about the account, so a session
+     * that no longer has one owes nothing: leaving it standing is how a logged-out tab was
+     * left holding a panel announcing the end of a flow that had already ended. Written here
+     * rather than at the caller because there are four ways a live session loses its
+     * identity - the shell sign-out, the expiry drop, the merge force-logout, the recovery
+     * drop of the other sessions - and one write cannot be split between them or forgotten by
+     * a fifth one written later.
+     *
      * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
      * @throws HilosException On database error
      */
@@ -105,6 +115,7 @@ final class SessionActions extends DbActions
         }
 
         $this->object->userId = null;
+        $this->object->pendingAck = null;
         $this->object->lastSeenAt = TimeHelper::getSqlDateTime();
         $this->object->sync();
     }
@@ -179,6 +190,56 @@ final class SessionActions extends DbActions
 
         $this->object->pendingRegistrationIdentifier = null;
         $this->object->pendingRegistrationSince = null;
+        $this->object->sync();
+    }
+
+    /**
+     * Marks this session with the success sentence a finished flow still owes its person (HIL-875).
+     *
+     * The mark belongs to the session because that is what it is about: a registration that
+     * landed, a password that changed. It used to belong to the socket, which is a different
+     * lifetime altogether - the socket a rotation replaces, the socket a logged-out tab keeps -
+     * and a mark on the wrong lifetime is an announcement the person cannot answer.
+     *
+     * One field, one value, last writer wins: the surface carries a flag and not a queue, so a
+     * second flow finishing before the first was read simply says the newer thing.
+     *
+     * @param string $ack Ack kind this session owes (a {@see SessionAck} value)
+     * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
+     * @throws HilosException On database error
+     */
+    public function holdPendingAck(string $ack): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Session not found for holdPendingAck (id is null)');
+        }
+
+        $this->object->pendingAck = $ack;
+        $this->object->sync();
+    }
+
+    /**
+     * Forgets the announcement this session owed (HIL-875).
+     *
+     * What the Continue button ends up writing, and what a second click writes over an
+     * already empty field - the mark is a flag, so clearing a cleared one is harmless. Losing
+     * the person is the other ending, and that one is not called from outside: it happens
+     * inside {@see unbindUser()}, where the identity the sentence was about goes.
+     *
+     * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
+     * @throws HilosException On database error
+     */
+    public function releasePendingAck(): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Session not found for releasePendingAck (id is null)');
+        }
+
+        $this->object->pendingAck = null;
         $this->object->sync();
     }
 

@@ -23,6 +23,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property ?string $expiresAt
  * @property ?string $pendingRegistrationIdentifier
  * @property ?string $pendingRegistrationSince
+ * @property ?string $pendingAck
  */
 final class Session extends Object_
 {
@@ -37,6 +38,7 @@ final class Session extends Object_
     public const string expiresAt = 'expiresAt';
     public const string pendingRegistrationIdentifier = 'pendingRegistrationIdentifier';
     public const string pendingRegistrationSince = 'pendingRegistrationSince';
+    public const string pendingAck = 'pendingAck';
 
     /**
      * Returns the database collection key for this object type.
@@ -52,7 +54,7 @@ final class Session extends Object_
      * Returns the value of a session object property by name.
      *
      * @param string $property Property name (id, token, userId, impersonatorUserId, createdAt,
-     *     lastSeenAt, expiresAt, pendingRegistrationIdentifier, pendingRegistrationSince)
+     *     lastSeenAt, expiresAt, pendingRegistrationIdentifier, pendingRegistrationSince, pendingAck)
      * @return mixed Property value or parent method result
      * @throws DatabaseException If entity access fails
      */
@@ -68,6 +70,7 @@ final class Session extends Object_
             self::expiresAt => $this->entity->expires_at,
             self::pendingRegistrationIdentifier => $this->entity->pending_registration_identifier,
             self::pendingRegistrationSince => $this->entity->pending_registration_since,
+            self::pendingAck => $this->entity->pending_ack,
             default => parent::__get($property),
         };
     }
@@ -92,6 +95,7 @@ final class Session extends Object_
                 = is_scalar($value) ? (string)$value : null,
             self::pendingRegistrationSince => $this->entity->pending_registration_since
                 = is_scalar($value) ? (string)$value : null,
+            self::pendingAck => $this->entity->pending_ack = is_scalar($value) ? (string)$value : null,
             default => parent::__set($property, $value),
         };
     }
@@ -99,10 +103,11 @@ final class Session extends Object_
     /**
      * Converts the session object to an associative array with its non-marker fields.
      *
-     * `impersonatorUserId` and the `pendingRegistration*` pair are intentionally
-     * excluded: both are read-legal server-side (guards and the session host read them
-     * via {@see __get}) but are kept off the browser-sync projection — the impersonating
-     * state and the unfinished registration are surfaced to the frontend through the
+     * `impersonatorUserId`, the `pendingRegistration*` pair and `pendingAck` are
+     * intentionally excluded: all three are read-legal server-side (guards and the session
+     * host read them via {@see __get}) but are kept off the browser-sync projection — the
+     * impersonating state, the unfinished registration and the announcement the session
+     * still owes are surfaced to the frontend through the session state frame and the
      * handshake response, not this row.
      *
      * @return array<string, mixed> Key => value array

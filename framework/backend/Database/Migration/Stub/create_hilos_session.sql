@@ -35,6 +35,16 @@
 -- exactly, matching the reservation it shadows; the writing leaf lowercases it
 -- before the write. `pending_registration_since` is restamped by every send,
 -- first or repeat, and is what the cron sweep of abandoned registrations reads.
+--
+-- `pending_ack` (HIL-875) is the success sentence a finished auth flow still owes
+-- this browser and nobody has read yet - the account is ready, the password
+-- changed. It is memory ABOUT this session by the same argument as the pair above,
+-- and it is a column here rather than a mark on the socket that earned it because
+-- a mark owned by a connection outlived the session it belonged to: a logout
+-- restated it and a rotation carried it onto the socket that replaced the marked
+-- one. It carries no index - nothing looks a session up by it, it is read off a
+-- session already in hand - and holds one of a closed set of values written by the
+-- framework, so the default collation is enough.
 
 CREATE TABLE `hilos_session` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -46,6 +56,7 @@ CREATE TABLE `hilos_session` (
     `expires_at` TIMESTAMP NULL DEFAULT NULL,
     `pending_registration_identifier` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
     `pending_registration_since` TIMESTAMP NULL DEFAULT NULL,
+    `pending_ack` VARCHAR(64) DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_session_token` (`token`),
     KEY `idx_session_user` (`user_id`),

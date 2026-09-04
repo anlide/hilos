@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Actions\Collection;
 
-use Hilos\Auth\Session\SessionAck;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\HilosException;
@@ -22,11 +21,14 @@ use Hilos\Runtime\View\Item\HilosSessionConnection;
 /**
  * Write API for the connections runtime collection — the session stage (HIL-509).
  *
- * Three writes differ from {@see HilosConnectionsActions}: the row a socket opens with
- * also names the session it belongs to, a row can be moved onto a renamed session
- * (HIL-582), and a row can be marked with the ack its surface still owes the person
- * (HIL-422). There is still no session-stage item actions class beside this one,
- * because all three writes are addressed by accept key rather than held per row.
+ * Two writes differ from {@see HilosConnectionsActions}: the row a socket opens with also
+ * names the session it belongs to, and a row can be moved onto a renamed session (HIL-582).
+ * A third used to mark the row with the ack its surface owed the person (HIL-422). That mark
+ * moved to the session row in HIL-875, because what it announces is about the account and a
+ * socket is the wrong lifetime for it: the socket dies under a person who has not read it,
+ * and it survives a person who has stopped being one. There is still no session-stage item
+ * actions class beside this one, because both writes are addressed by accept key rather than
+ * held per row.
  *
  * @template TItem of HilosSessionConnection
  * @template TCollection of HilosSessionConnections
@@ -96,39 +98,5 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
         }
 
         $this->applyDiffToState($state, [StateHilosSessionConnection::sessionToken => $newToken]);
-    }
-
-    /**
-     * Marks one live connection with the success ack its surface still owes, or clears it (HIL-422).
-     *
-     * The whole of the "ephemeral" requirement is that this mark lives on the socket:
-     * a reload opens a new connection, which owes nothing, so the announcement does not
-     * survive an F5 and no expiry has to be invented for it. One field, one value, last
-     * writer wins — the wire carries a flag, not a queue, so a second flow finishing
-     * before the first was dismissed simply says the newer thing.
-     *
-     * A connection this collection does not hold is a silent no-op, the same answer
-     * {@see repointSessionToken()} gives a socket that died mid-flight: the tab that was
-     * to be told has closed, and there is nothing left to tell.
-     *
-     * @param string $acceptKey Accept key of the connection to mark
-     * @param ?string $ack Ack kind to show (a {@see SessionAck} value), or null to clear the mark
-     *
-     * @throws RtActionsCollectionNameNullException When the collection name is unavailable
-     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
-     * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
-     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
-     * @throws HilosException Whatever the project's read of its own connection fields raises
-     */
-    public function markAck(string $acceptKey, ?string $ack): void
-    {
-        $this->ensureCanWrite();
-
-        $state = $this->getStateCollection()->get($acceptKey);
-        if ($state === null) {
-            return;
-        }
-
-        $this->applyDiffToState($state, [StateHilosSessionConnection::pendingAck => $ack]);
     }
 }

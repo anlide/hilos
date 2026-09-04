@@ -628,6 +628,50 @@ test('tells the tab that did not save the password that the flow succeeded', asy
   }).toPass()
 })
 
+test('lowers the standing panel in the other tab when the session logs out', async ({
+  page,
+  context,
+}) => {
+  const email = uniqueEmail()
+
+  // Tab A registers from the gated profile, so its surface stands IN PLACE rather
+  // than in a modal and the shell around it stays reachable. Continue is
+  // deliberately not pressed: the session is signed in and still owes the sentence.
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await submitRegistration(page, email)
+  await submitRegistrationCode(page, await readRegisterCode(email))
+  await expect(page.getByTestId('auth-heading')).toHaveText(
+    'Your account is ready',
+  )
+
+  // Tab B typed nothing and finished nothing. The mark belongs to the SESSION
+  // (HIL-875), so it arrives on this tab's own handshake and the gate raises the
+  // same panel here — which is what makes the next step a two-tab case at all.
+  const second = await context.newPage()
+  await gotoPage(second, '/')
+  await expect(second.getByTestId('conn-state')).toHaveText('connected')
+  await expect(second.getByTestId('auth-heading')).toHaveText(
+    'Your account is ready',
+  )
+  await expect(second.getByTestId('auth-continue')).toBeVisible()
+
+  // The case: the session ends with the panel still standing. What it announces is
+  // about the account this session no longer has, so the logout takes it down; it
+  // used to restate it instead, and tab B was left holding an announcement over an
+  // anonymous shell, with nothing on screen that could answer it and no way out
+  // but a reload.
+  await logout(page)
+
+  // toPass because this is a whole trip through the server and back down the other
+  // tab's socket, as in the recovery case above, and not a local unmount.
+  await expect(async () => {
+    await expect(second.getByTestId('auth-surface')).toHaveCount(0)
+  }).toPass()
+  await expect(second.getByTestId('modal')).toBeHidden()
+  await expect(second.getByTestId('nav-profile')).toHaveCount(0)
+})
+
 test('offers a countdown instead of a resend while the cooldown holds', async ({
   page,
 }) => {

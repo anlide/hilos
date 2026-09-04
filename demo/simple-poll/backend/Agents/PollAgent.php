@@ -147,10 +147,6 @@ final class PollAgent extends AbstractAgent
                 $connection->actions->bindUser($frame->userId);
             }
         }
-
-        if ($connection?->pendingAck !== $frame->pendingAck) {
-            Hilos::$rt->connections->actions->markAck($acceptKey, $frame->pendingAck);
-        }
     }
 
     /**

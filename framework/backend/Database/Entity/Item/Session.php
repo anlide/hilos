@@ -29,6 +29,14 @@ use Hilos\Database\PhpType;
  * and because a project with no registration then pays a column it never fills
  * instead of a table it must still create.
  *
+ * `pending_ack` is the success sentence a finished auth flow still owes this browser
+ * and nobody has read yet (HIL-875) - the account is ready, the password changed. It
+ * is memory ABOUT this session by the same argument, and it is written here rather
+ * than on the socket that earned it because a mark owned by a connection outlived
+ * the session it belonged to: a logout restated it, a rotation carried it onto the
+ * socket that replaced the marked one, and what the person was left looking at was an
+ * announcement about a flow that had already ended.
+ *
  * @method static EntitySessions get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntitySessions getAll()
  */
@@ -43,6 +51,7 @@ final class Session extends Entity
     public const string expires_at = 'expires_at';
     public const string pending_registration_identifier = 'pending_registration_identifier';
     public const string pending_registration_since = 'pending_registration_since';
+    public const string pending_ack = 'pending_ack';
 
     public const string _table = 'hilos_session';
     public const string _primary = self::id;
@@ -56,6 +65,7 @@ final class Session extends Entity
         self::expires_at,
         self::pending_registration_identifier,
         self::pending_registration_since,
+        self::pending_ack,
     ];
 
     public const array _types = [
@@ -68,6 +78,7 @@ final class Session extends Entity
         self::expires_at => PhpType::DATETIME->value,
         self::pending_registration_identifier => PhpType::STRING->value,
         self::pending_registration_since => PhpType::DATETIME->value,
+        self::pending_ack => PhpType::STRING->value,
     ];
 
     public const array _indexes = [
@@ -96,4 +107,5 @@ final class Session extends Entity
     public ?string $expires_at = null;
     public ?string $pending_registration_identifier = null;
     public ?string $pending_registration_since = null;
+    public ?string $pending_ack = null;
 }

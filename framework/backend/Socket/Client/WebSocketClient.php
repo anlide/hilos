@@ -428,13 +428,6 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             ? null
             : ProtectedModeRuntime::hashSessionToken($sessionToken);
 
-        // The one thing a rotation carries besides the token: the announcement the socket it
-        // replaces had not shown yet (HIL-423). It rides the handshake signal rather than
-        // being looked up in the worker, because the ticket is spent here and nothing later
-        // can tell this connection apart from a reload of the same session.
-        /** @var ?string $inheritedAck */
-        $inheritedAck = $rotation?->pendingAck;
-
         // Call onHandshake callback before completing handshake
         $this->handleHandshakeInternal(
             $headers,
@@ -443,7 +436,6 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             $this->resolveClientIp($headers),
             $queryParams,
             $sessionToken,
-            $inheritedAck,
         );
 
         // Send handshake response
@@ -1437,7 +1429,6 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @param ?string $clientIp Client IP (IPv4 or IPv6), or null when the peer name is unavailable
      * @param RequestQueryParams $queryParams Query parameters from request URL
      * @param string $sessionToken Session token resolved on the 101 (cookie value or freshly minted)
-     * @param ?string $inheritedAck Success ack a traded rotation carried over to this connection, or null for every other handshake
      * @throws InvalidArgumentException When the handshake signal cannot be named
      */
     final protected function handleHandshakeInternal(
@@ -1447,7 +1438,6 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         ?string $clientIp,
         RequestQueryParams $queryParams,
         string $sessionToken = '',
-        ?string $inheritedAck = null,
     ): void {
         $this->acceptKey = $acceptKey;
         $this->handshakeClientIp = $clientIp;
@@ -1467,7 +1457,6 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             clientIp: $clientIp,
             queryParams: $queryParams,
             sessionToken: $sessionToken,
-            inheritedAck: $inheritedAck,
         );
 
         Hilos::$sr->queueSignal(
