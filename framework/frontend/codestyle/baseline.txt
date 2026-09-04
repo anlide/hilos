@@ -1,0 +1,38 @@
+# Known code-style debt, one record per rule and file:
+#     <RULE-ID> <path from repository root> <count> # <HIL-nnn>
+# The ticket is mandatory: it names the leaf that removes the record.
+# Regenerate with CODESTYLE_BASELINE_UPDATE=1 on the frontend unit run.
+STYLE-INLINE demo/chat/frontend/src/views/AdminBots/AdminBots.vue 1 # HIL-449
+STYLE-INLINE demo/chat/frontend/src/views/AdminModerator/AdminModerator.vue 1 # HIL-449
+STYLE-INLINE demo/chat/frontend/src/views/Main/Main.vue 8 # HIL-449
+STYLE-INLINE demo/chat/frontend/src/views/User/User.vue 1 # HIL-449
+STYLE-INLINE framework/frontend/angular/src/HilosActionError.ts 1 # HIL-449
+STYLE-INLINE framework/frontend/angular/src/HilosMaintenance.ts 1 # HIL-449
+STYLE-INLINE framework/frontend/angular/src/HilosNotificationBell.ts 1 # HIL-449
+STYLE-INLINE framework/frontend/angular/src/admin/backup/HilosBackupPage.ts 5 # HIL-449
+STYLE-INLINE framework/frontend/angular/src/admin/logs/HilosLogsViewPage.ts 1 # HIL-449
+STYLE-INLINE framework/frontend/angular/src/admin/settings/HilosSettingsPage.ts 1 # HIL-449
+STYLE-INLINE framework/frontend/angular/src/admin/users/HilosUserPage.ts 1 # HIL-449
+STYLE-INLINE framework/frontend/angular/src/auth/HilosAuthSurface.ts 1 # HIL-449
+STYLE-INLINE framework/frontend/angular/src/auth/HilosMagicLinkPage.ts 1 # HIL-449
+STYLE-INLINE framework/frontend/angular/src/auth/HilosOAuthCallbackPage.ts 1 # HIL-449
+STYLE-INLINE framework/frontend/react/src/HilosActionError.tsx 1 # HIL-449
+STYLE-INLINE framework/frontend/react/src/HilosMaintenance.tsx 1 # HIL-449
+STYLE-INLINE framework/frontend/react/src/HilosNotificationBell.tsx 1 # HIL-449
+STYLE-INLINE framework/frontend/react/src/admin/backup/HilosBackupPage.tsx 4 # HIL-449
+STYLE-INLINE framework/frontend/react/src/admin/logs/HilosLogsViewPage.tsx 1 # HIL-449
+STYLE-INLINE framework/frontend/react/src/admin/settings/HilosSettingsPage.tsx 1 # HIL-449
+STYLE-INLINE framework/frontend/react/src/admin/users/HilosUserPage.tsx 1 # HIL-449
+STYLE-INLINE framework/frontend/react/src/auth/HilosAuthSurface.tsx 1 # HIL-449
+STYLE-INLINE framework/frontend/react/src/auth/HilosMagicLinkPage.tsx 1 # HIL-449
+STYLE-INLINE framework/frontend/react/src/auth/HilosOAuthCallbackPage.tsx 1 # HIL-449
+STYLE-INLINE framework/frontend/vue/src/HilosActionError.vue 1 # HIL-449
+STYLE-INLINE framework/frontend/vue/src/HilosMaintenance.vue 1 # HIL-449
+STYLE-INLINE framework/frontend/vue/src/HilosNotificationBell.vue 1 # HIL-449
+STYLE-INLINE framework/frontend/vue/src/admin/backup/HilosBackupPage.vue 5 # HIL-449
+STYLE-INLINE framework/frontend/vue/src/admin/logs/HilosLogsViewPage.vue 1 # HIL-449
+STYLE-INLINE framework/frontend/vue/src/admin/settings/HilosSettingsPage.vue 1 # HIL-449
+STYLE-INLINE framework/frontend/vue/src/admin/users/HilosUserPage.vue 1 # HIL-449
+STYLE-INLINE framework/frontend/vue/src/auth/HilosAuthSurface.vue 1 # HIL-449
+STYLE-INLINE framework/frontend/vue/src/auth/HilosMagicLinkPage.vue 1 # HIL-449
+STYLE-INLINE framework/frontend/vue/src/auth/HilosOAuthCallbackPage.vue 1 # HIL-449

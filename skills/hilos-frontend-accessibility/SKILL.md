@@ -45,8 +45,14 @@ target is **WCAG 2.1 AA**, in full, from v1.
 
 - Target WCAG 2.1 AA; do not defer or bolt it on later.
 - No hand-authored CSS for focus, reduced motion, or contrast — it regresses
-  Bootstrap and violates `styling-rules.md`. Never add a blanket
-  `prefers-reduced-motion` reset; it freezes the loading spinners.
+  Bootstrap and violates `styling-rules.md` (checked by `STYLE-SHEET-HOME` and
+  `STYLE-INLINE`). Never add a blanket `prefers-reduced-motion` reset; it freezes
+  the loading spinners.
+- A value the code computes — a progress width, a meter's fill — reaches CSS
+  through one channel and no other: a CSS custom property set on the element,
+  with the rule that consumes it living in the Sass layer beside its `WHY`
+  comment. Every other property name written inline is a violation
+  (`styling-rules.md`).
 - No information by color alone; never suppress a focus outline.
 - One top-level heading per page; never fake a heading with bold text.
 

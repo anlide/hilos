@@ -25,10 +25,19 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 
 - An SFC carries **no** `<style>` block at all — not scoped, not a single rule;
   express styling with Bootstrap utility and component classes in the template
+  (`styling-rules.md`, checked by `STYLE-SHEET-HOME`).
+- No inline `style` attribute in any spelling — `style`, `:style`,
+  `v-bind:style` — and no declaration written onto an element from code
+  (`el.style.…`); no global stylesheet, no hand-authored `.css` in app code. A
+  custom declaration that truly cannot be a Bootstrap class goes into the Sass
+  layer with a comment saying why (`styling-rules.md`, checked by `STYLE-INLINE`
+  and `STYLE-SHEET-HOME`).
+- A **computed** value reaches CSS through one channel and no other: a CSS custom
+  property set on the element — `:style="{ '--hilos-progress': percent }"` — with
+  the rule that consumes it living in the Sass layer beside its `WHY` comment. A
+  custom property on an element is still an inline style; it is legal because of
+  what it carries, and every other property name is a violation
   (`styling-rules.md`).
-- No inline `style` attribute, no global stylesheet, no hand-authored `.css` in
-  app code; a custom declaration that truly cannot be a Bootstrap class goes into
-  the Sass layer with a comment saying why (`styling-rules.md`).
 - Resolve an IDE warning the real toolchain accepts by making the shape
   canonical first, a scoped suppression second, document-and-accept last — never
   a code crutch (`warnings-and-ide.md`).

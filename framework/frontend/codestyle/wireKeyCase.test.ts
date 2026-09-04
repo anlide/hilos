@@ -1,14 +1,15 @@
-// The TypeScript half of WIRE-KEY-CASE under test twice over: against the seeded
-// fixtures, which are the only thing proving the checker still fires, and against
-// the real SDK and demo sources, which is the guard itself. The PHP half is tested
-// the same way by framework/tests/Unit/CodeStyle/{RuleFixtureTest,CodeStyleGuardTest}.
+// The TypeScript half of WIRE-KEY-CASE under test against the seeded fixtures,
+// which are the only thing proving the checker still fires. The real SDK and demo
+// sources are judged by guard.test.ts, which runs every rule of this project
+// against one baseline. The PHP half is split the same way, between
+// framework/tests/Unit/CodeStyle/{RuleFixtureTest,CodeStyleGuardTest}.
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { expect, it } from 'vitest'
 
-import { checkRepository, checkSource } from './wireKeyCase.js'
+import { checkSource } from './wireKeyCase.js'
 
 /** framework/frontend/codestyle → framework/frontend → framework → the repository. */
 const REPOSITORY_ROOT = join(
@@ -58,8 +59,4 @@ it('reports exactly the keys the bad fixture seeds', () => {
 
 it('stays silent on the look-alikes the good fixture seeds', () => {
   expect(reportFixture('goodWireKeys.ts')).toEqual([])
-})
-
-it('finds no field key spelled in another case in the scanned sources', () => {
-  expect(checkRepository(REPOSITORY_ROOT)).toEqual([])
 })

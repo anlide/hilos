@@ -1,13 +1,15 @@
-// E2E-PAGE-GOTO under test twice over: against the seeded fixtures, which are the
-// only thing proving the checker still fires, and against the demos' real e2e
-// roots, which is the guard itself.
+// E2E-PAGE-GOTO under test against the seeded fixtures, which are the only thing
+// proving the checker still fires. The real e2e roots are judged by guard.test.ts,
+// which runs every rule of this project against one baseline — a rule holding a
+// repository assertion of its own would be a second guard, and the baseline is
+// one file.
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { expect, it } from 'vitest'
 
-import { checkRepository, checkSource } from './e2eGoto.js'
+import { checkSource } from './e2eGoto.js'
 
 /** framework/frontend/codestyle → framework/frontend → framework → the repository. */
 const REPOSITORY_ROOT = join(
@@ -61,8 +63,4 @@ it('lets the wrapper owner call goto, since it owns the wrappers', () => {
       'await page.goto(path)\n',
     ),
   ).toEqual([])
-})
-
-it('finds no spec opening a page behind the wrappers', () => {
-  expect(checkRepository(REPOSITORY_ROOT)).toEqual([])
 })

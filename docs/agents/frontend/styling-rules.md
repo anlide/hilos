@@ -15,17 +15,31 @@ declared.
 
 The following are **gross Hilos violations**, no exceptions:
 
-- inline `style` attributes;
+- inline `style` attributes, in every spelling a view framework offers them —
+  Vue's `style` / `:style` / `v-bind:style`, Angular's `style` / `[style]` /
+  `[style.prop]` / `[ngStyle]`, React's `style={…}`;
+- writing a declaration onto an element from code — `el.style.<prop> = …`,
+  `el.style.setProperty('<prop>', …)`, `el.style.cssText = …`;
 - a Vue SFC trailing `<style>` block (the strict reading of "no CSS at the end of
   the file" is intended — an SFC carries no `<style>` at all);
+- an Angular component declaring `styles:` or `styleUrls:` of its own;
 - global stylesheets;
 - any hand-authored `.css` file in app code.
+
+The imperative write is named out loud rather than left to be inferred from
+"inline `style` attribute". It lands in the same place through a different door,
+and there are zero of them in the tree today — so naming it costs nothing now and
+closes the way around the rule before anyone walks it.
 
 The reason is structural: an SFC `<style>` or inline style would let hardcoded
 colors and sizes bypass Bootstrap's theme variables and responsive breakpoints,
 breaking theming and mobile support out of the box. The cost — utility-class
 verbosity, and an awkward home for the rare bespoke rule — is accepted
 consciously.
+
+Checked automatically: `STYLE-INLINE` for the two inline forms — the attribute
+and the imperative write — and `STYLE-SHEET-HOME` for the other three, which are
+one violation wearing three faces: a declaration housed outside the layer.
 
 ## The Sass layer — the only home for custom declarations
 
@@ -35,6 +49,45 @@ Bootstrap-native way to express a need. Each custom declaration carries a commen
 stating **why** Bootstrap utilities cannot achieve it and **what** it is for. Even
 a rare bespoke rule (e.g. a keyframe) goes here, documented — never as an ad-hoc
 escape hatch elsewhere.
+
+Checked automatically: `STYLE-SHEET-HOME`. The layer is a list of sanctioned
+paths — one file per view package — and a stylesheet anywhere else is reported by
+its path alone, whether or not anything imports it.
+
+## A computed value — the one legal channel
+
+A number the template computes still has to reach CSS, and no class can express
+one: a progress bar's width is the honest example. The one legal channel is a
+**CSS custom property set on the element**, and this document says out loud what
+it would be dishonest to hide — that a custom property on an element **is** an
+inline style. It is legal because of what it carries, not because of where it is
+written:
+
+```vue
+<div class="progress hilos-progress" :style="{ '--hilos-progress': percent }">
+```
+
+The element hands over a number and nothing else. The rule that consumes it lives
+in the Sass layer beside its `WHY` comment, like every other declaration stock
+utilities cannot express:
+
+```scss
+// WHY: Bootstrap's progress bar takes its width from an inline style, and a
+// width computed per frame has no class to be expressed as.
+// WHAT: the width of a progress bar whose owner hands over a percentage.
+.hilos-progress {
+  width: calc(var(--hilos-progress) * 1%);
+}
+```
+
+The channel is narrowed to a custom property rather than opened to "a dynamic
+binding" on purpose. A flat ban cannot express a progress bar; legalizing dynamic
+bindings wholesale would leave every static style one interpolation away from
+legal. What is judged is the **name** of every property a site sets, so no
+spelling launders a normal property through a variable — and a set of names that
+cannot be read where it is written (an identifier handed to `:style` instead of
+an object literal) is a violation of its own, because passing it would make the
+ban one indirection deep.
 
 ## Where Bootstrap lives — the SDK ships it
 

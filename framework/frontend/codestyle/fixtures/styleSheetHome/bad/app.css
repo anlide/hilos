@@ -1,0 +1,6 @@
+/* Deliberately broken sample: a hand-authored stylesheet living outside the
+   sanctioned Sass layer, which STYLE-SHEET-HOME must report by its path alone —
+   whatever is written inside it, and whether or not anything imports it. */
+.app-shell {
+  padding: 1rem;
+}

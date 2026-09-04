@@ -26,6 +26,8 @@ rule.
 | `THROWS-PROPAGATION` | An exception a callee documents is named by the caller's own `@throws` too, unless an enclosing `catch` swallows it; and an implementation does not document an exception the declaration it overrides is silent about. A `throw new X` is judged as its own callee. Only calls whose target is known without inferring a type; a private helper is walked through rather than trusted. | [phpdoc.md](phpdoc.md) |
 | `PAGE-REACH` | Every concrete page says whether the browser navigates to it, and a page that says it does not may not lean on `READS_DB`. The answer is the `REACH` constant, resolved up the parent chain, so a base answers for its whole branch. Three findings: a page for which nothing resolves, an `ACTION_HOST` whose `READS_DB` resolves to a non-empty list — that list is taken up on a page subscription only, so those reads belong in `DbContext::processWideReadCollections()` — and one of the two common roots carrying anything but `UNDECLARED`, which would declare the whole repository at once. Abstract classes are never required to answer. No baseline and no in-comment marker: the two roots are a line in the rule, with their reason. Every production root. | [subscriptions.md](../signals/subscriptions.md) |
 | `E2E-PAGE-GOTO` | An e2e spec opens a page through `gotoPage()`, never through Playwright's `goto`, which waits for the document and not for the subscription's answer. TypeScript only; the `helpers/page.ts` that owns the wrappers is the one place the call is allowed. | [testing-strategy.md](../frontend/testing-strategy.md) |
+| `STYLE-SHEET-HOME` | The Bootstrap Sass layer is the only home a custom style declaration has. Three faces under one id: a `.css` / `.scss` / `.sass` / `.less` file outside the sanctioned list — one `hilos-styles.scss` per view package — a `<style>` block in a Vue SFC, and `styles:` or `styleUrls:` on an `@Component`. A stylesheet is judged by its path alone, whether or not anything imports it. Not judged: `angular.json` `styles` and an `index.html` `<link>`, both of which reference third-party stylesheets under `node_modules`, and a third-party stylesheet is not a hand-authored one. TypeScript only. | [styling-rules.md](../frontend/styling-rules.md) |
+| `STYLE-INLINE` | An element carries no hand-authored declaration. What is judged is the **name** of every property a site sets, not static versus dynamic: the site is legal only when every one of them is a CSS custom property (`--*`), the one channel a computed value has. Read in every spelling the three view frameworks offer — Vue's `style` / `:style` / `v-bind:style`, Angular's `style` / `[style]` / `[style.prop]` / `[style.prop.unit]` / `[ngStyle]` / `ngStyle`, React's `style={…}` — and in the imperative forms `el.style.<prop> = …`, `el.style.setProperty()` and `el.style.cssText`. A set of names that cannot be read where it is written — an identifier instead of an object literal — is a violation with a message of its own, since passing it would make the ban one indirection deep. Reading `.style` is not judged. One violation per site, not per declaration. TypeScript only. | [styling-rules.md](../frontend/styling-rules.md) |
 | `DOC-ROUTE` | Every file of this catalog, at any depth, is mentioned by at least one `skills/*/SKILL.md`, or declines a route in itself and says why. A file that is both routed and declining is reported the same way. | [rule-authoring.md](../rule-authoring.md) |
 | `DOC-LINK` | A local reference in the agent docs names something that exists. In a skill wrapper both a markdown link and a backticked path count as one; in a document only a markdown link does. | [rule-authoring.md](../rule-authoring.md) |
 | `SECRET-IN-QUERY` | A query parameter is read only under a name the rule lists. It reads the by-key readers of `RequestQueryParams` — `getString()`, `requireString()`, `requireStringMatching()`, `has()` — and matches the text of the argument as written at the call site, because a token walk cannot resolve another class's constant. Two names are listed today, each with its reason; `toArray()` is out of scope. Every root. | [secret-in-query.md](../antipatterns/secret-in-query.md) |
@@ -330,6 +332,14 @@ several hundred sites in one go: the baseline would then hold more exceptions
 than the tree holds clean code, and a list that large is read as a mute list
 rather than as owed work — which is the one thing the baseline must never become.
 
+`STYLE-INLINE` reads what the template writes down, and two ways of styling an
+element reach the DOM without being written down there. An attribute spread —
+Vue's `v-bind="attributes"`, JSX's `{...props}` — can carry a `style` the checker
+never sees, and so can a style handed to a third-party component through a prop
+of its own. The tree has neither today, and both stay a matter for review. Its
+sibling `STYLE-SHEET-HOME` has no blind spot of that kind: it judges a file list,
+and a file cannot hide.
+
 The checker is not a second source of truth. Each rule points back at the
 document that owns it, and the failure line carries that path. Change the rule in
 the document first; the check follows.
@@ -413,6 +423,32 @@ write — a count that grew, a key that is new — and prints the lines those re
 do not cover, so nothing it left out stays invisible. A baseline whose own
 records do not parse is left untouched: they have to be readable before the tree
 is written into them.
+
+### The frontend has a baseline of its own
+
+The TypeScript rules record their debt in
+`framework/frontend/codestyle/baseline.txt`, which is the same file in a second
+copy: same record shape, same key, same four verdicts, same shrink-only update,
+same `CODESTYLE_BASELINE_UPDATE=1` flag. It is a separate file because the two
+suites run in separate processes and each rewrites its own whole; sharing one
+would mean whichever suite pressed the button last erased the other's records.
+
+Its guard is `framework/frontend/codestyle/guard.test.ts`, one test fed by every
+frontend rule, for the reason the PHP half gives above: a second guard test with
+a second baseline erases the first. Each rule keeps its fixture test, which is
+the only thing proving the checker still fires.
+
+```bash
+docker compose -f framework/docker/docker-compose.yml run --rm \
+  -e CODESTYLE_BASELINE_UPDATE=1 hilos-frontend-cli npm run test
+```
+
+Pass no `--user` here, unlike the PHP command above: the workspace's
+`node_modules` is installed by a root container, and Vite writes the bundled
+config into it before a single test runs — as another user the run dies with
+`EACCES` and never reaches the button. The file it rewrites is committed and
+therefore always exists, so the root process writes into an inode that already
+belongs to you and its ownership does not change.
 
 **A count only grows by hand, written by a person, with a `HIL-nnn` on the
 line.** Then the growth shows up in the diff as a decision instead of a side
