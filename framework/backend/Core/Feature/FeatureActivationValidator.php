@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Feature;
 
 use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -25,10 +26,10 @@ use Hilos\Hilos;
  * broken: the registries then say the feature is on and the declaration says it is off, which
  * is exactly the half-flipped switch the declaration was introduced to remove.
  *
- * Constants are all it reads: the validator runs before `$db` and `$rt` exist. Migrations
- * deliberately stay out of it - they are applied as a separate step, and gating startup on them
- * would fail every process that starts before the migration run, so the SQL tables a feature
- * needs are checked by each project's own unit test instead.
+ * Constants and the static declarations they name are all it reads: the validator runs before
+ * `$db` and `$rt` exist. Migrations deliberately stay out of it - they are applied as a separate
+ * step, and gating startup on them would fail every process that starts before the migration run,
+ * so the SQL tables a feature needs are checked by each project's own unit test instead.
  */
 final class FeatureActivationValidator
 {
@@ -196,6 +197,8 @@ final class FeatureActivationValidator
             $errors[] = "{$name} is declared but {$requirements->requiredCatalogConstant} still holds the framework default";
         }
 
+        $this->validateCatalogFragments($hilosClass, $name, $requirements, $errors);
+
         foreach ($requirements->requires as $required) {
             if (!in_array($required, $declared, true)) {
                 $errors[] = "{$name} is declared but the {$this->name($required)} it is built on is not";
@@ -317,6 +320,58 @@ final class FeatureActivationValidator
 
         $target = $tableClass ?? 'a table';
         $errors[] = "{$name} is declared but PAGE_TABLES binds no page extending {$pageClass} to {$target}";
+    }
+
+    /**
+     * Validates that the project folded a feature's settings-catalog fragments into its catalog.
+     *
+     * A framework fragment is woven in by hand, with `array_replace()` in the project's own
+     * settings catalog, and a forgotten one used to be invisible: the keys simply never reached
+     * the settings screen and every reader fell back to a default. The feature names the fragment
+     * classes rather than the keys, so the set of keys stays declared in one place - the fragment.
+     *
+     * The rule is one-directional and by inclusion: the fragment's keys must be among the
+     * catalog's. The catalog carries the project's own keys and the fragments of other features
+     * besides, and a project remains free to name a key of its own whatever it likes - the
+     * catalog is still the only truth about which keys exist.
+     *
+     * One error per fragment, not per key: what goes missing is a whole `array_replace()`
+     * argument, and a fragment derived from a project registry legitimately contributes no keys
+     * at all - an empty set is a subset of anything, so a project without delivery channels needs
+     * no special case here. An exception out of `getCatalog()` is deliberately not caught: a
+     * fragment that cannot build itself is a broken bootstrap, and swallowing it here would turn
+     * that into the silent green this check exists to remove.
+     *
+     * @param class-string<Hilos> $hilosClass Project facade class
+     * @param string $name Feature name for error messages
+     * @param FeatureRequirements $requirements What the feature obliges the project to register
+     * @param list<string> $errors Activation error accumulator
+     */
+    private function validateCatalogFragments(
+        string $hilosClass,
+        string $name,
+        FeatureRequirements $requirements,
+        array &$errors,
+    ): void {
+        if ($requirements->requiredCatalogFragments === []) {
+            return;
+        }
+
+        $catalogClass = Hilos::catalogConstantOf($hilosClass, 'SETTINGS_CATALOG');
+        if (!is_string($catalogClass) || !is_a($catalogClass, CatalogProviderInterface::class, true)) {
+            $errors[] = "{$name} is declared but SETTINGS_CATALOG does not name a " . CatalogProviderInterface::class;
+
+            return;
+        }
+
+        $catalogKeys = array_keys($catalogClass::getCatalog());
+        foreach ($requirements->requiredCatalogFragments as $fragmentClass) {
+            $missing = array_diff(array_keys($fragmentClass::getCatalog()), $catalogKeys);
+            if ($missing !== []) {
+                $errors[] = "{$name} is declared but {$catalogClass} does not fold in {$fragmentClass}: "
+                    . implode(', ', $missing);
+            }
+        }
     }
 
     /**

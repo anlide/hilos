@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Feature;
 
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -28,7 +29,9 @@ use Hilos\Core\Table\Definition\TableDefinition;
  *
  * The fields split by WHEN they can be checked, not by importance:
  * - the first group is visible in the facade constants alone, so the startup activation
- *   validator reads it before any layer is built and refuses to boot on a gap;
+ *   validator reads it before any layer is built and refuses to boot on a gap.
+ *   `$requiredCatalogFragments` belongs here too: the catalog is reached through the
+ *   SETTINGS_CATALOG constant, and both it and the fragment declare their keys statically;
  * - the second group (`$requiredDbTables`, `$requiredCliCommands`, `$requiresPresenceSource`)
  *   is not, so a per-demo unit test reads it instead. Migrations in particular must stay out
  *   of the startup check: they are applied as a separate step, and gating boot on them would
@@ -47,6 +50,9 @@ final readonly class FeatureRequirements
      * @param array<class-string<AbstractPage>, ?class-string<TableDefinition>> $requiredPageTables Page
      *     base class to the table it must be bound to, or null when any binding satisfies it
      * @param ?string $requiredCatalogConstant Facade constant the project must point at its own catalog
+     * @param list<class-string<CatalogProviderInterface>> $requiredCatalogFragments Framework settings-catalog
+     *     fragments the project must fold into its own settings catalog, named by the class that builds them
+     *     so the set of keys stays written in one place
      * @param list<HilosFeature> $requires Features this one is built on top of
      * @param list<string> $requiredDbTables SQL tables the feature reads and writes, named by their
      *     entity `_table` constant so a rename cannot leave the requirement behind (checked by the
@@ -62,6 +68,7 @@ final readonly class FeatureRequirements
         public array $requiredTables = [],
         public array $requiredPageTables = [],
         public ?string $requiredCatalogConstant = null,
+        public array $requiredCatalogFragments = [],
         public array $requires = [],
         public array $requiredDbTables = [],
         public array $requiredCliCommands = [],

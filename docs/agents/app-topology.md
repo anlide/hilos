@@ -136,11 +136,17 @@ feature, in `Core/Feature/Definition/*Feature.php`, and is checked rather than
 remembered:
 
 - `Hilos::validateFeatureActivation()` runs in `init()` beside
-  `validateTopology()` and reads constants only. It refuses to start when a
-  declared feature is missing its page, agent pair, table, page-table binding,
-  catalog constant or a feature it depends on — and equally when such an
-  artifact is registered while the feature is *not* declared, which is the same
-  half-flipped switch seen from the other side.
+  `validateTopology()` and reads constants and the static declarations they name.
+  It refuses to start when a declared feature is missing its page, agent pair,
+  table, page-table binding, catalog constant or a feature it depends on — and
+  equally when such an artifact is registered while the feature is *not*
+  declared, which is the same half-flipped switch seen from the other side.
+  Settings keys count as such an artifact: a feature names the framework
+  catalog fragments it owns (`requiredCatalogFragments`), and their keys must be
+  among the keys of the catalog `SETTINGS_CATALOG` points at. Folding a fragment
+  in stays a line the project writes by hand — `array_replace(...)` in its own
+  catalog — and forgetting it used to be invisible, the keys simply never
+  reaching the settings screen.
 - `Hilos::validateDeferredFeatureRequirements($migrationsPath,
   $cliManagerClass, $rtContextClass)` covers what startup deliberately cannot
   see: the SQL tables the feature reads (migrations are applied as a separate

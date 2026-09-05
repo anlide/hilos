@@ -23,6 +23,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -206,6 +207,14 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      *
      * A subclass that overrides this MUST call up: the claims are what the library stands on.
      *
+     * The journal prune is armed only where deliveries are written. Whether the project declared
+     * {@see HilosFeature::NOTIFICATION_DELIVERY} is a fact about how it was built, settled before
+     * the first tick and unchanged between them, so it is asked once here rather than on every
+     * tick; a store-only project leaves the rule null and {@see onTick()} does nothing. Until
+     * HIL-857 that project was spared the prune by accident - its catalog happened not to carry
+     * the retention key - and the accident, not the absence of a delivery table, is what stopped
+     * a daily DELETE against a table it never migrated.
+     *
      * The last thing it does is send the letters written while it was not running (HIL-771): a
      * restore emits with the node frozen or the daemon down, and those drafts waited in
      * {@see DeferredNotificationQueue} for exactly this moment. Sent after the claims, because
@@ -218,7 +227,9 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
         $this->registerDbTruthSource(HilosDbContext::notificationDeliveries);
         $this->registerDbTruthSource(HilosDbContext::pushSubscriptions);
 
-        $this->deliveryLogPruneRule = new CronRule(self::DELIVERY_LOG_PRUNE_RULE, self::DELIVERY_LOG_PRUNE_SCHEDULE);
+        if (Hilos::hasFeature(HilosFeature::NOTIFICATION_DELIVERY)) {
+            $this->deliveryLogPruneRule = new CronRule(self::DELIVERY_LOG_PRUNE_RULE, self::DELIVERY_LOG_PRUNE_SCHEDULE);
+        }
 
         $this->emitDeferred();
     }
@@ -818,15 +829,23 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     /**
      * Prunes the delivery journal to its retention window, swallowing and logging any failure.
      *
-     * Reads the retention setting only when the project catalogs it; a retention of 0
-     * disables cleanup inside {@see DeliveryLogPruner::prune()}. Any failure is logged
-     * and swallowed so a prune error never breaks the agent loop.
+     * Reached only where {@see HilosFeature::NOTIFICATION_DELIVERY} is declared, so the retention
+     * key is in the project's catalog: the startup guard refuses to boot a project that declared
+     * the feature without folding the fragment in. A missing key is therefore not a state to skip
+     * over quietly but a broken installation, and reading it raises rather than returns - the
+     * catch below turns that into an error in the agent log. A retention of 0 disables cleanup
+     * inside {@see DeliveryLogPruner::prune()}.
+     *
+     * Any failure is logged and swallowed so a prune error never breaks the agent loop. The
+     * absent accessor is the one thing that returns instead: {@see Hilos::init()} assigns it
+     * unconditionally, so a null here means the facade this agent runs under was never
+     * initialized at all - a state no worker is in, and one this method has nothing to say about.
      */
     private function pruneDeliveryLog(): void
     {
         try {
             $setting = Hilos::$setting;
-            if ($setting === null || !isset($setting[DeliveryLogPruner::RETENTION_SETTING_KEY])) {
+            if ($setting === null) {
                 return;
             }
 

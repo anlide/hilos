@@ -9,7 +9,7 @@ use DateTimeImmutable;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
-use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
 use Hilos\Notification\Delivery\DeliveryStatus;
 
 /**
@@ -22,6 +22,11 @@ use Hilos\Notification\Delivery\DeliveryStatus;
  * {@see DEFAULT_RETENTION_DAYS} days. A retention of 0 (or less) means keep forever —
  * {@see prune()} is a no-op. Pending rows are NEVER deleted: an unfinished delivery
  * must survive to be driven to a terminal state.
+ *
+ * The catalog entry behind that key lives in {@see DeliveryLogSettingsCatalog}, not here.
+ * The project folds that fragment into its own settings catalog by hand, and the feature
+ * registry is what makes it do so: NOTIFICATION_DELIVERY names the fragment among its
+ * requirements, and a project that declared the feature and skipped the fold does not start.
  *
  * Only the technical delivery trace is removed; the notification itself lives on in
  * hilos_notification, so no user data is lost. This is silent cleanup by design
@@ -87,24 +92,5 @@ final class DeliveryLogPruner
         }
 
         return $now->sub(new DateInterval("P{$retentionDays}D"))->format('Y-m-d H:i:s');
-    }
-
-    /**
-     * The framework settings-catalog fragment for the journal retention key.
-     *
-     * A project folds this into its own settings catalog (the same way it folds the
-     * channel fragment), so the retention key is framework-owned and present without
-     * the project spelling it out.
-     *
-     * @return array<string, array<string, mixed>> Catalog keyed by the retention setting key
-     */
-    public static function catalogFragment(): array
-    {
-        return [
-            self::RETENTION_SETTING_KEY => [
-                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
-                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => self::DEFAULT_RETENTION_DAYS,
-            ],
-        ];
     }
 }

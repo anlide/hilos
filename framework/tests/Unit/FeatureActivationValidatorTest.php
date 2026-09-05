@@ -18,6 +18,7 @@ use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos as HilosFacade;
 use PHPUnit\Framework\TestCase;
 
@@ -108,6 +109,34 @@ final class FeatureActivationValidatorTest extends TestCase
         FeatureActivationCatalogLessHilos::validateFeatureActivation();
     }
 
+    public function testDeclaredFeatureWithoutItsCatalogFragmentIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'HilosFeature::LOGS is declared but ' . FeatureActivationBareCatalog::class . ' does not fold in '
+            . FeatureActivationTestFragment::class . ': ' . FeatureActivationTestFragment::FRAGMENT_KEY,
+        );
+
+        FeatureActivationUnfoldedFragmentHilos::validateFeatureActivation();
+    }
+
+    public function testDeclaredFeatureWithItsCatalogFragmentFoldedInPasses(): void
+    {
+        FeatureActivationFoldedFragmentHilos::validateFeatureActivation();
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testCatalogFragmentAgainstANonCatalogSettingsConstantIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'HilosFeature::LOGS is declared but SETTINGS_CATALOG does not name a ' . CatalogProviderInterface::class,
+        );
+
+        FeatureActivationUncatalogedFragmentHilos::validateFeatureActivation();
+    }
+
     public function testRegisteredArtifactWithoutItsDeclarationIsReported(): void
     {
         $this->expectException(IncompleteFeatureActivationException::class);
@@ -162,6 +191,7 @@ final class FeatureActivationTestRegistry extends FeatureRegistry
             new FeatureActivationRequiringFeature(),
             new FeatureActivationDependentFeature(),
             new FeatureActivationSessionsLibraryFeature(),
+            new FeatureActivationFragmentFeature(),
         ];
     }
 }
@@ -235,6 +265,84 @@ final class FeatureActivationSessionsLibraryFeature extends FeatureDefinition
     public function requirements(): FeatureRequirements
     {
         return new FeatureRequirements(requiredAgents: [HilosAgentType::HILOS_SESSIONS_LIBRARY]);
+    }
+}
+
+/**
+ * Synthetic feature whose only obligation is a settings-catalog fragment folded into the project catalog.
+ */
+final class FeatureActivationFragmentFeature extends FeatureDefinition
+{
+    /**
+     * @return HilosFeature Case standing in for a feature that owns settings keys
+     */
+    public function feature(): HilosFeature
+    {
+        return HilosFeature::LOGS;
+    }
+
+    /**
+     * @return FeatureRequirements One settings-catalog fragment and nothing else
+     */
+    public function requirements(): FeatureRequirements
+    {
+        return new FeatureRequirements(requiredCatalogFragments: [FeatureActivationTestFragment::class]);
+    }
+}
+
+/**
+ * Framework-side settings-catalog fragment the synthetic feature asks a project to fold in.
+ */
+final class FeatureActivationTestFragment implements CatalogProviderInterface
+{
+    public const string FRAGMENT_KEY = 'feature_activation.fragment_key';
+
+    /**
+     * @return array<string, array<string, mixed>> Catalog holding the fragment's single key
+     */
+    public static function getCatalog(): array
+    {
+        return [
+            self::FRAGMENT_KEY => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => false,
+            ],
+        ];
+    }
+}
+
+/**
+ * Project settings catalog carrying its own key and none of the framework fragment.
+ */
+final class FeatureActivationBareCatalog implements CatalogProviderInterface
+{
+    public const string PROJECT_KEY = 'feature_activation.project_key';
+
+    /**
+     * @return array<string, array<string, mixed>> Catalog holding the project's own key
+     */
+    public static function getCatalog(): array
+    {
+        return [
+            self::PROJECT_KEY => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => '',
+            ],
+        ];
+    }
+}
+
+/**
+ * Project settings catalog that folds the framework fragment in, the way an activated project must.
+ */
+final class FeatureActivationFoldedCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, array<string, mixed>> The project's own keys with the fragment folded in
+     */
+    public static function getCatalog(): array
+    {
+        return array_replace(FeatureActivationBareCatalog::getCatalog(), FeatureActivationTestFragment::getCatalog());
     }
 }
 
@@ -457,6 +565,45 @@ final class FeatureActivationUnboundPageHilos extends FeatureActivationValidHilo
 final class FeatureActivationCatalogLessHilos extends FeatureActivationValidHilos
 {
     protected const ?string BACKUP_CATALOG = null;
+}
+
+/**
+ * Facade that declares the fragment feature while its settings catalog folds nothing in.
+ *
+ * The two facades below take this one and change only SETTINGS_CATALOG, so each test states the
+ * catalog it is about and nothing else.
+ */
+class FeatureActivationUnfoldedFragmentHilos extends FeatureActivationValidHilos
+{
+    protected const array FEATURES = [HilosFeature::LOGS];
+
+    protected const ?string BACKUP_CATALOG = null;
+
+    protected const string SETTINGS_CATALOG = FeatureActivationBareCatalog::class;
+
+    public const array PAGES = [];
+
+    public const array AGENTS = [];
+
+    public const array TABLES = [];
+
+    public const array PAGE_TABLES = [];
+}
+
+/**
+ * Facade whose settings catalog folds the fragment in.
+ */
+final class FeatureActivationFoldedFragmentHilos extends FeatureActivationUnfoldedFragmentHilos
+{
+    protected const string SETTINGS_CATALOG = FeatureActivationFoldedCatalog::class;
+}
+
+/**
+ * Facade that points SETTINGS_CATALOG at a class which is no catalog at all.
+ */
+final class FeatureActivationUncatalogedFragmentHilos extends FeatureActivationUnfoldedFragmentHilos
+{
+    protected const string SETTINGS_CATALOG = FeatureActivationTestAgent::class;
 }
 
 /**

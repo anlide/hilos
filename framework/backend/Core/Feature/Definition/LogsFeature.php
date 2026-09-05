@@ -9,6 +9,7 @@ use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Log\LogRotationTriggerPolicy;
+use Hilos\Log\LogSettingsCatalog;
 use Hilos\Pages\Logs\AbstractHilosLogsKeysPage;
 use Hilos\Pages\Logs\AbstractHilosLogsPage;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
@@ -24,7 +25,10 @@ use Hilos\Pages\Logs\AbstractHilosLogsWorkersPage;
  *
  * Whether rotation actually runs stays an env switch inside the feature
  * ({@see LogRotationTriggerPolicy}) and is not required here: the registry answers what the
- * project is built with, deployment answers what is turned on at this installation.
+ * project is built with, deployment answers what is turned on at this installation. The keys
+ * behind those switches are required, though: {@see LogSettingsCatalog} is what puts rotation,
+ * retention and the logging mode on the settings screen, and a project that declares the feature
+ * without folding it in leaves an administrator no way to reach them.
  */
 final class LogsFeature extends FeatureDefinition
 {
@@ -37,7 +41,8 @@ final class LogsFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements The five log pages and the overview, store, carrier and aggregator agents
+     * @return FeatureRequirements The five log pages, the overview, store, carrier and aggregator
+     *     agents, and the log settings fragment
      */
     public function requirements(): FeatureRequirements
     {
@@ -55,6 +60,7 @@ final class LogsFeature extends FeatureDefinition
                 HilosAgentType::HILOS_LOG_CARRIER,
                 HilosAgentType::HILOS_LOG_AGGREGATOR,
             ],
+            requiredCatalogFragments: [LogSettingsCatalog::class],
         );
     }
 }

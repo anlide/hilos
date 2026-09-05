@@ -10,8 +10,8 @@ use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Log\LogSettingsCatalog;
-use Hilos\Notification\DeliveryLogPruner;
 use Hilos\Notification\Delivery\ChannelSettingsCatalog;
+use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
 
 /**
  * SettingsCatalog - Project settings catalog.
@@ -125,7 +125,7 @@ final class SettingsCatalog implements CatalogProviderInterface
             ],
         ],
             ChannelSettingsCatalog::entriesFor(ChatDeliveryChannelRegistry::all()),
-            DeliveryLogPruner::catalogFragment(),
+            DeliveryLogSettingsCatalog::getCatalog(),
             LogSettingsCatalog::getCatalog(),
         );
     }
