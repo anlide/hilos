@@ -34,6 +34,8 @@ switch to the focused data-layer skill first.
 - A write that devalues a screen somebody is looking at right now:
   `docs/agents/signals/screen-invalidation.md`.
 - Signal routing and DTO payloads: use `$hilos-signals`.
+- A value out of `Hilos::$env` or `Hilos::$setting`, which is a catalog and not a
+  collection: `docs/agents/code-style/catalog-backed-accessors.md`.
 
 ## Mental Model
 

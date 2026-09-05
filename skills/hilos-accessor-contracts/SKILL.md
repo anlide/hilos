@@ -24,6 +24,9 @@ result, or collection value. Start with `agents.md`, then read
 - Caller code with a settings key must use `Hilos::$db->settings[$key]`; if the
   offset contract is missing, fix the collection contract instead of calling
   `Hilos::$db->settings->findByKey($key)` as a shortcut.
+- `Hilos::$setting[$key]` is not the settings collection: it is a catalog-backed
+  accessor whose index hands back a typed reader, and its shape is fixed by
+  `docs/agents/code-style/catalog-backed-accessors.md`.
 - Existing item properties, `__get()` bridges, typed DTO fields, and result
   accessors should be used before adding a new finder or helper.
 - A named `findBy*()` method is still correct for complex queries, ambiguous

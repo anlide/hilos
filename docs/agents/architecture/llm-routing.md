@@ -18,7 +18,7 @@ Today provider selection is a single process-wide env switch. `ClientFactory`
 reads `LLM_CHAT_PROVIDER` and returns one provider for the whole daemon:
 
 ```php
-$provider = Hilos::$env[EnvConstants::LLM_CHAT_PROVIDER];
+$provider = Hilos::$env[EnvConstants::LLM_CHAT_PROVIDER]->string();
 return $provider === LLMConstants::PROVIDER_EXTERNAL
     ? self::createExternalChatProvider()   // AsyncOpenAIChatProvider
     : self::createLocalChatProvider();     // AsyncOllamaChatProvider

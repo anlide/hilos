@@ -636,7 +636,7 @@ that reads configuration owes the journal, whatever it is reading.
 
 ```php
 // Wrong: a page, a table or the aggregator opening the log directory itself.
-$lines = file(dirname(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]) . '/' . $stream);
+$lines = file(dirname(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]->string()) . '/' . $stream);
 ```
 
 That page runs wherever the browser is attached and could only ever see the
