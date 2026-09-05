@@ -170,6 +170,10 @@ Topic documents are referenced by filename; several are still being authored.
   framework-level page search or command palette; the only framework search is a
   filter inside a table, taking the same path as any other viewport change. See
   [table-subscription.md](table-subscription.md).
+- **A sort order is declared, not composed.** A table lists the composite orders
+  it supports, and under every one of them lies an index; a reader picks from
+  the list and cannot assemble an arbitrary pair of columns. See
+  [table-sort-orders.md](table-sort-orders.md).
 
 ## E. Editing and modals
 

@@ -67,7 +67,8 @@ Without that, a column with repeats (a status, a kind) lets two adjacent pages
 show one row twice and another not at all — and the server cannot say where an
 arriving row falls relative to the window, which is what the classification below
 stands on. Which orders a table may declare, what it must refuse when asked for
-another, and what it answers instead, is HIL-785's document.
+another, and what it answers instead, is
+[table-sort-orders.md](table-sort-orders.md).
 
 The subscription remembers **two** things and needs both:
 
@@ -301,7 +302,9 @@ that says in words what froze and why. Showing yesterday's number silently besid
 today's is the worst of the options, because it looks fresh. A lagging source
 does not block the rest — rows page, filter, and sort by the live columns — but
 **a column of a stale source cannot be sorted at all**: an order over stale
-values is indistinguishable from a wrong one.
+values is indistinguishable from a wrong one. The other orders a table
+refuses, and what it answers, are in
+[table-sort-orders.md](table-sort-orders.md).
 
 ## Headless table state machine
 

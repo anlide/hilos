@@ -25,6 +25,8 @@ touched ORM surfaces.
   `docs/agents/code-style/table-names.md`
 - Object layer and view transformations: `docs/agents/orm/object.md`
 - Migrations and seeds: `docs/agents/orm/migrations.md`
+- A declared table order needs an index matching it in both columns and
+  directions, the primary key last: `docs/agents/frontend/table-sort-orders.md`
 - A new table needs a `_pii` verdict on its Entity, an empty column map included,
   and a new column needs naming in `_pii` or `_piiNotPersonal`:
   `docs/agents/architecture/backup-anonymization.md` or

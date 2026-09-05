@@ -29,6 +29,7 @@ document.
 | the handshake and cookie auth, the server-side session store, signals / actions / subscribe, discriminated-union parsing, requestId correlation, build-version forced refresh | [wire-protocol.md](wire-protocol.md) |
 | the entity store, the four scopes (page / session / user / group), the normalizer boundary, entity references, the rowKey / sourceKey / entityType keys | [data-model.md](data-model.md) |
 | tables: viewport subscriptions, the live-change taxonomy and Apply, sort-key window deltas, selection and bulk actions, progress bars, custom filters, search-as-filter | [table-subscription.md](table-subscription.md) |
+| which sort orders a table may declare, what it refuses when asked for another, and what it answers — the index under every order, the primary key at its end, computed fields, mixed directions, stale sources, in-memory sets | [table-sort-orders.md](table-sort-orders.md) |
 | editing in a modal, the baseline / draft / incoming 3-way merge, surfacing conflicts, entity-deleted-while-open | [conflict-resolution.md](conflict-resolution.md) |
 | SDK packaging, the monorepo workspace, the two-tier component model and slots, Composer / tarball distribution | [sdk-packaging.md](sdk-packaging.md) |
 | the framework-agnostic core, the signal primitive, Vue / React / Angular adapters, the conformance demos | [multiframework-core.md](multiframework-core.md) |
@@ -63,6 +64,9 @@ before editing.
   boundary, entity references, and the keying invariants.
 - [table-subscription.md](table-subscription.md) — viewport-scoped table subscriptions, the
   live-change taxonomy and Apply, and a window anchored by its sort key.
+- [table-sort-orders.md](table-sort-orders.md) — the sort orders a table may declare as a
+  capability: the six rules, why each holds, and the three-part reply to a
+  request for an order the table refuses.
 - [conflict-resolution.md](conflict-resolution.md) — modal-owned editing with a baseline / draft /
   incoming 3-way merge and its edge cases.
 - [sdk-packaging.md](sdk-packaging.md) — the dev monorepo, the two-tier SDK, the slot-first

@@ -17,6 +17,8 @@ read the canonical spec before editing.
 - What a row change does on the client — the pending/Apply gate, own changes, and
   the live exception for progress/status rows:
   `docs/agents/frontend/table-subscription.md`
+- Which sort orders a table may declare, what it must refuse, and what it
+  answers when asked for another: `docs/agents/frontend/table-sort-orders.md`
 - Framework extension points + the contract gate:
   `docs/agents/framework-development.md`
 - Page/table topology registration: `docs/agents/app-topology.md`
