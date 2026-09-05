@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test'
 
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoAdmitted, gotoMaintenance, gotoPage } from '../helpers/page'
+import { signUpWithVerifiedEmail } from '../helpers/session'
 import {
   closeProtectedMode,
   enterProtectedMode,
@@ -46,6 +47,18 @@ const ADMIN_URL = '/hilos'
 
 // The framework backup page, the one admin surface this leaf's block lives on.
 const BACKUP_URL = '/hilos/backup'
+
+// The two words of the circle's presence column. A case reads them as the node's own
+// answer to "is this person here", because the mark is computed from the very connections
+// the freeze photographs.
+const CIRCLE_ONLINE = 'signed in'
+const CIRCLE_OFFLINE = 'not signed in'
+
+// How many rows the circle is emptied of before the attempt is called broken. Every
+// removal takes one row out, so the count is what ends that loop; this only makes a
+// removal surface that stopped removing fail where it broke instead of hanging until
+// the test times out.
+const CIRCLE_CLEAR_LIMIT = 25
 
 test.afterEach(async () => {
   // Unconditional, and an open rather than a leave: an enter can be refused and
@@ -691,6 +704,283 @@ test('the operator and the admitted verifier both see the verification banner, a
   await verifierContext.close()
   await strangerContext.close()
 })
+
+test('the named circle walks in with the tab it already had open, and nobody else does', async ({
+  page,
+  browser,
+}) => {
+  // HIL-643 acceptance, and the whole point of the leaf: the verifier gets in without
+  // anybody reading a code out to them. Three real browsers, because the rule is about
+  // WHICH browser - the named one, the unnamed one, and the operator's own.
+  //
+  // The circle member is built with a PROVEN address: naming somebody resolves the
+  // address against the confirmed identities, and plain registration leaves it
+  // unverified, so an account made the short way could not be named at all.
+  await signUpAdmin(page)
+  await gotoPage(page, BACKUP_URL)
+  await expect(page.getByTestId('hilos-backup-circle-panel')).toBeVisible()
+  await clearCircle(page)
+  const operatorSession = await sessionTokenOf(page.context())
+  expect(operatorSession).not.toBe('')
+
+  const memberContext = await browser.newContext()
+  const member = await memberContext.newPage()
+  const { email: memberEmail } = await signUpWithVerifiedEmail(member)
+
+  // Named through the modal, which is the only way an operator has: no test backdoor
+  // writes this row, so a broken action surface fails here rather than silently
+  // passing on a row nobody could have created.
+  await addToCircle(page, memberEmail)
+  await expect(circleRow(page, memberEmail)).toBeVisible()
+  await expect(circleOnline(page, memberEmail)).toHaveText(CIRCLE_ONLINE)
+
+  // The member has to be HERE when the node freezes: what is photographed is the set
+  // of live connections, so a tab opened afterwards is a tab that was never in it.
+  await gotoPage(member, '/')
+  await expect(member.getByTestId('conn-state')).toHaveText('connected')
+
+  const strangerContext = await browser.newContext()
+  const stranger = await strangerContext.newPage()
+  await gotoPage(stranger, '/')
+  await expect(stranger.getByTestId('conn-state')).toHaveText('connected')
+
+  // The freeze, entered for the operator's browser and then ended - the same two moves
+  // a restore makes, and the ready in between is where the circle is photographed.
+  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe('active')
+  expect(await leaveProtectedMode()).toBe('verifying')
+
+  // The inspector counts what was named and what was admitted, and the pair is the
+  // whole verdict: one person was named, and exactly one browser came in by being named
+  // rather than by a code. Numbers and never addresses.
+  //
+  // Both numbers are exact because the case emptied the circle before naming anybody. A
+  // count read as "at least one" would pass on a photograph of somebody else's member,
+  // which is the only reading these two numbers must never survive.
+  const inside = await inspectProtectedMode()
+  expect(inside.circleSize).toBe(1)
+  expect(inside.circleAdmitted).toBe(1)
+  expect(inside.passCount).toBe(0)
+
+  // The member walks in on the tab they already had, with no code minted at all.
+  await gotoAdmitted(member, '/')
+  await expect(member.getByTestId('maintenance')).toHaveCount(0)
+  await expect(member.getByTestId('protected-mode-banner')).toContainText(
+    BANNER_MESSAGE,
+  )
+
+  // The stranger, who was equally online and equally signed in, stays on the stub:
+  // being here is not the qualification, being named is.
+  await gotoMaintenance(stranger, '/')
+  await expect(stranger.getByTestId('maintenance')).toBeVisible()
+
+  // Closing the window freezes the node again, and that voids the photograph with the
+  // passes: both the member and the operator are back behind the stub.
+  expect(await closeProtectedMode()).toBe('active')
+  const closed = await inspectProtectedMode()
+  expect(closed.circleSize).toBe(0)
+  expect(closed.circleAdmitted).toBe(0)
+  await gotoMaintenance(member, '/')
+  await gotoMaintenance(page, '/')
+
+  // Lifted, and then the other half of the surface: the membership outlived the freeze
+  // it was named for - a test drive replaces no database, so the row is still the one
+  // the operator typed - and taking somebody out is a click and a confirmation.
+  expect(await openProtectedMode()).toBe('inactive')
+  // The lift sends the browsers it had behind the stub back to the application on their
+  // own, so the operator's page is already navigating: wait for that to land before
+  // steering it, or the two navigations collide and the later one is interrupted.
+  await expect(page.getByTestId('maintenance')).toBeHidden()
+  await gotoPage(page, BACKUP_URL)
+  await expect(circleRow(page, memberEmail)).toBeVisible()
+  await removeFromCircle(page, memberEmail)
+  await expect(circleRow(page, memberEmail)).toHaveCount(0)
+
+  await memberContext.close()
+  await strangerContext.close()
+})
+
+test('a circle member who was away when the node froze is named and still outside', async ({
+  page,
+  browser,
+}) => {
+  // The cost the design accepted, asserted rather than described: the circle admits the
+  // tab that was open, so being on the list is not by itself a way in. Without this the
+  // leaf could quietly start letting anybody named through on a later connection, which
+  // is a session resolved against a database the restore has already replaced.
+  await signUpAdmin(page)
+  await gotoPage(page, BACKUP_URL)
+  await clearCircle(page)
+  const operatorSession = await sessionTokenOf(page.context())
+
+  const memberContext = await browser.newContext()
+  const member = await memberContext.newPage()
+  const { email: memberEmail } = await signUpWithVerifiedEmail(member)
+  await addToCircle(page, memberEmail)
+  await expect(circleRow(page, memberEmail)).toBeVisible()
+
+  // Away: the whole context goes, and then the case waits for the NODE to have noticed.
+  // Closing a browser is a client-side act, and freezing in the same breath photographs a
+  // hall the leaver is still standing in - which is how this case read "admitted 1" of a
+  // circle whose one member had shut their browser.
+  await memberContext.close()
+  await waitForCircleOffline(page, memberEmail)
+
+  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe('active')
+  expect(await leaveProtectedMode()).toBe('verifying')
+
+  // Named, and admitted nobody - which is exactly the pair the count exists to tell
+  // apart from a circle nobody had named at all.
+  const inside = await inspectProtectedMode()
+  expect(inside.circleSize).toBe(1)
+  expect(inside.circleAdmitted).toBe(0)
+
+  const returning = await browser.newContext()
+  const returned = await returning.newPage()
+  await gotoMaintenance(returned, '/')
+  await expect(returned.getByTestId('maintenance')).toBeVisible()
+
+  await returning.close()
+})
+
+/**
+ * The circle row of one address, named by the handle its own row carries.
+ *
+ * Keyed by the address rather than bare, because the circle is a list: a bare handle
+ * names every row at once the moment a second person is in it, which is every run after
+ * the first.
+ *
+ * @param page The operator's page, on the backup surface.
+ * @param identifier The address the member was named by.
+ */
+function circleRow(page: Page, identifier: string) {
+  return page.getByTestId(`hilos-backup-circle-row-${identifier}`)
+}
+
+/**
+ * The presence mark of one circle row, named by the handle its own cell carries.
+ *
+ * @param page The operator's page, on the backup surface.
+ * @param identifier The address the member was named by.
+ */
+function circleOnline(page: Page, identifier: string) {
+  return page.getByTestId(`hilos-backup-circle-online-${identifier}`)
+}
+
+/**
+ * Waits until the circle's presence column says the named person is gone.
+ *
+ * The honest reading of "away": the mark answers off the same live connections the freeze
+ * photographs, so a case that has seen it turn can freeze knowing what the photograph will
+ * hold. Without it the case asserts a client-side fact and the node answers a server-side
+ * one, which is a race it loses about half the time.
+ *
+ * Re-subscribed on every attempt rather than awaited in place, because the mark is a
+ * photograph too: it is taken when the row is drawn and no connection event moves it.
+ *
+ * @param page The operator's page, steered back to the backup surface on each attempt.
+ * @param identifier The address the member was named by.
+ */
+async function waitForCircleOffline(
+  page: Page,
+  identifier: string,
+): Promise<void> {
+  await expect(async () => {
+    await gotoPage(page, BACKUP_URL)
+    await expect(circleOnline(page, identifier)).toHaveText(CIRCLE_OFFLINE)
+  }).toPass()
+}
+
+/**
+ * Takes one address out of the verifier circle through the row's own modal.
+ *
+ * @param page The operator's page, already on the backup surface.
+ * @param identifier The address to remove.
+ */
+async function removeFromCircle(page: Page, identifier: string): Promise<void> {
+  await page.getByTestId(`hilos-backup-circle-remove-${identifier}`).click()
+  await confirmCircleRemoval(page)
+}
+
+/**
+ * Drives the confirmation of a removal modal that is already open.
+ *
+ * Its own step because two callers open that modal - a case taking one named person out,
+ * and the clearing every case starts with - and a second copy of these five lines would
+ * be a second place for the dialog's contract to be remembered wrongly.
+ *
+ * @param page The operator's page, with the removal modal open.
+ */
+async function confirmCircleRemoval(page: Page): Promise<void> {
+  const submit = page.getByTestId('hilos-backup-circle-remove-confirm')
+  await expect(submit).toBeVisible()
+  await submit.scrollIntoViewIfNeeded()
+  await expect(submit).toBeEnabled()
+  await submit.focus()
+  await submit.click()
+  // The modal closes on the ack and stays open on a refusal, so waiting for the button
+  // to go is waiting for the removal to have landed rather than for a fixed moment.
+  await expect(submit).toHaveCount(0)
+}
+
+/**
+ * Empties the verifier circle through the page's own removal modal.
+ *
+ * Every case that counts the circle starts here, because the circle is a durable list in
+ * a database that outlives a single case: a neighbour that failed before its own cleanup
+ * line leaves its member named, and somebody else's member is still a member when the
+ * freeze photographs the hall. A case asserting a number has to own the list that number
+ * is about - without this, `circleAdmitted` read 1 in a case that had named nobody who
+ * was online.
+ *
+ * The first window is waited for rather than assumed: a circle that is empty and one
+ * whose rows have not arrived look exactly alike, and clearing the second clears nothing.
+ *
+ * The search is scoped to the circle table so the modal's own confirm button, which
+ * shares the removal prefix, cannot be taken for a row's.
+ *
+ * @param page The operator's page, already on the backup surface.
+ */
+async function clearCircle(page: Page): Promise<void> {
+  const table = page.getByTestId('hilos-backup-circle-table')
+  await expect(table).toBeVisible()
+  await expect(table.getByTestId('hilos-table-loading')).toHaveCount(0)
+
+  const removals = table.getByTestId(/^hilos-backup-circle-remove-/)
+  for (let guard = 0; guard < CIRCLE_CLEAR_LIMIT; guard++) {
+    if ((await removals.count()) === 0) {
+      break
+    }
+    await removals.first().click()
+    await confirmCircleRemoval(page)
+  }
+
+  await expect(removals).toHaveCount(0)
+}
+
+/**
+ * Names one address to the verifier circle through the page's own modal.
+ *
+ * @param page The operator's page, already on the backup surface.
+ * @param identifier The address to name.
+ */
+async function addToCircle(page: Page, identifier: string): Promise<void> {
+  await page.getByTestId('hilos-backup-circle-add').click()
+
+  const field = page.getByTestId('hilos-backup-circle-add-field')
+  await expect(field).toBeVisible()
+  await field.fill('')
+  await field.pressSequentially(identifier, { delay: 10 })
+
+  const submit = page.getByTestId('hilos-backup-circle-add-confirm')
+  await submit.scrollIntoViewIfNeeded()
+  await expect(submit).toBeVisible()
+  await expect(submit).toBeEnabled()
+  await submit.focus()
+  await submit.click()
+  // The modal closes on the ack and stays open on a refusal, so waiting for the field
+  // to go is waiting for the write to have landed rather than for a fixed moment.
+  await expect(field).toHaveCount(0)
+}
 
 /**
  * Types a code into the verifier's field and drives the submit button.

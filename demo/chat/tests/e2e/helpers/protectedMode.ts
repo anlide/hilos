@@ -42,6 +42,8 @@ export interface ProtectedModeSnapshot {
   stoppedAgents: string[]
   agentStartGateClosed: boolean
   passCount: number
+  circleSize: number
+  circleAdmitted: number
 }
 
 /**

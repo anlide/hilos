@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\ProtectedMode;
 
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ClusterProtectedMode;
+use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
@@ -476,6 +477,47 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([], $this->mesh->calls);
     }
 
+    public function testTheCircleStaysOnTheNodeThatFrozeAndIsFannedNowhere(): void
+    {
+        // The one request on this seam that is never routed: it names browsers, and a browser is
+        // attached to the node it connected to. Broadcasting it would admit a session hash on a
+        // node that session was never on.
+        $this->mesh->followers = [];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->mesh->calls = [];
+
+        $this->withDaemonTruthSource(fn() => $this->coordinator->requestCircle($this->circleData()));
+
+        $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        $this->assertSame(1, Hilos::$rt?->hilosProtectedModeRuntime?->circleNamedCount);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testAFollowerWritesTheCircleOnItsOwnRowWithoutWaitingForActive(): void
+    {
+        // An initiator hosted on a follower reads `activating` for the whole freeze - `active` is
+        // the leader-local marker - so a phase gate here would drop the circle on exactly the
+        // topology that has one. What is checked instead is that this node is frozen at all.
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-a'));
+        $this->mesh->calls = [];
+
+        $this->withDaemonTruthSource(fn() => $this->coordinator->requestCircle($this->circleData()));
+
+        $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testACircleOfferedUnderNoFreezeIsDropped(): void
+    {
+        // Run without the truth source on purpose: reaching the row here would throw.
+        $this->coordinator->requestCircle($this->circleData());
+
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
     public function testLeaderDropsAProgressMarkFromANodeThatDoesNotOwnTheFreeze(): void
     {
         // Same authorization the release is given: a node that did not ask for the freeze could
@@ -737,6 +779,16 @@ final class ClusterProtectedModeTest extends TestCase
     private function enableData(): ProtectedModeEnableSignalData
     {
         return $this->enableDataFrom('node-b');
+    }
+
+    private function circleData(): ProtectedModeCircleSignalData
+    {
+        return new ProtectedModeCircleSignalData(
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: 0,
+            namedCount: 1,
+            sessionTokenHashes: ['hash-a'],
+        );
     }
 
     private function progressData(): ProtectedModeProgressSignalData

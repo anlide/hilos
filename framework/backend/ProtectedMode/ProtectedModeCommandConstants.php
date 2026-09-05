@@ -125,4 +125,27 @@ final class ProtectedModeCommandConstants
      * forever. How many verifiers may come in is all an assertion ever needs to know.
      */
     public const string FIELD_PASS_COUNT = 'passCount';
+
+    /**
+     * @var string Snapshot key: how many people the verifier circle named when this node froze
+     *
+     * A count and never an address, for the reason {@see FIELD_PASS_COUNT} is a count: this
+     * reply goes to an unauthenticated port and, in a test run, into CI output that keeps it
+     * forever.
+     *
+     * It is read off the freeze row rather than off the circle table, and that is not a
+     * shortcut: inside the verification window the table belongs to the database the restore
+     * put there, so counting it would answer about the archive's circle instead of the one the
+     * freeze was taken with.
+     */
+    public const string FIELD_CIRCLE_SIZE = 'circleSize';
+
+    /**
+     * @var string Snapshot key: how many of the named circle were online and got in
+     *
+     * Beside {@see FIELD_CIRCLE_SIZE} rather than instead of it, because the pair is what makes
+     * either number readable: zero admitted out of three named is a circle whose members had no
+     * tab open, and zero out of zero is an operator who named nobody.
+     */
+    public const string FIELD_CIRCLE_ADMITTED = 'circleAdmitted';
 }

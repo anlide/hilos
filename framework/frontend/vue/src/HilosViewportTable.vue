@@ -31,6 +31,12 @@ const props = withDefaults(
     loadingText?: string
     /** Label shown in a removed row's placeholder slot. */
     placeholderText?: string
+    /**
+     * The `data-id` the table's root carries, for a page that draws more than one of
+     * them: the default is the shared handle, and a second table on the same page names
+     * itself so the two can be told apart from outside.
+     */
+    dataId?: string
   }>(),
   {
     label: undefined,
@@ -39,6 +45,7 @@ const props = withDefaults(
     emptyText: 'No rows.',
     loadingText: 'Loading…',
     placeholderText: 'Removed',
+    dataId: 'hilos-viewport-table',
   },
 )
 
@@ -99,7 +106,7 @@ function onSearchInput(event: Event): void {
 </script>
 
 <template>
-  <div data-id="hilos-viewport-table">
+  <div :data-id="dataId">
     <div
       v-if="searchable || pendingCount > 0"
       class="d-flex justify-content-between align-items-center gap-2 mb-3"

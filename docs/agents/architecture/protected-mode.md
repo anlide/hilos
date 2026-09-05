@@ -355,14 +355,46 @@ make it useless for the disaster recovery it exists for.
 ## Who The Freeze Lets Through (HIL-655, re-decided by HIL-718)
 
 `ProtectedModeRuntime::locksOut()` is the whole admission rule, and it shuts a
-connection out when three things hold at once: the phase is not
+connection out when four things hold at once: the phase is not
 `PHASE_INACTIVE`, **and** the connection is not the initiator's with the
 verification window open (`admitsInitiator()`), **and** the browser session
 behind it holds no admitted pass (`admittedSessionTokenHashes`, matched by
-`admits()`). Either of the last two failing serves that connection the real
-application, and there is no third way in.
+`admits()`), **and** that session is not in the photographed verifier circle
+(`circleSessionTokenHashes`, matched by `admitsCircle()` — HIL-643). Any one of
+the last three failing serves that connection the real application, and there is
+no fourth way in.
 
-**Both doors are gated on `PHASE_VERIFYING`, and for one reason: that is the
+**The third door opens on a photograph rather than on a presentation
+(HIL-643).** The other two are earned at the door — the initiator by having
+asked for the freeze, a verifier by producing a code. The circle is decided
+before the door exists: an operator names people from the backup page, and at the
+moment the node freezes `VerifierCircleSnapshot::capture()` reads that list
+against the live connections and writes the session hashes of the members who
+were online onto the row. Nothing is presented afterwards; the tab that was
+already open walks in.
+
+The order matters and is not an implementation detail. The photograph is taken
+under the freeze and **before the database is replaced**, because it is the last
+moment the question has an answer: the circle table lives in the database a
+restore rewrites, and afterwards the archive's own circle applies. It is also the
+first moment the answer is final — the node is quiesced, so the set of live
+connections has stopped changing. That is also why only somebody signed in at
+that moment is admitted: resolving a person to a session later would mean reading
+a session table the restore has replaced.
+
+The read and the write sit on opposite sides of a process boundary and neither
+may cross it. The circle is three database queries, which the master is forbidden
+(`antipatterns/heavy-work-in-master.md`), while the freeze row is the master's to
+write. So the initiator agent photographs it in its worker and sends the result
+on the `PROTECTED_MODE_CIRCLE` frame — the twin of `PROTECTED_MODE_PASS`, whole
+rather than one entry at a time, because there is exactly one moment when the
+list is knowable. Only hashes and a count travel; no address of anybody named
+reaches the master. In a cluster the photograph stays on the row of the node that
+froze and is fanned nowhere, exactly as the initiator's own session hash is: a
+browser is attached to the node it connected to, and a member who reached another
+node meets the stub there.
+
+**Both presented doors are gated on `PHASE_VERIFYING`, and for one reason: that is the
 first phase with anything behind them.** Under `PHASE_ACTIVATING` and
 `PHASE_ACTIVE` the executor has stopped every agent but the one driving the
 operation, so no page subscription is answered — admitting a browser there would
@@ -383,8 +415,17 @@ holding a code the node had already accepted. What is stored is the hash of the
 session token, through the same one door the initiator half uses
 (`hashSessionToken()`), and it is compared with `hash_equals()` in a loop rather
 than `in_array()`, because both sides are derived from a secret. The list is a
-list because several people may verify at once; the code stays reusable, and who
-exactly walked in is a different question (HIL-643).
+list because several people may verify at once, and the code stays reusable. The
+circle's list is keyed the same way and compared the same way, for the same
+reason — it is the same kind of value on the same row, differing only in how it
+got there.
+
+**The code did not go away when the circle arrived (HIL-643), and will not.** The
+circle admits only somebody who was signed in when the freeze started, so
+everybody else has nothing else: a colleague reached by phone, an operator on a
+machine they had not logged in on, anyone at all after a restore whose archive
+does not know them. The code is the emergency entrance, and an emergency entrance
+that answers to a list is not one.
 
 **The record is idempotent, and the frame is not.** `admitSession()` refuses to
 add a hash it already carries, so a browser is one entry however many of its tabs

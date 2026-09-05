@@ -183,6 +183,7 @@ use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
+use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -436,6 +437,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::moderatorPromptPieces => ModeratorPromptPiecesTable::class,
         ChatTableContext::settings => HilosSettingsTable::class,
         ChatTableContext::hilosBackups => HilosBackupHistoryTable::class,
+        ChatTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
         ChatTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
         ChatTableContext::hilosCommunicationsChannelFields => HilosCommunicationsChannelFieldsTable::class,
         ChatTableContext::hilosNotificationDeliveries => HilosNotificationDeliveriesTable::class,
@@ -530,6 +532,7 @@ final class Hilos extends HilosFacade
         ],
         BackupPage::PAGE => [
             ChatTableContext::hilosBackups => [],
+            ChatTableContext::hilosVerifierCircle => [],
         ],
         CommunicationsPage::PAGE => [
             ChatTableContext::hilosCommunicationsChannels => [],

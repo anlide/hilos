@@ -46,6 +46,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Random\RandomException;
+use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
@@ -54,6 +55,7 @@ use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
 use Hilos\ProtectedMode\ProtectedModeSwitch;
+use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -708,6 +710,37 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
                 initiatorAgentType: $this->getType(),
                 initiatorAgentIndex: $index === null ? null : (int)$index,
                 passHash: $passHash,
+            ),
+        );
+    }
+
+    /**
+     * Hand the master the verifier circle photographed under the freeze (HIL-643).
+     *
+     * The read and the write sit on opposite sides of a process boundary and neither may cross it:
+     * the circle is three database queries, which the master is forbidden, and the freeze row is
+     * the master's to write. So the agent photographs it here, in a worker and while the database
+     * is still the old one, and only hashes and a count travel on - no address of anybody named
+     * ever reaches the other side.
+     *
+     * Sent whole rather than one member at a time, because there is exactly one moment when the
+     * answer is knowable: after this the archive's own circle replaces the one just read.
+     *
+     * @param VerifierCircleSnapshot $snapshot Circle as it stood at the freeze
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
+     */
+    protected function requestProtectedModeCircle(VerifierCircleSnapshot $snapshot): void
+    {
+        $index = $this->getIndex();
+        Hilos::$sr->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::PROTECTED_MODE_CIRCLE),
+            signalName: new SignalName(SignalTypeConstants::PROTECTED_MODE_CIRCLE),
+            signalData: new ProtectedModeCircleSignalData(
+                initiatorAgentType: $this->getType(),
+                initiatorAgentIndex: $index === null ? null : (int)$index,
+                namedCount: $snapshot->namedCount,
+                sessionTokenHashes: $snapshot->sessionTokenHashes,
             ),
         );
     }

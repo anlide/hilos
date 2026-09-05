@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Runtime;
 
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
@@ -211,6 +212,43 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $this->assertTrue($view->locksOut('accept-2', 'session-hash-2'));
     }
 
+    public function testThePhotographedCircleIsLetInWithoutAPass(): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $state = StateProtectedModeRuntime::create();
+        $view = $this->viewWithActions($state);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
+        $view->actions->admitCircle(new VerifierCircleSnapshot(2, ['session-hash-circle']));
+        $view->actions->enterVerifying();
+
+        $this->assertSame(['session-hash-circle'], $view->circleSessionTokenHashes);
+        $this->assertSame(2, $view->circleNamedCount);
+        $this->assertTrue($view->admitsCircle('session-hash-circle'));
+        $this->assertFalse($view->admits('session-hash-circle'));
+        $this->assertFalse($view->locksOut('accept-1', 'session-hash-circle'));
+        $this->assertTrue($view->locksOut('accept-2', 'session-hash-stranger'));
+    }
+
+    public function testTheCircleIsVoidedWhenTheWindowCloses(): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $state = StateProtectedModeRuntime::create();
+        $view = $this->viewWithActions($state);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
+        $view->actions->admitCircle(new VerifierCircleSnapshot(2, ['session-hash-circle']));
+        $view->actions->enterVerifying();
+
+        // A circle photographed before one database replacement says nothing about who belongs
+        // inside the next one, so both ways out of the window forget it.
+        $view->actions->enterActive();
+
+        $this->assertSame([], $view->circleSessionTokenHashes);
+        $this->assertSame(0, $view->circleNamedCount);
+
+        $view->actions->enterVerifying();
+        $this->assertFalse($view->admitsCircle('session-hash-circle'));
+    }
+
     public function testTheSameSessionPresentingThePassAgainAddsNoSecondEntry(): void
     {
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
@@ -348,6 +386,8 @@ final class ProtectedModeRuntimeViewTest extends TestCase
             StateProtectedModeRuntime::initiatorSessionTokenHash => $initiatorSessionTokenHash,
             StateProtectedModeRuntime::passHashes => [],
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
         ]);
 
         return new ProtectedModeRuntime($state);

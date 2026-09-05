@@ -305,6 +305,8 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
             StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_VERIFYING,
             StateProtectedModeRuntime::passHashes => [],
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
         ]));
 
         $this->executor->reenterActive();

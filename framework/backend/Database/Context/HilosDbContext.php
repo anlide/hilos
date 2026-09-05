@@ -18,6 +18,7 @@ use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrat
 use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
+use Hilos\Database\Object\Collection\VerifierCircleMembers as ObjectVerifierCircleMembers;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\AuthBlocks as DbCollectionAuthBlocks;
 use Hilos\Database\View\Collection\Identities as DbCollectionIdentities;
@@ -30,14 +31,17 @@ use Hilos\Database\View\Collection\RegistrationReservations as DbCollectionRegis
 use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
+use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
 use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
 use Hilos\Database\Actions\Collection\NotificationsActions;
 use Hilos\Database\Actions\Collection\PushSubscriptionsActions;
 use Hilos\Database\Actions\Collection\SessionsActions;
 use Hilos\Database\Actions\Collection\SettingsActions;
+use Hilos\Database\Actions\Collection\VerifierCircleMembersActions;
 use Hilos\Database\Actions\Item\NotificationActions;
 use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Actions\Item\SettingActions;
+use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
 use Hilos\Pages\AbstractHilosNotificationsPage;
 
 /**
@@ -58,6 +62,7 @@ use Hilos\Pages\AbstractHilosNotificationsPage;
  * @property-read DbCollectionNotificationDeliveries $notificationDeliveries
  * @property-read DbCollectionNotificationPreferences $notificationPreferences
  * @property-read DbCollectionPushSubscriptions $pushSubscriptions
+ * @property-read DbCollectionVerifierCircleMembers $verifierCircle
  * @property-read DbCollectionAuthBlocks $authBlocks
  */
 abstract class HilosDbContext extends DbContext
@@ -82,13 +87,14 @@ abstract class HilosDbContext extends DbContext
     public const string notificationPreference = 'notificationPreference';
     public const string pushSubscriptions = 'pushSubscriptions';
     public const string pushSubscription = 'pushSubscription';
+    public const string verifierCircle = 'verifierCircle';
     public const string authBlocks = 'authBlocks';
     public const string authBlock = 'authBlock';
 
     /**
      * Configures Hilos-level collections (settings, identities, verifications,
      * passkey credentials, sessions, notifications, notification deliveries,
-     * notification preferences, push subscriptions, auth blocks).
+     * notification preferences, push subscriptions, the verifier circle, auth blocks).
      *
      * Identities, verifications, passkey credentials, sessions, notifications,
      * notification deliveries, notification preferences, push subscriptions and auth
@@ -99,6 +105,11 @@ abstract class HilosDbContext extends DbContext
      * hilos_user_verification / hilos_passkey_credential / hilos_session /
      * hilos_notification / hilos_notification_delivery / hilos_notification_preference /
      * hilos_push_subscription / hilos_auth_block tables.
+     *
+     * The verifier circle is the one collection here that IS read whole, and it stays
+     * inert for a different reason: only an installation that declares the backup feature
+     * has anything that reads it, and that is also the only one the hilos_verifier_circle
+     * migration is copied into.
      *
      * @throws ObjectCollectionNotFoundException When a framework object collection is missing
      */
@@ -133,6 +144,14 @@ abstract class HilosDbContext extends DbContext
 
         $this->_objectCollections[self::pushSubscriptions] = ObjectPushSubscriptions::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::pushSubscriptions, DbCollectionPushSubscriptions::class, PushSubscriptionsActions::class);
+
+        $this->_objectCollections[self::verifierCircle] = ObjectVerifierCircleMembers::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(
+            self::verifierCircle,
+            DbCollectionVerifierCircleMembers::class,
+            VerifierCircleMembersActions::class,
+            VerifierCircleMemberActions::class,
+        );
 
         $this->_objectCollections[self::authBlocks] = ObjectAuthBlocks::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::authBlocks, DbCollectionAuthBlocks::class);

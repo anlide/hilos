@@ -43,7 +43,7 @@ export interface ViewportTableRowContext<R> {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NgTemplateOutlet],
   template: `
-    <div data-id="hilos-viewport-table">
+    <div [attr.data-id]="dataId()">
       @if (searchable() || pendingCount() > 0) {
         <div
           class="d-flex justify-content-between align-items-center gap-2 mb-3"
@@ -226,6 +226,12 @@ export class HilosViewportTable<R> {
   readonly loadingText = input('Loading…')
   /** Label shown in a removed row's placeholder slot. */
   readonly placeholderText = input('Removed')
+  /**
+   * The `data-id` the table's root carries, for a page that draws more than one of them:
+   * the default is the shared handle, and a second table on the same page names itself so
+   * the two can be told apart from outside.
+   */
+  readonly dataId = input('hilos-viewport-table')
 
   protected readonly row =
     contentChild.required<TemplateRef<ViewportTableRowContext<R>>>('row')

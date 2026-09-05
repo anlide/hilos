@@ -34,6 +34,12 @@ export interface HilosViewportTableProps<R> {
   empty?: ReactNode
   /** Label shown in a removed row's placeholder slot. */
   placeholderText?: string
+  /**
+   * The `data-id` the table's root carries, for a page that draws more than one of them:
+   * the default is the shared handle, and a second table on the same page names itself so
+   * the two can be told apart from outside.
+   */
+  dataId?: string
 }
 
 // A row with an unapplied pending change gets a subtle, theme-aware tint that
@@ -61,6 +67,7 @@ export function HilosViewportTable<R>({
   loadingText = 'Loading…',
   empty,
   placeholderText = 'Removed',
+  dataId = 'hilos-viewport-table',
 }: HilosViewportTableProps<R>) {
   const rows = useSignal(controller.rows)
   const search = useSignal(controller.search)
@@ -97,7 +104,7 @@ export function HilosViewportTable<R>({
   }
 
   return (
-    <div data-id="hilos-viewport-table">
+    <div data-id={dataId}>
       {searchable || pendingCount > 0 ? (
         <div className="d-flex justify-content-between align-items-center gap-2 mb-3">
           {searchable ? (

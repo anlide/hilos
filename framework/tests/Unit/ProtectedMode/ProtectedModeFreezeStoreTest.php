@@ -290,6 +290,8 @@ final class ProtectedModeFreezeStoreTest extends TestCase
             StateProtectedModeRuntime::activatedAt => self::STARTED_AT + 1,
             StateProtectedModeRuntime::passHashes => [],
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
         ])->toArray();
     }
 
@@ -314,6 +316,8 @@ final class ProtectedModeFreezeStoreTest extends TestCase
             StateProtectedModeRuntime::startedAt => self::STARTED_AT,
             StateProtectedModeRuntime::passHashes => ['hash-of-a-pass'],
             StateProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-9'],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
         ]);
     }
 

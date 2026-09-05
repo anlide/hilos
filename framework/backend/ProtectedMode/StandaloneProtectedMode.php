@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\Hilos;
+use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
@@ -191,6 +192,36 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
         if (count($view->passHashes) === 1) {
             $this->executor->announcePassIssued();
         }
+    }
+
+    /**
+     * Records the verifier circle this node's initiator photographed under the freeze (HIL-643).
+     *
+     * Authorized by the recorded initiator like every other request here, and for a sharper reason
+     * than most: the payload is a list of session hashes that the verification window will let in
+     * unasked, so a stranger agent able to send one could name whoever it liked.
+     *
+     * Fail-closed on {@see StateProtectedModeRuntime::PHASE_ACTIVE} because that is the phase the
+     * photograph is taken from - the initiator is told ready at the end of {@see requestEnable()},
+     * having quiesced - and a circle written outside a settled freeze would sit on the row waiting
+     * for a window whose entry clears it anyway.
+     *
+     * @param ProtectedModeCircleSignalData $data Photographing agent identity and the circle it saw
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function requestCircle(ProtectedModeCircleSignalData $data): void
+    {
+        if (!$this->initiatorMayDrive($data->initiatorAgentType, $data->initiatorAgentIndex, 'circle')) {
+            return;
+        }
+        if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_ACTIVE, 'circle')) {
+            return;
+        }
+
+        $this->runtimeView()?->actions->admitCircle(
+            new VerifierCircleSnapshot($data->namedCount, $data->sessionTokenHashes),
+        );
     }
 
     /**

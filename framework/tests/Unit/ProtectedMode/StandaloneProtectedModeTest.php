@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\ProtectedMode;
 
 use Hilos\Hilos;
+use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
@@ -228,6 +229,58 @@ final class StandaloneProtectedModeTest extends TestCase
         $this->assertSame([], $this->executor->calls);
     }
 
+    public function testTheCircleIsWrittenWholeOnTheSettledFreeze(): void
+    {
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+
+        $this->withDaemonTruthSource(fn() => $this->mode->requestCircle($this->circleData(2, ['hash-a', 'hash-b'])));
+
+        $this->assertSame(['hash-a', 'hash-b'], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        $this->assertSame(2, Hilos::$rt?->hilosProtectedModeRuntime?->circleNamedCount);
+    }
+
+    public function testASecondPhotographOfTheCircleReplacesTheFirst(): void
+    {
+        // The write is a list rather than an entry, so a relay that arrives twice cannot double
+        // the hall - which is what makes the frame safe to resend at all.
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+
+        $this->withDaemonTruthSource(function (): void {
+            $this->mode->requestCircle($this->circleData(2, ['hash-a', 'hash-b']));
+            $this->mode->requestCircle($this->circleData(2, ['hash-a', 'hash-b']));
+        });
+
+        $this->assertSame(['hash-a', 'hash-b'], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+    }
+
+    public function testACircleFromAnotherAgentIsDropped(): void
+    {
+        // The payload names browsers the window will let in unasked, so an agent that did not
+        // freeze the node could otherwise walk anybody it liked into a restored system.
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+
+        $this->mode->requestCircle($this->circleData(1, ['hash-a'], 'chat', null));
+
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        $this->assertSame(0, Hilos::$rt?->hilosProtectedModeRuntime?->circleNamedCount);
+    }
+
+    public function testACircleArrivingInsideTheWindowIsDropped(): void
+    {
+        // The photograph belongs to the freeze, taken before the database was replaced; one
+        // offered later was read from the restored database and names whoever it now holds.
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->enterVerifyingOnTheRuntimeRow();
+
+        $this->mode->requestCircle($this->circleData(1, ['hash-a']));
+
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+    }
+
     public function testTheInitiatorStampsTheProgressMarkOnTheRow(): void
     {
         $this->mode->requestEnable($this->enableData());
@@ -410,6 +463,22 @@ final class StandaloneProtectedModeTest extends TestCase
             initiatorAgentIndex: $agentIndex,
             initiatorNodeId: null,
         );
+    }
+
+    /**
+     * @param int $namedCount How many people the circle named at the freeze
+     * @param list<string> $sessionTokenHashes Session token hashes of the members who were online
+     * @param string $agentType Agent type that photographed the circle, the recorded initiator by default
+     * @param ?int $agentIndex Agent index that photographed the circle
+     * @return ProtectedModeCircleSignalData Circle photograph of that agent
+     */
+    private function circleData(
+        int $namedCount,
+        array $sessionTokenHashes,
+        string $agentType = self::INITIATOR_TYPE,
+        ?int $agentIndex = self::INITIATOR_INDEX,
+    ): ProtectedModeCircleSignalData {
+        return new ProtectedModeCircleSignalData($agentType, $agentIndex, $namedCount, $sessionTokenHashes);
     }
 
     /**

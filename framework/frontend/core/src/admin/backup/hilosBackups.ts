@@ -171,6 +171,11 @@ const BACKUP_DELETE_ACTION = 'backup_delete'
 const BACKUP_SET_KEEP_ACTION = 'backup_set_keep'
 const BACKUP_RESTORE_ACTION = 'backup_restore'
 const BACKUP_REOPEN_ACTION = 'backup_reopen'
+const BACKUP_CIRCLE_ADD_ACTION = 'backup_circle_add'
+const BACKUP_CIRCLE_REMOVE_ACTION = 'backup_circle_remove'
+const HILOS_BACKUP_CIRCLE_TABLE = 'hilosVerifierCircle'
+const HILOS_BACKUP_CIRCLE_SLOT = 'verifierCircle'
+const HILOS_BACKUP_CIRCLE_PAGE_SIZE = 10
 /** The page's own actions, so an addressed failure notice for one is recognized as ours. */
 const BACKUP_ACTIONS = new Set<string>([
   BACKUP_CREATE_ACTION,
@@ -178,6 +183,8 @@ const BACKUP_ACTIONS = new Set<string>([
   BACKUP_SET_KEEP_ACTION,
   BACKUP_RESTORE_ACTION,
   BACKUP_REOPEN_ACTION,
+  BACKUP_CIRCLE_ADD_ACTION,
+  BACKUP_CIRCLE_REMOVE_ACTION,
 ])
 
 /** Page-data section saying what this installation offers for restoring (backend `RESTORE_SECTION`). */
@@ -198,6 +205,20 @@ export const BACKUP_CREATED_AT_FIELD = 'createdAt'
 
 /** Row payload key of the environment the backup was taken in. */
 export const BACKUP_ENV_FIELD = 'env'
+
+// Row payload keys of the verifier circle slot, the backup page's second table. The
+// membership id is not among them and is not missing either: it is the row key, and it
+// stays off the slot because a slot carrying a non-null `id` is read as an entity
+// fragment and replaced by a reference.
+
+/** Row payload key of the identity type the member was named under. */
+export const BACKUP_CIRCLE_IDENTITY_TYPE_FIELD = 'identityType'
+
+/** Row payload key of the address the member was named by (also the default sort field). */
+export const BACKUP_CIRCLE_IDENTIFIER_FIELD = 'identifier'
+
+/** Row payload key of whether that person was signed in when the row was built. */
+export const BACKUP_CIRCLE_ONLINE_FIELD = 'online'
 
 /** Row payload key of the capture scope. */
 export const BACKUP_SCOPE_FIELD = 'scope'
@@ -354,6 +375,21 @@ export interface HilosBackupsActions {
    * which reloads every connected page including this one.
    */
   sendBackupReopen(): ActionHandle
+  /**
+   * Name one more person to the verifier circle, as a tracked action. The address
+   * travels as the operator typed it: which identity proves it is the server's answer,
+   * and an address nobody has proven is refused with the ack.
+   *
+   * @param identifier The email or phone number the person is named by.
+   */
+  sendBackupCircleAdd(identifier: string): ActionHandle
+  /**
+   * Take one person out of the verifier circle, as a tracked action. A membership that
+   * is already gone succeeds silently: the operator wanted the state they are now in.
+   *
+   * @param memberId The membership id (also the table row key).
+   */
+  sendBackupCircleRemove(memberId: number): ActionHandle
 }
 
 /** What this installation offers for restoring, from the page-data section. */
@@ -366,6 +402,18 @@ export interface HilosBackupRestoreGate {
   readonly uiEnabled: boolean
   /** The environment this installation runs in, as the confirmation modal names it. */
   readonly targetEnv: string | null
+}
+
+/** One row of the verifier circle table — a person an operator named to check a restore. */
+export interface HilosBackupCircleRow {
+  /** The membership id; also the table row key, and what a removal names. */
+  readonly memberId: number
+  /** The identity type the person was named under. */
+  readonly identityType: string
+  /** The address the person was named by. */
+  readonly identifier: string
+  /** Whether that person was signed in when this row was built. */
+  readonly online: boolean
 }
 
 /** Read a row slot as an inline record, or undefined when it is not one. */
@@ -506,6 +554,30 @@ export function resolveHilosBackupRow(row: TableRow): HilosBackupRow {
       slot,
       BACKUP_PROGRESS_ESTIMATED_SECONDS_FIELD,
     ),
+  }
+}
+
+/**
+ * Resolve one raw verifier circle table row into its view-model. The three fields ride a
+ * single inline `verifierCircle` slot, the online mark included: it is computed when the
+ * row is built rather than stored, so it arrives beside the two that are.
+ *
+ * The membership id comes off the row key rather than out of the slot, because a slot
+ * carrying a non-null `id` is read as an entity fragment by the normalizer and replaced
+ * with a reference. It is the same value either way — the backend keys the row by it.
+ *
+ * @param row The raw table row from the page-scoped table store.
+ */
+export function resolveHilosBackupCircleRow(
+  row: TableRow,
+): HilosBackupCircleRow {
+  const slot = recordSlot(row.slots[HILOS_BACKUP_CIRCLE_SLOT]) ?? {}
+
+  return {
+    memberId: Number(row.rowKey),
+    identityType: readString(slot, BACKUP_CIRCLE_IDENTITY_TYPE_FIELD),
+    identifier: readString(slot, BACKUP_CIRCLE_IDENTIFIER_FIELD),
+    online: readBoolean(slot, BACKUP_CIRCLE_ONLINE_FIELD),
   }
 }
 
@@ -1230,6 +1302,45 @@ export const HILOS_BACKUP_REOPEN_COPY = {
     'reloads itself, this one included. Closing the system again is a CLI command.',
 } as const
 
+/**
+ * The copy of the verifier circle block, owned here so the three shells that render it
+ * cannot disagree.
+ *
+ * Three sentences carry the whole of what the circle promises and what it does not. It is
+ * not an alternative to the code - somebody with no tab open still needs one. It admits the
+ * browser already open rather than sending anyone a link. And it does not survive the
+ * restore it was named for, because the archive brings its own.
+ */
+export const HILOS_BACKUP_CIRCLE_COPY = {
+  /** Heading of the block. */
+  title: 'Who will check the system',
+  /** What an empty circle means, in the terms of what happens after a restore. */
+  empty:
+    'The circle is empty - after a restore only somebody you hand a code to can check the system.',
+  /** How a named person actually gets in, so nobody waits for an email. */
+  rule:
+    'They get in with the tab they already have open: only members signed in at the moment ' +
+    'you press Restore are let into the verification window.',
+  /** The one property of the list that surprises people afterwards. */
+  volatile:
+    'The circle itself does not survive a restore - afterwards the one stored in the archive applies.',
+  /** Label of the button that opens the add modal. */
+  addButton: 'Add a checker',
+  /** Heading of the add modal. */
+  addTitle: 'Add a checker',
+  /** Label of the add modal's single field. */
+  addField: 'Email or phone',
+  /** Heading of the removal confirmation modal. */
+  removeTitle: 'Remove from the circle',
+  /** The removal modal's body: what the person loses. */
+  removeBody:
+    'They will not be let into the verification window after the next restore.',
+  /** Row mark for a member who was signed in when the row was built. */
+  online: 'signed in',
+  /** Row mark for a member who was not. */
+  offline: 'not signed in',
+} as const
+
 /** The shared clock a backup view redraws its progress from. */
 export interface HilosBackupProgressClock {
   /** Epoch milliseconds, republished once a second while the clock lives. */
@@ -1342,6 +1453,72 @@ export function createHilosBackupsTable(
   }
 }
 
+/** The circle table handle a backup view drives: the controller plus its mount lifecycle. */
+export interface HilosBackupsCircleTable {
+  /** The server-windowed controller the view renders rows, descriptor, and pending from. */
+  readonly controller: TableViewportController<HilosBackupCircleRow>
+  /** Bind the table to the connection and request the first window — call on mount. */
+  start(): void
+  /** Unbind from the connection — call on unmount. */
+  dispose(): void
+}
+
+/**
+ * The server-windowed controller for the verifier circle table: the backup page's second
+ * table, addressed by its own tableKey on the same page scope. Rows resolve through
+ * {@link resolveHilosBackupCircleRow}, sorted by address so the list reads the way the
+ * operator typed it rather than by the order memberships happened to be made.
+ *
+ * The addressed-failure listener the backup table installs is not repeated here: it
+ * already covers both circle actions ({@link BACKUP_ACTIONS}), and a second listener on
+ * the same connection would show one refusal as two toasts.
+ *
+ * @param context The project context (connection and scope stores).
+ */
+export function createHilosBackupsCircleTable(
+  context: HilosBackupsContext,
+): HilosBackupsCircleTable {
+  const controller = new TableViewportController<HilosBackupCircleRow>({
+    resolve: resolveHilosBackupCircleRow,
+    sendViewport: (descriptor) =>
+      context.connection.sendTableViewport(
+        HilosPages.BACKUP,
+        HILOS_BACKUP_CIRCLE_TABLE,
+        descriptor,
+      ),
+    pageSize: HILOS_BACKUP_CIRCLE_PAGE_SIZE,
+    initialSort: { field: BACKUP_CIRCLE_IDENTIFIER_FIELD, direction: 'asc' },
+  })
+  const teardown: Array<() => void> = []
+
+  return {
+    controller,
+    start() {
+      teardown.push(
+        bindTableViewport(
+          context.connection,
+          context.scopes,
+          { page: HilosPages.BACKUP, tableKey: HILOS_BACKUP_CIRCLE_TABLE },
+          controller,
+        ),
+        // Re-request the window whenever the socket (re)connects, for the reason the
+        // backup table does: a reconnect is a fresh exchange that remembers no window.
+        context.connection.on('state', (state) => {
+          if (state === 'connected') {
+            controller.start()
+          }
+        }),
+      )
+      controller.start()
+    },
+    dispose() {
+      for (const off of teardown.splice(0)) {
+        off()
+      }
+    },
+  }
+}
+
 /**
  * The backup mutation surface: create / delete / set-keep submit as tracked
  * actions over the lifecycle. Each returns an ActionHandle whose `done` resolves
@@ -1378,6 +1555,12 @@ export function createHilosBackupsActions(
     },
     sendBackupReopen() {
       return context.actions.dispatch(BACKUP_REOPEN_ACTION, {})
+    },
+    sendBackupCircleAdd(identifier) {
+      return context.actions.dispatch(BACKUP_CIRCLE_ADD_ACTION, { identifier })
+    },
+    sendBackupCircleRemove(memberId) {
+      return context.actions.dispatch(BACKUP_CIRCLE_REMOVE_ACTION, { memberId })
     },
   }
 }

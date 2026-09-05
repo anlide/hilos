@@ -162,6 +162,24 @@ final class Identities extends DbCollection
     }
 
     /**
+     * Names the identity type that has proven an address (HIL-643).
+     *
+     * Delegates to the object collection's
+     * {@see ObjectIdentities::findVerifiedTypeByIdentifier()} primitive, the other half of the
+     * question {@see findUserIdByVerifiedEmail()} asks and off the same row. It answers a caller
+     * that stores the (type, identifier) pair rather than the person, and it hands back a type
+     * rather than a Db item on purpose: the pair is all such a caller keeps.
+     *
+     * @param string $identifier Normalized identifier - a lowercased email or an E.164 phone
+     * @return ?string Identity type of the verified row carrying it, or null when nobody has proven it
+     * @throws DatabaseException On database error while resolving the identity
+     */
+    public function findVerifiedTypeByIdentifier(string $identifier): ?string
+    {
+        return $this->objectCollection->findVerifiedTypeByIdentifier($identifier);
+    }
+
+    /**
      * Resolves the account an email already belongs to, by any road (HIL-608).
      *
      * THE definition of "this address is taken" on the read-facing side: delegates to

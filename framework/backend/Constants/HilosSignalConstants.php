@@ -337,6 +337,25 @@ final class HilosSignalConstants
      */
     public const string BACKUP_REOPEN = 'backup_reopen';
 
+    /**
+     * Client -> server: name one more person to the verifier circle (HIL-643).
+     *
+     * Carries the address as the operator typed it and nothing else. Who that address
+     * belongs to is resolved on the server against the confirmed identities, because the
+     * circle is a list of people rather than a list of strings, and a client naming a user
+     * id would be naming a row in a database a restore is about to replace.
+     */
+    public const string BACKUP_CIRCLE_ADD = 'backup_circle_add';
+
+    /**
+     * Client -> server: take one person out of the verifier circle (HIL-643).
+     *
+     * Carries the row key the table handed out, not the address shown beside it: what is
+     * being removed is a membership, and the key that names it does not change with what the
+     * screen happens to display.
+     */
+    public const string BACKUP_CIRCLE_REMOVE = 'backup_circle_remove';
+
     // ── Hilos backup admin: restore progress (server → the connection that asked) ──
     /**
      * BackupAgent → restore initiator: one snapshot of the restore runtime row.

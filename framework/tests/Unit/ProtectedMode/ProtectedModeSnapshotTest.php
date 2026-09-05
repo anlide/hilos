@@ -40,6 +40,25 @@ final class ProtectedModeSnapshotTest extends TestCase
         parent::tearDown();
     }
 
+    public function testTheSnapshotCountsTheCircleWithoutNamingAnybody(): void
+    {
+        // Two numbers rather than one, because the pair is what makes either readable: one
+        // admitted out of three named is a circle that mostly had no tab open. Neither is an
+        // address - this reply leaves on an unauthenticated port.
+        $this->freeze(
+            StateProtectedModeRuntime::PHASE_VERIFYING,
+            self::INITIATOR_TYPE,
+            null,
+            circleNamedCount: 3,
+            circleSessionTokenHashes: ['session-hash-circle'],
+        );
+
+        $snapshot = $this->buildManager()->protectedModeSnapshot();
+
+        $this->assertSame(3, $snapshot[ProtectedModeCommandConstants::FIELD_CIRCLE_SIZE]);
+        $this->assertSame(1, $snapshot[ProtectedModeCommandConstants::FIELD_CIRCLE_ADMITTED]);
+    }
+
     public function testTheSnapshotReportsThePhaseAndInitiatorFromTheRuntimeRow(): void
     {
         $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, 3);
@@ -173,9 +192,16 @@ final class ProtectedModeSnapshotTest extends TestCase
      * @param string $phase Freeze phase to mount
      * @param ?string $initiatorType Initiator agent type recorded on the row
      * @param ?int $initiatorIndex Initiator agent index recorded on the row
+     * @param int $circleNamedCount People the verifier circle named when the node froze
+     * @param list<string> $circleSessionTokenHashes Session hashes of the named people who were online
      */
-    private function freeze(string $phase, ?string $initiatorType, ?int $initiatorIndex): void
-    {
+    private function freeze(
+        string $phase,
+        ?string $initiatorType,
+        ?int $initiatorIndex,
+        int $circleNamedCount = 0,
+        array $circleSessionTokenHashes = [],
+    ): void {
         Hilos::$rt = new SnapshotTestRtContext();
         Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::fromRow([
             StateProtectedModeRuntime::phase => $phase,
@@ -189,6 +215,8 @@ final class ProtectedModeSnapshotTest extends TestCase
             StateProtectedModeRuntime::progressAt => 1042,
             StateProtectedModeRuntime::passHashes => [],
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => $circleSessionTokenHashes,
+            StateProtectedModeRuntime::circleNamedCount => $circleNamedCount,
         ]));
     }
 

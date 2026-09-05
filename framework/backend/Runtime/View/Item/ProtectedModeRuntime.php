@@ -33,6 +33,8 @@ use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
  * @property-read ?int $progressAt Epoch seconds of the last progress mark behind the freeze; null when none
  * @property-read list<string> $passHashes Hashes of the passes minted for the verification; empty otherwise
  * @property-read list<string> $admittedSessionTokenHashes Session token hashes let in by a pass; empty otherwise
+ * @property-read list<string> $circleSessionTokenHashes Session token hashes of the circle photographed at the freeze; empty otherwise
+ * @property-read int $circleNamedCount How many people the circle named at the freeze; zero otherwise
  * @property-read ProtectedModeRuntimeActions $actions Write operations for the runtime singleton
  */
 final class ProtectedModeRuntime extends RtItem
@@ -66,6 +68,8 @@ final class ProtectedModeRuntime extends RtItem
             StateProtectedModeRuntime::progressAt => $this->_state->progressAt,
             StateProtectedModeRuntime::passHashes => $this->_state->passHashes,
             StateProtectedModeRuntime::admittedSessionTokenHashes => $this->_state->admittedSessionTokenHashes,
+            StateProtectedModeRuntime::circleSessionTokenHashes => $this->_state->circleSessionTokenHashes,
+            StateProtectedModeRuntime::circleNamedCount => $this->_state->circleNamedCount,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };
@@ -116,6 +120,21 @@ final class ProtectedModeRuntime extends RtItem
     public function admits(?string $sessionTokenHash): bool
     {
         return $this->_state->admits($sessionTokenHash);
+    }
+
+    /**
+     * Whether this browser session was photographed into the verifier circle at the freeze.
+     *
+     * The rule lives on the state row ({@see StateProtectedModeRuntime::admitsCircle()}); this
+     * delegate is what lets the admission path ask whether a session was named in advance
+     * without holding the backing row.
+     *
+     * @param ?string $sessionTokenHash Hash of the connection's session token, or null when it carries no session
+     * @return bool Whether the session behind this connection is a circle member let in right now
+     */
+    public function admitsCircle(?string $sessionTokenHash): bool
+    {
+        return $this->_state->admitsCircle($sessionTokenHash);
     }
 
     /**

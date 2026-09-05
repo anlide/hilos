@@ -403,6 +403,8 @@ final class ProtectedModeWatchdogTest extends TestCase
             StateProtectedModeRuntime::progressAt => $progressAt,
             StateProtectedModeRuntime::passHashes => [],
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
         ]));
     }
 

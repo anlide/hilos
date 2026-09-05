@@ -1286,6 +1286,8 @@ abstract class DaemonManager extends BaseManager implements
                 ProtectedModeCommandConstants::FIELD_STOPPED_AGENTS => $stopped,
                 ProtectedModeCommandConstants::FIELD_AGENT_START_GATE_CLOSED => false,
                 ProtectedModeCommandConstants::FIELD_PASS_COUNT => 0,
+                ProtectedModeCommandConstants::FIELD_CIRCLE_SIZE => 0,
+                ProtectedModeCommandConstants::FIELD_CIRCLE_ADMITTED => 0,
             ];
         }
 
@@ -1310,6 +1312,11 @@ abstract class DaemonManager extends BaseManager implements
             // The count, never a hash: a snapshot goes to CI output, and a hash in a log is a
             // hash in a log forever. How many passes are outstanding is all an assertion needs.
             ProtectedModeCommandConstants::FIELD_PASS_COUNT => count($freeze->passHashes),
+            // Both circle numbers come off the row for the same reason the pass count does, and
+            // for one more: the circle table is in the database a restore replaces, so the master
+            // could not ask it about the freeze it is reporting on even if it were allowed to.
+            ProtectedModeCommandConstants::FIELD_CIRCLE_SIZE => $freeze->circleNamedCount,
+            ProtectedModeCommandConstants::FIELD_CIRCLE_ADMITTED => count($freeze->circleSessionTokenHashes),
         ];
     }
 

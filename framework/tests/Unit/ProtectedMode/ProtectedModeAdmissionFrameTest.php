@@ -49,6 +49,8 @@ final class ProtectedModeAdmissionFrameTest extends TestCase
             StateProtectedModeRuntime::operation => 'restore',
             StateProtectedModeRuntime::passHashes => ['hash-of-a-pass'],
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
         ]));
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
     }

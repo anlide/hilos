@@ -183,6 +183,9 @@ final class SignalTypeConstants
     /** @var string Protected-mode pass request signal type (worker -> own daemon, drained worker-locally) */
     public const string PROTECTED_MODE_PASS = 'protected_mode_pass';
 
+    /** @var string Protected-mode verifier-circle photograph (worker -> own daemon, drained worker-locally) */
+    public const string PROTECTED_MODE_CIRCLE = 'protected_mode_circle';
+
     /** @var string Protected-mode refreeze request signal type (worker -> own daemon, drained worker-locally) */
     public const string PROTECTED_MODE_REFREEZE = 'protected_mode_refreeze';
 

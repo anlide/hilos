@@ -72,6 +72,7 @@ use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
+use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Core\Daemon\Cron\CronRule;
@@ -1566,6 +1567,7 @@ final class BackupAgent extends AbstractAgent
         $this->timeoutSeconds = $this->pendingRestoreTimeout;
         $this->runKind = BackupRunKind::RESTORE;
         $this->pendingCarryover = $this->captureSessions();
+        $this->captureVerifierCircle();
         // The phase the child opens with, marked before it can say so itself: from here on the
         // child announces each one on its stdout and {@see consumeChildProgress()} follows along.
         // A child too old to announce anything therefore reports the truth up to this point
@@ -3342,6 +3344,48 @@ final class BackupAgent extends AbstractAgent
         }
 
         return $snapshot;
+    }
+
+    /**
+     * Photographs the verifier circle against the hall, and hands it to the master (HIL-643).
+     *
+     * The circle table is about to be overwritten by the archive's own, so this is the last moment
+     * the question "who did the operator name?" has an answer, and the connections have stopped
+     * changing, so it is also the first moment the answer is final. Read here rather than written
+     * here: the row it lands on is the master's, and the master may not read a database.
+     *
+     * A photograph that cannot be taken must not stop a restore the operator asked for, exactly as
+     * {@see captureSessions()} must not: the cost of losing it is that the circle waits outside
+     * with everyone else and is let in by a code, which is nothing beside a restore that refuses to
+     * run.
+     *
+     * An empty intersection under a named circle is written down for the reason the empty session
+     * photograph is: it reads like "nobody was named", and telling those two apart afterwards is
+     * impossible once the archive's circle is in place.
+     *
+     * @throws InvalidArgumentException When the circle frame to this node's master cannot be named
+     */
+    private function captureVerifierCircle(): void
+    {
+        try {
+            $snapshot = VerifierCircleSnapshot::capture();
+        } catch (Throwable $e) {
+            $this->logAgentError('Restore could not photograph the verifier circle: ' . $e->getMessage());
+
+            return;
+        }
+
+        if ($snapshot->namedCount === 0) {
+            return;
+        }
+
+        $this->requestProtectedModeCircle($snapshot);
+
+        if ($snapshot->sessionTokenHashes === []) {
+            $this->logAgentWarning(
+                "Verifier circle admitted 0 of {$snapshot->namedCount} named member(s)"
+            );
+        }
     }
 
     /**

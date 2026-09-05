@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeReadySignalData;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeCircleDTO;
+use Hilos\Socket\Worker\WorkerDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -34,6 +37,8 @@ final class ProtectedModeContractTest extends TestCase
         $this->assertNull($runtime->startedAt);
         $this->assertSame([], $runtime->passHashes);
         $this->assertSame([], $runtime->admittedSessionTokenHashes);
+        $this->assertSame([], $runtime->circleSessionTokenHashes);
+        $this->assertSame(0, $runtime->circleNamedCount);
         $this->assertSame(ProtectedModeRuntime::RT_ITEM, ProtectedModeRuntime::getRtCollectionKey());
     }
 
@@ -52,6 +57,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::progressAt => null,
             ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
         ];
 
         $runtime = ProtectedModeRuntime::fromRow($row);
@@ -76,6 +83,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::progressAt => 1_700_000_030,
             ProtectedModeRuntime::passHashes => ['hash-a', 'hash-b'],
             ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-verifier'],
+            ProtectedModeRuntime::circleSessionTokenHashes => ['session-hash-circle'],
+            ProtectedModeRuntime::circleNamedCount => 3,
         ];
 
         $runtime = ProtectedModeRuntime::fromRow($row);
@@ -101,12 +110,16 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
             ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
         ]);
 
         $runtime->applyDiff([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
             ProtectedModeRuntime::passHashes => ['hash-a'],
             ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-verifier'],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
         ]);
 
         $this->assertSame(ProtectedModeRuntime::PHASE_VERIFYING, $runtime->phase);
@@ -117,10 +130,38 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_DEACTIVATING,
             ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
         ]);
 
         $this->assertSame([], $runtime->passHashes);
         $this->assertSame([], $runtime->admittedSessionTokenHashes);
+    }
+
+    public function testRuntimeApplyDiffCarriesThePhotographedCircle(): void
+    {
+        // The circle reaches a worker the same way the admissions do - as a diff of this row -
+        // so a worker that never learned it would go on locking a named verifier out of the
+        // window their own tab is already sitting in.
+        $runtime = ProtectedModeRuntime::fromRow([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
+            ProtectedModeRuntime::passHashes => [],
+            ProtectedModeRuntime::admittedSessionTokenHashes => [],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
+        ]);
+
+        $runtime->applyDiff([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
+            ProtectedModeRuntime::circleSessionTokenHashes => ['session-hash-circle'],
+            ProtectedModeRuntime::circleNamedCount => 3,
+        ]);
+
+        $this->assertSame(['session-hash-circle'], $runtime->circleSessionTokenHashes);
+        $this->assertSame(3, $runtime->circleNamedCount);
+        $this->assertTrue($runtime->admitsCircle('session-hash-circle'));
+        $this->assertFalse($runtime->admits('session-hash-circle'));
+        $this->assertFalse($runtime->locksOut(null, 'session-hash-circle'));
     }
 
     public function testRuntimeApplyDiffOverwritesOnlyPresentFields(): void
@@ -131,6 +172,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::startedAt => 1_700_000_000,
             ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
         ]);
 
         $runtime->applyDiff([
@@ -152,6 +195,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::initiatorAgentIndex => 2,
             ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
         ]);
 
         $runtime->applyDiff([
@@ -181,6 +226,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
             ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
         ]);
 
         $this->assertTrue($runtime->locksOut('accept-initiator', null));
@@ -198,6 +245,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::initiatorAcceptKey => null,
             ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
         ]);
 
         $this->assertTrue($runtime->locksOut('accept-9', null));
@@ -213,6 +262,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
             ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
         ]);
 
         $this->assertTrue($runtime->locksOut('accept-initiator', null));
@@ -226,6 +277,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
             ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-verifier'],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
         ]);
 
         $this->assertFalse($runtime->locksOut('accept-initiator', null));
@@ -244,6 +297,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
             ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-verifier'],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
         ]);
 
         $this->assertFalse($runtime->locksOut('accept-second-tab', 'session-hash-verifier'));
@@ -255,6 +310,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
             ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-verifier'],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
         ]);
 
         $this->assertTrue($runtime->admits('session-hash-verifier'));
@@ -274,6 +331,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
             ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-a', 'session-hash-b'],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
         ]);
 
         $this->assertTrue($runtime->admits('session-hash-a'));
@@ -298,6 +357,8 @@ final class ProtectedModeContractTest extends TestCase
                 ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
                 ProtectedModeRuntime::passHashes => [],
                 ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-verifier'],
+                ProtectedModeRuntime::circleSessionTokenHashes => [],
+                ProtectedModeRuntime::circleNamedCount => 0,
             ]);
 
             $this->assertTrue($runtime->locksOut('accept-verifier', 'session-hash-verifier'), $phase);
@@ -437,6 +498,71 @@ final class ProtectedModeContractTest extends TestCase
         );
     }
 
+    public function testCircleSignalDataRoundTripsBothHalvesOfThePhotograph(): void
+    {
+        $data = new ProtectedModeCircleSignalData(
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: 2,
+            namedCount: 3,
+            sessionTokenHashes: ['session-hash-a', 'session-hash-b'],
+        );
+
+        $restored = ProtectedModeCircleSignalData::fromArray($data->toArray());
+
+        $this->assertSame('backup', $restored->initiatorAgentType);
+        $this->assertSame(2, $restored->initiatorAgentIndex);
+        $this->assertSame(3, $restored->namedCount);
+        $this->assertSame(['session-hash-a', 'session-hash-b'], $restored->sessionTokenHashes);
+    }
+
+    public function testCircleSignalDataKeepsAnEmptyPhotographOfANamedCircle(): void
+    {
+        // The pair the count exists for: nobody named was online is not the same fact as nobody
+        // was named, and the frame has to carry the difference the row cannot recover later.
+        $data = new ProtectedModeCircleSignalData(
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: null,
+            namedCount: 4,
+            sessionTokenHashes: [],
+        );
+
+        $restored = ProtectedModeCircleSignalData::fromArray($data->toArray());
+
+        $this->assertNull($restored->initiatorAgentIndex);
+        $this->assertSame(4, $restored->namedCount);
+        $this->assertSame([], $restored->sessionTokenHashes);
+    }
+
+    public function testCircleSignalDataRefusesAPayloadThatNamesNoHashList(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        ProtectedModeCircleSignalData::fromArray([
+            ProtectedModeCircleSignalData::initiatorAgentType => 'backup',
+            ProtectedModeCircleSignalData::initiatorAgentIndex => null,
+            ProtectedModeCircleSignalData::namedCount => 1,
+        ]);
+    }
+
+    public function testTheCircleFrameRoundTripsThroughItsWorkerEnvelope(): void
+    {
+        // Through the registry rather than the class, because the registry is the half that can
+        // be forgotten: a frame nobody registered decodes into an unknown-type refusal.
+
+        $frame = new WorkerProtectedModeCircleDTO(new ProtectedModeCircleSignalData(
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: 0,
+            namedCount: 2,
+            sessionTokenHashes: ['session-hash-a'],
+        ));
+
+        $restored = WorkerDTO::factoryWorkerDTO(json_encode($frame->toArray(), JSON_THROW_ON_ERROR));
+
+        $this->assertInstanceOf(WorkerProtectedModeCircleDTO::class, $restored);
+        $this->assertSame(2, $restored->data->namedCount);
+        $this->assertSame(['session-hash-a'], $restored->data->sessionTokenHashes);
+    }
+
     public function testTheProgressMarkRoundTripsThroughTheRow(): void
     {
         $runtime = ProtectedModeRuntime::fromRow([
@@ -444,6 +570,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::progressAt => 1_700_000_030,
             ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
         ]);
 
         $this->assertSame(1_700_000_030, $runtime->progressAt);
@@ -463,6 +591,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
             ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
         ]);
 
         $this->assertNull($runtime->progressAt);

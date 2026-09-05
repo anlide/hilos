@@ -122,6 +122,49 @@ final class ProtectedModeAdmissionTest extends TestCase
         );
     }
 
+    public function testANamedCircleMemberIsLetInWithoutPresentingAnything(): void
+    {
+        // The whole point of naming people in advance: the tab was already open when the freeze
+        // started, and it keeps working without anybody reading a code down the phone.
+        $this->freeze(
+            StateProtectedModeRuntime::PHASE_VERIFYING,
+            [],
+            circleSessionTokens: [self::VERIFIER_SESSION_TOKEN],
+        );
+
+        $block = $this->protectedModeBlock($this->handshake(null, sessionToken: self::VERIFIER_SESSION_TOKEN));
+
+        $this->assertFalse($block['active']);
+    }
+
+    public function testACircleMemberIsNotLetInBeforeTheWindowOpens(): void
+    {
+        // The photograph is taken while the node is frozen, so the list is already on the row
+        // during the phases where there is nothing behind the door to let anybody into.
+        $this->freeze(
+            StateProtectedModeRuntime::PHASE_ACTIVE,
+            [],
+            circleSessionTokens: [self::VERIFIER_SESSION_TOKEN],
+        );
+
+        $block = $this->protectedModeBlock($this->handshake(null, sessionToken: self::VERIFIER_SESSION_TOKEN));
+
+        $this->assertTrue($block['active']);
+    }
+
+    public function testABrowserOutsideTheCircleStaysOutOfTheWindow(): void
+    {
+        $this->freeze(
+            StateProtectedModeRuntime::PHASE_VERIFYING,
+            [],
+            circleSessionTokens: [self::VERIFIER_SESSION_TOKEN],
+        );
+
+        $block = $this->protectedModeBlock($this->handshake(null, sessionToken: self::STRANGER_SESSION_TOKEN));
+
+        $this->assertTrue($block['active']);
+    }
+
     public function testAWrongPassAdmitsNobody(): void
     {
         $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, [hash('sha256', self::PASS)]);
@@ -306,9 +349,14 @@ final class ProtectedModeAdmissionTest extends TestCase
      * @param string $phase Freeze phase to mount
      * @param list<string> $passHashes Hashes of the passes the window has outstanding
      * @param ?string $initiatorSessionToken Session token of the browser that asked, or null when nothing with one did
+     * @param list<string> $circleSessionTokens Session tokens the verifier circle was photographed with
      */
-    private function freeze(string $phase, array $passHashes, ?string $initiatorSessionToken = null): void
-    {
+    private function freeze(
+        string $phase,
+        array $passHashes,
+        ?string $initiatorSessionToken = null,
+        array $circleSessionTokens = [],
+    ): void {
         Hilos::$rt = new AdmissionTestRtContext();
         Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::fromRow([
             StateProtectedModeRuntime::phase => $phase,
@@ -320,6 +368,11 @@ final class ProtectedModeAdmissionTest extends TestCase
             StateProtectedModeRuntime::initiatorAgentType => 'backup',
             StateProtectedModeRuntime::passHashes => $passHashes,
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => array_map(
+                StateProtectedModeRuntime::hashSessionToken(...),
+                $circleSessionTokens,
+            ),
+            StateProtectedModeRuntime::circleNamedCount => count($circleSessionTokens),
         ]));
     }
 

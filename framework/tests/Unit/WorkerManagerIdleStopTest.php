@@ -232,6 +232,8 @@ final class WorkerManagerIdleStopTest extends TestCase
             StateProtectedModeRuntime::phase => $phase,
             StateProtectedModeRuntime::passHashes => [],
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
         ]));
     }
 

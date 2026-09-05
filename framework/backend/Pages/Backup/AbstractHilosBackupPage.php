@@ -20,7 +20,9 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageReach;
@@ -36,6 +38,9 @@ use Hilos\Environment\Exception\EnvNotInCatalogException;
 use Hilos\Environment\Exception\EnvTypeMismatchException;
 use Hilos\Environment\Exception\MissingEnvironmentVariableException;
 use Hilos\Hilos;
+use Hilos\HilosException;
+use Hilos\Pages\Backup\DTO\BackupCircleAddActionDTO;
+use Hilos\Pages\Backup\DTO\BackupCircleRemoveActionDTO;
 use Hilos\Pages\Backup\DTO\BackupCreateActionDTO;
 use Hilos\Pages\Backup\DTO\BackupDeleteActionDTO;
 use Hilos\Pages\Backup\DTO\BackupReopenActionDTO;
@@ -77,6 +82,8 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
         HilosSignalConstants::BACKUP_SET_KEEP => BackupSetKeepActionDTO::class,
         HilosSignalConstants::BACKUP_RESTORE => BackupRestoreActionDTO::class,
         HilosSignalConstants::BACKUP_REOPEN => BackupReopenActionDTO::class,
+        HilosSignalConstants::BACKUP_CIRCLE_ADD => BackupCircleAddActionDTO::class,
+        HilosSignalConstants::BACKUP_CIRCLE_REMOVE => BackupCircleRemoveActionDTO::class,
     ];
 
     public const array BROWSER = [
@@ -99,7 +106,7 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
     public const string REOPEN_OFFERED = 'offered';
 
     /**
-     * Routes backup create, delete, set-keep, restore, and reopen actions to typed handlers.
+     * Routes backup create, delete, set-keep, restore, reopen and verifier-circle actions.
      *
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name from the WebSocket envelope
@@ -113,6 +120,7 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
      * @throws EnvNotInCatalogException When the key is not declared in the catalog
      * @throws EnvTypeMismatchException When the key is not cataloged as the type read
      * @throws MissingEnvironmentVariableException When a required value is missing
+     * @throws HilosException When an identity lookup or a verifier-circle write fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
@@ -154,6 +162,22 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
                     throw new InvalidActionPayloadException($action, BackupReopenActionDTO::class, $dto);
                 }
                 $this->handleReopen($acceptKey);
+
+                break;
+
+            case HilosSignalConstants::BACKUP_CIRCLE_ADD:
+                if (!$dto instanceof BackupCircleAddActionDTO) {
+                    throw new InvalidActionPayloadException($action, BackupCircleAddActionDTO::class, $dto);
+                }
+                $this->handleCircleAdd($dto);
+
+                break;
+
+            case HilosSignalConstants::BACKUP_CIRCLE_REMOVE:
+                if (!$dto instanceof BackupCircleRemoveActionDTO) {
+                    throw new InvalidActionPayloadException($action, BackupCircleRemoveActionDTO::class, $dto);
+                }
+                $this->handleCircleRemove($dto);
 
                 break;
 
@@ -388,6 +412,72 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
             HilosSignalConstants::BACKUP_AGENT_REOPEN,
             new BackupReopenSignalData($acceptKey),
         );
+    }
+
+    /**
+     * Names one more person to the verifier circle, by the address the operator typed.
+     *
+     * The address is resolved to an identity here rather than taken as a string, because the
+     * circle is a list of people: what is stored is the (type, identifier) pair off the identity
+     * that carries it, which is the same pair the freeze resolves back to a person when the
+     * database under it has been replaced. An address nobody has proven names nobody, and is
+     * refused with that in as many words - there is nothing to disclose here that the operator,
+     * who is an administrator of this installation, could not read off the users page anyway.
+     *
+     * One lookup and not two: the type is the whole of what is stored, so asking for the owner
+     * first and then walking their identities for the address would ask the same question twice
+     * and give the two halves two ways to disagree.
+     *
+     * The duplicate is caught from the write rather than checked before it: two admin tabs fit
+     * between a read and its insert, and the UNIQUE index is the only gate that does not.
+     *
+     * Written from this page and not sent to an agent, unlike every other action here: the row is
+     * a database row rather than a file or a freeze, and the agent that serves this page is the
+     * one that claims the table ({@see AbstractHilosIndexAgent}) - which is the same arrangement
+     * the settings page writes under.
+     *
+     * @param BackupCircleAddActionDTO $dto Add action payload carrying the typed address
+     * @throws TableActionException When the address is empty, unproven, or already in the circle
+     * @throws HilosException When the identity lookup or the circle write fails
+     */
+    private function handleCircleAdd(BackupCircleAddActionDTO $dto): void
+    {
+        $identifier = mb_strtolower($dto->identifier);
+        if ($identifier === '') {
+            throw new TableActionException('An address is required');
+        }
+
+        $identityType = Hilos::$db->identities->findVerifiedTypeByIdentifier($identifier);
+        if ($identityType === null) {
+            throw new TableActionException('Nobody has proven this address');
+        }
+
+        try {
+            Hilos::$db->verifierCircle->actions->add($identityType, $identifier);
+        } catch (DuplicateValueException) {
+            throw new TableActionException('This address is already in the circle');
+        }
+    }
+
+    /**
+     * Takes one person out of the verifier circle, by the key the table handed out.
+     *
+     * A key that names no row is a silent success rather than a refusal: the only way to reach
+     * this with nothing to delete is that somebody already deleted it, and the operator wanted
+     * exactly the state they are now in. A refusal there would report a second admin's work as
+     * this one's failure.
+     *
+     * @param BackupCircleRemoveActionDTO $dto Remove action payload carrying the membership key
+     * @throws HilosException When the circle lookup or the delete fails
+     */
+    private function handleCircleRemove(BackupCircleRemoveActionDTO $dto): void
+    {
+        $member = Hilos::$db->verifierCircle[$dto->memberId] ?? null;
+        if ($member === null) {
+            return;
+        }
+
+        $member->actions->delete();
     }
 
     /**

@@ -10,6 +10,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ProtectedModeAdmissionConstants;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
+use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Socket\Client\CommandClient;
@@ -61,10 +62,13 @@ use Random\RandomException;
  * closing the window voids outright, and it is written down here because a docblock claiming
  * otherwise is what an operator would plan around.
  *
- * TODO(HIL-643): the circle of verifiers stays keys until HIL-643 replaces it with a user list
- * managed from the admin surface - the owner's standing wish, deferred rather than declined. The
- * marker sits here, beside the paragraph that explains what a pass is, so the next reader meets
- * the decision instead of re-deriving it.
+ * **The key is now the second way in, not the only one (HIL-643).** A circle of named people is
+ * kept from the admin surface, photographed at the freeze, and let into the verification window
+ * with the tabs they already have open ({@see VerifierCircleSnapshot}). The key stayed rather than
+ * being replaced by it, and deliberately: the circle admits only somebody who was signed in at the
+ * moment the freeze started, so anybody else - a colleague reached by phone, an operator on a
+ * machine they had not logged in on - has nothing but a key. It is the emergency entrance, and an
+ * emergency entrance that answers to no list is the point of one.
  */
 trait ProtectedModeOperatorTrait
 {

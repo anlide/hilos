@@ -398,6 +398,8 @@ final class ProtectedModeOperatorTest extends TestCase
             StateProtectedModeRuntime::initiatorAgentIndex => $initiatorIndex,
             StateProtectedModeRuntime::passHashes => $passHashes,
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
         ]));
     }
 
@@ -426,6 +428,8 @@ final class ProtectedModeOperatorTest extends TestCase
             StateProtectedModeRuntime::initiatorAgentType => self::INITIATOR_TYPE,
             StateProtectedModeRuntime::passHashes => ['hash-of-a-pass'],
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
         ]));
     }
 

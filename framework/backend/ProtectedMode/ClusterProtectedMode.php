@@ -7,6 +7,7 @@ namespace Hilos\ProtectedMode;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
@@ -304,6 +305,38 @@ final class ClusterProtectedMode implements
         }
 
         $this->mesh->sendPass($leaderNodeId, $data->passHash);
+    }
+
+    /**
+     * Entry point on the initiator's own node: writes the photographed circle on this node's row.
+     *
+     * The one request here that is never routed anywhere. Its siblings travel to the leader because
+     * they move a phase the whole cluster shares; the circle names browsers, and a browser is
+     * attached to the node it connected to. So the photograph stays on the row of the node that
+     * froze - exactly where the initiator's own session hash stays and for the same reason
+     * ({@see onQuiesce()}) - and a member of the circle who reached another node of the cluster
+     * meets the stub there, as the initiator does today.
+     *
+     * Refused when this node holds no freeze at all: on a leader that is `activeFreeze`, on a
+     * follower the leader that ordered the quiesce. The phase is deliberately not checked, unlike
+     * the pass - an initiator sitting on a follower stays on `activating` for the whole freeze by
+     * design, and gating on `active` would drop the circle on exactly the topology that has one.
+     *
+     * @param ProtectedModeCircleSignalData $data Photographing agent identity and the circle it saw
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function requestCircle(ProtectedModeCircleSignalData $data): void
+    {
+        if ($this->activeFreeze === null && $this->freezingLeaderId === null) {
+            Logger::warning("Protected mode: dropping circle from agent '{$data->initiatorAgentType}'"
+                . " — node '{$this->selfNodeId}' holds no freeze");
+            return;
+        }
+
+        $this->runtimeView()?->actions->admitCircle(
+            new VerifierCircleSnapshot($data->namedCount, $data->sessionTokenHashes),
+        );
     }
 
     /**

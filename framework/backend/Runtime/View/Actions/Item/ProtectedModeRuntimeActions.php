@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Actions\Item;
 
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -70,6 +71,8 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->progressAt = $row->progressAt;
         $this->state->passHashes = [];
         $this->state->admittedSessionTokenHashes = [];
+        $this->state->circleSessionTokenHashes = [];
+        $this->state->circleNamedCount = 0;
         $this->sync();
     }
 
@@ -83,12 +86,13 @@ final class ProtectedModeRuntimeActions extends RtActions
      * epic that widens it. Neither name buys anything while the freeze holds: under the frozen
      * phases the row refuses every connection, this one included.
      *
-     * A new freeze starts with no passes and nobody admitted, and that is written rather than
-     * assumed: {@see ViewProtectedModeRuntime::admits()} reads the frozen phases as empty by
-     * construction, and one path can arrive here holding an abandoned window's hashes - a
-     * demoted leader still on verifying, quiesced again by whoever took leadership. Every other
-     * way in passes through a clear already, so this costs two assignments and closes the one
-     * hole where a voided pass could admit its holder to the next operation.
+     * A new freeze starts with no passes, nobody admitted and nobody named, and that is written
+     * rather than assumed: {@see ViewProtectedModeRuntime::admits()} reads the frozen phases as
+     * empty by construction, and one path can arrive here holding an abandoned window's hashes -
+     * a demoted leader still on verifying, quiesced again by whoever took leadership. Every other
+     * way in passes through a clear already, so this costs three assignments and closes the one
+     * hole where a voided pass, or a circle photographed for the previous operation, could admit
+     * its holder to the next one.
      *
      * @param ProtectedModeQuiesceData $freeze Operation and initiator identity the freeze protects
      * @param ?string $initiatorAcceptKey Accept key recorded here and admitted once the verification
@@ -118,6 +122,8 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->progressAt = null;
         $this->state->passHashes = [];
         $this->state->admittedSessionTokenHashes = [];
+        $this->state->circleSessionTokenHashes = [];
+        $this->state->circleNamedCount = 0;
         $this->sync();
     }
 
@@ -125,10 +131,11 @@ final class ProtectedModeRuntimeActions extends RtActions
      * Marks the freeze fully established: every node has quiesced.
      *
      * Coming back from {@see enterVerifying()} this is also the operator closing the system
-     * again, so the passes and the admissions they earned are voided here: a pass that outlived
-     * the verification it was minted for would let its holder in during the next operation.
-     * On the ordinary activating -> active path both lists are empty already and the clear
-     * costs nothing.
+     * again, so the passes, the admissions they earned and the photographed circle are voided
+     * here: a pass that outlived the verification it was minted for would let its holder in
+     * during the next operation, and a circle photographed before one database replacement says
+     * nothing about who should be inside the next. On the ordinary activating -> active path all
+     * three lists are empty already and the clear costs nothing.
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -141,6 +148,8 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->activatedAt = time();
         $this->state->passHashes = [];
         $this->state->admittedSessionTokenHashes = [];
+        $this->state->circleSessionTokenHashes = [];
+        $this->state->circleNamedCount = 0;
         $this->sync();
     }
 
@@ -239,6 +248,38 @@ final class ProtectedModeRuntimeActions extends RtActions
     }
 
     /**
+     * Writes the verifier circle photographed at the freeze, whole.
+     *
+     * Whole rather than one hash at a time, which is what tells it apart from
+     * {@see admitSession()}: the circle is read once, under the freeze and before the database is
+     * replaced, so there is exactly one moment when the list is known and no second one to add to
+     * it. Writing it as a list also makes the write idempotent for free - a second photograph of
+     * the same hall overwrites the first instead of doubling it.
+     *
+     * A freeze of an installation that named nobody writes nothing and syncs nothing: the row is
+     * already empty there - both ways into the freeze clear it - so the diff to every worker on
+     * the node would say nothing anyway. A circle that WAS named syncs even when the photograph
+     * came out empty, because the count is the difference between "nobody was named" and "nobody
+     * named was online", and only the row can still tell them apart afterwards.
+     *
+     * @param VerifierCircleSnapshot $snapshot Circle photographed under the freeze, before the swap
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function admitCircle(VerifierCircleSnapshot $snapshot): void
+    {
+        $this->ensureCanWrite();
+
+        if ($snapshot->namedCount === 0) {
+            return;
+        }
+
+        $this->state->circleSessionTokenHashes = $snapshot->sessionTokenHashes;
+        $this->state->circleNamedCount = $snapshot->namedCount;
+        $this->sync();
+    }
+
+    /**
      * Marks the freeze as lifting; the lockdown stays up until it is inactive.
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
@@ -257,8 +298,8 @@ final class ProtectedModeRuntimeActions extends RtActions
      *
      * The whole identity is cleared with the phase: a stale accept key left on the row would hand
      * one connection a privilege after the operation that earned it is over, and a stale session
-     * hash would hand it to a whole browser, for as long as its cookie lives. The passes and the
-     * sessions they admitted go the same way and for the same reason.
+     * hash would hand it to a whole browser, for as long as its cookie lives. The passes, the
+     * sessions they admitted and the photographed circle go the same way and for the same reason.
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -279,6 +320,8 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->progressAt = null;
         $this->state->passHashes = [];
         $this->state->admittedSessionTokenHashes = [];
+        $this->state->circleSessionTokenHashes = [];
+        $this->state->circleNamedCount = 0;
         $this->sync();
     }
 }

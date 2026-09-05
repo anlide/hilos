@@ -115,6 +115,7 @@ use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
 use Hilos\Socket\Worker\DTO\WorkerGroupJoinDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeCircleDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModePassDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeProgressDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeRefreezeDTO;
@@ -128,6 +129,7 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerSessionCarryOverDeferredDTO;
 use Hilos\Socket\Worker\DTO\WorkerSessionCarryOverDoneDTO;
 use Hilos\Log\LogWriteLevelApplier;
+use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
@@ -2904,6 +2906,14 @@ abstract class WorkerManager extends BaseManager
                     $this->daemonClient->send(new WorkerProtectedModePassDTO($signal->data));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - protected-mode pass carries invalid data: ' . get_class($signal->data));
+                }
+                continue;
+            }
+            if ($signalType === SignalTypeConstants::PROTECTED_MODE_CIRCLE) {
+                if ($signal->data instanceof ProtectedModeCircleSignalData) {
+                    $this->daemonClient->send(new WorkerProtectedModeCircleDTO($signal->data));
+                } else {
+                    Logger::error('dispatchQueuedSignalsToDaemon - protected-mode circle carries invalid data: ' . get_class($signal->data));
                 }
                 continue;
             }

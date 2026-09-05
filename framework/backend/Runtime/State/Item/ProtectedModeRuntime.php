@@ -6,6 +6,7 @@ namespace Hilos\Runtime\State\Item;
 
 use Hilos\Cluster\ClusterContext;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\ProtectedMode\VerifierCircleSnapshot;
 
 /**
  * ProtectedModeRuntime - the singleton runtime state of the protected mode subsystem.
@@ -58,6 +59,8 @@ final class ProtectedModeRuntime extends RtState
     public const string progressAt = 'progressAt';
     public const string passHashes = 'passHashes';
     public const string admittedSessionTokenHashes = 'admittedSessionTokenHashes';
+    public const string circleSessionTokenHashes = 'circleSessionTokenHashes';
+    public const string circleNamedCount = 'circleNamedCount';
 
     /** Hash algorithm the initiator's session token is stored and compared under. */
     private const string SESSION_TOKEN_HASH_ALGO = 'sha256';
@@ -129,6 +132,31 @@ final class ProtectedModeRuntime extends RtState
     public array $admittedSessionTokenHashes = [];
 
     /**
+     * Session token hashes of the verifier circle photographed at the freeze; empty on every other phase.
+     *
+     * The list beside the one above, and the difference is who filled it. That one grows as
+     * people spell a code into the placeholder; this one is written once, under the freeze and
+     * before the database is replaced, out of the intersection of the named circle with the hall
+     * that was actually online ({@see VerifierCircleSnapshot::capture()}). Nobody is added to it
+     * afterwards: the circle table is in the database the restore rewrites, so the only honest
+     * moment to read it is before the swap.
+     *
+     * @var list<string>
+     */
+    public array $circleSessionTokenHashes = [];
+
+    /**
+     * How many people the circle named when this node froze; zero on every other phase.
+     *
+     * Carried beside the hashes because it cannot be recovered afterwards: by the time anybody
+     * asks, the circle table belongs to the restored database and answers about a different set
+     * of people. It is what tells an empty photograph of a named circle apart from a freeze where
+     * nobody was named at all - the one distinction the operator's log line and the inspector
+     * both turn on.
+     */
+    public int $circleNamedCount = 0;
+
+    /**
      * Creates the inactive singleton runtime row.
      *
      * @return static Inactive protected mode runtime state
@@ -161,6 +189,8 @@ final class ProtectedModeRuntime extends RtState
         $instance->progressAt = self::optionalInt($row, self::progressAt);
         $instance->passHashes = self::requireStringList($row, self::passHashes);
         $instance->admittedSessionTokenHashes = self::requireStringList($row, self::admittedSessionTokenHashes);
+        $instance->circleSessionTokenHashes = self::requireStringList($row, self::circleSessionTokenHashes);
+        $instance->circleNamedCount = self::requireInt($row, self::circleNamedCount);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -189,6 +219,8 @@ final class ProtectedModeRuntime extends RtState
         $this->progressAt = self::patchOptionalInt($diff, self::progressAt, $this->progressAt);
         $this->passHashes = self::patchStringList($diff, self::passHashes, $this->passHashes);
         $this->admittedSessionTokenHashes = self::patchStringList($diff, self::admittedSessionTokenHashes, $this->admittedSessionTokenHashes);
+        $this->circleSessionTokenHashes = self::patchStringList($diff, self::circleSessionTokenHashes, $this->circleSessionTokenHashes);
+        $this->circleNamedCount = self::patchInt($diff, self::circleNamedCount, $this->circleNamedCount);
     }
 
     /**
@@ -222,10 +254,16 @@ final class ProtectedModeRuntime extends RtState
      * that every node has quiesced), so a lockdown gated on `active` would leave followers
      * open for the whole freeze.
      *
-     * {@see self::PHASE_VERIFYING} is the one phase that lets anyone through, and it opens two
-     * doors at once: the initiator by its own identity ({@see admitsInitiator()}) and a second
-     * circle by pass ({@see admits()}). Both are worth opening only there, for one reason - by
-     * then the executor has the agents back up and there is a live system behind the door.
+     * {@see self::PHASE_VERIFYING} is the one phase that lets anyone through, and it opens three
+     * doors at once: the initiator by its own identity ({@see admitsInitiator()}), a holder of a
+     * pass ({@see admits()}), and a member of the verifier circle ({@see admitsCircle()}). All
+     * three are worth opening only there, for one reason - by then the executor has the agents
+     * back up and there is a live system behind the door.
+     *
+     * The third door differs from the other two in what opens it: nothing is presented at it. A
+     * circle member is let in by a photograph taken before the database was replaced, so the tab
+     * that was already open simply keeps working - which is the whole point of naming people in
+     * advance instead of reading a code to them over the phone.
      *
      * The initiator is recognized by either half of its identity: the accept key of the socket
      * that asked, and the session token hash of the browser behind it ({@see belongsToInitiator()}).
@@ -242,7 +280,8 @@ final class ProtectedModeRuntime extends RtState
     {
         return $this->phase !== self::PHASE_INACTIVE
             && !$this->admitsInitiator($acceptKey, $sessionTokenHash)
-            && !$this->admits($sessionTokenHash);
+            && !$this->admits($sessionTokenHash)
+            && !$this->admitsCircle($sessionTokenHash);
     }
 
     /**
@@ -314,6 +353,40 @@ final class ProtectedModeRuntime extends RtState
     }
 
     /**
+     * Whether this browser session was photographed into the verifier circle at the freeze.
+     *
+     * The twin of {@see admits()}, and it is deliberately a twin rather than a second list read
+     * by the same method: the two answer the same question from different evidence, and keeping
+     * them apart is what lets the freeze say how many got in by a code and how many by being
+     * named. Only {@see self::PHASE_VERIFYING} consults the list, for the reason spelled there -
+     * an emptiness enforced by the phase beats one merely assumed of the row.
+     *
+     * The circle is held by the browser rather than by the socket for the reason a pass is: a
+     * reload arrives with the same cookie and a brand new accept key, and a member who reloaded
+     * would otherwise be thrown back behind the placeholder mid-verification.
+     *
+     * The comparison is {@see hash_equals()} in a loop rather than {@see in_array()} for the
+     * reason {@see admits()} compares that way: both sides are derived from a secret.
+     *
+     * @param ?string $sessionTokenHash Hash of the connection's session token, or null when it carries no session
+     * @return bool Whether the session behind this connection is a circle member let in right now
+     */
+    public function admitsCircle(?string $sessionTokenHash): bool
+    {
+        if ($this->phase !== self::PHASE_VERIFYING || $sessionTokenHash === null) {
+            return false;
+        }
+
+        foreach ($this->circleSessionTokenHashes as $circleSessionTokenHash) {
+            if (hash_equals($circleSessionTokenHash, $sessionTokenHash)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @return array<string, mixed> Row suitable for runtime sync
      */
     public function toArray(): array
@@ -331,6 +404,8 @@ final class ProtectedModeRuntime extends RtState
             self::progressAt => $this->progressAt,
             self::passHashes => $this->passHashes,
             self::admittedSessionTokenHashes => $this->admittedSessionTokenHashes,
+            self::circleSessionTokenHashes => $this->circleSessionTokenHashes,
+            self::circleNamedCount => $this->circleNamedCount,
         ];
     }
 

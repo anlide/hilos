@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\Environment\Exception\EnvException;
+use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
@@ -99,6 +100,24 @@ interface ProtectedModeSwitch
      * @throws EnvException When the cluster-enabled flag value is invalid
      */
     public function requestPass(ProtectedModePassSignalData $data): void;
+
+    /**
+     * Hands over the verifier circle photographed under the freeze, whole (HIL-643).
+     *
+     * The one request here that carries a reading rather than a decision: the circle table and the
+     * live connections are both readable only from a worker, and the row they answer onto is the
+     * master's. What arrives is hashes and a count, never an address.
+     *
+     * Refused unless the mode has settled on a freeze - the moment the initiator is told ready,
+     * and the only one at which the photograph is both taken and still true. It is written whole,
+     * so a second photograph of the same hall replaces the first instead of doubling it.
+     *
+     * @param ProtectedModeCircleSignalData $data Photographing agent identity and the circle it saw
+     * @throws EnvException When the cluster-enabled flag value is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function requestCircle(ProtectedModeCircleSignalData $data): void;
 
     /**
      * Asks to close the system again from the verification window, voiding every pass.

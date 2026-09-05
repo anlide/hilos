@@ -10,8 +10,11 @@ use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreProgressSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Pages\Backup\DTO\BackupCircleAddActionDTO;
+use Hilos\Pages\Backup\DTO\BackupCircleRemoveActionDTO;
 use Hilos\Pages\Backup\DTO\BackupCreateActionDTO;
 use Hilos\Pages\Backup\DTO\BackupDeleteActionDTO;
 use Hilos\Pages\Backup\DTO\BackupReopenActionDTO;
@@ -308,6 +311,49 @@ final class BackupActionDtoTest extends TestCase
             'The initiator and the CLI monitor are shown one run: the frame carries the row as it is,'
             . ' key for key, so the two representations cannot drift',
         );
+    }
+
+    public function testTheCircleAddDtoReadsTheAddressThroughTheDataWrapper(): void
+    {
+        $dto = BackupCircleAddActionDTO::fromArray([
+            SignalPayloadConstants::FIELD_DATA => [
+                BackupCircleAddActionDTO::identifier => '  ann@example.test  ',
+            ],
+        ]);
+
+        $this->assertSame(HilosSignalConstants::BACKUP_CIRCLE_ADD, $dto->getAction());
+        $this->assertSame('ann@example.test', $dto->identifier, 'What the operator typed is trimmed');
+        $this->assertSame(
+            [BackupCircleAddActionDTO::identifier => 'ann@example.test'],
+            $dto->toArray(),
+            'One field and no identity type beside it: which type the address is proven under is'
+            . ' answered by the identity that carries it, never by the client',
+        );
+    }
+
+    public function testTheCircleAddDtoRefusesAPayloadWithNoAddress(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        BackupCircleAddActionDTO::fromArray([]);
+    }
+
+    public function testTheCircleRemoveDtoNamesTheMembershipAndNotTheAddress(): void
+    {
+        $dto = BackupCircleRemoveActionDTO::fromArray([
+            BackupCircleRemoveActionDTO::memberId => 12,
+        ]);
+
+        $this->assertSame(HilosSignalConstants::BACKUP_CIRCLE_REMOVE, $dto->getAction());
+        $this->assertSame(12, $dto->memberId);
+        $this->assertSame([BackupCircleRemoveActionDTO::memberId => 12], $dto->toArray());
+    }
+
+    public function testTheCircleRemoveDtoRefusesAPayloadWithNoMembership(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        BackupCircleRemoveActionDTO::fromArray([SignalPayloadConstants::FIELD_DATA => []]);
     }
 
     public function testTheProgressFrameRoundTripsOffTheWire(): void

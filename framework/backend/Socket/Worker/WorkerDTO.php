@@ -34,6 +34,7 @@ use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeCircleDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModePassDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeProgressDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeRefreezeDTO;
@@ -139,6 +140,7 @@ abstract class WorkerDTO extends BaseDTO
             WorkerProtectedModeVerifyDTO::MESSAGE_TYPE => WorkerProtectedModeVerifyDTO::fromArray($data),
             WorkerProtectedModeProgressDTO::MESSAGE_TYPE => WorkerProtectedModeProgressDTO::fromArray($data),
             WorkerProtectedModePassDTO::MESSAGE_TYPE => WorkerProtectedModePassDTO::fromArray($data),
+            WorkerProtectedModeCircleDTO::MESSAGE_TYPE => WorkerProtectedModeCircleDTO::fromArray($data),
             WorkerProtectedModeRefreezeDTO::MESSAGE_TYPE => WorkerProtectedModeRefreezeDTO::fromArray($data),
             WorkerSessionCarryOverDeferredDTO::MESSAGE_TYPE => WorkerSessionCarryOverDeferredDTO::fromArray($data),
             WorkerSessionCarryOverDoneDTO::MESSAGE_TYPE => WorkerSessionCarryOverDoneDTO::fromArray($data),

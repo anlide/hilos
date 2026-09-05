@@ -17,6 +17,7 @@ use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
+use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -31,6 +32,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read ModeratorPromptPiecesTable $moderatorPromptPieces
  * @property-read HilosSettingsTable $settings
  * @property-read HilosBackupHistoryTable $hilosBackups
+ * @property-read HilosVerifierCircleTable $hilosVerifierCircle
  * @property-read HilosCommunicationsChannelsTable $hilosCommunicationsChannels
  * @property-read HilosCommunicationsChannelFieldsTable $hilosCommunicationsChannelFields
  * @property-read HilosNotificationDeliveriesTable $hilosNotificationDeliveries
@@ -46,6 +48,7 @@ final class ChatTableContext extends TableContext
     public const string moderatorPromptPieces = 'moderatorPromptPieces';
     public const string settings = HilosSettingsTable::TABLE;
     public const string hilosBackups = HilosBackupHistoryTable::TABLE;
+    public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;
     public const string hilosCommunicationsChannels = HilosCommunicationsChannelsTable::TABLE;
     public const string hilosCommunicationsChannelFields = HilosCommunicationsChannelFieldsTable::TABLE;
     public const string hilosNotificationDeliveries = HilosNotificationDeliveriesTable::TABLE;

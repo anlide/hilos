@@ -179,6 +179,8 @@ final class BackupReopenSubscriptionSectionIntegrationTest extends TestCase
             StateProtectedModeRuntime::initiatorAgentType => 'backup',
             StateProtectedModeRuntime::passHashes => [],
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
         ]));
 
         $this->connect(self::INITIATOR_ACCEPT_KEY, self::INITIATOR_SESSION_TOKEN);

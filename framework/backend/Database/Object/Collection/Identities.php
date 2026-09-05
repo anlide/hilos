@@ -700,14 +700,54 @@ final class Identities extends Objects
      */
     public function findUserIdByVerifiedEmail(string $email): ?int
     {
-        if ($email === '') {
+        return $this->findVerifiedByIdentifier($email)?->user_id;
+    }
+
+    /**
+     * Names the identity TYPE that has proven an address, whatever type that turns out to be.
+     *
+     * The other half of the question {@see findUserIdByVerifiedEmail()} answers, off the same
+     * row and through the same walk, so the two cannot disagree about whether an address is
+     * proven. What it exists for is a caller that stores the (type, identifier) PAIR rather than
+     * the person - the verifier circle (HIL-643), which keeps no user id because the database it
+     * lives in is the one a restore rewrites, so a number stored there would name somebody else.
+     *
+     * A type rather than the identity itself, deliberately: the pair is all the caller keeps, and
+     * an accessor handing back a row would invite reads of everything else on it.
+     *
+     * @param string $identifier Normalized identifier - a lowercased email or an E.164 phone
+     * @return ?string Identity type of the verified row carrying it, or null when nobody has proven it
+     * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function findVerifiedTypeByIdentifier(string $identifier): ?string
+    {
+        return $this->findVerifiedByIdentifier($identifier)?->type;
+    }
+
+    /**
+     * The verified, user-owning identity row carrying an address, or null when there is none.
+     *
+     * The one walk both public readers above are built on. Only email identifiers can match
+     * across types (`password`/`magic_link` store the lowercased email; `sms`/`oauth` identifiers
+     * are a phone / `provider:subject` and never equal an email), so the lookup is by identifier
+     * across every type and keeps only a verified row with an owner. An unverified address or no
+     * account resolves to null, letting the callers answer generically (anti-enumeration).
+     *
+     * @param string $identifier Normalized identifier
+     * @return ?EntityIdentity The verified identity row, or null when the address is nobody's
+     * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    private function findVerifiedByIdentifier(string $identifier): ?EntityIdentity
+    {
+        if ($identifier === '') {
             return null;
         }
 
-        $entityIdentities = EntityIdentity::get([EntityIdentity::identifier => $email]);
-        foreach ($entityIdentities as $entityIdentity) {
+        foreach (EntityIdentity::get([EntityIdentity::identifier => $identifier]) as $entityIdentity) {
             if ($entityIdentity->verified && $entityIdentity->user_id !== null) {
-                return $entityIdentity->user_id;
+                return $entityIdentity;
             }
         }
 

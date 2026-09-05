@@ -43,6 +43,7 @@ use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeCircleDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModePassDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeProgressDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeRefreezeDTO;
@@ -233,6 +234,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerProtectedModeVerifyDTO => $this->handleProtectedModeVerifyMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeProgressDTO => $this->handleProtectedModeProgressMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModePassDTO => $this->handleProtectedModePassMessage($workerDTO),
+            $workerDTO instanceof WorkerProtectedModeCircleDTO => $this->handleProtectedModeCircleMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeRefreezeDTO => $this->handleProtectedModeRefreezeMessage($workerDTO),
             $workerDTO instanceof WorkerSessionCarryOverDeferredDTO
                 => $this->handleSessionCarryOverDeferredMessage($workerDTO),
@@ -633,6 +635,20 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     private function handleProtectedModePassMessage(WorkerProtectedModePassDTO $dto): void
     {
         Hilos::$cluster?->protectedMode()?->requestPass($dto->data);
+    }
+
+    /**
+     * Handle the verifier circle an initiator worker photographed under the freeze.
+     *
+     * Writes the photograph on the freeze row, whole: the circle is read once, in the worker that
+     * may reach the database, and the row that decides admission belongs to this master. What
+     * arrives is already hashes and a count - no address of anybody named ever reaches this side.
+     *
+     * @param WorkerProtectedModeCircleDTO $dto DTO with the photographing agent identity and the circle it saw
+     */
+    private function handleProtectedModeCircleMessage(WorkerProtectedModeCircleDTO $dto): void
+    {
+        Hilos::$cluster?->protectedMode()?->requestCircle($dto->data);
     }
 
     /**
