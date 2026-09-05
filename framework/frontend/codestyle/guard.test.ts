@@ -60,21 +60,45 @@ const EXPLANATION =
   ` and owned by a leaf — record it in ${BASELINE_PATH} (regenerate with` +
   ` ${BASELINE_UPDATE_FLAG}=1).`
 
-it('carries no code-style violation the baseline does not already own', () => {
-  const reported = reportedViolations()
-  const baseline = Baseline.fromText(baselineText())
+/**
+ * The one test here that reads the whole tree, and the only one needing a
+ * ceiling of its own: every rule walks the SDK and the demos and hands each
+ * source to the compiler, which is not the shape the 5s default is sized for.
+ * The scan sits close enough to that default to cross it under load, and a run
+ * lost that way costs far more than it reports — the tree carried no violation
+ * either time, and proving so took a second run.
+ *
+ * The number is generous because generosity is free: a ceiling is only ever
+ * waited on when it is hit, so a scan that ends in five seconds ends in five
+ * seconds whatever stands here. Raising it therefore buys the honest margin
+ * without lengthening a single green run.
+ *
+ * What it still catches is the failure worth catching. Half a minute is not a
+ * slow tree — it is a rule that stopped terminating or a walk that left the
+ * repository — so a guard that reaches this limit has found a defect, and the
+ * cure is the rule that hangs, never a larger number written here.
+ */
+const GUARD_TIMEOUT_MS = 30_000
 
-  if (process.env[BASELINE_UPDATE_FLAG] === '1') {
-    const update = baseline.update(reported)
-    const text = update.text()
-    if (text !== null) {
-      writeFileSync(join(REPOSITORY_ROOT, BASELINE_PATH), text)
+it(
+  'carries no code-style violation the baseline does not already own',
+  () => {
+    const reported = reportedViolations()
+    const baseline = Baseline.fromText(baselineText())
+
+    if (process.env[BASELINE_UPDATE_FLAG] === '1') {
+      const update = baseline.update(reported)
+      const text = update.text()
+      if (text !== null) {
+        writeFileSync(join(REPOSITORY_ROOT, BASELINE_PATH), text)
+      }
+      throw new Error(update.message())
     }
-    throw new Error(update.message())
-  }
 
-  expect(baseline.reconcile(reported), EXPLANATION).toEqual([])
-})
+    expect(baseline.reconcile(reported), EXPLANATION).toEqual([])
+  },
+  GUARD_TIMEOUT_MS,
+)
 
 /**
  * @returns Violation lines of every rule, keyed by `<rule id> <path>`
