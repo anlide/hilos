@@ -108,6 +108,14 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
     }
 
     /**
+     * @return string Payload key the row key travels under
+     */
+    public static function keyField(): string
+    {
+        return self::rowKey;
+    }
+
+    /**
      * Serializes the row to the log-rotations table payload shape.
      *
      * @return array<string, mixed> Row payload

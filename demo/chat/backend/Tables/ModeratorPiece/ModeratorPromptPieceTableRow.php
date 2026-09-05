@@ -33,6 +33,14 @@ final class ModeratorPromptPieceTableRow extends AbstractTableRow
     }
 
     /**
+     * @return string Payload key the row key travels under
+     */
+    public static function keyField(): string
+    {
+        return self::id;
+    }
+
+    /**
      * Serializes the row to the moderator prompt pieces table payload shape.
      *
      * @return array{id: int, section: string, promptPiece: string}

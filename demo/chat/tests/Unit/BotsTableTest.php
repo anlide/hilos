@@ -82,6 +82,14 @@ final class BotsTableTest extends TestCase
             }
 
             /**
+             * @return string Payload key the row key travels under
+             */
+            public static function keyField(): string
+            {
+                return 'id';
+            }
+
+            /**
              * @return array<string, mixed> Row payload
              */
             public function toArray(): array

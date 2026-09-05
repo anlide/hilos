@@ -37,6 +37,14 @@ final class AdminUserTableRow extends AbstractTableRow
     }
 
     /**
+     * @return string Payload key the row key travels under
+     */
+    public static function keyField(): string
+    {
+        return self::id;
+    }
+
+    /**
      * Serializes the row to the frontend table payload shape.
      *
      * @return array{id: int, name: string, lastActivity: ?string, onlineSessionCount: int, presence: ?string}

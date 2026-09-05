@@ -27,7 +27,6 @@ use Hilos\Core\Table\DTO\TableViewportAppendDTO;
 use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
-use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Hilos;
@@ -421,7 +420,7 @@ final class SourceFanoutWindowUnitTable extends TableDefinition implements Viewp
     {
         $rows = array_map(static fn(SourceFanoutWindowUnitRow $row): array => $row->toArray(), $this->rows);
 
-        return InMemoryTableFilter::apply($rows, $query);
+        return $this->filterInMemory($rows, $query);
     }
 }
 
@@ -436,6 +435,14 @@ final class SourceFanoutWindowUnitRow extends AbstractTableRow
     public function getRowKey(): string
     {
         return $this->key;
+    }
+
+    /**
+     * @return string Payload key the row key travels under
+     */
+    public static function keyField(): string
+    {
+        return 'key';
     }
 
     /**

@@ -63,6 +63,14 @@ final class HilosCommunicationsChannelsTableRow extends AbstractTableRow
     }
 
     /**
+     * @return string Payload key the row key travels under
+     */
+    public static function keyField(): string
+    {
+        return self::channel;
+    }
+
+    /**
      * Serializes the row to the channels table payload shape.
      *
      * @return array<string, mixed> Row payload

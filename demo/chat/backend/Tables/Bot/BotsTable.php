@@ -23,7 +23,6 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
-use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
@@ -186,7 +185,7 @@ final class BotsTable extends TableDefinition implements ViewportTable
     {
         $result = Hilos::$db->bots->queryPageItems(new TableQueryDTO());
 
-        return InMemoryTableFilter::apply(
+        return $this->filterInMemory(
             rows: array_map(
                 fn(DbBot $bot): array => $this->rowFromBot($bot)->toArray(),
                 $result[TableConstants::RESULT_KEY_ROWS],

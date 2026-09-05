@@ -20,7 +20,6 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
-use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Hilos;
@@ -340,7 +339,7 @@ final class ViewportFailureLogUnitTable extends TableDefinition implements SelfS
             throw new RuntimeException(self::QUERY_FAILURE);
         }
 
-        return InMemoryTableFilter::apply([], $query);
+        return $this->filterInMemory([], $query);
     }
 }
 
@@ -355,6 +354,14 @@ final class ViewportFailureLogUnitRow extends AbstractTableRow
     public function getRowKey(): string
     {
         return $this->key;
+    }
+
+    /**
+     * @return string Payload key the row key travels under
+     */
+    public static function keyField(): string
+    {
+        return 'key';
     }
 
     /**

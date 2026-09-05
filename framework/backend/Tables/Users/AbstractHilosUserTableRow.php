@@ -41,6 +41,14 @@ abstract class AbstractHilosUserTableRow extends AbstractTableRow
     }
 
     /**
+     * @return string Payload key the row key travels under
+     */
+    public static function keyField(): string
+    {
+        return self::id;
+    }
+
+    /**
      * The framework user fields shared by every Hilos user row.
      *
      * A project row folds these into its own {@see self::toArray()} output

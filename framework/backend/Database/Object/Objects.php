@@ -370,9 +370,15 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * rather than trusting whoever built the query. A field that is no column of this entity
      * leaves the page in the table's default order.
      *
+     * Every order is settled by the entity's primary key, in the direction of the sorted
+     * column: without it a column with repeats leaves two neighbouring pages free to show
+     * one row twice and another not at all. With no sort at all the key alone orders the
+     * page ascending, so the default is unambiguous too.
+     *
      * @param TableQueryDTO $query Query parameters
      * @return array<string, mixed> Keys: objects (array<int|string, Object_>), totalCount (int)
      * @throws DatabaseException If database query fails
+     * @throws InvalidArgumentException When an order direction is neither SqlSortDirection::ASC nor ::DESC
      */
     public function queryPage(TableQueryDTO $query): array
     {
@@ -401,10 +407,19 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             array_combine($entityClass::_columns, $entityClass::_columns),
             $entityClass,
         );
+        $tieBreakerDirection = SqlSortDirection::ASC;
         if ($sort !== null) {
-            $orderBy[$sort->column ?? $sort->field] = $sort->direction === TableConstants::ORDER_DESC
+            $tieBreakerDirection = $sort->direction === TableConstants::ORDER_DESC
                 ? SqlSortDirection::DESC
                 : SqlSortDirection::ASC;
+            $orderBy[$sort->column ?? $sort->field] = $tieBreakerDirection;
+        }
+        $primaryColumns = is_array($entityClass::_primary) ? $entityClass::_primary : [$entityClass::_primary];
+        foreach ($primaryColumns as $primaryColumn) {
+            // A key column the client already sorts by keeps the direction the client chose.
+            if (!isset($orderBy[$primaryColumn])) {
+                $orderBy[$primaryColumn] = $tieBreakerDirection;
+            }
         }
 
         $entityCollection = $entityClass::get(

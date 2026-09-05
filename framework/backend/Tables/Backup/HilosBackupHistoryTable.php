@@ -21,7 +21,6 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
-use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Hilos;
@@ -137,7 +136,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             $rows[] = $running->toArray();
         }
 
-        return InMemoryTableFilter::apply($rows, $query);
+        return $this->filterInMemory($rows, $query);
     }
 
     /**

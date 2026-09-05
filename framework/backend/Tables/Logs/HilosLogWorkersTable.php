@@ -135,7 +135,7 @@ final class HilosLogWorkersTable extends TableDefinition implements ViewportTabl
             filter: $query->filter,
         );
 
-        return InMemoryTableFilter::apply($rows, $ordering);
+        return $this->filterInMemory($rows, $ordering);
     }
 
     /**

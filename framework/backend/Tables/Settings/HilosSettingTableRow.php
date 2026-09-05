@@ -54,6 +54,14 @@ final class HilosSettingTableRow extends AbstractTableRow
     }
 
     /**
+     * @return string Payload key the row key travels under
+     */
+    public static function keyField(): string
+    {
+        return self::key;
+    }
+
+    /**
      * Serializes the row to the settings table payload shape.
      *
      * @return array<string, mixed>

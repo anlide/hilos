@@ -23,6 +23,18 @@ abstract class AbstractTableRow extends BaseDTO
     abstract public function getRowKey(): string|int|null;
 
     /**
+     * Payload field the row key travels under — the name of what {@see getRowKey()} returns.
+     *
+     * An in-memory window sorts `toArray()` payloads, not row objects, so it settles a tie
+     * by reading one field out of the array and has no way to guess which. The name is
+     * declared here, beside the value, and abstract so that a new row class cannot lose its
+     * tie-breaker quietly: the compiler asks for it.
+     *
+     * @return string Payload key the row key is written under
+     */
+    abstract public static function keyField(): string;
+
+    /**
      * Row key of a row that has to be addressable — a browser row, a window entry.
      *
      * A placeholder row has no key, and the caller has no honest key to send: an

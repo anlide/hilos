@@ -17,7 +17,6 @@ use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
-use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DatabaseException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
@@ -156,7 +155,7 @@ final class HilosUsersTable extends AbstractHilosUsersTable
     {
         $result = Hilos::$db->users->queryPageItems(new TableQueryDTO());
 
-        return InMemoryTableFilter::apply(
+        return $this->filterInMemory(
             rows: array_map(
                 fn(DbUser $user): array => $this->rowFromUser($user)->toArray(),
                 $result[TableConstants::RESULT_KEY_ROWS],

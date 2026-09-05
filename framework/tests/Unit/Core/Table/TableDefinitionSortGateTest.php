@@ -157,6 +157,14 @@ final class SortGateUnitRow extends AbstractTableRow
     }
 
     /**
+     * @return string Payload key the row key travels under
+     */
+    public static function keyField(): string
+    {
+        return self::KEY;
+    }
+
+    /**
      * @return array<string, mixed> Row fields
      */
     public function toArray(): array

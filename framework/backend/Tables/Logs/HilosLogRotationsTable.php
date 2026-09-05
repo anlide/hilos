@@ -174,7 +174,7 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
             filter: $query->filter,
         );
 
-        return InMemoryTableFilter::apply($rows, $ordering);
+        return $this->filterInMemory($rows, $ordering);
     }
 
     /**

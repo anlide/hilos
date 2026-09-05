@@ -57,6 +57,14 @@ final class BotTableRow extends AbstractTableRow
     }
 
     /**
+     * @return string Payload key the row key travels under
+     */
+    public static function keyField(): string
+    {
+        return self::id;
+    }
+
+    /**
      * Serializes the row to the bots table payload shape.
      *
      * @return array<string, mixed>

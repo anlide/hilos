@@ -16,7 +16,6 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
-use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
@@ -237,7 +236,7 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
             $rows[] = $this->rowFromSetting($orphan)->toArray();
         }
 
-        return InMemoryTableFilter::apply($rows, $query);
+        return $this->filterInMemory($rows, $query);
     }
 
     /**

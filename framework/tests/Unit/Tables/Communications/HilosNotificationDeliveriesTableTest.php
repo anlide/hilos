@@ -114,7 +114,7 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
         $table = $this->table();
 
         self::assertSame(
-            ' ORDER BY nd.attempts ASC, nd.id DESC',
+            ' ORDER BY nd.attempts ASC, nd.id ASC',
             $table->exposedBuildOrderBy(new TableQueryDTO(
                 sort: $this->resolvedSort($table, new TableSortDTO('attempts', TableConstants::ORDER_ASC)),
             )),

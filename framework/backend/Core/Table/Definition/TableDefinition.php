@@ -27,6 +27,7 @@ use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\HilosException;
+use Hilos\Utils\Logger;
 use Throwable;
 
 /**
@@ -42,6 +43,12 @@ abstract class TableDefinition implements ArrayAccess
 {
     /** Browser table config declared by data-bearing table definitions. */
     public const array BROWSER = [];
+
+    /** Log context key: the table whose rows do not carry the key their row class names. */
+    private const string LOG_KEY_CONTEXT = 'context';
+
+    /** Log context key: the tie-breaker field that was looked for and not found. */
+    private const string LOG_KEY_FIELD = 'field';
 
     /** @var ?TableActions Lazy-loaded table-level actions instance */
     private ?TableActions $_actions = null;
@@ -239,7 +246,7 @@ abstract class TableDefinition implements ArrayAccess
 
         if ($objectCollection === null || $objectCollection->isAllLoaded()) {
             $rows = $collection->toArray(idAsIndex: false, toFrontend: true);
-            return InMemoryTableFilter::apply($rows, $query);
+            return $this->filterInMemory($rows, $query);
         }
 
         $result = $collection->queryPage($query);
@@ -250,6 +257,33 @@ abstract class TableDefinition implements ArrayAccess
             offset: $query->offset,
             limit: $query->limit,
         );
+    }
+
+    /**
+     * Filters, sorts and paginates rows this table already holds in memory.
+     *
+     * This is the seam that hands the in-memory filter the field the tie-breaker reads, taken
+     * from the row class this table registered — the one place that knows both. Rows whose
+     * payload does not carry that field cannot be told apart by the tie-breaker, so the window
+     * says so once rather than once per row: an in-memory set runs to thousands of them.
+     *
+     * @param list<array<string, mixed>> $rows All rows the table holds
+     * @param TableQueryDTO $query Query parameters
+     * @return TableSnapshotDTO Filtered/sorted/paginated snapshot
+     */
+    protected function filterInMemory(array $rows, TableQueryDTO $query): TableSnapshotDTO
+    {
+        $rowClass = $this->getRowClass();
+        $keyField = $rowClass::keyField();
+
+        if ($query->sort !== null && !array_all($rows, static fn(array $row): bool => array_key_exists($keyField, $row))) {
+            Logger::warning('Table tie-breaker field missing', [
+                self::LOG_KEY_CONTEXT => static::class,
+                self::LOG_KEY_FIELD => $keyField,
+            ]);
+        }
+
+        return InMemoryTableFilter::apply($rows, $query, $keyField);
     }
 
     /**

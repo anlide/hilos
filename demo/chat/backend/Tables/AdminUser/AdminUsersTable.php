@@ -22,7 +22,6 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
-use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
@@ -207,7 +206,7 @@ final class AdminUsersTable extends TableDefinition implements ViewportTable
     {
         $result = Hilos::$db->users->queryPageItems(new TableQueryDTO());
 
-        return InMemoryTableFilter::apply(
+        return $this->filterInMemory(
             rows: array_map(
                 fn(DbUser $user): array => $this->rowFromUser($user)->toArray(),
                 $result[TableConstants::RESULT_KEY_ROWS],

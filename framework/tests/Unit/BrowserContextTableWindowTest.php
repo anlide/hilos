@@ -31,7 +31,6 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
-use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -344,7 +343,7 @@ final class TableWindowUnitTable extends TableDefinition implements SelfSnapshot
     {
         $rows = array_map(static fn(TableWindowUnitRow $row): array => $row->toArray(), $this->rows);
 
-        return InMemoryTableFilter::apply($rows, $query);
+        return $this->filterInMemory($rows, $query);
     }
 }
 
@@ -359,6 +358,14 @@ final class TableWindowUnitRow extends AbstractTableRow
     public function getRowKey(): string
     {
         return $this->key;
+    }
+
+    /**
+     * @return string Payload key the row key travels under
+     */
+    public static function keyField(): string
+    {
+        return 'key';
     }
 
     /**
@@ -437,6 +444,6 @@ final class TableWindowRefusedRowTable extends TableDefinition implements SelfSn
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        return InMemoryTableFilter::apply([['key' => 'a']], $query);
+        return $this->filterInMemory([['key' => 'a']], $query);
     }
 }

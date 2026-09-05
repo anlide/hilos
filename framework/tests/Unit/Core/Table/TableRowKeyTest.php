@@ -51,6 +51,14 @@ final class TableRowKeyTest extends TestCase
             }
 
             /**
+             * @return string Payload key the row key travels under
+             */
+            public static function keyField(): string
+            {
+                return 'rowKey';
+            }
+
+            /**
              * @return array<string, mixed> Row payload
              */
             public function toArray(): array

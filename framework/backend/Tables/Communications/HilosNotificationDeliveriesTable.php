@@ -255,6 +255,11 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
      * {@see sortableFields()} and either attached the column it may order by or dropped it,
      * so a sort with no column here is a window that asked for none.
      *
+     * The delivery id settles the order in the direction the sorted column runs, so one index
+     * over both columns serves either direction by being scanned backwards. Fixing the id to
+     * descending would instead ask the server for two columns running opposite ways, which no
+     * single index answers.
+     *
      * @param TableQueryDTO $query Window query
      * @return string The `ORDER BY ...` clause
      */
@@ -272,7 +277,7 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
             : SqlSortDirection::DESC;
 
         return ' ORDER BY ' . $column . ' ' . $direction
-            . ', nd.' . EntityNotificationDelivery::id . ' ' . SqlSortDirection::DESC;
+            . ', nd.' . EntityNotificationDelivery::id . ' ' . $direction;
     }
 
     /**

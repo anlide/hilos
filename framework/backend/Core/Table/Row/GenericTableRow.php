@@ -37,6 +37,21 @@ final class GenericTableRow extends AbstractTableRow
     }
 
     /**
+     * Names `id` alone, which is where the convention and the fallback part company.
+     *
+     * {@see getRowKey()} reads `key` when `id` is absent, but a field name is one name and
+     * cannot say "whichever of the two this row happens to carry". A generic row keyed under
+     * `key` therefore gets no tie-breaker; a table that lives on such rows declares its own
+     * row class, which is what naming the key beside its value is for.
+     *
+     * @return string Payload key the row key travels under
+     */
+    public static function keyField(): string
+    {
+        return self::FIELD_ID;
+    }
+
+    /**
      * Serializes the generic row back to the raw table payload.
      *
      * @return array<string, mixed> Stored raw row payload
