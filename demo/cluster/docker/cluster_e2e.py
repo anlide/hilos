@@ -1344,13 +1344,27 @@ FLAKY_SKIP = {
 def run_scenario(name, fn):
     """Run one scenario, retrying a PURE convergence timeout (transient) up to
     SCENARIO_RETRIES times after re-converging the mesh. Returns the pass detail,
-    or raises the final failure (hard invariant assertions are never retried)."""
+    or raises the FIRST failure (hard invariant assertions are never retried).
+
+    The first failure is the verdict, and a retry cannot replace it. A retry runs
+    on a stand the first attempt left skewed, so what it trips over is usually a
+    precondition of its own making - and naming that in the summary hides the
+    cause behind its consequence and burns the retry budget getting there.
+
+    The branch order is load-bearing: ScenarioTimeout subclasses AssertionError,
+    so the narrow except must come first or the broad one would swallow every
+    timeout and no scenario would ever be retried. On the FIRST attempt the broad
+    branch changes nothing - first_failure is empty there, and a hard assertion
+    flies out untouched, exactly as before."""
+    first_failure = None
     for attempt in range(1, SCENARIO_RETRIES + 2):
         try:
             return fn()
         except ScenarioTimeout as e:
+            if first_failure is None:
+                first_failure = e
             if attempt > SCENARIO_RETRIES:
-                raise
+                raise first_failure
             print(f"  RETRY ({attempt}/{SCENARIO_RETRIES}) after timeout: {e}")
             # The scenario's own finally has already restored any perturbation;
             # settle the full mesh before the next attempt so it starts clean.
@@ -1358,6 +1372,11 @@ def run_scenario(name, fn):
                 wait_converge(ALL_NODES)
             except ScenarioTimeout:
                 pass
+        except Exception as e:
+            if first_failure is None:
+                raise
+            print(f"  the retry failed on something the first failure caused: {e}")
+            raise first_failure from e
 
 
 def main():

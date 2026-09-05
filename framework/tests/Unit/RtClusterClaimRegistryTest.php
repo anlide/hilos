@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Cluster\Peer\DTO\PeerRtClaimEntry;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Config\AgentScope;
+use Hilos\Hilos;
 use Hilos\TruthSource\RtClusterClaimRegistry;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 
 /**
  * How the leader tells two owners of one runtime collection apart from a legitimate arrangement
@@ -22,7 +26,11 @@ use PHPUnit\Framework\TestCase;
  * The other half is what the map REMEMBERS. A claim that lost is not a holding, and the case
  * that proves why is the holder's second report: the holder reports again every time anything
  * it owns moves, and a loser recorded as an incumbent would take the right off the very node it
- * lost to.
+ * lost to. The same half answers for an agent that MOVED (HIL-913): the identity is one, so the
+ * map holds it in one place, and the node it was on is left with nothing rather than forgiven.
+ * Where that reading stops is pinned too — an agent declared {@see AgentScope::NODE} is placed by
+ * nothing and therefore moves nowhere, so one id on many nodes is the declaration working there
+ * and the guard has to go on judging what those nodes hold.
  */
 final class RtClusterClaimRegistryTest extends TestCase
 {
@@ -32,11 +40,30 @@ final class RtClusterClaimRegistryTest extends TestCase
     /** @var string Node that claims afterwards */
     private const string LATE_NODE = 'node-b';
 
+    /** @var string Node that turns up once the first two have settled who holds what */
+    private const string THIRD_NODE = 'node-c';
+
     /** @var string Collection the cases claim */
     private const string COLLECTION = 'unitClusterClaimRows';
 
     /** @var string Collection nobody in these cases contests */
     private const string OTHER_COLLECTION = 'unitClusterClaimOther';
+
+    /** @var class-string<Hilos> App class bound before this test touched it */
+    private string $boundAppClass;
+
+    protected function setUp(): void
+    {
+        $this->boundAppClass = Hilos::appClass();
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, RtClusterClaimTestHilos::class);
+    }
+
+    protected function tearDown(): void
+    {
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->boundAppClass);
+
+        parent::tearDown();
+    }
 
     public function testTwoWholeClaimsOnTwoNodesAreTheSplit(): void
     {
@@ -203,6 +230,77 @@ final class RtClusterClaimRegistryTest extends TestCase
         );
     }
 
+    public function testAnAgentThatMovedIsNotASplitWithItself(): void
+    {
+        $registry = new RtClusterClaimRegistry();
+        $registry->fold(self::HOLDER_NODE, [self::claim('library')]);
+
+        // The report of the host failover moved that same agent to.
+        $refusals = $registry->fold(self::LATE_NODE, [self::claim('library')]);
+
+        $this->assertSame([], $refusals, 'One agent on two nodes is a move, and it cannot be a split with itself');
+    }
+
+    public function testTheAgentThatMovedLeavesNoHoldingOnTheNodeItLeft(): void
+    {
+        $registry = new RtClusterClaimRegistry();
+        $registry->fold(self::HOLDER_NODE, [self::claim('library')]);
+        $registry->fold(self::LATE_NODE, [self::claim('library')]);
+
+        // A genuine second owner, arriving after the move: it still loses, and to the right node.
+        $refusals = $registry->fold(self::THIRD_NODE, [self::claim('twin')]);
+
+        $this->assertCount(1, $refusals, 'Two different agents over one collection are the defect, move or no move');
+        $this->assertSame(
+            self::LATE_NODE,
+            $refusals[0]->holderNodeId,
+            'The move was an eviction, not a pardon: the node left behind holds nothing to lose to',
+        );
+    }
+
+    public function testANodeStrippedOfItsLastClaimByAMoveIsGoneFromTheMap(): void
+    {
+        $registry = new RtClusterClaimRegistry();
+        $registry->fold(self::HOLDER_NODE, [self::claim('library')]);
+        $registry->fold(self::LATE_NODE, [self::claim('library')]);
+
+        // The only claim of HOLDER_NODE went with the agent, and here the agent comes back.
+        $refusals = $registry->fold(self::HOLDER_NODE, [self::claim('library')]);
+
+        $this->assertSame([], $refusals, 'A node emptied by a move is judged from nothing when it reports again');
+        $this->assertSame(
+            self::HOLDER_NODE,
+            $registry->fold(self::THIRD_NODE, [self::claim('twin')])[0]->holderNodeId,
+            'And the node the agent moved back off is gone in its turn, so the right is where the agent is',
+        );
+    }
+
+    public function testEveryNodeWritingItsOwnRowsThroughOnePerNodeAgentIsNoMoveAtAll(): void
+    {
+        $registry = new RtClusterClaimRegistry();
+        $registry->fold(self::HOLDER_NODE, [self::perNodeRowClaim(['1'])]);
+
+        // The same agent id again, because the bootstrap of every node starts one of these.
+        $registry->fold(self::LATE_NODE, [self::perNodeRowClaim(['2'])]);
+
+        $refusals = $registry->fold(self::THIRD_NODE, [self::rowClaim('member:1', ['1'])]);
+
+        $this->assertCount(1, $refusals, 'The neighbour was left holding its rows, so a second owner of them loses');
+        $this->assertSame(self::HOLDER_NODE, $refusals[0]->holderNodeId, 'And loses to the node that actually holds them');
+    }
+
+    public function testASecondWholeOwnerOfWhatAPerNodeAgentTookIsStillRefused(): void
+    {
+        $registry = new RtClusterClaimRegistry();
+        $registry->fold(self::HOLDER_NODE, [self::perNodeClaim()]);
+
+        // The declaration error this guard exists for: a per-node agent taking a cluster-wide collection.
+        $refusals = $registry->fold(self::LATE_NODE, [self::perNodeClaim()]);
+
+        $this->assertCount(1, $refusals, 'Nothing moved, so two whole rights over one collection are the split');
+        $this->assertSame(self::HOLDER_NODE, $refusals[0]->holderNodeId, 'The node heard first keeps the right');
+    }
+
     /**
      * Builds a claim over the whole contested collection.
      *
@@ -232,4 +330,54 @@ final class RtClusterClaimRegistryTest extends TestCase
             [self::COLLECTION => $stateIds],
         );
     }
+
+    /**
+     * Builds a claim of the per-node agent over named rows of the contested collection.
+     *
+     * @param list<string> $stateIds Rows the copy on this node writes
+     * @return PeerRtClaimEntry Claim over every operation, over those rows alone
+     */
+    private static function perNodeRowClaim(array $stateIds): PeerRtClaimEntry
+    {
+        return new PeerRtClaimEntry(
+            RtClusterClaimTestHilos::PER_NODE_AGENT,
+            RtClusterClaimTestHilos::PER_NODE_AGENT,
+            null,
+            [self::COLLECTION],
+            [],
+            [self::COLLECTION => $stateIds],
+        );
+    }
+
+    /**
+     * Builds a claim of the per-node agent over the whole contested collection.
+     *
+     * @return PeerRtClaimEntry Claim over every operation and every row
+     */
+    private static function perNodeClaim(): PeerRtClaimEntry
+    {
+        return new PeerRtClaimEntry(
+            RtClusterClaimTestHilos::PER_NODE_AGENT,
+            RtClusterClaimTestHilos::PER_NODE_AGENT,
+            null,
+            [self::COLLECTION],
+        );
+    }
+}
+
+/**
+ * Project facade whose registry declares the one per-node agent these cases address.
+ *
+ * Abstract because only its registry constant is read.
+ */
+abstract class RtClusterClaimTestHilos extends Hilos
+{
+    /** @var string Agent type these cases declare as started by every node's own bootstrap */
+    public const string PER_NODE_AGENT = 'unit_cluster_claim_watcher';
+
+    public const array AGENTS = [
+        self::PER_NODE_AGENT => [
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+    ];
 }

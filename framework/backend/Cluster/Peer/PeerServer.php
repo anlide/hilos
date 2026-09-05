@@ -2473,6 +2473,38 @@ final class PeerServer extends AbstractServer implements
     }
 
     /**
+     * Reports whether membership knows this node and currently has it down.
+     *
+     * The threshold is "known AND offline" rather than "not among the online ones", and the two
+     * part company on the node the leader has not heard of YET: a frame can outrun gossip, and
+     * reading that as departure would throw away a claim nobody would restate until ownership
+     * next changed. A node that LEFT is not absent from the registry — it keeps its row and turns
+     * offline in it (HIL-337) — so the leader has something to tell the two apart by.
+     *
+     * An unavailable registry answers false, which judges the report the way it was judged before
+     * this question existed. A registry hiccup turning into a silent loss of claims would be a
+     * worse failure than the one this guards.
+     *
+     * @param string $nodeId Node id to look up
+     * @return bool True only when membership holds the node and marks it offline
+     */
+    public function nodeHasLeftTheMesh(string $nodeId): bool
+    {
+        $registry = $this->registry();
+        if ($registry === null) {
+            return false;
+        }
+
+        foreach ($registry->snapshot() as $node) {
+            if ($node->nodeId === $nodeId) {
+                return !$node->online;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Announces one node entry to every handshaked link, optionally skipping its source.
      *
      * @param PeerNodeEntry $entry Node entry to announce

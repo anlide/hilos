@@ -2902,7 +2902,8 @@ abstract class DaemonManager extends BaseManager implements
      * is never disturbed by the node that challenged it.
      *
      * Ignored on a node that does not lead - the map is the leader's, and a second judge would
-     * refuse claims nobody asked it about.
+     * refuse claims nobody asked it about. Ignored as well when the report comes from a node the
+     * mesh has already lost, which is the one case where a stale report does real damage.
      *
      * @param string $nodeId Node whose agents hold the claims
      * @param list<PeerRtClaimEntry> $claims What each agent of that node owns
@@ -2910,6 +2911,17 @@ abstract class DaemonManager extends BaseManager implements
     public function applyRemoteRtClaims(string $nodeId, array $claims): void
     {
         if (!$this->amLeader()) {
+            return;
+        }
+
+        // A report from a node that is gone is dropped whole, and the window it is dropped in is
+        // narrow and real: onNodeLeft() has already forgotten that node's claims (HIL-696, see
+        // there), and a frame that left the node before it went arrives a moment after. Folded,
+        // it puts the forgotten claims back - and the agent failover has just re-placed elsewhere
+        // then loses to its own dead incarnation, for good (HIL-913).
+        if ($this->nodeHasLeftTheMesh($nodeId)) {
+            Logger::warning("RT claims from {$nodeId} ignored: the node has left the mesh");
+
             return;
         }
 
@@ -2927,6 +2939,24 @@ abstract class DaemonManager extends BaseManager implements
             // refusal, so the stop cannot be undone by a start racing it.
             Hilos::$cluster?->placement()?->refusePlacement($refusal->agentType, $refusal->agentIndex, $nodeId);
         }
+    }
+
+    /**
+     * Asks the mesh whether one node has left it, for {@see applyRemoteRtClaims()} to judge by.
+     *
+     * Protected for the reason {@see sendRtSnapshotsToNode()} is: it is the seam a subclass
+     * answers for the mesh at. A unit has no cluster registry behind it, so without the seam the
+     * threshold could only ever be exercised in its silent direction.
+     *
+     * Off-cluster the answer is false and the report is judged as before: a question about two
+     * nodes is not asked on a single installation at all.
+     *
+     * @param string $nodeId Node whose report arrived
+     * @return bool True when the mesh knows the node and has it offline
+     */
+    protected function nodeHasLeftTheMesh(string $nodeId): bool
+    {
+        return $this->findPeerServer()?->nodeHasLeftTheMesh($nodeId) ?? false;
     }
 
     /**
@@ -5101,7 +5131,9 @@ abstract class DaemonManager extends BaseManager implements
         Hilos::$cluster?->clientConnections()?->forgetNode($node->nodeId);
         // And so do the RT rights its agents held (HIL-696). Without this the leader would go on
         // holding a claim for a node that is gone, and failover - which re-places that very agent
-        // on a surviving node - would have its new host refused in favour of the dead one.
+        // on a surviving node - would have its new host refused in favour of the dead one. A
+        // report still in flight can no longer undo this: the membership check at the top of
+        // applyRemoteRtClaims() drops whatever that node says from here on (HIL-913).
         $this->rtClaimRegistry->forget($node->nodeId);
         // Last, for the reason given in {@see onNodeJoined()}. The departed node keeps its row and
         // turns offline in it; the registry does not forget it either (HIL-337).

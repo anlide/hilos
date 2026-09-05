@@ -1549,6 +1549,49 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     }
 
     /**
+     * The window failover opens, and what it cost before this was closed (HIL-913): the node goes,
+     * `onNodeLeft` forgets the rights its agents held, and a frame that left before it did arrives
+     * after. Folded, it hands the departed node its claims back — and the survivor the leader has
+     * just moved that agent onto is then refused in favour of a node that is not there.
+     */
+    public function testAReportFromANodeThatLeftDoesNotRaiseWhatWasForgotten(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = DaemonManagerRtSyncPeerTestRtContext::ROWS;
+        $daemon->departedNodes[] = 'node-b';
+
+        $daemon->applyRemoteRtClaims('node-b', [new PeerRtClaimEntry('library', 'library', null, [$collection])]);
+        $daemon->applyRemoteRtClaims('node-c', [new PeerRtClaimEntry('twin', 'twin', null, [$collection])]);
+
+        $this->assertSame(
+            0,
+            $daemon->inspectRtReplicas()[ClusterCommandConstants::FIELD_RT_CLAIM_CONFLICTS],
+            'A node that has left holds nothing, so the survivor had nobody to lose the right to',
+        );
+    }
+
+    /**
+     * And the threshold is membership, not silence: a node the registry cannot name yet is a
+     * report that outran gossip, and dropping it would lose a claim nobody would restate until
+     * ownership next moved. Only a node KNOWN to be down is ignored, so everything else is
+     * judged exactly as it was.
+     */
+    public function testAReportFromANodeTheRegistryDoesNotKnowIsStillJudged(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = DaemonManagerRtSyncPeerTestRtContext::ROWS;
+
+        $daemon->applyRemoteRtClaims('node-b', [new PeerRtClaimEntry('library', 'library', null, [$collection])]);
+        $daemon->applyRemoteRtClaims('node-c', [new PeerRtClaimEntry('twin', 'twin', null, [$collection])]);
+
+        $this->assertSame(
+            1,
+            $daemon->inspectRtReplicas()[ClusterCommandConstants::FIELD_RT_CLAIM_CONFLICTS],
+            'Nothing said the node was gone, so the split is named the way it always was',
+        );
+    }
+
+    /**
      * And the node the verdict is against counts it at its own end, which is what an operator
      * reading one node has to go on.
      */
@@ -1625,6 +1668,9 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
 
     /** @var list<?RtSyncMesh> Port the announce step was handed, once per call */
     public array $announcedThrough = [];
+
+    /** @var list<string> Nodes the mesh reports as departed */
+    public array $departedNodes = [];
 
     public function __construct()
     {
@@ -2048,6 +2094,22 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
     protected function sendRtSnapshotsToNode(?RtSyncMesh $mesh, string $nodeId): void
     {
         parent::sendRtSnapshotsToNode($mesh === null ? null : $this->mesh, $nodeId);
+    }
+
+    /**
+     * Answers for membership from {@see $departedNodes}, for the reason given on
+     * {@see broadcastRtSyncToPeers()}.
+     *
+     * The real answer comes from the cluster registry, and a unit has none: the peer server this
+     * manager registers is real, but nothing behind it is, so left to itself the threshold could
+     * only ever be seen in its silent direction.
+     *
+     * @param string $nodeId Node whose report arrived
+     * @return bool True when this case declared the node departed
+     */
+    protected function nodeHasLeftTheMesh(string $nodeId): bool
+    {
+        return in_array($nodeId, $this->departedNodes, true);
     }
 
     /**

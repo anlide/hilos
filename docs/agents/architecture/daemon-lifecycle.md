@@ -460,8 +460,12 @@ onto one node.
   carries the node whose loss armed it, and firing it re-places only an agent the registry
   still puts there: inside one grace period the fleet's own supervisor may restart the agent
   on a neighbour, and a deadline outliving that move would start a second copy on the node it
-  names — which the HIL-696 guard then refuses for good, leaving the agent running nowhere
-  (HIL-719).
+  names — which that re-check against the registry is what stops (HIL-719). The HIL-696 guard
+  does not: since HIL-913 a claim whose agent id matches the holder reads as the agent having
+  MOVED, the older incarnation is evicted from the leader's map, and a report from a node that
+  has left the mesh is not folded at all. That reading is for placed agents only. An agent
+  declared `AgentScope::NODE` is never placed, so it never moves; the leader keeps the entry of
+  every node holding it, and a second whole owner of what it owns is still refused for good.
 - **Slave self-fence (no double-run).** A slave that loses the link to the leader that
   placed its work stops those agents after `CLUSTER_SLAVE_WORK_GRACE_MS`, then reconnects
   via the existing peer dial. The self-fence grace is held **at or below** the failover

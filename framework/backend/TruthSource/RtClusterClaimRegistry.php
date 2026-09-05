@@ -7,6 +7,9 @@ namespace Hilos\TruthSource;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimEntry;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimRefusedDTO;
 use Hilos\Cluster\Placement\PlacementRegistry;
+use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Config\AgentScope;
+use Hilos\Hilos;
 
 /**
  * Leader-side soft-state map of who in the cluster claims the right to write which RT state.
@@ -23,6 +26,20 @@ use Hilos\Cluster\Placement\PlacementRegistry;
  * Keyed by node id, and a report REPLACES what that node claimed before, because the report is
  * the node's whole ownership rather than a delta. So a right released on the node disappears
  * here on its next report, with nothing to expire and no way for the two to drift apart.
+ *
+ * Across nodes the map holds ONE incarnation of an agent PLACEMENT places: a claim carrying an
+ * agent id somebody else holds is that agent having MOVED, not a second owner of the same name,
+ * and the older entry goes as the fresh one arrives (HIL-913). A move and a genuine double start
+ * cannot be told apart from the frames — the report says what an agent owns, never which
+ * incarnation of it is speaking — so this map does not try: the double start is placement's to
+ * catch, and it is caught by the registry re-check a firing deadline makes (HIL-719). Carrying
+ * the fact that a node came back as a NEW process on the handshake is separate work again
+ * (proposal P-222).
+ *
+ * An agent declared {@see AgentScope::NODE} is outside all of that, both halves of it. Placement
+ * does not place it, so it never moves and its id standing on every node is the declaration
+ * working; and for the same reason the HIL-719 re-check cannot be what catches a second holder of
+ * that id, so here the split verdict is still the one that names it.
  *
  * What counts as a conflict is the narrow thing, and both axes of the right decide it: two
  * claims collide only when each of them is WHOLE — every operation (HIL-688) over rows that
@@ -66,6 +83,9 @@ final class RtClusterClaimRegistry
      * owners inside one node are a different defect with a different owner (HIL-685), and the map
      * could not tell them from one agent reported twice anyway.
      *
+     * What the report says about agents it names elsewhere is settled first, by
+     * {@see evictStaleIncarnations()}, because eviction changes what the judging is against.
+     *
      * Which side loses is decided by arrival — the leader heard the holder first — and by nothing
      * else. A tie-break on node ids was rejected deliberately: it would move the right to the
      * other node after an election, while the whole promise of the guard is that an owner working
@@ -77,6 +97,8 @@ final class RtClusterClaimRegistry
      */
     public function fold(string $nodeId, array $claims): array
     {
+        $this->evictStaleIncarnations($nodeId, $claims);
+
         $refusals = [];
         $held = [];
         foreach ($claims as $claim) {
@@ -102,6 +124,64 @@ final class RtClusterClaimRegistry
         }
 
         return $refusals;
+    }
+
+    /**
+     * Takes every agent named by one report off whichever OTHER node still holds it.
+     *
+     * This is failover seen from the map: the leader re-places an agent on a surviving node, that
+     * node reports the right, and the node the agent left has no report left to make. Judged as
+     * it stands, the newcomer meets ITSELF as the incumbent and loses to it — the refusal is
+     * terminal, so the agent then runs nowhere at all (HIL-913).
+     *
+     * Skipping the comparison instead of evicting would take the false verdict away and leave the
+     * cause: a dead incarnation sitting in the map, judging OTHER nodes' claims, gone only on a
+     * report from a node that may never speak again. Evicting makes the map what it says it is.
+     *
+     * The whole entry goes rather than the contested collections alone. An agent moves as one
+     * thing, and half a dead incarnation is the same phantom holder, only smaller.
+     *
+     * An agent declared {@see AgentScope::NODE} is exempt, and by construction rather than by
+     * agreement: nothing places it — topology validation refuses a placement beside that scope,
+     * and each node's own bootstrap is what starts it — so it has no move for an eviction to
+     * follow. One id on many nodes is what the declaration ASKED for there, and evicting it would
+     * take a legitimate holding off a working neighbour and leave the guard with nothing to judge
+     * a real second owner against. A type the registry does not know reads as
+     * {@see AgentScope::CLUSTER} and is evicted like any other.
+     *
+     * @param string $nodeId Node whose report is being folded in, and the one node left alone
+     * @param list<PeerRtClaimEntry> $claims What that node says its agents own
+     */
+    private function evictStaleIncarnations(string $nodeId, array $claims): void
+    {
+        $movedAgentIds = array_map(static fn(PeerRtClaimEntry $claim): string => $claim->agentId, $claims);
+        if ($movedAgentIds === []) {
+            return;
+        }
+
+        foreach ($this->byNode as $holderNodeId => $heldClaims) {
+            if ($holderNodeId === $nodeId) {
+                continue;
+            }
+
+            $kept = [];
+            foreach ($heldClaims as $held) {
+                if (AgentRegistry::startsOnEveryNode(Hilos::appClass()::AGENTS[$held->agentType] ?? null)) {
+                    $kept[] = $held;
+                    continue;
+                }
+
+                if (!in_array($held->agentId, $movedAgentIds, true)) {
+                    $kept[] = $held;
+                }
+            }
+
+            if ($kept === []) {
+                $this->forget($holderNodeId);
+            } else {
+                $this->byNode[$holderNodeId] = $kept;
+            }
+        }
     }
 
     /**
