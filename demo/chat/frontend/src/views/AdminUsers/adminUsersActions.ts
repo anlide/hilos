@@ -12,11 +12,6 @@ import { actions } from '../../bootstrap/connection'
 // Backend action name (ChatSignalConstants::USER_UPDATE).
 const ADMIN_USER_UPDATE = 'user_update'
 
-// Backend action name (HilosSignalConstants::HILOS_IMPERSONATE_START). Page-independent
-// and framework-owned since HIL-729: the sessions library answers it, and the takeover
-// moves this tab off the admin page it was asked from, so no page could own it.
-const IMPERSONATE_START = 'hilos_impersonate_start'
-
 /**
  * Rename a user as a tracked action. Own-change is decided server-side: the
  * backend tags this tab's own echo `own` (page action origin) so it applies at
@@ -27,15 +22,4 @@ const IMPERSONATE_START = 'hilos_impersonate_start'
  */
 export function sendAdminUserUpdate(id: number, name: string): ActionHandle {
   return actions.dispatch(ADMIN_USER_UPDATE, { id, name })
-}
-
-/**
- * Start impersonating the target user as a tracked action. The visible effect —
- * the shell banner and this admin session becoming the target — is server-driven
- * through the handshake broadcast, so the caller only awaits the action ack.
- *
- * @param targetUserId The user id to impersonate.
- */
-export function sendImpersonateStart(targetUserId: number): ActionHandle {
-  return actions.dispatch(IMPERSONATE_START, { targetUserId })
 }

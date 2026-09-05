@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import {
+  ActionLifecycle,
   HilosConnection,
   ScopeManager,
   createSignal,
@@ -65,7 +66,7 @@ function userContext(seed: boolean): HilosUsersContext {
     }),
   )
   const connection = new HilosConnection({ url: 'ws://test/ws' })
-  return { scopes, connection, users }
+  return { scopes, connection, actions: new ActionLifecycle(connection), users }
 }
 
 function renderPage(context: HilosUsersContext) {

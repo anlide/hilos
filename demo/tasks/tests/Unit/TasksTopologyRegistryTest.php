@@ -165,6 +165,9 @@ final class TasksTopologyRegistryTest extends TestCase
                 // waiting on raises a toast on their session, and the stack is the library's
                 // (HIL-768).
                 HilosSignalConstants::HILOS_SESSION_TOAST_RAISE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                // The takeover the Hilos users page forwards: the page carries the ADMIN level
+                // that closes the action, and the session it rebinds is the library's (HIL-824).
+                HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_NOTIFICATION_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
                 HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
                 // Sign-in's own frames (HIL-623). The users library waits for the throttle
@@ -243,13 +246,12 @@ final class TasksTopologyRegistryTest extends TestCase
         );
 
         $this->assertSame([
-            // Signing out, dismissing an ack and taking a user over all write a session, so
+            // Signing out, dismissing an ack and leaving a takeover all write a session, so
             // the sessions library owns them (HIL-710, HIL-729) - this demo adds an action of
-            // its own for none of them. The impersonation pair is mounted here as everywhere
-            // else and refuses, because this demo wires no seam saying who may take over.
+            // its own for none of them. STARTING a takeover is not among them since HIL-824:
+            // only an administrator may, and an ADMIN level is a thing only a page carries.
             HilosSignalConstants::HILOS_LOGOUT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => HilosAgentType::HILOS_SESSIONS_LIBRARY,
-            HilosSignalConstants::HILOS_IMPERSONATE_START => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_IMPERSONATE_STOP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             // The tabs of one session answering about the toasts the server raised for it
             // (HIL-768): the stack they answer about stands on the session.

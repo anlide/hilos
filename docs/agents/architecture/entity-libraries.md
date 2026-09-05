@@ -367,6 +367,65 @@ untracked submit `sendToUser(SignalConstants::ACTION_ERROR, acceptKey, new
 PageActionErrorSignalData(...))`. The reason is a string,
 `DeliveryRetryDoneSignalData::$error`, which is what statement 3 asks for.
 
+### When A Name May Live On The Library (HIL-824)
+
+The neighbour above answers when a name may NOT travel to the owner. The positive
+half is this: **a name may be declared on a library when its right is no stronger
+than "you have a session" AND no page could own the action.** Both halves, not
+either.
+
+`HilosSignalConstants::HILOS_IMPERSONATE_STOP` is the worked example, because it
+is the one that has to argue the second half. While a takeover is on, the
+effective user is the non-admin target, so no admin page is guaranteed to be
+under the control — it lives in the app shell
+(`demo/chat/frontend/src/App.vue:184`). Its right passes the first half too: the
+administrator to go back to is read off the session's own marker, so ending a
+takeover is allowed to whoever is inside it, exactly as signing out is.
+`HilosSignalConstants::HILOS_LOGOUT` is the plainest form of the same, and the
+three session-toast controls are the same again.
+
+**The answer may leave the accepting page when only the project can name the
+ack.** Statement 1 above says the gatekeeper answers the client itself; read it as
+"the gatekeeper SIDE answers", not "the accepting class answers". The account
+merge is the legal variant: the name sits on an ADMIN page
+(`demo/chat/backend/Pages/Hilos/Users/UserPage.php:57`), the page forwards
+`HILOS_ACCOUNT_MERGE` carrying the accept key and does NOT defer (`:276`), and the
+project's own agent answers the initiator under project names — `ackAccountMerge()`
+sending `ACCOUNT_MERGE_SUCCESS` / `ACCOUNT_MERGE_FAIL`
+(`demo/chat/backend/Agents/ChatAgent.php:436`). The condition is that the ack has a
+project name and a project shape: what the framework could send back is
+`action_success` and nothing else, and the merge's outcome summary is not that.
+
+**An operation with two entrances: the gatekeeper's lock closes the browser one
+only.** The writer keeps its own seam for the entrance that has no page. The
+impersonation is the case: `AbstractSessionsLibraryAgent::assertImpersonationAllowed()`
+stays exactly as it was after the page took the name, because
+`CliCommands::IMPERSONATE_START` reaches the same core from a command socket, where
+there is no level to check and the seam is the only judge. A seam that duplicates a
+page level for the browser is not a redundancy to clean up — it is the other
+entrance's whole lock.
+
+**The deviation this leaf repaired, so the next session operation copies the rule
+and not the exception.** `hilos_impersonate_start` sat in the sessions library's
+`AGENT_ACTIONS` from HIL-729 until HIL-824, closed by an administrator check the
+library asked the project for. It failed the first half of the criterion above —
+only an administrator may take a person over, which is more than "you have a
+session" — and it had been read as a precedent, because it was the first session
+operation with two entrances and the shape it wore was the one the next operation
+would copy. It now stands on `AbstractHilosUsersPage::ACTIONS` with the ADMIN level
+that closes it, and the library performs the write on
+`HILOS_IMPERSONATE_REQUEST`, answering `HILOS_IMPERSONATE_DONE`. The wire name did
+not change: `PageSignalRouter::resolveActionHost()` asks the agent's own actions
+first and the static action-to-page map second, so the browser sends the same
+string either way.
+
+The absolute sentence of the neighbour subsection — no "unless the owner can
+reproduce the check" — is not softened, not scoped and not rewritten by any of the
+above. A discriminator in front of it ("does the operation rewrite the asker's own
+session or somebody else's data") was proposed while this leaf was designed and
+refused by the owner: a general rule is not bent for one feature, the feature is
+brought to the rule.
+
 ## Refusals
 
 | Situation | What happens |

@@ -88,6 +88,13 @@ would have nothing to tell the person.
 ## How to spot it
 
 - An agent action that writes what an `ADMIN` page used to write.
+- An agent action guarded by a project seam that asks "is this an
+  administrator". The `Wrong` example above is hypothetical, but this one was
+  real: `hilos_impersonate_start` sat in the sessions library's `AGENT_ACTIONS`
+  from HIL-729 until HIL-824 moved it onto `AbstractHilosUsersPage`, and the
+  admin check it needed was asked of the project through a seam because an agent
+  action had no level to stand on. A reader who greps the history will find it;
+  it is the mistake, not the pattern.
 - `sendActionSuccess()` in the same call that sent the signal to the owner —
   an answer before the confirmation, while the owner may still refuse.
 - The owner's refusal thrown as an exception outside a page. Only a page
@@ -101,5 +108,9 @@ would have nothing to tell the person.
 - [../architecture/entity-libraries.md](../architecture/entity-libraries.md#the-lock-does-not-travel-with-the-name-hil-771) —
   the rule: the criterion table, the gatekeeper/writer form, and the worked
   example.
+- [../architecture/entity-libraries.md](../architecture/entity-libraries.md#when-a-name-may-live-on-the-library-hil-824) —
+  the other half: when a name may be declared on a library at all, who answers
+  when the gatekeeper and the answerer are different agents, and what a second
+  entrance with no page changes.
 - [../architecture/page-access-control.md](../architecture/page-access-control.md) —
   the page level that closes the actions a page holds.

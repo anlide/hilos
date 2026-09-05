@@ -6,7 +6,6 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
-use Hilos\Auth\Session\DTO\ImpersonateStartActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Auth\Session\DTO\LogoutActionDTO;
 use Hilos\Auth\Session\Exception\SessionNotOnConnectionException;
@@ -26,14 +25,18 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * What the four controls of the sign-in surface do when the connection carries no session
- * (HIL-730).
+ * What the controls of the sign-in surface do when the connection carries no session (HIL-730).
  *
- * All four act on the session of the ACTING connection, and all four used to return as if they
- * had acted when that connection held no token. The browser read that as success: the tab still
+ * They act on the session of the ACTING connection, and they all used to return as if they had
+ * acted when that connection held no token. The browser read that as success: the tab still
  * showed the person signed in, the takeover it asked for had not happened, and the only way to
  * learn either was to reload. Sign-out looks like the one that could stay a no-op and is not -
  * the token is gone from the runtime but the cookie is still in the browser.
+ *
+ * Starting a takeover was the fourth of them until HIL-824 moved the name onto the Hilos users
+ * page. Its browser entrance is closed earlier now - a connection with no session is nobody's
+ * administrator, and the page level refuses before the handler - and the write that still
+ * arrives here comes on a frame, not as an action.
  *
  * That the throw becomes an action_error frame is the general rail and is pinned by
  * {@see AgentActionRailsTest}; what is pinned here is the refusal itself, its one sentence, and
@@ -74,7 +77,6 @@ final class SessionsLibraryActionRefusalTest extends TestCase
         return [
             'logout' => [HilosSignalConstants::HILOS_LOGOUT, new LogoutActionDTO()],
             'dismiss ack' => [HilosSignalConstants::HILOS_DISMISS_SESSION_ACK, new DismissSessionAckActionDTO()],
-            'impersonate start' => [HilosSignalConstants::HILOS_IMPERSONATE_START, new ImpersonateStartActionDTO(9)],
             'impersonate stop' => [HilosSignalConstants::HILOS_IMPERSONATE_STOP, new ImpersonateStopActionDTO()],
         ];
     }

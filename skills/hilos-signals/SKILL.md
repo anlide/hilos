@@ -45,7 +45,10 @@ Use this skill for every change that affects signal shape, route, subscription, 
    means the name stays on the page, the write goes to the owner as an agent
    signal, the page defers its ack, and the refusal comes back as a frame
    carrying a reason as text (`docs/agents/architecture/entity-libraries.md`,
-   section "The Lock Does Not Travel With The Name").
+   section "The Lock Does Not Travel With The Name"). For the opposite case — a
+   name that may be declared on the library, and an operation whose second
+   entrance has no page — read the same file's "When A Name May Live On The
+   Library".
 4. Route named signal handlers with `switch ($name)` and explicit cases.
 5. Omit empty `default` branches in partial shared-broadcast handlers; document
    the ignore contract in PHPDoc instead.

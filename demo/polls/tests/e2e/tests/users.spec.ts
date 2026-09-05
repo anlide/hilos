@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Browser, type Page } from '@playwright/test'
 import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant'
 import { gotoPage, PAGE_REFUSED } from '../helpers/page'
 
@@ -6,6 +6,25 @@ import { gotoPage, PAGE_REFUSED } from '../helpers/page'
 // live socket, the client's own granted row is present, search filters the client
 // viewport, a row links to the user detail page, and a modal rename round-trips
 // through the backend and re-renders with no document reload.
+
+/**
+ * Open a second visitor in a context of its own, so the users table holds a row that is
+ * not the admin's own.
+ *
+ * Identity here is the session cookie, so two pages of one context are one browser and one
+ * account. A context made off the browser fixture inherits none of the project's `use`
+ * options - including the tolerance for the self-signed certificate the test nginx serves -
+ * so they are passed on by hand.
+ *
+ * @param browser The browser the test runs in.
+ * @returns A page belonging to a fresh visitor.
+ */
+async function openSecondVisitor(browser: Browser): Promise<Page> {
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  const context = await browser.newContext({ baseURL, ignoreHTTPSErrors })
+
+  return context.newPage()
+}
 
 /** Open the users admin and wait for the live table's first row. */
 async function openUsers(page: Page): Promise<void> {
@@ -186,4 +205,25 @@ test('a revoked admin loses the gear and the door', async ({ page }) => {
   // refuses the subscription on the next visit.
   await gotoPage(page, '/hilos/users', PAGE_REFUSED)
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
+})
+
+// HIL-824: the takeover button is drawn by the SDK page, not by this project. The backend
+// route is one shared framework path for all three demos and is covered where it lives
+// (demo/chat), so what is worth a case here is the only thing that differs — the markup —
+// and a visible button is what proves it reached this framework's view.
+test('draws the framework takeover button on a row that is not your own', async ({
+  page,
+  browser,
+}) => {
+  // A second visitor, so the table holds a row other than the admin's own: the control is
+  // offered on every row but yours, since taking yourself over is refused server-side.
+  const other = await openSecondVisitor(browser)
+  await grantAdminToSelf(other)
+
+  await grantAdminToSelf(page)
+  await openUsers(page)
+
+  await expect(
+    page.locator('[data-id^="hilos-users-impersonate-"]').first(),
+  ).toBeVisible()
 })

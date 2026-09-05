@@ -154,3 +154,38 @@ test('windows, paginates, and searches the seeded users', async ({ page }) => {
   expect(seededTotal).toBeGreaterThanOrEqual(20)
   await expect(rows).toHaveCount(10)
 })
+
+// HIL-824: the takeover is a framework row action on the Hilos users page. Its name is
+// closed by that page's ADMIN level and the sessions library performs the write, so what
+// proves the whole two-hop route in one assertion is the banner: the shell draws it from
+// the rebound session's own handshake, which cannot arrive unless the write landed.
+//
+// The refusal branch is not driven from here on purpose. Once the ADMIN level closes the
+// page, the guards the library still runs are out of a browser's reach — a non-admin never
+// gets the table, self-impersonation offers no button, and a nested takeover has no admin
+// page left to press from. What a refusal looks like on the wire is pinned in
+// demo/chat/tests/Integration/ImpersonationTest.php instead.
+test('takes a user over from the users table and shows the shell banner', async ({
+  page,
+}) => {
+  await signUpAdmin(page)
+  await gotoPage(page, '/hilos/users')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+
+  // Every row but the admin's own carries the control; the seeded users fill the rest.
+  const impersonate = page
+    .locator('[data-id^="hilos-users-impersonate-"]')
+    .first()
+  await expect(impersonate).toBeVisible()
+  await impersonate.click()
+
+  // A mutation is confirmed in a modal, and the confirm is what dispatches.
+  const confirm = page.getByTestId('hilos-users-impersonate-confirm')
+  await expect(confirm).toBeVisible()
+  await confirm.click()
+
+  // The takeover arrives as the rebound session, not as an ack the view acted on.
+  await expect(page.getByTestId('impersonation-banner')).toBeVisible()
+  await expect(page.getByTestId('impersonation-stop')).toBeVisible()
+})

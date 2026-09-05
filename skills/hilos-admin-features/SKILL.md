@@ -46,7 +46,9 @@ read the canonical spec before editing.
    the page — the page sends the owner a signal, defers its ack, and answers
    the client after the owner confirms
    (`docs/agents/architecture/entity-libraries.md`, section "The Lock Does
-   Not Travel With The Name").
+   Not Travel With The Name"). The same file's section "When A Name May Live On
+   The Library" answers the other direction — when the name belongs on the owner
+   after all, and who answers when the gatekeeper is not the answerer.
 6. Pass every framework/project boundary shift through the contract gate.
 7. Validate with composer scripts via `$hilos-testing-cli`; keep existing admin
    e2e green and add framework unit coverage for the graduated base.

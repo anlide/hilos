@@ -505,6 +505,7 @@ export {
   createHilosUsersTable,
   createHilosUserDetail,
   createHilosUserRename,
+  createHilosImpersonate,
   USER_ONLINE_SESSION_COUNT_FIELD,
   USER_PRESENCE_FIELD,
   type HilosPresence,
@@ -513,6 +514,7 @@ export {
   type HilosUsersContext,
   type HilosUsersTable,
   type HilosUserRename,
+  type HilosImpersonate,
 } from './admin/users/hilosUsers.js'
 export {
   resolveHilosSettingRow,

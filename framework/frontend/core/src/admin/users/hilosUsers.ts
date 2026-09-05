@@ -7,11 +7,16 @@
 // The page is a hybrid: its identity, view-model, and behavior are the
 // framework's, but the data arrives through slots a project fills on its backend
 // (the `users` entity slot and the inline `connections` slot). A project supplies
-// a HilosUsersContext — its scope manager, its connection, and its typed user
-// collection — and the framework owns the rest.
+// a HilosUsersContext — its scope manager, its connection, its action lifecycle,
+// and its typed user collection — and the framework owns the rest.
 
+import {
+  type ActionHandle,
+  type ActionLifecycle,
+} from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
+import { sessionUserId } from '../../session/sessionScope.js'
 import { type Entity } from '../../state/entity.js'
 import { type EntityCollection } from '../../state/EntityCollection.js'
 import { type EntityRef } from '../../state/EntityStore.js'
@@ -92,11 +97,17 @@ const CONNECTIONS_SLOT = 'connections'
 // registered schema, so the view observes its type only.
 const HILOS_USER_UPDATE_ACTION = 'hilos_user_update'
 const HILOS_USER_UPDATE_FAIL = 'hilos_user_update_fail'
+// The takeover the users list offers on every row but your own. Owned by the
+// framework Hilos users page since HIL-824 (it was the sessions library's before,
+// and the ADMIN level that closes it is a thing only a page carries), so the SDK
+// draws the control and no project restates the name.
+const HILOS_IMPERSONATE_START_ACTION = 'hilos_impersonate_start'
 
 /**
  * The project-supplied context the users admin reads from: the scope-partitioned
- * stores, the live connection, and the typed user collection. Everything else
- * (the table keys, slot names, view-model, and behavior) is the framework's.
+ * stores, the live connection, the action lifecycle its tracked actions dispatch
+ * over, and the typed user collection. Everything else (the table keys, slot
+ * names, view-model, and behavior) is the framework's.
  */
 export interface HilosUsersContext<
   TUser extends HilosUserProfile = HilosUserProfile,
@@ -105,8 +116,26 @@ export interface HilosUsersContext<
   readonly scopes: ScopeManager
   /** The live connection the rename action and its fail ack ride. */
   readonly connection: HilosConnection
+  /** The action lifecycle the impersonation tracked action dispatches over. */
+  readonly actions: ActionLifecycle
   /** The typed user collection that resolves the `users` entity slot. */
   readonly users: EntityCollection<TUser>
+}
+
+/** The impersonation control a users-list view binds to. */
+export interface HilosImpersonate {
+  /**
+   * The signed-in user's own id, or null before the handshake answers. The row
+   * that carries it offers no takeover button: the backend refuses taking
+   * yourself over, and a control whose only outcome is a refusal is not one.
+   */
+  readonly currentUserId: ReadonlySignal<number | null>
+  /**
+   * Dispatch one takeover as a tracked action.
+   *
+   * @param targetUserId The user id to act as.
+   */
+  start(targetUserId: number): ActionHandle
 }
 
 /** The rename action surface a user-detail view binds to. */
@@ -285,6 +314,30 @@ export function createHilosUserRename(
       return context.connection.sendAction(HILOS_USER_UPDATE_ACTION, {
         id,
         name,
+      })
+    },
+  }
+}
+
+/**
+ * The impersonation surface for the users-list view: the takeover submits as a
+ * tracked action over the lifecycle, returning an ActionHandle whose `done`
+ * resolves on the page's `::success` ack and rejects with the reason on `::fail`
+ * — the confirm modal closes on the first and stays open with the sentence on the
+ * second (authoritative-backend). Success needs nothing else: the takeover
+ * arrives as the rebound session on the handshake broadcast, which redraws the
+ * shell and drops this admin-only page on its own.
+ *
+ * @param context The project context (the scope stores and the action lifecycle).
+ */
+export function createHilosImpersonate(
+  context: HilosUsersContext,
+): HilosImpersonate {
+  return {
+    currentUserId: sessionUserId(context.scopes),
+    start(targetUserId) {
+      return context.actions.dispatch(HILOS_IMPERSONATE_START_ACTION, {
+        targetUserId,
       })
     },
   }

@@ -5,16 +5,24 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\Hilos\Users\UsersPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Session\DTO\ImpersonateDoneSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateStartActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Core\Page\PageAccessLevel;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\HilosException;
+use Hilos\Pages\Users\AbstractHilosUsersPage;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -31,10 +39,17 @@ use Hilos\Utils\Helpers\RandomHelper;
  * transports) the re-emitted handshake response whose impersonatedBy slot proves
  * the marker-before-rebind ordering.
  *
- * All four ways in are driven at the SESSIONS LIBRARY since HIL-729: both commands and
- * both browser actions are its own, and the only thing left in this project is the seam
- * answering whether the takeover is allowed. What the chat agent still does is say the
- * result out loud, which is why every case hands it the frames the library queued.
+ * The two commands and the browser STOP are driven at the sessions library, which owns
+ * them (HIL-729). The browser START is not: HIL-824 moved its name onto the framework
+ * Hilos users page, because only an administrator may take a person over and an ADMIN
+ * level is a thing only a page carries. So that one is driven at the page, which forwards
+ * {@see HilosSignalConstants::HILOS_IMPERSONATE_REQUEST} to the library and is answered on
+ * {@see HilosSignalConstants::HILOS_IMPERSONATE_DONE} - and a refusal reaches it as text on
+ * that frame, because the guards now run outside a page.
+ *
+ * The only thing left in this project either way is the seam answering whether the takeover
+ * is allowed. What the chat agent still does is say the result out loud, which is why every
+ * case hands it the frames the library queued.
  * Requires test DB to be reset before run (composer run test:db-reset).
  */
 final class ImpersonationTest extends IntegrationTestCase
@@ -194,17 +209,18 @@ final class ImpersonationTest extends IntegrationTestCase
     }
 
     /**
-     * The browser start action rebinds the session to the target, records the admin
-     * marker, and re-emits a handshake response whose impersonatedBy slot names the
-     * admin — the browser transport over the same shared core as the CLI command.
+     * The browser start reaches the library through the page that holds its name, rebinds
+     * the session to the target, records the admin marker, and re-emits a handshake
+     * response whose impersonatedBy slot names the admin — the browser transport over the
+     * same shared core as the CLI command.
      *
-     * Page-independent since HIL-729, though the control that sends it still sits on the
-     * admin users table: the takeover moves the person off that page in the very next
-     * frame, so no page can be the owner.
+     * Two hops since HIL-824, and the case drives both: the page forwards the request, the
+     * library writes. What it proves beyond the command case is that nothing was lost in
+     * the move — the same session state, the same marker ordering, the same greeting.
      *
      * @throws HilosException When setup or the action fails
      */
-    public function testStartActionRebindsAndEmitsImpersonatedBy(): void
+    public function testPageStartRebindsAndEmitsImpersonatedBy(): void
     {
         $agent = $this->bootAgent();
         $token = RandomHelper::hex(16);
@@ -214,7 +230,7 @@ final class ImpersonationTest extends IntegrationTestCase
         $this->drainSignals();
 
         try {
-            $this->runAction($agent, 'page-ak', new ImpersonateStartActionDTO($targetId));
+            $this->runPageStart($agent, 'page-ak', $targetId);
 
             $session = $this->sessionOf('page-ak');
             $this->assertSame($targetId, $session?->userId);
@@ -229,6 +245,66 @@ final class ImpersonationTest extends IntegrationTestCase
         } finally {
             Hilos::$rt->connections->actions->clear();
         }
+    }
+
+    /**
+     * A refused takeover comes back to the page as TEXT on the done frame, and the session
+     * is left alone.
+     *
+     * This is the half of the move that could have been lost quietly. While the name was
+     * the library's, a guard threw and the dispatcher turned the throw into the fail ack
+     * the caller was waiting on. After the move the guards run outside a page, where that
+     * hook does not reach, so the reason has to travel as a field — and a page with nothing
+     * to say would leave the admin's modal waiting for its own timeout.
+     *
+     * @throws HilosException When setup or the action fails
+     */
+    public function testPageStartRefusalTravelsAsTextOnTheDoneFrame(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $userId = $this->registerUser();
+        $this->deliverHandshake($agent, $this->handshake('refused-ak', $token));
+        $this->authenticateSession($agent, $token, $userId, null);
+        $targetId = $this->registerUser();
+        $this->drainSignals();
+
+        try {
+            $this->runPageStart($agent, 'refused-ak', $targetId);
+
+            $done = $this->lastImpersonateDone();
+            $this->assertNotNull($done);
+            $this->assertSame('refused-ak', $done->acceptKey);
+            $this->assertNotNull($done->error);
+
+            $session = Hilos::$db->sessions->findByToken($token);
+            $this->assertSame($userId, $session?->userId);
+            $this->assertNull($session?->impersonatorUserId);
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * The name is declared where the lock is, and nowhere else.
+     *
+     * The lock never travels with the name (HIL-771), so what closes the takeover is
+     * whatever page holds it — and the page that does inherits ADMIN. Asserted on the
+     * classes rather than through the dispatcher because the dispatcher's own 403 rail is
+     * pinned framework-side, in framework/tests/Unit/PageAccessGateTest.php; what can go
+     * wrong HERE is the name drifting back onto an agent, where no level would reach it.
+     */
+    public function testTheTakeoverNameSitsUnderAnAdminPageLevel(): void
+    {
+        $this->assertArrayHasKey(
+            HilosSignalConstants::HILOS_IMPERSONATE_START,
+            AbstractHilosUsersPage::ACTIONS,
+        );
+        $this->assertSame(PageAccessLevel::ADMIN, AbstractHilosUsersPage::ACCESS_LEVEL);
+        $this->assertArrayNotHasKey(
+            HilosSignalConstants::HILOS_IMPERSONATE_START,
+            AbstractSessionsLibraryAgent::AGENT_ACTIONS,
+        );
     }
 
     /**
@@ -294,6 +370,55 @@ final class ImpersonationTest extends IntegrationTestCase
     {
         $this->sessionsLibrary()->onAgentAction($acceptKey, $dto->getAction(), $dto);
         $this->deliverLibraryFrames($agent);
+    }
+
+    /**
+     * Runs one browser takeover the way the dispatcher runs it since HIL-824: at the page.
+     *
+     * The page only forwards, so the act is not over when onAction() returns - the write
+     * happens one frame later, in the library. {@see IntegrationTestCase::deliverLibraryFrames()}
+     * carries that frame, because the request is one of the names the library declares.
+     *
+     * @param ChatAgent $agent Agent that holds this project's connections
+     * @param string $acceptKey Accept key of the connection that submitted
+     * @param int $targetUserId User id the session asks to act as
+     * @throws HilosException When the action or a frame that follows it fails
+     */
+    private function runPageStart(ChatAgent $agent, string $acceptKey, int $targetUserId): void
+    {
+        $page = new UsersPage(new DemoHilosAgent());
+        $page->onAction(
+            $acceptKey,
+            HilosSignalConstants::HILOS_IMPERSONATE_START,
+            new ImpersonateStartActionDTO($targetUserId),
+        );
+        $this->deliverLibraryFrames($agent);
+    }
+
+    /**
+     * Drains the queue and returns the last takeover outcome the library sent back.
+     *
+     * The page is not driven with it, so what a case asserts here is the frame's own
+     * contents - that a reason travelled at all, and to whom. Turning it into an ack is the
+     * page's own three branches, and the general rail under them is pinned in
+     * framework/tests/Unit/Auth/Session/ImpersonationTwoStepTest.php: the answer frame is
+     * declared on the page, so it arrives where the deferred submit is waiting.
+     *
+     * @return ?ImpersonateDoneSignalData Last done frame, or null when none was sent
+     */
+    private function lastImpersonateDone(): ?ImpersonateDoneSignalData
+    {
+        $found = null;
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $data = $signal->data;
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_IMPERSONATE_DONE
+                && $data instanceof AgentSignalData
+                && $data->data instanceof ImpersonateDoneSignalData) {
+                $found = $data->data;
+            }
+        }
+
+        return $found;
     }
 
     /**

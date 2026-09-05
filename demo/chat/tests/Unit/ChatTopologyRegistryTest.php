@@ -82,11 +82,11 @@ use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
 use Hilos\Auth\Session\DTO\DismissSessionToastActionDTO;
-use Hilos\Auth\Session\DTO\ImpersonateStartActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Auth\Session\DTO\LogoutActionDTO;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
+use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\SessionToastExpiredActionDTO;
 use Hilos\Auth\Session\DTO\SessionToastReadingActionDTO;
@@ -314,6 +314,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::LOGS_FOLLOW_START => PageConstants::HILOS_LOGS_VIEW,
             HilosSignalConstants::LOGS_FOLLOW_STOP => PageConstants::HILOS_LOGS_VIEW,
             HilosSignalConstants::SETTING_PRESET_APPLY => PageConstants::HILOS_LOGS_SETTINGS,
+            HilosSignalConstants::HILOS_IMPERSONATE_START => HilosPageConstants::HILOS_USERS,
             HilosSignalConstants::HILOS_USER_UPDATE => PageConstants::HILOS_USER,
             ChatSignalConstants::ACCOUNT_MERGE => PageConstants::HILOS_USER,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
@@ -354,6 +355,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::LOGS_FOLLOW_START => AgentType::HILOS_LOGS,
             HilosSignalConstants::LOGS_FOLLOW_STOP => AgentType::HILOS_LOGS,
             HilosSignalConstants::SETTING_PRESET_APPLY => AgentType::HILOS_LOGS,
+            HilosSignalConstants::HILOS_IMPERSONATE_START => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_UPDATE => AgentType::HILOS_INDEX,
             ChatSignalConstants::ACCOUNT_MERGE => AgentType::HILOS_INDEX,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET => AgentType::HILOS_INDEX,
@@ -370,6 +372,7 @@ final class ChatTopologyRegistryTest extends TestCase
             SignalTypeConstants::AGENT_SIGNAL => [
                 ChatSignalConstants::MODERATION_RESULT => PageConstants::MAIN,
                 ChatSignalConstants::USER_ADMIN_RENAME_DONE => PageConstants::ADMIN_USERS,
+                HilosSignalConstants::HILOS_IMPERSONATE_DONE => HilosPageConstants::HILOS_USERS,
                 HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => PageConstants::HILOS_USER,
                 HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE
                     => HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
@@ -384,6 +387,7 @@ final class ChatTopologyRegistryTest extends TestCase
             SignalTypeConstants::AGENT_SIGNAL => [
                 ChatSignalConstants::MODERATION_RESULT => AgentType::CHAT,
                 ChatSignalConstants::USER_ADMIN_RENAME_DONE => AgentType::CHAT,
+                HilosSignalConstants::HILOS_IMPERSONATE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE => AgentType::HILOS_INDEX,
             ],
@@ -411,6 +415,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_SESSION_REBIND => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_MERGE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_SESSION_TOAST_RAISE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             ChatSignalConstants::BOT_AGENT_START => AgentType::BOT,
@@ -535,6 +540,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_SESSION_REBIND => SessionRebindSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_MERGE => AccountMergeSignalData::class,
             HilosSignalConstants::HILOS_SESSION_TOAST_RAISE => RaiseSessionToastSignalData::class,
+            HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => ImpersonateRequestSignalData::class,
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => NotificationEmitSignalData::class,
             HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
             ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,
@@ -597,7 +603,6 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::ADD_PASSWORD_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LOGOUT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => HilosAgentType::HILOS_SESSIONS_LIBRARY,
-            HilosSignalConstants::HILOS_IMPERSONATE_START => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_IMPERSONATE_STOP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_TOAST_DISMISS => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_TOAST_EXPIRED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -652,7 +657,6 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::ADD_PASSWORD_CONFIRM => ConfirmAddPasswordActionDTO::class,
             HilosSignalConstants::HILOS_LOGOUT => LogoutActionDTO::class,
             HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
-            HilosSignalConstants::HILOS_IMPERSONATE_START => ImpersonateStartActionDTO::class,
             HilosSignalConstants::HILOS_IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
             HilosSignalConstants::HILOS_TOAST_DISMISS => DismissSessionToastActionDTO::class,
             HilosSignalConstants::HILOS_TOAST_EXPIRED => SessionToastExpiredActionDTO::class,

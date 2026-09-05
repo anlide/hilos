@@ -275,7 +275,8 @@ then call that API from the table/page.
   closed by `AUTH_ACTIONS` alone. The name stays on the page, which sends the
   owner a signal and answers the client after the owner confirms
   (`docs/agents/architecture/entity-libraries.md`, section "The Lock Does Not
-  Travel With The Name").
+  Travel With The Name"). A name may be the owner's only when both halves of the
+  criterion in that file's "When A Name May Live On The Library" hold.
 - Do not make an IRREVERSIBLE decision about an RT row on a cluster without
   asking `staleSince()` first: burning a one-time token, spending a quota, or
   anything else that cannot be taken back. A frozen copy is served unchanged, so

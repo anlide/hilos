@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
-import { ScopeManager, createSignal, entityCollection } from '@hilos/core'
+import {
+  ActionLifecycle,
+  ScopeManager,
+  createSignal,
+  entityCollection,
+} from '@hilos/core'
 import type {
+  ActionLifecycleSource,
   HilosRouter,
   HilosUserProfile,
   HilosUsersContext,
@@ -52,6 +58,10 @@ function seededContext(users: UserSeed[]): HilosUsersContext {
   scopes.openPage('hilos_users')
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
   const connection = {
+    // The takeover dispatches over the lifecycle; this fake only has to accept it.
+    sendAction(): boolean {
+      return true
+    },
     sendTableViewport(page: string, tableKey: string): boolean {
       const data = {
         page,
@@ -104,6 +114,7 @@ function seededContext(users: UserSeed[]): HilosUsersContext {
   return {
     scopes,
     connection: connection as unknown as HilosUsersContext['connection'],
+    actions: new ActionLifecycle(connection as ActionLifecycleSource),
     users: collection,
   }
 }

@@ -24,7 +24,9 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageReach;
+use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
@@ -46,6 +48,19 @@ final class AdminUsersPage extends AbstractPage
     public const array READS_DB = [ChatDbContext::users, ChatDbContext::events];
 
     public const string PAGE = PageConstants::ADMIN_USERS;
+
+    /**
+     * The page is an admin surface, and says so at the level rather than only at the door
+     * it subscribes through (HIL-824).
+     *
+     * The browser guard below reads the admin flag and closes the SUBSCRIPTION, which is
+     * everything a project page needed while its actions were nothing anyone could ask for
+     * out of turn. Action routing needs no subscription - the client sends the name and
+     * {@see PageSignalRouter::resolveActionHost()} reads a static map - so a project page
+     * left at the inherited PUBLIC has its actions closed by nothing at all. The rename this
+     * page owns was in exactly that state until the level was written here.
+     */
+    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::ADMIN;
 
     public const PageReach REACH = PageReach::ROUTE;
 

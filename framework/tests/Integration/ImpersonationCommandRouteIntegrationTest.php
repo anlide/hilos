@@ -5,13 +5,15 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
-use Hilos\Auth\Session\DTO\ImpersonateStartActionDTO;
+use Hilos\Auth\Session\DTO\ImpersonateDoneSignalData;
+use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
@@ -26,6 +28,7 @@ use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Tests\Unit\Auth\Session\ImpersonationTwoStepTest;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AdminCommandConstants;
 
@@ -50,6 +53,14 @@ use Hilos\Users\AdminCommandConstants;
  * The browser half is the same core through another door, so it is driven here too - one case
  * each way, enough to pin that the door leads to the same place and answers with no reply of
  * its own.
+ *
+ * The two browser doors stopped being symmetrical in HIL-824. The STOP is still an action of
+ * this library, so its case dispatches one. The START is not: its name moved to the Hilos
+ * users page, because only an administrator may take a person over and an ADMIN level is a
+ * thing only a page carries, so what arrives here is the page's write frame
+ * ({@see HilosSignalConstants::HILOS_IMPERSONATE_REQUEST}) and what leaves is the answer the
+ * page acks from ({@see HilosSignalConstants::HILOS_IMPERSONATE_DONE}). The core between them
+ * is the same one the command socket reaches, which is the whole point of driving both here.
  */
 final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegrationTestCase
 {
@@ -124,11 +135,17 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
         self::assertContains(CliCommands::IMPERSONATE_STOP, AbstractSessionsLibraryAgent::AGENT_COMMANDS);
     }
 
-    public function testBothBrowserNamesDeclareTheActionOnTheLibrary(): void
+    /**
+     * The two browser doors are declared differently since HIL-824, and each declaration is
+     * what routes it: the stop is an action of this library, the start's write is a frame
+     * addressed to it. Which class the start's NAME sits on is pinned next door, in
+     * {@see ImpersonationTwoStepTest}; what matters here is that both doors still arrive.
+     */
+    public function testBothBrowserDoorsAreDeclaredOnTheLibrary(): void
     {
         self::assertSame(
-            ImpersonateStartActionDTO::class,
-            AbstractSessionsLibraryAgent::AGENT_ACTIONS[HilosSignalConstants::HILOS_IMPERSONATE_START] ?? null,
+            ImpersonateRequestSignalData::class,
+            AbstractSessionsLibraryAgent::AGENT_SIGNALS[HilosSignalConstants::HILOS_IMPERSONATE_REQUEST] ?? null,
         );
         self::assertSame(
             ImpersonateStopActionDTO::class,
@@ -292,27 +309,77 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
     }
 
     /**
-     * The browser door reaches the same core and answers with no reply of its own: what a tab
-     * gets back is the identity the state frame carries, not a command reply.
+     * The page's write frame reaches the same core, and the operator's socket hears nothing.
+     *
+     * The frame carries the accept key rather than a token, exactly as the action did: who is
+     * asking is read off the connection that submitted, and the payload only ever names whom
+     * to become. What the tab gets back is the identity the state frame carries; the answer
+     * frame this run also queues is for the PAGE, and is asserted in the case below.
      *
      * @throws DatabaseException When the seed or the read-back fails
-     * @throws HilosException When the action fails
+     * @throws HilosException When the frame fails
      */
-    public function testTheBrowserStartActionWritesTheSameTakeoverAndRepliesToNobody(): void
+    public function testTheBrowserStartFrameWritesTheSameTakeoverAndRepliesToNobody(): void
     {
         self::seedSession(self::TOKEN, self::ADMIN_USER_ID);
         $this->mountLiveConnection();
         $agent = new ImpersonationRouteTestAgent();
 
-        $agent->onAgentAction(
-            self::ACCEPT_KEY,
-            HilosSignalConstants::HILOS_IMPERSONATE_START,
-            new ImpersonateStartActionDTO(self::TARGET_USER_ID),
-        );
+        $this->sendStartFrame($agent);
 
         self::assertSame([self::ADMIN_USER_ID, self::TARGET_USER_ID], $agent->asked);
         self::assertSame([self::TARGET_USER_ID, self::ADMIN_USER_ID], self::soleSessionIds());
         self::assertSame([], $this->drainReplies(), 'A browser is answered by its identity, not by a command reply');
+    }
+
+    /**
+     * A refused takeover comes back to the page as text, not as a throw.
+     *
+     * The guards run outside a page now, where the dispatcher's exception hook does not reach,
+     * so a throw would leave the admin's deferred submit waiting for its own timeout. The
+     * refusal chosen is the project's seam, because it is the one this file already owns a
+     * fixture for - and it proves the sentence survives the whole way back.
+     *
+     * @throws DatabaseException When the seed or the read-back fails
+     * @throws HilosException When the frame fails
+     */
+    public function testARefusedTakeoverAnswersThePageWithItsReason(): void
+    {
+        self::seedSession(self::TOKEN, self::ADMIN_USER_ID);
+        $this->mountLiveConnection();
+        $agent = new ImpersonationRouteTestAgent();
+        $agent->refuseWith = new ValidationException('This project says no');
+
+        $this->sendStartFrame($agent);
+
+        self::assertSame([self::ADMIN_USER_ID, null], self::soleSessionIds());
+        $done = $this->lastDoneFrame();
+        self::assertNotNull($done);
+        self::assertSame(self::ACCEPT_KEY, $done->acceptKey);
+        self::assertSame('This project says no', $done->error);
+    }
+
+    /**
+     * An accepted takeover answers the same frame with no reason on it.
+     *
+     * The page reads the null as its cue to send the success ack, so the absence is as much a
+     * contract as the sentence next to it.
+     *
+     * @throws DatabaseException When the seed or the read-back fails
+     * @throws HilosException When the frame fails
+     */
+    public function testAnAcceptedTakeoverAnswersThePageWithNoReason(): void
+    {
+        self::seedSession(self::TOKEN, self::ADMIN_USER_ID);
+        $this->mountLiveConnection();
+        $agent = new ImpersonationRouteTestAgent();
+
+        $this->sendStartFrame($agent);
+
+        $done = $this->lastDoneFrame();
+        self::assertNotNull($done);
+        self::assertSame(self::ACCEPT_KEY, $done->acceptKey);
+        self::assertNull($done->error);
     }
 
     /**
@@ -376,6 +443,48 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
             '',
             '',
         );
+    }
+
+    /**
+     * Drives one takeover write frame the way the Hilos users page sends it (HIL-824).
+     *
+     * The page is not built here: what this file owns is the library side, and the frame is
+     * the whole of what crosses between them. The request id is null because the case answers
+     * the question the page asks with a tracked submit and an untracked one alike - the
+     * library copies whatever it was given straight back.
+     *
+     * @param AbstractAgent $agent Agent under test
+     * @throws HilosException When the frame handler fails
+     */
+    private function sendStartFrame(AbstractAgent $agent): void
+    {
+        $agent->onSignalAgent(
+            new AgentSignalData(
+                data: new ImpersonateRequestSignalData(self::TARGET_USER_ID, self::ACCEPT_KEY),
+            ),
+            '',
+            HilosSignalConstants::HILOS_IMPERSONATE_REQUEST,
+        );
+    }
+
+    /**
+     * Drains the queue and returns the last takeover answer the library addressed to a page.
+     *
+     * @return ?ImpersonateDoneSignalData Last answer frame, or null when none was sent
+     */
+    private function lastDoneFrame(): ?ImpersonateDoneSignalData
+    {
+        $found = null;
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $data = $signal->data;
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_IMPERSONATE_DONE
+                && $data instanceof AgentSignalData
+                && $data->data instanceof ImpersonateDoneSignalData) {
+                $found = $data->data;
+            }
+        }
+
+        return $found;
     }
 
     /**

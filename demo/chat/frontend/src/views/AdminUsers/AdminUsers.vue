@@ -15,15 +15,13 @@ import {
   HilosModal,
   HilosViewportTable,
   LoadingButton,
-  useSignal,
   useTrackedAction,
 } from '@hilos/vue'
 import { type HilosTableColumn, type HilosUserRow } from '@hilos/core'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import { PAGE_ADMIN_USERS } from '../../pages/keys'
-import { currentUserId } from '../../bootstrap/session'
-import { sendAdminUserUpdate, sendImpersonateStart } from './adminUsersActions'
+import { sendAdminUserUpdate } from './adminUsersActions'
 import {
   adminUsersTable,
   disposeAdminUsersTable,
@@ -103,44 +101,6 @@ async function submitEdit(): Promise<void> {
     closeEdit()
   }
 }
-
-// Impersonate dialog: a light confirm before an admin assumes a user's identity.
-// The row's Impersonate button shows on every row except your own — the current
-// user id comes from the session scope, so no admin field is needed on the row.
-const currentUid = useSignal(currentUserId)
-const impersonateOpen = ref(false)
-const impersonateRow = ref<HilosUserRow | null>(null)
-const impersonateAction = useTrackedAction()
-const {
-  loading: impersonateLoading,
-  busy: impersonateBusy,
-  run: runImpersonateAction,
-  clearError: clearImpersonateError,
-} = impersonateAction
-
-function openImpersonate(row: HilosUserRow): void {
-  clearImpersonateError()
-  impersonateRow.value = row
-  impersonateOpen.value = true
-}
-
-function closeImpersonate(): void {
-  impersonateOpen.value = false
-}
-
-// Authoritative-backend: dispatch the tracked start; the visible effect (the
-// shell banner, and this admin session becoming the non-admin target — which
-// drops this admin-only table) is server-driven through the handshake broadcast,
-// so on success just close the confirm; a failure stays open with the reason.
-async function submitImpersonate(): Promise<void> {
-  const row = impersonateRow.value
-  if (!row || impersonateBusy.value) {
-    return
-  }
-  if (await runImpersonateAction(sendImpersonateStart(row.id))) {
-    closeImpersonate()
-  }
-}
 </script>
 
 <template>
@@ -180,17 +140,6 @@ async function submitImpersonate(): Promise<void> {
               @click="openEdit(row)"
             >
               <i class="bi bi-pencil" aria-hidden="true"></i>
-            </button>
-            <button
-              v-if="row.id !== currentUid"
-              type="button"
-              class="btn btn-sm btn-outline-secondary ms-2"
-              title="Impersonate"
-              aria-label="Impersonate"
-              :data-id="`admin-users-impersonate-${row.id}`"
-              @click="openImpersonate(row)"
-            >
-              <i class="bi bi-person-badge" aria-hidden="true"></i>
             </button>
           </td>
         </template>
@@ -241,41 +190,6 @@ async function submitImpersonate(): Promise<void> {
             @click="submitEdit"
           >
             Save
-          </LoadingButton>
-        </template>
-      </HilosModal>
-
-      <HilosModal
-        v-model="impersonateOpen"
-        :title="
-          impersonateRow
-            ? `Impersonate · ${impersonateRow.name}`
-            : 'Impersonate user'
-        "
-        @cancel="closeImpersonate"
-      >
-        <HilosActionError :action="impersonateAction" />
-        <p v-if="impersonateRow" class="mb-0">
-          Become <strong>{{ impersonateRow.name }}</strong> and see the app as
-          they do? You can stop from the banner at any time.
-        </p>
-        <template #actions="{ requestClose }">
-          <button
-            type="button"
-            class="btn btn-secondary"
-            :disabled="impersonateBusy"
-            @click="requestClose"
-          >
-            Cancel
-          </button>
-          <LoadingButton
-            class="btn-primary"
-            :loading="impersonateLoading"
-            :disabled="impersonateBusy"
-            data-id="admin-users-impersonate-confirm"
-            @click="submitImpersonate"
-          >
-            Impersonate
           </LoadingButton>
         </template>
       </HilosModal>

@@ -14,6 +14,8 @@ use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
+use Hilos\Auth\Session\DTO\ImpersonateDoneSignalData;
+use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
@@ -48,6 +50,7 @@ use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
+use Hilos\Pages\Users\AbstractHilosUsersPage;
 use Hilos\Push\Delivery\PushDeliveryChannel;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Sms\DTO\SmsSendSignalData;
@@ -572,17 +575,20 @@ final class HilosSignalConstants
     public const string HILOS_LOGOUT = 'hilos_logout';
 
     /**
-     * Client → sessions library (page-independent): make this admin session act as another
-     * user (HIL-729).
+     * Client → Hilos users page: make this admin session act as another user (HIL-729,
+     * moved onto the page by HIL-824).
      *
-     * Page-independent although its only control today sits on an admin table: what it
-     * writes is a session, and the session is the library's. Naming it on a page would tie
-     * the takeover to the page that happens to offer it, and the very next frame moves the
-     * person off that page - the effective user becomes the non-admin target, so an admin
-     * page is no longer theirs to be on.
+     * The name lives on {@see AbstractHilosUsersPage} because of what closes it: only an
+     * administrator may take a person over, and an ADMIN level is a thing only a page
+     * carries. It stood on the sessions library until HIL-824 on the strength of what it
+     * writes - a session - and that is the writer's claim, not the gatekeeper's; the library
+     * asked the project through a seam because it had no level to stand on. The wire name is
+     * unchanged, so the browser sends the same string it always did.
      *
-     * Whether this session MAY is the project's answer, not the name's: the flag that says
-     * "administrator" is a project field, and the library asks for it through a seam.
+     * What it writes is still the library's, so the page forwards
+     * {@see self::HILOS_IMPERSONATE_REQUEST} and answers the admin on
+     * {@see self::HILOS_IMPERSONATE_DONE}. The seam stays as well, for the entrance that has
+     * no page at all - an operator on the command line.
      */
     public const string HILOS_IMPERSONATE_START = 'hilos_impersonate_start';
 
@@ -597,6 +603,33 @@ final class HilosSignalConstants
      * session's own marker.
      */
     public const string HILOS_IMPERSONATE_STOP = 'hilos_impersonate_stop';
+
+    /**
+     * Hilos users page → sessions library: rebind this session onto that person (HIL-824).
+     *
+     * The write half of {@see self::HILOS_IMPERSONATE_START}, split off from it for the
+     * reason the neighbouring pairs were split: WHO may ask is the page's ADMIN level, which
+     * an agent action carries no equivalent of, and the session being rebound is the
+     * library's. So the gatekeeper checks who is asking and the owner does the writing.
+     *
+     * Nothing is judged on the way out, not even that the admin session still exists: the
+     * page would be reading in one worker what another is free to change before it writes.
+     * Carried by {@see ImpersonateRequestSignalData}, which brings the waiting admin along.
+     */
+    public const string HILOS_IMPERSONATE_REQUEST = 'hilos_impersonate_request';
+
+    /**
+     * Sessions library → Hilos users page: the takeover happened, or it is refused
+     * (HIL-824).
+     *
+     * The way back for {@see self::HILOS_IMPERSONATE_REQUEST} and only for it. The page
+     * deferred its own ack when it handed the work over, so this frame is what finally
+     * answers the admin - the takeover, or the sentence saying why the session was not
+     * rebound. The refusal has to travel as text: after the move the guards run outside a
+     * page, and the dispatcher's exception hook does not reach there. Carried by
+     * {@see ImpersonateDoneSignalData}.
+     */
+    public const string HILOS_IMPERSONATE_DONE = 'hilos_impersonate_done';
 
     // ── Hilos sign-in surface: WebAuthn ceremonies (client → server) ──
     /**

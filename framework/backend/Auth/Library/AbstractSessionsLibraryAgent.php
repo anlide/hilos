@@ -24,7 +24,8 @@ use Hilos\Auth\Registration\RegistrationReservationSweeper;
 use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
 use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
 use Hilos\Auth\Session\DTO\DismissSessionToastActionDTO;
-use Hilos\Auth\Session\DTO\ImpersonateStartActionDTO;
+use Hilos\Auth\Session\DTO\ImpersonateDoneSignalData;
+use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Auth\Session\DTO\LogoutActionDTO;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
@@ -80,6 +81,7 @@ use Hilos\Database\View\Item\Session;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Pages\Users\AbstractHilosUsersPage;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -144,7 +146,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /**
      * The frames this library is addressed by: seven from the users library, two from the
-     * project holding the sockets, and one from anybody with something to say to a browser.
+     * project holding the sockets, one from anybody with something to say to a browser, and
+     * one from a page of the framework's own.
      *
      * Routing takes the destination from whoever declares a name here, so this list IS the
      * move: the frames the users library has always sent to "the holder" now arrive at an
@@ -156,6 +159,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * The tenth has no fixed sender at all (HIL-768): a toast addressed to a session may be
      * raised by any agent that finished something a person is waiting on, and it arrives here
      * because the stack it lands on is the session's.
+     *
+     * The eleventh is sent by {@see AbstractHilosUsersPage} (HIL-824), which holds the
+     * impersonation action because an ADMIN level is a thing only a page carries, and forwards
+     * the write here. {@see HilosSignalConstants::HILOS_IMPERSONATE_DONE} is absent for the
+     * same reason the two above are: it is the frame this library sends BACK, and the page
+     * declares it.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
@@ -168,21 +177,27 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_SESSION_REBIND => SessionRebindSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_MERGE => AccountMergeSignalData::class,
         HilosSignalConstants::HILOS_SESSION_TOAST_RAISE => RaiseSessionToastSignalData::class,
+        HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => ImpersonateRequestSignalData::class,
     ];
 
     /**
      * The page-independent controls a browser has over its own session, by wire name.
      *
      * Every one of them resolves its session from the ACTING connection, so a client can
-     * only ever end, dismiss or vacate its own; the one payload that names somebody says whom
-     * to become and still cannot say who is asking. They are the library's rather than a
-     * project's because what they write is a session (HIL-710, HIL-729).
+     * only ever end, dismiss or vacate its own. They are the library's rather than a project's
+     * because what they write is a session (HIL-710, HIL-729), and a name may sit here at all
+     * only when both halves hold: the right is no stronger than "you have a session", and no
+     * page could own the control.
      *
-     * The impersonation pair judges a project field on the way in - the flag that says
-     * "administrator" - and that used to be the reason it stayed in the project. It is not a
-     * reason to own the action, only to ask: the question goes back over
-     * {@see self::assertImpersonationAllowed()} while the write stays here, which is the
-     * same split the grant pair above already runs on.
+     * {@see HilosSignalConstants::HILOS_IMPERSONATE_STOP} is the one that has to argue the
+     * second half, and argues it plainly - while a takeover is on, the effective user is the
+     * non-admin target, so no admin page is guaranteed to be under the control. Its start
+     * left in HIL-824 for failing the FIRST half: only an administrator may take a person
+     * over, which is more than "you have a session". It now stands on
+     * {@see AbstractHilosUsersPage} and the write comes back here on
+     * {@see HilosSignalConstants::HILOS_IMPERSONATE_REQUEST}. The seam
+     * {@see self::assertImpersonationAllowed()} stays either way: the command line is a second
+     * entrance with no page at all, and there the seam is the only judge.
      *
      * The last three are the tabs of one session answering about the toasts the server raised
      * for it (HIL-768): closed, counted down, being read. They sit here for the plainest
@@ -192,7 +207,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     public const array AGENT_ACTIONS = [
         HilosSignalConstants::HILOS_LOGOUT => LogoutActionDTO::class,
         HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
-        HilosSignalConstants::HILOS_IMPERSONATE_START => ImpersonateStartActionDTO::class,
         HilosSignalConstants::HILOS_IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
         HilosSignalConstants::HILOS_TOAST_DISMISS => DismissSessionToastActionDTO::class,
         HilosSignalConstants::HILOS_TOAST_EXPIRED => SessionToastExpiredActionDTO::class,
@@ -1977,8 +1991,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /**
      * Routes one frame addressed to this library - seven from the users library, two back
-     * over the project seam (HIL-622, HIL-710, HIL-729), and one from whoever has something to
-     * say to a browser (HIL-768).
+     * over the project seam (HIL-622, HIL-710, HIL-729), one from whoever has something to
+     * say to a browser (HIL-768), and one from the framework's own Hilos users page, which
+     * holds the takeover's name and forwards its write here (HIL-824).
      *
      * The switch is the framework's rather than a project's because what each frame means
      * is: the users library ends a ceremony by saying what happened, and the order this
@@ -2100,6 +2115,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 }
 
                 $this->handleAccountMergeRequest($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_IMPERSONATE_REQUEST:
+                if (!$data->data instanceof ImpersonateRequestSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        ImpersonateRequestSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->handleImpersonateRequest($data->data);
 
                 return;
 
@@ -2343,25 +2371,27 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * Every one of them takes its session from the ACTING connection, read off the project's
      * own connection rows - which this library may read but never write. A connection carrying
-     * no session is refused for all seven, because there is nothing to end, dismiss, vacate or
+     * no session is refused for all six, because there is nothing to end, dismiss, vacate or
      * answer about, and returning was read by the browser as having done it (HIL-730). Signing
      * out is not the exception it looks like: the token is gone from the runtime but the cookie
      * is still in the browser, so "you are signed out" would be undone by the next reload.
      *
-     * One sentence covers all seven, because the reason is not about the action: the connection
+     * One sentence covers all six, because the reason is not about the action: the connection
      * does not carry a session.
      *
-     * None of them answers here. The first four end in a session state, which the project
+     * None of them answers here. The first three end in a session state, which the project
      * puts on the wire, so the answer is carried in that frame and leaves behind the
-     * identity it announces (HIL-622). The impersonation pair is the same shape - a takeover
-     * a browser asked for is answered by the identity it gets back, not by an ack - so the
-     * correlation id it hands the core is null; only an operator on the command socket has
-     * one (HIL-729). The three toast controls end in a toast frame instead (HIL-768), and it
-     * goes to the whole SESSION rather than to the tab that spoke: the tabs agreeing is the
-     * answer, and a tab that only heard about its own click would be the disagreement again.
+     * identity it announces (HIL-622); ending a takeover is the third of them, and it is the
+     * same shape - what the browser asked for is answered by the identity it gets back, not
+     * by an ack - so the correlation id it hands the core is null, and only an operator on
+     * the command socket has one (HIL-729). The three toast controls end in a toast frame
+     * instead (HIL-768), and it goes to the whole SESSION rather than to the tab that spoke:
+     * the tabs agreeing is the answer, and a tab that only heard about its own click would be
+     * the disagreement again.
      *
-     * A refused takeover is the exception, and it needs no frame of its own: a guard throws,
-     * and the dispatcher turns that into the action-fail ack the caller is already awaiting.
+     * STARTING a takeover is no longer among them (HIL-824): it is closed by more than "you
+     * have a session", so the name stands on {@see AbstractHilosUsersPage} and only the write
+     * arrives here, on {@see HilosSignalConstants::HILOS_IMPERSONATE_REQUEST}.
      *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param string $action Owned action name from {@see AGENT_ACTIONS}
@@ -2370,7 +2400,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @throws SessionNotOnConnectionException When the acting connection carries no session
      * @throws AgentUnknownActionException When the action is not one this library owns
      * @throws InvalidActionPayloadException When the payload does not match the action name
-     * @throws ValidationException When an impersonation guard rejects the request
+     * @throws ValidationException When the session asked to leave a takeover is in none
      * @throws InvalidArgumentException When the state frame cannot be named
      * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
      * @throws HilosException When ending the session exposes database or runtime failure
@@ -2396,14 +2426,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     throw new InvalidActionPayloadException($action, DismissSessionAckActionDTO::class, $dto);
                 }
                 $this->clearSessionAck($sessionToken, $this->currentActionRequestId(), $action);
-
-                return null;
-
-            case HilosSignalConstants::HILOS_IMPERSONATE_START:
-                if (!$dto instanceof ImpersonateStartActionDTO) {
-                    throw new InvalidActionPayloadException($action, ImpersonateStartActionDTO::class, $dto);
-                }
-                $this->startImpersonation($sessionToken, $dto->targetUserId, $acceptKey, null);
 
                 return null;
 
@@ -2543,6 +2565,62 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         } catch (Throwable $e) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
         }
+    }
+
+    /**
+     * Runs one takeover for the admin page that forwarded it, and answers that page (HIL-824).
+     *
+     * The write half of the browser entrance. The page carries the ADMIN level and has already
+     * spent it, so what is left here is the work and the guards only the owner of a session can
+     * run. Who is ASKING is still read off the connection that submitted, exactly as it was
+     * while the action stood on this library: the payload names whom to become and never who
+     * wants it.
+     *
+     * A refusal comes back as text on the answering frame rather than as a throw. Outside a
+     * page there is no dispatcher hook to turn a throw into an ack, so a throw here would leave
+     * the admin's deferred submit waiting for its own timeout with nothing to show. Everything
+     * is caught for that reason, the project's unwired seam among it - the one failure that is
+     * not a guard refusing and would otherwise be the silent case.
+     *
+     * A success says nothing beyond the frame: what the person sees is the rebound session's
+     * own state, published from where it was written.
+     *
+     * @param ImpersonateRequestSignalData $request Whom to become, and the admin waiting on the answer
+     * @throws InvalidArgumentException When the answering frame cannot be named
+     */
+    private function handleImpersonateRequest(ImpersonateRequestSignalData $request): void
+    {
+        $sessionToken = Hilos::$rt?->sessionConnectionsSource()?->get($request->acceptKey)?->sessionToken;
+        if ($sessionToken === null || $sessionToken === '') {
+            $this->answerImpersonate($request, self::SESSION_NOT_ON_CONNECTION_MESSAGE);
+
+            return;
+        }
+
+        try {
+            $this->startImpersonation($sessionToken, $request->targetUserId, $request->acceptKey, null);
+        } catch (Throwable $e) {
+            $this->answerImpersonate($request, $e->getMessage());
+
+            return;
+        }
+
+        $this->answerImpersonate($request, null);
+    }
+
+    /**
+     * Sends one takeover outcome back over the seam it arrived on.
+     *
+     * @param ImpersonateRequestSignalData $request The request being answered, for whom to answer
+     * @param ?string $error Why the takeover was refused, or null when it happened
+     * @throws InvalidArgumentException When the frame cannot be named
+     */
+    private function answerImpersonate(ImpersonateRequestSignalData $request, ?string $error): void
+    {
+        $this->sendToAgent(
+            HilosSignalConstants::HILOS_IMPERSONATE_DONE,
+            new ImpersonateDoneSignalData($request->acceptKey, $request->requestId, $error),
+        );
     }
 
     /**
