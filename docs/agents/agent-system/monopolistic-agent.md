@@ -22,20 +22,11 @@ class MyMonopolisticWorkerManager extends WorkerManager {
 
 ## Truth source pattern
 
-Monopolistic agents typically register as **truth source** — the authoritative writer for a DB or RT collection:
-
-```php
-public function onStart(): void {
-    TruthSourceRegistry::register(ChatDbContext::events, true, $this->getId());
-    RtTruthSourceRegistry::register(ChatRtContext::connections, true, $this->getId());
-}
-
-public function onStop(): void {
-    // Cleanup owned state here. WorkerManager unregisters truth sources after this hook.
-}
-```
-
-Only the truth source should **write** to its collections. Other agents read.
+A monopolistic agent is usually the **owner** of a DB or RT collection — the one
+writer whose copy the collection is, with every other agent reading it or asking
+the owner for a change by signal. A collection has exactly one full owner. How
+ownership is declared, and why a claim is also the owner's reader interest, is
+[truth-source.md](../architecture/truth-source.md).
 
 ## Regular agent
 

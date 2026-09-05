@@ -224,8 +224,9 @@ Before writing runtime-backed code:
    helpers from inside `Database/` or `Runtime/` only.
 6. Inspect collection actions for create/register/clear operations.
 7. Inspect item actions for updates on one loaded runtime item.
-8. Find the truth source registration in the owning agent's `onStart()` and
-   `onStop()`.
+8. Find the owner of the collection — the one agent whose claim covers it
+   ([truth-source.md](../architecture/truth-source.md)) — and read what that
+   claim allows.
 9. Only then add the smallest missing method to the owning layer. In transparent
    data-shape refactors, prefer explicit field access unless a new method was
    explicitly approved.

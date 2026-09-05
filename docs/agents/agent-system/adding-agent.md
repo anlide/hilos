@@ -149,6 +149,6 @@ class MyPage extends AbstractPage {
 - [ ] Registered in `Hilos::AGENTS` with `WORKER`, `DAEMON`, `INDEXED` when needed, and `SCOPE` / `PLACEMENT` when the agent is not a leader-hosted cluster singleton
 - [ ] Direct agent-to-agent signals declared in `AGENT_SIGNALS`; indexed multi-instance signals use `AgentSignalConfigKey::INDEX_FIELD` instead of `SignalRouter::getDestinations()`
 - [ ] Static source/type routes declared in `SignalRouter` when needed (not covered by topology)
-- [ ] `onStop()` cleans owned state; `WorkerManager` unregisters truth sources after the hook
-- [ ] `defaultTruthSourceOperations()` overridden when this kind of agent may not do all of add / update / remove to the rows it claims
+- [ ] Every collection the agent writes is one it owns, declared as [truth-source.md](../architecture/truth-source.md) says; `onStop()` cleans owned state, and the claims end with the agent — `WorkerManager` takes them back after the hook
+- [ ] `defaultTruthSourceOperations()` overridden when this kind of agent may not do all of add / update / remove to the rows it owns
 - [ ] `onTick()` completes in < 0.1s

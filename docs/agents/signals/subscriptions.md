@@ -136,7 +136,10 @@ route). A page nobody subscribes to is never the subject of a take-up, so a list
 writes there sits unread and its reads are refused at the moment the person presses the
 button. Those reads belong in `DbContext::processWideReadCollections()` instead, which
 holds interest for the life of the process — the framework's own entries are in
-`HilosDbContext`, and a project overrides the method and calls the parent.
+`HilosDbContext`, and a project overrides the method and calls the parent. The
+mechanism of interest itself — who owns a collection, who reads it, and why a claim
+of ownership is a reader interest too — is
+[truth-source.md](../architecture/truth-source.md).
 
 Nothing reads the declaration at runtime. It is judged by the `PAGE-REACH` guard, which
 reports a page nothing in its chain answers for, an `ACTION_HOST` that still fills

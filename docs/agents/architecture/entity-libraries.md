@@ -162,10 +162,10 @@ everybody else asks it or queries the database.
 
 ## Declaring The Set Complete, And Refusing When It Is Not
 
-A holder declares completeness in `onStart()`: it registers itself as the truth
-source of its collection (`AbstractAgent::registerDbTruthSource()`) and calls
-`Objects::preloadAll()` (`framework/backend/Database/Object/Objects.php`). Every
-other process stays lazy. `Objects::isAllLoaded()` is the bit that records the
+A holder declares completeness in `onStart()` by calling `Objects::preloadAll()`
+(`framework/backend/Database/Object/Objects.php`); it is the owner of the
+collection it preloads, in the form [truth-source.md](truth-source.md) gives.
+Every other process stays lazy. `Objects::isAllLoaded()` is the bit that records the
 declaration.
 
 **Iterating a collection that has not declared completeness refuses** (HIL-781).
@@ -222,14 +222,15 @@ the table for the rows of a foreign key instead of walking for them —
 ## Writing Without The Owner
 
 The set and the row have different owners, and the existing truth-source registry
-already expresses both. A registration answers two questions, not one: which rows
-are yours, and what you may do with them.
+already expresses both. A claim answers two questions, not one: which rows are
+yours, and what you may do with them ([truth-source.md](truth-source.md), *The
+Operation Axis*).
 
-| Owner | Right | Call |
+| Owner | Right | In the claim |
 |---|---|---|
-| library | create rows in the collection | `TruthSourceRegistry::registerCreate($collection, $agentId)` |
-| instance owner | write its own row's keys | `TruthSourceRegistry::register($collection, $keys, $agentId)` |
-| either | only some of add / update / remove | the fourth argument of `register()`, a list of `TruthSourceOperation` |
+| library | create rows in the collection | a claim of zero width — no rows — with the single operation `TruthSourceOperation::Add` |
+| instance owner | write its own row's keys | a claim naming those keys |
+| either | only some of add / update / remove | the claim's list of `TruthSourceOperation` |
 
 Creating is not a mechanism of its own (HIL-688): `registerCreate()` is a
 registration that covers no row and allows `TruthSourceOperation::Add`, and the
@@ -246,12 +247,13 @@ instead (HIL-685 is the first pair: `hilos_auth_registration_wait_moved` and
 `hilos_auth_recovery_wait_moved`). Checking this by machine is HIL-696; today it is
 read off the two `register()` calls with the eye.
 
-`AbstractAgent::registerDbTruthSource()` is the helper for the write half only;
-there is no create-side helper on the agent today, and adding one is the
-implementing leaf's business, not a decision this approach makes. What the helper
-does carry is the operation set: it takes it from
-`AbstractAgent::defaultTruthSourceOperations()`, which
-`AbstractUsersLibraryAgent` overrides with adding and removing. **A library never
+The claim an agent makes for itself answers the second row of the table above
+and not the first: it names the rows the agent owns, and there is no create-side
+seam on the agent today — adding one is the implementing leaf's business, not a
+decision this approach makes. What the claim does carry is the operation set: it
+takes it from `AbstractAgent::defaultTruthSourceOperations()`, which
+`AbstractUsersLibraryAgent` overrides with adding and removing
+([truth-source.md](truth-source.md)). **A library never
 edits a row it already wrote** (owner's decision, 2026-08-24) - the standard
 behaviour of a library rather than a switch each project throws, and the whole of
 the rule is that one override.
