@@ -65,7 +65,7 @@ final class LogRotator
      */
     public static function forStartup(): self
     {
-        return new self(dirname(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]));
+        return new self(dirname(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]->string()));
     }
 
     /**
@@ -76,11 +76,11 @@ final class LogRotator
      */
     public static function forRuntime(): self
     {
-        $daemonLogFile = Hilos::$env[EnvConstants::DAEMON_LOG_FILE];
+        $daemonLogFile = Hilos::$env[EnvConstants::DAEMON_LOG_FILE]->string();
 
         return new self(dirname($daemonLogFile), [
             basename(DaemonRawStream::pathFor($daemonLogFile)),
-            basename(DaemonRawStream::pathFor(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE])),
+            basename(DaemonRawStream::pathFor(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]->string())),
         ]);
     }
 

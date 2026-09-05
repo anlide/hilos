@@ -644,7 +644,7 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink
     private function readTimeout(EnvConstants $name, int $fallbackSeconds): int
     {
         try {
-            return Hilos::$env->int($name);
+            return Hilos::$env[$name]->int();
         } catch (EnvException $e) {
             Logger::logAgentError(
                 self::LOG_AGENT_ID,

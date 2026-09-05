@@ -397,7 +397,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $secWebSocketAccept = base64_encode(sha1($key . WebSocketConstants::RFC6455_ACCEPT_MAGIC, true));
 
         $cookies = $this->parseCookies($headers);
-        $sessionCookieName = Hilos::$env->string(EnvConstants::HILOS_SESSION_COOKIE_NAME);
+        $sessionCookieName = Hilos::$env[EnvConstants::HILOS_SESSION_COOKIE_NAME]->string();
 
         // A browser that just logged in comes back carrying the ticket its rotation was
         // announced with; anyone else carries nothing here and is served exactly as before.
@@ -660,7 +660,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     {
         $cookie = $name . '=' . $token
             . '; Path=/; HttpOnly; SameSite=Strict'
-            . '; Max-Age=' . Hilos::$env->int(EnvConstants::HILOS_SESSION_COOKIE_MAX_AGE);
+            . '; Max-Age=' . Hilos::$env[EnvConstants::HILOS_SESSION_COOKIE_MAX_AGE]->int();
         if (self::cookiesAreSecured()) {
             $cookie .= '; Secure';
         }
@@ -711,7 +711,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     private static function cookiesAreSecured(): bool
     {
-        return AppEnv::fromString(Hilos::$env->string(EnvConstants::APP_ENV))?->isProductionLike() === true;
+        return AppEnv::fromString(Hilos::$env[EnvConstants::APP_ENV]->string())?->isProductionLike() === true;
     }
 
     /**
@@ -749,7 +749,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $operation = $modeHolds ? Hilos::$rt?->hilosProtectedModeRuntime?->operation : null;
         $copy = $modeHolds ? ProtectedModeStubCopy::forOperation($operation) : null;
         $welcome = new HandshakeWelcomeSignalData(
-            build: Hilos::$env->string(EnvConstants::HILOS_BUILD_TIMESTAMP),
+            build: Hilos::$env[EnvConstants::HILOS_BUILD_TIMESTAMP]->string(),
             sessionCookieName: $sessionCookieName,
             protectedModeActive: $locksOut,
             protectedModeOperation: $operation,

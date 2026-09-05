@@ -81,7 +81,7 @@ final class LogCarrierAgent extends AbstractAgent
     public function onStart(): void
     {
         try {
-            $this->carrier = new LogBatchCarrier(dirname(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]));
+            $this->carrier = new LogBatchCarrier(dirname(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]->string()));
         } catch (EnvException) {
             $this->carrier = null;
         }

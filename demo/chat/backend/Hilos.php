@@ -190,7 +190,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * Hilos - Main app facade for data access.
  *
  * Usage:
- * - Hilos::$env[EnvConstants::HTTP_STATUS_HOST]
+ * - Hilos::$env[EnvConstants::HTTP_STATUS_HOST]->string()
  * - Hilos::$db->users
  * - Hilos::$setting[ChatSettingsConstants::CHAT_BOT_MODEL]->string()
  * - Hilos::$rt->connections

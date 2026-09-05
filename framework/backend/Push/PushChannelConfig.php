@@ -75,10 +75,12 @@ final class PushChannelConfig
 
         $publicField = $fields[PushDeliveryChannel::FIELD_VAPID_PUBLIC];
 
+        $env = Hilos::$env;
+
         return new self(
             publicKey: (string)new ChannelConfigResolver()->resolve($channel->name(), $publicField)->value,
-            privateKey: Hilos::$env?->string(EnvConstants::VAPID_PRIVATE),
-            subject: Hilos::$env?->string(EnvConstants::VAPID_SUBJECT),
+            privateKey: $env === null ? null : $env[EnvConstants::VAPID_PRIVATE]->string(),
+            subject: $env === null ? null : $env[EnvConstants::VAPID_SUBJECT]->string(),
         );
     }
 

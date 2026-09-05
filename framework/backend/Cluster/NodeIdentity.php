@@ -50,12 +50,12 @@ final class NodeIdentity
      */
     public static function fromEnv(): self
     {
-        $nodeId = trim(Hilos::$env[EnvConstants::CLUSTER_NODE_ID]);
+        $nodeId = trim(Hilos::$env[EnvConstants::CLUSTER_NODE_ID]->string());
         if ($nodeId === '') {
             throw ClusterConfigurationException::missingField(EnvConstants::CLUSTER_NODE_ID->name);
         }
 
-        $roleValue = trim(Hilos::$env[EnvConstants::CLUSTER_NODE_ROLE]);
+        $roleValue = trim(Hilos::$env[EnvConstants::CLUSTER_NODE_ROLE]->string());
         if ($roleValue === '') {
             throw ClusterConfigurationException::missingField(EnvConstants::CLUSTER_NODE_ROLE->name);
         }
@@ -68,7 +68,7 @@ final class NodeIdentity
         return new self(
             $nodeId,
             $role,
-            self::parseCapabilities(Hilos::$env[EnvConstants::CLUSTER_NODE_CAPABILITIES]),
+            self::parseCapabilities(Hilos::$env[EnvConstants::CLUSTER_NODE_CAPABILITIES]->string()),
             self::resolveAdvertiseAddress(),
         );
     }
@@ -85,13 +85,13 @@ final class NodeIdentity
      */
     private static function resolveAdvertiseAddress(): ?PeerAddress
     {
-        $advertised = PeerAddress::fromString(Hilos::$env[EnvConstants::CLUSTER_PEER_ADVERTISE]);
+        $advertised = PeerAddress::fromString(Hilos::$env[EnvConstants::CLUSTER_PEER_ADVERTISE]->string());
         if ($advertised !== null) {
             return $advertised;
         }
 
-        $host = trim(Hilos::$env[EnvConstants::CLUSTER_PEER_HOST]);
-        $port = Hilos::$env->int(EnvConstants::CLUSTER_PEER_PORT);
+        $host = trim(Hilos::$env[EnvConstants::CLUSTER_PEER_HOST]->string());
+        $port = Hilos::$env[EnvConstants::CLUSTER_PEER_PORT]->int();
 
         return $host !== '' && $port > 0 ? new PeerAddress($host, $port) : null;
     }

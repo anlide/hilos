@@ -5,11 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Backup;
 
 use Hilos\Constants\EnvConstants;
-use Hilos\Environment\Exception\EnvInvalidValueException;
-use Hilos\Environment\Exception\EnvKeyInvalidException;
-use Hilos\Environment\Exception\EnvNotInCatalogException;
-use Hilos\Environment\Exception\EnvTypeMismatchException;
-use Hilos\Environment\Exception\MissingEnvironmentVariableException;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 
 /**
@@ -56,21 +52,17 @@ final class BackupRetentionPolicy
      * Builds the policy from the backup retention env variables.
      *
      * @return self Policy seeded from env (catalog defaults: 45 of each unit, error count 20, no ceiling)
-     * @throws EnvInvalidValueException When a retention value is not a valid integer
-     * @throws EnvKeyInvalidException When a retention key is invalid
-     * @throws EnvNotInCatalogException When a retention key is not declared in the catalog
-     * @throws EnvTypeMismatchException When a retention key is not cataloged as integer
-     * @throws MissingEnvironmentVariableException When a required retention value is missing
+     * @throws EnvException When a retention key is invalid, uncataloged, or its value is not an integer
      */
     public static function fromEnv(): self
     {
         return new self(
-            Hilos::$env->int(EnvConstants::BACKUP_RETENTION_DAILY),
-            Hilos::$env->int(EnvConstants::BACKUP_RETENTION_WEEKLY),
-            Hilos::$env->int(EnvConstants::BACKUP_RETENTION_MONTHLY),
-            Hilos::$env->int(EnvConstants::BACKUP_RETENTION_YEARLY),
-            Hilos::$env->int(EnvConstants::BACKUP_ERROR_RETENTION_COUNT),
-            Hilos::$env->int(EnvConstants::BACKUP_MAX_TOTAL_BYTES),
+            Hilos::$env[EnvConstants::BACKUP_RETENTION_DAILY]->int(),
+            Hilos::$env[EnvConstants::BACKUP_RETENTION_WEEKLY]->int(),
+            Hilos::$env[EnvConstants::BACKUP_RETENTION_MONTHLY]->int(),
+            Hilos::$env[EnvConstants::BACKUP_RETENTION_YEARLY]->int(),
+            Hilos::$env[EnvConstants::BACKUP_ERROR_RETENTION_COUNT]->int(),
+            Hilos::$env[EnvConstants::BACKUP_MAX_TOTAL_BYTES]->int(),
         );
     }
 }

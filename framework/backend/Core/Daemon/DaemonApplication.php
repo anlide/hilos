@@ -70,8 +70,8 @@ final class DaemonApplication
                 throw MissingRequiredEnvironmentException::forNames($hilosClass, $missing);
             }
 
-            Logger::setLogFile(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]);
-            Logger::setErrorLogFile(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]);
+            Logger::setLogFile(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]->string());
+            Logger::setErrorLogFile(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]->string());
 
             // The environment only: the master is forbidden the database, so it cannot read the
             // setting that overrides this. A worker tells it the real level once one registers,

@@ -57,13 +57,13 @@ final readonly class WebAuthnConfig
     public static function fromEnv(): self
     {
         return new self(
-            Hilos::$env->string(EnvConstants::HILOS_WEBAUTHN_RP_ID),
-            Hilos::$env->string(EnvConstants::HILOS_WEBAUTHN_RP_NAME),
-            self::parseOrigins(Hilos::$env->string(EnvConstants::HILOS_WEBAUTHN_ORIGIN)),
-            Hilos::$env->int(EnvConstants::HILOS_WEBAUTHN_CHALLENGE_TTL_SEC),
-            Hilos::$env->string(EnvConstants::HILOS_WEBAUTHN_USER_VERIFICATION),
-            Hilos::$env->int(EnvConstants::HILOS_WEBAUTHN_TIMEOUT_MS),
-            Hilos::$env->string(EnvConstants::HILOS_WEBAUTHN_CHALLENGE_SECRET),
+            Hilos::$env[EnvConstants::HILOS_WEBAUTHN_RP_ID]->string(),
+            Hilos::$env[EnvConstants::HILOS_WEBAUTHN_RP_NAME]->string(),
+            self::parseOrigins(Hilos::$env[EnvConstants::HILOS_WEBAUTHN_ORIGIN]->string()),
+            Hilos::$env[EnvConstants::HILOS_WEBAUTHN_CHALLENGE_TTL_SEC]->int(),
+            Hilos::$env[EnvConstants::HILOS_WEBAUTHN_USER_VERIFICATION]->string(),
+            Hilos::$env[EnvConstants::HILOS_WEBAUTHN_TIMEOUT_MS]->int(),
+            Hilos::$env[EnvConstants::HILOS_WEBAUTHN_CHALLENGE_SECRET]->string(),
         );
     }
 

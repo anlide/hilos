@@ -82,7 +82,12 @@ final class TrustedProxies
      */
     public static function fromEnv(): self
     {
-        return new self(self::parseNetworks(Hilos::$env?->string(EnvConstants::HILOS_TRUSTED_PROXIES)));
+        $env = Hilos::$env;
+        if ($env === null) {
+            return new self(self::parseNetworks(null));
+        }
+
+        return new self(self::parseNetworks($env[EnvConstants::HILOS_TRUSTED_PROXIES]->string()));
     }
 
     /**

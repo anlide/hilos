@@ -12,6 +12,7 @@ use Hilos\Environment\Exception\EnvMutationNotSupportedException;
 use Hilos\Environment\Exception\EnvNotInCatalogException;
 use Hilos\Environment\Exception\EnvTypeMismatchException;
 use Hilos\Environment\Exception\MissingEnvironmentVariableException;
+use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -61,7 +62,7 @@ final class EnvAccessorTest extends TestCase
             self::STRING_KEY => $this->entry(EnvCatalogConstants::TYPE_STRING, 'fallback', emptyIsMissing: true),
         ]);
 
-        $this->assertSame('fallback', $env[self::STRING_KEY]);
+        $this->assertSame('fallback', $env[self::STRING_KEY]->string());
         $this->assertTrue(isset($env[self::STRING_KEY]));
     }
 
@@ -72,7 +73,7 @@ final class EnvAccessorTest extends TestCase
             self::STRING_KEY => $this->entry(EnvCatalogConstants::TYPE_STRING, 'fallback', emptyIsMissing: true),
         ]);
 
-        $this->assertSame('fallback', $env[self::STRING_KEY]);
+        $this->assertSame('fallback', $env[self::STRING_KEY]->string());
     }
 
     public function testEmptyCanBeARealValue(): void
@@ -82,7 +83,7 @@ final class EnvAccessorTest extends TestCase
             self::EMPTY_ALLOWED_KEY => $this->entry(EnvCatalogConstants::TYPE_STRING, 'fallback'),
         ]);
 
-        $this->assertSame('', $env[self::EMPTY_ALLOWED_KEY]);
+        $this->assertSame('', $env[self::EMPTY_ALLOWED_KEY]->string());
     }
 
     public function testRequiredMissingValueThrows(): void
@@ -97,7 +98,7 @@ final class EnvAccessorTest extends TestCase
 
         $this->expectException(MissingEnvironmentVariableException::class);
 
-        $env[self::REQUIRED_KEY];
+        $env[self::REQUIRED_KEY]->string();
     }
 
     public function testTypedReadersValidateCatalogType(): void
@@ -108,7 +109,39 @@ final class EnvAccessorTest extends TestCase
 
         $this->expectException(EnvTypeMismatchException::class);
 
-        $env[self::INTEGER_KEY];
+        $env[self::INTEGER_KEY]->string();
+    }
+
+    public function testIssetAnswersForTheKeysOwnCatalogType(): void
+    {
+        // The door used to ask whether the key resolves as a STRING, so it said no about every
+        // key the catalog types as something else. It asks for the key's own type now.
+        $env = $this->env([
+            self::INTEGER_KEY => $this->entry(EnvCatalogConstants::TYPE_INTEGER, 7),
+        ]);
+
+        $this->assertTrue(isset($env[self::INTEGER_KEY]));
+    }
+
+    public function testTheReaderAnswersFromTheAccessorItCameFrom(): void
+    {
+        // The one departure from the settings model, pinned because it is the kind of thing a
+        // later simplification would undo silently: SettingValue reaches the global accessor,
+        // EnvValue carries the one it was taken from. The global here is a plain accessor on the
+        // framework catalog, which does not declare this key at all - a reader that went there
+        // would refuse instead of answering.
+        $env = $this->env([
+            self::STRING_KEY => $this->entry(EnvCatalogConstants::TYPE_STRING, 'fallback', emptyIsMissing: true),
+        ]);
+        $reader = $env[self::STRING_KEY];
+        $previousEnv = Hilos::$env;
+        Hilos::$env = new EnvAccessor();
+
+        try {
+            $this->assertSame('fallback', $reader->string());
+        } finally {
+            Hilos::$env = $previousEnv;
+        }
     }
 
     public function testIntegerReaderParsesStrictInteger(): void
@@ -118,7 +151,7 @@ final class EnvAccessorTest extends TestCase
             self::INTEGER_KEY => $this->entry(EnvCatalogConstants::TYPE_INTEGER, 7, emptyIsMissing: true),
         ]);
 
-        $this->assertSame(42, $env->int(self::INTEGER_KEY));
+        $this->assertSame(42, $env[self::INTEGER_KEY]->int());
     }
 
     public function testIntegerReaderRejectsInvalidValue(): void
@@ -130,7 +163,7 @@ final class EnvAccessorTest extends TestCase
 
         $this->expectException(EnvInvalidValueException::class);
 
-        $env->int(self::INTEGER_KEY);
+        $env[self::INTEGER_KEY]->int();
     }
 
     public function testFloatReaderParsesNumericString(): void
@@ -140,7 +173,7 @@ final class EnvAccessorTest extends TestCase
             self::FLOAT_KEY => $this->entry(EnvCatalogConstants::TYPE_FLOAT, 1.0, emptyIsMissing: true),
         ]);
 
-        $this->assertSame(3.5, $env->float(self::FLOAT_KEY));
+        $this->assertSame(3.5, $env[self::FLOAT_KEY]->float());
     }
 
     public function testBooleanReaderParsesKnownValues(): void
@@ -150,7 +183,7 @@ final class EnvAccessorTest extends TestCase
             self::BOOLEAN_KEY => $this->entry(EnvCatalogConstants::TYPE_BOOLEAN, false, emptyIsMissing: true),
         ]);
 
-        $this->assertTrue($env->bool(self::BOOLEAN_KEY));
+        $this->assertTrue($env[self::BOOLEAN_KEY]->bool());
     }
 
     public function testUnknownKeyThrows(): void
@@ -172,7 +205,7 @@ final class EnvAccessorTest extends TestCase
         ]);
         $env->init($root);
 
-        $this->assertSame('from-process', $env[self::STRING_KEY]);
+        $this->assertSame('from-process', $env[self::STRING_KEY]->string());
     }
 
     public function testEnvFileOutranksExample(): void
@@ -186,7 +219,7 @@ final class EnvAccessorTest extends TestCase
         ]);
         $env->init($root);
 
-        $this->assertSame('from-file', $env[self::STRING_KEY]);
+        $this->assertSame('from-file', $env[self::STRING_KEY]->string());
     }
 
     public function testInitDoesNotCreateEnvFile(): void
@@ -198,7 +231,7 @@ final class EnvAccessorTest extends TestCase
         $env->init($root);
 
         $this->assertFileDoesNotExist($root . '/.env');
-        $this->assertSame('from-example', $env[self::STRING_KEY]);
+        $this->assertSame('from-example', $env[self::STRING_KEY]->string());
     }
 
     public function testEmptyProcessValueAnswersInsteadOfLettingTheEnvFileSpeak(): void
@@ -210,7 +243,7 @@ final class EnvAccessorTest extends TestCase
         ]);
         $env->init($root);
 
-        $this->assertSame('fallback', $env[self::STRING_KEY]);
+        $this->assertSame('fallback', $env[self::STRING_KEY]->string());
     }
 
     public function testExplicitlyLoadedFileStaysBelowProcessEnvironment(): void
@@ -222,7 +255,7 @@ final class EnvAccessorTest extends TestCase
         ]);
         $env->load($root . '/tests.env');
 
-        $this->assertSame('from-process', $env[self::STRING_KEY]);
+        $this->assertSame('from-process', $env[self::STRING_KEY]->string());
     }
 
     public function testMutationIsRejected(): void

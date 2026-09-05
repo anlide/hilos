@@ -116,10 +116,10 @@ final class ChannelConfigResolver
     private function envValue(EnvConstants|string $envKey, string $type): bool|float|int|string
     {
         return match ($type) {
-            SettingsCatalogConstants::TYPE_INTEGER => Hilos::$env->int($envKey),
-            SettingsCatalogConstants::TYPE_FLOAT => Hilos::$env->float($envKey),
-            SettingsCatalogConstants::TYPE_BOOLEAN => Hilos::$env->bool($envKey),
-            default => Hilos::$env->string($envKey),
+            SettingsCatalogConstants::TYPE_INTEGER => Hilos::$env[$envKey]->int(),
+            SettingsCatalogConstants::TYPE_FLOAT => Hilos::$env[$envKey]->float(),
+            SettingsCatalogConstants::TYPE_BOOLEAN => Hilos::$env[$envKey]->bool(),
+            default => Hilos::$env[$envKey]->string(),
         };
     }
 
@@ -132,6 +132,6 @@ final class ChannelConfigResolver
      */
     private function envIsSet(EnvConstants|string|null $envKey): bool
     {
-        return $envKey !== null && Hilos::$env !== null && Hilos::$env->string($envKey) !== '';
+        return $envKey !== null && Hilos::$env !== null && Hilos::$env[$envKey]->string() !== '';
     }
 }

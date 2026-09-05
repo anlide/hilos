@@ -6,11 +6,7 @@ namespace Hilos\Backup\Ship;
 
 use Hilos\Backup\BackupCreator;
 use Hilos\Constants\EnvConstants;
-use Hilos\Environment\Exception\EnvInvalidValueException;
-use Hilos\Environment\Exception\EnvKeyInvalidException;
-use Hilos\Environment\Exception\EnvNotInCatalogException;
-use Hilos\Environment\Exception\EnvTypeMismatchException;
-use Hilos\Environment\Exception\MissingEnvironmentVariableException;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
@@ -65,15 +61,11 @@ final class BackupArchiveEncryptor
      * copy leave, because that copy is the exposure the file was configured against.
      *
      * @return ?self Encryptor, or null when no usable recipient set is configured
-     * @throws EnvInvalidValueException When the configured path cannot be read as a string
-     * @throws EnvKeyInvalidException When the environment key is malformed
-     * @throws EnvNotInCatalogException When the project's catalog declares no recipients path
-     * @throws EnvTypeMismatchException When the catalog declares the path as another type
-     * @throws MissingEnvironmentVariableException When the path is required and unset
+     * @throws EnvException When the recipients path is malformed, uncataloged, or unreadable as a string
      */
     public static function fromEnv(): ?self
     {
-        $path = trim(Hilos::$env->string(EnvConstants::BACKUP_SHIP_ENCRYPT_RECIPIENTS));
+        $path = trim(Hilos::$env[EnvConstants::BACKUP_SHIP_ENCRYPT_RECIPIENTS]->string());
         if ($path === '') {
             return null;
         }
@@ -101,15 +93,11 @@ final class BackupArchiveEncryptor
      * second ships nothing.
      *
      * @return bool True when the environment names a recipients file
-     * @throws EnvInvalidValueException When the configured path cannot be read as a string
-     * @throws EnvKeyInvalidException When the environment key is malformed
-     * @throws EnvNotInCatalogException When the project's catalog declares no recipients path
-     * @throws EnvTypeMismatchException When the catalog declares the path as another type
-     * @throws MissingEnvironmentVariableException When the path is required and unset
+     * @throws EnvException When the recipients path is malformed, uncataloged, or unreadable as a string
      */
     public static function isConfigured(): bool
     {
-        return trim(Hilos::$env->string(EnvConstants::BACKUP_SHIP_ENCRYPT_RECIPIENTS)) !== '';
+        return trim(Hilos::$env[EnvConstants::BACKUP_SHIP_ENCRYPT_RECIPIENTS]->string()) !== '';
     }
 
     /**

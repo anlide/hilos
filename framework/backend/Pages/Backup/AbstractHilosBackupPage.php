@@ -218,8 +218,8 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
         }
 
         $missing = BackupAgent::missingCreateConfig(
-            Hilos::$env->string(EnvConstants::BACKUP_DIR),
-            Hilos::$env->string(EnvConstants::BACKUP_CLI_ENTRY),
+            Hilos::$env[EnvConstants::BACKUP_DIR]->string(),
+            Hilos::$env[EnvConstants::BACKUP_CLI_ENTRY]->string(),
         );
         if ($missing !== []) {
             throw new TableActionException('Backups are not configured: ' . implode(', ', $missing));
@@ -559,7 +559,7 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
     private function currentEnv(): ?AppEnv
     {
         try {
-            return AppEnv::fromString(Hilos::$env->string(EnvConstants::APP_ENV));
+            return AppEnv::fromString(Hilos::$env[EnvConstants::APP_ENV]->string());
         } catch (EnvException) {
             return null;
         }

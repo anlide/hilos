@@ -726,7 +726,7 @@ class VerificationService
 
         return VerificationDeliverable::magicLink(
             MagicLinkUrl::build(
-                Hilos::$env->string(EnvConstants::HILOS_MAGIC_LINK_URL),
+                Hilos::$env[EnvConstants::HILOS_MAGIC_LINK_URL]->string(),
                 $identifier,
                 $secret,
             ),
@@ -839,7 +839,7 @@ class VerificationService
      */
     private function codeLength(): int
     {
-        return max(1, Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_CODE_LENGTH));
+        return max(1, Hilos::$env[EnvConstants::HILOS_VERIFICATION_CODE_LENGTH]->int());
     }
 
     /**
@@ -847,7 +847,7 @@ class VerificationService
      */
     private function ttlSeconds(): int
     {
-        return Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_TTL_SEC);
+        return Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int();
     }
 
     /**
@@ -855,7 +855,7 @@ class VerificationService
      */
     private function maxAttempts(): int
     {
-        return max(1, Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_MAX_ATTEMPTS));
+        return max(1, Hilos::$env[EnvConstants::HILOS_VERIFICATION_MAX_ATTEMPTS]->int());
     }
 
     /**
@@ -863,7 +863,7 @@ class VerificationService
      */
     private function resendCooldownSeconds(): int
     {
-        return Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC);
+        return Hilos::$env[EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC]->int();
     }
 
     /**
@@ -871,7 +871,7 @@ class VerificationService
      */
     private function sendWindowSeconds(): int
     {
-        return Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_SEND_WINDOW_SEC);
+        return Hilos::$env[EnvConstants::HILOS_VERIFICATION_SEND_WINDOW_SEC]->int();
     }
 
     /**
@@ -883,9 +883,9 @@ class VerificationService
     private function sendCapFor(string $type): int
     {
         if (VerificationType::isSms($type)) {
-            return Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_SEND_CAP_SMS);
+            return Hilos::$env[EnvConstants::HILOS_VERIFICATION_SEND_CAP_SMS]->int();
         }
 
-        return Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_SEND_CAP);
+        return Hilos::$env[EnvConstants::HILOS_VERIFICATION_SEND_CAP]->int();
     }
 }

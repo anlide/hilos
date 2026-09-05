@@ -36,8 +36,8 @@ final class ChatFsContext extends FsContext
     public function configure(): void
     {
         $base = self::defaultBaseDir();
-        $quarantinePath = Hilos::$env[ChatEnvConstants::CHAT_FILES_QUARANTINE_DIR];
-        $publishedPath = Hilos::$env[ChatEnvConstants::CHAT_FILES_PUBLISHED_DIR];
+        $quarantinePath = Hilos::$env[ChatEnvConstants::CHAT_FILES_QUARANTINE_DIR]->string();
+        $publishedPath = Hilos::$env[ChatEnvConstants::CHAT_FILES_PUBLISHED_DIR]->string();
 
         $this->setTmpPath($base . DIRECTORY_SEPARATOR . self::TMP);
 

@@ -143,7 +143,7 @@ final class BackupCreator
             throw new BackupException("Invalid backup id: {$id}");
         }
 
-        $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+        $root = Hilos::$env[EnvConstants::BACKUP_DIR]->string();
         if ($root === '') {
             throw new BackupException('Backup directory (BACKUP_DIR) is not configured');
         }
@@ -151,7 +151,7 @@ final class BackupCreator
         $scopeDir = $root . '/' . $scope->value;
         $this->ensureDirectory($scopeDir);
 
-        $base = self::archiveBaseName($id, Hilos::$env->string(EnvConstants::APP_ENV), $scope);
+        $base = self::archiveBaseName($id, Hilos::$env[EnvConstants::APP_ENV]->string(), $scope);
         $tmpStem = $scopeDir . '/' . self::TEMP_PREFIX . $base . '-' . getmypid();
         $workDir = $tmpStem . '.work';
         $tmpArchive = $tmpStem . self::ARCHIVE_EXTENSION;
@@ -263,7 +263,7 @@ final class BackupCreator
     private function digestFitsBudget(int $sizeBytes, float $startedAt): bool
     {
         try {
-            $budgetSeconds = Hilos::$env->int(EnvConstants::BACKUP_TIMEOUT);
+            $budgetSeconds = Hilos::$env[EnvConstants::BACKUP_TIMEOUT]->int();
         } catch (EnvException) {
             return true;
         }
@@ -300,7 +300,7 @@ final class BackupCreator
             throw new BackupException("Invalid backup id: {$id}");
         }
 
-        $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+        $root = Hilos::$env[EnvConstants::BACKUP_DIR]->string();
         if ($root === '') {
             throw new BackupException('Backup directory (BACKUP_DIR) is not configured');
         }
@@ -308,7 +308,7 @@ final class BackupCreator
         $scopeDir = $root . '/' . $scope->value;
         $this->ensureDirectory($scopeDir);
 
-        $base = self::archiveBaseName($id, Hilos::$env->string(EnvConstants::APP_ENV), $scope);
+        $base = self::archiveBaseName($id, Hilos::$env[EnvConstants::APP_ENV]->string(), $scope);
         $this->sweepPartialTemp($scopeDir, $base);
 
         $metadata = $this->buildMetadata(
@@ -884,7 +884,7 @@ final class BackupCreator
         return new BackupMetadata(
             $id,
             self::startedAtFromId($id),
-            Hilos::$env->string(EnvConstants::APP_ENV),
+            Hilos::$env[EnvConstants::APP_ENV]->string(),
             $scope,
             $connections,
             $sizeBytes,

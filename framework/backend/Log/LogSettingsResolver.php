@@ -289,7 +289,7 @@ final class LogSettingsResolver
         }
 
         try {
-            $interval = $env->int(EnvConstants::LOG_INDEX_PUSH_INTERVAL_MS);
+            $interval = $env[EnvConstants::LOG_INDEX_PUSH_INTERVAL_MS]->int();
         } catch (EnvException $exception) {
             $this->trouble(
                 'log index push environment is unreadable: ' . $exception->getMessage()
@@ -333,7 +333,7 @@ final class LogSettingsResolver
         }
 
         try {
-            return max(0, $env->int(EnvConstants::LOG_TAKEOUT_UNDO_WINDOW_SECONDS));
+            return max(0, $env[EnvConstants::LOG_TAKEOUT_UNDO_WINDOW_SECONDS]->int());
         } catch (EnvException $exception) {
             $this->trouble(
                 'log takeout undo window is unreadable: ' . $exception->getMessage()

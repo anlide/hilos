@@ -71,8 +71,8 @@ final class DaemonPresenceProbe
     public static function address(): ?string
     {
         try {
-            $host = Hilos::$env[EnvConstants::HILOS_DAEMON_HOST];
-            $port = Hilos::$env->int(EnvConstants::COMMAND_PORT);
+            $host = Hilos::$env[EnvConstants::HILOS_DAEMON_HOST]->string();
+            $port = Hilos::$env[EnvConstants::COMMAND_PORT]->int();
         } catch (EnvException) {
             return null;
         }

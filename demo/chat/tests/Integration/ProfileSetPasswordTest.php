@@ -273,7 +273,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
         $verifications->voidActive(
             VerificationType::REGISTER_CONFIRM,
             $email,
-            max(1, Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_MAX_ATTEMPTS)),
+            max(1, Hilos::$env[EnvConstants::HILOS_VERIFICATION_MAX_ATTEMPTS]->int()),
         );
         $verifications->createChallenge(
             VerificationType::REGISTER_CONFIRM,

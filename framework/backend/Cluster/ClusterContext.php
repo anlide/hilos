@@ -149,7 +149,7 @@ final class ClusterContext
      */
     public function isEnabled(): bool
     {
-        return Hilos::$env->bool(EnvConstants::CLUSTER_ENABLED);
+        return Hilos::$env[EnvConstants::CLUSTER_ENABLED]->bool();
     }
 
     /**

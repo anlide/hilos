@@ -83,7 +83,7 @@ final class LogLineReader
     public static function fromEnv(): self
     {
         try {
-            return new self(dirname(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]));
+            return new self(dirname(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]->string()));
         } catch (EnvException) {
             return new self(null);
         }

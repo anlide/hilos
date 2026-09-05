@@ -102,9 +102,9 @@ final class WatchdogAlertMailer
     public static function fromEnv(): ?self
     {
         try {
-            $host = trim(Hilos::$env->string(EnvConstants::WATCHDOG_ALERT_SMTP_HOST));
-            $fromAddress = trim(Hilos::$env->string(EnvConstants::WATCHDOG_ALERT_FROM_ADDRESS));
-            $toAddress = trim(Hilos::$env->string(EnvConstants::WATCHDOG_ALERT_TO_ADDRESS));
+            $host = trim(Hilos::$env[EnvConstants::WATCHDOG_ALERT_SMTP_HOST]->string());
+            $fromAddress = trim(Hilos::$env[EnvConstants::WATCHDOG_ALERT_FROM_ADDRESS]->string());
+            $toAddress = trim(Hilos::$env[EnvConstants::WATCHDOG_ALERT_TO_ADDRESS]->string());
 
             $missing = self::missingNames($host, $fromAddress, $toAddress);
             if ($missing !== []) {
@@ -116,16 +116,16 @@ final class WatchdogAlertMailer
                 return null;
             }
 
-            $timeoutMs = Hilos::$env->int(EnvConstants::WATCHDOG_ALERT_TIMEOUT_MS);
+            $timeoutMs = Hilos::$env[EnvConstants::WATCHDOG_ALERT_TIMEOUT_MS]->int();
             $config = new MailTransportConfig(
                 fromAddress: $fromAddress,
                 fileDir: '',
                 transport: MailTransportFactory::TRANSPORT_SMTP,
                 smtpHost: $host,
-                smtpPort: Hilos::$env->int(EnvConstants::WATCHDOG_ALERT_SMTP_PORT),
+                smtpPort: Hilos::$env[EnvConstants::WATCHDOG_ALERT_SMTP_PORT]->int(),
                 security: self::security(),
-                username: self::nullIfEmpty(Hilos::$env->string(EnvConstants::WATCHDOG_ALERT_SMTP_USERNAME)),
-                password: self::nullIfEmpty(Hilos::$env->string(EnvConstants::WATCHDOG_ALERT_SMTP_PASSWORD)),
+                username: self::nullIfEmpty(Hilos::$env[EnvConstants::WATCHDOG_ALERT_SMTP_USERNAME]->string()),
+                password: self::nullIfEmpty(Hilos::$env[EnvConstants::WATCHDOG_ALERT_SMTP_PASSWORD]->string()),
                 timeoutMs: $timeoutMs,
             );
 
@@ -336,7 +336,7 @@ final class WatchdogAlertMailer
      */
     private static function security(): SmtpSecurity
     {
-        $value = Hilos::$env->string(EnvConstants::WATCHDOG_ALERT_SMTP_SECURITY);
+        $value = Hilos::$env[EnvConstants::WATCHDOG_ALERT_SMTP_SECURITY]->string();
 
         return SmtpSecurity::tryFrom(strtolower(trim($value)))
             ?? throw new MailConfigException(

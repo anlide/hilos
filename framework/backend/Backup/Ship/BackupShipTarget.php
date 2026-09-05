@@ -6,11 +6,7 @@ namespace Hilos\Backup\Ship;
 
 use Hilos\Backup\BackupShipState;
 use Hilos\Constants\EnvConstants;
-use Hilos\Environment\Exception\EnvInvalidValueException;
-use Hilos\Environment\Exception\EnvKeyInvalidException;
-use Hilos\Environment\Exception\EnvNotInCatalogException;
-use Hilos\Environment\Exception\EnvTypeMismatchException;
-use Hilos\Environment\Exception\MissingEnvironmentVariableException;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 
 /**
@@ -57,15 +53,11 @@ final class BackupShipTarget
      * Reads the configured destination.
      *
      * @return ?self Parsed destination, or null when none is configured or the URL is malformed
-     * @throws EnvInvalidValueException When the configured value cannot be read as a string
-     * @throws EnvKeyInvalidException When the environment key is malformed
-     * @throws EnvNotInCatalogException When the project's catalog declares no shipping destination
-     * @throws EnvTypeMismatchException When the catalog declares the destination as another type
-     * @throws MissingEnvironmentVariableException When the destination is required and unset
+     * @throws EnvException When the destination key is malformed, uncataloged, or unreadable as a string
      */
     public static function fromEnv(): ?self
     {
-        return self::parse(Hilos::$env->string(EnvConstants::BACKUP_SHIP_TARGET));
+        return self::parse(Hilos::$env[EnvConstants::BACKUP_SHIP_TARGET]->string());
     }
 
     /**

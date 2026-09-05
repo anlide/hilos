@@ -109,11 +109,11 @@ HELP;
      */
     protected function run(array $options, array $args): int
     {
-        $host = Hilos::$env[EnvConstants::DB_HOST];
-        $port = Hilos::$env->int(EnvConstants::DB_PORT);
-        $user = Hilos::$env[EnvConstants::DB_USERNAME];
-        $pass = Hilos::$env[EnvConstants::DB_PASSWORD];
-        $database = Hilos::$env[EnvConstants::DB_DATABASE];
+        $host = Hilos::$env[EnvConstants::DB_HOST]->string();
+        $port = Hilos::$env[EnvConstants::DB_PORT]->int();
+        $user = Hilos::$env[EnvConstants::DB_USERNAME]->string();
+        $pass = Hilos::$env[EnvConstants::DB_PASSWORD]->string();
+        $database = Hilos::$env[EnvConstants::DB_DATABASE]->string();
         if ($database === '') {
             $database = self::DEFAULT_TEST_DATABASE;
         }

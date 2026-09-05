@@ -96,7 +96,7 @@ class Seed
      */
     public static function isProduction(): bool
     {
-        $env = Hilos::$env[EnvConstants::APP_ENV];
+        $env = Hilos::$env[EnvConstants::APP_ENV]->string();
         $appEnv = AppEnv::fromString($env);
 
         if ($appEnv === null) {

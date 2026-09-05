@@ -498,8 +498,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private function armPendingRegistrationSweep(): void
     {
-        $expression = Hilos::$env?->string(EnvConstants::HILOS_PENDING_REGISTRATION_SWEEP_CRON);
-        if ($expression === null || trim($expression) === '') {
+        $env = Hilos::$env;
+        if ($env === null) {
+            return;
+        }
+
+        $expression = $env[EnvConstants::HILOS_PENDING_REGISTRATION_SWEEP_CRON]->string();
+        if (trim($expression) === '') {
             return;
         }
 
@@ -581,7 +586,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         $released = Hilos::$db?->sessions->actions->sweepStalePendingRegistrations(
-            Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_TTL_SEC),
+            Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int(),
         );
         if ($released !== null && $released > 0) {
             $this->logAgentInfo("Pending registration sweep: cleared {$released} abandoned registration(s)");

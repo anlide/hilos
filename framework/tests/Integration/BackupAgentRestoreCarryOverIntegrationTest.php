@@ -23,6 +23,8 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Database;
 use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\EnvCatalogConstants;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -505,14 +507,33 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
                 parent::__construct();
             }
 
-            public function string(EnvConstants|string $name): string
+            /**
+             * @return array<string, array<string, mixed>> Framework catalog plus the entry point a project declares
+             */
+            protected function getCatalog(): array
             {
-                return $name === EnvConstants::BACKUP_DIR ? $this->backupDir : '/dev/null';
+                return [
+                    ...parent::getCatalog(),
+                    EnvConstants::BACKUP_CLI_ENTRY->name => [
+                        EnvCatalogConstants::CATALOG_ENTRY_TYPE => EnvCatalogConstants::TYPE_STRING,
+                    ],
+                ];
             }
 
-            public function int(EnvConstants|string $name): int
+            /**
+             * @param string $key Environment variable name
+             * @return mixed Fixture for a string or integer key, the catalog answer for every other type
+             * @throws EnvException When the key is invalid, uncataloged, or has no answer
+             */
+            public function effectiveValueFor(string $key): mixed
             {
-                return 600;
+                return match ($this->typeFor($key)) {
+                    EnvCatalogConstants::TYPE_STRING => $key === EnvConstants::BACKUP_DIR->name
+                        ? $this->backupDir
+                        : '/dev/null',
+                    EnvCatalogConstants::TYPE_INTEGER => 600,
+                    default => parent::effectiveValueFor($key),
+                };
             }
         };
     }

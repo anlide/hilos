@@ -5,11 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Backup\Ship;
 
 use Hilos\Constants\EnvConstants;
-use Hilos\Environment\Exception\EnvInvalidValueException;
-use Hilos\Environment\Exception\EnvKeyInvalidException;
-use Hilos\Environment\Exception\EnvNotInCatalogException;
-use Hilos\Environment\Exception\EnvTypeMismatchException;
-use Hilos\Environment\Exception\MissingEnvironmentVariableException;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 
@@ -42,11 +38,7 @@ final class BackupShipperFactory
      *
      * @param BackupShipTarget $target Parsed destination
      * @return ?BackupShipperInterface Driver for the destination, or null when nothing serves it
-     * @throws EnvInvalidValueException When a configured credential path cannot be read as a string
-     * @throws EnvKeyInvalidException When an environment key is malformed
-     * @throws EnvNotInCatalogException When the project's catalog declares no ssh credentials
-     * @throws EnvTypeMismatchException When the catalog declares a credential path as another type
-     * @throws MissingEnvironmentVariableException When a credential path is required and unset
+     * @throws EnvException When a credential key is malformed, uncataloged, or unreadable as a string
      */
     public static function fromTarget(BackupShipTarget $target): ?BackupShipperInterface
     {
@@ -62,11 +54,11 @@ final class BackupShipperFactory
             return null;
         }
 
-        $knownHosts = Hilos::$env->string(EnvConstants::BACKUP_SHIP_SSH_KNOWN_HOSTS);
+        $knownHosts = Hilos::$env[EnvConstants::BACKUP_SHIP_SSH_KNOWN_HOSTS]->string();
         if ($knownHosts === '') {
             return null;
         }
 
-        return new SshBackupShipper($target, Hilos::$env->string(EnvConstants::BACKUP_SHIP_SSH_KEY), $knownHosts);
+        return new SshBackupShipper($target, Hilos::$env[EnvConstants::BACKUP_SHIP_SSH_KEY]->string(), $knownHosts);
     }
 }

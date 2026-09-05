@@ -79,7 +79,8 @@ class HilosSmsSender
      */
     public static function shardKeyForNumber(string $number): int
     {
-        $workerCount = max(1, Hilos::$env?->int(EnvConstants::SMS_WORKER_COUNT) ?? 1);
+        $env = Hilos::$env;
+        $workerCount = $env === null ? 1 : max(1, $env[EnvConstants::SMS_WORKER_COUNT]->int());
 
         return 1 + (int)(crc32(self::normalize($number)) % $workerCount);
     }

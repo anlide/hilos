@@ -46,8 +46,8 @@ final class FrontendHtmlModule implements DaemonModule
     public function register(DaemonManager $daemon, DaemonContext $context): void
     {
         $frontendHtmlServer = new FrontendHtmlServer(
-            Hilos::$env[EnvConstants::FRONTEND_HTML_HOST],
-            Hilos::$env->int(EnvConstants::FRONTEND_HTML_PORT),
+            Hilos::$env[EnvConstants::FRONTEND_HTML_HOST]->string(),
+            Hilos::$env[EnvConstants::FRONTEND_HTML_PORT]->int(),
             new HtmlResolver(),
             new HtmlCache($this->distPath),
         );

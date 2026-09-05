@@ -63,16 +63,16 @@ final class MailTransportConfig
     public static function fromEnv(): self
     {
         return new self(
-            Hilos::$env->string(EnvConstants::MAIL_FROM_ADDRESS),
-            Hilos::$env->string(EnvConstants::MAIL_FILE_DIR),
-            self::nullIfEmpty(Hilos::$env->string(EnvConstants::MAIL_TRANSPORT)),
-            Hilos::$env->string(EnvConstants::MAIL_SMTP_HOST),
-            Hilos::$env->int(EnvConstants::MAIL_SMTP_PORT),
-            self::parseSecurity(Hilos::$env->string(EnvConstants::MAIL_SMTP_SECURITY)),
-            self::nullIfEmpty(Hilos::$env->string(EnvConstants::MAIL_SMTP_USERNAME)),
-            self::nullIfEmpty(Hilos::$env->string(EnvConstants::MAIL_SMTP_PASSWORD)),
-            self::nullIfEmpty(Hilos::$env->string(EnvConstants::MAIL_FROM_NAME)),
-            Hilos::$env->int(EnvConstants::MAIL_TIMEOUT_MS),
+            Hilos::$env[EnvConstants::MAIL_FROM_ADDRESS]->string(),
+            Hilos::$env[EnvConstants::MAIL_FILE_DIR]->string(),
+            self::nullIfEmpty(Hilos::$env[EnvConstants::MAIL_TRANSPORT]->string()),
+            Hilos::$env[EnvConstants::MAIL_SMTP_HOST]->string(),
+            Hilos::$env[EnvConstants::MAIL_SMTP_PORT]->int(),
+            self::parseSecurity(Hilos::$env[EnvConstants::MAIL_SMTP_SECURITY]->string()),
+            self::nullIfEmpty(Hilos::$env[EnvConstants::MAIL_SMTP_USERNAME]->string()),
+            self::nullIfEmpty(Hilos::$env[EnvConstants::MAIL_SMTP_PASSWORD]->string()),
+            self::nullIfEmpty(Hilos::$env[EnvConstants::MAIL_FROM_NAME]->string()),
+            Hilos::$env[EnvConstants::MAIL_TIMEOUT_MS]->int(),
         );
     }
 

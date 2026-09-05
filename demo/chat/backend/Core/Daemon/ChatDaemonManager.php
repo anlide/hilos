@@ -87,8 +87,8 @@ final class ChatDaemonManager extends DaemonManager
     protected function createServers(DaemonContext $context): iterable
     {
         $this->workerServer = new ChatWorkerServer(
-            Hilos::$env[EnvConstants::WORKER_COMM_HOST],
-            Hilos::$env->int(EnvConstants::WORKER_COMM_PORT),
+            Hilos::$env[EnvConstants::WORKER_COMM_HOST]->string(),
+            Hilos::$env[EnvConstants::WORKER_COMM_PORT]->int(),
             $context->workerScript(),
             $context->bootstrapDir,
             $this->getAgentManagerDaemon(),
@@ -96,17 +96,17 @@ final class ChatDaemonManager extends DaemonManager
 
         return [
             new HttpServer(
-                Hilos::$env[EnvConstants::HTTP_STATUS_HOST],
-                Hilos::$env->int(EnvConstants::HTTP_STATUS_PORT),
+                Hilos::$env[EnvConstants::HTTP_STATUS_HOST]->string(),
+                Hilos::$env[EnvConstants::HTTP_STATUS_PORT]->int(),
             ),
             $this->workerServer,
             new ChatWebSocketServer(
-                Hilos::$env[EnvConstants::WEBSOCKET_HOST],
-                Hilos::$env->int(EnvConstants::WEBSOCKET_PORT),
+                Hilos::$env[EnvConstants::WEBSOCKET_HOST]->string(),
+                Hilos::$env[EnvConstants::WEBSOCKET_PORT]->int(),
             ),
             new CommandServer(
-                Hilos::$env[EnvConstants::COMMAND_HOST],
-                Hilos::$env->int(EnvConstants::COMMAND_PORT),
+                Hilos::$env[EnvConstants::COMMAND_HOST]->string(),
+                Hilos::$env[EnvConstants::COMMAND_PORT]->int(),
             ),
         ];
     }

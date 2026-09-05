@@ -184,7 +184,7 @@ HELP;
     public function execute(array $options, array $args): int
     {
         try {
-            $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+            $root = Hilos::$env[EnvConstants::BACKUP_DIR]->string();
         } catch (EnvException $e) {
             echo "Error: {$e->getMessage()}\n";
 
@@ -305,7 +305,7 @@ HELP;
      */
     private function decideEnv(BackupMetadata $metadata, bool $force): ?RestoreEnvDecision
     {
-        $targetEnv = AppEnv::fromString(Hilos::$env->string(EnvConstants::APP_ENV));
+        $targetEnv = AppEnv::fromString(Hilos::$env[EnvConstants::APP_ENV]->string());
         if ($targetEnv === null) {
             echo "Error: APP_ENV does not name a known environment\n";
 

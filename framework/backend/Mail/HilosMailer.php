@@ -83,7 +83,8 @@ class HilosMailer
      */
     public static function shardKeyForAddress(string $address): int
     {
-        $workerCount = max(1, Hilos::$env?->int(EnvConstants::MAIL_WORKER_COUNT) ?? 1);
+        $env = Hilos::$env;
+        $workerCount = $env === null ? 1 : max(1, $env[EnvConstants::MAIL_WORKER_COUNT]->int());
 
         return 1 + (int)(crc32(strtolower(trim($address))) % $workerCount);
     }

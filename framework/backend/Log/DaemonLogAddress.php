@@ -42,7 +42,7 @@ final class DaemonLogAddress
 
         // isset() rather than a plain read: EnvAccessor::offsetExists() swallows the refusal these
         // required names would raise, which is the whole point of asking from here.
-        return isset($env[$name]) ? $env[$name] : null;
+        return isset($env[$name]) ? $env[$name]->string() : null;
     }
 
     /**

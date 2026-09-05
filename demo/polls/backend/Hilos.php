@@ -81,7 +81,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * Hilos - Main app facade for data access.
  *
  * Usage:
- * - Hilos::$env[EnvConstants::HTTP_STATUS_HOST]
+ * - Hilos::$env[EnvConstants::HTTP_STATUS_HOST]->string()
  * - Hilos::$db->settings
  * - Hilos::$setting->catalog()
  * - Hilos::$rt->connections

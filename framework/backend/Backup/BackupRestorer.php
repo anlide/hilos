@@ -92,7 +92,7 @@ final class BackupRestorer
             throw new RestoreFailedException("Invalid backup id: {$id}");
         }
 
-        $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+        $root = Hilos::$env[EnvConstants::BACKUP_DIR]->string();
         if ($root === '') {
             throw new RestoreFailedException('Backup directory (BACKUP_DIR) is not configured');
         }

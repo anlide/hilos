@@ -242,8 +242,8 @@ final class PeerServer extends AbstractServer implements
                 $this,
                 $executor,
                 Hilos::$cluster->placementObserver(),
-                Hilos::$env->int(EnvConstants::CLUSTER_FAILOVER_GRACE_MS),
-                Hilos::$env->int(EnvConstants::CLUSTER_SLAVE_WORK_GRACE_MS),
+                Hilos::$env[EnvConstants::CLUSTER_FAILOVER_GRACE_MS]->int(),
+                Hilos::$env[EnvConstants::CLUSTER_SLAVE_WORK_GRACE_MS]->int(),
                 policy: Hilos::$cluster->placementPolicy(),
             );
             Hilos::$cluster->registerPlacement($this->placement);

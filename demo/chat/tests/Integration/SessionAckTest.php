@@ -894,7 +894,7 @@ final class SessionAckTest extends IntegrationTestCase
      */
     private function maxAttempts(): int
     {
-        return max(1, Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_MAX_ATTEMPTS));
+        return max(1, Hilos::$env[EnvConstants::HILOS_VERIFICATION_MAX_ATTEMPTS]->int());
     }
 
     /**

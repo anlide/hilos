@@ -172,7 +172,7 @@ final class WatchdogAlertMailerTest extends TestCase
     {
         return new WatchdogAlertMailer(
             new FileMailTransport($this->dir, 'watchdog@example.com'),
-            Hilos::$env->string(EnvConstants::WATCHDOG_ALERT_TO_ADDRESS),
+            Hilos::$env[EnvConstants::WATCHDOG_ALERT_TO_ADDRESS]->string(),
             5000,
         );
     }

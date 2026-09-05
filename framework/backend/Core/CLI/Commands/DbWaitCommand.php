@@ -101,10 +101,10 @@ HELP;
         $interval = isset($options['interval']) ? (int)$options['interval'] : self::DEFAULT_INTERVAL_SEC;
         $timeout = isset($options['timeout']) ? (int)$options['timeout'] : self::DEFAULT_TIMEOUT_SEC;
 
-        $host = Hilos::$env[EnvConstants::DB_HOST];
-        $port = Hilos::$env->int(EnvConstants::DB_PORT);
-        $user = Hilos::$env[EnvConstants::DB_USERNAME];
-        $pass = Hilos::$env[EnvConstants::DB_PASSWORD];
+        $host = Hilos::$env[EnvConstants::DB_HOST]->string();
+        $port = Hilos::$env[EnvConstants::DB_PORT]->int();
+        $user = Hilos::$env[EnvConstants::DB_USERNAME]->string();
+        $pass = Hilos::$env[EnvConstants::DB_PASSWORD]->string();
 
         $start = time();
         $attempt = 0;

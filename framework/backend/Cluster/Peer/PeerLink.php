@@ -116,8 +116,8 @@ final class PeerLink extends AbstractClient
         $this->localIdentity = $localIdentity;
         $this->dialer = $dialer;
 
-        $this->keepaliveIntervalSec = Hilos::$env->int(EnvConstants::CLUSTER_LINK_KEEPALIVE_INTERVAL_MS) / TimeConstants::MS_PER_SECOND;
-        $this->linkTimeoutSec = Hilos::$env->int(EnvConstants::CLUSTER_LINK_TIMEOUT_MS) / TimeConstants::MS_PER_SECOND;
+        $this->keepaliveIntervalSec = Hilos::$env[EnvConstants::CLUSTER_LINK_KEEPALIVE_INTERVAL_MS]->int() / TimeConstants::MS_PER_SECOND;
+        $this->linkTimeoutSec = Hilos::$env[EnvConstants::CLUSTER_LINK_TIMEOUT_MS]->int() / TimeConstants::MS_PER_SECOND;
         $this->maxWriteBufferBytes = self::MAX_WRITE_BUFFER_BYTES;
         $this->lastHeardAt = microtime(true);
     }

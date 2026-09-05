@@ -107,10 +107,10 @@ final class DatabaseReconnectIntegrationTest extends FrameworkIntegrationTestCas
         Database::close(DatabaseConnectionDefaults::PRIMARY_INDEX);
         Database::configure(
             index: DatabaseConnectionDefaults::PRIMARY_INDEX,
-            host: Hilos::$env[EnvConstants::DB_HOST],
-            user: Hilos::$env[EnvConstants::DB_USERNAME],
-            password: Hilos::$env[EnvConstants::DB_PASSWORD],
-            database: Hilos::$env[EnvConstants::DB_DATABASE],
+            host: Hilos::$env[EnvConstants::DB_HOST]->string(),
+            user: Hilos::$env[EnvConstants::DB_USERNAME]->string(),
+            password: Hilos::$env[EnvConstants::DB_PASSWORD]->string(),
+            database: Hilos::$env[EnvConstants::DB_DATABASE]->string(),
             port: self::CLOSED_PORT,
             charset: DatabaseConnectionDefaults::CHARSET,
         );
@@ -147,11 +147,11 @@ final class DatabaseReconnectIntegrationTest extends FrameworkIntegrationTestCas
     private function killConnection(int $connectionId): void
     {
         $killer = new mysqli(
-            Hilos::$env[EnvConstants::DB_HOST],
-            Hilos::$env[EnvConstants::DB_USERNAME],
-            Hilos::$env[EnvConstants::DB_PASSWORD],
-            Hilos::$env[EnvConstants::DB_DATABASE],
-            Hilos::$env->int(EnvConstants::DB_PORT),
+            Hilos::$env[EnvConstants::DB_HOST]->string(),
+            Hilos::$env[EnvConstants::DB_USERNAME]->string(),
+            Hilos::$env[EnvConstants::DB_PASSWORD]->string(),
+            Hilos::$env[EnvConstants::DB_DATABASE]->string(),
+            Hilos::$env[EnvConstants::DB_PORT]->int(),
         );
         $killer->query("KILL {$connectionId}");
         $killer->close();

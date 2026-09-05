@@ -117,7 +117,8 @@ class PushDeliveryChannel extends AbstractDeliveryChannel
      */
     public function shardKeyFor(int $userId, int $notificationId): ?int
     {
-        $workerCount = max(1, Hilos::$env?->int(EnvConstants::PUSH_WORKER_COUNT) ?? 1);
+        $env = Hilos::$env;
+        $workerCount = $env === null ? 1 : max(1, $env[EnvConstants::PUSH_WORKER_COUNT]->int());
 
         return 1 + ($userId % $workerCount);
     }

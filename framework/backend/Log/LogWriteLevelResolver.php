@@ -74,7 +74,7 @@ final class LogWriteLevelResolver
         }
 
         try {
-            $name = $env->string(EnvConstants::LOG_WRITE_LEVEL);
+            $name = $env[EnvConstants::LOG_WRITE_LEVEL]->string();
         } catch (EnvException) {
             return LogLevel::Info;
         }

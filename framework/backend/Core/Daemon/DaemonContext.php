@@ -46,7 +46,7 @@ final readonly class DaemonContext
      */
     public function frontendDistPath(): string
     {
-        $override = Hilos::$env[EnvConstants::FRONTEND_DIST_PATH];
+        $override = Hilos::$env[EnvConstants::FRONTEND_DIST_PATH]->string();
 
         return $override !== '' ? $override : $this->projectRoot . '/frontend/dist';
     }

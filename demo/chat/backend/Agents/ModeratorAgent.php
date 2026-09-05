@@ -81,7 +81,7 @@ final class ModeratorAgent extends AbstractAgent
     public function __construct()
     {
         $this->profile = Hilos::$llm->resolve(ChatLLMConstants::PROFILE_MODERATION);
-        $this->chatClient = AppEnv::fromString(Hilos::$env[EnvConstants::APP_ENV]) === AppEnv::TEST
+        $this->chatClient = AppEnv::fromString(Hilos::$env[EnvConstants::APP_ENV]->string()) === AppEnv::TEST
             ? new TestModerationChatClient()
             : ClientFactory::createChatClientForProfile($this->profile);
     }

@@ -66,8 +66,8 @@ class CliMonitorManager extends BaseManager
         Logger::info("Press Ctrl+C to exit");
 
         // Initialize HTTP client
-        $host = Hilos::$env[EnvConstants::HILOS_DAEMON_HOST];
-        $port = Hilos::$env->int(EnvConstants::HTTP_STATUS_PORT);
+        $host = Hilos::$env[EnvConstants::HILOS_DAEMON_HOST]->string();
+        $port = Hilos::$env[EnvConstants::HTTP_STATUS_PORT]->int();
 
         $httpClient = new AsyncHttpClient($host, $port, ApiEndpoint::STATUS);
         $httpClient->timeout = 400.0;  // 0.4 seconds timeout
@@ -145,7 +145,7 @@ class CliMonitorManager extends BaseManager
         }
 
         // Check TERM variable
-        $term = Hilos::$env[EnvConstants::TERM];
+        $term = Hilos::$env[EnvConstants::TERM]->string();
         if (!$term || $term === 'dumb') {
             Logger::info("WARNING: Terminal capabilities limited (TERM=$term).");
             Logger::info("Monitor may not display correctly.");
@@ -163,7 +163,7 @@ class CliMonitorManager extends BaseManager
     private function updateDisplay(): void
     {
         // Clear screen (cross-platform)
-        $term = Hilos::$env[EnvConstants::TERM];
+        $term = Hilos::$env[EnvConstants::TERM]->string();
         if ($term !== '' && $term !== 'dumb') {
             system('clear');
         } else {

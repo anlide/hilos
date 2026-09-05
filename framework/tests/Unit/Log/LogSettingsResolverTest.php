@@ -327,7 +327,9 @@ final class LogSettingsResolverTest extends TestCase
      */
     private function envInt(EnvConstants $key): int
     {
-        return max(0, Hilos::$env?->int($key) ?? 0);
+        $env = Hilos::$env;
+
+        return $env === null ? 0 : max(0, $env[$key]->int());
     }
 }
 

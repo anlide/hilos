@@ -47,7 +47,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     {
         parent::__construct($socket);
 
-        $this->serverAllowsPersistentConnections = Hilos::$env->bool(EnvConstants::HTTP_STATUS_KEEP_ALIVE);
+        $this->serverAllowsPersistentConnections = Hilos::$env[EnvConstants::HTTP_STATUS_KEEP_ALIVE]->bool();
     }
 
     /**

@@ -208,11 +208,11 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
     {
         Database::configure(
             index: self::RIVAL_INDEX,
-            host: Hilos::$env[EnvConstants::DB_HOST],
-            user: Hilos::$env[EnvConstants::DB_USERNAME],
-            password: Hilos::$env[EnvConstants::DB_PASSWORD],
-            database: Hilos::$env[EnvConstants::DB_DATABASE],
-            port: Hilos::$env->int(EnvConstants::DB_PORT),
+            host: Hilos::$env[EnvConstants::DB_HOST]->string(),
+            user: Hilos::$env[EnvConstants::DB_USERNAME]->string(),
+            password: Hilos::$env[EnvConstants::DB_PASSWORD]->string(),
+            database: Hilos::$env[EnvConstants::DB_DATABASE]->string(),
+            port: Hilos::$env[EnvConstants::DB_PORT]->int(),
             charset: DatabaseConnectionDefaults::CHARSET,
         );
         Database::connect(self::RIVAL_INDEX);

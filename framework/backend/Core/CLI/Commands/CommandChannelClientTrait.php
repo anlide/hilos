@@ -48,8 +48,8 @@ trait CommandChannelClientTrait
      */
     protected function sendCommand(string $command, array $payload): CommandChannelResult
     {
-        $host = Hilos::$env[EnvConstants::HILOS_DAEMON_HOST];
-        $port = Hilos::$env->int(EnvConstants::COMMAND_PORT);
+        $host = Hilos::$env[EnvConstants::HILOS_DAEMON_HOST]->string();
+        $port = Hilos::$env[EnvConstants::COMMAND_PORT]->int();
         $address = "{$host}:{$port}";
 
         $client = new AsyncCommandClient($host, $port);

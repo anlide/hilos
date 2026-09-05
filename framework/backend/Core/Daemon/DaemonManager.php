@@ -3839,7 +3839,7 @@ abstract class DaemonManager extends BaseManager implements
     private function reHydrateTimeoutSeconds(): float
     {
         try {
-            return (float)Hilos::$env->int(EnvConstants::HILOS_DB_REHYDRATE_TIMEOUT);
+            return (float)Hilos::$env[EnvConstants::HILOS_DB_REHYDRATE_TIMEOUT]->int();
         } catch (EnvException $e) {
             Logger::error('DB re-hydrate timeout is unreadable', ['error' => $e->getMessage()]);
 
@@ -5321,7 +5321,7 @@ abstract class DaemonManager extends BaseManager implements
      */
     private function registerBackupCronRules(): void
     {
-        if (!Hilos::$env->bool(EnvConstants::BACKUP_ENABLED)) {
+        if (!Hilos::$env[EnvConstants::BACKUP_ENABLED]->bool()) {
             return;
         }
 

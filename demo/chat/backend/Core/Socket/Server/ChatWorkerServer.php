@@ -54,12 +54,13 @@ final class ChatWorkerServer extends WorkerServer
             $this->startAgent('bot', (string) $bot->id);
         }
 
-        $mailWorkerCount = max(1, Hilos::$env?->int(EnvConstants::MAIL_WORKER_COUNT) ?? 1);
+        $env = Hilos::$env;
+        $mailWorkerCount = $env === null ? 1 : max(1, $env[EnvConstants::MAIL_WORKER_COUNT]->int());
         for ($shard = 1; $shard <= $mailWorkerCount; $shard++) {
             $this->startAgent(HilosAgentType::HILOS_MAIL, (string) $shard);
         }
 
-        $smsWorkerCount = max(1, Hilos::$env?->int(EnvConstants::SMS_WORKER_COUNT) ?? 1);
+        $smsWorkerCount = $env === null ? 1 : max(1, $env[EnvConstants::SMS_WORKER_COUNT]->int());
         for ($shard = 1; $shard <= $smsWorkerCount; $shard++) {
             $this->startAgent(HilosAgentType::HILOS_SMS, (string) $shard);
         }

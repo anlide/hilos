@@ -94,12 +94,12 @@ class LlmRouter
         }
         $entry = $catalog[$profileKey];
 
-        $provider = LlmProvider::fromValue(Hilos::$env[$entry[LlmProfileCatalogConstants::PROVIDER_ENV]]);
+        $provider = LlmProvider::fromValue(Hilos::$env[$entry[LlmProfileCatalogConstants::PROVIDER_ENV]]->string());
 
         if ($provider === LlmProvider::EXTERNAL) {
-            $url = Hilos::$env[$entry[LlmProfileCatalogConstants::EXTERNAL_URL_ENV]];
-            $model = Hilos::$env[$entry[LlmProfileCatalogConstants::EXTERNAL_MODEL_ENV]];
-            $apiKey = Hilos::$env[$entry[LlmProfileCatalogConstants::API_KEY_ENV]];
+            $url = Hilos::$env[$entry[LlmProfileCatalogConstants::EXTERNAL_URL_ENV]]->string();
+            $model = Hilos::$env[$entry[LlmProfileCatalogConstants::EXTERNAL_MODEL_ENV]]->string();
+            $apiKey = Hilos::$env[$entry[LlmProfileCatalogConstants::API_KEY_ENV]]->string();
             if ($apiKey === '') {
                 throw new LLMConfigurationException(
                     "LLM profile '{$profileKey}' selects the external provider but has no API key",
@@ -110,13 +110,13 @@ class LlmRouter
                 $entry[LlmProfileCatalogConstants::LOCAL_URL_ENV],
                 $entry[LlmProfileCatalogConstants::LOCAL_URL_FALLBACK_ENV] ?? null,
             );
-            $model = Hilos::$env[$entry[LlmProfileCatalogConstants::LOCAL_MODEL_ENV]];
+            $model = Hilos::$env[$entry[LlmProfileCatalogConstants::LOCAL_MODEL_ENV]]->string();
             $apiKey = null;
         }
 
         $timeoutEnv = $entry[LlmProfileCatalogConstants::TIMEOUT_ENV] ?? null;
         $timeoutSec = $timeoutEnv !== null
-            ? Hilos::$env->float($timeoutEnv)
+            ? Hilos::$env[$timeoutEnv]->float()
             : LLMConstants::DEFAULT_TIMEOUT_SEC;
 
         return new LlmProfile(

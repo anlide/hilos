@@ -133,7 +133,7 @@ HELP;
     public function execute(array $options, array $args): int
     {
         try {
-            $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+            $root = Hilos::$env[EnvConstants::BACKUP_DIR]->string();
         } catch (EnvException $e) {
             echo "Error: {$e->getMessage()}\n";
 

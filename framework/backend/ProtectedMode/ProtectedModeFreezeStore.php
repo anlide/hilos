@@ -164,6 +164,6 @@ final class ProtectedModeFreezeStore
      */
     private static function path(): string
     {
-        return dirname(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]) . '/' . self::FILE_NAME;
+        return dirname(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]->string()) . '/' . self::FILE_NAME;
     }
 }

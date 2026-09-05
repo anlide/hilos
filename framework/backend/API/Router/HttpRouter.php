@@ -46,7 +46,7 @@ class HttpRouter
     {
         $this->registry = new RouteRegistry();
         $this->resolver = new RouteResolver();
-        $this->sessionCookieName = Hilos::$env->string(EnvConstants::HILOS_SESSION_COOKIE_NAME);
+        $this->sessionCookieName = Hilos::$env[EnvConstants::HILOS_SESSION_COOKIE_NAME]->string();
     }
 
     /**

@@ -12,7 +12,7 @@ namespace Hilos\Constants;
  * Using Pure Enum where the name IS the value.
  *
  * Read values through Hilos::$env:
- * Hilos::$env[EnvConstants::HILOS_DAEMON_HOST]
+ * Hilos::$env[EnvConstants::HILOS_DAEMON_HOST]->string()
  */
 enum EnvConstants
 {

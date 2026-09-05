@@ -73,7 +73,7 @@ final class LogStoreReader
     public static function fromEnv(): self
     {
         try {
-            $daemonLogFile = Hilos::$env[EnvConstants::DAEMON_LOG_FILE];
+            $daemonLogFile = Hilos::$env[EnvConstants::DAEMON_LOG_FILE]->string();
         } catch (EnvException) {
             return new self(null);
         }
@@ -104,7 +104,7 @@ final class LogStoreReader
             basename(DaemonRawStream::pathFor($daemonLogFile)),
         ];
         try {
-            $errorLogFile = Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE];
+            $errorLogFile = Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]->string();
         } catch (EnvException) {
             return $basenames;
         }

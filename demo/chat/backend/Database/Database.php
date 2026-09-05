@@ -55,11 +55,11 @@ final class Database extends BaseDatabase
         // Configure primary database connection (index 0)
         self::configure(
             index: DatabaseConnectionDefaults::PRIMARY_INDEX,
-            host: Hilos::$env[EnvConstants::DB_HOST],
-            user: Hilos::$env[EnvConstants::DB_USERNAME],
-            password: Hilos::$env[EnvConstants::DB_PASSWORD],
-            database: Hilos::$env[EnvConstants::DB_DATABASE],
-            port: Hilos::$env->int(EnvConstants::DB_PORT),
+            host: Hilos::$env[EnvConstants::DB_HOST]->string(),
+            user: Hilos::$env[EnvConstants::DB_USERNAME]->string(),
+            password: Hilos::$env[EnvConstants::DB_PASSWORD]->string(),
+            database: Hilos::$env[EnvConstants::DB_DATABASE]->string(),
+            port: Hilos::$env[EnvConstants::DB_PORT]->int(),
             charset: DatabaseConnectionDefaults::CHARSET,
         );
 
@@ -82,11 +82,11 @@ final class Database extends BaseDatabase
         // Example for secondary database:
         // self::configure(
         //     index: 1,
-        //     host: Hilos::$env[EnvConstants::DB_SECONDARY_HOST],
-        //     user: Hilos::$env[EnvConstants::DB_SECONDARY_USERNAME],
-        //     password: Hilos::$env[EnvConstants::DB_SECONDARY_PASSWORD],
-        //     database: Hilos::$env[EnvConstants::DB_SECONDARY_DATABASE],
-        //     port: Hilos::$env->int(EnvConstants::DB_SECONDARY_PORT),
+        //     host: Hilos::$env[EnvConstants::DB_SECONDARY_HOST]->string(),
+        //     user: Hilos::$env[EnvConstants::DB_SECONDARY_USERNAME]->string(),
+        //     password: Hilos::$env[EnvConstants::DB_SECONDARY_PASSWORD]->string(),
+        //     database: Hilos::$env[EnvConstants::DB_SECONDARY_DATABASE]->string(),
+        //     port: Hilos::$env[EnvConstants::DB_SECONDARY_PORT]->int(),
         //     charset: DatabaseConnectionDefaults::CHARSET,
         // );
         // self::connect(1);

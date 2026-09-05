@@ -413,6 +413,6 @@ final class RegistrationReservationService
      */
     private function ttlSeconds(): int
     {
-        return Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_TTL_SEC);
+        return Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int();
     }
 }

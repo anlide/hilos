@@ -70,15 +70,15 @@ final class ChatLlmProfileOverrideSource implements LlmProfileOverrideSource
         $timeout = $timeout > 0.0 ? $timeout : $profile->timeoutSec;
 
         if ($provider === LlmProvider::EXTERNAL) {
-            $url = Hilos::$env[EnvConstants::LLM_EXTERNAL_URL];
-            $apiKey = Hilos::$env[EnvConstants::LLM_EXTERNAL_API_KEY];
+            $url = Hilos::$env[EnvConstants::LLM_EXTERNAL_URL]->string();
+            $apiKey = Hilos::$env[EnvConstants::LLM_EXTERNAL_API_KEY]->string();
             if ($apiKey === '') {
                 throw new LLMConfigurationException(
                     "LLM profile '{$profile->key}' selects the external provider via settings but has no API key",
                 );
             }
         } else {
-            $url = Hilos::$setting[$urlKey]->string() ?: Hilos::$env[EnvConstants::LLM_LOCAL_URL];
+            $url = Hilos::$setting[$urlKey]->string() ?: Hilos::$env[EnvConstants::LLM_LOCAL_URL]->string();
             $apiKey = null;
         }
 

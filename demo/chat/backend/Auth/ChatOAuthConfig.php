@@ -82,7 +82,7 @@ final class ChatOAuthConfig
      */
     public static function buildService(): OAuthService
     {
-        $appSecret = Hilos::$env[ChatEnvConstants::OAUTH_STATE_SECRET];
+        $appSecret = Hilos::$env[ChatEnvConstants::OAUTH_STATE_SECRET]->string();
 
         return new OAuthService(
             self::buildProviderRegistry(),
@@ -125,9 +125,9 @@ final class ChatOAuthConfig
         string $clientIdKey,
         string $clientSecretKey,
     ): GenericOAuthProvider|StubOAuthProvider {
-        $clientId = Hilos::$env[$clientIdKey];
-        $clientSecret = Hilos::$env[$clientSecretKey];
-        $redirectUri = Hilos::$env[ChatEnvConstants::OAUTH_REDIRECT_URI];
+        $clientId = Hilos::$env[$clientIdKey]->string();
+        $clientSecret = Hilos::$env[$clientSecretKey]->string();
+        $redirectUri = Hilos::$env[ChatEnvConstants::OAUTH_REDIRECT_URI]->string();
 
         if ($clientId === '' || $clientSecret === '') {
             return new StubOAuthProvider($preset->value, $redirectUri, self::stubCode($preset));

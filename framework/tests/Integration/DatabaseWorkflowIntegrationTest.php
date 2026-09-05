@@ -57,7 +57,7 @@ final class DatabaseWorkflowIntegrationTest extends FrameworkIntegrationTestCase
 
         $this->assertNotSame('', trim(Database::getServerInfo()));
 
-        $expectedDb = Hilos::$env[EnvConstants::DB_DATABASE];
+        $expectedDb = Hilos::$env[EnvConstants::DB_DATABASE]->string();
         Database::sql('SELECT DATABASE() AS db');
         $dbRow = Database::row();
         $this->assertNotNull($dbRow);

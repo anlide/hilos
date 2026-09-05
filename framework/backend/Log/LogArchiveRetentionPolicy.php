@@ -132,8 +132,13 @@ final class LogArchiveRetentionPolicy
      */
     private static function envInt(EnvConstants $key, array &$unreadable): int
     {
+        $env = Hilos::$env;
+        if ($env === null) {
+            return 0;
+        }
+
         try {
-            return max(0, Hilos::$env?->int($key) ?? 0);
+            return max(0, $env[$key]->int());
         } catch (EnvException $exception) {
             $unreadable[$key->name] = $exception->getMessage();
 

@@ -21,6 +21,8 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Context\DbContext;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\EnvCatalogConstants;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use PHPUnit\Framework\TestCase;
@@ -425,19 +427,41 @@ final class BackupAgentTest extends TestCase
     /**
      * Builds an environment the restore admission can read every value it needs from.
      *
+     * The fixtures answer at the catalog and the value seam rather than at the typed readers,
+     * because an index read reaches those two and never the readers themselves.
+     *
      * @return EnvAccessor Accessor answering the backup keys with fixtures
      */
     private function env(): EnvAccessor
     {
         return new class extends EnvAccessor {
-            public function string(EnvConstants|string $name): string
+            /**
+             * @return array<string, array<string, mixed>> Framework catalog plus the entry point a project declares
+             */
+            protected function getCatalog(): array
             {
-                return $name === EnvConstants::BACKUP_DIR ? '/app/data/backup' : '/app/cli.php';
+                return [
+                    ...parent::getCatalog(),
+                    EnvConstants::BACKUP_CLI_ENTRY->name => [
+                        EnvCatalogConstants::CATALOG_ENTRY_TYPE => EnvCatalogConstants::TYPE_STRING,
+                    ],
+                ];
             }
 
-            public function int(EnvConstants|string $name): int
+            /**
+             * @param string $key Environment variable name
+             * @return mixed Fixture for a string or integer key, the catalog answer for every other type
+             * @throws EnvException When the key is invalid, uncataloged, or has no answer
+             */
+            public function effectiveValueFor(string $key): mixed
             {
-                return 600;
+                return match ($this->typeFor($key)) {
+                    EnvCatalogConstants::TYPE_STRING => $key === EnvConstants::BACKUP_DIR->name
+                        ? '/app/data/backup'
+                        : '/app/cli.php',
+                    EnvCatalogConstants::TYPE_INTEGER => 600,
+                    default => parent::effectiveValueFor($key),
+                };
             }
         };
     }

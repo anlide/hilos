@@ -452,7 +452,7 @@ final class BackupAgent extends AbstractAgent
      */
     public function onStart(): void
     {
-        if (!Hilos::$env->bool(EnvConstants::BACKUP_ENABLED)) {
+        if (!Hilos::$env[EnvConstants::BACKUP_ENABLED]->bool()) {
             $this->logAgentInfo('Backup disabled; skipping history scan');
 
             return;
@@ -462,8 +462,8 @@ final class BackupAgent extends AbstractAgent
         // work, every create is refused by startBackup(), and the storage scan finds nothing -
         // so say it once, loudly, at the only moment an operator is reading the agent log.
         foreach (self::missingCreateConfig(
-            Hilos::$env->string(EnvConstants::BACKUP_DIR),
-            Hilos::$env->string(EnvConstants::BACKUP_CLI_ENTRY),
+            Hilos::$env[EnvConstants::BACKUP_DIR]->string(),
+            Hilos::$env[EnvConstants::BACKUP_CLI_ENTRY]->string(),
         ) as $key) {
             $this->logAgentError("Backups are enabled but {$key} is not configured; no backup can be created");
         }
@@ -739,7 +739,7 @@ final class BackupAgent extends AbstractAgent
             }
         }
 
-        $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+        $root = Hilos::$env[EnvConstants::BACKUP_DIR]->string();
         if ($root === '') {
             $this->replyToCommand(CommandReplyDTO::error(
                 $data->correlationId,
@@ -821,7 +821,7 @@ final class BackupAgent extends AbstractAgent
         $shipped = 0;
         $failed = 0;
         $mirrorFailed = false;
-        $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+        $root = Hilos::$env[EnvConstants::BACKUP_DIR]->string();
         $shipper = $this->shipper();
 
         if ($shipper !== null && $root !== '') {
@@ -894,7 +894,7 @@ final class BackupAgent extends AbstractAgent
         BackupShipPlan $plan,
         ?BackupArchiveEncryptor $encryptor,
     ): ?string {
-        $timeout = (float)Hilos::$env->int(EnvConstants::BACKUP_SHIP_TIMEOUT);
+        $timeout = (float)Hilos::$env[EnvConstants::BACKUP_SHIP_TIMEOUT]->int();
 
         if ($plan->step === BackupShipStep::MIRROR) {
             $error = $this->runToCompletion($shipper->mirrorCommand($plan->localPath, $plan->scope), $timeout);
@@ -1191,10 +1191,10 @@ final class BackupAgent extends AbstractAgent
 
         try {
             $missing = self::missingCreateConfig(
-                Hilos::$env->string(EnvConstants::BACKUP_DIR),
-                Hilos::$env->string(EnvConstants::BACKUP_CLI_ENTRY),
+                Hilos::$env[EnvConstants::BACKUP_DIR]->string(),
+                Hilos::$env[EnvConstants::BACKUP_CLI_ENTRY]->string(),
             );
-            $timeoutSeconds = (float)Hilos::$env->int(EnvConstants::BACKUP_RESTORE_TIMEOUT);
+            $timeoutSeconds = (float)Hilos::$env[EnvConstants::BACKUP_RESTORE_TIMEOUT]->int();
         } catch (EnvException $e) {
             return 'Cannot restore: ' . $e->getMessage();
         }
@@ -1458,7 +1458,7 @@ final class BackupAgent extends AbstractAgent
         }
 
         try {
-            new BackupPruner()->deleteStored($row, Hilos::$env->string(EnvConstants::BACKUP_DIR));
+            new BackupPruner()->deleteStored($row, Hilos::$env[EnvConstants::BACKUP_DIR]->string());
             // Stamp the requester as the origin of the index write so its own row
             // removal applies at once while other tabs keep the pending gate.
             ExecutionContext::withOrigin(
@@ -1513,7 +1513,7 @@ final class BackupAgent extends AbstractAgent
         }
 
         try {
-            new BackupCreator()->setStoredKeep($row, Hilos::$env->string(EnvConstants::BACKUP_DIR), $data->keep);
+            new BackupCreator()->setStoredKeep($row, Hilos::$env[EnvConstants::BACKUP_DIR]->string(), $data->keep);
             // Re-mirror the index from the rewritten sidecar (files=truth): the cleared +
             // recreated rows carry the new keep pin to every reader over RT sync. Stamp the
             // requester as the origin so its own row update applies at once, other tabs gate.
@@ -1579,7 +1579,7 @@ final class BackupAgent extends AbstractAgent
             $this->childProcess = new Process(
                 self::PHP_BINARY,
                 self::buildRestoreChildArgs(
-                    Hilos::$env->string(EnvConstants::BACKUP_CLI_ENTRY),
+                    Hilos::$env[EnvConstants::BACKUP_CLI_ENTRY]->string(),
                     $id,
                     $scope,
                     $decision,
@@ -1620,7 +1620,7 @@ final class BackupAgent extends AbstractAgent
         ?string $initiatorAcceptKey = null,
         ?string $initiatorRequestId = null,
     ): void {
-        if (!Hilos::$env->bool(EnvConstants::BACKUP_ENABLED)) {
+        if (!Hilos::$env[EnvConstants::BACKUP_ENABLED]->bool()) {
             $this->logAgentWarning('Backup is disabled; ignoring create request');
 
             return;
@@ -1644,8 +1644,8 @@ final class BackupAgent extends AbstractAgent
             return;
         }
 
-        $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
-        $cliEntry = Hilos::$env->string(EnvConstants::BACKUP_CLI_ENTRY);
+        $root = Hilos::$env[EnvConstants::BACKUP_DIR]->string();
+        $cliEntry = Hilos::$env[EnvConstants::BACKUP_CLI_ENTRY]->string();
         $missing = self::missingCreateConfig($root, $cliEntry);
         if ($missing !== []) {
             $this->logAgentError('Cannot start backup: missing configuration (' . implode(', ', $missing) . ')');
@@ -1670,7 +1670,7 @@ final class BackupAgent extends AbstractAgent
         $this->currentInitiatorRequestId = $initiatorRequestId;
         $this->currentInitiatorSessionTokenHash = $this->resolveInitiatorSessionTokenHash($initiatorAcceptKey);
         $this->startedAt = microtime(true);
-        $this->timeoutSeconds = (float)Hilos::$env->int(EnvConstants::BACKUP_TIMEOUT);
+        $this->timeoutSeconds = (float)Hilos::$env[EnvConstants::BACKUP_TIMEOUT]->int();
         $this->runKind = BackupRunKind::CREATE;
         $this->markRuntimeRunning($id, $scope, BackupEstimator::createSeconds($this->indexRows(), $scope));
 
@@ -1934,7 +1934,7 @@ final class BackupAgent extends AbstractAgent
         $this->shipProcess->tick();
 
         if ($this->shipProcess->getStatus()[Process::STATUS_RUNNING] === true) {
-            $timeout = (float)Hilos::$env->int(EnvConstants::BACKUP_SHIP_TIMEOUT);
+            $timeout = (float)Hilos::$env[EnvConstants::BACKUP_SHIP_TIMEOUT]->int();
             if (microtime(true) - $this->shipStartedAt >= $timeout) {
                 $this->shipProcess->stop();
                 $this->shipProcess->halt();
@@ -2096,7 +2096,7 @@ final class BackupAgent extends AbstractAgent
      */
     private function startNextShipStep(): void
     {
-        $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+        $root = Hilos::$env[EnvConstants::BACKUP_DIR]->string();
         if ($root === '') {
             return;
         }
@@ -2253,7 +2253,7 @@ final class BackupAgent extends AbstractAgent
         }
 
         try {
-            $required = FsPath::size($archivePath) + Hilos::$env->int(EnvConstants::BACKUP_MIN_FREE_BYTES);
+            $required = FsPath::size($archivePath) + Hilos::$env[EnvConstants::BACKUP_MIN_FREE_BYTES]->int();
         } catch (FsException) {
             return true;
         }
@@ -2349,7 +2349,7 @@ final class BackupAgent extends AbstractAgent
         try {
             $stored = new BackupCreator()->recordShipping(
                 $row,
-                Hilos::$env->string(EnvConstants::BACKUP_DIR),
+                Hilos::$env[EnvConstants::BACKUP_DIR]->string(),
                 $shippedAt,
                 $outcome,
                 $error,
@@ -2443,7 +2443,7 @@ final class BackupAgent extends AbstractAgent
             return;
         }
         // An empty destination is the documented "shipping off" state, not a misconfiguration.
-        if (Hilos::$env->string(EnvConstants::BACKUP_SHIP_TARGET) === '') {
+        if (Hilos::$env[EnvConstants::BACKUP_SHIP_TARGET]->string() === '') {
             return;
         }
 
@@ -2466,7 +2466,7 @@ final class BackupAgent extends AbstractAgent
         if ($this->shipEncryptionReported) {
             return;
         }
-        if (Hilos::$env->string(EnvConstants::BACKUP_SHIP_TARGET) === '') {
+        if (Hilos::$env[EnvConstants::BACKUP_SHIP_TARGET]->string() === '') {
             return;
         }
 
@@ -2968,7 +2968,7 @@ final class BackupAgent extends AbstractAgent
                 $id,
                 $row->env,
                 $row->scope,
-                Hilos::$env->string(EnvConstants::BACKUP_DIR),
+                Hilos::$env[EnvConstants::BACKUP_DIR]->string(),
                 $restoredAt,
                 $durationSeconds,
             );
@@ -3579,7 +3579,7 @@ final class BackupAgent extends AbstractAgent
     {
         $this->discardDirectoryChanges();
 
-        $result = new BackupHistoryScanner()->scan(Hilos::$env->string(EnvConstants::BACKUP_DIR));
+        $result = new BackupHistoryScanner()->scan(Hilos::$env[EnvConstants::BACKUP_DIR]->string());
         $changes = $this->historiesView()?->actions->syncToScan($result->metadatas) ?? 0;
         $this->reportAnomalies($result);
 
@@ -3610,7 +3610,7 @@ final class BackupAgent extends AbstractAgent
      */
     private function watchedBackupDirectories(): array
     {
-        $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+        $root = Hilos::$env[EnvConstants::BACKUP_DIR]->string();
         if ($root === '' || !is_dir($root)) {
             return [];
         }
@@ -3682,7 +3682,7 @@ final class BackupAgent extends AbstractAgent
             $policy = BackupRetentionPolicy::fromEnv();
             $pruner = new BackupPruner();
             $rows = $this->indexRows();
-            $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+            $root = Hilos::$env[EnvConstants::BACKUP_DIR]->string();
 
             $doomed = $pruner->selectForDeletion(
                 $rows,

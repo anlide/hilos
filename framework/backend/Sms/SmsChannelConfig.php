@@ -164,7 +164,9 @@ final class SmsChannelConfig
      */
     private static function envString(EnvConstants $key): ?string
     {
-        return Hilos::$env?->string($key);
+        $env = Hilos::$env;
+
+        return $env === null ? null : $env[$key]->string();
     }
 
     /**

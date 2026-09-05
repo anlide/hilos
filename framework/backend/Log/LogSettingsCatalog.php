@@ -187,7 +187,7 @@ final class LogSettingsCatalog implements CatalogProviderInterface
         }
 
         try {
-            return max(0, $env->int($key));
+            return max(0, $env[$key]->int());
         } catch (EnvException) {
             return $fallback;
         }
@@ -208,7 +208,7 @@ final class LogSettingsCatalog implements CatalogProviderInterface
         }
 
         try {
-            return $env->string($key);
+            return $env[$key]->string();
         } catch (EnvException) {
             return $fallback;
         }

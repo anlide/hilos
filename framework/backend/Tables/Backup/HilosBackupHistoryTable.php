@@ -380,8 +380,13 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      */
     private function currentEnv(): ?string
     {
+        $env = Hilos::$env;
+        if ($env === null) {
+            return null;
+        }
+
         try {
-            return Hilos::$env?->string(EnvConstants::APP_ENV);
+            return $env[EnvConstants::APP_ENV]->string();
         } catch (Throwable) {
             return null;
         }

@@ -293,14 +293,17 @@ final class DeferredSessionCarryoverQueue
      */
     private static function path(): ?string
     {
+        $env = Hilos::$env;
+        if ($env === null) {
+            return null;
+        }
+
         try {
-            $directory = Hilos::$env?->string(EnvConstants::BACKUP_DIR);
+            $directory = $env[EnvConstants::BACKUP_DIR]->string();
         } catch (EnvException) {
             return null;
         }
 
-        return $directory === null || $directory === ''
-            ? null
-            : rtrim($directory, '/') . '/' . self::FILE_NAME;
+        return $directory === '' ? null : rtrim($directory, '/') . '/' . self::FILE_NAME;
     }
 }

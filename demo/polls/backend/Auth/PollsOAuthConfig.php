@@ -78,7 +78,7 @@ final class PollsOAuthConfig
      */
     public static function buildService(): OAuthService
     {
-        $appSecret = Hilos::$env[PollsEnvConstants::OAUTH_STATE_SECRET];
+        $appSecret = Hilos::$env[PollsEnvConstants::OAUTH_STATE_SECRET]->string();
 
         return new OAuthService(
             self::buildProviderRegistry(),
@@ -121,9 +121,9 @@ final class PollsOAuthConfig
         string $clientIdKey,
         string $clientSecretKey,
     ): GenericOAuthProvider|StubOAuthProvider {
-        $clientId = Hilos::$env[$clientIdKey];
-        $clientSecret = Hilos::$env[$clientSecretKey];
-        $redirectUri = Hilos::$env[PollsEnvConstants::OAUTH_REDIRECT_URI];
+        $clientId = Hilos::$env[$clientIdKey]->string();
+        $clientSecret = Hilos::$env[$clientSecretKey]->string();
+        $redirectUri = Hilos::$env[PollsEnvConstants::OAUTH_REDIRECT_URI]->string();
 
         if ($clientId === '' || $clientSecret === '') {
             return new StubOAuthProvider($preset->value, $redirectUri, self::stubCode($preset));

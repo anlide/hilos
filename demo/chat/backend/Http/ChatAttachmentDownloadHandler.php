@@ -83,7 +83,7 @@ final class ChatAttachmentDownloadHandler
             HttpConstants::HEADER_CACHE_CONTROL => self::CACHE_CONTROL_VALUE,
         ];
 
-        $xAccelLocation = Hilos::$env[ChatEnvConstants::CHAT_FILES_XACCEL_LOCATION];
+        $xAccelLocation = Hilos::$env[ChatEnvConstants::CHAT_FILES_XACCEL_LOCATION]->string();
         if ($xAccelLocation !== '') {
             $headers[HttpHeaders::X_ACCEL_REDIRECT] =
                 rtrim($xAccelLocation, '/') . '/' . rawurlencode($attachment->storedName);

@@ -731,11 +731,11 @@ final class MainPageRegisterTest extends IntegrationTestCase
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
-        $cap = Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_SEND_CAP);
-        $cooldown = Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC);
+        $cap = Hilos::$env[EnvConstants::HILOS_VERIFICATION_SEND_CAP]->int();
+        $cooldown = Hilos::$env[EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC]->int();
         $this->assertGreaterThan(
             $cap * ($cooldown + 1),
-            Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_SEND_WINDOW_SEC),
+            Hilos::$env[EnvConstants::HILOS_VERIFICATION_SEND_WINDOW_SEC]->int(),
             'The window must outlast the ageing this case does, or the cap could never be reached',
         );
         $this->openSession($agent, 'resend-cap-ak');
@@ -1396,7 +1396,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
      */
     private function maxAttempts(): int
     {
-        return max(1, Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_MAX_ATTEMPTS));
+        return max(1, Hilos::$env[EnvConstants::HILOS_VERIFICATION_MAX_ATTEMPTS]->int());
     }
 
     /**

@@ -59,7 +59,7 @@ final class EntrypointPrelude
         // it here would refuse the start over that one name before the daemon's own check
         // gets to name all of them. No APP_ENV means no tests/.env, and the name travels on
         // into that list like any other.
-        if (isset(Hilos::$env[EnvConstants::APP_ENV]) && Hilos::$env[EnvConstants::APP_ENV] === 'test') {
+        if (isset(Hilos::$env[EnvConstants::APP_ENV]) && Hilos::$env[EnvConstants::APP_ENV]->string() === 'test') {
             $hilosClass::loadEnv($projectRoot . '/tests/.env');
         }
 

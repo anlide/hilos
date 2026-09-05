@@ -124,7 +124,7 @@ final class ProtectedModeAlertNotifier
     private function recipients(): array
     {
         try {
-            $configured = Hilos::$env->string(EnvConstants::HILOS_PROTECTED_MODE_ALERT_EMAILS);
+            $configured = Hilos::$env[EnvConstants::HILOS_PROTECTED_MODE_ALERT_EMAILS]->string();
         } catch (EnvException $e) {
             Logger::logAgentError(
                 self::LOG_AGENT_ID,

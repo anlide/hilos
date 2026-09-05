@@ -37,8 +37,13 @@ final class NonProductionGate
      */
     public static function admitted(): bool
     {
+        $env = Hilos::$env;
+        if ($env === null) {
+            return false;
+        }
+
         try {
-            $appEnv = AppEnv::fromString(Hilos::$env?->string(EnvConstants::APP_ENV));
+            $appEnv = AppEnv::fromString($env[EnvConstants::APP_ENV]->string());
         } catch (Throwable) {
             return false;
         }

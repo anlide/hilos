@@ -70,14 +70,20 @@ final class ThrottlePolicy
     public static function fromEnv(): self
     {
         $env = Hilos::$env;
+        if ($env === null) {
+            // No environment in this process: the layer is off, every clamped number stands at its
+            // own floor and the steps are the fallback ladder - what the absent reads produced here
+            // when one `??` answered both for "no accessor" and for "no value".
+            return new self(false, 1.0, 1, 1, self::parseSteps(null), 1);
+        }
 
         return new self(
-            $env?->bool(EnvConstants::HILOS_AUTH_THROTTLE_ENABLED) ?? false,
-            (float)max(1, $env?->int(EnvConstants::HILOS_AUTH_THROTTLE_WINDOW) ?? 0),
-            max(1, $env?->int(EnvConstants::HILOS_AUTH_THROTTLE_MAX_SESSION) ?? 0),
-            max(1, $env?->int(EnvConstants::HILOS_AUTH_THROTTLE_MAX_IP) ?? 0),
-            self::parseSteps($env?->string(EnvConstants::HILOS_AUTH_THROTTLE_STEPS)),
-            max(1, $env?->int(EnvConstants::HILOS_AUTH_THROTTLE_VERDICT_TIMEOUT_MS) ?? 0),
+            $env[EnvConstants::HILOS_AUTH_THROTTLE_ENABLED]->bool(),
+            (float)max(1, $env[EnvConstants::HILOS_AUTH_THROTTLE_WINDOW]->int()),
+            max(1, $env[EnvConstants::HILOS_AUTH_THROTTLE_MAX_SESSION]->int()),
+            max(1, $env[EnvConstants::HILOS_AUTH_THROTTLE_MAX_IP]->int()),
+            self::parseSteps($env[EnvConstants::HILOS_AUTH_THROTTLE_STEPS]->string()),
+            max(1, $env[EnvConstants::HILOS_AUTH_THROTTLE_VERDICT_TIMEOUT_MS]->int()),
         );
     }
 

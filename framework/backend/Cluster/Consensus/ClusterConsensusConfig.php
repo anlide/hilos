@@ -56,7 +56,7 @@ final class ClusterConsensusConfig
      */
     public static function fromEnv(NodeIdentity $identity): self
     {
-        $masterSet = self::parseNodeList(Hilos::$env[EnvConstants::CLUSTER_MASTER_SET]);
+        $masterSet = self::parseNodeList(Hilos::$env[EnvConstants::CLUSTER_MASTER_SET]->string());
         if ($masterSet === []) {
             throw ClusterConfigurationException::missingField(EnvConstants::CLUSTER_MASTER_SET->name);
         }
@@ -72,9 +72,9 @@ final class ClusterConsensusConfig
             ));
         }
 
-        $minMs = Hilos::$env->int(EnvConstants::CLUSTER_ELECTION_TIMEOUT_MIN_MS);
-        $maxMs = Hilos::$env->int(EnvConstants::CLUSTER_ELECTION_TIMEOUT_MAX_MS);
-        $heartbeatMs = Hilos::$env->int(EnvConstants::CLUSTER_HEARTBEAT_INTERVAL_MS);
+        $minMs = Hilos::$env[EnvConstants::CLUSTER_ELECTION_TIMEOUT_MIN_MS]->int();
+        $maxMs = Hilos::$env[EnvConstants::CLUSTER_ELECTION_TIMEOUT_MAX_MS]->int();
+        $heartbeatMs = Hilos::$env[EnvConstants::CLUSTER_HEARTBEAT_INTERVAL_MS]->int();
         self::validateTimings($minMs, $maxMs, $heartbeatMs);
 
         return new self(

@@ -54,13 +54,13 @@ final readonly class TelegramGatewayConfig
      */
     public static function resolve(): self
     {
-        $endpointUrl = Hilos::$env->string(EnvConstants::TELEGRAM_GATEWAY_ENDPOINT_URL);
+        $endpointUrl = Hilos::$env[EnvConstants::TELEGRAM_GATEWAY_ENDPOINT_URL]->string();
 
         return new self(
             endpointUrl: $endpointUrl === '' ? self::DEFAULT_ENDPOINT_URL : $endpointUrl,
-            accessToken: Hilos::$env->string(EnvConstants::TELEGRAM_GATEWAY_TOKEN),
-            senderUsername: Hilos::$env->string(EnvConstants::TELEGRAM_GATEWAY_SENDER_USERNAME),
-            timeoutMs: Hilos::$env->int(EnvConstants::TELEGRAM_GATEWAY_TIMEOUT_MS),
+            accessToken: Hilos::$env[EnvConstants::TELEGRAM_GATEWAY_TOKEN]->string(),
+            senderUsername: Hilos::$env[EnvConstants::TELEGRAM_GATEWAY_SENDER_USERNAME]->string(),
+            timeoutMs: Hilos::$env[EnvConstants::TELEGRAM_GATEWAY_TIMEOUT_MS]->int(),
         );
     }
 

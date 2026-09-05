@@ -120,8 +120,8 @@ HELP;
      */
     private function fetchDaemonStatus(): void
     {
-        $host = Hilos::$env[EnvConstants::HILOS_DAEMON_HOST];
-        $port = Hilos::$env->int(EnvConstants::HTTP_STATUS_PORT);
+        $host = Hilos::$env[EnvConstants::HILOS_DAEMON_HOST]->string();
+        $port = Hilos::$env[EnvConstants::HTTP_STATUS_PORT]->int();
 
         try {
             $client = new AsyncHttpClient($host, $port, ApiEndpoint::STATUS);

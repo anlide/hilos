@@ -46,6 +46,6 @@ final class ChatLlmProfileOverrideTest extends IntegrationTestCase
         $analyzer = Hilos::$llm->resolve(ChatLLMConstants::PROFILE_ANALYZER);
 
         self::assertSame(LlmProvider::LOCAL, $analyzer->provider);
-        self::assertSame(Hilos::$env[EnvConstants::CHAT_CONTEXT_ANALYZER_MODEL], $analyzer->model);
+        self::assertSame(Hilos::$env[EnvConstants::CHAT_CONTEXT_ANALYZER_MODEL]->string(), $analyzer->model);
     }
 }

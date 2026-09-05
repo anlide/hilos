@@ -251,9 +251,10 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 
         try {
             $config = MailTransportConfig::fromEnv();
+            $env = Hilos::$env;
             $this->resolvedMaxConcurrent = max(
                 1,
-                Hilos::$env?->int(EnvConstants::MAIL_MAX_CONCURRENT) ?? self::DEFAULT_MAX_CONCURRENT,
+                $env === null ? self::DEFAULT_MAX_CONCURRENT : $env[EnvConstants::MAIL_MAX_CONCURRENT]->int(),
             );
             $this->transportConfig = $config;
         } catch (EnvException | MailConfigException $e) {

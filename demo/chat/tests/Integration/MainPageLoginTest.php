@@ -446,7 +446,7 @@ final class MainPageLoginTest extends IntegrationTestCase
         return $verifications->findActive(
             VerificationType::PASSWORD_RESET,
             $email,
-            max(1, Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_MAX_ATTEMPTS)),
+            max(1, Hilos::$env[EnvConstants::HILOS_VERIFICATION_MAX_ATTEMPTS]->int()),
         );
     }
 

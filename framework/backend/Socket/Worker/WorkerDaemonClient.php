@@ -54,8 +54,8 @@ class WorkerDaemonClient extends AbstractSocket
             return;
         }
 
-        $host = Hilos::$env[EnvConstants::WORKER_COMM_HOST];
-        $port = Hilos::$env->int(EnvConstants::WORKER_COMM_PORT);
+        $host = Hilos::$env[EnvConstants::WORKER_COMM_HOST]->string();
+        $port = Hilos::$env[EnvConstants::WORKER_COMM_PORT]->int();
 
         // Create socket
         $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);

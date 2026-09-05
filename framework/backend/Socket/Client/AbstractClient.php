@@ -60,7 +60,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     {
         $this->socket = $socket;
 
-        $this->readBufferSize = Hilos::$env->int(EnvConstants::SOCKET_READ_BUFFER_SIZE);
+        $this->readBufferSize = Hilos::$env[EnvConstants::SOCKET_READ_BUFFER_SIZE]->int();
     }
 
     /**

@@ -169,7 +169,7 @@ class DockerManager extends BaseManager
 
         // For error-based restarts, check minimum interval
         if ($this->lastErrorRestartTime !== null) {
-            $minRestartInterval = Hilos::$env->int(EnvConstants::DAEMON_MIN_RESTART_INTERVAL);
+            $minRestartInterval = Hilos::$env[EnvConstants::DAEMON_MIN_RESTART_INTERVAL]->int();
             $timeSinceLastRestart = microtime(true) - $this->lastErrorRestartTime;
 
             if ($timeSinceLastRestart < $minRestartInterval) {
@@ -243,7 +243,7 @@ class DockerManager extends BaseManager
         } elseif ($this->processStartTime !== null && $this->lastErrorRestartTime !== null) {
             // Process is running successfully - check if it worked long enough to reset restart protection
             $processUptime = microtime(true) - $this->processStartTime;
-            $minRestartInterval = Hilos::$env->int(EnvConstants::DAEMON_MIN_RESTART_INTERVAL);
+            $minRestartInterval = Hilos::$env[EnvConstants::DAEMON_MIN_RESTART_INTERVAL]->int();
 
             if ($processUptime >= $minRestartInterval) {
                 // Process has been running successfully for minimum interval - reset restart protection
@@ -271,7 +271,7 @@ class DockerManager extends BaseManager
     private function recordFailedStart(float $uptime, string $errorLogTail): void
     {
         $this->consecutiveFailedStarts++;
-        $threshold = Hilos::$env->int(EnvConstants::DAEMON_FAILED_START_THRESHOLD);
+        $threshold = Hilos::$env[EnvConstants::DAEMON_FAILED_START_THRESHOLD]->int();
         if ($threshold <= 0 || $this->consecutiveFailedStarts < $threshold) {
             return;
         }

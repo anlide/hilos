@@ -44,10 +44,10 @@ final class PeerModule implements DaemonModule
     public function register(DaemonManager $daemon, DaemonContext $context): void
     {
         $peerServer = new PeerServer(
-            Hilos::$env[EnvConstants::CLUSTER_PEER_HOST],
-            Hilos::$env->int(EnvConstants::CLUSTER_PEER_PORT),
+            Hilos::$env[EnvConstants::CLUSTER_PEER_HOST]->string(),
+            Hilos::$env[EnvConstants::CLUSTER_PEER_PORT]->int(),
             Hilos::$cluster->identity(),
-            PeerAddress::parseList(Hilos::$env[EnvConstants::CLUSTER_SEEDS]),
+            PeerAddress::parseList(Hilos::$env[EnvConstants::CLUSTER_SEEDS]->string()),
             Hilos::$cluster->connectionPolicy(),
         );
         $daemon->registerServer($peerServer);

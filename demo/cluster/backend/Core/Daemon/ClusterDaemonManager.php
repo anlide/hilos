@@ -91,8 +91,8 @@ final class ClusterDaemonManager extends DaemonManager
     protected function createServers(DaemonContext $context): iterable
     {
         $this->workerServer = new ClusterWorkerServer(
-            Hilos::$env[EnvConstants::WORKER_COMM_HOST],
-            Hilos::$env->int(EnvConstants::WORKER_COMM_PORT),
+            Hilos::$env[EnvConstants::WORKER_COMM_HOST]->string(),
+            Hilos::$env[EnvConstants::WORKER_COMM_PORT]->int(),
             $context->workerScript(),
             $context->bootstrapDir,
             $this->getAgentManagerDaemon(),
@@ -100,13 +100,13 @@ final class ClusterDaemonManager extends DaemonManager
 
         return [
             new HttpServer(
-                Hilos::$env[EnvConstants::HTTP_STATUS_HOST],
-                Hilos::$env->int(EnvConstants::HTTP_STATUS_PORT),
+                Hilos::$env[EnvConstants::HTTP_STATUS_HOST]->string(),
+                Hilos::$env[EnvConstants::HTTP_STATUS_PORT]->int(),
             ),
             $this->workerServer,
             new CommandServer(
-                Hilos::$env[EnvConstants::COMMAND_HOST],
-                Hilos::$env->int(EnvConstants::COMMAND_PORT),
+                Hilos::$env[EnvConstants::COMMAND_HOST]->string(),
+                Hilos::$env[EnvConstants::COMMAND_PORT]->int(),
             ),
         ];
     }
@@ -152,7 +152,7 @@ final class ClusterDaemonManager extends DaemonManager
     {
         parent::onBecameLeader($term);
 
-        $heartbeatSec = Hilos::$env->int(EnvConstants::CLUSTER_HEARTBEAT_INTERVAL_MS) / TimeConstants::MS_PER_SECOND;
+        $heartbeatSec = Hilos::$env[EnvConstants::CLUSTER_HEARTBEAT_INTERVAL_MS]->int() / TimeConstants::MS_PER_SECOND;
         $this->placeSettleDeadline = microtime(true) + $heartbeatSec * self::PLACE_SETTLE_HEARTBEATS;
     }
 

@@ -187,9 +187,9 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
         $this->agentManager = $agentManager;
 
         // Get worker configuration from environment
-        $this->minRegular = Hilos::$env->int(EnvConstants::WORKER_MIN_REGULAR);
-        $this->minMonopolistic = Hilos::$env->int(EnvConstants::WORKER_MIN_MONOPOLISTIC);
-        $this->maxRegular = Hilos::$env->int(EnvConstants::WORKER_MAX_REGULAR);
+        $this->minRegular = Hilos::$env[EnvConstants::WORKER_MIN_REGULAR]->int();
+        $this->minMonopolistic = Hilos::$env[EnvConstants::WORKER_MIN_MONOPOLISTIC]->int();
+        $this->maxRegular = Hilos::$env[EnvConstants::WORKER_MAX_REGULAR]->int();
 
         // Ensure log directory exists at startup to avoid repeated is_dir() checks
         $this->ensureLogDirectory();
@@ -680,7 +680,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
         if ($this->cachedLogDirectory === null) {
             // Determine log directory from daemon log file path (same directory)
             // DAEMON_LOG_FILE must be set in environment configuration
-            $daemonLogFile = Hilos::$env[EnvConstants::DAEMON_LOG_FILE];
+            $daemonLogFile = Hilos::$env[EnvConstants::DAEMON_LOG_FILE]->string();
             $this->cachedLogDirectory = dirname($daemonLogFile);
         }
 
