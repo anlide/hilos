@@ -165,6 +165,40 @@ describe('connection machine', () => {
     expect(MockWebSocket.instances).toHaveLength(3)
   })
 
+  it('marks the repair as dragging once the pauses reach the ceiling', () => {
+    const { connection } = createConnection()
+    const dragging: boolean[] = []
+    connection.on('reconnectDragging', (value) => dragging.push(value))
+
+    connection.connect()
+    MockWebSocket.last.open()
+    MockWebSocket.last.drop()
+    expect(connection.reconnectDragging).toBe(false)
+
+    // random() => 1 makes every pause its exact cap: 1000, 2000, 4000, 8000,
+    // 16000, and then the ceiling. Five failures still look like a hiccup.
+    for (const delay of [1000, 2000, 4000, 8000]) {
+      vi.advanceTimersByTime(delay)
+      MockWebSocket.last.fail()
+      expect(connection.reconnectDragging).toBe(false)
+    }
+
+    vi.advanceTimersByTime(16000)
+    MockWebSocket.last.fail()
+    expect(connection.reconnectDragging).toBe(true)
+    expect(dragging).toEqual([true])
+
+    // The retries go on forever; the announcement does not repeat with them.
+    vi.advanceTimersByTime(30000)
+    MockWebSocket.last.fail()
+    expect(dragging).toEqual([true])
+
+    vi.advanceTimersByTime(30000)
+    MockWebSocket.last.open()
+    expect(connection.reconnectDragging).toBe(false)
+    expect(dragging).toEqual([true, false])
+  })
+
   it('resets the backoff after a successful connect', () => {
     const { connection } = createConnection()
     connection.connect()

@@ -64,6 +64,7 @@ import {
   readStoredProtectedModePass,
   writeStoredProtectedModePass,
 } from './protectedModePass.js'
+import { isReconnectDragging } from './reconnectDragging.js'
 import { Emitter } from './events.js'
 
 export type ConnectionState =
@@ -146,6 +147,13 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
    * although nothing moved while it was opening.
    */
   rtStaleness: RtStalenessStatus
+  /**
+   * Whether the repair under way has been going on long enough that the backoff
+   * pauses have reached their ceiling (HIL-831). Emitted only when the answer
+   * changes — the retries themselves go on forever, and an event per attempt
+   * would too.
+   */
+  reconnectDragging: boolean
   /**
    * The first frame is no longer held back: whatever the shell draws now, it
    * draws with the server's answer in hand (or with the fail-open verdict of a
@@ -272,6 +280,12 @@ export class HilosConnection {
   private protectedModeStatus: ProtectedModeStatus = PROTECTED_MODE_INACTIVE
   private rtStalenessStatus: RtStalenessStatus = RT_STALENESS_FRESH
   /**
+   * Whether the current repair is a dragging one. A pure function of
+   * `reconnectAttempt`, held as a field only so the change can be spotted and
+   * announced once.
+   */
+  private reconnectDraggingFlag = false
+  /**
    * Whether the shell is still holding its first frame back, waiting to be told
    * what to draw.
    *
@@ -348,6 +362,19 @@ export class HilosConnection {
    */
   get rtStaleness(): RtStalenessStatus {
     return this.rtStalenessStatus
+  }
+
+  /**
+   * Whether the reconnect under way has been going on long enough for its
+   * backoff pauses to have reached the ceiling.
+   *
+   * Worth reading only while the state is `reconnecting`: it is a mark on top of
+   * that state, not a fifth value of it, so that everything asking
+   * `state === 'reconnecting'` today keeps working without learning how long a
+   * repair has run.
+   */
+  get reconnectDragging(): boolean {
+    return this.reconnectDraggingFlag
   }
 
   /**
@@ -437,6 +464,7 @@ export class HilosConnection {
       return
     }
     this.reconnectAttempt = 0
+    this.setReconnectDragging(false)
     this.armFirstFrameHold()
     this.setState('connecting')
     this.openSocket()
@@ -449,6 +477,9 @@ export class HilosConnection {
     this.clearReconnectTimer()
     this.stopKeepalive()
     this.closeSocket()
+    // Explicitly, unlike the sites next door: closing for good leaves the attempt
+    // counter where it stood, and nothing is repairing any more.
+    this.setReconnectDragging(false)
     this.setState('disconnected')
   }
 
@@ -633,6 +664,7 @@ export class HilosConnection {
 
   private handleOpen(): void {
     this.reconnectAttempt = 0
+    this.setReconnectDragging(false)
     this.setState('connected')
     this.startKeepalive()
   }
@@ -837,6 +869,7 @@ export class HilosConnection {
     this.stopKeepalive()
     this.closeSocket()
     this.reconnectAttempt = 0
+    this.setReconnectDragging(false)
     this.setState('reconnecting')
     this.openSocket()
   }
@@ -928,6 +961,11 @@ export class HilosConnection {
       this.reconnectOptions,
       this.random,
     )
+    // Off the attempt this pause belongs to, so the mark appears with the first
+    // pause that has nowhere left to grow rather than one attempt behind it.
+    this.setReconnectDragging(
+      isReconnectDragging(this.reconnectAttempt, this.reconnectOptions),
+    )
     this.reconnectAttempt += 1
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null
@@ -992,6 +1030,15 @@ export class HilosConnection {
     if (state === 'reconnecting' || state === 'disconnected') {
       this.releaseFirstFrame()
     }
+  }
+
+  /** Announces the dragging repair on the change alone, exactly as {@link setState} does. */
+  private setReconnectDragging(next: boolean): void {
+    if (this.reconnectDraggingFlag === next) {
+      return
+    }
+    this.reconnectDraggingFlag = next
+    this.emitter.emit('reconnectDragging', next)
   }
 
   /**

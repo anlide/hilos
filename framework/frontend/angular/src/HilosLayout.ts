@@ -43,6 +43,7 @@ import {
   RT_STALENESS_FRESH,
   HilosPages,
   protectedModeBannerCopy,
+  RECONNECT_DRAGGING_COPY,
   rtStalenessLabel,
 } from '@hilos/core'
 
@@ -55,13 +56,16 @@ import { HILOS_ROUTER } from './hilosRouterToken.js'
 import { hilosSignal } from './hilosSignal.js'
 
 // Each transport state maps to a Bootstrap Icon and a Bootstrap text color:
-// green while the socket is live, amber while it is (re)connecting, red when it
-// is down. `connecting` and `reconnecting` share the in-progress icon — the only
-// thing that distinguishes them is the visually-hidden label.
+// green while the socket is live and green on a first connect too — the person
+// has only just opened the page and nothing has broken yet, so a warning colour
+// there would invent a problem (HIL-831) — amber once a live link has dropped
+// and is being repaired, red when it is down. `connecting` and `reconnecting`
+// share the in-progress icon, and what distinguishes them is the colour and the
+// visually-hidden label.
 type ConnVisual = { icon: string; color: string }
 const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
   connected: { icon: 'bi-check-circle-fill', color: 'text-success' },
-  connecting: { icon: 'bi-arrow-repeat', color: 'text-warning' },
+  connecting: { icon: 'bi-arrow-repeat', color: 'text-success' },
   reconnecting: { icon: 'bi-arrow-repeat', color: 'text-warning' },
   disconnected: { icon: 'bi-exclamation-triangle-fill', color: 'text-danger' },
 }
@@ -139,7 +143,15 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                 aria-live="polite"
                 [title]="connLabel()"
               >
-                <i [class]="connIconClass()" aria-hidden="true"></i>
+                <span class="position-relative d-inline-flex">
+                  <i [class]="connIconClass()" aria-hidden="true"></i>
+                  @if (showsDraggingRepair()) {
+                    <i
+                      class="bi bi-exclamation-triangle-fill text-danger position-absolute hilos-conn-dragging-mark"
+                      aria-hidden="true"
+                    ></i>
+                  }
+                </span>
                 <span class="visually-hidden">{{ connLabel() }}</span>
               </span>
             </div>
@@ -297,12 +309,26 @@ export class HilosLayout {
       ? 'bi bi-snow'
       : 'bi ' + CONN_VISUAL[this.connState()].icon,
   )
+  // A repair that has been running long enough for the backoff pauses to have
+  // reached their ceiling (HIL-831): the same amber arrows, with a small red
+  // triangle over their corner. An overlay rather than a replacement, because it
+  // is the same process — merely longer than expected. Only while reconnecting:
+  // on a first connect nothing has been repairing.
+  protected readonly reconnectDragging = signal(false)
+  protected readonly showsDraggingRepair = computed(
+    () => this.connState() === 'reconnecting' && this.reconnectDragging(),
+  )
   protected readonly connLabel = computed(() => {
     const label = rtStalenessLabel(this.rtStaleness())
 
-    return this.showsFrozenData() && label !== undefined
-      ? `${this.connState()} - ${label}`
-      : this.connState()
+    if (this.showsFrozenData() && label !== undefined) {
+      return `${this.connState()} - ${label}`
+    }
+    if (this.showsDraggingRepair()) {
+      return `${this.connState()} - ${RECONNECT_DRAGGING_COPY.dragging}`
+    }
+
+    return this.connState()
   })
 
   // Mirror the navigator's current page title: set it as the document title so
@@ -360,6 +386,19 @@ export class HilosLayout {
       onCleanup(
         connection.on('rtStaleness', (next) => {
           this.rtStaleness.set(next)
+        }),
+      )
+    })
+
+    // And the same for a repair that has dragged: seeded from the connection so
+    // a shell mounted mid-outage starts marked, then kept live by the event the
+    // core emits on the change alone.
+    effect((onCleanup) => {
+      const connection = this.connection()
+      this.reconnectDragging.set(connection.reconnectDragging)
+      onCleanup(
+        connection.on('reconnectDragging', (next) => {
+          this.reconnectDragging.set(next)
         }),
       )
     })

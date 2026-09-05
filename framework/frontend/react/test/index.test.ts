@@ -11,10 +11,12 @@ import {
   HilosRouterContext,
   HilosView,
   useConnectionState,
+  useReconnectDragging,
 } from '../src/index.js'
 
 it('exports the @hilos/react public surface', () => {
   expect(useConnectionState).toBeTypeOf('function')
+  expect(useReconnectDragging).toBeTypeOf('function')
   expect(HilosLink).toBeTypeOf('function')
   expect(HilosView).toBeTypeOf('function')
   expect(HilosLayout).toBeTypeOf('function')

@@ -7,10 +7,12 @@ import {
   HilosView,
   hilosRouterKey,
   useConnectionState,
+  useReconnectDragging,
 } from '../src/index.js'
 
 it('exports the @hilos/vue public surface', () => {
   expect(useConnectionState).toBeTypeOf('function')
+  expect(useReconnectDragging).toBeTypeOf('function')
   expect(HilosLayout).toBeTypeOf('object')
   expect(HilosLink).toBeTypeOf('object')
   expect(HilosView).toBeTypeOf('object')

@@ -7,6 +7,7 @@ import {
   RT_STALENESS_FRESH,
 } from '@hilos/core'
 import type {
+  ConnectionState,
   HilosConnection,
   HilosRestoreStatus,
   ProtectedModeStatus,
@@ -82,36 +83,49 @@ function restoreFrame(
 const FROZEN_DATA: RtStalenessStatus = { stale: true, since: 1_760_000_000_000 }
 
 // A minimal connection stub: the shell only reads the transport state, the
-// protected-mode state and the frozen-replica state off it, and subscribes to
-// all three. `push` drives the freeze the way the daemon's pushed frame would,
-// `pushStaleness` the worker's frozen-replica frame, and `pushRestore` the
-// addressed frame the backup agent sends to every tab of the initiator's session.
+// protected-mode state, the frozen-replica state and the dragging-repair mark off
+// it, and subscribes to all four. `push` drives the freeze the way the daemon's
+// pushed frame would, `pushStaleness` the worker's frozen-replica frame,
+// `pushConnection` a transport move together with the mark that goes with it, and
+// `pushRestore` the addressed frame the backup agent sends to every tab of the
+// initiator's session.
 function fakeConnection(
   initial: ProtectedModeStatus,
   initialStaleness: RtStalenessStatus = RT_STALENESS_FRESH,
+  initialState: ConnectionState = 'connected',
 ): {
   connection: HilosConnection
   push: (next: ProtectedModeStatus) => void
   pushStaleness: (next: RtStalenessStatus) => void
+  pushConnection: (next: ConnectionState, dragging?: boolean) => void
   pushRestore: (frame: HilosRestoreStatus) => void
   presented: string[]
 } {
   let current = initial
   let currentStaleness = initialStaleness
+  let currentState = initialState
+  let currentDragging = false
   const listeners: ((next: ProtectedModeStatus) => void)[] = []
   const stalenessListeners: ((next: RtStalenessStatus) => void)[] = []
+  const stateListeners: ((next: ConnectionState) => void)[] = []
+  const draggingListeners: ((next: boolean) => void)[] = []
   const projectListeners: ((signal: {
     type: string
     data: unknown
   }) => void)[] = []
   const presented: string[] = []
   const connection = {
-    state: 'connected',
+    get state(): ConnectionState {
+      return currentState
+    },
     get protectedMode(): ProtectedModeStatus {
       return current
     },
     get rtStaleness(): RtStalenessStatus {
       return currentStaleness
+    },
+    get reconnectDragging(): boolean {
+      return currentDragging
     },
     on(event: string, listener: (next: never) => void): () => void {
       if (event === 'protectedMode') {
@@ -119,6 +133,12 @@ function fakeConnection(
       }
       if (event === 'rtStaleness') {
         stalenessListeners.push(listener as (next: RtStalenessStatus) => void)
+      }
+      if (event === 'state') {
+        stateListeners.push(listener as (next: ConnectionState) => void)
+      }
+      if (event === 'reconnectDragging') {
+        draggingListeners.push(listener as (next: boolean) => void)
       }
       if (event === 'projectSignal') {
         projectListeners.push(
@@ -148,6 +168,16 @@ function fakeConnection(
       currentStaleness = next
       for (const listener of stalenessListeners) {
         listener(next)
+      }
+    },
+    pushConnection(next: ConnectionState, dragging = false): void {
+      currentState = next
+      currentDragging = dragging
+      for (const listener of stateListeners) {
+        listener(next)
+      }
+      for (const listener of draggingListeners) {
+        listener(dragging)
       }
     },
     pushRestore(frame: HilosRestoreStatus): void {
@@ -493,6 +523,66 @@ describe('HilosLayout under protected mode', () => {
     expect(
       wrapper.find('[data-id="conn-state"]').find('i').classes(),
     ).toContain('bi-check-circle-fill')
+  })
+
+  it('keeps a first connect green - nothing has broken yet', () => {
+    const { connection } = fakeConnection(
+      PROTECTED_MODE_INACTIVE,
+      RT_STALENESS_FRESH,
+      'connecting',
+    )
+    const wrapper = mountShell(connection)
+
+    const indicator = wrapper.find('[data-id="conn-state"]')
+    expect(indicator.classes()).toContain('text-success')
+    expect(indicator.find('i').classes()).toContain('bi-arrow-repeat')
+    expect(indicator.attributes('title')).toBe('connecting')
+  })
+
+  it('marks a repair that has dragged without changing its colour', async () => {
+    const { connection, pushConnection } = fakeConnection(
+      PROTECTED_MODE_INACTIVE,
+    )
+    const wrapper = mountShell(connection)
+
+    pushConnection('reconnecting')
+    await nextTick()
+    let indicator = wrapper.find('[data-id="conn-state"]')
+    expect(indicator.classes()).toContain('text-warning')
+    expect(indicator.find('.bi-exclamation-triangle-fill').exists()).toBe(false)
+    expect(indicator.attributes('title')).toBe('reconnecting')
+
+    pushConnection('reconnecting', true)
+    await nextTick()
+    indicator = wrapper.find('[data-id="conn-state"]')
+    // The same process, merely longer than expected - so the same amber, with
+    // the triangle over it rather than instead of it.
+    expect(indicator.classes()).toContain('text-warning')
+    expect(indicator.find('i').classes()).toContain('bi-arrow-repeat')
+    expect(indicator.find('.bi-exclamation-triangle-fill').exists()).toBe(true)
+    expect(indicator.attributes('title')).toContain('taking longer than usual')
+  })
+
+  it('takes the dragging mark off when the link comes back', async () => {
+    const { connection, pushConnection } = fakeConnection(
+      PROTECTED_MODE_INACTIVE,
+    )
+    const wrapper = mountShell(connection)
+
+    pushConnection('reconnecting', true)
+    await nextTick()
+    expect(
+      wrapper
+        .find('[data-id="conn-state"]')
+        .find('.bi-exclamation-triangle-fill')
+        .exists(),
+    ).toBe(true)
+
+    pushConnection('connected')
+    await nextTick()
+    const indicator = wrapper.find('[data-id="conn-state"]')
+    expect(indicator.find('.bi-exclamation-triangle-fill').exists()).toBe(false)
+    expect(indicator.attributes('title')).toBe('connected')
   })
 
   it('replaces the page and every link with the maintenance surface', () => {

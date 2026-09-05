@@ -6,6 +6,7 @@ import {
   RT_STALENESS_FRESH,
 } from '@hilos/core'
 import type {
+  ConnectionState,
   HilosConnection,
   HilosRestoreStatus,
   ProtectedModeStatus,
@@ -88,29 +89,40 @@ function restoreFrame(
 function fakeConnection(
   initial: ProtectedModeStatus,
   initialStaleness: RtStalenessStatus = RT_STALENESS_FRESH,
+  initialState: ConnectionState = 'connected',
 ): {
   connection: HilosConnection
   push: (next: ProtectedModeStatus) => void
   pushStaleness: (next: RtStalenessStatus) => void
+  pushConnection: (next: ConnectionState, dragging?: boolean) => void
   pushRestore: (frame: HilosRestoreStatus) => void
   presented: string[]
 } {
   let current = initial
   let currentStaleness = initialStaleness
+  let currentState = initialState
+  let currentDragging = false
   const listeners: (() => void)[] = []
   const stalenessListeners: (() => void)[] = []
+  const stateListeners: (() => void)[] = []
+  const draggingListeners: (() => void)[] = []
   const projectListeners: ((signal: {
     type: string
     data: unknown
   }) => void)[] = []
   const presented: string[] = []
   const connection = {
-    state: 'connected',
+    get state(): ConnectionState {
+      return currentState
+    },
     get protectedMode(): ProtectedModeStatus {
       return current
     },
     get rtStaleness(): RtStalenessStatus {
       return currentStaleness
+    },
+    get reconnectDragging(): boolean {
+      return currentDragging
     },
     on(event: string, listener: (signal: never) => void): () => void {
       if (event === 'protectedMode') {
@@ -118,6 +130,12 @@ function fakeConnection(
       }
       if (event === 'rtStaleness') {
         stalenessListeners.push(listener as () => void)
+      }
+      if (event === 'state') {
+        stateListeners.push(listener as () => void)
+      }
+      if (event === 'reconnectDragging') {
+        draggingListeners.push(listener as () => void)
       }
       if (event === 'projectSignal') {
         projectListeners.push(
@@ -146,6 +164,16 @@ function fakeConnection(
     pushStaleness(next: RtStalenessStatus): void {
       currentStaleness = next
       for (const listener of stalenessListeners) {
+        listener()
+      }
+    },
+    pushConnection(next: ConnectionState, dragging = false): void {
+      currentState = next
+      currentDragging = dragging
+      for (const listener of stateListeners) {
+        listener()
+      }
+      for (const listener of draggingListeners) {
         listener()
       }
     },
@@ -500,6 +528,77 @@ describe('HilosLayout under protected mode', () => {
       container.querySelector('[data-id="conn-state"]')?.querySelector('i')
         ?.className,
     ).toContain('bi-check-circle-fill')
+  })
+
+  it('keeps a first connect green - nothing has broken yet', () => {
+    const { connection } = fakeConnection(
+      PROTECTED_MODE_INACTIVE,
+      RT_STALENESS_FRESH,
+      'connecting',
+    )
+    const container = renderShell(connection)
+
+    const indicator = container.querySelector('[data-id="conn-state"]')
+    expect(indicator?.className).toContain('text-success')
+    expect(indicator?.querySelector('i')?.className).toContain(
+      'bi-arrow-repeat',
+    )
+    expect(indicator?.getAttribute('title')).toBe('connecting')
+  })
+
+  it('marks a repair that has dragged without changing its colour', () => {
+    const { connection, pushConnection } = fakeConnection(
+      PROTECTED_MODE_INACTIVE,
+    )
+    const container = renderShell(connection)
+
+    act(() => {
+      pushConnection('reconnecting')
+    })
+    let indicator = container.querySelector('[data-id="conn-state"]')
+    expect(indicator?.className).toContain('text-warning')
+    expect(indicator?.querySelector('.bi-exclamation-triangle-fill')).toBeNull()
+    expect(indicator?.getAttribute('title')).toBe('reconnecting')
+
+    act(() => {
+      pushConnection('reconnecting', true)
+    })
+    indicator = container.querySelector('[data-id="conn-state"]')
+    // The same process, merely longer than expected - so the same amber, with
+    // the triangle over it rather than instead of it.
+    expect(indicator?.className).toContain('text-warning')
+    expect(indicator?.querySelector('i')?.className).toContain(
+      'bi-arrow-repeat',
+    )
+    expect(
+      indicator?.querySelector('.bi-exclamation-triangle-fill'),
+    ).not.toBeNull()
+    expect(indicator?.getAttribute('title')).toContain(
+      'taking longer than usual',
+    )
+  })
+
+  it('takes the dragging mark off when the link comes back', () => {
+    const { connection, pushConnection } = fakeConnection(
+      PROTECTED_MODE_INACTIVE,
+    )
+    const container = renderShell(connection)
+
+    act(() => {
+      pushConnection('reconnecting', true)
+    })
+    expect(
+      container
+        .querySelector('[data-id="conn-state"]')
+        ?.querySelector('.bi-exclamation-triangle-fill'),
+    ).not.toBeNull()
+
+    act(() => {
+      pushConnection('connected')
+    })
+    const indicator = container.querySelector('[data-id="conn-state"]')
+    expect(indicator?.querySelector('.bi-exclamation-triangle-fill')).toBeNull()
+    expect(indicator?.getAttribute('title')).toBe('connected')
   })
 
   it('replaces the page and every link with the maintenance surface', () => {

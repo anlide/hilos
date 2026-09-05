@@ -6,6 +6,8 @@ import {
   parseSignal,
   assertNever,
   computeBackoffDelay,
+  isReconnectDragging,
+  RECONNECT_DRAGGING_COPY,
   createPageRouter,
   createAppPageRouter,
   createHilosRouter,
@@ -33,6 +35,8 @@ it('exports the @hilos/core public surface', () => {
   expect(parseSignal).toBeTypeOf('function')
   expect(assertNever).toBeTypeOf('function')
   expect(computeBackoffDelay).toBeTypeOf('function')
+  expect(isReconnectDragging).toBeTypeOf('function')
+  expect(RECONNECT_DRAGGING_COPY.dragging).toBeTypeOf('string')
   expect(createPageRouter).toBeTypeOf('function')
   expect(createAppPageRouter).toBeTypeOf('function')
   expect(createHilosRouter).toBeTypeOf('function')

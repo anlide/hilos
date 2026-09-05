@@ -29,6 +29,7 @@ import {
   HILOS_PAGE_ROUTES,
   HilosPages,
   protectedModeBannerCopy,
+  RECONNECT_DRAGGING_COPY,
   rtStalenessLabel,
 } from '@hilos/core'
 import { computed, inject, watch } from 'vue'
@@ -42,6 +43,7 @@ import { hilosRouterKey } from './hilosRouterKey.js'
 import { useConnectionState } from './useConnectionState.js'
 import { useFirstFrameHold } from './useFirstFrameHold.js'
 import { useProtectedMode } from './useProtectedMode.js'
+import { useReconnectDragging } from './useReconnectDragging.js'
 import { useRtStaleness } from './useRtStaleness.js'
 import { useSignal } from './useSignal.js'
 
@@ -122,13 +124,16 @@ watch(
 )
 
 // Each transport state maps to a Bootstrap Icon and a Bootstrap text color:
-// green while the socket is live, amber while it is (re)connecting, red when it
-// is down. `connecting` and `reconnecting` share the in-progress icon — the only
-// thing that distinguishes them is the visually-hidden label.
+// green while the socket is live and green on a first connect too — the person
+// has only just opened the page and nothing has broken yet, so a warning colour
+// there would invent a problem (HIL-831) — amber once a live link has dropped
+// and is being repaired, red when it is down. `connecting` and `reconnecting`
+// share the in-progress icon, and what distinguishes them is the colour and the
+// visually-hidden label.
 type ConnVisual = { icon: string; color: string }
 const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
   connected: { icon: 'bi-check-circle-fill', color: 'text-success' },
-  connecting: { icon: 'bi-arrow-repeat', color: 'text-warning' },
+  connecting: { icon: 'bi-arrow-repeat', color: 'text-success' },
   reconnecting: { icon: 'bi-arrow-repeat', color: 'text-warning' },
   disconnected: { icon: 'bi-exclamation-triangle-fill', color: 'text-danger' },
 }
@@ -148,11 +153,24 @@ const showsFrozenData = computed(
 const connIcon = computed(() =>
   showsFrozenData.value ? 'bi-snow' : connVisual.value.icon,
 )
-const connLabel = computed(() =>
-  showsFrozenData.value && stalenessLabel.value !== undefined
-    ? `${connectionState.value} - ${stalenessLabel.value}`
-    : connectionState.value,
+// A repair that has been running long enough for the backoff pauses to have
+// reached their ceiling (HIL-831): the same amber arrows, with a small red
+// triangle over their corner. An overlay rather than a replacement, because it
+// is the same process — merely longer than expected. Only while reconnecting:
+// on a first connect nothing has been repairing.
+const reconnectDragging = useReconnectDragging(props.connection)
+const showsDraggingRepair = computed(
+  () => connectionState.value === 'reconnecting' && reconnectDragging.value,
 )
+const connLabel = computed(() => {
+  if (showsFrozenData.value && stalenessLabel.value !== undefined) {
+    return `${connectionState.value} - ${stalenessLabel.value}`
+  }
+  if (showsDraggingRepair.value) {
+    return `${connectionState.value} - ${RECONNECT_DRAGGING_COPY.dragging}`
+  }
+  return connectionState.value
+})
 
 // The gear targets the framework's own dashboard page; its URL is owned by the
 // framework page catalog, not restated here as a literal (routing/hilosPages).
@@ -230,7 +248,14 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
             aria-live="polite"
             :title="connLabel"
           >
-            <i class="bi" :class="connIcon" aria-hidden="true"></i>
+            <span class="position-relative d-inline-flex">
+              <i class="bi" :class="connIcon" aria-hidden="true"></i>
+              <i
+                v-if="showsDraggingRepair"
+                class="bi bi-exclamation-triangle-fill text-danger position-absolute hilos-conn-dragging-mark"
+                aria-hidden="true"
+              ></i>
+            </span>
             <span class="visually-hidden">{{ connLabel }}</span>
           </span>
         </div>
