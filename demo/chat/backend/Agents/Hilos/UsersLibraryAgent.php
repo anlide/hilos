@@ -50,7 +50,9 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\HilosException;
@@ -201,9 +203,9 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
         $this->registerDbTruthSource(ChatDbContext::eventUserRenames);
         RtTruthSourceRegistry::register(
             ChatRtContext::connections,
-            true,
+            TruthSourceKeys::all(),
             $this->getId(),
-            [TruthSourceOperation::Update],
+            TruthSourceOperations::of(TruthSourceOperation::Update),
         );
     }
 

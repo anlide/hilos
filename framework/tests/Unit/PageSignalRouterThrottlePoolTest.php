@@ -25,6 +25,7 @@ use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos as HilosFacade;
@@ -298,7 +299,7 @@ final class PageSignalRouterThrottlePoolTest extends TestCase
         $rt->mountFeatureRuntime([new AuthThrottleFeature()]);
         HilosFacade::$rt = $rt;
 
-        RtTruthSourceRegistry::register(StateAuthAttempt::RT_COLLECTION, true, self::AGENT_ID);
+        RtTruthSourceRegistry::register(StateAuthAttempt::RT_COLLECTION, TruthSourceKeys::all(), self::AGENT_ID);
         ExecutionContext::setCurrentAgentId(self::AGENT_ID);
 
         $attempts = $rt->hilosAuthAttempts;

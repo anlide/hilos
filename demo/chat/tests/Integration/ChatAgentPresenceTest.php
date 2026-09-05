@@ -24,6 +24,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
@@ -45,7 +46,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
      */
     public function testHandshakeAndCloseUpdatePresenceWithoutHistoryEvents(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$db->events->actions->deleteAll();
 
@@ -108,7 +109,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
      */
     public function testCloseDeletesSelfConnectionAttachmentDrafts(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
 
@@ -155,7 +156,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
      */
     public function testConnectionAttachmentDraftsExposeOwnedDrafts(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
 

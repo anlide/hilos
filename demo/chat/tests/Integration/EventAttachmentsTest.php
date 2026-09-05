@@ -7,6 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
@@ -18,7 +19,7 @@ final class EventAttachmentsTest extends IntegrationTestCase
 
     public function testPublishConnectionDraftsMovesQuarantineFilesAndReturnsMetadata(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
         Hilos::$fs->quarantine['draft-publish.txt']->unlink();
@@ -63,7 +64,7 @@ final class EventAttachmentsTest extends IntegrationTestCase
 
     public function testPublishConnectionDraftsReturnsNullWhenQuarantineFileIsMissing(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
         Hilos::$fs->quarantine['draft-missing.txt']->unlink();

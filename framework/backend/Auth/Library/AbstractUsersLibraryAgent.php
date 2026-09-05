@@ -62,7 +62,9 @@ use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Runtime\State\Item\RecoveryWaiter;
@@ -263,14 +265,19 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     public function onStart(): void
     {
         $this->authMethods = $this->buildAuthMethods();
-        TruthSourceRegistry::register($this->usersCollection(), true, $this->getId(), TruthSourceOperation::ALL);
-        $this->registerDbTruthSource(HilosDbContext::identities, operations: TruthSourceOperation::ALL);
-        $this->registerDbTruthSource(HilosDbContext::verifications, operations: TruthSourceOperation::ALL);
+        TruthSourceRegistry::register(
+            $this->usersCollection(),
+            TruthSourceKeys::all(),
+            $this->getId(),
+            TruthSourceOperations::all(),
+        );
+        $this->registerDbTruthSource(HilosDbContext::identities, operations: TruthSourceOperations::all());
+        $this->registerDbTruthSource(HilosDbContext::verifications, operations: TruthSourceOperations::all());
         $this->registerDbTruthSource(
             HilosDbContext::registrationReservations,
-            operations: TruthSourceOperation::ALL,
+            operations: TruthSourceOperations::all(),
         );
-        $this->registerDbTruthSource(HilosDbContext::passkeyCredentials, operations: TruthSourceOperation::ALL);
+        $this->registerDbTruthSource(HilosDbContext::passkeyCredentials, operations: TruthSourceOperations::all());
         // TODO(HIL-626): borrowed claim - the sessions library owns the session set. A
         // command that parks a browser on a code screen writes the durable half of that
         // wait on the session row itself ({@see PasswordCommands::parkRegistrationWait()}),
@@ -278,7 +285,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         // write is: an update of a row that already exists, never a create or a remove.
         $this->registerDbTruthSource(
             HilosDbContext::sessions,
-            operations: [TruthSourceOperation::Update],
+            operations: TruthSourceOperations::of(TruthSourceOperation::Update),
         );
         $this->registerRtTruthSource(RegistrationWaiter::RT_COLLECTION);
         $this->registerRtTruthSource(RecoveryWaiter::RT_COLLECTION);
@@ -296,11 +303,11 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * because a library that renames somebody edits the row it owns, and there it owns rather
      * than shares.
      *
-     * @return list<TruthSourceOperation> Adding and removing, never updating
+     * @return TruthSourceOperations Adding and removing, never updating
      */
-    protected function defaultTruthSourceOperations(): array
+    public static function defaultTruthSourceOperations(): TruthSourceOperations
     {
-        return [TruthSourceOperation::Add, TruthSourceOperation::Remove];
+        return TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Remove);
     }
 
     /**

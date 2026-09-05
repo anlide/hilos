@@ -35,7 +35,10 @@ use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Database\Context\DbContext;
@@ -121,6 +124,31 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      *     happen, in whatever action reached for them.
      */
     public const array READS_DB = [];
+
+    /**
+     * @var array<string, list<TruthSourceOperation>> DB collections this agent OWNS, each mapped to
+     *     the operations it may perform on their rows. Read off the class before the instance
+     *     exists ({@see OwnershipDeclaration::claimDb()}), which is the whole point: a claim made
+     *     inside onStart() is invisible to the worker deciding whether to build the agent, and
+     *     invisible to the validator that judges the topology with no agent running at all.
+     *
+     *     A map and not a list of names, because a claim may narrow its operations and a list
+     *     would need a second constant to say so. {@see TruthSourceOperation::BY_KIND} leaves the
+     *     answer to the kind of the agent - it is resolved through
+     *     {@see self::defaultTruthSourceOperations()} of the class that is STARTING, which is what
+     *     a call from a parent's onStart() already did on the instance of its subclass.
+     *
+     *     A subclass declaring this MERGES with what its parents declared, where
+     *     {@see self::READS_DB} replaces: a repeated collection gets the union of both operation
+     *     sets, so a subclass widens its parent's claim and cannot narrow it. The two rules differ
+     *     because the two misses cost differently - a lost read is refused in the action that
+     *     reached for it, while a lost claim refuses nothing until some sweep an hour later finds
+     *     the collection has no owner.
+     *
+     *     A collection named here does not belong in {@see self::READS_DB}: the claim is the
+     *     reader interest already.
+     */
+    public const array OWNS_DB = [];
 
     /** @var list<string> CLI command names owned directly by this agent. */
     public const array AGENT_COMMANDS = [];
@@ -211,11 +239,16 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * changing the answer for a whole kind costs this one line and no walk of the call
      * sites. An ordinary agent owns its rows outright and may do anything with them.
      *
-     * @return list<TruthSourceOperation> Operations every claim of this agent gets
+     * Static because {@see self::OWNS_DB} is answered off the class: the resolver expands
+     * {@see TruthSourceOperation::BY_KIND} before any instance exists, and the topology validator
+     * has no instance to take. Late static binding keeps a subclass's answer winning, which is
+     * what the instance call it replaces already did.
+     *
+     * @return TruthSourceOperations Operations every claim of this agent gets
      */
-    protected function defaultTruthSourceOperations(): array
+    public static function defaultTruthSourceOperations(): TruthSourceOperations
     {
-        return TruthSourceOperation::ALL;
+        return TruthSourceOperations::all();
     }
 
     /**
@@ -238,20 +271,31 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * update it performs. Omit the argument and the agent's kind answers, which is what every
      * claim of a collection the agent owns outright wants.
      *
+     * Both widths and both operation sets are optional here where the registry demands them,
+     * because this seam is on its way out (HIL-898) and its callers are the claims HIL-897
+     * moves onto the declaration: naming the whole collection at seventy-odd call sites would
+     * be writing out an argument to delete it again. The registry underneath still hears the
+     * width spelled out.
+     *
+     * @deprecated Declare the collection in {@see self::OWNS_DB} instead. The constant is read
+     *     off the class before the instance exists, which this call cannot be; it stays working
+     *     until every live claim has moved (HIL-897), after which a guard refuses new calls and
+     *     the helper is removed (HIL-898).
+     *
      * @param string $collection Collection/table name
-     * @param list<string>|true $keys Specific writable keys or true for all keys
-     * @param ?list<TruthSourceOperation> $operations Operations this claim allows, or null for the agent's default
+     * @param ?TruthSourceKeys $keys Rows this claim covers, or null for the whole collection
+     * @param ?TruthSourceOperations $operations Operations this claim allows, or null for the agent's default
      */
     protected function registerDbTruthSource(
         string $collection,
-        array|true $keys = true,
-        ?array $operations = null,
+        ?TruthSourceKeys $keys = null,
+        ?TruthSourceOperations $operations = null,
     ): void {
         TruthSourceRegistry::register(
             $collection,
-            $keys,
+            $keys ?? TruthSourceKeys::all(),
             $this->getId(),
-            $operations ?? $this->defaultTruthSourceOperations(),
+            $operations ?? static::defaultTruthSourceOperations(),
         );
 
         SourceInterestRegistry::register(SourceChange::KIND_DB, $collection, SourceConsumer::agent($this->getId()));
@@ -268,11 +312,16 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * out once the hook has returned ({@see WorkerManager::handleAgentStart()}).
      *
      * @param string $collection Runtime collection name
-     * @param list<string>|true $keys Specific writable keys or true for all keys
+     * @param ?TruthSourceKeys $keys Rows this claim covers, or null for the whole collection
      */
-    protected function registerRtTruthSource(string $collection, array|true $keys = true): void
+    protected function registerRtTruthSource(string $collection, ?TruthSourceKeys $keys = null): void
     {
-        RtTruthSourceRegistry::register($collection, $keys, $this->getId(), $this->defaultTruthSourceOperations());
+        RtTruthSourceRegistry::register(
+            $collection,
+            $keys ?? TruthSourceKeys::all(),
+            $this->getId(),
+            static::defaultTruthSourceOperations(),
+        );
 
         SourceInterestRegistry::register(SourceChange::KIND_RT, $collection, SourceConsumer::agent($this->getId()));
         SourceInterestRegistry::markReady(SourceChange::KIND_RT, $collection);

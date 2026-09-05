@@ -16,6 +16,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Database;
 use Hilos\Database\Context\HilosDbContext;
@@ -274,9 +275,9 @@ final class MainPageLoginTest extends IntegrationTestCase
      */
     private function bootAgent(): ChatAgent
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(ChatRtContext::userStates, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(StateRecoveryWaiter::RT_COLLECTION, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::userStates, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(StateRecoveryWaiter::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);

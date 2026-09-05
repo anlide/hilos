@@ -11,6 +11,7 @@ use Demo\Tasks\Hilos;
 use Demo\Tasks\Runtime\View\Context\TasksRtContext;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -34,7 +35,7 @@ final class TasksAgentGuestHandshakeTest extends IntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        RtTruthSourceRegistry::register(TasksRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(TasksRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         $this->previousRouter = Hilos::$sr;
         Hilos::$sr = new SignalRouter();

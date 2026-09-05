@@ -7,6 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Constants\ChatNotificationType;
 use Demo\Chat\Database\Actions\Collection\EventsActions;
 use Demo\Chat\Hilos;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -36,7 +37,7 @@ final class ChatMentionNotificationTest extends IntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        TruthSourceRegistry::register(HilosDbContext::notifications, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::notifications, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         $this->deleteChatNotifications();
         Hilos::$db->events->actions->deleteAll();
     }

@@ -7,7 +7,9 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\Entity\Item\Entity;
@@ -71,7 +73,7 @@ final class DbWriteGuardLazyCollectionsTest extends TestCase
     public function testLazyCollectionAllowsTheAgentThatClaimedIt(int $strategy): void
     {
         $actions = $this->actionsFor(GuardedObjects::class, $strategy);
-        TruthSourceRegistry::register(self::COLLECTION, true, self::AGENT);
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::all(), self::AGENT);
         ExecutionContext::setCurrentAgentId(self::AGENT);
 
         $actions->writePublic();
@@ -95,7 +97,12 @@ final class DbWriteGuardLazyCollectionsTest extends TestCase
     public function testEditingRightDoesNotByItselfAllowCreating(): void
     {
         $actions = $this->actionsFor(GuardedObjects::class, Objects::LAZY_STRATEGY_KEY);
-        TruthSourceRegistry::register(self::COLLECTION, ['1'], self::AGENT, [TruthSourceOperation::Update]);
+        TruthSourceRegistry::register(
+            self::COLLECTION,
+            TruthSourceKeys::listed('1'),
+            self::AGENT,
+            TruthSourceOperations::of(TruthSourceOperation::Update),
+        );
         ExecutionContext::setCurrentAgentId(self::AGENT);
 
         $this->expectException(CreateNotAllowedException::class);
@@ -106,7 +113,7 @@ final class DbWriteGuardLazyCollectionsTest extends TestCase
     {
         $actions = $this->actionsFor(GuardedObjects::class, Objects::LAZY_STRATEGY_KEY);
         // Owning one row is not owning the table, and a truncate names no row at all.
-        TruthSourceRegistry::register(self::COLLECTION, ['1'], self::AGENT);
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::listed('1'), self::AGENT);
         ExecutionContext::setCurrentAgentId(self::AGENT);
 
         $this->expectException(WriteNotAllowedException::class);

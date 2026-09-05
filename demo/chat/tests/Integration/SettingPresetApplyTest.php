@@ -9,6 +9,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Logs\LogsSettingsPage;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Table\Exception\TableActionException;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\Preset\SettingPresetResolver;
@@ -181,7 +182,7 @@ final class SettingPresetApplyTest extends IntegrationTestCase
      */
     private function withSettingsWriter(callable $body): void
     {
-        TruthSourceRegistry::register(HilosDbContext::settings, true, self::SETTINGS_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::SETTINGS_AGENT_ID);
 
         try {
             $body();

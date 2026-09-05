@@ -16,6 +16,7 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\LLM\Exception\LLMResultUnavailableException;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
@@ -34,7 +35,7 @@ final class ChatContextAnalyzerAgentTest extends IntegrationTestCase
 
     public function testRuntimeChatContextAliasExposesSingleton(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::chatContext, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::chatContext, TruthSourceKeys::all(), self::TEST_AGENT_ID);
 
         Hilos::$rt->chatContext->actions->update(
             new ChatContextUpdateData('AI', 0.75, 'Alias summary'),
@@ -74,7 +75,7 @@ final class ChatContextAnalyzerAgentTest extends IntegrationTestCase
 
     public function testChatClearResetsInFlightSummarizationAndRuntimeContext(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::chatContext, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::chatContext, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$db->events->actions->deleteAll();
 
         try {
@@ -117,7 +118,7 @@ final class ChatContextAnalyzerAgentTest extends IntegrationTestCase
 
     public function testPendingMessageDuringInFlightSummarizationStartsFollowUpRequest(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::chatContext, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::chatContext, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$db->events->actions->deleteAll();
 
         try {

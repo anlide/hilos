@@ -6,6 +6,7 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -77,7 +78,7 @@ HELP;
     {
         // The settings collection needs a registered writer; the CLI has no agent, so the command
         // registers itself as the truth source before mutating (only reachable on the test-only path).
-        TruthSourceRegistry::register(HilosDbContext::settings, true, self::TRUTH_SOURCE_ID);
+        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::TRUTH_SOURCE_ID);
         Hilos::$db->settings->actions->add(self::ORPHAN_KEY, self::ORPHAN_VALUE, Hilos::$setting->catalog());
         echo "Setting created for key '" . self::ORPHAN_KEY . "'.\n";
 

@@ -6,6 +6,7 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
@@ -92,7 +93,7 @@ HELP;
 
         // The CLI has no agent-writer for sessions, so the command registers itself as the truth
         // source before mutating (only reachable on the test-only path, same as test:orphan:*).
-        TruthSourceRegistry::register(HilosDbContext::sessions, true, self::TRUTH_SOURCE_ID);
+        TruthSourceRegistry::register(HilosDbContext::sessions, TruthSourceKeys::all(), self::TRUTH_SOURCE_ID);
         $session = Hilos::$db->sessions->actions->expireByToken($token);
         if ($session === null) {
             echo "No session for token {$token}\n";

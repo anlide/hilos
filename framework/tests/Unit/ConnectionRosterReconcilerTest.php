@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Hilos;
 use Hilos\Runtime\ConnectionRosterReconciler;
 use Hilos\Runtime\State\Collection\HilosConnections as StateHilosConnections;
@@ -101,9 +103,9 @@ final class ConnectionRosterReconcilerTest extends TestCase
         $connections = $this->arrangeOwnedCollection();
         RtTruthSourceRegistry::register(
             RosterRtContext::connections,
-            true,
+            TruthSourceKeys::all(),
             self::OTHER_AGENT_ID,
-            [TruthSourceOperation::Update],
+            TruthSourceOperations::of(TruthSourceOperation::Update),
         );
         ExecutionContext::setCurrentAgentId(self::OTHER_AGENT_ID);
 
@@ -123,7 +125,7 @@ final class ConnectionRosterReconcilerTest extends TestCase
         Hilos::$rt = new RosterRtContext();
         Hilos::$rt->configure();
         ExecutionContext::setCurrentAgentId(self::AGENT_ID);
-        RtTruthSourceRegistry::register(RosterRtContext::connections, true, self::AGENT_ID);
+        RtTruthSourceRegistry::register(RosterRtContext::connections, TruthSourceKeys::all(), self::AGENT_ID);
 
         $registry = Hilos::$rt->connectionsRegistry();
         $this->assertInstanceOf(RosterConnections::class, $registry);

@@ -8,6 +8,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 final class BotAgentStatusesActionsTest extends IntegrationTestCase
@@ -15,7 +16,7 @@ final class BotAgentStatusesActionsTest extends IntegrationTestCase
     public function testEnsureAllowsStateSpecificBotTruthSource(): void
     {
         $agentId = 'bot:901';
-        RtTruthSourceRegistry::register(ChatRtContext::botAgentStatuses, ['901'], $agentId);
+        RtTruthSourceRegistry::register(ChatRtContext::botAgentStatuses, TruthSourceKeys::listed('901'), $agentId);
         ExecutionContext::setCurrentAgentId($agentId);
 
         try {

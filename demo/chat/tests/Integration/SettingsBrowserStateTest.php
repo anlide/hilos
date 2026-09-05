@@ -18,6 +18,7 @@ use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
@@ -38,7 +39,7 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
     public function testSettingsSnapshotUsesBrowserRowsWithCatalogPlaceholdersAndOrphans(): void
     {
         $orphanKey = 'browser_snapshot_orphan_' . RandomHelper::hex(8);
-        TruthSourceRegistry::register(HilosDbContext::settings, true, self::TEST_SETTINGS_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::TEST_SETTINGS_AGENT_ID);
 
         try {
             $this->registerAdminConnection('settings-snapshot-ak');
@@ -83,7 +84,7 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
         $originalValue = $original?->value;
         $orphanKey = 'browser_delete_orphan_' . RandomHelper::hex(8);
 
-        TruthSourceRegistry::register(HilosDbContext::settings, true, self::TEST_SETTINGS_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::TEST_SETTINGS_AGENT_ID);
 
         try {
             $this->registerAdminConnection('settings-mutation-ak');
@@ -135,7 +136,7 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
     public function testSettingsAddRejectsKeyNotInCatalog(): void
     {
         $nonCatalogKey = 'browser_non_catalog_' . RandomHelper::hex(8);
-        TruthSourceRegistry::register(HilosDbContext::settings, true, self::TEST_SETTINGS_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::TEST_SETTINGS_AGENT_ID);
 
         try {
             $this->expectException(SettingNotInCatalogException::class);
@@ -165,7 +166,7 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
      */
     private function registerAdminConnection(string $acceptKey): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_SETTINGS_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_SETTINGS_AGENT_ID);
         $userId = (int) Hilos::$db->users->actions->createWithName('Settings Browser Admin')->id;
         Hilos::$db->users[$userId]?->actions->setAdmin(true);
         Hilos::$rt->connections->actions->register($acceptKey, $userId);

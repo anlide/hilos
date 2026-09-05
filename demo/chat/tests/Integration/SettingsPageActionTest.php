@@ -11,6 +11,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\Exception\TableActionException;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
@@ -280,7 +281,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
      */
     private function withSettingsWriter(callable $body, array $keysToCleanup): void
     {
-        TruthSourceRegistry::register(HilosDbContext::settings, true, self::SETTINGS_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::SETTINGS_AGENT_ID);
 
         try {
             $body();

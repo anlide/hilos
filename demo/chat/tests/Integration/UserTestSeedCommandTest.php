@@ -8,6 +8,7 @@ use Demo\Chat\Hilos;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\UserTestSeedCommand;
 use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -37,7 +38,7 @@ final class UserTestSeedCommandTest extends IntegrationTestCase
         parent::setUp();
         // Direct identity writes (the wrapper regression) need a collection-wide truth
         // source; the command registers its own before mutating.
-        TruthSourceRegistry::register(HilosDbContext::identities, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::identities, TruthSourceKeys::all(), self::TEST_AGENT_ID);
     }
 
     protected function tearDown(): void

@@ -9,6 +9,7 @@ use Demo\Tasks\Runtime\State\Item\Connection as ConnectionState;
 use Demo\Tasks\Runtime\View\Context\TasksRtContext;
 use Demo\Tasks\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -25,7 +26,7 @@ final class HilosUsersTableTest extends IntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        RtTruthSourceRegistry::register(TasksRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(TasksRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
     }
 

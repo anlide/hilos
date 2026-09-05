@@ -13,6 +13,7 @@ use Demo\Tasks\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
@@ -29,7 +30,7 @@ final class UserPageActionTest extends IntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        RtTruthSourceRegistry::register(TasksRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(TasksRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         $this->previousRouter = Hilos::$sr;
         Hilos::$sr = new SignalRouter();

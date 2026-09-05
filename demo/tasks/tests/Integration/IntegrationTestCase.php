@@ -21,6 +21,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\HilosException;
@@ -59,22 +60,22 @@ abstract class IntegrationTestCase extends TestCase
             Database::initialize(initHilos: true);
             self::$dbInitialized = true;
         }
-        TruthSourceRegistry::register(TasksDbContext::users, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(TasksDbContext::userRenames, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(TasksDbContext::guests, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(TasksDbContext::users, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(TasksDbContext::userRenames, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(TasksDbContext::guests, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         // Framework tables these cases write through their real writers - a login, a code, a
         // notification - and not through the library that owns them. The guard asks on every
         // table since HIL-716, while a test process runs the writers under this harness id
         // rather than under a library's, so the harness claims them once for everybody.
-        TruthSourceRegistry::register(HilosDbContext::sessions, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(HilosDbContext::identities, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(HilosDbContext::verifications, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(HilosDbContext::registrationReservations, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(HilosDbContext::passkeyCredentials, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(HilosDbContext::authBlocks, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(HilosDbContext::notifications, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(HilosDbContext::notificationDeliveries, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(HilosDbContext::notificationPreferences, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::sessions, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::identities, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::verifications, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::registrationReservations, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::passkeyCredentials, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::authBlocks, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::notifications, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::notificationDeliveries, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::notificationPreferences, TruthSourceKeys::all(), self::TEST_AGENT_ID);
     }
 
     /**

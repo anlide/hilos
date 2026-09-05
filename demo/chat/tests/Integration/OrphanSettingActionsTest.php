@@ -11,6 +11,7 @@ use Hilos\Core\CLI\Commands\OrphanTestCreateCommand;
 use Hilos\Core\CLI\Commands\OrphanTestDeleteCommand;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\Exception\SettingKeyInCatalogException;
@@ -190,7 +191,7 @@ final class OrphanSettingActionsTest extends IntegrationTestCase
      */
     private function withSettingsWriter(callable $body, array $keysToCleanup): void
     {
-        TruthSourceRegistry::register(HilosDbContext::settings, true, self::SETTINGS_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::SETTINGS_AGENT_ID);
 
         try {
             $body();

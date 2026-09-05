@@ -8,6 +8,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\AbstractTruthSourceRegistry;
 use Hilos\Core\TruthSource\TruthSourceGrant;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\RtState;
@@ -20,7 +21,7 @@ use Hilos\Runtime\State\Item\RtState;
  *
  * Usage:
  *   // In Agent::onStart()
- *   RtTruthSourceRegistry::register('connections', true, $this->getId());
+ *   RtTruthSourceRegistry::register('connections', TruthSourceKeys::all(), $this->getId());
  *
  *   // After Agent::onStop() returns or throws, WorkerManager unregisters the agent.
  *   RtTruthSourceRegistry::unregisterAgent($agent->getId());
@@ -65,12 +66,14 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
      * agent-less {@see RtState::sync()} calls pass the write-guard. It holds every operation:
      * a singleton the master owns is one it also brings into being and clears.
      *
+     * The claim is always the whole collection, and there is no parameter offering otherwise: a
+     * singleton is not owned by halves, and none of this method's callers ever named rows.
+     *
      * @param string $collection Runtime collection name
-     * @param list<string>|true $keys Specific writable keys or true for all keys
      */
-    public static function registerDaemon(string $collection, array|true $keys = true): void
+    public static function registerDaemon(string $collection): void
     {
-        self::register($collection, $keys, self::DAEMON_SOURCE_ID);
+        self::register($collection, TruthSourceKeys::all(), self::DAEMON_SOURCE_ID);
     }
 
     /**
@@ -139,11 +142,8 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
             if ($grant === null) {
                 continue;
             }
-            foreach (TruthSourceOperation::ALL as $operation) {
-                if (!$grant->allows($operation)) {
-                    $collections[] = (string)$collection;
-                    break;
-                }
+            if (!$grant->operations->isComplete()) {
+                $collections[] = (string)$collection;
             }
         }
 
@@ -168,10 +168,10 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
         $sources = &self::getSources();
         foreach ($sources as $collection => $agents) {
             $grant = $agents[$agentId] ?? null;
-            if ($grant === null || $grant->keys === true) {
+            if ($grant === null || $grant->keys->coversEveryKey()) {
                 continue;
             }
-            $keysByCollection[(string)$collection] = $grant->keys;
+            $keysByCollection[(string)$collection] = $grant->keys->listedKeys();
         }
 
         return $keysByCollection;
@@ -216,7 +216,7 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
         }
 
         if (ExecutionContext::currentAgentId() === null) {
-            if (self::getTruthSourceKeys($collection) === true) {
+            if (self::getTruthSourceKeys($collection)?->coversEveryKey() === true) {
                 return;
             }
 
@@ -226,8 +226,7 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
             );
         }
 
-        $agentKeys = self::getCurrentAgentKeys($collection);
-        if ($agentKeys === true) {
+        if (self::getCurrentAgentKeys($collection)?->coversEveryKey() === true) {
             return;
         }
 
@@ -270,19 +269,19 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
             }
 
             $covering = self::operationsCovering($collection, $stateId);
-            if (in_array($operation, $covering, true)) {
+            if ($covering->allows($operation)) {
                 return;
             }
 
             throw new RtTruthSourceWriteNotAllowedException(
                 "Write operation not allowed: the truth source for runtime collection '{$collection}' has " .
-                "operations [" . TruthSourceOperation::listAsText($covering) . "] and may not " .
+                "operations [" . $covering->asText() . "] and may not " .
                 "{$operation->value} state '{$stateId}'."
             );
         }
 
         $grant = self::grantOf($collection, $agentId);
-        if ($grant === null || ($grant->keys !== true && !in_array($stateId, $grant->keys, true))) {
+        if ($grant === null || !$grant->keys->covers($stateId)) {
             throw new RtTruthSourceWriteNotAllowedException(
                 "Write operation not allowed: agent '{$agentId}' is not a truth source for " .
                 "runtime collection '{$collection}' state '{$stateId}'."
@@ -295,7 +294,7 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
 
         throw new RtTruthSourceWriteNotAllowedException(
             "Write operation not allowed: agent '{$agentId}' is a truth source for runtime collection " .
-            "'{$collection}' with operations [" . TruthSourceOperation::listAsText($grant->operations) . "] and " .
+            "'{$collection}' with operations [" . $grant->operations->asText() . "] and " .
             "may not {$operation->value} state '{$stateId}'."
         );
     }
@@ -304,9 +303,9 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
      * Returns the current agent's registered key set for a collection.
      *
      * @param string $collection Collection name
-     * @return list<string>|true|null Current agent keys, true for full collection, or null
+     * @return ?TruthSourceKeys Width of the current agent's claim, or null when it holds none
      */
-    private static function getCurrentAgentKeys(string $collection): array|true|null
+    private static function getCurrentAgentKeys(string $collection): ?TruthSourceKeys
     {
         $agentId = ExecutionContext::currentAgentId();
         if ($agentId === null) {

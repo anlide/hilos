@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -58,7 +59,7 @@ abstract class FrameworkIntegrationTestCase extends TestCase
         parent::setUp();
 
         foreach (self::CLAIMED_TABLES as $table) {
-            TruthSourceRegistry::register($table, true, self::TEST_AGENT_ID);
+            TruthSourceRegistry::register($table, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         }
 
         if (Hilos::$env === null) {

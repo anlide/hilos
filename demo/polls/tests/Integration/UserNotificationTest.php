@@ -12,6 +12,7 @@ use Demo\Polls\Runtime\View\Context\PollsRtContext;
 use Demo\Polls\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -42,8 +43,8 @@ final class UserNotificationTest extends IntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        TruthSourceRegistry::register(HilosDbContext::notifications, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(PollsRtContext::connections, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::notifications, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(PollsRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         $this->deleteDemoNotifications();
         $this->previousRouter = Hilos::$sr;

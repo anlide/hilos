@@ -8,6 +8,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -141,7 +142,7 @@ HELP;
 
         // The identities collection needs a registered writer; the CLI has no agent, so the
         // command registers itself as the truth source before mutating (test-only path).
-        TruthSourceRegistry::register(HilosDbContext::identities, true, self::TRUTH_SOURCE_ID);
+        TruthSourceRegistry::register(HilosDbContext::identities, TruthSourceKeys::all(), self::TRUTH_SOURCE_ID);
 
         $firstEmail = '';
         $lastEmail = '';

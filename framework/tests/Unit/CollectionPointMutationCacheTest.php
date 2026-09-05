@@ -9,6 +9,7 @@ use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\OutboundRtSyncSubscriber;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Exception\CollectionNotFoundException;
 use Hilos\Database\Entity\Item\Entity;
@@ -69,7 +70,7 @@ final class CollectionPointMutationCacheTest extends TestCase
         SourceChangeBus::reset();
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
         SourceChangeBus::subscribe(new OutboundRtSyncSubscriber());
-        RtTruthSourceRegistry::register(PointMutationRtContext::COLLECTION, true, self::AGENT_ID);
+        RtTruthSourceRegistry::register(PointMutationRtContext::COLLECTION, TruthSourceKeys::all(), self::AGENT_ID);
     }
 
     protected function tearDown(): void

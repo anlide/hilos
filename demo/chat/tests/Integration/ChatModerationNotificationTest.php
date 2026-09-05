@@ -21,6 +21,7 @@ use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Page\SignalRouteConfig;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -46,8 +47,8 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        TruthSourceRegistry::register(HilosDbContext::notifications, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::notifications, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         $this->deleteChatNotifications();
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();

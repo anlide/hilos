@@ -8,6 +8,7 @@ use Demo\Chat\Browser\ChatBrowserContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
@@ -26,7 +27,7 @@ final class ChatBrowserContextResolveUserTest extends IntegrationTestCase
 
     public function testResolvesUserIdFromRegisteredConnection(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         try {
@@ -43,7 +44,7 @@ final class ChatBrowserContextResolveUserTest extends IntegrationTestCase
 
     public function testAnUnregisteredAcceptKeyIsPendingRatherThanAGuest(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         try {

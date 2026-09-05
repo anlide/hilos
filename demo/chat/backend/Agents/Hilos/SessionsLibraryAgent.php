@@ -14,6 +14,7 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\HilosException;
 
@@ -83,13 +84,13 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
         // merge, both of them edits of a row that already exists.
         $this->registerDbTruthSource(
             ChatDbContext::users,
-            operations: [TruthSourceOperation::Update],
+            operations: TruthSourceOperations::of(TruthSourceOperation::Update),
         );
         // TODO(HIL-626): borrowed claim - the chat agent owns the message rows. A merge
         // re-points the loser's messages onto the survivor, which edits them and nothing more.
         $this->registerDbTruthSource(
             ChatDbContext::eventMessages,
-            operations: [TruthSourceOperation::Update],
+            operations: TruthSourceOperations::of(TruthSourceOperation::Update),
         );
     }
 

@@ -156,6 +156,7 @@ use Hilos\Core\Browser\Config\BrowserRuntimeParam;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
@@ -588,7 +589,7 @@ final class Hilos extends HilosFacade
      */
     public static function createFixtureUser(string $displayName): ?int
     {
-        TruthSourceRegistry::register(ChatDbContext::users, true, 'test-cli');
+        TruthSourceRegistry::register(ChatDbContext::users, TruthSourceKeys::all(), 'test-cli');
 
         return (int)Hilos::$db->users->actions->createWithName($displayName)->id;
     }

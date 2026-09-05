@@ -27,6 +27,7 @@ use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Page\SignalRouteConfig;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
@@ -49,7 +50,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
      */
     public function testOnStopClearsWhatIsItsOwnAndLeavesTheConnections(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
         Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
@@ -80,7 +81,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
 
     public function testStaleTextModerationResultThrowsAgentExceptionAndDoesNotPublishMessage(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
         Hilos::$db->events->actions->deleteAll();
@@ -116,7 +117,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
 
     public function testApprovedTextModerationResultPublishesMessageAndClearsPendingState(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
         Hilos::$db->events->actions->deleteAll();
@@ -155,7 +156,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
 
     public function testRejectedTextModerationResultUsesActionExceptionAndPreservesRetryState(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
         Hilos::$db->events->actions->deleteAll();
@@ -201,7 +202,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
 
     public function testMainPageRejectsMessageInsideRuntimeRateLimit(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
         Hilos::$db->events->actions->deleteAll();

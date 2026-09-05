@@ -28,11 +28,12 @@ enum TruthSourceOperation: string
     public const array ALL = [self::Add, self::Update, self::Remove];
 
     /**
-     * @param list<self> $operations Operations to name
-     * @return string Operation values separated by a comma, as a refusal message spells them
+     * No operation named - the kind of the agent answers for this claim.
+     *
+     * An empty list under a name, because a bare one would say both "nothing may be done here"
+     * and "the set was never written", which is the very pair {@see TruthSourceKeys} exists to
+     * take apart. Only a declaration carries it: it is resolved into a real set against the
+     * class that is starting, before the claim reaches a registry.
      */
-    public static function listAsText(array $operations): string
-    {
-        return implode(', ', array_map(static fn (self $operation): string => $operation->value, $operations));
-    }
+    public const array BY_KIND = [];
 }

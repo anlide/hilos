@@ -11,6 +11,7 @@ use Hilos\Core\Source\SourceChangeSubscriberInterface;
 use Hilos\Core\Source\Subscriber\OutboundRtSyncSubscriber;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
@@ -40,7 +41,7 @@ final class ObjectUpdateAnnouncementTest extends TestCase
         parent::setUp();
 
         SourceChangeBus::reset();
-        TruthSourceRegistry::register(UpdateAnnouncementObject::COLLECTION_KEY, true, self::AGENT);
+        TruthSourceRegistry::register(UpdateAnnouncementObject::COLLECTION_KEY, TruthSourceKeys::all(), self::AGENT);
     }
 
     protected function tearDown(): void

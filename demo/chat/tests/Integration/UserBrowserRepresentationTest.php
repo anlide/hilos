@@ -10,6 +10,7 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\AdminUser\AdminUserTableRow;
 use Demo\Chat\Tables\HilosUser\HilosUserTableRow;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
@@ -21,7 +22,7 @@ final class UserBrowserRepresentationTest extends IntegrationTestCase
 
     public function testUserTableRowsIncludeRuntimeOnlineSessionCount(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         $user = Hilos::$db->users->actions->createWithName('User');

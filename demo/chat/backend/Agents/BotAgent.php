@@ -28,6 +28,7 @@ use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
 use Hilos\LLM\Agent\AbstractLlmChatAgent;
 use Hilos\LLM\DTO\ChatGenerateOptions;
@@ -115,7 +116,7 @@ final class BotAgent extends AbstractLlmChatAgent
      */
     public function onStart(): void
     {
-        $this->registerRtTruthSource(ChatRtContext::botAgentStatuses, [(string)$this->botId]);
+        $this->registerRtTruthSource(ChatRtContext::botAgentStatuses, TruthSourceKeys::listed((string)$this->botId));
         Hilos::$rt->botAgentStatuses->actions->ensure($this->botId)->actions->markJoined();
         $this->scheduleReaction();
     }

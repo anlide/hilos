@@ -25,6 +25,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\View\Item\Session;
@@ -67,32 +68,32 @@ abstract class IntegrationTestCase extends TestCase
             Database::initialize(initHilos: true);
             self::$dbInitialized = true;
         }
-        TruthSourceRegistry::register(ChatDbContext::users, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(ChatDbContext::events, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(ChatDbContext::eventMessages, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(ChatDbContext::eventUserRegistrations, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(ChatDbContext::eventUserRenames, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(ChatDbContext::eventAttachments, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(ChatDbContext::bots, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(ChatDbContext::moderatorPromptPieces, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(ChatDbContext::users, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(ChatDbContext::events, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(ChatDbContext::eventMessages, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(ChatDbContext::eventUserRegistrations, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(ChatDbContext::eventUserRenames, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(ChatDbContext::eventAttachments, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(ChatDbContext::bots, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(ChatDbContext::moderatorPromptPieces, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         // Framework tables these cases write through their real writers - a login, a code, a
         // notification - and not through the library that owns them. The guard asks on every
         // table since HIL-716, while a test process runs the writers under this harness id
         // rather than under a library's, so the harness claims them once for everybody.
-        TruthSourceRegistry::register(HilosDbContext::sessions, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(HilosDbContext::identities, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(HilosDbContext::verifications, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(HilosDbContext::registrationReservations, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(HilosDbContext::passkeyCredentials, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(HilosDbContext::authBlocks, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(HilosDbContext::notifications, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(HilosDbContext::notificationDeliveries, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(HilosDbContext::notificationPreferences, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(ChatRtContext::userStates, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(ChatRtContext::attachmentDrafts, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::sessions, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::identities, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::verifications, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::registrationReservations, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::passkeyCredentials, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::authBlocks, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::notifications, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::notificationDeliveries, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::notificationPreferences, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::userStates, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::attachmentDrafts, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         // Owned by the framework rather than the project (HIL-582), and written by any case
         // that drives a login, so the harness claims it once for everybody.
-        RtTruthSourceRegistry::register(StateHilosSessionRotation::RT_COLLECTION, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(StateHilosSessionRotation::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
     }
 
     /**

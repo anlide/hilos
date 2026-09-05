@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\Hilos\NotificationsLibraryAgent;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -49,7 +50,7 @@ final class NotificationCenterTest extends IntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        TruthSourceRegistry::register(HilosDbContext::notifications, true, 'test-agent');
+        TruthSourceRegistry::register(HilosDbContext::notifications, TruthSourceKeys::all(), 'test-agent');
         $this->deleteRecipientRows();
     }
 

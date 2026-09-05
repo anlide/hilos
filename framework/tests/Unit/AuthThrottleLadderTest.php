@@ -9,6 +9,7 @@ use Hilos\Auth\Throttle\ThrottleScope;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Feature\Definition\AuthThrottleFeature;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
@@ -189,7 +190,7 @@ final class AuthThrottleLadderTest extends TestCase
         $rt->mountFeatureRuntime([new AuthThrottleFeature()]);
         Hilos::$rt = $rt;
 
-        RtTruthSourceRegistry::register(StateAuthAttempt::RT_COLLECTION, true, self::AGENT_ID);
+        RtTruthSourceRegistry::register(StateAuthAttempt::RT_COLLECTION, TruthSourceKeys::all(), self::AGENT_ID);
         ExecutionContext::setCurrentAgentId(self::AGENT_ID);
 
         $attempts = $rt->hilosAuthAttempts;

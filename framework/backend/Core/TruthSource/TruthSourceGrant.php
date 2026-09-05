@@ -14,12 +14,12 @@ namespace Hilos\Core\TruthSource;
 final readonly class TruthSourceGrant
 {
     /**
-     * @param list<string>|true $keys Rows this grant covers, or true for the whole collection
-     * @param list<TruthSourceOperation> $operations Operations this grant allows
+     * @param TruthSourceKeys $keys Rows this grant covers
+     * @param TruthSourceOperations $operations Operations this grant allows on them
      */
     public function __construct(
-        public array|true $keys,
-        public array $operations,
+        public TruthSourceKeys $keys,
+        public TruthSourceOperations $operations,
     ) {
     }
 
@@ -29,6 +29,6 @@ final readonly class TruthSourceGrant
      */
     public function allows(TruthSourceOperation $operation): bool
     {
-        return in_array($operation, $this->operations, true);
+        return $this->operations->allows($operation);
     }
 }

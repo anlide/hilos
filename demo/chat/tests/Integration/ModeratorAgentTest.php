@@ -14,6 +14,7 @@ use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\LLM\Exception\LLMResultUnavailableException;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
@@ -31,7 +32,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
 
     public function testOnTickDiscoversPendingUserModerationFromRuntimeState(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
 
@@ -66,7 +67,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
 
     public function testOnTickDiscoversPendingRenameModerationFromRuntimeState(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
 
@@ -102,7 +103,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
 
     public function testOnTickConvertsInvalidModerationModelOutputToUnknownDenial(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
 
@@ -159,7 +160,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
 
     public function testRtUpdateCancelsInFlightModerationRequest(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
 

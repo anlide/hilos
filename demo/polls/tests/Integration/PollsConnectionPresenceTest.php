@@ -9,6 +9,7 @@ use Demo\Polls\Hilos;
 use Demo\Polls\Runtime\View\Context\PollsRtContext;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
@@ -33,7 +34,7 @@ final class PollsConnectionPresenceTest extends IntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        RtTruthSourceRegistry::register(PollsRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(PollsRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
     }
 

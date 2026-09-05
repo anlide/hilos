@@ -21,6 +21,7 @@ use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUsersPage;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -509,8 +510,8 @@ final class ImpersonationTest extends IntegrationTestCase
      */
     private function bootAgent(): ChatAgent
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(ChatRtContext::userStates, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::userStates, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         Hilos::initSignalRouter(new ChatSignalRouter());

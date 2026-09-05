@@ -13,6 +13,7 @@ use Hilos\Core\Source\SourceChangeProvenance;
 use Hilos\Core\Source\SourceChangeSubscriberInterface;
 use Hilos\Core\Source\Subscriber\OutboundRtSyncSubscriber;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
@@ -51,7 +52,7 @@ final class SourceChangeBusTest extends TestCase
         $this->previousSignalRouter = Hilos::$sr;
         $this->previousRuntime = Hilos::$rt;
         SourceChangeBus::reset();
-        RtTruthSourceRegistry::register(BusRtContext::COLLECTION, true, self::AGENT_ID);
+        RtTruthSourceRegistry::register(BusRtContext::COLLECTION, TruthSourceKeys::all(), self::AGENT_ID);
     }
 
     protected function tearDown(): void

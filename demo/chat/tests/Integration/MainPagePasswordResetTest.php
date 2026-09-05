@@ -29,6 +29,7 @@ use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
@@ -631,8 +632,8 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
             // rotates the session token and writes here on the way out.
             StateHilosSessionRotation::RT_COLLECTION,
         ] as $collection) {
-            RtTruthSourceRegistry::register($collection, true, self::TEST_AGENT_ID);
-            RtTruthSourceRegistry::register($collection, true, $agent->getId());
+            RtTruthSourceRegistry::register($collection, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+            RtTruthSourceRegistry::register($collection, TruthSourceKeys::all(), $agent->getId());
         }
 
         // Built here rather than on first dispatch: onStart() is what lays down the

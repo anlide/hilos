@@ -70,6 +70,7 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -345,7 +346,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // of this class, not a project seam - a project that wires the merge inherits it.
         $this->registerDbTruthSource(
             HilosDbContext::identities,
-            operations: [TruthSourceOperation::Update, TruthSourceOperation::Remove],
+            operations: TruthSourceOperations::of(TruthSourceOperation::Update, TruthSourceOperation::Remove),
         );
 
         $this->armPendingRegistrationSweep();

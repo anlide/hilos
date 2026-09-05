@@ -16,13 +16,14 @@ use Exception;
  *   3. Implement checkCanWrite() with their specific exception type
  *
  * Usage pattern:
- *   - Agent registers as truth source on start: Registry::register($collection, true, $agentId).
+ *   - Agent registers as truth source on start:
+ *     Registry::register($collection, TruthSourceKeys::all(), $agentId).
  *   - WorkerManager unregisters the agent after its onStop hook: Registry::unregisterAgent($agentId).
  *   - Actions check before write: Registry::checkCanWrite($collection).
  *
  * One registration is a {@see TruthSourceGrant}: the rows it covers and the operations it
- * allows on them. A registration that names no operations gets {@see TruthSourceOperation::ALL},
- * which is what every source held before the operation axis existed.
+ * allows on them. A registration that names no operations gets every one of them, which is what
+ * every source held before the operation axis existed.
  */
 abstract class AbstractTruthSourceRegistry
 {
@@ -42,16 +43,26 @@ abstract class AbstractTruthSourceRegistry
      * A repeated registration replaces the agent's grant for that collection rather than
      * widening it: the last claim is the whole claim.
      *
+     * The width has no default: a claim says out loud whether it runs over the whole collection
+     * or over rows it names, because the pair this replaced could not tell the two apart. The
+     * operations do have one, and it is written out case by case rather than unpacked from
+     * {@see TruthSourceOperation::ALL}, because PHP accepts only a `new` expression in the
+     * default value of a parameter and refuses unpacking a constant there.
+     *
      * @param string $collection Collection/table name
-     * @param list<string>|true $keys Array of specific keys or true for all keys
+     * @param TruthSourceKeys $keys Rows the agent claims - the whole collection, or those it names
      * @param string $agentId Agent ID from agent->getId()
-     * @param list<TruthSourceOperation> $operations Operations the agent may perform on those keys
+     * @param TruthSourceOperations $operations Operations the agent may perform on those rows
      */
     public static function register(
         string $collection,
-        array|true $keys,
+        TruthSourceKeys $keys,
         string $agentId,
-        array $operations = TruthSourceOperation::ALL,
+        TruthSourceOperations $operations = new TruthSourceOperations(
+            TruthSourceOperation::Add,
+            TruthSourceOperation::Update,
+            TruthSourceOperation::Remove,
+        ),
     ): void {
         $sources = &static::getSources();
         if (!isset($sources[$collection])) {
@@ -130,12 +141,9 @@ abstract class AbstractTruthSourceRegistry
         }
 
         foreach ($sources[$collection] as $grant) {
-            if ($grant->keys === true) {
-                return true; // All keys are truth source
-            }
             $allKeysPresent = true;
             foreach ($keys as $key) {
-                if (!in_array($key, $grant->keys, true)) {
+                if (!$grant->keys->covers($key)) {
                     $allKeysPresent = false;
                     break;
                 }
@@ -151,10 +159,13 @@ abstract class AbstractTruthSourceRegistry
     /**
      * Get truth source keys for collection.
      *
+     * Null still means "no cover here", and it is also the answer when the collection has grants
+     * but every one of them owns no row: a mint-only claim covers nothing to read.
+     *
      * @param string $collection Collection/table name
-     * @return list<string>|true|null Array of keys, true for all keys, or null if no truth source
+     * @return ?TruthSourceKeys Width of the cover over this collection, or null when it has none
      */
-    public static function getTruthSourceKeys(string $collection): array|true|null
+    public static function getTruthSourceKeys(string $collection): ?TruthSourceKeys
     {
         $sources = &static::getSources();
         if (!isset($sources[$collection])) {
@@ -163,13 +174,13 @@ abstract class AbstractTruthSourceRegistry
 
         $allKeys = [];
         foreach ($sources[$collection] as $grant) {
-            if ($grant->keys === true) {
-                return true; // All keys are truth source
+            if ($grant->keys->coversEveryKey()) {
+                return TruthSourceKeys::all();
             }
-            $allKeys = array_merge($allKeys, $grant->keys);
+            $allKeys = array_merge($allKeys, $grant->keys->listedKeys());
         }
 
-        return empty($allKeys) ? null : array_unique($allKeys);
+        return $allKeys === [] ? null : TruthSourceKeys::listed(...array_values(array_unique($allKeys)));
     }
 
     /**
@@ -192,21 +203,17 @@ abstract class AbstractTruthSourceRegistry
      *
      * @param string $collection Collection/table name
      * @param string $key Row key about to be written
-     * @return list<TruthSourceOperation> Operations any covering grant allows, each named once
+     * @return TruthSourceOperations Operations any covering grant allows, each named once
      */
-    protected static function operationsCovering(string $collection, string $key): array
+    protected static function operationsCovering(string $collection, string $key): TruthSourceOperations
     {
         $sources = &static::getSources();
-        $operations = [];
+        $operations = new TruthSourceOperations();
         foreach ($sources[$collection] ?? [] as $grant) {
-            if ($grant->keys !== true && !in_array($key, $grant->keys, true)) {
+            if (!$grant->keys->covers($key)) {
                 continue;
             }
-            foreach ($grant->operations as $operation) {
-                if (!in_array($operation, $operations, true)) {
-                    $operations[] = $operation;
-                }
-            }
+            $operations = $operations->merge($grant->operations);
         }
 
         return $operations;

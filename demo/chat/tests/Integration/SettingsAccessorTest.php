@@ -7,6 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\Exception\SettingNotInCatalogException;
@@ -65,7 +66,7 @@ final class SettingsAccessorTest extends IntegrationTestCase
     {
         $setting = Hilos::$db->settings[ChatSettingsConstants::DEFAULT_BOT_MODEL];
         $originalValue = $setting?->value;
-        TruthSourceRegistry::register(HilosDbContext::settings, true, self::TEST_SETTINGS_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::TEST_SETTINGS_AGENT_ID);
 
         try {
             $setting?->actions->updateValue('');

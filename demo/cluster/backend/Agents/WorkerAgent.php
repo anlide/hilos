@@ -11,6 +11,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -97,7 +98,7 @@ final class WorkerAgent extends AbstractAgent
     public function onStart(): void
     {
         $this->reportDueAt = microtime(true) + self::REPORT_INTERVAL_SEC;
-        $this->registerRtTruthSource(ClusterRtContext::workerStatuses, [$this->agentIndex]);
+        $this->registerRtTruthSource(ClusterRtContext::workerStatuses, TruthSourceKeys::listed($this->agentIndex));
         $this->report();
 
         Logger::info("Worker {$this->getId()} started on this node: it is now carrying load");

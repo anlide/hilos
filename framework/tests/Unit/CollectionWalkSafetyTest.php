@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Entity\Item\Entity;
@@ -62,7 +63,7 @@ final class CollectionWalkSafetyTest extends TestCase
         $this->previousDb = Hilos::$db;
         SourceChangeBus::reset();
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
-        RtTruthSourceRegistry::register(WalkRtContext::COLLECTION, true, self::AGENT_ID);
+        RtTruthSourceRegistry::register(WalkRtContext::COLLECTION, TruthSourceKeys::all(), self::AGENT_ID);
     }
 
     protected function tearDown(): void

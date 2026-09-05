@@ -10,6 +10,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
@@ -102,11 +103,11 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
      * so a channel that could add or remove would be claiming the journal rather than sharing
      * it.
      *
-     * @return list<TruthSourceOperation> Editing alone
+     * @return TruthSourceOperations Editing alone
      */
-    protected function defaultTruthSourceOperations(): array
+    public static function defaultTruthSourceOperations(): TruthSourceOperations
     {
-        return [TruthSourceOperation::Update];
+        return TruthSourceOperations::of(TruthSourceOperation::Update);
     }
 
     /**

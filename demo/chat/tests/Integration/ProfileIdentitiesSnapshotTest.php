@@ -15,6 +15,7 @@ use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Object\Item\Identity;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
@@ -37,7 +38,7 @@ final class ProfileIdentitiesSnapshotTest extends IntegrationTestCase
 
     public function testTheProfileListArrivesWhenTheWorkerHoldsNoneOfTheIdentityRows(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         // The harness runs no worker, so nothing has queued the router the snapshot answers into.
         Hilos::$sr = new SignalRouter();

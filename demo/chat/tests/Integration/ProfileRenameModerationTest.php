@@ -17,6 +17,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
@@ -29,7 +30,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
 
     public function testRenameActionStartsModerationWithoutChangingUserName(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$db->events->actions->deleteAll();
 
@@ -61,7 +62,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
 
     public function testApprovedRenameModerationResultRenamesUser(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$db->events->actions->deleteAll();
 
@@ -100,7 +101,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
 
     public function testRejectedRenameModerationResultPreservesNameAndReportsActionError(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$db->events->actions->deleteAll();
 

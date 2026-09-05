@@ -58,6 +58,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SignalName;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -744,6 +745,11 @@ abstract class WorkerManager extends BaseManager
         // Before the start hook rather than after it: an agent whose onStart() throws is still an
         // agent this worker holds, and one the tracker has never heard of is never idle.
         $this->agentIdleTracker->noteStarted($agentId, microtime(true));
+        // Before the start hook and not inside it: an agent writes its first row within onStart(),
+        // so the claim has to stand by then - this is the same beat at which the helper calls the
+        // hook still makes take effect. Reading the class rather than the instance is what lets
+        // the same declaration be answered where no instance exists at all.
+        OwnershipDeclaration::claimDb($agent::class, $agentId);
         $agent->onStart();
         Hilos::$ac?->openAgentSession($agentType, $agentIndex);
         Logger::info("Agent '{$agentId}' started");

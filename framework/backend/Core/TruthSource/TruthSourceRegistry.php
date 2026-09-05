@@ -20,7 +20,7 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
  *
  * Usage:
  *   // In Agent::onStart()
- *   TruthSourceRegistry::register(Hilos::users, true, $this->getId());
+ *   TruthSourceRegistry::register(Hilos::users, TruthSourceKeys::all(), $this->getId());
  *   TruthSourceRegistry::registerCreate(Hilos::bots, $this->getId());
  *
  *   // After Agent::onStop() returns or throws, WorkerManager unregisters the agent.
@@ -63,7 +63,12 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
     {
         $grant = self::grantOf($collection, $agentId);
         if ($grant === null) {
-            self::register($collection, [], $agentId, [TruthSourceOperation::Add]);
+            self::register(
+                $collection,
+                TruthSourceKeys::listed(),
+                $agentId,
+                TruthSourceOperations::of(TruthSourceOperation::Add),
+            );
 
             return;
         }
@@ -72,7 +77,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             return;
         }
 
-        self::register($collection, $grant->keys, $agentId, [...$grant->operations, TruthSourceOperation::Add]);
+        self::register($collection, $grant->keys, $agentId, $grant->operations->with(TruthSourceOperation::Add));
     }
 
     /**
@@ -91,11 +96,8 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             return;
         }
 
-        $remaining = array_values(array_filter(
-            $grant->operations,
-            static fn (TruthSourceOperation $operation): bool => $operation !== TruthSourceOperation::Add,
-        ));
-        if ($remaining === []) {
+        $remaining = $grant->operations->without(TruthSourceOperation::Add);
+        if ($remaining->isEmpty()) {
             self::unregister($collection, $agentId);
 
             return;
@@ -153,7 +155,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
         if (
             $grant !== null
             && $grant->allows(TruthSourceOperation::Add)
-            && ($grant->keys === true || $grant->keys === [])
+            && ($grant->keys->coversEveryKey() || $grant->keys->coversNoKey())
         ) {
             return;
         }
@@ -192,7 +194,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
         }
 
         if (ExecutionContext::currentAgentId() === null) {
-            if (self::getTruthSourceKeys($collection) === true) {
+            if (self::getTruthSourceKeys($collection)?->coversEveryKey() === true) {
                 return;
             }
 
@@ -201,7 +203,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             );
         }
 
-        if (self::getCurrentAgentKeys($collection) === true) {
+        if (self::getCurrentAgentKeys($collection)?->coversEveryKey() === true) {
             return;
         }
 
@@ -243,19 +245,19 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             }
 
             $covering = self::operationsCovering($collection, $idString);
-            if (in_array($operation, $covering, true)) {
+            if ($covering->allows($operation)) {
                 return;
             }
 
             throw new WriteNotAllowedException(
                 "Write operation not allowed: the truth source for table '{$collection}' has operations " .
-                "[" . TruthSourceOperation::listAsText($covering) . "] and may not " .
+                "[" . $covering->asText() . "] and may not " .
                 "{$operation->value} item '{$idString}'."
             );
         }
 
         $grant = self::grantOf($collection, $agentId);
-        if ($grant === null || ($grant->keys !== true && !in_array($idString, $grant->keys, true))) {
+        if ($grant === null || !$grant->keys->covers($idString)) {
             throw new WriteNotAllowedException(
                 "Write operation not allowed: agent '{$agentId}' is not a truth source for " .
                 "table '{$collection}' item '{$idString}'."
@@ -268,7 +270,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
 
         throw new WriteNotAllowedException(
             "Write operation not allowed: agent '{$agentId}' is a truth source for table '{$collection}' " .
-            "with operations [" . TruthSourceOperation::listAsText($grant->operations) . "] and may not " .
+            "with operations [" . $grant->operations->asText() . "] and may not " .
             "{$operation->value} item '{$idString}'."
         );
     }
@@ -277,9 +279,9 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      * Returns the current agent's registered key set for a collection.
      *
      * @param string $collection Collection name
-     * @return list<string>|true|null Current agent keys, true for full collection, or null
+     * @return ?TruthSourceKeys Width of the current agent's claim, or null when it holds none
      */
-    private static function getCurrentAgentKeys(string $collection): array|true|null
+    private static function getCurrentAgentKeys(string $collection): ?TruthSourceKeys
     {
         $agentId = ExecutionContext::currentAgentId();
         if ($agentId === null) {

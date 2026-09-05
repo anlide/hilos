@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Runtime;
 
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Hilos;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\RtStaleness;
@@ -47,7 +48,7 @@ final class HilosSessionRotationsTest extends TestCase
     {
         $this->previousSignalRouter = Hilos::$sr;
         Hilos::$sr = new SignalRouter();
-        RtTruthSourceRegistry::register(StateHilosSessionRotation::RT_COLLECTION, true, self::AGENT_ID);
+        RtTruthSourceRegistry::register(StateHilosSessionRotation::RT_COLLECTION, TruthSourceKeys::all(), self::AGENT_ID);
         $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-session-rotations');
         Logger::setLogFile($this->logFile);
     }

@@ -6,6 +6,7 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
@@ -61,7 +62,7 @@ final class LogWriteLevelPropagationTest extends FrameworkIntegrationTestCase
         self::runStubs(down: true);
         self::runStubs(down: false);
 
-        TruthSourceRegistry::register(HilosDbContext::settings, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::TEST_AGENT_ID);
 
         $this->previousDb = Hilos::$db;
         $this->previousSettings = Hilos::$setting;

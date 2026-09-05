@@ -9,6 +9,7 @@ use Demo\Polls\Runtime\State\Item\Connection as ConnectionState;
 use Demo\Polls\Runtime\View\Context\PollsRtContext;
 use Demo\Polls\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -25,7 +26,7 @@ final class HilosUsersTableTest extends IntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        RtTruthSourceRegistry::register(PollsRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(PollsRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
     }
 

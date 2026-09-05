@@ -6,7 +6,9 @@ namespace Hilos\Tests\Unit\Auth\Session;
 
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Feature\Definition\AuthFeature;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Hilos;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
@@ -46,12 +48,12 @@ final class WaiterParkOwnershipTest extends TestCase
         Hilos::$rt->configure();
 
         foreach ([StateRegistrationWaiter::RT_COLLECTION, StateRecoveryWaiter::RT_COLLECTION] as $collection) {
-            RtTruthSourceRegistry::register($collection, true, self::HOLDER);
+            RtTruthSourceRegistry::register($collection, TruthSourceKeys::all(), self::HOLDER);
             RtTruthSourceRegistry::register(
                 $collection,
-                true,
+                TruthSourceKeys::all(),
                 self::LIBRARY,
-                [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+                TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Remove),
             );
         }
     }

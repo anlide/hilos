@@ -11,7 +11,9 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\WorkerDTO;
@@ -52,9 +54,9 @@ final class RtNodeSourceMapTest extends TestCase
 
     public function testTheRegistryNamesTheCollectionsOneAgentTook(): void
     {
-        RtTruthSourceRegistry::register(self::COLLECTION, true, self::AGENT);
-        RtTruthSourceRegistry::register('unitRtNodeSourceOther', ['1'], self::AGENT);
-        RtTruthSourceRegistry::register('unitRtNodeSourceThird', true, self::OTHER_AGENT);
+        RtTruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::all(), self::AGENT);
+        RtTruthSourceRegistry::register('unitRtNodeSourceOther', TruthSourceKeys::listed('1'), self::AGENT);
+        RtTruthSourceRegistry::register('unitRtNodeSourceThird', TruthSourceKeys::all(), self::OTHER_AGENT);
 
         $this->assertSame(
             [self::COLLECTION, 'unitRtNodeSourceOther'],
@@ -68,14 +70,14 @@ final class RtNodeSourceMapTest extends TestCase
      */
     public function testAKeyScopedRegistrationStillNamesItsCollection(): void
     {
-        RtTruthSourceRegistry::register(self::COLLECTION, ['7'], self::AGENT);
+        RtTruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::listed('7'), self::AGENT);
 
         $this->assertSame([self::COLLECTION], RtTruthSourceRegistry::collectionsOf(self::AGENT));
     }
 
     public function testTheRegistryNamesNothingOnceTheAgentIsUnregistered(): void
     {
-        RtTruthSourceRegistry::register(self::COLLECTION, true, self::AGENT);
+        RtTruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::all(), self::AGENT);
         RtTruthSourceRegistry::unregisterAgent(self::AGENT);
 
         $this->assertSame([], RtTruthSourceRegistry::collectionsOf(self::AGENT));
@@ -201,11 +203,11 @@ final class RtNodeSourceMapTest extends TestCase
     {
         RtTruthSourceRegistry::register(
             self::COLLECTION,
-            true,
+            TruthSourceKeys::all(),
             self::AGENT,
-            [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+            TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Remove),
         );
-        RtTruthSourceRegistry::register('unitRtNodeSourceOther', true, self::AGENT);
+        RtTruthSourceRegistry::register('unitRtNodeSourceOther', TruthSourceKeys::all(), self::AGENT);
 
         $this->assertSame([self::COLLECTION], RtTruthSourceRegistry::partialCollectionsOf(self::AGENT));
     }
@@ -250,8 +252,8 @@ final class RtNodeSourceMapTest extends TestCase
      */
     public function testTheRegistryNamesTheRowsAClaimCovers(): void
     {
-        RtTruthSourceRegistry::register(self::COLLECTION, ['7', '9'], self::AGENT);
-        RtTruthSourceRegistry::register('unitRtNodeSourceOther', true, self::AGENT);
+        RtTruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::listed('7', '9'), self::AGENT);
+        RtTruthSourceRegistry::register('unitRtNodeSourceOther', TruthSourceKeys::all(), self::AGENT);
 
         $this->assertSame([self::COLLECTION => ['7', '9']], RtTruthSourceRegistry::keysByCollectionOf(self::AGENT));
     }
@@ -405,7 +407,7 @@ final class RtNodeSourceMapTest extends TestCase
      */
     public function testTheRowsAnAgentClaimedReachTheMastersMap(): void
     {
-        RtTruthSourceRegistry::register(self::COLLECTION, ['7'], self::AGENT);
+        RtTruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::listed('7'), self::AGENT);
         $map = new RtNodeSourceMap();
 
         $parsed = WorkerDTO::factoryWorkerDTO(new WorkerRtSourceRegisteredDTO(

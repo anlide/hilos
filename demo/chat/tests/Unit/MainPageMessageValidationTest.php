@@ -14,6 +14,7 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -65,8 +66,8 @@ final class MainPageMessageValidationTest extends TestCase
 
     public function testRejectsDeletingMissingAttachmentDraft(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(ChatRtContext::userStates, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::userStates, TruthSourceKeys::all(), self::TEST_AGENT_ID);
 
         ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
         ExecutionContext::setCurrentAcceptKey('draft-ak');

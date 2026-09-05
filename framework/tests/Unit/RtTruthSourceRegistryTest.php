@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
@@ -53,8 +55,8 @@ final class RtTruthSourceRegistryTest extends TestCase
 
     public function testCurrentAgentCanWriteOnlyRegisteredRtStateKey(): void
     {
-        RtTruthSourceRegistry::register(self::COLLECTION, ['1'], self::AGENT_A);
-        RtTruthSourceRegistry::register(self::COLLECTION, ['2'], self::AGENT_B);
+        RtTruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::listed('1'), self::AGENT_A);
+        RtTruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::listed('2'), self::AGENT_B);
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '1', TruthSourceOperation::Update);
@@ -65,7 +67,7 @@ final class RtTruthSourceRegistryTest extends TestCase
 
     public function testKeyedRtSourceCannotPerformCollectionWideWrite(): void
     {
-        RtTruthSourceRegistry::register(self::COLLECTION, ['1'], self::AGENT_A);
+        RtTruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::listed('1'), self::AGENT_A);
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         $this->expectException(RtTruthSourceWriteNotAllowedException::class);
@@ -74,7 +76,7 @@ final class RtTruthSourceRegistryTest extends TestCase
 
     public function testCollectionWideRtSourceCanWriteAnyStateKey(): void
     {
-        RtTruthSourceRegistry::register(self::COLLECTION, true, self::AGENT_A);
+        RtTruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::all(), self::AGENT_A);
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         RtTruthSourceRegistry::checkCanWrite(self::COLLECTION);
@@ -86,7 +88,7 @@ final class RtTruthSourceRegistryTest extends TestCase
 
     public function testUnregisterCurrentAgentClearsRtContext(): void
     {
-        RtTruthSourceRegistry::register(self::COLLECTION, ['1'], self::AGENT_A);
+        RtTruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::listed('1'), self::AGENT_A);
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         RtTruthSourceRegistry::unregisterAgent(self::AGENT_A);
@@ -98,9 +100,9 @@ final class RtTruthSourceRegistryTest extends TestCase
     {
         RtTruthSourceRegistry::register(
             self::COLLECTION,
-            true,
+            TruthSourceKeys::all(),
             self::AGENT_A,
-            [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+            TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Remove),
         );
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
@@ -114,9 +116,9 @@ final class RtTruthSourceRegistryTest extends TestCase
     {
         RtTruthSourceRegistry::register(
             self::COLLECTION,
-            true,
+            TruthSourceKeys::all(),
             self::AGENT_A,
-            [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+            TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Remove),
         );
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
@@ -128,9 +130,9 @@ final class RtTruthSourceRegistryTest extends TestCase
     {
         RtTruthSourceRegistry::register(
             self::COLLECTION,
-            true,
+            TruthSourceKeys::all(),
             self::AGENT_A,
-            [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+            TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Remove),
         );
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
@@ -145,9 +147,9 @@ final class RtTruthSourceRegistryTest extends TestCase
     {
         RtTruthSourceRegistry::register(
             self::COLLECTION,
-            true,
+            TruthSourceKeys::all(),
             RtTruthSourceRegistry::DAEMON_SOURCE_ID,
-            [TruthSourceOperation::Add],
+            TruthSourceOperations::of(TruthSourceOperation::Add),
         );
         ExecutionContext::setCurrentAgentId(null);
 
@@ -160,7 +162,12 @@ final class RtTruthSourceRegistryTest extends TestCase
 
     public function testSourceWithoutTheRowIsRefusedBeforeTheOperationIsWeighed(): void
     {
-        RtTruthSourceRegistry::register(self::COLLECTION, ['1'], self::AGENT_A, [TruthSourceOperation::Add]);
+        RtTruthSourceRegistry::register(
+            self::COLLECTION,
+            TruthSourceKeys::listed('1'),
+            self::AGENT_A,
+            TruthSourceOperations::of(TruthSourceOperation::Add),
+        );
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         $this->expectExceptionMessage(

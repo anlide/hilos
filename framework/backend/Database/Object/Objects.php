@@ -915,9 +915,9 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         $filteredObjects = [];
 
         // If there is a truth source - filter from memory
-        if ($truthSourceKeys !== null && $truthSourceKeys !== true) {
+        if ($truthSourceKeys !== null && !$truthSourceKeys->coversEveryKey()) {
             // Filter only objects from truth source
-            foreach ($truthSourceKeys as $key) {
+            foreach ($truthSourceKeys->listedKeys() as $key) {
                 if (isset($this->objects[$key])) {
                     $object = $this->objects[$key];
                     if ($filter->matches($object)) {
@@ -925,7 +925,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
                     }
                 }
             }
-        } elseif ($truthSourceKeys === true) {
+        } elseif ($truthSourceKeys?->coversEveryKey() === true) {
             // All keys are truth source, filter all loaded objects
             foreach ($this->objects as $key => $object) {
                 if ($filter->matches($object)) {

@@ -53,10 +53,14 @@ agent reads out of a collection another agent owns.
 
 The declaration of ownership is a map, `OWNS_DB`, from a database collection key
 to the operations the owner may perform on its rows, written on the class beside
-`READS_DB` (not in the code yet — HIL-893). The runtime half is `OWNS_RT`, the
-same shape over runtime collection keys (not in the code yet — HIL-894). A map
-and not a list of names, because some claims narrow their operations and a list
-would need a second constant to say so — two ways of saying one thing.
+`READS_DB`. The runtime half is `OWNS_RT`, the same shape over runtime collection
+keys (not in the code yet — HIL-894). A map and not a list of names, because some
+claims narrow their operations and a list would need a second constant to say
+so — two ways of saying one thing.
+
+A record naming no operation gets `TruthSourceOperation::BY_KIND` and is answered
+by the kind of the agent, which is the empty list under a name: a bare one would
+say both "nothing may be done here" and "the set was never written".
 
 ## The Operation Axis
 
@@ -126,8 +130,9 @@ unregister its own claims.
 ## Merging Up The Parent Chain
 
 Ownership merges up the chain: a subclass that declares its own database
-collections keeps every one its parents declared
-(not in the code yet — HIL-893), and the runtime map merges the same way
+collections keeps every one its parents declared, and a collection both named
+carries the union of the two operation sets
+(`OwnershipDeclaration::dbCollectionsOf()`). The runtime map merges the same way
 (not in the code yet — HIL-894).
 
 Reading does not merge. A subclass declaring `READS_DB` replaces what its
@@ -156,7 +161,7 @@ Merging also removes a fork. `AbstractSessionsLibraryAgent::onStart()` claims
 two waiter collections and the reservations table only behind
 `if ($this->hasSignInSurface())` — the base class deciding for the project. With
 a merged map the fork is unnecessary: the project subclass that has a sign-in
-surface declares the reservations table itself (not in the code yet — HIL-893)
+surface declares the reservations table itself (not in the code yet — HIL-897)
 and the two waiter collections the same way (not in the code yet — HIL-894),
 while the base declares only what every sessions library owns.
 
@@ -298,7 +303,8 @@ the helpers are removed (not in the code yet — HIL-898).
 
 ## Validation
 
-`composer run test:framework:unit` — the operation axis and the guards on it
+`composer run test:framework:unit` — ownership read off the class and merged up
+the chain (`DeclaredDbOwnershipTest`), the operation axis and the guards on it
 (`TruthSourceRegistryTest`, `AgentTruthSourceOperationsTest`,
 `DbWriteGuardLazyCollectionsTest`), the grants a stop takes back
 (`WorkerManagerStopCleanupTest`), the node-level map of runtime owners
