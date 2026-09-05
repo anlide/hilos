@@ -466,6 +466,24 @@ onto one node.
   has left the mesh is not folded at all. That reading is for placed agents only. An agent
   declared `AgentScope::NODE` is never placed, so it never moves; the leader keeps the entry of
   every node holding it, and a second whole owner of what it owns is still refused for good.
+- **Placement-ack timeout (leader, HIL-930).** A record left `Placing` waits for a status that
+  may never come — the target node can be recreated before it answers, and a rejoin inside the
+  failover grace clears the failover deadline without anyone judging the `Placing`. So the wait
+  is bounded by `CLUSTER_PLACEMENT_ACK_TIMEOUT_MS` (default 16000, at or above two failover
+  graces, so an ordinary flap is settled by failover first), and what the timeout fires is a
+  QUESTION, not an action: one `peer_placement_query` per record, sent to the node the record
+  names. Three outcomes, all on paths that already existed: the node names the agent in its
+  snapshot and the record becomes `Started`; it does not name it and the record is forgotten and
+  re-placed best-fit; it answers nothing at all, which means the link is dead, and
+  `CLUSTER_LINK_TIMEOUT_MS` turns that into the failover above. Re-placing on the timeout itself
+  was rejected: `onAgentStatus()` writes the record by SENDER, so a late `started` from the old
+  node would point the record back at it while the new copy runs unnamed. Guarding that is the
+  other half — a status from a node the record no longer names never moves the record; a late
+  `started` gets a `peer_stop_agent` back, a late `stopped` or `failed` is dropped in silence
+  (`onStopAgent()` answers `stopped` unconditionally, so a stop sent back at one would loop the
+  pair of nodes). Deadlines are derived by sweeping the registry each `tick()` rather than armed
+  where the registry is written, because eight paths write it and one that forgot to arm would
+  leave its record waiting forever.
 - **Slave self-fence (no double-run).** A slave that loses the link to the leader that
   placed its work stops those agents after `CLUSTER_SLAVE_WORK_GRACE_MS`, then reconnects
   via the existing peer dial. The self-fence grace is held **at or below** the failover
@@ -479,8 +497,11 @@ onto one node.
   agent re-placed best-fit at once, with no grace waited out (HIL-719) — the emptied node is
   the least loaded candidate, so its own fleet comes back to it. A container recreated faster
   than the failover grace is exactly that case, and until it was made to speak up the leader
-  reported a dead fleet as started for the rest of the term. `Placing` (its place frame may
-  still be in flight), `Refused` (HIL-696), `Failed` and `Unplaced` records are left alone.
+  reported a dead fleet as started for the rest of the term. `Refused` (HIL-696), `Failed` and
+  `Unplaced` records are left alone, and so is a `Placing` one whose place frame may still be in
+  flight — but only until `CLUSTER_PLACEMENT_ACK_TIMEOUT_MS` elapses: a `Placing` the leader has
+  already asked this node about is judged by the snapshot exactly as a `Started` one, because
+  the snapshot is the answer to that question (HIL-930).
 - **Degrade gracefully.** When re-placement finds no capable+online node, the agent is
   marked `PlacementState::Unplaced`, logged, and the project `onPlacementDegraded()` hook
   fires; the leader retries automatically when a capable node joins (`onNodeJoined`).

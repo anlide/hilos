@@ -578,6 +578,14 @@ enum EnvConstants
      */
     case CLUSTER_FAILOVER_GRACE_MS;
 
+    /**
+     * @var string Duration in ms the leader waits for a node to acknowledge a placement it
+     * was sent before it asks that node what it actually hosts. Held at or above two failover
+     * graces, so an ordinary flap is settled by failover before the ack timeout speaks.
+     * Default 16000.
+     */
+    case CLUSTER_PLACEMENT_ACK_TIMEOUT_MS;
+
     // ── WebAuthn / passkey (HIL-284) ─────────────────────────────────────────
 
     /**

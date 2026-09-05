@@ -10,7 +10,9 @@ use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
  * Lifecycle state of a placed agent as the leader tracks it.
  *
  * {@see Placing}, {@see Unplaced} and {@see Refused} are leader-local: {@see Placing} means the
- * placement frame was sent to the target node but no status has come back yet, {@see Unplaced}
+ * placement frame was sent to the target node but no status has come back yet — a wait that is
+ * no longer open-ended, since `CLUSTER_PLACEMENT_ACK_TIMEOUT_MS` makes the leader ask the node
+ * what it hosts (HIL-930) — {@see Unplaced}
  * means failover found no capable+online node to host the agent, so it is degraded and
  * awaiting a capable node to join, and {@see Refused} means the agent claimed the right to
  * write an RT collection another node already holds (HIL-696). None of the three travels the

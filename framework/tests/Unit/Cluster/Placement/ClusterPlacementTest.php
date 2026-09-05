@@ -750,6 +750,142 @@ final class ClusterPlacementTest extends TestCase
         $this->assertInstanceOf(PeerPlacementViewDTO::class, $view);
         $this->assertSame([], $view->agents, 'A refused agent is left out of the published picture');
     }
+
+    /**
+     * A placement whose acknowledgement never came asks the node what it hosts, rather than
+     * re-placing the agent on a guess (HIL-930). Both data-plane nodes are capable and the
+     * leader is not, so a re-placement WOULD have somewhere to go — the absence of one is a
+     * decision, not a dead end.
+     */
+    public function testAnExpiredPlacementAskAsksTheNodeInsteadOfRePlacing(): void
+    {
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            linked: ['node-b', 'node-c'],
+            online: [self::SELF, 'node-b', 'node-c'],
+        );
+        $placement = new ClusterPlacement(
+            self::SELF,
+            $mesh,
+            new FakePlacementExecutor(['gpu']),
+            placementAckTimeoutMs: 500,
+        );
+        $placement->onBecameLeader();
+        $placement->placeAgentOnNode('render', '9', 'node-b');
+        $placement->tick(1000.0);
+        $mesh->sent = [];
+
+        $placement->tick(1000.6);
+
+        $this->assertCount(1, $mesh->sent, 'One question per record, and nothing else');
+        [$askedNode, $frame] = $mesh->sent[0];
+        $this->assertSame('node-b', $askedNode, 'The node the record names is the one that knows');
+        $this->assertInstanceOf(PeerPlacementQueryDTO::class, $frame, 'The timeout fires a question, not an action');
+        $record = $placement->registry()->get('render:9');
+        $this->assertSame(PlacementState::Placing, $record?->state, 'Asking does not decide anything by itself');
+        $this->assertSame('node-b', $record?->nodeId);
+
+        $mesh->sent = [];
+        $placement->tick(1001.2);
+
+        $this->assertSame([], $mesh->sent, 'A node that answers nothing has a dead link, and that is failover, not a retry');
+    }
+
+    public function testAReportNamingTheAgentEndsTheWaitAsStarted(): void
+    {
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            linked: ['node-b', 'node-c'],
+            online: [self::SELF, 'node-b', 'node-c'],
+        );
+        $placement = new ClusterPlacement(
+            self::SELF,
+            $mesh,
+            new FakePlacementExecutor(['gpu']),
+            placementAckTimeoutMs: 500,
+        );
+        $placement->onBecameLeader();
+        $placement->placeAgentOnNode('render', '9', 'node-b');
+        $placement->tick(1000.0);
+        $placement->tick(1000.6);
+        $mesh->sent = [];
+
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+
+        $record = $placement->registry()->get('render:9');
+        $this->assertSame(PlacementState::Started, $record?->state, 'The node holds it, so the status frame was merely lost');
+        $this->assertSame('node-b', $record?->nodeId);
+        $this->assertSame([], $mesh->sent, 'An agent found where it was put is left where it is');
+    }
+
+    public function testAReportWithoutTheAgentRePlacesTheTimedOutPlacing(): void
+    {
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            linked: ['node-b', 'node-c'],
+            online: [self::SELF, 'node-b', 'node-c'],
+        );
+        $placement = new ClusterPlacement(
+            self::SELF,
+            $mesh,
+            new FakePlacementExecutor(['gpu']),
+            placementAckTimeoutMs: 500,
+        );
+        $placement->onBecameLeader();
+        $placement->placeAgentOnNode('render', '9', 'node-b');
+        $placement->tick(1000.0);
+        $placement->tick(1000.6);
+        $mesh->sent = [];
+
+        // The answer to the question: the node hosts nothing, so the place frame is not in
+        // flight, it is lost.
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+
+        $this->assertInstanceOf(PeerPlaceAgentDTO::class, $mesh->sent[0][1] ?? null, 'An asked Placing is judged like a Started one');
+        $this->assertSame(PlacementState::Placing, $placement->registry()->get('render:9')?->state);
+    }
+
+    public function testALateStartedFromANodeTheRecordLeftIsStoppedAndIgnored(): void
+    {
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            linked: ['node-b', 'node-c'],
+            online: [self::SELF, 'node-b', 'node-c'],
+        );
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']));
+        $placement->onBecameLeader();
+        $placement->placeAgentOnNode('render', '9', 'node-c');
+        $mesh->sent = [];
+
+        // node-b answers for a placement the leader has since moved to node-c.
+        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 5));
+
+        $this->assertSame(['node-b'], array_column($mesh->sent, 0));
+        $this->assertInstanceOf(PeerStopAgentDTO::class, $mesh->sent[0][1] ?? null, 'The second copy is taken down, as a report would');
+        $record = $placement->registry()->get('render:9');
+        $this->assertSame('node-c', $record?->nodeId, 'Writing the record by sender would point it back at the node it left');
+        $this->assertSame(PlacementState::Placing, $record?->state);
+    }
+
+    public function testALateStoppedFromANodeTheRecordLeftDoesNotForgetIt(): void
+    {
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            linked: ['node-b', 'node-c'],
+            online: [self::SELF, 'node-b', 'node-c'],
+        );
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']));
+        $placement->onBecameLeader();
+        $placement->placeAgentOnNode('render', '9', 'node-c');
+        $mesh->sent = [];
+
+        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::stopped('render', '9'));
+
+        $record = $placement->registry()->get('render:9');
+        $this->assertSame('node-c', $record?->nodeId, 'A stop from the node it left must not erase a record naming another');
+        $this->assertSame(PlacementState::Placing, $record?->state);
+        $this->assertSame([], $mesh->sent, 'onStopAgent() answers stopped unconditionally, so a stop back at one loops the pair');
+    }
 }
 
 /**

@@ -68,7 +68,11 @@ use Throwable;
  * `CLUSTER_SLAVE_WORK_GRACE_MS` (held at or below the failover grace, so the old copy stops
  * before the leader starts a new one). On rejoin a node reports what it still hosts
  * ({@see onPeerHandshaked()}) and the leader reconciles against its view (leader = truth),
- * stopping anything already re-placed elsewhere.
+ * stopping anything already re-placed elsewhere. The wait for a placement to be acknowledged is
+ * bounded by the same kind of timer (HIL-930): after `CLUSTER_PLACEMENT_ACK_TIMEOUT_MS` the
+ * leader ASKS the node what it hosts ({@see sweepPlacementAcks()}) rather than re-placing the
+ * agent blind, and a status arriving from a node the record no longer names is refused instead
+ * of written ({@see onAgentStatus()}).
  */
 final class ClusterPlacement implements WorkerPlacement
 {
@@ -77,6 +81,9 @@ final class ClusterPlacement implements WorkerPlacement
 
     /** @var int Default slave self-fence grace in ms when none is configured */
     private const int DEFAULT_SLAVE_WORK_GRACE_MS = 6000;
+
+    /** @var int Default placement-ack timeout in ms when none is configured */
+    private const int DEFAULT_PLACEMENT_ACK_TIMEOUT_MS = 16000;
 
     /** @var float Seconds one agent's placement ask silences the next one for */
     private const float PLACEMENT_ASK_INTERVAL_SEC = 5.0;
@@ -102,6 +109,9 @@ final class ClusterPlacement implements WorkerPlacement
     /** @var float Slave self-fence grace in seconds */
     private float $slaveWorkGraceSec;
 
+    /** @var float Placement-ack timeout in seconds */
+    private float $placementAckTimeoutSec;
+
     /** @var PlacementRegistry Leader-side soft-state view of every placement, cluster-wide */
     private PlacementRegistry $registry;
 
@@ -119,6 +129,17 @@ final class ClusterPlacement implements WorkerPlacement
      * @var array<string, array{nodeId: string, deadline: float}>
      */
     private array $failoverDeadlines = [];
+
+    /**
+     * Deadline per agent id awaiting a placement acknowledgement, with the node it was armed
+     * for and whether that node has already been asked: by the time it elapses the record may
+     * name another node, and only the armed node tells the leader whether the deadline still
+     * speaks about the placement it was armed for. The ask flag is what keeps the query at one
+     * per record instead of one per tick.
+     *
+     * @var array<string, array{nodeId: string, deadline: float, asked: bool}>
+     */
+    private array $placementAckDeadlines = [];
 
     /** @var array<string, string> Hosting node id per agent id, as the leader last published it; empty on the leader */
     private array $placementView = [];
@@ -142,6 +163,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param ?PlacementObserver $observer Degradation seam; a no-op observer when null
      * @param int $failoverGraceMs Leader failover grace in ms
      * @param int $slaveWorkGraceMs Slave self-fence grace in ms
+     * @param int $placementAckTimeoutMs Placement-ack timeout in ms
      * @param ?PlacementPolicy $policy Node-selection policy; the best-fit policy when null
      */
     public function __construct(
@@ -151,6 +173,7 @@ final class ClusterPlacement implements WorkerPlacement
         ?PlacementObserver $observer = null,
         int $failoverGraceMs = self::DEFAULT_FAILOVER_GRACE_MS,
         int $slaveWorkGraceMs = self::DEFAULT_SLAVE_WORK_GRACE_MS,
+        int $placementAckTimeoutMs = self::DEFAULT_PLACEMENT_ACK_TIMEOUT_MS,
         ?PlacementPolicy $policy = null,
     ) {
         $this->selfNodeId = $selfNodeId;
@@ -159,6 +182,7 @@ final class ClusterPlacement implements WorkerPlacement
         $this->observer = $observer ?? new NullPlacementObserver();
         $this->failoverGraceSec = $failoverGraceMs / TimeConstants::MS_PER_SECOND;
         $this->slaveWorkGraceSec = $slaveWorkGraceMs / TimeConstants::MS_PER_SECOND;
+        $this->placementAckTimeoutSec = $placementAckTimeoutMs / TimeConstants::MS_PER_SECOND;
         $this->policy = $policy ?? new BestFitPlacementPolicy();
         $this->registry = new PlacementRegistry();
     }
@@ -245,6 +269,10 @@ final class ClusterPlacement implements WorkerPlacement
         $delivered = $this->mesh->sendToNode($nodeId, new PeerPlaceAgentDTO($agentType, $agentIndex));
         $state = $delivered ? PlacementState::Placing : PlacementState::Failed;
         $this->registry->put(new PlacementRecord($agentType, $agentIndex, $nodeId, $state));
+        // A re-placement routinely lands on the very node the agent left — best-fit reads the
+        // emptied node as the least loaded one — so the fresh wait would inherit the old one's
+        // `asked` flag and never send its own query. Drop the entry and let the sweep re-arm it.
+        unset($this->placementAckDeadlines[$this->agentId($agentType, $agentIndex)]);
 
         Logger::info("Placing agent '{$this->agentId($agentType, $agentIndex)}' on node '{$nodeId}'"
             . ($delivered ? '' : ' failed: node is not linked'));
@@ -506,16 +534,35 @@ final class ClusterPlacement implements WorkerPlacement
      * A stopped status forgets the placement; a started or failed status records it
      * against the reporting node so the view reflects where each agent actually landed.
      *
+     * A status from a node the record no longer names moves nothing: the record was re-placed
+     * while this frame was in flight, so writing it by sender would point the agent back at the
+     * node it left while the new copy runs unnamed. A late `started` earns the same stop
+     * {@see onPlacementReport()} sends a second copy; a late `stopped` or `failed` is dropped in
+     * silence, because {@see onStopAgent()} answers `stopped` UNCONDITIONALLY and a stop sent
+     * back at one would loop the pair of nodes, while a `failed` says nothing runs there anyway.
+     *
      * @param string $fromNodeId Id of the node that reported the status
      * @param PeerAgentStatusDTO $frame Received agent-status frame
      */
     public function onAgentStatus(string $fromNodeId, PeerAgentStatusDTO $frame): void
     {
         $agentId = $this->agentId($frame->agentType, $frame->agentIndex);
-        if ($this->registry->get($agentId)?->state === PlacementState::Refused) {
+        $existing = $this->registry->get($agentId);
+        if ($existing?->state === PlacementState::Refused) {
             // The node is confirming the stop this leader ordered for a two-owner split, and the
             // record is the only thing keeping the agent down (HIL-696). Forgetting it here would
             // undo the refusal with the very frame that carried it out.
+            return;
+        }
+
+        // Read exactly as in onPlacementReport(), runsNowhere() and all: an Unplaced record is
+        // meant to be adopted by whichever node reports the agent up.
+        if ($existing !== null && $existing->nodeId !== $fromNodeId && !$existing->state->runsNowhere()) {
+            if ($frame->state === PlacementState::Started) {
+                $this->mesh->sendToNode($fromNodeId, new PeerStopAgentDTO($frame->agentType, $frame->agentIndex));
+                Logger::info("Telling node '{$fromNodeId}' to stop '{$agentId}': the leader places it on '{$existing->nodeId}'");
+            }
+
             return;
         }
 
@@ -684,14 +731,15 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * The node keeps hosting the agents it was placed with — they are data-plane and run
      * on regardless of who leads — but it no longer owns the cluster-wide view, which the
-     * next leader rebuilds from the mesh. Any pending failover timers drop with the view;
-     * the next leader re-derives them from its own rebuilt placements.
+     * next leader rebuilds from the mesh. Any pending failover timers and placement-ack waits
+     * drop with the view; the next leader re-derives them from its own rebuilt placements.
      */
     public function onLostLeadership(): void
     {
         $this->isLeader = false;
         $this->registry->clear();
         $this->failoverDeadlines = [];
+        $this->placementAckDeadlines = [];
         // Publishing is the leader's duty, so this node stops; what it published stays true
         // until the next leader publishes its own, which it does within a tick of winning.
         $this->publishedViewFingerprint = null;
@@ -760,7 +808,8 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
-     * Fires any failover or self-fence whose grace has elapsed. Driven each daemon tick.
+     * Fires any failover, placement-ack timeout or self-fence whose grace has elapsed. Driven
+     * each daemon tick.
      *
      * @param float $now Current microtime
      */
@@ -773,12 +822,79 @@ final class ClusterPlacement implements WorkerPlacement
             }
         }
 
+        // After failover, not before: a failover re-places a record out of `Placing` onto
+        // another node, and arming on the far side of it means arming for the node the record
+        // actually names now.
+        $this->sweepPlacementAcks($now);
+
         if ($this->selfFenceDeadline !== null && $now >= $this->selfFenceDeadline) {
             $this->selfFenceDeadline = null;
             $this->selfFence();
         }
 
         $this->publishPlacementView();
+    }
+
+    /**
+     * Leader side: gives every {@see PlacementState::Placing} record a deadline and, when one
+     * elapses, asks the node what it actually hosts instead of re-placing the agent blind.
+     *
+     * A placement frame that never came back leaves the record waiting for a status that has no
+     * other way out: the node may have been recreated before it answered, and a rejoin inside
+     * `CLUSTER_FAILOVER_GRACE_MS` clears the failover deadline without ever judging the
+     * `Placing`. So the wait gets `CLUSTER_PLACEMENT_ACK_TIMEOUT_MS`, and what the timeout
+     * fires is a {@see PeerPlacementQueryDTO} — a question, not an action. The answer travels
+     * the path that already exists ({@see onPlacementReport()} and
+     * {@see reconcileMissingAgents()}): the node names the agent and the record becomes
+     * `Started`; it does not and the record is forgotten and re-placed. Re-placing on the
+     * timeout itself was rejected — {@see onAgentStatus()} writes the record by SENDER, so a
+     * late `started` from the old node would point the record back at it while the new copy
+     * runs unnamed, and two copies is what placement exists to prevent.
+     *
+     * Arming is DERIVED from the registry rather than done where the registry is written: eight
+     * paths write it, and one that forgot to arm would leave its record waiting forever. Only
+     * one query goes out per record — a node that answers nothing has a dead link, and that is
+     * `CLUSTER_LINK_TIMEOUT_MS` and failover's case, not this one.
+     *
+     * @param float $now Current microtime
+     */
+    private function sweepPlacementAcks(float $now): void
+    {
+        if (!$this->isLeader) {
+            return;
+        }
+
+        $live = [];
+        foreach ($this->registry->all() as $record) {
+            if ($record->state !== PlacementState::Placing) {
+                continue;
+            }
+
+            $agentId = $record->agentId();
+            $live[$agentId] = true;
+            $armed = $this->placementAckDeadlines[$agentId] ?? null;
+            if ($armed === null || $armed['nodeId'] !== $record->nodeId) {
+                $this->placementAckDeadlines[$agentId] = [
+                    'nodeId' => $record->nodeId,
+                    'deadline' => $now + $this->placementAckTimeoutSec,
+                    'asked' => false,
+                ];
+                continue;
+            }
+
+            if ($armed['asked'] || $now < $armed['deadline']) {
+                continue;
+            }
+
+            $delivered = $this->mesh->sendToNode($record->nodeId, new PeerPlacementQueryDTO());
+            // Asked either way: an undelivered query means the link is gone, and a gone link is
+            // closed by `CLUSTER_LINK_TIMEOUT_MS` into the failover that owns that case.
+            $this->placementAckDeadlines[$agentId]['asked'] = true;
+            Logger::info("Placement ack of '{$agentId}' timed out on node '{$record->nodeId}'; asking what it hosts"
+                . ($delivered ? '' : ' failed: node is not linked'));
+        }
+
+        $this->placementAckDeadlines = array_intersect_key($this->placementAckDeadlines, $live);
     }
 
     /**
@@ -990,9 +1106,12 @@ final class ClusterPlacement implements WorkerPlacement
      * would have noticed it gone. This is the case that used to end in a fleet running nowhere
      * while the leader answered started for the rest of the term.
      *
-     * Only a Started record of the reporting node is judged. {@see PlacementState::Placing} is
-     * spared because its place-agent frame may still be in flight, and dropping the record would
-     * make the copy that lands a second source of truth; {@see PlacementState::Refused} is
+     * A Started record of the reporting node is judged, and so is a Placing one the leader
+     * ALREADY ASKED about ({@see sweepPlacementAcks()}, HIL-930) — that snapshot is the answer
+     * to the question, and an answer that does not name the agent says the place frame is not
+     * in flight, it is lost. An unasked {@see PlacementState::Placing} is spared exactly as
+     * before, because its frame may still be travelling and dropping the record would make the
+     * copy that lands a second source of truth; {@see PlacementState::Refused} is
      * spared because the leader took that agent down on purpose (HIL-696);
      * {@see PlacementState::Failed} is retried by whoever placed it; {@see PlacementState::Unplaced}
      * is not about a node at all and belongs to {@see retryUnplaced()}.
@@ -1011,7 +1130,7 @@ final class ClusterPlacement implements WorkerPlacement
         foreach ($this->registry->all() as $record) {
             $agentId = $record->agentId();
             if ($record->nodeId !== $fromNodeId
-                || $record->state !== PlacementState::Started
+                || !$this->isJudgedByReport($record, $fromNodeId)
                 || in_array($agentId, $reportedIds, true)
             ) {
                 continue;
@@ -1030,6 +1149,33 @@ final class ClusterPlacement implements WorkerPlacement
 
             $this->degrade($record);
         }
+    }
+
+    /**
+     * Tells whether a placement report from a node is allowed to judge one of its records.
+     *
+     * A {@see PlacementState::Started} record always is — the leader believes the agent runs
+     * there, and a complete snapshot that leaves it out contradicts that belief. A
+     * {@see PlacementState::Placing} one only once the leader has ASKED this very node what it
+     * hosts ({@see sweepPlacementAcks()}): before the question the silence is ordinary travel
+     * time, after it the snapshot is the answer.
+     *
+     * @param PlacementRecord $record Record the report is being read against
+     * @param string $fromNodeId Id of the node that reported
+     * @return bool True when the report decides this record's fate
+     */
+    private function isJudgedByReport(PlacementRecord $record, string $fromNodeId): bool
+    {
+        if ($record->state === PlacementState::Started) {
+            return true;
+        }
+
+        $armed = $this->placementAckDeadlines[$record->agentId()] ?? null;
+
+        return $record->state === PlacementState::Placing
+            && $armed !== null
+            && $armed['asked']
+            && $armed['nodeId'] === $fromNodeId;
     }
 
     /**
