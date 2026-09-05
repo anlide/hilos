@@ -1085,6 +1085,34 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         $this->assertSame([], $daemon->mesh->snapshots);
     }
 
+    /**
+     * An owner of named rows that holds none of them yet offers NOTHING, rather than a frame with
+     * an empty scope. The scope is built from the rows actually sent (HIL-746), so zero rows leave
+     * it empty - and an empty scope is how the wire says "the whole collection", which would have
+     * the receiver replace its copy with nothing and delete every neighbour's row along with it.
+     * The window is the ordinary one: an agent claims its key and writes its first row a line
+     * later.
+     */
+    public function testAnOwnerOfNamedRowsHoldingNoneOfThemOffersNothingAtAll(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->noteOwnAgent(
+            'worker_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]],
+        );
+
+        $daemon->handshaked('node-c');
+
+        $this->assertSame(
+            [],
+            $daemon->mesh->snapshots,
+            'An empty scope reads as the collection, so this frame would wipe the neighbour\'s copy',
+        );
+    }
+
     public function testANodeThatOwnsNothingOffersNothingToTheNodeItLinkedTo(): void
     {
         $daemon = new DaemonManagerRtSyncPeerTestManager();
@@ -1131,6 +1159,44 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
             ]],
             $daemon->mesh->snapshots,
             'The rows it has just started owning go to the node it was already linked to',
+        );
+    }
+
+    /**
+     * And the silence of an owner with no row yet ends of itself. The ownership signature counts
+     * the rows HELD under the claimed keys, so the first write moves it and offers again - this
+     * time with a row to show and a scope naming it. That is why saying nothing loses nothing: the
+     * claim travelled in its own frame, and the row follows the moment it exists. The case above
+     * does not cover this one, because there the row is written BEFORE the claim.
+     *
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     */
+    public function testTheSilenceEndsOfItselfWhenTheFirstRowLands(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->mesh->linked = ['node-c'];
+        $daemon->noteOwnAgent(
+            'worker_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]],
+        );
+        $daemon->offerOnOwnershipChange();
+        $this->assertSame([], $daemon->mesh->snapshots, 'A claim with no row under it offers nothing');
+
+        $collection->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => self::ROW_ID, 'name' => 'Ada']));
+        $daemon->offerOnOwnershipChange();
+
+        $this->assertSame(
+            [[
+                'nodeId' => 'node-c',
+                'collectionKey' => DaemonManagerRtSyncPeerTestRtContext::ROWS,
+                'rows' => [self::ROW_ID => ['id' => self::ROW_ID, 'name' => 'Ada']],
+                'scopeKeys' => [self::ROW_ID],
+            ]],
+            $daemon->mesh->snapshots,
+            'The first row moves the ownership signature, and the offer it was waiting for goes out',
         );
     }
 

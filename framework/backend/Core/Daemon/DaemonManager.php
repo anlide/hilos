@@ -2341,7 +2341,9 @@ abstract class DaemonManager extends BaseManager implements
      * those rows under their own scope: the collection around them is other nodes' to write, and
      * claiming it would delete their rows on the receiver. An owner short of an OPERATION offers
      * nothing at all, because even about the rows it writes, its copy may be missing what the
-     * co-owner wrote (that case belongs to HIL-696).
+     * co-owner wrote (that case belongs to HIL-696). And an owner of named rows holding none of
+     * them yet offers nothing either: a scope covering no row is an empty scope, which on the
+     * wire is the same frame as a claim on the whole collection ({@see applyRemoteRtSnapshot()}).
      *
      * Without the scoped half of this, a fleet of one-row owners never converged: nothing was
      * ever handed over, delivery is best-effort with no retries (HIL-183), and so everything
@@ -2374,6 +2376,14 @@ abstract class DaemonManager extends BaseManager implements
             }
 
             $rows = array_intersect_key(RtSnapshot::rows($collectionKey), array_flip($scopeKeys));
+            // Nothing to show for the claim, so nothing is said about it. An empty scope reads as
+            // the COLLECTION on the receiver ({@see applyRemoteRtSnapshot()}), which makes a frame
+            // with no rows under it not "empty" but ERASING: it would wipe the neighbour's whole
+            // copy, other nodes' rows and all.
+            if ($rows === []) {
+                continue;
+            }
+
             // The scope is what this frame ANSWERS FOR, and the receiver deletes every key in it
             // that the frame does not carry ({@see RtSnapshot::replaceScope()}). So it is built
             // from the rows actually being sent, not from what this node claims: a claim is only
@@ -2673,7 +2683,11 @@ abstract class DaemonManager extends BaseManager implements
      * hand-over as it has always been. Named, the frame speaks for those rows only: they are
      * swept and rewritten, and every other row of the collection — written by other nodes of a
      * fleet, or by this one — is left untouched, workers and all. Replacing the collection on a
-     * scoped frame would delete exactly the rows the sender never claimed.
+     * scoped frame would delete exactly the rows the sender never claimed. The reverse of that
+     * reading is the addressed sender's contract: an owner of named rows sends no frame at all
+     * while it holds none of them ({@see sendRtSnapshotsToNode()}), because the two are one frame
+     * on the wire — a scope this node cannot tell from "nothing to say" is read here as the
+     * collection.
      *
      * A row carried outside the declared scope is dropped before anything is written, here and
      * not only in the runtime: the two-owner question below is asked of the SCOPE, so a row
