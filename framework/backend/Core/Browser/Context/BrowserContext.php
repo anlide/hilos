@@ -319,7 +319,7 @@ abstract class BrowserContext
      *
      * @param string $page Page the table belongs to
      * @param string $acceptKey Subscribing WebSocket accept key
-     * @param TableViewportSubscription $viewport Window descriptor; its delivered row-id set is updated
+     * @param TableViewportSubscription $viewport Window descriptor; its delivered rows are updated
      * @return bool Whether the window was delivered to the connection
      * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
      * @throws InvalidArgumentException When the table-window signal cannot be named
@@ -374,17 +374,18 @@ abstract class BrowserContext
         }
 
         $rows = [];
-        $rowIds = [];
+        $wireRows = [];
         foreach ($snapshot->rows as $row) {
             if (!$row instanceof AbstractTableRow) {
                 continue;
             }
             $browserRow = $table->browserRow($row);
-            $rows[] = $this->browserRowToWire($browserRow);
-            $rowIds[] = (string) $browserRow[BrowserPageSignalData::rowKey];
+            $wireRow = $this->browserRowToWire($browserRow);
+            $rows[] = $wireRow;
+            $wireRows[(string) $browserRow[BrowserPageSignalData::rowKey]] = $wireRow;
         }
 
-        $viewport->recordWindow($rowIds, $snapshot->totalCount);
+        $viewport->recordWindow($wireRows, $snapshot->totalCount);
 
         Hilos::$sr->queueSignal(
             signalSource: new SignalSource(SignalSource::WORKER),
@@ -1347,7 +1348,7 @@ abstract class BrowserContext
      * succeeded, and show a row the author's filter excludes when it did not.
      *
      * @param ViewportTable $table Viewport table the window is on
-     * @param TableViewportSubscription $viewport Connection's window; its row-id set and total are updated in place
+     * @param TableViewportSubscription $viewport Connection's window; its delivered rows and total are updated in place
      * @param SourceChange $change Grouped DB/RT source change
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
@@ -1425,7 +1426,7 @@ abstract class BrowserContext
      * with a classifier over the window's boundary sort keys, and this path goes away.
      *
      * @param ViewportTable $table Viewport table the window is on
-     * @param TableViewportSubscription $viewport Connection's window; its row-id set and total are updated in place
+     * @param TableViewportSubscription $viewport Connection's window; its delivered rows and total are updated in place
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
      * @param string $acceptKey Target accept key, which is also the author of the create
      * @param string $page Subscribed page key
@@ -1465,7 +1466,7 @@ abstract class BrowserContext
         }
 
         $rowKey = (string) $mutation->rowKey;
-        $rowIds = [];
+        $wireRows = [];
         $position = null;
         $wireRow = null;
         foreach ($snapshot->rows as $row) {
@@ -1474,18 +1475,19 @@ abstract class BrowserContext
             }
             $browserRow = $table->browserRow($row);
             $windowRowKey = (string) $browserRow[BrowserPageSignalData::rowKey];
+            $windowWireRow = $this->browserRowToWire($browserRow);
             if ($windowRowKey === $rowKey) {
-                $position = count($rowIds);
-                $wireRow = $this->browserRowToWire($browserRow);
+                $position = count($wireRows);
+                $wireRow = $windowWireRow;
             }
-            $rowIds[] = $windowRowKey;
+            $wireRows[$windowRowKey] = $windowWireRow;
         }
 
         if ($position === null || $wireRow === null) {
             return false;
         }
 
-        $viewport->recordWindow($rowIds, $snapshot->totalCount);
+        $viewport->recordWindow($wireRows, $snapshot->totalCount);
 
         $this->queueAddressedTableSignal(
             SignalTypeConstants::TABLE_VIEWPORT_OWN_CREATE,
@@ -1514,7 +1516,7 @@ abstract class BrowserContext
      * through to the count path (the new row may not match the search).
      *
      * @param ViewportTable $table Viewport table the window is on
-     * @param TableViewportSubscription $viewport Connection's window; its row-id set and total are updated in place
+     * @param TableViewportSubscription $viewport Connection's window; its delivered rows and total are updated in place
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
@@ -1541,14 +1543,16 @@ abstract class BrowserContext
         }
 
         $newTotal = $viewport->totalCount() + 1;
-        $viewport->recordWindow([...$viewport->rowIds(), (string) $mutation->rowKey], $newTotal);
+        $wireRow = $this->browserRowToWire($table->browserRow($mutation->row));
+        $viewport->recordTotal($newTotal);
+        $viewport->recordRow((string) $mutation->rowKey, $wireRow);
 
         $this->queueAddressedTableSignal(
             SignalTypeConstants::TABLE_VIEWPORT_APPEND,
             new TableViewportAppendDTO(
                 $page,
                 $browserKey,
-                $this->browserRowToWire($table->browserRow($mutation->row)),
+                $wireRow,
                 $newTotal,
                 $this->pageCount($newTotal, $viewport->limit),
             ),
@@ -1606,7 +1610,7 @@ abstract class BrowserContext
             return;
         }
 
-        $viewport->recordWindow($viewport->rowIds(), $newTotal);
+        $viewport->recordTotal($newTotal);
 
         $this->queueAddressedTableSignal(
             SignalTypeConstants::TABLE_VIEWPORT_COUNT,
@@ -1683,7 +1687,15 @@ abstract class BrowserContext
      * for an inbound last-page row, a later append). An in-window delete drops the
      * row from the delivered set and removes it; an in-window update re-sends it.
      *
-     * @param TableViewportSubscription $viewport Connection's window; its row-id set is updated in place
+     * An update whose row comes out identical to the one this connection was already
+     * given sends nothing at all: what reaches the screen is the rendered row, not the
+     * record behind it, so a change to a field the row does not carry would otherwise
+     * raise a gate badge whose "apply" leaves the screen exactly as it was. The count
+     * is settled before this, and deliberately not folded into the same early exit: a
+     * row can leave a filtered set over a field the delivered row never carried, and
+     * then the payload is the same while the total is not.
+     *
+     * @param TableViewportSubscription $viewport Connection's window; its delivered rows are updated in place
      * @param ViewportTable $table Viewport table the window is on
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
      * @param string $page Subscribed page key
@@ -1722,11 +1734,18 @@ abstract class BrowserContext
             return null;
         }
 
+        $wireRow = $this->browserRowToWire($table->browserRow($mutation->row));
+        if ($viewport->matchesRow($rowKey, $wireRow)) {
+            return null;
+        }
+
+        $viewport->recordRow($rowKey, $wireRow);
+
         return TableViewportDeltaDTO::rowUpdated(
             $page,
             $browserKey,
             $mutation->rowKey,
-            $this->browserRowToWire($table->browserRow($mutation->row)),
+            $wireRow,
             $mutation->live,
             $own,
         );

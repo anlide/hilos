@@ -9,6 +9,7 @@ use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\TableViewportSubscription;
@@ -77,7 +78,7 @@ final class BrowserContextViewportFailureLogTest extends TestCase
             offset: 0,
             limit: 10,
         );
-        $viewport->recordWindow(['alpha'], 1);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1);
         $context = $this->boot($viewport, throwOnMutation: true);
 
         $context->record(SourceChange::dbUpdated(ViewportFailureLogUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Alpha']));
@@ -112,7 +113,7 @@ final class BrowserContextViewportFailureLogTest extends TestCase
             offset: 0,
             limit: 10,
         );
-        $viewport->recordWindow(['alpha'], 7);
+        $viewport->recordWindow(self::windowOf(['alpha']), 7);
         $context = $this->boot($viewport, throwOnQuery: true);
 
         // A row outside the delivered set: its edit shifts only the total, so the count path
@@ -142,7 +143,7 @@ final class BrowserContextViewportFailureLogTest extends TestCase
             offset: 0,
             limit: 10,
         );
-        $viewport->recordWindow(['alpha'], 1);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1);
         $context = $this->boot($viewport);
 
         // Another collection entirely: the table answers null, which is the ordinary
@@ -152,6 +153,26 @@ final class BrowserContextViewportFailureLogTest extends TestCase
 
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
         $this->assertSame([], $this->writtenLines());
+    }
+
+    /**
+     * Turns a list of row-id keys into a window of placeholder wire rows.
+     *
+     * A placeholder equals no row the fixture table builds, so a window recorded
+     * this way still expects every delta it expected before rows were compared;
+     * a test about suppression records the real row body instead.
+     *
+     * @param list<string> $rowIds Row-id keys the connection holds, in display order
+     * @return array<string, array{rowKey: int|string, slots: array<string, mixed>}> Window of placeholder rows
+     */
+    private static function windowOf(array $rowIds): array
+    {
+        $window = [];
+        foreach ($rowIds as $rowId) {
+            $window[$rowId] = [PagePayload::rowKey => $rowId, PagePayload::slots => []];
+        }
+
+        return $window;
     }
 
     /**

@@ -117,7 +117,7 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
     public function testInWindowDeleteEmitsRowRemovedDeltaAndForgetsTheRow(): void
     {
         $viewport = new TableViewportSubscription(tableKey: SourceFanoutWindowUnitTable::TABLE, offset: 0, limit: 10);
-        $viewport->recordWindow(['alpha'], 1);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1);
         $context = $this->bootWithViewport([], $viewport);
 
         $context->record(SourceChange::dbDeleted(SourceFanoutWindowUnitTable::SOURCE_KEY, 'alpha', ['key' => 'alpha']));
@@ -135,7 +135,7 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
     public function testLastPageWithRoomCreateAppends(): void
     {
         $viewport = new TableViewportSubscription(tableKey: SourceFanoutWindowUnitTable::TABLE, offset: 0, limit: 10);
-        $viewport->recordWindow(['alpha'], 1);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1);
         $context = $this->bootWithViewport(
             [new SourceFanoutWindowUnitRow('alpha', 'Alpha'), new SourceFanoutWindowUnitRow('beta', 'Beta')],
             $viewport,
@@ -163,7 +163,7 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
     public function testCreateOffTheLastPageEmitsCount(): void
     {
         $viewport = new TableViewportSubscription(tableKey: SourceFanoutWindowUnitTable::TABLE, offset: 0, limit: 1);
-        $viewport->recordWindow(['alpha'], 5);
+        $viewport->recordWindow(self::windowOf(['alpha']), 5);
         $context = $this->bootWithViewport(
             [new SourceFanoutWindowUnitRow('alpha', 'Alpha'), new SourceFanoutWindowUnitRow('beta', 'Beta')],
             $viewport,
@@ -197,6 +197,26 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
     }
 
     /**
+     * Turns a list of row-id keys into a window of placeholder wire rows.
+     *
+     * A placeholder equals no row the fixture table builds, so a window recorded
+     * this way still expects every delta it expected before rows were compared;
+     * a test about suppression records the real row body instead.
+     *
+     * @param list<string> $rowIds Row-id keys the connection holds, in display order
+     * @return array<string, array{rowKey: int|string, slots: array<string, mixed>}> Window of placeholder rows
+     */
+    private static function windowOf(array $rowIds): array
+    {
+        $window = [];
+        foreach ($rowIds as $rowId) {
+            $window[$rowId] = [PagePayload::rowKey => $rowId, PagePayload::slots => []];
+        }
+
+        return $window;
+    }
+
+    /**
      * Boots the registry, table, page subscription, and a recorded viewport.
      *
      * @param list<SourceFanoutWindowUnitRow> $rows Table rows the fixture owns
@@ -207,7 +227,7 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
     private function boot(array $rows, array $windowRowIds, int $totalCount): SourceFanoutWindowUnitContext
     {
         $viewport = new TableViewportSubscription(tableKey: SourceFanoutWindowUnitTable::TABLE, offset: 0, limit: 10);
-        $viewport->recordWindow($windowRowIds, $totalCount);
+        $viewport->recordWindow(self::windowOf($windowRowIds), $totalCount);
 
         return $this->bootWithViewport($rows, $viewport);
     }
