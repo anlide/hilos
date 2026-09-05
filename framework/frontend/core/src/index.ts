@@ -831,6 +831,7 @@ export {
   logLevelVariant,
   hasLogViewerNodes,
   splitLogLine,
+  splitLogTrace,
   toLogViewerRows,
   isLogViewerPinned,
   HILOS_LOG_LEVEL_OPTIONS,

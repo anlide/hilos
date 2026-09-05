@@ -264,7 +264,11 @@ export interface HilosLogViewerLine {
 export interface HilosLogViewerEntry extends HilosLogViewerLine {
   /** Stable across a page of older lines arriving above, so an opened stack stays open. */
   readonly key: string
-  /** The continuation lines, hidden behind the stack marker until it is opened. */
+  /**
+   * The stack of this entry, hidden behind the stack marker until it is opened:
+   * the frames of the trace in its structured context, its continuation lines,
+   * or the one followed by the other.
+   */
   readonly frames: readonly HilosLogViewerLine[]
   /**
    * Whether this is a continuation whose own start line was never read.
@@ -435,6 +439,72 @@ export function splitLogLine(text: string, level: string): HilosLogViewerLine {
     level,
     text: cutLevelPrefix(text.slice(stamped[0].length)),
   }
+}
+
+/**
+ * Takes the stack trace out of the structured context at the end of a line and
+ * hands it back as frames of its own.
+ *
+ * The writer packs an event's context into the tail of the SAME physical line
+ * (PHP `Logger::writeLine()`), so a trace arrives escaped inside it and the
+ * grouping by continuation lines never sees one. Cutting it here rather than at
+ * the writing end leaves the journal's format alone — and with it the batches
+ * that are already written, which is where the fault was found.
+ *
+ * Where the message ends and the context begins is looked for from the LEFT,
+ * because a message may carry an object of its own: the tail taken from the
+ * first candidate would then hold two objects in a row and parse as neither,
+ * while the next candidate holds exactly the context.
+ *
+ * A line whose context carries no trace, and a trace carrying no frame, come
+ * back untouched — one rule rather than two, and the line is drawn whole the way
+ * it is drawn today.
+ *
+ * @param text The line with the timestamp and level prefixes already cut off it.
+ */
+export function splitLogTrace(text: string): {
+  text: string
+  frames: readonly string[]
+} {
+  if (!text.endsWith('}') || !text.includes(LOG_CONTEXT_TRACE_MARKER)) {
+    return { text, frames: [] }
+  }
+
+  for (
+    let at = text.indexOf(' {');
+    at !== -1;
+    at = text.indexOf(' {', at + 1)
+  ) {
+    let context: unknown
+    try {
+      context = JSON.parse(text.slice(at + 1))
+    } catch {
+      continue
+    }
+
+    if (typeof context !== 'object' || context === null) {
+      return { text, frames: [] }
+    }
+
+    const rest = context as Record<string, unknown>
+    const trace = rest[LOG_CONTEXT_TRACE_KEY]
+    if (typeof trace !== 'string') {
+      return { text, frames: [] }
+    }
+
+    const frames = trace.split('\n').filter((frame) => frame !== '')
+    if (frames.length === 0) {
+      return { text, frames: [] }
+    }
+
+    delete rest[LOG_CONTEXT_TRACE_KEY]
+    const kept =
+      Object.keys(rest).length === 0 ? '' : ` ${JSON.stringify(rest)}`
+
+    return { text: `${text.slice(0, at)}${kept}`, frames }
+  }
+
+  return { text, frames: [] }
 }
 
 /** What the catalog itself has to say, before any file is named. */
@@ -1216,11 +1286,23 @@ export function toLogViewerRows(
       continue
     }
 
+    // Only a line that starts an entry is read for context: a continuation never
+    // carries one, so an orphan is left exactly as it was written.
+    const traced: { text: string; frames: readonly string[] } =
+      line.isContinuation
+        ? { text: split.text, frames: [] }
+        : splitLogTrace(split.text)
+
     open = {
       kind: 'entry',
       key: line.id,
       ...split,
-      frames: [],
+      text: traced.text,
+      frames: traced.frames.map((frame) => ({
+        time: '',
+        level: split.level,
+        text: frame,
+      })),
       orphan: line.isContinuation,
     }
     rows.push(open)
@@ -1303,6 +1385,12 @@ function formatLogViewerBytes(bytes: number): string {
 /** Matches the `[YYYY-MM-DD HH:MM:SS.mmm] ` prefix, capturing the clock time. */
 const TIMESTAMP_PREFIX_PATTERN =
   /^\[\d{4}-\d{2}-\d{2} (\d{2}:\d{2}:\d{2}\.\d{3})\] /
+
+/** The context key a stack is written under (PHP `ErrorConstants::CONTEXT_KEY_TRACE`). */
+const LOG_CONTEXT_TRACE_KEY = 'trace'
+
+/** What a line must hold before its tail is worth parsing as context at all. */
+const LOG_CONTEXT_TRACE_MARKER = '"trace":"'
 
 /** The level prefixes the writer emits, in both its modes (PHP `LogLineReader`). */
 const LEVEL_PREFIX_PATTERN =

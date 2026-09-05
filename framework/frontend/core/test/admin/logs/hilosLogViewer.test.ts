@@ -10,6 +10,7 @@ import {
   logViewerStreamsOf,
   readLogViewerAddress,
   splitLogLine,
+  splitLogTrace,
   toLogViewerRows,
   LOGS_FOLLOW_START_ACTION,
   LOGS_FOLLOW_STOP_ACTION,
@@ -372,6 +373,70 @@ describe('splitLogLine', () => {
   })
 })
 
+/**
+ * One real error line as the writer leaves it, prefixes already cut: the context
+ * of the event in the tail of the SAME physical line, its slashes escaped by the
+ * `json_encode` in PHP `Logger::writeLine()`.
+ */
+const TRACED_LINE =
+  'Action failed {"file":"\\/hilos\\/backend\\/PasskeyCommands.php","line":291,' +
+  '"trace":"#0 \\/hilos\\/backend\\/Db.php(214): run()\\n#1 {main}"}'
+
+describe('splitLogTrace', () => {
+  it('takes the trace out of the context and hands back its frames', () => {
+    expect(splitLogTrace(TRACED_LINE).frames).toEqual([
+      '#0 /hilos/backend/Db.php(214): run()',
+      '#1 {main}',
+    ])
+  })
+
+  it('keeps the rest of the context in the text, re-printed', () => {
+    // The escaping goes away by itself: the tail was read and printed again, not
+    // rewritten by us.
+    expect(splitLogTrace(TRACED_LINE).text).toBe(
+      'Action failed {"file":"/hilos/backend/PasskeyCommands.php","line":291}',
+    )
+  })
+
+  it('drops the tail whole when the trace was all it carried', () => {
+    expect(splitLogTrace('Action failed {"trace":"#0 A.php(1)"}')).toEqual({
+      text: 'Action failed',
+      frames: ['#0 A.php(1)'],
+    })
+  })
+
+  it('starts from the candidate the context really begins at', () => {
+    // The message may carry an object of its own, and the tail taken from the
+    // first candidate would hold two of them in a row and parse as neither.
+    expect(
+      splitLogTrace(
+        'Action failed payload={"a":1} {"line":291,"trace":"#0 A.php(1)"}',
+      ),
+    ).toEqual({
+      text: 'Action failed payload={"a":1} {"line":291}',
+      frames: ['#0 A.php(1)'],
+    })
+  })
+
+  it('leaves a line whose context carries no trace alone', () => {
+    const line = 'Rotation done {"file":"a.php","line":1}'
+
+    expect(splitLogTrace(line)).toEqual({ text: line, frames: [] })
+  })
+
+  it('leaves a line whose trace holds no frame alone', () => {
+    const line = 'Action failed {"line":291,"trace":""}'
+
+    expect(splitLogTrace(line)).toEqual({ text: line, frames: [] })
+  })
+
+  it('leaves a tail that looks like an object but does not parse alone', () => {
+    const line = 'Action failed {"line":291,"trace":"#0 A.php(1)",}'
+
+    expect(splitLogTrace(line)).toEqual({ text: line, frames: [] })
+  })
+})
+
 describe('toLogViewerRows', () => {
   it('folds continuations under the line that started them', () => {
     const rows = toLogViewerRows([
@@ -389,6 +454,63 @@ describe('toLogViewerRows', () => {
       '#1 Users.php(88)',
     ])
     expect(entry.orphan).toBe(false)
+  })
+
+  it('gives an entry whose stack sits in its context the frames of it', () => {
+    const rows = toLogViewerRows([
+      feedLine(
+        '1:0',
+        `[2027-01-15 03:12:19.907] ERROR: ${TRACED_LINE}`,
+        'ERROR',
+      ),
+    ])
+
+    expect(rows).toHaveLength(1)
+    const entry = asEntry(rows[0])
+    expect(entry.text).toBe(
+      'Action failed {"file":"/hilos/backend/PasskeyCommands.php","line":291}',
+    )
+    expect(entry.frames).toEqual([
+      {
+        time: '',
+        level: 'ERROR',
+        text: '#0 /hilos/backend/Db.php(214): run()',
+      },
+      { time: '', level: 'ERROR', text: '#1 {main}' },
+    ])
+  })
+
+  it('puts the frames of the trace before the physical continuations', () => {
+    // For the reader it is one stack of one error, so it is counted and opened
+    // as one; the file order says the trace was written first.
+    const rows = toLogViewerRows([
+      feedLine(
+        '1:0',
+        `[2027-01-15 03:12:19.907] ERROR: ${TRACED_LINE}`,
+        'ERROR',
+      ),
+      feedLine('1:1', '#2 Users.php(88)', 'ERROR', true),
+    ])
+
+    expect(rows).toHaveLength(1)
+    expect(asEntry(rows[0]).frames.map((frame) => frame.text)).toEqual([
+      '#0 /hilos/backend/Db.php(214): run()',
+      '#1 {main}',
+      '#2 Users.php(88)',
+    ])
+  })
+
+  it('leaves a continuation carrying a JSON tail alone', () => {
+    // A continuation carries no context of its own, and an orphan is not folded
+    // into anything either — so nothing is taken out of it.
+    const tail = '#7 Page.php(160) {"trace":"#0 A.php(1)"}'
+    const rows = toLogViewerRows([feedLine('1:0', tail, 'ERROR', true)])
+
+    expect(rows).toHaveLength(1)
+    const entry = asEntry(rows[0])
+    expect(entry.orphan).toBe(true)
+    expect(entry.text).toBe(tail)
+    expect(entry.frames).toEqual([])
   })
 
   it('leaves a continuation whose start was never read on its own', () => {
