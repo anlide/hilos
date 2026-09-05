@@ -6,7 +6,7 @@ namespace Hilos\Core\Bootstrap;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Database\Migration;
-use Hilos\Environment\Exception\EnvInvalidValueException;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 
 /**
@@ -26,7 +26,7 @@ final class EntrypointPrelude
      * @param class-string<Hilos> $hilosClass Project Hilos facade whose catalogs drive env/cluster init
      * @param string $projectRoot Project root that holds .env (and tests/.env under the test stack)
      * @param callable(): void $persistenceInit Persistence bootstrap (e.g. Database::initialize) run after env is ready
-     * @throws EnvInvalidValueException When the test env file is requested but missing
+     * @throws EnvException When the environment refuses a name the prelude reads, or the test env file is missing
      */
     public static function run(string $hilosClass, string $projectRoot, callable $persistenceInit): void
     {
@@ -48,7 +48,7 @@ final class EntrypointPrelude
      *
      * @param class-string<Hilos> $hilosClass Project Hilos facade whose catalogs drive env/cluster init
      * @param string $projectRoot Project root that holds .env (and tests/.env under the test stack)
-     * @throws EnvInvalidValueException When the test env file is requested but missing
+     * @throws EnvException When the environment refuses APP_ENV, or the test env file is requested and missing
      */
     public static function initEnvironment(string $hilosClass, string $projectRoot): void
     {

@@ -17,6 +17,7 @@ use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificatio
 use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDelivery;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 use Hilos\Notification\HilosNotifier;
@@ -47,6 +48,7 @@ class NotificationDispatcher
      * @param ?list<string> $channels Draft channel narrowing: null delivers to all enabled channels; a non-empty list restricts to the named channels
      * @throws DatabaseException When a delivery row cannot be persisted
      * @throws InvalidArgumentException When a channel's deliver signal cannot be named or queued
+     * @throws SettingException When the settings accessor refuses a channel's enablement key
      */
     public function dispatch(ObjectNotification $notification, ?array $channels): void
     {

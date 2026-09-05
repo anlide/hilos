@@ -7,6 +7,7 @@ namespace Hilos\Notification;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\DTO\NotificationChannelState;
@@ -36,6 +37,7 @@ final class NotificationChannelPreferenceProjector
      * @param int $userId Recipient user id
      * @return array<string, bool> Channel name → allowed (true) / muted (false), over globally-enabled channels the recipient has an address on
      * @throws DatabaseException When a preference or address lookup query fails
+     * @throws SettingException When the settings accessor refuses a channel's enablement key
      */
     public function channelPreferenceMap(int $userId): array
     {
@@ -69,6 +71,7 @@ final class NotificationChannelPreferenceProjector
      * @param int $userId Recipient user id
      * @return NotificationPreferencesSectionData Section payload for the profile subscription scope
      * @throws DatabaseException When a preference or address lookup query fails
+     * @throws SettingException When the settings accessor refuses a channel's enablement key
      */
     public function sectionData(int $userId): NotificationPreferencesSectionData
     {

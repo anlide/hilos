@@ -6,6 +6,7 @@ namespace Hilos\Database;
 
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\EnvConstants;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 
 /**
@@ -91,6 +92,7 @@ class Seed
      * Unrecognized APP_ENV values default to DEV (seeds allowed).
      *
      * @return bool Whether APP_ENV is PROD or STAGING
+     * @throws EnvException When the environment refuses to answer for APP_ENV
      */
     public static function isProduction(): bool
     {
@@ -110,6 +112,7 @@ class Seed
      * @param string $seedId Seed identifier (numeric prefix or basename)
      * @return bool Whether seed was applied
      * @throws DatabaseException When production-like env, seed not found, read fails, or SQL fails
+     * @throws EnvException When the environment refuses to answer for APP_ENV
      */
     public static function applyOne(string $seedId): bool
     {
@@ -155,6 +158,7 @@ class Seed
     /**
      * @return int Number of seed files applied
      * @throws DatabaseException When production-like env, read fails, or SQL fails
+     * @throws EnvException When the environment refuses to answer for APP_ENV
      */
     public static function apply(): int
     {

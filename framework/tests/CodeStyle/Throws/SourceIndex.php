@@ -35,6 +35,24 @@ final class SourceIndex
     /** Marks a loop variable two loops bind to different receivers; dropped before the record is built. */
     private const array AMBIGUOUS_BINDING = ['base' => '', 'path' => []];
 
+    /** Token opening an index, handed back as a bare string and so carrying no line of its own. */
+    private const string INDEX_OPEN = '[';
+
+    /** Token closing an index. */
+    private const string INDEX_CLOSE = ']';
+
+    /** `ArrayAccess` method an index read reaches. */
+    private const string INDEX_READ = 'offsetGet';
+
+    /** `ArrayAccess` method an assignment to an index reaches. */
+    private const string INDEX_WRITE = 'offsetSet';
+
+    /** `ArrayAccess` method `isset()` and `empty()` reach. */
+    private const string INDEX_TEST = 'offsetExists';
+
+    /** `ArrayAccess` method `unset()` reaches. */
+    private const string INDEX_DROP = 'offsetUnset';
+
     /** @var array<string, ClassRecord> Indexed classes keyed by lowercased fully qualified name */
     private array $classes = [];
 
@@ -814,6 +832,11 @@ final class SourceIndex
      * `Registry::find()` — and stops at the first call, whose result type is unknown
      * and takes the rest of the chain out of scope.
      *
+     * A square bracket ends the chain the same way a parenthesis does, because behind
+     * it stands a method too: `Hilos::$env[KEY]` is `EnvAccessor::offsetGet()` written
+     * shorter. Which of the four `ArrayAccess` methods it is depends on what the source
+     * does with the index, not on the brackets — see {@see self::indexTarget()}.
+     *
      * @param int $cursor Index the chain starts at
      * @param int $limit Index the chain may not reach past
      * @return array{0: ?CallSite, 1: ?array{base: string, path: array<int, string>}, 2: int}
@@ -836,12 +859,24 @@ final class SourceIndex
             return [null, null, $cursor + 1];
         }
 
+        $start = $cursor;
         $cursor++;
         $path = [];
+        // The bracket is handed back as a bare string, so the hit is put on the last
+        // token that carried a line of its own — the member the index is read on.
+        $line = $token[2];
         while ($cursor < $limit) {
             $operator = $this->tokens[$cursor][0];
             $member = $this->tokens[$cursor + 1] ?? null;
             $isArrow = $operator === T_OBJECT_OPERATOR || $operator === T_NULLSAFE_OBJECT_OPERATOR;
+            if ($operator === self::INDEX_OPEN) {
+                $target = $this->indexTarget($start, $cursor);
+                $site = new CallSite(CallSite::KIND_CALL, $line, $base, $path, $target, []);
+
+                // Back onto the bracket, as the call branch goes back onto its
+                // parenthesis: the key may hold a chain of its own.
+                return [$site, null, $cursor];
+            }
             if (!$isArrow && $operator !== T_DOUBLE_COLON) {
                 break;
             }
@@ -858,11 +893,13 @@ final class SourceIndex
             }
             if ($isArrow && $this->isName($member)) {
                 $path[] = $member[1];
+                $line = $member[2];
                 $cursor += 2;
                 continue;
             }
             if (!$isArrow && $member[0] === T_VARIABLE) {
                 $path[] = CallSite::STATIC_STEP_PREFIX . ltrim($member[1], '$');
+                $line = $member[2];
                 $cursor += 2;
                 continue;
             }
@@ -871,6 +908,74 @@ final class SourceIndex
         }
 
         return [null, ['base' => $base, 'path' => $path], $cursor];
+    }
+
+    /**
+     * Names the `ArrayAccess` method an index reaches. PHP picks it by what surrounds
+     * the brackets: `isset()` and `empty()` ask whether the key is there, `unset()`
+     * drops it, an assignment to the index writes it, and everything else reads it.
+     *
+     * `empty()` reads the value too when the key is present, and is counted as a test
+     * anyway: the rule is allowed to be narrower than what the code can do and never
+     * wider, and a hit demanded for an exception PHP may not raise is the wider kind.
+     *
+     * @param int $start Index the chain starts at
+     * @param int $bracket Index of the opening square bracket
+     * @return string Name of the method the index reaches
+     */
+    private function indexTarget(int $start, int $bracket): string
+    {
+        $enclosing = $this->enclosingConstruct($start);
+        if ($enclosing === T_ISSET || $enclosing === T_EMPTY) {
+            return self::INDEX_TEST;
+        }
+        if ($enclosing === T_UNSET) {
+            return self::INDEX_DROP;
+        }
+        $after = $this->matchingBracket($bracket, self::INDEX_OPEN, self::INDEX_CLOSE) + 1;
+
+        return ($this->tokens[$after][0] ?? null) === '=' ? self::INDEX_WRITE : self::INDEX_READ;
+    }
+
+    /**
+     * Reads backwards to the construct whose parenthesis stands open over a token, so
+     * that both arguments of `isset($a['x'], $b['y'])` are seen for what they are. The
+     * walk stops at the statement it is in: `isset`, `empty` and `unset` all take their
+     * argument on the same statement, and a scan past that would read the enclosing
+     * block instead.
+     *
+     * A pair is counted by both halves or by neither. Interpolation closes with a plain
+     * `}` and opens with a token of its own, so `isset($a["{$b['k']}"], $c['x'])` would
+     * leave the walk one closer deep and read the second argument as a plain one — a
+     * hit demanded where PHP calls `offsetExists()`, which is the wider direction.
+     *
+     * @param int $cursor Index of the token the construct is looked for around
+     * @return int|string|null Token type standing before the open parenthesis, or null when none does
+     */
+    private function enclosingConstruct(int $cursor): int|string|null
+    {
+        $depth = 0;
+        for ($index = $cursor - 1; $index >= 0; $index--) {
+            $type = $this->tokens[$index][0];
+            if ($type === ';') {
+                return null;
+            }
+            if ($type === ')' || $type === self::INDEX_CLOSE || $type === '}') {
+                $depth++;
+                continue;
+            }
+            if ($type !== '(' && $type !== self::INDEX_OPEN && !in_array($type, self::BRACE_OPENERS, true)) {
+                continue;
+            }
+            if ($depth > 0) {
+                $depth--;
+                continue;
+            }
+
+            return $type === '(' ? ($this->tokens[$index - 1][0] ?? null) : null;
+        }
+
+        return null;
     }
 
     /**

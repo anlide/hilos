@@ -30,42 +30,58 @@ final class ThrowsPropagationFixtureTest extends TestCase
     {
         $this->assertSame(
             [
-                'THROWS-PROPAGATION ThrowsTree/Caller.php:57 — Caller::missesTheTag() does not propagate '
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:58 — Caller::missesTheTag() does not propagate '
                     . 'NarrowException documented on SourceInterface::read() (see docs/agents/code-style/phpdoc.md)',
-                'THROWS-PROPAGATION ThrowsTree/Caller.php:75 — Caller::narrowsTheBase() does not propagate '
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:76 — Caller::narrowsTheBase() does not propagate '
                     . 'OtherException documented on AbstractSource::start() (see docs/agents/code-style/phpdoc.md)',
-                'THROWS-PROPAGATION ThrowsTree/Caller.php:110 — Caller::convertsInTheCatch() does not document '
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:111 — Caller::convertsInTheCatch() does not document '
                     . 'OtherException it throws (see docs/agents/code-style/phpdoc.md)',
-                'THROWS-PROPAGATION ThrowsTree/Caller.php:119 — Caller::goesThroughAPrivateLink() does not '
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:120 — Caller::goesThroughAPrivateLink() does not '
                     . 'propagate NarrowException: Caller::goesThroughAPrivateLink() -> private '
                     . 'Caller::readThroughHelper() -> NarrowException (see docs/agents/code-style/phpdoc.md)',
-                'THROWS-PROPAGATION ThrowsTree/Caller.php:149 — Caller::callsByClassName() does not propagate '
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:150 — Caller::callsByClassName() does not propagate '
                     . 'NarrowException documented on Registry::lookup() (see docs/agents/code-style/phpdoc.md)',
-                'THROWS-PROPAGATION ThrowsTree/Caller.php:157 — Caller::callsThroughAStaticProperty() does not '
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:158 — Caller::callsThroughAStaticProperty() does not '
                     . 'propagate OtherException documented on Registry::name() (see docs/agents/code-style/phpdoc.md)',
-                'THROWS-PROPAGATION ThrowsTree/Caller.php:165 — Caller::callsATraitMethod() does not propagate '
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:166 — Caller::callsATraitMethod() does not propagate '
                     . 'OtherException documented on HelperTrait::helpFromTrait() (see docs/agents/code-style/phpdoc.md)',
-                'THROWS-PROPAGATION ThrowsTree/Caller.php:175 — Caller::iteratesADeclaredArray() does not '
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:176 — Caller::iteratesADeclaredArray() does not '
                     . 'propagate NarrowException documented on SourceInterface::read() (see '
                     . 'docs/agents/code-style/phpdoc.md)',
-                'THROWS-PROPAGATION ThrowsTree/Caller.php:187 — Caller::constructsAThrowingClass() does not '
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:188 — Caller::constructsAThrowingClass() does not '
                     . 'propagate OtherException documented on Constructed::__construct() (see '
                     . 'docs/agents/code-style/phpdoc.md)',
-                'THROWS-PROPAGATION ThrowsTree/Caller.php:195 — Caller::throwsWithoutSayingSo() does not document '
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:196 — Caller::throwsWithoutSayingSo() does not document '
                     . 'NarrowException it throws (see docs/agents/code-style/phpdoc.md)',
-                'THROWS-PROPAGATION ThrowsTree/Caller.php:216 — Caller::iteratesASpacedGenericArray() does not '
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:217 — Caller::iteratesASpacedGenericArray() does not '
                     . 'propagate NarrowException documented on SourceInterface::read() (see '
                     . 'docs/agents/code-style/phpdoc.md)',
-                'THROWS-PROPAGATION ThrowsTree/Caller.php:231 — Caller::iteratesAParameterArray() does not '
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:232 — Caller::iteratesAParameterArray() does not '
                     . 'propagate NarrowException documented on SourceInterface::read() (see '
                     . 'docs/agents/code-style/phpdoc.md)',
-                'THROWS-PROPAGATION ThrowsTree/Caller.php:283 — Caller::callsAKeywordNamedMethod() does not '
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:284 — Caller::callsAKeywordNamedMethod() does not '
                     . 'propagate NarrowException documented on Registry::match() (see docs/agents/code-style/phpdoc.md)',
-                'THROWS-PROPAGATION ThrowsTree/Caller.php:291 — Caller::callsAByReferenceMethod() does not '
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:292 — Caller::callsAByReferenceMethod() does not '
                     . 'propagate OtherException documented on Registry::entries() (see '
                     . 'docs/agents/code-style/phpdoc.md)',
-                'THROWS-PROPAGATION ThrowsTree/Caller.php:300 — Caller::readsPastAParameterAttribute() does not '
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:301 — Caller::readsPastAParameterAttribute() does not '
                     . 'propagate NarrowException documented on SourceInterface::read() (see '
+                    . 'docs/agents/code-style/phpdoc.md)',
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:310 — Caller::readsAnIndex() does not propagate '
+                    . 'NarrowException documented on Indexed::offsetGet() (see docs/agents/code-style/phpdoc.md)',
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:318 — Caller::writesAnIndex() does not propagate '
+                    . 'OtherException documented on Indexed::offsetSet() (see docs/agents/code-style/phpdoc.md)',
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:327 — Caller::testsAnIndex() does not propagate '
+                    . 'OtherException documented on Indexed::offsetExists() (see docs/agents/code-style/phpdoc.md)',
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:339 — Caller::emptiesAnIndex() does not propagate '
+                    . 'OtherException documented on Indexed::offsetExists() (see docs/agents/code-style/phpdoc.md)',
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:347 — Caller::dropsAnIndex() does not propagate '
+                    . 'NarrowException documented on Indexed::offsetUnset() (see docs/agents/code-style/phpdoc.md)',
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:362 — Caller::testsTwoIndexesPastAnInterpolation() does '
+                    . 'not propagate OtherException documented on Indexed::offsetExists() (see '
+                    . 'docs/agents/code-style/phpdoc.md)',
+                'THROWS-PROPAGATION ThrowsTree/Caller.php:363 — Caller::testsTwoIndexesPastAnInterpolation() does '
+                    . 'not propagate OtherException documented on Indexed::offsetExists() (see '
                     . 'docs/agents/code-style/phpdoc.md)',
                 'THROWS-PROPAGATION ThrowsTree/Contract/AbstractSource.php:20 — AbstractSource::start() documents '
                     . 'OtherException that SourceInterface::start() does not declare (see '

@@ -38,6 +38,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\TableNotActivatedException;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
@@ -397,6 +398,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * @throws DatabaseException When the notification cannot be persisted
      * @throws LogicException When the notifications object collection is unavailable
      * @throws InvalidArgumentException When the live or channel signal cannot be named or queued
+     * @throws SettingException When the settings accessor refuses a channel's enablement key
      */
     public function emit(NotificationDraft $draft): int
     {

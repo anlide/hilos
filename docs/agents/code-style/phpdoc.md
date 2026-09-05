@@ -107,12 +107,21 @@ documenting non-obvious error contracts.
   accessors, audit the parent implementation too. If the parent PHPDoc is
   missing a documented callee exception, fix the parent contract first, then
   propagate the exception from the child method that exposes it.
-- For magic property or array access with a statically known property/key, use
-  the exact resolved branch rather than the whole generic `__get()` or
-  `offsetGet()` contract. Do not propagate a broad default-branch exception
-  when the known branch only returns a scalar/object field. Do propagate
-  exceptions from explicit calls made by that known branch, such as
-  `$connections->forUser(...)`.
+- For a magic property read with a statically known property, use the exact
+  resolved branch of `__get()` rather than its whole generic contract. Do not
+  propagate a broad default-branch exception when the known branch only returns
+  a scalar/object field. Do propagate exceptions from explicit calls made by
+  that known branch, such as `$connections->forUser(...)`.
+- For array access, propagate the whole `offsetGet()` contract of the receiver,
+  even when the key is a constant. That is what the check does: it resolves
+  `$receiver[KEY]` into the `offsetGet()` of the declared type and asks for
+  every exception that declaration names. It reads an index of the tree rather
+  than inferring types — the premise written out at the end of this section —
+  so it cannot tell which branch a key takes, and a document that asked for the
+  branch would demand one thing while the red run demanded another. The same
+  goes for the other three doors: writing an index reaches `offsetSet()`,
+  `isset()`/`empty()` reach `offsetExists()`, and `unset()` reaches
+  `offsetUnset()`.
 - For normal `$item->property` reads of documented `@property-read` magic
   properties, do not propagate exceptions from the underlying `__get()` branch
   into the caller method's PHPDoc. Document those exceptions on the `__get()`

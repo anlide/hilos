@@ -9,6 +9,7 @@ use Hilos\Constants\ExitCode;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Seed;
+use Hilos\Environment\Exception\EnvException;
 
 /**
  * Seed Apply Command.
@@ -89,6 +90,7 @@ HELP;
      * @param list<string> $args Positional arguments (seed identifier)
      * @return int Exit code (0 = success)
      * @throws DatabaseException If database connection or seed execution fails
+     * @throws EnvException When the environment refuses to answer for APP_ENV
      */
     public function execute(array $options, array $args): int
     {

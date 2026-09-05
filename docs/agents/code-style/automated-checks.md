@@ -23,7 +23,7 @@ rule.
 | `PAYLOAD-SENTINEL` | A judged reader reads an absent key as a value. Eight method names are judged, by name wherever they stand, in two groups: `fromArray()`, `fromJson()`, `fromRow()`, `hydrateBase()` and `hydrateOwn()` are handed a whole frame or row, `applyDiff()`, `applyBaseDiff()` and `applyOwnDiff()` a partial one. Two findings. A minted stub — `''`, `0` or `0.0` fallen back to with `??`, handed back by a ternary branch, or returned by a `match` `default` arm — is reported in either group, and the group picks the cure the report names: refuse the payload or let the field be null, against read it with `patch*`. A call of the `optional*` family, matched by the prefix of the name, is reported in a diff body only: it answers null to a key the diff does not carry and clears a field it never touched. `?? null` and `?? []` are legal in both groups, and a `// external-boundary: <reason>` marker on the line directly above legalizes one minted stub — the misread diff key has no legitimate case and no marker. Every root. | [method-contracts.md](method-contracts.md) |
 | `WIRE-KEY-CASE` | A field key that crosses PHP → wire → TS is spelled camelCase. Two halves under one id: PHP judges a constant named in camelCase, TypeScript a constant named `<NAME>_FIELD` and the entries of an `as const` `*RowKey` map. A value that is a reference to another constant is judged where the key is spelled out. | [cross-layer-field-names.md](cross-layer-field-names.md) |
 | `LINE-LENGTH` | A PHP line is wider than 150 characters. Width is counted in characters and not in bytes, so a multi-byte dash costs one column. A line inside a heredoc or nowdoc body is not checked: a break there would land in the string itself. | [line-length.md](line-length.md) |
-| `THROWS-PROPAGATION` | An exception a callee documents is named by the caller's own `@throws` too, unless an enclosing `catch` swallows it; and an implementation does not document an exception the declaration it overrides is silent about. A `throw new X` is judged as its own callee. Only calls whose target is known without inferring a type; a private helper is walked through rather than trusted. | [phpdoc.md](phpdoc.md) |
+| `THROWS-PROPAGATION` | An exception a callee documents is named by the caller's own `@throws` too, unless an enclosing `catch` swallows it; and an implementation does not document an exception the declaration it overrides is silent about. A `throw new X` is judged as its own callee. Only calls whose target is known without inferring a type; an index on such a receiver counts as the call it is, reaching one of the four `ArrayAccess` methods; a private helper is walked through rather than trusted. | [phpdoc.md](phpdoc.md) |
 | `PAGE-REACH` | Every concrete page says whether the browser navigates to it, and a page that says it does not may not lean on `READS_DB`. The answer is the `REACH` constant, resolved up the parent chain, so a base answers for its whole branch. Three findings: a page for which nothing resolves, an `ACTION_HOST` whose `READS_DB` resolves to a non-empty list — that list is taken up on a page subscription only, so those reads belong in `DbContext::processWideReadCollections()` — and one of the two common roots carrying anything but `UNDECLARED`, which would declare the whole repository at once. Abstract classes are never required to answer. No baseline and no in-comment marker: the two roots are a line in the rule, with their reason. Every production root. | [subscriptions.md](../signals/subscriptions.md) |
 | `E2E-PAGE-GOTO` | An e2e spec opens a page through `gotoPage()`, never through Playwright's `goto`, which waits for the document and not for the subscription's answer. TypeScript only; the `helpers/page.ts` that owns the wrappers is the one place the call is allowed. | [testing-strategy.md](../frontend/testing-strategy.md) |
 | `STYLE-SHEET-HOME` | The Bootstrap Sass layer is the only home a custom style declaration has. Three faces under one id: a `.css` / `.scss` / `.sass` / `.less` file outside the sanctioned list — one `hilos-styles.scss` per view package — a `<style>` block in a Vue SFC, and `styles:` or `styleUrls:` on an `@Component`. A stylesheet is judged by its path alone, whether or not anything imports it. Not judged: `angular.json` `styles` and an `index.html` `<link>`, both of which reference third-party stylesheets under `node_modules`, and a third-party stylesheet is not a hand-authored one. TypeScript only. | [styling-rules.md](../frontend/styling-rules.md) |
@@ -160,15 +160,29 @@ declared and stops at the first one that is not. The declaration is repeated in
 the guard's failure message, because a reader of a green run has to know why it
 is empty.
 
-Six things are outside it on purpose:
+An index on such a receiver is one of those calls, not a syntax of its own:
+`Hilos::$env[KEY]` is `EnvAccessor::offsetGet()` written shorter, and the guard
+asks the whole contract of it. Which of the four `ArrayAccess` methods a pair of
+brackets reaches is decided by what surrounds them — `isset()` and `empty()`
+reach `offsetExists()`, `unset()` reaches `offsetUnset()`, an assignment into
+the index reaches `offsetSet()`, and everything else reads. `empty()` also reads
+when the key is there and is counted as a test anyway, on the same principle
+that keeps the rule narrower than the code and never wider. An ordinary array
+needs no clause to stay silent: a type with the array suffix ends the chain
+already, a string offset resolves no `offsetGet()`, and an undeclared receiver
+has no type to look one up on.
 
-1. **The Hilos magic.** `Hilos::$db->users` travels through `__get`,
-   `@property-read` bridges and a collection's `offsetGet`, and no text resolves
-   the target of a call made on the result. This is the uncomfortable one —
+Five things are outside it on purpose:
+
+1. **A member reached through `__get`.** `Hilos::$db->users` names no declared
+   property: the step travels through `__get` and a `@property-read` bridge, and
+   no text resolves what the result is. This is the uncomfortable one —
    `DbContext::__get` is exactly what throws `CollectionNotFoundException`, so
    the most interesting path is the one behind the magic — but nothing checks
    those paths today, so the rule does not make the coverage worse; it moves the
-   question out of the dark.
+   question out of the dark. What the magic no longer hides is the index itself:
+   `Hilos::$env[KEY]` and `Hilos::$setting[KEY]` stand on a static property whose
+   type is declared, so they resolve like any other receiver.
 2. **Vendor and built-in classes.** They are not indexed, so a call into one
    requires nothing. The roots of the PHP exception hierarchy are written into
    the rule as a table instead, which is what lets `@throws Throwable` cover a

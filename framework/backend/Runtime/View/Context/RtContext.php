@@ -53,6 +53,7 @@ use Hilos\Runtime\View\Item\BackupRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Item\RestoreRuntime;
 use Hilos\Runtime\View\Item\RtItem;
+use OutOfBoundsException;
 
 /**
  * RtContext - runtime context (transient application data).
@@ -652,6 +653,7 @@ abstract class RtContext
      * @return RtCollection|RtItem|null Runtime collection, item alias result, or null for a missing item alias
      * @throws RtCollectionNotFoundException When name is neither a collection nor an item alias
      * @throws RtCollectionNotReadableException When nothing here reads the collection, or its state is still on its way
+     * @throws OutOfBoundsException When a state collection searched for the alias's owner requires a key it does not hold
      */
     public function __get(string $name): RtCollection|RtItem|null
     {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Actions\Collection;
 
 use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
@@ -155,6 +156,7 @@ final class SettingsActions extends DbActions
      * @param array<string, array<string, mixed>> $catalog Catalog: key => [type, default_value]
      * @throws SettingKeyInCatalogException When the key is in the catalog (catalog overrides are not orphans)
      * @throws ItemNotFoundForDeleteException When no setting row for the key exists
+     * @throws InvalidArgumentException When a row the settings collection holds is of another object type
      * @throws DatabaseException When collection loading or setting deletion fails
      * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
      * @throws LogicException When the settings object collection entity class is not configured

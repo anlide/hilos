@@ -41,9 +41,10 @@ final class ThrowsPropagationRule implements CrossFileRule
      * same reason.
      */
     public const string SCOPE = 'THROWS-PROPAGATION judges only calls whose target is known without inferring a'
-        . ' type — $this->, self::, static::, parent::, new, a call by class name, and a parameter, property or'
-        . ' loop variable with a declared type. Hilos magic and vendor classes are outside it by declaration,'
-        . ' not for want of debt:';
+        . ' type — $this->, self::, static::, parent::, new, a call by class name, a parameter, property or'
+        . ' loop variable with a declared type, and an index on any of those, which stands for the ArrayAccess'
+        . ' method behind the brackets. A member reached through __get() and a vendor class are outside it by'
+        . ' declaration, not for want of debt:';
 
     private const string DOC = 'docs/agents/code-style/phpdoc.md';
 
