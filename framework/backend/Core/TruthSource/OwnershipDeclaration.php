@@ -14,11 +14,15 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 /**
  * OwnershipDeclaration - reads what a class says it owns and turns it into registered claims.
  *
- * The declaration lives on the class ({@see AbstractAgent::OWNS_DB}, {@see AbstractAgent::OWNS_RT})
+ * The declaration lives on the class ({@see TruthSourceOwner::OWNS_DB}, {@see TruthSourceOwner::OWNS_RT})
  * rather than in a call inside onStart(), so it can be answered before an instance exists: the
  * worker deciding whether to build an agent, and the topology validator judging a daemon with
  * nothing running, both ask the class. This is the reader that answers them, and the same one that
  * lays the claim down when an agent actually starts.
+ *
+ * The class it reads need not be an agent. Everything that implements {@see TruthSourceOwner}
+ * answers here the same way - a test-only CLI command and the application class beside it - and
+ * this reader has no way of telling them apart, which is what one form of the declaration means.
  *
  * The walk is {@see get_parent_class()} and a constant read per step, deliberately not Reflection:
  * nothing here needs to look past what PHP already resolves, and an inherited value merely repeats
@@ -29,7 +33,7 @@ final class OwnershipDeclaration
     /**
      * The database collections a class owns, its parents' claims folded in.
      *
-     * @param class-string<AbstractAgent> $agentClass Agent class to read the declaration off
+     * @param class-string<TruthSourceOwner> $agentClass Class to read the declaration off
      * @return array<string, TruthSourceOperations> Collection key => operations its owner may perform
      */
     public static function dbCollectionsOf(string $agentClass): array
@@ -50,8 +54,8 @@ final class OwnershipDeclaration
      *
      * A class that declares nothing registers nothing - the empty map never reaches a registry.
      *
-     * @param class-string<AbstractAgent> $agentClass Agent class to read the declaration off
-     * @param string $ownerId Id the claim is registered under, from AbstractAgent::getId()
+     * @param class-string<TruthSourceOwner> $agentClass Class to read the declaration off
+     * @param string $ownerId Id the claim is registered under - an agent's own id, or the id of the runner that claims for a class
      */
     public static function claimDb(string $agentClass, string $ownerId): void
     {
@@ -66,7 +70,7 @@ final class OwnershipDeclaration
     /**
      * The runtime collections a class owns, its parents' claims folded in.
      *
-     * @param class-string<AbstractAgent> $agentClass Agent class to read the declaration off
+     * @param class-string<TruthSourceOwner> $agentClass Class to read the declaration off
      * @return array<string, TruthSourceOperations> Collection key => operations its owner may perform
      */
     public static function rtCollectionsOf(string $agentClass): array
@@ -87,8 +91,8 @@ final class OwnershipDeclaration
      *
      * A class that declares nothing registers nothing - the empty map never reaches a registry.
      *
-     * @param class-string<AbstractAgent> $agentClass Agent class to read the declaration off
-     * @param string $ownerId Id the claim is registered under, from AbstractAgent::getId()
+     * @param class-string<TruthSourceOwner> $agentClass Class to read the declaration off
+     * @param string $ownerId Id the claim is registered under - an agent's own id, or the id of the runner that claims for a class
      */
     public static function claimRt(string $agentClass, string $ownerId): void
     {
@@ -123,8 +127,8 @@ final class OwnershipDeclaration
      * halves too: no agent has yet wanted to do different things to the database rows it holds and
      * to the runtime rows beside them.
      *
-     * @param class-string<AbstractAgent> $agentClass Agent class to read the declaration off
-     * @param Closure(class-string<AbstractAgent>): array<string, list<TruthSourceOperation>> $declarationOf
+     * @param class-string<TruthSourceOwner> $agentClass Class to read the declaration off
+     * @param Closure(class-string<TruthSourceOwner>): array<string, list<TruthSourceOperation>> $declarationOf
      *     Reads the declared map off one step of the chain
      * @return array<string, TruthSourceOperations> Collection key => operations its owner may perform
      */

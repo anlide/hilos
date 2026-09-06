@@ -37,16 +37,9 @@ final class UserTestSeedCommandTest extends IntegrationTestCase
     {
         parent::setUp();
         // Direct identity writes (the wrapper regression) need a collection-wide truth
-        // source; the command registers its own before mutating.
+        // source of their own; the claim the command itself needs is declared on its class
+        // and laid, then taken back, by its runner.
         TruthSourceRegistry::register(HilosDbContext::identities, TruthSourceKeys::all(), self::TEST_AGENT_ID);
-    }
-
-    protected function tearDown(): void
-    {
-        // The command registers the identities truth source under its own id; drop it so
-        // it does not leak into the next test in this process.
-        TruthSourceRegistry::unregisterAgent('test-cli');
-        parent::tearDown();
     }
 
     /**

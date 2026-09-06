@@ -7,8 +7,7 @@ namespace Hilos\Core\CLI\Commands;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Exception\DuplicateValueException;
-use Hilos\Core\TruthSource\TruthSourceKeys;
-use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingKeyInCatalogException;
@@ -26,8 +25,8 @@ use Hilos\Hilos;
  */
 final class OrphanTestCreateCommand extends TestOnlyCommand
 {
-    /** @var string Truth-source id this CLI writer registers under (no agent runs in the CLI) */
-    private const string TRUTH_SOURCE_ID = 'test-cli';
+    /** @var array<string, list<TruthSourceOperation>> Settings rows this command writes, claimed for it by its runner */
+    public const array OWNS_DB = [HilosDbContext::settings => TruthSourceOperation::BY_KIND];
 
     public function getName(): string
     {
@@ -109,9 +108,6 @@ HELP;
             $value = self::convertValue($type, $args[2]);
         }
 
-        // The settings collection needs a registered writer; the CLI has no agent, so the command
-        // registers itself as the truth source before mutating (only reachable on the test-only path).
-        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::TRUTH_SOURCE_ID);
         Hilos::$db->settings->actions->addOrphan($key, $type, $value, Hilos::$setting->catalog());
         echo "Orphan setting created for key '{$key}' (type {$type}).\n";
 

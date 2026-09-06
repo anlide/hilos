@@ -8,8 +8,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
-use Hilos\Core\TruthSource\TruthSourceKeys;
-use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
@@ -33,8 +32,8 @@ use Hilos\Hilos;
  */
 final class UserTestSeedCommand extends TestOnlyCommand
 {
-    /** @var string Truth-source id this CLI writer registers under (no agent runs in the CLI) */
-    private const string TRUTH_SOURCE_ID = 'test-cli';
+    /** @var array<string, list<TruthSourceOperation>> Identity rows this command seeds, claimed for it by its runner */
+    public const array OWNS_DB = [HilosDbContext::identities => TruthSourceOperation::BY_KIND];
 
     /** @var string Default identifier prefix when --prefix is not given */
     private const string DEFAULT_PREFIX = 'seed';
@@ -139,10 +138,6 @@ HELP;
         // One bcrypt for the whole run: password_hash(PASSWORD_DEFAULT) is ~340ms and all
         // seeded users share the same password, so per-user hashing would dominate bring-up.
         $hash = password_hash($password, PASSWORD_DEFAULT);
-
-        // The identities collection needs a registered writer; the CLI has no agent, so the
-        // command registers itself as the truth source before mutating (test-only path).
-        TruthSourceRegistry::register(HilosDbContext::identities, TruthSourceKeys::all(), self::TRUTH_SOURCE_ID);
 
         $firstEmail = '';
         $lastEmail = '';

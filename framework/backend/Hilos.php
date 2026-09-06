@@ -40,6 +40,8 @@ use Hilos\Core\Topology\AgentSignalRouteRegistry;
 use Hilos\Core\Topology\PageAgentIndexRouteRegistry;
 use Hilos\Core\Topology\PageSignalRouteRegistry;
 use Hilos\Core\Topology\TopologyValidator;
+use Hilos\Core\TruthSource\TruthSourceOperations;
+use Hilos\Core\TruthSource\TruthSourceOwner;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Pages\PageCatalogResolver;
@@ -82,7 +84,7 @@ use Hilos\Users\AdminAudience;
  * - Hilos::$cluster    — cluster mode and local node identity
  * - Hilos::$notify     — durable notification emit seam
  */
-abstract class Hilos
+abstract class Hilos implements TruthSourceOwner
 {
     /** @var class-string<CatalogProviderInterface> Environment catalog provider class. */
     protected const string ENV_CATALOG = EnvCatalogStub::class;
@@ -372,6 +374,22 @@ abstract class Hilos
     public static function createFixtureUser(string $displayName): ?int
     {
         return null;
+    }
+
+    /**
+     * Operations the claims of the application class carry.
+     *
+     * The kind of a bootstrap claimant: a row it seeded is a row it may edit and take away
+     * again, so the answer is every operation there is. The application class owns a collection
+     * whose name only the project knows ({@see self::OWNS_DB}) - the users table a fixture
+     * writes into is the standing example - and the runner of a test-only command lays that
+     * claim down for the length of its body.
+     *
+     * @return TruthSourceOperations Operations every claim of the application class gets
+     */
+    public static function defaultTruthSourceOperations(): TruthSourceOperations
+    {
+        return TruthSourceOperations::all();
     }
 
     /**

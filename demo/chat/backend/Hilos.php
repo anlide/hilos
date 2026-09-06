@@ -153,10 +153,10 @@ use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserRuntimeParam;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
-use Hilos\Core\TruthSource\TruthSourceKeys;
-use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
@@ -209,6 +209,14 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  */
 final class Hilos extends HilosFacade
 {
+    /**
+     * @var array<string, list<TruthSourceOperation>> The users collection, named here because
+     *     only the project knows its name. The claim is laid by the runner of a test-only
+     *     command ({@see TestOnlyCommand}), which is the only thing that writes this table
+     *     with no agent behind it.
+     */
+    public const array OWNS_DB = [ChatDbContext::users => TruthSourceOperation::BY_KIND];
+
     protected const string ENV_CATALOG = ChatEnvCatalog::class;
 
     protected const string SETTINGS_CATALOG = SettingsCatalog::class;
@@ -577,9 +585,10 @@ final class Hilos extends HilosFacade
      * Creates a fixture user in the chat users collection and returns its id.
      *
      * Project side of the {@see HilosFacade::createFixtureUser()} seam (test-only user
-     * seeding): the framework does not know the project's users collection, so this
-     * registers that collection as a truth source (the CLI has no agent) and creates the
-     * row through the existing name-only create path.
+     * seeding): the framework does not know the project's users collection, so this creates
+     * the row through the existing name-only create path. Owning that collection while the
+     * row is written is not this method's work any more - the class declares it in
+     * {@see self::OWNS_DB} and the runner of the command lays the claim down.
      *
      * @param string $displayName Display name for the seeded user
      * @return ?int Created user id
@@ -587,8 +596,6 @@ final class Hilos extends HilosFacade
      */
     public static function createFixtureUser(string $displayName): ?int
     {
-        TruthSourceRegistry::register(ChatDbContext::users, TruthSourceKeys::all(), 'test-cli');
-
         return (int)Hilos::$db->users->actions->createWithName($displayName)->id;
     }
 

@@ -41,6 +41,7 @@ use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
+use Hilos\Core\TruthSource\TruthSourceOwner;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Database\Context\DbContext;
@@ -88,7 +89,7 @@ use Throwable;
  * - onTick() - agent work logic run on each worker loop iteration
  * - Signal handling methods (can override onSignal* methods for specific signal types).
  */
-abstract class AbstractAgent implements AgentInterface, PageAgentInterface, ActionHostInterface
+abstract class AbstractAgent implements AgentInterface, PageAgentInterface, ActionHostInterface, TruthSourceOwner
 {
     /** @var string Agent type identifier. Override in child classes. */
     public const string AGENT_TYPE = '';
@@ -126,59 +127,6 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      *     happen, in whatever action reached for them.
      */
     public const array READS_DB = [];
-
-    /**
-     * @var array<string, list<TruthSourceOperation>> DB collections this agent OWNS, each mapped to
-     *     the operations it may perform on their rows. Read off the class before the instance
-     *     exists ({@see OwnershipDeclaration::claimDb()}), which is the whole point: a claim made
-     *     inside onStart() is invisible to the worker deciding whether to build the agent, and
-     *     invisible to the validator that judges the topology with no agent running at all.
-     *
-     *     A map and not a list of names, because a claim may narrow its operations and a list
-     *     would need a second constant to say so. {@see TruthSourceOperation::BY_KIND} leaves the
-     *     answer to the kind of the agent - it is resolved through
-     *     {@see self::defaultTruthSourceOperations()} of the class that is STARTING, which is what
-     *     a call from a parent's onStart() already did on the instance of its subclass.
-     *
-     *     A subclass declaring this MERGES with what its parents declared, where
-     *     {@see self::READS_DB} replaces: a repeated collection gets the union of both operation
-     *     sets, so a subclass widens its parent's claim and cannot narrow it. The two rules differ
-     *     because the two misses cost differently - a lost read is refused in the action that
-     *     reached for it, while a lost claim refuses nothing until some sweep an hour later finds
-     *     the collection has no owner.
-     *
-     *     A collection named here does not belong in {@see self::READS_DB}: the claim is the
-     *     reader interest already.
-     */
-    public const array OWNS_DB = [];
-
-    /**
-     * @var array<string, list<TruthSourceOperation>> Runtime collections this agent OWNS, each
-     *     mapped to the operations it may perform on their rows. Read off the class before the
-     *     instance exists ({@see OwnershipDeclaration::claimRt()}), which is what a call inside
-     *     onStart() can never be: the worker deciding whether to build the agent, and the
-     *     validator judging a topology with nothing running, both have only the class to ask.
-     *
-     *     A subclass declaring this MERGES with what its parents declared, where
-     *     {@see self::READS_RT} replaces: a repeated collection gets the union of both operation
-     *     sets, so a subclass widens its parent's claim and cannot narrow it. A parent's methods
-     *     run on the instance of its subclass and were written for a parent's rights, so a right
-     *     taken away here would be refused somewhere else entirely.
-     *
-     *     A record here is read by the whole node and not by this worker alone: the master
-     *     replicates runtime state by the map of owners, so a collection named here becomes the
-     *     single place in the cluster its rows may be written from, and every other node reaches
-     *     it by frame. That makes an entry cost more than one in {@see self::OWNS_DB}, where the
-     *     rows sit in a database each process can read for itself.
-     *
-     *     {@see TruthSourceOperation::BY_KIND} leaves the answer to the kind of the agent - it is
-     *     resolved through {@see self::defaultTruthSourceOperations()} of the class that is
-     *     STARTING, the same way the database half resolves it.
-     *
-     *     A collection named here does not belong in {@see self::READS_RT}: the claim is the
-     *     reader interest already.
-     */
-    public const array OWNS_RT = [];
 
     /** @var list<string> CLI command names owned directly by this agent. */
     public const array AGENT_COMMANDS = [];

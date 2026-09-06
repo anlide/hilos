@@ -17,11 +17,14 @@ says *owner*.
 
 ## Core Rule
 
-A collection has exactly one full owner. Ownership is declared on the agent's
-class, the way its reads are, and not made by a call inside a start hook: what a
-class owns is a fact about the class. A claim of ownership is also the reader
-interest of its owner — the collection an agent owns is a collection it reads,
-by the same statement and not by a second one.
+A collection has exactly one full owner. Ownership is declared on the claimant's
+class, the way an agent's reads are, and not made by a call inside a start hook:
+what a class owns is a fact about the class. The claimant is usually an agent,
+but not always — a test-only CLI command and the application class declare the
+same way, and *Three Cases A Flat Constant Cannot Say* is where that is spelled
+out. A claim of ownership is also the reader interest of its owner — the
+collection an agent owns is a collection it reads, by the same statement and not
+by a second one.
 
 Everything else writes through the owner. A process that wants a row changed
 and does not own it sends the owner a signal and lets the owner write; it does
@@ -54,7 +57,10 @@ agent reads out of a collection another agent owns.
 The declaration of ownership is a map, `OWNS_DB`, from a database collection key
 to the operations the owner may perform on its rows, written on the class beside
 `READS_DB`. The runtime half is `OWNS_RT`, the same shape over runtime collection
-keys. A map and not a list of names, because some
+keys. Both live on the `TruthSourceOwner` interface, which is the one place they
+are declared and the question a validator may ask of a class with nothing
+running; `AbstractAgent` implements it, and so does everything else that may hold
+a collection. A map and not a list of names, because some
 claims narrow their operations and a list would need a second constant to say
 so — two ways of saying one thing.
 
@@ -187,14 +193,27 @@ names the table at run time. The project subclass declares it, since it is the
 one that knows its name, and the base declares only what it owns under names of
 its own (not in the code yet — HIL-897).
 
-**The claimant is not an agent at all.** The test-fixture CLI commands register
-under a `TRUTH_SOURCE_ID` of their own — a seed such as `UserTestSeedCommand`
-mutates a table from a process that has no agent — and the chat's bootstrap
-registers the users collection under `test-cli` for the same reason. The answer
-is the same constant on the command class, raised by the runner that starts the
-command (not in the code yet — HIL-896). Not a separate entry for fixtures: that
-would be a second form of the declaration for the sake of its rarest user
-(owner's decision, 2026-09-05).
+**The claimant is not an agent at all.** A test-fixture CLI command such as
+`UserTestSeedCommand` mutates a table from a process that has no agent, and the
+chat's bootstrap writes the users collection for the same reason. Both declare
+it the same way anything else does: `OWNS_DB` on the class, because both
+implement `TruthSourceOwner`. The claim is laid by the runner —
+`TestOnlyCommand::execute()`, which claims for the command class and for
+`Hilos::appClass()` under one id, `TestOnlyCommand::TRUTH_SOURCE_ID`, and takes
+both back in a `finally`. Not a separate entry for fixtures: that would be a
+second form of the declaration for the sake of its rarest user (owner's
+decision, 2026-09-05).
+
+The runner is `execute()` and not `CliManager::run()` because the tests of these
+commands construct one and call `execute()` directly, so a claim raised further
+out would leave a command refused inside its own test; and because CliManager
+runs commands whose process lives on afterwards. The application class is
+claimed beside the command every time, not only for the seed, since splitting it
+by command would be that second form again — the cost is that the project's
+users collection stands claimed for the length of any test-only command, inert
+and released with the rest. Taking the claim back matters even though a CLI
+process dies at once: called from a test, the body returns into a process that
+lives on, and the manual cleanup that used to cover it is gone.
 
 One writer stands outside all three: the daemon master writes a framework
 singleton under `RtTruthSourceRegistry::DAEMON_SOURCE_ID` by its own decision,
@@ -306,7 +325,8 @@ the helpers are removed (not in the code yet — HIL-898).
 
 `composer run test:framework:unit` — ownership read off the class and merged up
 the chain, over each half (`DeclaredDbOwnershipTest`,
-`DeclaredRtOwnershipTest`), the operation axis and the guards on it
+`DeclaredRtOwnershipTest`) and over a claimant that is not an agent
+(`DeclaredCommandOwnershipTest`), the operation axis and the guards on it
 (`TruthSourceRegistryTest`, `AgentTruthSourceOperationsTest`,
 `DbWriteGuardLazyCollectionsTest`), the grants a stop takes back
 (`WorkerManagerStopCleanupTest`), the node-level map of runtime owners

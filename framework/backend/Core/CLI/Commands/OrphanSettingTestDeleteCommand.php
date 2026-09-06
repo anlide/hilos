@@ -6,8 +6,7 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
-use Hilos\Core\TruthSource\TruthSourceKeys;
-use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
@@ -22,11 +21,11 @@ use Hilos\Hilos;
  */
 final class OrphanSettingTestDeleteCommand extends TestOnlyCommand
 {
+    /** @var array<string, list<TruthSourceOperation>> Settings rows this command deletes, claimed for it by its runner */
+    public const array OWNS_DB = [HilosDbContext::settings => TruthSourceOperation::BY_KIND];
+
     /** @var string Catalog key whose example orphan row is removed */
     private const string ORPHAN_KEY = SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING;
-
-    /** @var string Truth-source id this CLI writer registers under (no agent runs in the CLI) */
-    private const string TRUTH_SOURCE_ID = 'test-cli';
 
     public function getName(): string
     {
@@ -68,9 +67,6 @@ HELP;
      */
     protected function run(array $options, array $args): int
     {
-        // The settings collection needs a registered writer; the CLI has no agent, so the command
-        // registers itself as the truth source before mutating (only reachable on the test-only path).
-        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::TRUTH_SOURCE_ID);
         if (isset(Hilos::$db->settings[self::ORPHAN_KEY])) {
             Hilos::$db->settings[self::ORPHAN_KEY]->actions->delete();
             echo "Orphan setting deleted for key '" . self::ORPHAN_KEY . "'.\n";

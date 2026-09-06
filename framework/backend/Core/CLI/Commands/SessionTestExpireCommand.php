@@ -6,8 +6,7 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
-use Hilos\Core\TruthSource\TruthSourceKeys;
-use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -25,8 +24,8 @@ use Hilos\HilosException;
  */
 final class SessionTestExpireCommand extends TestOnlyCommand
 {
-    /** @var string Truth-source id this CLI writer registers under (no agent runs in the CLI) */
-    private const string TRUTH_SOURCE_ID = 'test-cli';
+    /** @var array<string, list<TruthSourceOperation>> Session rows this command ages, claimed for it by its runner */
+    public const array OWNS_DB = [HilosDbContext::sessions => TruthSourceOperation::BY_KIND];
 
     public function getName(): string
     {
@@ -91,9 +90,6 @@ HELP;
             return ExitCode::CONFIG_ERROR;
         }
 
-        // The CLI has no agent-writer for sessions, so the command registers itself as the truth
-        // source before mutating (only reachable on the test-only path, same as test:orphan:*).
-        TruthSourceRegistry::register(HilosDbContext::sessions, TruthSourceKeys::all(), self::TRUTH_SOURCE_ID);
         $session = Hilos::$db->sessions->actions->expireByToken($token);
         if ($session === null) {
             echo "No session for token {$token}\n";
