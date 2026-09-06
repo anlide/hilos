@@ -165,6 +165,44 @@ require re-running them. The normative AA requirements those specs guard are in
 Always **reset before re-running a data-mutating e2e** (`test:e2e-up` does it); see
 the next section.
 
+### A cross-process defect is an e2e defect first
+
+A defect where **two processes see different state** — the master appends an
+agent's log and a worker asks for its size; the daemon and the CLI; two nodes of
+a cluster — is proved on the stand, where both processes are real rather than
+impersonated. That is the default, and it is already how the log tail is tested:
+`demo/chat/tests/e2e/helpers/logs.ts` asks the daemon to append lines over its
+own command channel, the log-store agent writes them, the master files them, and
+the front end reads them through a worker
+(`demo/chat/tests/e2e/tests/logs.spec.ts`). The helper's docblock
+(`demo/chat/tests/e2e/helpers/logs.ts:14`) says why it does not append to the
+file itself: "Appending to the file from here instead would prove only that a
+file grew."
+
+Leave that step only by **naming what e2e cannot see**. There are exactly three
+such reasons, all about observability and none about convenience:
+
+1. the state never leaves the process — a cache inside it, a counter, a
+   descriptor;
+2. the window in which the defect is visible is shorter than one tick of the
+   stand;
+3. the missing participant is an **external service** the stand does not reach.
+
+The third reason leads to the second step, not past it: an external service is
+**impersonated on the stand**, not worked around with a second process. The stand
+gateway (`framework/docker/stand-gateway`) is one container running PHP's
+built-in server on port 18000, and the channel is the path prefix
+(`framework/docker/stand-gateway/src/Router.php`, `SmsRoutes.php`,
+`TelegramRoutes.php`); whatever it catches lands in Mailpit and is read by the
+helpers a spec already uses for a code — `demo/chat/tests/e2e/helpers/sms.ts`
+and `demo/chat/tests/e2e/helpers/telegram.ts`. That inbox is described in
+[architecture/verification-codes.md](architecture/verification-codes.md),
+section "Where a Code Is Read on a Stand".
+
+Only when neither step applies may a unit test spawn a second process, and then
+the reason goes into the test's docblock. What such a test's own tooling erases,
+and which sample to copy, is under [Writing new tests](#writing-new-tests).
+
 ---
 
 ## The full run — one graph, a bounded number of lanes
@@ -319,6 +357,54 @@ ticket for the entries that are genuinely foreign.
   with the fix removed; if it could, it pins nothing. While developing, the cheapest way
   to find out is to break one line of the fix and watch the test go red. That is a
   debugging trick, not a gate — the verdict on a change still comes from one full run.
+- **A second process inside a unit test is the last step of that ladder.** The
+  ladder is "A cross-process defect is an e2e defect first" above: e2e first, the
+  stand gateway when the missing participant is an external service, a second
+  process last. A test that takes the last step says so in its docblock — or in
+  the docblock of the helper that spawns the process — in one sentence naming
+  what e2e could not see and why the stand gateway did not fit. Without that
+  sentence the test reads as chosen for convenience, and the next author copies
+  its form without knowing its price: that is how `exec()` travelled into HIL-874
+  from `framework/tests/Unit/BackupRestoreCommandTest.php:547` and let a case go
+  green on a broken reader.
+
+  The trap the step is written for: **the tool a test uses to watch or arrange
+  what happens can itself destroy the state the test checks.** Measured on PHP
+  8.4.24 in the `hilos-cli-test` container, five probes per condition, one
+  condition at a time (HIL-874). The stat cache is dropped by `exec()`, by
+  `popen()`, by `proc_open()` with pipes on any write into a pipe, by `fopen()`,
+  and by **any PHPUnit assertion** placed between the other process's write and
+  the repeated question about the file. What survives: `proc_open()` **without
+  pipes** plus `proc_close()`, and not one assertion inside the measured window —
+  "the child appended nothing" is asserted after the window, not inside it.
+  `exec()` is not banned as a tool; it is banned as the way to arrange or observe
+  state the test then reads through file metadata. Building a fixture with it
+  stays legitimate, and the suite does so in three places:
+  `framework/tests/Unit/AiToolingInstallerTest.php:234`,
+  `framework/tests/Unit/BackupRestoreCommandTest.php:547`,
+  `framework/tests/Integration/BackupRestorerIntegrationTest.php:677`.
+
+  A fork is a form of its own. The child inherits the live PHPUnit run, so: an
+  immediate `exit()` at the end of the child's branch; not one assertion on the
+  child's path — a red one there does not fail the test, it carries the child to
+  the end of the run and prints a second PHPUnit report; and the wait in
+  `finally`, through `pcntl_waitpid()`. The suite's only carrier of the form is
+  `framework/tests/Unit/AsyncHttpClientTest.php:443` (`serveTlsResponseInChild()`;
+  the `exit` at `:494`, the wait at `:155`). HIL-929 intends to retire that
+  regression test once an e2e through the emulator covers it — the reference
+  shows the form and promises nothing about the file.
+
+  Two samples, and what picks between them. `framework/tests/Unit/OrphanReaperTest.php`
+  (HIL-450) is the sample of **structure**: real children through the
+  framework's `Hilos\Core\Process`, stopped in `tearDown()` (`:41-48`), a
+  readiness barrier instead of a blind sleep, and its own trap of the same kind
+  in the class docblock (`:21-28`). But `Process` opens three pipes by default
+  (`framework/backend/Core/Process.php:100-102`, `:122`), so a test that measures
+  **file metadata** cannot use it; that form is the bare pipeless `proc_open()`
+  of `framework/tests/Unit/Log/LogLineReaderAppendedTest.php:244`
+  (`appendFromAnotherProcess()`, docblock `:226-243`). Measuring the live process
+  table — `Process`; measuring a file's metadata — bare `proc_open()` without
+  pipes.
 - **Time-based features** (grace periods, token/session expiry, digests,
   scheduled rounds/settlement): there is no global clock to mock — see
   `cli/commands.md` § "Time-based features: no universal clock". Add a small,

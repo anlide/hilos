@@ -42,6 +42,9 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
 ## Hard Rules
 
 - Never run `git commit` or `git push`.
+- A unit test may spawn a second process only as the last step of the ladder in
+  `docs/agents/testing.md`, section "A cross-process defect is an e2e defect
+  first", and its docblock must name what stopped e2e and the stand gateway.
 - Never run `phpunit` or `vendor/bin/phpunit` directly from the host.
 - Prefer composer scripts documented in `docs/agents/testing.md`.
 - A step of `test:suite` that goes red while another step was running is not a

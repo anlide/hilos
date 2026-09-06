@@ -13,6 +13,9 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
 
 - The change-type → test-set map and the rare-full-run rule:
   `docs/agents/testing.md`, section "Selective testing — what to run for which change".
+- The ladder for a defect two processes disagree about, and when a unit test may
+  spawn a second process: `docs/agents/testing.md`, section "A cross-process
+  defect is an e2e defect first".
 - The step graph, lanes, and what a red step under concurrency means:
   `docs/agents/testing.md`, section "The full run — one graph, a bounded number of lanes".
 - What a retried test reports, and whose debt it is:
@@ -27,18 +30,22 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
    template, a wire/signal/subscription contract, a topology registry change
    (`Hilos::PAGES` / `AGENTS` / `ACTIONS` / `SIGNALS` / `AGENT_SIGNALS`), an e2e
    spec, or cross-connection behavior.
-2. Run the narrowest set the map prescribes for that class.
-3. Reach for the heavy suites — `test:e2e-full` per demo, the two-window tests, and
+2. A defect where two processes see different state goes down that ladder: e2e
+   first, the stand gateway when the missing participant is an external service,
+   a second process inside a unit test last and only with the reason written in
+   its docblock.
+3. Run the narrowest set the map prescribes for that class.
+4. Reach for the heavy suites — `test:e2e-full` per demo, the two-window tests, and
    the a11y tests (`a11y.spec.ts`) — only for cross-connection behavior (subscription /
    viewport / pending / presence), accessibility changes (ARIA / keyboard / focus), or
    as the pre-merge gate; they are not an inner-loop step.
-4. The full cross-demo pass is `composer run test:frontend:all`, and everything at
+5. The full cross-demo pass is `composer run test:frontend:all`, and everything at
    once is `composer run test:suite`; run either rarely.
-5. Reset before re-running a data-mutating e2e (`test:e2e-up`).
-6. A step that went red while another step was running is not a verdict: re-run it
+6. Reset before re-running a data-mutating e2e (`test:e2e-up`).
+7. A step that went red while another step was running is not a verdict: re-run it
    alone (`php scripts/run-test-suite.php <id> --lanes=1`) on the same HEAD. Green
    alone makes the run inconclusive, not green.
-7. An `=== unstable: ... ===` section at the end of a run names tests that only
+8. An `=== unstable: ... ===` section at the end of a run names tests that only
    passed on a retry. It does not widen the scope you chose: name the test, check
    how long it has flickered, and leave a foreign one to its own ticket.
 
