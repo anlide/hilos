@@ -8,18 +8,16 @@ use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Notification\NotificationSignalName;
-use Hilos\Pages\AbstractHilosNotificationsPage;
 
 /**
- * NotificationsSnapshotSignalData - server → client payload for the notification-center subscribe.
+ * NotificationsSnapshotSignalData - server → client payload for the notification-center join.
  *
- * The initial snapshot the {@see AbstractHilosNotificationsPage} sends
- * when a recipient's connection subscribes (HIL-195): the recent notifications
- * newest-first plus the unread badge count. After the snapshot the list stays
- * live off the per-user group signals {@see NotificationSignalName::CREATED}
- * / {@see NotificationSignalName::READ}, so this payload is
- * sent once per subscribe, not on every change. Each row reuses the
- * {@see NotificationCreatedSignalData} shape rather than a second row shape.
+ * The initial snapshot the per-user group answers a join with (HIL-195, HIL-721): the recent
+ * notifications newest-first plus the unread badge count. After the snapshot the list stays
+ * live off the group signals {@see NotificationSignalName::CREATED} /
+ * {@see NotificationSignalName::READ}, so this payload is sent once per join, not on every
+ * change. Each row reuses the {@see NotificationCreatedSignalData} shape rather than a second
+ * row shape.
  */
 final class NotificationsSnapshotSignalData extends BaseDTO implements SignalDataInterface
 {

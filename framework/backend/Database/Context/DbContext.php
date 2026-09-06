@@ -23,7 +23,6 @@ use Hilos\Database\Exception\View\UnknownLazyStrategyException;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\HilosException;
-use Hilos\Pages\AbstractHilosNotificationsPage;
 use Hilos\Runtime\View\Context\RtContext;
 
 /**
@@ -314,9 +313,10 @@ abstract class DbContext
      *
      * A page nobody subscribes to reads the same way and belongs here for the same reason. It has
      * a class and a name, so {@see AbstractPage::READS_DB} looks like the place - but that list is
-     * taken up when a connection subscribes and this page is never subscribed to, so its actions
-     * run wherever the person happens to be. {@see AbstractHilosNotificationsPage} is the
-     * framework's one of those (HIL-750).
+     * taken up when a connection subscribes, and a page that never is has its actions run
+     * wherever the person happens to be instead (HIL-750). The framework has no page of that kind
+     * left since HIL-860 retired the notification center's one; the rule is here for the projects
+     * that do.
      *
      * The interest is never given back. A seam has no end the way a page subscription or an agent
      * does: it stops being read when the process stops.

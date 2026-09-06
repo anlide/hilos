@@ -12,10 +12,9 @@ use Hilos\Database\Entity\Item\Notification;
 use Hilos\Database\Entity\Item\NotificationPreference;
 use Hilos\Groups\AbstractHilosNotificationsGroup;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
-use Hilos\Pages\AbstractHilosNotificationsPage;
 
 /**
- * Durable notifications: storage, per-user preferences and the notifications page.
+ * Durable notifications: storage, per-user preferences and the bell's live channel.
  *
  * The library agent is required first because it is the only writer (HIL-771): a project that
  * declared the feature and registered no {@see AbstractNotificationsLibraryAgent} has tables
@@ -28,10 +27,11 @@ use Hilos\Pages\AbstractHilosNotificationsPage;
  * project that migrated one and not the other has notifications that fail on the first send
  * rather than a feature it can see is missing.
  *
- * The group is required beside the page because the bell lives on neither: it is fed by the
- * per-user group, and a project that registered the page and forgot the group would have a
- * join that reaches no owner and a bell that never fills - which is exactly the state the two
- * demos without a GROUPS constant were in before this requirement existed.
+ * The group stands on its own since HIL-860 retired the notifications page: the bell lives in
+ * the layout above whatever page the person is on, and the per-user group is the only thing
+ * that feeds it. A project that declared the feature and forgot the group has a join that
+ * reaches no owner and a bell that never fills - which is exactly the state the two demos
+ * without a GROUPS constant were in before this requirement existed.
  */
 final class NotificationsFeature extends FeatureDefinition
 {
@@ -44,13 +44,12 @@ final class NotificationsFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements The library agent, the notifications page and group, and the notification and preference tables
+     * @return FeatureRequirements The library agent, the notifications group, and the notification and preference tables
      */
     public function requirements(): FeatureRequirements
     {
         return new FeatureRequirements(
             requiredAgents: [HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY],
-            requiredPages: [AbstractHilosNotificationsPage::class],
             requiredGroups: [AbstractHilosNotificationsGroup::class],
             requiredDbTables: [Notification::_table, NotificationPreference::_table],
         );

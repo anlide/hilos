@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Database\Context;
 
 use Hilos\Auth\Session\SessionCarrier;
-use Hilos\Core\Page\AbstractPage;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Collection\AuthBlocks as ObjectAuthBlocks;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
@@ -42,7 +41,6 @@ use Hilos\Database\Actions\Item\NotificationActions;
 use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Actions\Item\SettingActions;
 use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
-use Hilos\Pages\AbstractHilosNotificationsPage;
 
 /**
  * HilosDbContext - Framework database context with Hilos-level collections.
@@ -166,13 +164,12 @@ abstract class HilosDbContext extends DbContext
      * everywhere and is the one eager collection of the three, so a worker holding it unaddressed
      * would go on serving the values it started with forever.
      *
-     * Notifications is here for a different reason, and it is the only collection whose reader is
-     * a page ({@see AbstractHilosNotificationsPage}): that page hosts the mark-read actions of the
-     * bell and has no subscription of its own, deliberately, because the connection holds one page
-     * at a time and an always-on subscription would clobber the route page on every navigation.
-     * Its live channel is a group instead. So the actions arrive on whatever page the person is
-     * looking at, in whatever worker serves that connection, and {@see AbstractPage::READS_DB} -
-     * which is taken up when a page is subscribed to - never covers them.
+     * Notifications is here for a different reason, and since HIL-860 it is no longer a page's:
+     * the notification center has no page any more. The collection stays declared because its
+     * readers are several and they live in different workers - the library agent that owns the
+     * rows, the per-user group that answers a join with the snapshot, and the delivery-channel
+     * agent that reads a row as it sends it. Which of them would stop seeing fresh rows without
+     * this entry is a question this leaf does not answer.
      *
      * Named rather than counted: what is here is what the framework is known to read that way,
      * and a seam this list forgets shows up as a refused read rather than as a stale row.

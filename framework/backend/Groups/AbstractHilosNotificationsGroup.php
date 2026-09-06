@@ -18,7 +18,6 @@ use Hilos\Notification\DTO\NotificationCreatedSignalData;
 use Hilos\Notification\DTO\NotificationsSnapshotSignalData;
 use Hilos\Notification\NotificationGroup;
 use Hilos\Notification\NotificationSignalName;
-use Hilos\Pages\AbstractHilosNotificationsPage;
 
 /**
  * Base class for the framework notification group (HIL-721).
@@ -35,7 +34,9 @@ use Hilos\Pages\AbstractHilosNotificationsPage;
  * that existed while any connection could ask to join any recipient's channel.
  *
  * A project activates the feature by extending this group with a `SUBSCRIPTION_AGENT_TYPE` -
- * the agent that owns {@see AbstractHilosNotificationsPage} - and registering it in GROUPS.
+ * the agent that answers a join and builds the snapshot - and registering it in GROUPS. Since
+ * HIL-860 that is all there is to activate: the notification center has no page any more, and
+ * the group stands on its own.
  */
 abstract class AbstractHilosNotificationsGroup extends AbstractGroup
 {

@@ -142,8 +142,8 @@ final class ChatSignalRouterTest extends TestCase
     public function testUnregisteredGroupRoutesToNobody(): void
     {
         // The chat fallback that used to answer here is gone (HIL-721): it sent every
-        // unrecognized group to the chat agent, notifications included, whose page belongs to
-        // the Hilos index agent instead. A join nobody owns is now refused by the master with
+        // unrecognized group to the chat agent, notifications included, which the registry
+        // names an owner for instead. A join nobody owns is now refused by the master with
         // a subscription_group_error rather than delivered to whoever happened to be default.
         $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::WEBSOCKET),
@@ -168,7 +168,7 @@ final class ChatSignalRouterTest extends TestCase
         ));
 
         $this->assertEquals([
-            new AgentDestination(AgentType::HILOS_INDEX),
+            new AgentDestination(AgentType::HILOS_NOTIFICATIONS_LIBRARY),
         ], $destinations);
     }
 

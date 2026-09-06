@@ -38,7 +38,6 @@ use Demo\Polls\Pages\Hilos\PrivacyPage;
 use Demo\Polls\Pages\Hilos\SettingsPage;
 use Demo\Polls\Pages\Hilos\TermsPage;
 use Demo\Polls\Groups\Hilos\NotificationsGroup;
-use Demo\Polls\Pages\Hilos\NotificationsPage;
 use Demo\Polls\Pages\Hilos\Users\UserPage;
 use Demo\Polls\Pages\Hilos\Users\UsersPage;
 use Demo\Polls\Pages\MainPage;
@@ -124,7 +123,6 @@ final class Hilos extends HilosFacade
         LogsSettingsPage::PAGE => LogsSettingsPage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
-        NotificationsPage::PAGE => NotificationsPage::class,
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,

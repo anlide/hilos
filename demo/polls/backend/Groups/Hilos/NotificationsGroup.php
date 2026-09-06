@@ -11,10 +11,11 @@ use Hilos\Groups\AbstractHilosNotificationsGroup;
  * Activates the framework notification group for the demo.
  *
  * The address, the admission and the join snapshot are framework-owned
- * ({@see AbstractHilosNotificationsGroup}); the demo binds only the owner, and it is the
- * agent that owns the notifications page - one owner for the whole feature.
+ * ({@see AbstractHilosNotificationsGroup}); the demo binds only the owner, and since HIL-860
+ * it is the agent that owns the notification rows - the join is answered where the snapshot
+ * is read from, rather than in the admin index agent that serves the dashboard.
  */
 final class NotificationsGroup extends AbstractHilosNotificationsGroup
 {
-    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_NOTIFICATIONS_LIBRARY;
 }

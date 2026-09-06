@@ -29,7 +29,6 @@ use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Pages\AbstractHilosNotificationsPage;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Logger;
 use LogicException;
@@ -134,8 +133,8 @@ abstract class AbstractPage implements ActionHostInterface
      *     the person is looking at something else - is never the subject of a take-up, and a list
      *     here would sit unread. Those reads belong to
      *     {@see DbContext::processWideReadCollections()}, which a project overrides for its own
-     *     such pages exactly as the framework does for
-     *     {@see AbstractHilosNotificationsPage} (HIL-750).
+     *     such pages (HIL-750). The framework itself no longer has one to point at: the
+     *     notification center was the example, and HIL-860 turned it into a group.
      */
     public const array READS_DB = [];
 

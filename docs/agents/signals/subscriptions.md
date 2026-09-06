@@ -143,9 +143,10 @@ of ownership is a reader interest too — is
 
 Nothing reads the declaration at runtime. It is judged by the `PAGE-REACH` guard, which
 reports a page nothing in its chain answers for, an `ACTION_HOST` that still fills
-`READS_DB`, and a common root that answers at all. Exactly one `ACTION_HOST` exists:
-`AbstractHilosNotificationsPage`, which is a page by mistake — the bell lives in the
-application shell and its live channel is the group above — and HIL-860 retires it.
+`READS_DB`, and a common root that answers at all. No `ACTION_HOST` is left in the
+repository: the only one was the notification center, a page by mistake — the bell lives
+in the application shell and its live channel is the group above — and HIL-860 retired
+it. The category stays for the projects that host actions off a page nobody navigates to.
 
 Checked automatically: `PAGE-REACH`, see
 [automated-checks.md](../code-style/automated-checks.md).

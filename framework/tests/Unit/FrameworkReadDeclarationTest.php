@@ -9,7 +9,6 @@ use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Closure;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Database\Context\HilosDbContext;
-use Hilos\Pages\AbstractHilosNotificationsPage;
 use Hilos\Runtime\State\Collection\HilosConnections as StateHilosConnections;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\HilosConnection as StateHilosConnection;
@@ -183,10 +182,12 @@ final class FrameworkReadDeclarationTest extends TestCase
     }
 
     /**
-     * The one whose reader is a page, and the case the e2e of all three demos found:
-     * {@see AbstractHilosNotificationsPage} hosts the mark-read actions of the bell and has no
-     * subscription of its own, so a list on the page is never taken up and every mark-read was
-     * refused in whatever worker served the connection.
+     * The one with several readers in several workers, and the case the e2e of all three demos
+     * found: the bell's rows are reached from the library agent that owns them, from the per-user
+     * group that answers a join, and from the delivery-channel agent that sends them, so no one
+     * page subscription ever took them up and every mark-read was refused in whatever worker
+     * served the connection. The page that used to host those actions is gone (HIL-860); the
+     * declaration is not.
      */
     public function testTheBellsRowsAreDeclaredHereBecauseNoSubscriptionEverTakesThemUp(): void
     {
