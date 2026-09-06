@@ -146,11 +146,13 @@ abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name from the WebSocket envelope
      * @param ActionPayloadDTO $dto Parsed action payload
-     * @return ?ActionReplyDTO Always null, the state travels as the page's own signal
+     * @return ?ActionReplyDTO Always null, the state travels as the page's own signal; the
+     *     sentence the success is spoken with rides the tracked reply the framework builds after
      * @throws AgentUnknownActionException When the action is not supported by this page
      * @throws InvalidActionPayloadException When the action payload does not match the action name
      * @throws TableActionException When the preset is unknown or one of its values is refused
-     * @throws HilosException When the group declaration is unusable or a settings write fails
+     * @throws HilosException When the group declaration is unusable, the applied preset cannot be
+     *     read, or a settings write fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
@@ -272,17 +274,34 @@ abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
      * wrong in words meant for them: the unknown-preset one is otherwise withheld at the wire gate
      * as an internal fault, and one refusal class from one action is easier to answer than two.
      *
+     * The success is spoken, and the sentence depends on which of the screen's two gestures this
+     * was. Applying a preset that is already the selected one is the "put the values back" button,
+     * and it is told apart by what was selected BEFORE the write - afterwards both gestures leave
+     * the same selection behind. The name is therefore read first, off the resolver the apply then
+     * uses, rather than by building a second one over the same group.
+     *
+     * Spoken at all, though the card lights up on its own: on the way back the card was lit
+     * already, and all the screen has to show for the work is a border that changed shade.
+     *
      * @param SettingPresetApplyActionDTO $dto Apply action payload
      * @throws TableActionException When the preset is unknown or one of its values is refused
-     * @throws HilosException When the group declaration is unusable or a settings write fails
+     * @throws HilosException When the group declaration is unusable, the applied preset cannot be
+     *     read, or a settings write fails
      */
     private function handleApply(SettingPresetApplyActionDTO $dto): void
     {
+        $resolver = new SettingPresetResolver(static::presetGroup());
+        $selectedBefore = $resolver->selectedName();
+
         try {
-            new SettingPresetResolver(static::presetGroup())->apply($dto->preset);
+            $resolver->apply($dto->preset);
         } catch (SettingPresetUnknownException | SettingValueRefusedException $e) {
             throw new TableActionException($e->getMessage(), previous: $e);
         }
+
+        $this->setActionSuccessMessage(
+            $selectedBefore === $dto->preset ? "The mode's values are back." : 'The mode is applied.',
+        );
     }
 
     /**

@@ -199,6 +199,27 @@ for freshness in a place that already has a push. After a click, nothing is
 re-requested either: the initiator gets an ack, and the new state is pushed to
 every open tab of the section, the clicker's included.
 
+## Who May Write The Settings A Mode Applies
+
+A section that offers modes writes the settings collection from the process of
+its own agent — the one that serves the section's pages — so that agent has to
+be an owner of the collection. Applying a mode is not a read: it writes a row
+for every key the mode names and the selection under them, and the write guard
+asks who is writing before any of it lands. A section whose agent does not own
+the settings is refused on its very first apply, in every demo and for every
+mode, and the screen shows the refusal it was given
+([truth-source.md](truth-source.md)).
+
+The right narrows to what the section does. Applying writes keys that may have
+no row yet and rewrites the ones that do, so adding and updating are what a
+section claims; clearing a key back to its default belongs to the general
+settings screen and to the agent that serves it. Two sections owning the same
+collection is not a conflict of two writers over one row — each writes from its
+own process, and both write the same table the same way.
+
+How ownership is declared is the one thing this file does not say; it is one
+statement on the agent's class, and the file above owns its form.
+
 ## Anti-Patterns
 
 ```php
@@ -222,6 +243,18 @@ foreach ($group->presets as $preset) {
 
 One hand edit and the mode is gone, with nothing to put back. Store the name
 under the group's selection key and read it from there.
+
+```php
+// Wrong: a section offering modes whose agent does not own the settings.
+final class ReportsAgent extends AbstractHilosAgent
+{
+    // ... nothing said about the settings the reports mode screen writes
+}
+```
+
+The screen renders, the cards light up, and the first click is refused by the
+write guard — the section is asking somebody else's process to answer for its
+own write. The agent serving the section owns the collection its pages write.
 
 ```php
 // Wrong: writing the values around the settings layer.
@@ -259,11 +292,15 @@ only then.
   passes its key's rule (`LogSettingsPresetsTest`), the selection rule
   (`LogPresetNameRuleTest`).
 - `demo/chat` `composer run test:phpunit` — a preset applied through the settings
-  doors, the differences after a hand edit, the revert, the refused unknown name
-  (`SettingPresetApplyTest`), and the topology snapshot that pins the action to
-  its page (`ChatTopologyRegistryTest`).
+  doors, the differences after a hand edit, the revert, the refused unknown name,
+  and the refusal an agent that does not own the settings is given
+  (`SettingPresetApplyTest`, whose cases run as the agent serving the screen),
+  and the topology snapshot that pins the action to its page
+  (`ChatTopologyRegistryTest`).
 - `composer run test:framework:frontend` — the common headless module
   (`framework/frontend/core/test/admin/settings/hilosSettingPresets.test.ts`)
   and the Logs vocabulary (`admin/logs/hilosLogSettings.test.ts`).
 - `demo/polls` e2e `logs.spec.ts` — the logging-modes screen rendered over
-  the live socket and the way out of it into the general settings.
+  the live socket, the way out of it into the general settings, and both
+  gestures clicked through to the success toast the backend words — the values
+  of the chosen mode put back, and another mode applied.

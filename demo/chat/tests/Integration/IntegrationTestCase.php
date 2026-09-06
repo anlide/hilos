@@ -433,8 +433,13 @@ abstract class IntegrationTestCase extends TestCase
      * a running node never does, and which the guard of HIL-716 made visible. The previous id
      * is put back because a case is usually inside one when it calls here.
      *
-     * Used on the LIBRARY dispatches only. The holder's own handlers keep running under the
-     * harness id, because that is who holds this project's runtime claims in a case; moving
+     * Used on the library dispatches and on the actions of admin pages, which reach the guard by
+     * the same road: a page action arrives as a message addressed to the agent that serves the
+     * page, and that agent's id is what the guard reads. A case calling such an action without
+     * this wrapper is judged as nobody, which is the permissive branch of the guard - it is how
+     * the apply of a logging mode passed five integration cases while failing in every browser
+     * (HIL-888). What is NOT wrapped is the holder's own handlers: they keep running under the
+     * harness id, because that is who holds this project's runtime claims in a case, and moving
      * them onto the holder's id is a change to the runtime half and belongs with it.
      *
      * @template TReturn
@@ -443,7 +448,7 @@ abstract class IntegrationTestCase extends TestCase
      * @return TReturn Whatever the handler returned
      * @throws HilosException When the handler fails
      */
-    private function underAgent(AgentInterface $agent, callable $dispatch): mixed
+    protected function underAgent(AgentInterface $agent, callable $dispatch): mixed
     {
         $previous = ExecutionContext::currentAgentId();
         ExecutionContext::setCurrentAgentId($agent->getId());

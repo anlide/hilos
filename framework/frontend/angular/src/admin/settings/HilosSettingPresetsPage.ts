@@ -16,8 +16,10 @@
 // optimistic drawing — a rewrite of several keys can be refused by the rule on any
 // one of them. A refusal shows where the person acted (inside the confirmation when
 // they came through it, above the cards when the click applied at once) and, by the
-// driver's default, as a toast; a success is silent, because the card lighting up
-// is the result itself (toasts.md). Bootstrap classes only (styling-rules.md).
+// driver's default, as a toast; a success speaks too, in a sentence the backend
+// writes, because putting the values back leaves a card that was lit already and
+// changes nothing but the shade of its border (toasts.md). Bootstrap classes only
+// (styling-rules.md).
 import {
   ChangeDetectionStrategy,
   Component,

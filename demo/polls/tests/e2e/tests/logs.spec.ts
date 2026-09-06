@@ -11,8 +11,8 @@ import { gotoPage } from '../helpers/page'
 // tests (ng test is blocked upstream, so the templates are held by the AOT build
 // and by this). What the section DOES — following a tail (HIL-395), rotating and
 // carrying a batch off (HIL-763) — belongs to its own specs and is not asserted
-// here. Nothing is mutated and nothing is typed, so the spec is idempotent across
-// runs on the shared database.
+// here. Nothing is typed, and the one thing that is mutated — the logging mode —
+// is left on the default one, so a re-run finds the section as this one found it.
 
 test('renders every screen of the logs section over the live socket', async ({
   page,
@@ -73,4 +73,49 @@ test('renders every screen of the logs section over the live socket', async ({
   await expect(
     page.getByTestId('hilos-setting-preset-investigation'),
   ).toBeVisible()
+
+  // And the clicks themselves, which are the only writes the section makes: both were
+  // refused until the agent serving this screen owned the settings it writes (HIL-888),
+  // and everything above passed anyway. A stand that has never applied a mode has no
+  // settings rows at all, so the values in force are the node's environment — which is
+  // not what the chosen mode declares - and the chosen card opens with its differences.
+  await expect(page.getByTestId('hilos-setting-preset-differences')).toBeVisible()
+
+  // Putting them back is the gesture the defect was found on, and it asks nothing
+  // first: the card is already the chosen one.
+  const revert = page.getByTestId('hilos-setting-preset-revert')
+  await expect(revert).toBeEnabled()
+  await revert.click()
+  await expect(page.getByTestId('hilos-toast-success')).toContainText(
+    "The mode's values are back.",
+  )
+  await page.getByTestId('hilos-toast-close').click()
+  await expect(page.getByTestId('hilos-toast-success')).toHaveCount(0)
+  // The differences going is the new state arriving over the socket, not a guess about
+  // when it will: the backend answers the action with nothing and pushes the state.
+  await expect(page.getByTestId('hilos-setting-preset-differences')).toHaveCount(0)
+
+  // Choosing another mode, which is the second gesture and the second sentence. With
+  // the values back there is nothing of anyone's own to overwrite, so no confirmation
+  // opens and the card applies at once.
+  const frugal = page.getByTestId('hilos-setting-preset-frugal')
+  await expect(frugal).toBeEnabled()
+  await frugal.click()
+  await expect(page.getByTestId('hilos-toast-success')).toContainText(
+    'The mode is applied.',
+  )
+  await page.getByTestId('hilos-toast-close').click()
+  await expect(page.getByTestId('hilos-toast-success')).toHaveCount(0)
+
+  // Back to the default, because the stand is shared and frugal raises the write
+  // threshold to warnings — every later spec would run against a quieter log. The
+  // chosen card is disabled, so this one becoming clickable is the push arriving.
+  const normal = page.getByTestId('hilos-setting-preset-normal')
+  await expect(normal).toBeEnabled()
+  await normal.click()
+  await expect(page.getByTestId('hilos-toast-success')).toContainText(
+    'The mode is applied.',
+  )
+  await page.getByTestId('hilos-toast-close').click()
+  await expect(frugal).toBeEnabled()
 })
