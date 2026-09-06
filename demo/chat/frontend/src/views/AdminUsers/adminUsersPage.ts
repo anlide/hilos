@@ -35,7 +35,7 @@ export const adminUsersTable = new TableViewportController<HilosUserRow>({
   sendViewport: (descriptor) =>
     connection.sendTableViewport(PAGE_ADMIN_USERS, USERS_TABLE, descriptor),
   pageSize: USERS_PAGE_SIZE,
-  initialSort: { field: 'id', direction: 'asc' },
+  initialOrder: [{ field: 'id', direction: 'asc' }],
 })
 
 const teardown: Array<() => void> = []

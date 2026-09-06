@@ -248,7 +248,7 @@ export function createHilosDeliveriesTable(
       ),
     pageSize: DELIVERIES_PAGE_SIZE,
     initialFilter,
-    initialSort: { field: DELIVERY_CREATED_AT_FIELD, direction: 'desc' },
+    initialOrder: [{ field: DELIVERY_CREATED_AT_FIELD, direction: 'desc' }],
   })
   const teardown: Array<() => void> = []
 

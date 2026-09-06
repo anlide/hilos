@@ -12,6 +12,7 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Row\AbstractTableRow;
@@ -310,21 +311,25 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
      * Turns the window's ordering into the one the row payloads are ordered by.
      *
      * {@see TableSortWhitelist} resolves a wire field into the payload key {@see sortableFields()}
-     * allows it to reach and hands it along as the sort's column, while
-     * {@see InMemoryTableFilter} orders by the sort's FIELD — a name it looks up as an array key of
-     * the row. The two meet here: for four of the five columns the swap changes nothing, and for
+     * allows it to reach and hands it along as each component's column, while
+     * {@see InMemoryTableFilter} orders by a component's FIELD — a name it looks up as an array key
+     * of the row. The two meet here: for four of the five columns the swap changes nothing, and for
      * the growth it is what puts the unknown at the bottom instead of the top.
      *
-     * @param ?TableSortDTO $sort Ordering the window asked for, already through the whitelist
-     * @return ?TableSortDTO Ordering over the payload key, or null when the window asked for none
+     * @param ?TableSortOrderDTO $order Order the window asked for, already through the whitelist
+     * @return ?TableSortOrderDTO Order over the payload keys, or null when the window asked for none
      */
-    private static function orderingSort(?TableSortDTO $sort): ?TableSortDTO
+    private static function orderingSort(?TableSortOrderDTO $order): ?TableSortOrderDTO
     {
-        if ($sort === null) {
+        if ($order === null) {
             return null;
         }
 
-        return new TableSortDTO($sort->column ?? $sort->field, $sort->direction);
+        return $order->withComponents(array_map(
+            static fn(TableSortDTO $component): TableSortDTO
+                => new TableSortDTO($component->column ?? $component->field, $component->direction),
+            $order->components,
+        ));
     }
 
     /**

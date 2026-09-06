@@ -8,7 +8,11 @@
 // placeholder, header, paging, and the pending bar stay framework-owned.
 // (Distinct from HilosTable, the client-side view.) Bootstrap classes only.
 import type { ReactNode } from 'react'
-import type { HilosTableColumn, TableViewportController } from '@hilos/core'
+import type {
+  HilosTableColumn,
+  TableSort,
+  TableViewportController,
+} from '@hilos/core'
 
 import { useSignal } from './useSignal.js'
 
@@ -71,7 +75,7 @@ export function HilosViewportTable<R>({
 }: HilosViewportTableProps<R>) {
   const rows = useSignal(controller.rows)
   const search = useSignal(controller.search)
-  const sort = useSignal(controller.sort)
+  const order = useSignal(controller.order)
   const page = useSignal(controller.page)
   const pageCount = useSignal(controller.pageCount)
   const totalCount = useSignal(controller.totalCount)
@@ -79,12 +83,20 @@ export function HilosViewportTable<R>({
   const loaded = useSignal(controller.loaded)
   const paginated = pageCount > 1
 
+  // The arrow a header carries: every column the order runs by gets one, because
+  // an order of two columns is sorted by both of them and a single arrow would
+  // name one of the two as the whole answer.
+  function sortComponent(key: string): TableSort | undefined {
+    return order?.find((component) => component.field === key)
+  }
+
   function sortIcon(key: string): string {
-    if (sort?.field !== key) {
+    const component = sortComponent(key)
+    if (component === undefined) {
       return 'bi-arrow-down-up text-muted'
     }
 
-    return sort.direction === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down'
+    return component.direction === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down'
   }
 
   // A sortable header reports its current sort state to assistive tech through
@@ -96,11 +108,12 @@ export function HilosViewportTable<R>({
     if (!column.sortable) {
       return undefined
     }
-    if (sort?.field !== column.key) {
+    const component = sortComponent(column.key)
+    if (component === undefined) {
       return 'none'
     }
 
-    return sort.direction === 'asc' ? 'ascending' : 'descending'
+    return component.direction === 'asc' ? 'ascending' : 'descending'
   }
 
   return (

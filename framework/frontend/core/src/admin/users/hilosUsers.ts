@@ -224,7 +224,7 @@ export function createHilosUsersTable<TUser extends HilosUserProfile>(
         descriptor,
       ),
     pageSize: HILOS_USERS_PAGE_SIZE,
-    initialSort: { field: 'id', direction: 'asc' },
+    initialOrder: [{ field: 'id', direction: 'asc' }],
   })
   const teardown: Array<() => void> = []
 

@@ -7,15 +7,17 @@ namespace Hilos\Core\Table\DTO;
 use Hilos\Core\Table\TableConstants;
 
 /**
- * One table window's ordering: which field, which direction.
+ * One component of a table window's order: which field, which direction.
  *
- * The pair travels together or not at all. "No ordering" is the absence of this object (a null
- * sort), so the state "a direction with no field to apply it to" cannot be written down — which
- * is what the flat `sortField` + `sortDirection` pair used to allow, with the empty string
- * standing in for "unsorted" and every consumer left to recognize it.
+ * The pair travels together or not at all, so the state "a direction with no field to apply it
+ * to" cannot be written down — which is what the flat `sortField` + `sortDirection` pair used to
+ * allow, with the empty string standing in for "unsorted" and every consumer left to recognize
+ * it. A component is not the window's order by itself: the order is the sequence of components
+ * a {@see TableSortOrderDTO} holds, and "no ordering" is the absence of that object.
  *
- * The wire form is the nested `{field, direction}` object the frontend already sends; a payload
- * that names no field decodes to null rather than to a sort over nothing.
+ * The wire form is the nested `{field, direction}` object the frontend already sends, one per
+ * entry of the order's list; a payload that names no field decodes to null rather than to a
+ * component over nothing.
  */
 final readonly class TableSortDTO
 {

@@ -334,7 +334,7 @@ describe('action send', () => {
 })
 
 describe('table viewport send', () => {
-  it('frames a table viewport with its filter and sort while connected', () => {
+  it('frames a table viewport with its filter and order while connected', () => {
     const { connection } = createConnection()
     connection.connect()
     const socket = MockWebSocket.last
@@ -342,7 +342,7 @@ describe('table viewport send', () => {
 
     const sent = connection.sendTableViewport('hilos_settings', 'settings', {
       filter: { search: 'theme' },
-      sort: { field: 'key', direction: 'asc' },
+      sort: [{ field: 'key', direction: 'asc' }],
       limit: 10,
       anchor: { key: 'theme.dark' },
       anchorDirection: 'before',
@@ -358,8 +358,32 @@ describe('table viewport send', () => {
       anchor: { key: 'theme.dark' },
       anchorDirection: 'before',
       filter: { search: 'theme' },
-      sort: { field: 'key', direction: 'asc' },
+      sort: [{ field: 'key', direction: 'asc' }],
     })
+  })
+
+  it('an order of more than one column rides as the list of its components', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.open()
+
+    connection.sendTableViewport('p', 't', {
+      filter: {},
+      sort: [
+        { field: 'channel', direction: 'desc' },
+        { field: 'createdAt', direction: 'desc' },
+      ],
+      limit: 10,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
+    })
+
+    expect(JSON.parse(socket.sent.at(-1) as string).sort).toEqual([
+      { field: 'channel', direction: 'desc' },
+      { field: 'createdAt', direction: 'desc' },
+    ])
   })
 
   it('a jump travels as a page index and nothing else', () => {
@@ -388,7 +412,7 @@ describe('table viewport send', () => {
     })
   })
 
-  it('omits an empty filter and a null sort', () => {
+  it('omits an empty filter and an order with nothing in it', () => {
     const { connection } = createConnection()
     connection.connect()
     const socket = MockWebSocket.last
@@ -411,6 +435,26 @@ describe('table viewport send', () => {
       anchor: null,
       anchorDirection: 'after',
     })
+  })
+
+  it('omits an order that is an empty list, the same as a null one', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.open()
+
+    connection.sendTableViewport('p', 't', {
+      filter: {},
+      sort: [],
+      limit: 10,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
+    })
+
+    // An empty list is no order, and the server reads it as one — but a frame that
+    // never carries the key says so without asking the other side to notice.
+    expect(JSON.parse(socket.sent.at(-1) as string)).not.toHaveProperty('sort')
   })
 
   it('sends nothing unless connected', () => {

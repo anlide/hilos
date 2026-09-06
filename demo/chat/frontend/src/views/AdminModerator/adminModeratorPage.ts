@@ -74,7 +74,7 @@ export const moderatorPiecesTable =
         descriptor,
       ),
     pageSize: PIECES_PAGE_SIZE,
-    initialSort: { field: 'id', direction: 'asc' },
+    initialOrder: [{ field: 'id', direction: 'asc' }],
   })
 
 const teardown: Array<() => void> = []

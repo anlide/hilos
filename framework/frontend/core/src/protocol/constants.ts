@@ -112,7 +112,7 @@ export const FIELD_TABLE_KEY = 'tableKey'
 /** Viewport frame key carrying the filter map (PHP `SignalPayloadConstants::FIELD_FILTER`). */
 export const FIELD_FILTER = 'filter'
 
-/** Viewport frame key carrying the sort `{field, direction}` (PHP `SignalPayloadConstants::FIELD_SORT`). */
+/** Viewport frame key carrying the order as a list of `{field, direction}` (PHP `SignalPayloadConstants::FIELD_SORT`). */
 export const FIELD_SORT = 'sort'
 
 /** Viewport frame key carrying the window limit (PHP `SignalPayloadConstants::FIELD_LIMIT`). */

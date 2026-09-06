@@ -212,7 +212,7 @@ export function createHilosLogWorkersTable(
       ),
     pageSize: WORKERS_PAGE_SIZE,
     initialFilter,
-    initialSort: { field: WORKER_BYTES_FIELD, direction: 'desc' },
+    initialOrder: [{ field: WORKER_BYTES_FIELD, direction: 'desc' }],
   })
   const teardown: Array<() => void> = []
 

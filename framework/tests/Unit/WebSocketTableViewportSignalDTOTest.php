@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
@@ -24,7 +25,7 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
             page: 'hilos_settings',
             tableKey: 'settings',
             filter: ['search' => 'theme'],
-            sort: new TableSortDTO('key', TableConstants::ORDER_DESC),
+            sort: TableSortOrderDTO::of(new TableSortDTO('key', TableConstants::ORDER_DESC)),
             limit: 10,
             anchor: new TableAnchorDTO(['key' => 'theme.dark']),
             anchorDirection: TableAnchorDirection::Before,
@@ -36,7 +37,7 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
         $this->assertSame('hilos_settings', $restored->page);
         $this->assertSame('settings', $restored->tableKey);
         $this->assertSame(['search' => 'theme'], $restored->filter);
-        $this->assertEquals(new TableSortDTO('key', TableConstants::ORDER_DESC), $restored->sort);
+        $this->assertEquals(TableSortOrderDTO::of(new TableSortDTO('key', TableConstants::ORDER_DESC)), $restored->sort);
         $this->assertSame(10, $restored->limit);
         $this->assertSame(['key' => 'theme.dark'], $restored->anchor?->toArray());
         $this->assertSame(TableAnchorDirection::Before, $restored->anchorDirection);
@@ -78,16 +79,22 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
         ]);
     }
 
-    public function testSortRidesAsNestedFieldDirection(): void
+    public function testOrderRidesAsAListOfNestedFieldDirections(): void
     {
         $array = new WebSocketTableViewportSignalDTO(
             acceptKey: 'ak',
             tableKey: 't',
-            sort: new TableSortDTO('name', TableConstants::ORDER_ASC),
+            sort: TableSortOrderDTO::of(
+                new TableSortDTO('channel', TableConstants::ORDER_ASC),
+                new TableSortDTO('name', TableConstants::ORDER_ASC),
+            ),
         )->toArray();
 
         $this->assertSame(
-            ['field' => 'name', 'direction' => TableConstants::ORDER_ASC],
+            [
+                ['field' => 'channel', 'direction' => TableConstants::ORDER_ASC],
+                ['field' => 'name', 'direction' => TableConstants::ORDER_ASC],
+            ],
             $array[WebSocketTableViewportSignalDTO::SORT],
         );
     }
@@ -149,7 +156,39 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
             WebSocketTableViewportSignalDTO::ACCEPT_KEY => 'ak',
             WebSocketTableViewportSignalDTO::TABLE_KEY => 't',
             WebSocketTableViewportSignalDTO::LIMIT => 10,
-            WebSocketTableViewportSignalDTO::SORT => [TableSortDTO::DIRECTION => TableConstants::ORDER_DESC],
+            WebSocketTableViewportSignalDTO::SORT => [[TableSortDTO::DIRECTION => TableConstants::ORDER_DESC]],
+        ]);
+
+        $this->assertNull($dto->sort);
+    }
+
+    public function testAnEmptyOrderDecodesToNoOrderRatherThanToABrokenFrame(): void
+    {
+        // The SDK sends the list it has, and a window with nothing to order by has an
+        // empty one; refusing the frame would close the connection over saying so.
+        $dto = WebSocketTableViewportSignalDTO::fromArray([
+            WebSocketTableViewportSignalDTO::ACCEPT_KEY => 'ak',
+            WebSocketTableViewportSignalDTO::TABLE_KEY => 't',
+            WebSocketTableViewportSignalDTO::LIMIT => 10,
+            WebSocketTableViewportSignalDTO::SORT => [],
+        ]);
+
+        $this->assertNull($dto->sort);
+    }
+
+    public function testAnOrderRidingAsASingleObjectDecodesToNoOrder(): void
+    {
+        // The frame before this leaf carried one `{field, direction}` object rather than a
+        // list of them. A client still sending that asks for an order this side cannot read,
+        // and the window it gets is the table's own — not a closed connection.
+        $dto = WebSocketTableViewportSignalDTO::fromArray([
+            WebSocketTableViewportSignalDTO::ACCEPT_KEY => 'ak',
+            WebSocketTableViewportSignalDTO::TABLE_KEY => 't',
+            WebSocketTableViewportSignalDTO::LIMIT => 10,
+            WebSocketTableViewportSignalDTO::SORT => [
+                TableSortDTO::FIELD => 'name',
+                TableSortDTO::DIRECTION => TableConstants::ORDER_DESC,
+            ],
         ]);
 
         $this->assertNull($dto->sort);

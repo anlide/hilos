@@ -368,15 +368,17 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * Query a page of objects from DB with search, sort and keyset pagination.
      * Loaded objects are merged into $this->objects (common storage).
      *
-     * The sort field is held against the entity's own columns here as well as at the table
+     * The order's fields are held against the entity's own columns here as well as at the table
      * boundary: this is where a name becomes an SQL identifier, so it answers for itself
      * rather than trusting whoever built the query. A field that is no column of this entity
-     * leaves the page in the table's default order.
+     * leaves the page in the table's default order, and takes the rest of its order with it.
      *
-     * Every order is settled by the entity's primary key, in the direction of the sorted
-     * column: without it a column with repeats leaves two neighbouring pages free to show
-     * one row twice and another not at all. With no sort at all the key alone orders the
-     * page ascending, so the default is unambiguous too.
+     * The order runs by its components in the sequence they were asked for, and is settled by
+     * the entity's primary key in the direction of the last of them: without the key a column
+     * with repeats leaves two neighbouring pages free to show one row twice and another not at
+     * all, and a key running the other way to the column before it would need an index nobody
+     * would think to build. With no order at all the key alone orders the page ascending, so
+     * the default is unambiguous too.
      *
      * The window is taken from an anchor, so a page costs the same at any depth and a row
      * deleted above the window no longer shifts it. Paging back inverts the order and turns
@@ -416,17 +418,21 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         }
 
         $orderBy = [];
-        $sort = TableSortWhitelist::resolve(
+        $order = TableSortWhitelist::resolve(
             $query->sort,
             array_combine($entityClass::_columns, $entityClass::_columns),
             $entityClass,
         );
         $tieBreakerDirection = SqlSortDirection::ASC;
-        if ($sort !== null) {
-            $tieBreakerDirection = $sort->direction === TableConstants::ORDER_DESC
+        if ($order !== null) {
+            foreach ($order->components as $component) {
+                $orderBy[$component->column ?? $component->field] = $component->direction === TableConstants::ORDER_DESC
+                    ? SqlSortDirection::DESC
+                    : SqlSortDirection::ASC;
+            }
+            $tieBreakerDirection = $order->last()->direction === TableConstants::ORDER_DESC
                 ? SqlSortDirection::DESC
                 : SqlSortDirection::ASC;
-            $orderBy[$sort->column ?? $sort->field] = $tieBreakerDirection;
         }
         $primaryColumns = is_array($entityClass::_primary) ? $entityClass::_primary : [$entityClass::_primary];
         foreach ($primaryColumns as $primaryColumn) {

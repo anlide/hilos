@@ -306,7 +306,7 @@ export function createHilosLogRotationsTable(
       ),
     pageSize: ROTATIONS_PAGE_SIZE,
     initialFilter,
-    initialSort: { field: ROTATION_BATCH_AT_FIELD, direction: 'desc' },
+    initialOrder: [{ field: ROTATION_BATCH_AT_FIELD, direction: 'desc' }],
   })
   const teardown: Array<() => void> = []
 

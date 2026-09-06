@@ -1408,7 +1408,7 @@ export function createHilosBackupsTable(
         descriptor,
       ),
     pageSize: HILOS_BACKUPS_PAGE_SIZE,
-    initialSort: { field: BACKUP_CREATED_AT_FIELD, direction: 'desc' },
+    initialOrder: [{ field: BACKUP_CREATED_AT_FIELD, direction: 'desc' }],
   })
   const teardown: Array<() => void> = []
 
@@ -1487,7 +1487,7 @@ export function createHilosBackupsCircleTable(
         descriptor,
       ),
     pageSize: HILOS_BACKUP_CIRCLE_PAGE_SIZE,
-    initialSort: { field: BACKUP_CIRCLE_IDENTIFIER_FIELD, direction: 'asc' },
+    initialOrder: [{ field: BACKUP_CIRCLE_IDENTIFIER_FIELD, direction: 'asc' }],
   })
   const teardown: Array<() => void> = []
 

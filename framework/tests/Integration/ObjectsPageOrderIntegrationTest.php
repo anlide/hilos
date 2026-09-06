@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -85,7 +86,7 @@ final class ObjectsPageOrderIntegrationTest extends FrameworkIntegrationTestCase
      */
     public function testWalkingEveryPageOfARepeatedColumnShowsEachRowExactlyOnce(): void
     {
-        $keys = $this->walkPages(new TableSortDTO(PageOrderTestRow::state, TableConstants::ORDER_ASC));
+        $keys = $this->walkPages(TableSortOrderDTO::of(new TableSortDTO(PageOrderTestRow::state, TableConstants::ORDER_ASC)));
 
         self::assertSame([2, 4, 6, 1, 3, 5], $keys);
     }
@@ -100,7 +101,7 @@ final class ObjectsPageOrderIntegrationTest extends FrameworkIntegrationTestCase
      */
     public function testTheTieBreakerFollowsTheDirectionOfTheSortedColumn(): void
     {
-        $keys = $this->walkPages(new TableSortDTO(PageOrderTestRow::state, TableConstants::ORDER_DESC));
+        $keys = $this->walkPages(TableSortOrderDTO::of(new TableSortDTO(PageOrderTestRow::state, TableConstants::ORDER_DESC)));
 
         self::assertSame([5, 3, 1, 6, 4, 2], $keys);
     }
@@ -124,12 +125,12 @@ final class ObjectsPageOrderIntegrationTest extends FrameworkIntegrationTestCase
      * Each page is asked for from the boundary of the one before it, which is how a client pages
      * now: two statements again, and the order has to hold between them for the same reason.
      *
-     * @param ?TableSortDTO $sort Ordering to ask each page for, or null to ask for none
+     * @param ?TableSortOrderDTO $order Order to ask each page for, or null to ask for none
      * @return list<int> Row keys across all pages, in the order the pages delivered them
      * @throws DatabaseException When a page query fails
      * @throws InvalidArgumentException When an order direction is rejected
      */
-    private function walkPages(?TableSortDTO $sort): array
+    private function walkPages(?TableSortOrderDTO $order): array
     {
         $objects = PageOrderTestObjects::initEmpty();
 
@@ -137,7 +138,7 @@ final class ObjectsPageOrderIntegrationTest extends FrameworkIntegrationTestCase
         $anchor = null;
         do {
             $page = $objects->queryPage(new TableQueryDTO(
-                sort: $sort,
+                sort: $order,
                 limit: self::PAGE_SIZE,
                 anchor: $anchor,
             ));

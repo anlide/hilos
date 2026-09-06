@@ -53,7 +53,11 @@ a **viewport descriptor**. It has two forms, and a frame carries exactly one:
 { page, tableKey, filter, sort, limit, pageIndex }                 a jump
 ```
 
-`anchor` is an open map of the sort key's values, the primary key included;
+`sort` is the order the window runs in: the **list** of its `{field, direction}`
+components in the sequence they apply, one of them for a click on a column header
+and more for an order the table declared. An empty list and a missing key both
+mean no order. `anchor` is an open map of the sort key's values, the primary key
+included;
 `anchorDirection` is `after` or `before`; `anchor: null` asks for the edge the
 direction points away from — the start of the set with `after`, its end with
 `before`. There is **no** `offset` in either form, and a frame carrying both
@@ -372,7 +376,7 @@ and everything below is addressed to the one connection it concerns:
 
 | Frame | Direction | Carries |
 |---|---|---|
-| `table_viewport` | client → server | `page`, `tableKey`, `filter`, `sort`, `limit`, and then either `anchor` + `anchorDirection` or `pageIndex` — never both |
+| `table_viewport` | client → server | `page`, `tableKey`, `filter`, `sort` (a **list** of `{field, direction}`, in the sequence they apply), `limit`, and then either `anchor` + `anchorDirection` or `pageIndex` — never both |
 | `table_window` | server → client, reply only | `page`, `tableKey`, `rows`, `limit`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor` |
 | `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed`), `rowKey`, `row` |
 | `table_viewport_append` | server → client, live | `page`, `tableKey`, `row`, `totalCount`, `totalExact`, `pageCount` — sent **only** when the row's place is the end of the window and the window has room |

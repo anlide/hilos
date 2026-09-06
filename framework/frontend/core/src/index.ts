@@ -66,6 +66,7 @@ export {
   TableViewportController,
   type SortDirection,
   type TableSort,
+  type TableSortOrder,
   type TableViewportControllerOptions,
   type TableViewportRow,
   type TableViewportDelta,

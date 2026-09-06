@@ -51,7 +51,7 @@ final class SignalPayloadConstants
     /** @var string Payload field key for a table viewport filter map */
     public const string FIELD_FILTER = 'filter';
 
-    /** @var string Payload field key for a table viewport sort ({field, direction}) */
+    /** @var string Payload field key for a table viewport order (list of {field, direction}) */
     public const string FIELD_SORT = 'sort';
 
     /** @var string Payload field key for a table viewport limit */

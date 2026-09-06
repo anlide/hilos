@@ -25,6 +25,7 @@ import type {
   HilosTableColumn,
   ReadonlySignal,
   TableSort,
+  TableSortOrder,
   TableViewportController,
   TableViewportRow,
 } from '@hilos/core'
@@ -239,7 +240,7 @@ export class HilosViewportTable<R> {
 
   protected readonly rows = signal<readonly TableViewportRow<R>[]>([])
   protected readonly search = signal('')
-  protected readonly sort = signal<TableSort | undefined>(undefined)
+  protected readonly order = signal<TableSortOrder | undefined>(undefined)
   protected readonly page = signal(0)
   protected readonly pageCount = signal(1)
   protected readonly totalCount = signal(0)
@@ -273,7 +274,7 @@ export class HilosViewportTable<R> {
       const subscriptions = [
         bind(controller.rows, this.rows),
         bind(controller.search, this.search),
-        bind(controller.sort, this.sort),
+        bind(controller.order, this.order),
         bind(controller.page, this.page),
         bind(controller.pageCount, this.pageCount),
         bind(controller.totalCount, this.totalCount),
@@ -288,13 +289,20 @@ export class HilosViewportTable<R> {
     })
   }
 
+  // The arrow a header carries: every column the order runs by gets one, because
+  // an order of two columns is sorted by both of them and a single arrow would
+  // name one of the two as the whole answer.
+  protected sortComponent(key: string): TableSort | undefined {
+    return this.order()?.find((component) => component.field === key)
+  }
+
   protected sortIcon(key: string): string {
-    const sort = this.sort()
-    if (sort?.field !== key) {
+    const component = this.sortComponent(key)
+    if (component === undefined) {
       return 'bi-arrow-down-up text-muted'
     }
 
-    return sort.direction === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down'
+    return component.direction === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down'
   }
 
   // A sortable header reports its current sort state to assistive tech through
@@ -306,12 +314,12 @@ export class HilosViewportTable<R> {
     if (!column.sortable) {
       return undefined
     }
-    const sort = this.sort()
-    if (sort?.field !== column.key) {
+    const component = this.sortComponent(column.key)
+    if (component === undefined) {
       return 'none'
     }
 
-    return sort.direction === 'asc' ? 'ascending' : 'descending'
+    return component.direction === 'asc' ? 'ascending' : 'descending'
   }
 
   protected onSearchInput(event: Event): void {

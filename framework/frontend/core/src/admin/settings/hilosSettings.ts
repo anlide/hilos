@@ -221,7 +221,7 @@ export function createHilosSettingsTable(
         descriptor,
       ),
     pageSize: SETTINGS_PAGE_SIZE,
-    initialSort: { field: SETTING_KEY_FIELD, direction: 'asc' },
+    initialOrder: [{ field: SETTING_KEY_FIELD, direction: 'asc' }],
   })
   const teardown: Array<() => void> = []
 

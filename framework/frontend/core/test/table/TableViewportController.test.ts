@@ -2,17 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { type TableViewportDescriptor } from '../../src/connection/HilosConnection.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
 import {
-  type TableSort,
+  type TableSortOrder,
   TableViewportController,
 } from '../../src/table/TableViewportController.js'
 
-function makeController(pageSize = 10, initialSort?: TableSort) {
+function makeController(pageSize = 10, initialOrder?: TableSortOrder) {
   const sent: TableViewportDescriptor[] = []
   const controller = new TableViewportController<TableRow>({
     resolve: (row) => row,
     sendViewport: (descriptor) => sent.push(descriptor),
     pageSize,
-    initialSort,
+    initialOrder,
   })
 
   return { controller, sent }
@@ -117,32 +117,31 @@ describe('TableViewportController', () => {
     const { controller, sent } = makeController()
     controller.setSort('key')
     expect(sent.at(-1)).toMatchObject({
-      sort: { field: 'key', direction: 'asc' },
+      sort: [{ field: 'key', direction: 'asc' }],
     })
     controller.setSort('key')
     expect(sent.at(-1)).toMatchObject({
-      sort: { field: 'key', direction: 'desc' },
+      sort: [{ field: 'key', direction: 'desc' }],
     })
   })
 
   it('setSort cycles ascending, descending, then back to the table initial sort', () => {
-    const { controller, sent } = makeController(10, {
-      field: 'id',
-      direction: 'asc',
-    })
+    const { controller, sent } = makeController(10, [
+      { field: 'id', direction: 'asc' },
+    ])
     controller.setSort('name')
     expect(sent.at(-1)).toMatchObject({
-      sort: { field: 'name', direction: 'asc' },
-    })
-
-    controller.setSort('name')
-    expect(sent.at(-1)).toMatchObject({
-      sort: { field: 'name', direction: 'desc' },
+      sort: [{ field: 'name', direction: 'asc' }],
     })
 
     controller.setSort('name')
     expect(sent.at(-1)).toMatchObject({
-      sort: { field: 'id', direction: 'asc' },
+      sort: [{ field: 'name', direction: 'desc' }],
+    })
+
+    controller.setSort('name')
+    expect(sent.at(-1)).toMatchObject({
+      sort: [{ field: 'id', direction: 'asc' }],
     })
   })
 
@@ -163,19 +162,18 @@ describe('TableViewportController', () => {
   })
 
   it('setSort never repeats the shown state on the initially sorted column', () => {
-    const { controller, sent } = makeController(10, {
-      field: 'created',
-      direction: 'desc',
-    })
+    const { controller, sent } = makeController(10, [
+      { field: 'created', direction: 'desc' },
+    ])
     controller.start()
     controller.setSort('created')
     expect(sent.at(-1)).toMatchObject({
-      sort: { field: 'created', direction: 'asc' },
+      sort: [{ field: 'created', direction: 'asc' }],
     })
 
     controller.setSort('created')
     expect(sent.at(-1)).toMatchObject({
-      sort: { field: 'created', direction: 'desc' },
+      sort: [{ field: 'created', direction: 'desc' }],
     })
 
     const sorts = sent.map((descriptor) => JSON.stringify(descriptor.sort))
@@ -184,24 +182,84 @@ describe('TableViewportController', () => {
     ).toEqual([])
   })
 
-  it('resetSort returns to the initial sort and the first page', () => {
-    const { controller, sent } = makeController(10, {
-      field: 'id',
-      direction: 'asc',
-    })
+  it('resetOrder returns to the initial order and the first page', () => {
+    const { controller, sent } = makeController(10, [
+      { field: 'id', direction: 'asc' },
+    ])
     controller.ingestWindow([], 50, null, null) // 5 pages of 10
     controller.setSort('name')
     controller.setPage(2)
-    controller.resetSort()
+    controller.resetOrder()
 
     expect(sent.at(-1)).toEqual({
       filter: {},
-      sort: { field: 'id', direction: 'asc' },
+      sort: [{ field: 'id', direction: 'asc' }],
       limit: 10,
       anchor: null,
       anchorDirection: 'after',
       pageIndex: null,
     })
+  })
+
+  it('setOrder sends a declared order whole and returns to the first page', () => {
+    const { controller, sent } = makeController()
+    controller.ingestWindow([], 50, null, null) // 5 pages of 10
+    controller.setPage(2)
+    controller.setOrder([
+      { field: 'channel', direction: 'desc' },
+      { field: 'created', direction: 'desc' },
+    ])
+
+    expect(sent.at(-1)).toEqual({
+      filter: {},
+      sort: [
+        { field: 'channel', direction: 'desc' },
+        { field: 'created', direction: 'desc' },
+      ],
+      limit: 10,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
+    })
+    expect(controller.page.get()).toBe(0)
+  })
+
+  it('a header click leaves a composite order rather than adding to it', () => {
+    const { controller, sent } = makeController()
+    controller.setOrder([
+      { field: 'channel', direction: 'desc' },
+      { field: 'created', direction: 'desc' },
+    ])
+    controller.setSort('channel')
+
+    // The backend serves only orders a table declared, so a click that added a
+    // column to the order would ask for one nobody offered.
+    expect(sent.at(-1)).toMatchObject({
+      sort: [{ field: 'channel', direction: 'asc' }],
+    })
+  })
+
+  it('reports the orders the table declares in the sequence a menu offers them', () => {
+    const declaredOrders = [
+      [
+        { field: 'channel', direction: 'desc' },
+        { field: 'created', direction: 'desc' },
+      ],
+    ] as const
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: () => {},
+      pageSize: 10,
+      declaredOrders,
+    })
+
+    expect(controller.orders).toEqual(declaredOrders)
+  })
+
+  it('a table declaring no orders reports an empty list rather than nothing', () => {
+    const { controller } = makeController()
+
+    expect(controller.orders).toEqual([])
   })
 
   it('setPage asks for the page by number, clamped to the page count', () => {

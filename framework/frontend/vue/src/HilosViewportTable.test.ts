@@ -14,6 +14,12 @@ const COLUMNS: HilosTableColumn[] = [
   { key: 'name', label: 'Name', sortable: true },
 ]
 
+// A second sortable column, for the one test about an order that runs by two.
+const TWO_COLUMNS: HilosTableColumn[] = [
+  { key: 'name', label: 'Name', sortable: true },
+  { key: 'id', label: 'Id', sortable: true },
+]
+
 // The controller is typed as unknown so the slot/controller line up with the
 // generic SFC, whose `R` @vue/test-utils does not infer from the prop value.
 function makeController(): {
@@ -33,9 +39,10 @@ function makeController(): {
 function mountTable(
   controller: TableViewportController<unknown>,
   searchable = false,
+  columns: HilosTableColumn[] = COLUMNS,
 ) {
   return mount(HilosViewportTable, {
-    props: { controller, columns: COLUMNS, searchable },
+    props: { controller, columns, searchable },
     slots: {
       row: (props: { row: unknown; rowKey: string }) =>
         h('td', { class: 'cell' }, (props.row as Row).name),
@@ -68,8 +75,25 @@ describe('HilosViewportTable', () => {
     await wrapper.find('[data-id="hilos-table-sort-name"]').trigger('click')
 
     expect(sent.at(-1)).toMatchObject({
-      sort: { field: 'name', direction: 'asc' },
+      sort: [{ field: 'name', direction: 'asc' }],
     })
+  })
+
+  it('marks every column an order of two runs by, not just the first', async () => {
+    const { controller } = makeController()
+    controller.setOrder([
+      { field: 'name', direction: 'desc' },
+      { field: 'id', direction: 'desc' },
+    ])
+    const wrapper = mountTable(controller, false, TWO_COLUMNS)
+    await wrapper.vm.$nextTick()
+
+    // Sorted by both columns means an arrow on both: one arrow would name one of
+    // the two as the whole answer.
+    const arrows = wrapper.findAll('th i.bi')
+
+    expect(arrows).toHaveLength(2)
+    expect(arrows.every((arrow) => arrow.classes('bi-arrow-down'))).toBe(true)
   })
 
   it('shows the apply button with the pending count and applies in place', async () => {

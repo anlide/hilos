@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Log;
 
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
@@ -148,7 +149,7 @@ final class HilosLogKeysTableTest extends TestCase
         ));
 
         $rows = $this->rows(new TableQueryDTO(
-            sort: new TableSortDTO(HilosLogKeysTableRow::growthPerDay, TableConstants::ORDER_DESC),
+            sort: TableSortOrderDTO::of(new TableSortDTO(HilosLogKeysTableRow::growthPerDay, TableConstants::ORDER_DESC)),
         ));
 
         $this->assertSame(

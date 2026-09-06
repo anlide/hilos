@@ -68,7 +68,7 @@ describe('HilosViewportTable', () => {
     )
 
     expect(sent.at(-1)).toMatchObject({
-      sort: { field: 'name', direction: 'asc' },
+      sort: [{ field: 'name', direction: 'asc' }],
     })
   })
 

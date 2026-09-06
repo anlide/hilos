@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Tables\Communications;
 
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
@@ -116,7 +117,7 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
         self::assertSame(
             ' ORDER BY nd.attempts ASC, nd.id ASC',
             $table->exposedBuildOrderBy(new TableQueryDTO(
-                sort: $this->resolvedSort($table, new TableSortDTO('attempts', TableConstants::ORDER_ASC)),
+                sort: $this->resolvedOrder($table, new TableSortDTO('attempts', TableConstants::ORDER_ASC)),
             )),
         );
     }
@@ -126,13 +127,29 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
         $table = $this->table();
 
         ob_start();
-        $sort = $this->resolvedSort($table, new TableSortDTO('note` DESC, (SELECT 1)'));
+        $sort = $this->resolvedOrder($table, new TableSortDTO('note` DESC, (SELECT 1)'));
         ob_end_clean();
 
         self::assertNull($sort);
         self::assertSame(
             ' ORDER BY nd.created_at DESC, nd.id DESC',
             $table->exposedBuildOrderBy(new TableQueryDTO(sort: $sort)),
+        );
+    }
+
+    public function testOrderByRunsEveryComponentAndSettlesOnTheLastOnesDirection(): void
+    {
+        $table = $this->table();
+
+        self::assertSame(
+            ' ORDER BY nd.channel ASC, nd.attempts ASC, nd.id ASC',
+            $table->exposedBuildOrderBy(new TableQueryDTO(
+                sort: $this->resolvedOrder(
+                    $table,
+                    new TableSortDTO('channel', TableConstants::ORDER_ASC),
+                    new TableSortDTO('attempts', TableConstants::ORDER_ASC),
+                ),
+            )),
         );
     }
 
@@ -157,15 +174,20 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
     }
 
     /**
-     * Runs a requested sort through the table's own map, the way getPage() does before the query.
+     * Runs a requested order through the table's own map, the way getPage() does before the query.
      *
      * @param HilosNotificationDeliveriesTable $table Table whose map decides
-     * @param TableSortDTO $sort Sort as the window requested it
-     * @return ?TableSortDTO Sort carrying its allowed column, or null when the table does not sort by it
+     * @param TableSortDTO ...$components Components of the order as the window requested it
+     * @return ?TableSortOrderDTO Order carrying its allowed columns, or null when the table does not
+     *     sort by one of its fields
      */
-    private function resolvedSort(HilosNotificationDeliveriesTable $table, TableSortDTO $sort): ?TableSortDTO
+    private function resolvedOrder(HilosNotificationDeliveriesTable $table, TableSortDTO ...$components): ?TableSortOrderDTO
     {
-        return TableSortWhitelist::resolve($sort, $table->exposedSortableFields(), $table::class);
+        return TableSortWhitelist::resolve(
+            TableSortOrderDTO::of(...$components),
+            $table->exposedSortableFields(),
+            $table::class,
+        );
     }
 
     /**

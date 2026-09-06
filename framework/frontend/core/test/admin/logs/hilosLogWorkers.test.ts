@@ -141,10 +141,9 @@ describe('the worker table descriptor', () => {
 
     expect(sent).toHaveLength(1)
     expect(sent[0].tableKey).toBe('hilosLogWorkers')
-    expect(sent[0].descriptor.sort).toEqual({
-      field: WORKER_BYTES_FIELD,
-      direction: 'desc',
-    })
+    expect(sent[0].descriptor.sort).toEqual([
+      { field: WORKER_BYTES_FIELD, direction: 'desc' },
+    ])
     expect(sent[0].descriptor.limit).toBe(25)
   })
 
@@ -166,10 +165,9 @@ describe('the worker table descriptor', () => {
 
     table.controller.setSort('key')
 
-    expect(sent.at(-1)?.descriptor.sort).toEqual({
-      field: 'key',
-      direction: 'asc',
-    })
+    expect(sent.at(-1)?.descriptor.sort).toEqual([
+      { field: 'key', direction: 'asc' },
+    ])
   })
 })
 

@@ -9,17 +9,19 @@ use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the sort gate {@see TableDefinition::getPage()} runs (HIL-561).
+ * Unit tests for the sort gate {@see TableDefinition::getPage()} runs (HIL-561, HIL-789).
  *
  * The gate is placed where every table's row source is reached from, so what the tests
  * inspect is the query the concrete table is handed: a declared field arrives with the
- * column it may order by, a field the table does not sort by does not arrive at all, and
+ * column it may order by, a field the table does not sort by does not arrive at all, an
+ * order of more than one column arrives only if the table offered that very order, and
  * everything else about the window is passed on untouched.
  */
 final class TableDefinitionSortGateTest extends TestCase
@@ -28,13 +30,16 @@ final class TableDefinitionSortGateTest extends TestCase
     {
         $table = new SortGateUnitTable([SortGateUnitRow::LABEL => 'row_label']);
 
-        $table->getPage(new TableQueryDTO(sort: new TableSortDTO(SortGateUnitRow::LABEL, TableConstants::ORDER_DESC)));
+        $table->getPage(new TableQueryDTO(
+            sort: TableSortOrderDTO::of(new TableSortDTO(SortGateUnitRow::LABEL, TableConstants::ORDER_DESC)),
+        ));
 
-        $sort = $table->received?->sort;
-        self::assertNotNull($sort);
-        self::assertSame(SortGateUnitRow::LABEL, $sort->field);
-        self::assertSame(TableConstants::ORDER_DESC, $sort->direction);
-        self::assertSame('row_label', $sort->column);
+        $order = $table->received?->sort;
+        self::assertNotNull($order);
+        $component = $order->last();
+        self::assertSame(SortGateUnitRow::LABEL, $component->field);
+        self::assertSame(TableConstants::ORDER_DESC, $component->direction);
+        self::assertSame('row_label', $component->column);
     }
 
     public function testAFieldTheTableDoesNotSortByLeavesTheWindowInItsDefaultOrder(): void
@@ -42,7 +47,7 @@ final class TableDefinitionSortGateTest extends TestCase
         $table = new SortGateUnitTable([SortGateUnitRow::LABEL => 'row_label']);
 
         ob_start();
-        $table->getPage(new TableQueryDTO(sort: new TableSortDTO('label` DESC, (SELECT 1)')));
+        $table->getPage(new TableQueryDTO(sort: TableSortOrderDTO::of(new TableSortDTO('label` DESC, (SELECT 1)'))));
         ob_end_clean();
 
         // No sort at all rather than a sort the table cannot serve: the concrete query
@@ -57,7 +62,7 @@ final class TableDefinitionSortGateTest extends TestCase
 
         $table->getPage(new TableQueryDTO(
             search: 'alpha',
-            sort: new TableSortDTO(SortGateUnitRow::LABEL),
+            sort: TableSortOrderDTO::of(new TableSortDTO(SortGateUnitRow::LABEL)),
             limit: 10,
             filter: ['channel' => 'email'],
             anchor: new TableAnchorDTO([SortGateUnitRow::KEY => 'a']),
@@ -75,13 +80,89 @@ final class TableDefinitionSortGateTest extends TestCase
     public function testATableThatDeclaresNoSortableFieldsSortsAsItAlwaysHas(): void
     {
         $table = new SortGateUnitTable();
-        $sort = new TableSortDTO(SortGateUnitRow::LABEL);
+        $order = TableSortOrderDTO::of(new TableSortDTO(SortGateUnitRow::LABEL));
 
-        $table->getPage(new TableQueryDTO(sort: $sort));
+        $table->getPage(new TableQueryDTO(sort: $order));
 
         // Its rows are ordered in PHP, where the field is an array key and no identifier
         // is built from it, so the gate has nothing to protect and does not interfere.
-        self::assertSame($sort, $table->received?->sort);
+        self::assertSame($order, $table->received?->sort);
+    }
+
+    public function testADeclaredOrderReachesTheQueryWithAColumnUnderEveryComponent(): void
+    {
+        $table = new SortGateUnitTable(
+            [SortGateUnitRow::LABEL => 'row_label', SortGateUnitRow::CHANNEL => 'row_channel'],
+            ['channelThenLabel' => self::channelThenLabel()],
+        );
+
+        $table->getPage(new TableQueryDTO(sort: self::channelThenLabel()));
+
+        $order = $table->received?->sort;
+        self::assertNotNull($order);
+        self::assertSame([SortGateUnitRow::CHANNEL, SortGateUnitRow::LABEL], array_map(
+            static fn(TableSortDTO $component): string => $component->field,
+            $order->components,
+        ));
+        self::assertSame(['row_channel', 'row_label'], array_map(
+            static fn(TableSortDTO $component): ?string => $component->column,
+            $order->components,
+        ));
+    }
+
+    public function testAnOrderTheTableNeverOfferedIsRejectedWholeAndLogged(): void
+    {
+        $table = new SortGateUnitTable(
+            [SortGateUnitRow::LABEL => 'row_label', SortGateUnitRow::CHANNEL => 'row_channel'],
+            ['channelThenLabel' => self::channelThenLabel()],
+        );
+
+        ob_start();
+        $table->getPage(new TableQueryDTO(sort: TableSortOrderDTO::of(
+            new TableSortDTO(SortGateUnitRow::LABEL, TableConstants::ORDER_DESC),
+            new TableSortDTO(SortGateUnitRow::CHANNEL, TableConstants::ORDER_DESC),
+        )));
+        $logged = (string) ob_get_clean();
+
+        // Both fields are sortable on their own; the pair of them in this sequence is not
+        // an order this table promised an index for, so the window keeps its default order.
+        self::assertNotNull($table->received);
+        self::assertNull($table->received->sort);
+        self::assertStringContainsString('Table sort order rejected', $logged);
+    }
+
+    public function testADeclarationMixingDirectionsIsPassedOverAsThoughItWereNotWritten(): void
+    {
+        $mixed = TableSortOrderDTO::of(
+            new TableSortDTO(SortGateUnitRow::CHANNEL, TableConstants::ORDER_ASC),
+            new TableSortDTO(SortGateUnitRow::LABEL, TableConstants::ORDER_DESC),
+        );
+        $table = new SortGateUnitTable(
+            [SortGateUnitRow::LABEL => 'row_label', SortGateUnitRow::CHANNEL => 'row_channel'],
+            ['mixed' => $mixed],
+        );
+
+        ob_start();
+        $table->getPage(new TableQueryDTO(sort: $mixed));
+        $logged = (string) ob_get_clean();
+
+        // An index direction is neither declared nor checked on this side (HIL-901), so the
+        // declaration would promise an index nothing stands behind.
+        self::assertNotNull($table->received);
+        self::assertNull($table->received->sort);
+        self::assertStringContainsString('Table sort order declaration ignored', $logged);
+        self::assertStringContainsString('mixed-directions', $logged);
+    }
+
+    /**
+     * @return TableSortOrderDTO The one composite order the test tables declare
+     */
+    private static function channelThenLabel(): TableSortOrderDTO
+    {
+        return TableSortOrderDTO::of(
+            new TableSortDTO(SortGateUnitRow::CHANNEL, TableConstants::ORDER_DESC),
+            new TableSortDTO(SortGateUnitRow::LABEL, TableConstants::ORDER_DESC),
+        );
     }
 }
 
@@ -93,12 +174,17 @@ final class SortGateUnitTable extends TableDefinition
     /** @var array<string, string> Sortable fields this table declares */
     private array $declaredSortableFields;
 
+    /** @var array<string, TableSortOrderDTO> Composite orders this table declares */
+    private array $declaredSortOrders;
+
     /**
      * @param array<string, string> $declaredSortableFields Sortable fields the table declares
+     * @param array<string, TableSortOrderDTO> $declaredSortOrders Composite orders the table declares
      */
-    public function __construct(array $declaredSortableFields = [])
+    public function __construct(array $declaredSortableFields = [], array $declaredSortOrders = [])
     {
         $this->declaredSortableFields = $declaredSortableFields;
+        $this->declaredSortOrders = $declaredSortOrders;
 
         parent::__construct();
     }
@@ -120,6 +206,14 @@ final class SortGateUnitTable extends TableDefinition
     }
 
     /**
+     * @return array<string, TableSortOrderDTO> Composite orders injected by the test
+     */
+    protected function sortOrders(): array
+    {
+        return $this->declaredSortOrders;
+    }
+
+    /**
      * Records the query the gate produced and answers with one fixed row.
      *
      * @param TableQueryDTO $query Window query as the gate left it
@@ -130,7 +224,7 @@ final class SortGateUnitTable extends TableDefinition
         $this->received = $query;
 
         return new TableSnapshotDTO(
-            rows: [[SortGateUnitRow::KEY => 'a', SortGateUnitRow::LABEL => 'Alpha']],
+            rows: [[SortGateUnitRow::KEY => 'a', SortGateUnitRow::LABEL => 'Alpha', SortGateUnitRow::CHANNEL => 'email']],
             totalCount: 1,
             limit: $query->limit,
         );
@@ -145,9 +239,13 @@ final class SortGateUnitRow extends AbstractTableRow
     /** Row field: the one field the test table declares sortable. */
     public const string LABEL = 'label';
 
+    /** Row field: the second field a composite order is declared over. */
+    public const string CHANNEL = 'channel';
+
     public function __construct(
         public readonly string $key,
         public readonly string $label,
+        public readonly string $channel,
     ) {
     }
 
@@ -175,6 +273,7 @@ final class SortGateUnitRow extends AbstractTableRow
         return [
             self::KEY => $this->key,
             self::LABEL => $this->label,
+            self::CHANNEL => $this->channel,
         ];
     }
 
@@ -187,6 +286,7 @@ final class SortGateUnitRow extends AbstractTableRow
         return new static(
             (string) $data[self::KEY],
             (string) $data[self::LABEL],
+            (string) $data[self::CHANNEL],
         );
     }
 }

@@ -226,7 +226,7 @@ export function createHilosLogKeysTable(
       ),
     pageSize: KEYS_PAGE_SIZE,
     initialFilter,
-    initialSort: { field: KEY_BYTES_FIELD, direction: 'desc' },
+    initialOrder: [{ field: KEY_BYTES_FIELD, direction: 'desc' }],
   })
   const teardown: Array<() => void> = []
 

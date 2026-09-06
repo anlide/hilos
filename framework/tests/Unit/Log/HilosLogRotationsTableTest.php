@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Log;
 use Hilos\Constants\LogRotationConstants;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
@@ -401,12 +402,12 @@ final class HilosLogRotationsTableTest extends TestCase
         );
 
         $byWeight = $this->rows(new TableQueryDTO(
-            sort: new TableSortDTO(HilosLogRotationsTableRow::bytes, TableConstants::ORDER_ASC),
+            sort: TableSortOrderDTO::of(new TableSortDTO(HilosLogRotationsTableRow::bytes, TableConstants::ORDER_ASC)),
         ));
         $this->assertSame([400, 3_600], array_map(static fn($row): int => $row->bytes, $byWeight));
 
         $byNode = $this->rows(new TableQueryDTO(
-            sort: new TableSortDTO(HilosLogRotationsTableRow::node, TableConstants::ORDER_ASC),
+            sort: TableSortOrderDTO::of(new TableSortDTO(HilosLogRotationsTableRow::node, TableConstants::ORDER_ASC)),
         ));
         $this->assertSame(['node-1', 'node-2'], array_map(static fn($row): ?string => $row->node, $byNode));
     }

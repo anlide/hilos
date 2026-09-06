@@ -301,12 +301,13 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     /**
      * Reads the window's ordering as the delivery columns it runs by, defaulting to newest first.
      *
-     * The sort arrives resolved: {@see TableDefinition::getPage()} has held it against
-     * {@see sortableFields()} and either attached the column it may order by or dropped it,
-     * so a sort with no column here is a window that asked for none.
+     * The order arrives resolved: {@see TableDefinition::getPage()} has held it against
+     * {@see sortableFields()} and either attached the column each component may order by or
+     * dropped the whole of it, so an order whose components carry no column is a window that
+     * asked for none.
      *
-     * The delivery id settles the order in the direction the sorted column runs, so one index
-     * over both columns serves either direction by being scanned backwards. Fixing the id to
+     * The delivery id settles the order in the direction its last component runs, so one index
+     * over the columns serves either direction by being scanned backwards. Fixing the id to
      * descending would instead ask the server for two columns running opposite ways, which no
      * single index answers. The same total key is what the window's anchor is read against.
      *
@@ -319,17 +320,29 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
      */
     protected function orderColumns(TableQueryDTO $query): array
     {
-        $sort = $query->sort;
-        $column = $sort?->column === null ? null : self::SORT_COLUMNS[$sort->field] ?? null;
-        if ($column === null) {
+        $order = $query->sort;
+        if ($order === null) {
             return self::DEFAULT_ORDER;
         }
 
-        $direction = $sort->direction === TableConstants::ORDER_ASC
+        $orderColumns = [];
+        foreach ($order->components as $component) {
+            $column = $component->column === null ? null : self::SORT_COLUMNS[$component->field] ?? null;
+            if ($column === null) {
+                return self::DEFAULT_ORDER;
+            }
+
+            $orderColumns[$column] = $component->direction === TableConstants::ORDER_ASC
+                ? SqlSortDirection::ASC
+                : SqlSortDirection::DESC;
+        }
+
+        $tieBreakerDirection = $order->last()->direction === TableConstants::ORDER_ASC
             ? SqlSortDirection::ASC
             : SqlSortDirection::DESC;
+        $orderColumns[EntityNotificationDelivery::id] ??= $tieBreakerDirection;
 
-        return [$column => $direction, EntityNotificationDelivery::id => $direction];
+        return $orderColumns;
     }
 
     /**

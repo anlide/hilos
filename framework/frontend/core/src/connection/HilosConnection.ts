@@ -88,8 +88,11 @@ export type TableAnchorDirection = 'after' | 'before'
 
 /**
  * The window a connection requests for one table: an open filter map the table
- * resolves, an optional sort, the window size, and where the window sits. Sent over
+ * resolves, an optional order, the window size, and where the window sits. Sent over
  * {@link HilosConnection.sendTableViewport}.
+ *
+ * The order is the list of its components in the sequence they apply — one of them for
+ * a click on a column header, more for an order the table declared.
  *
  * The window is addressed one of two ways and the frame carries one of them. Paging
  * names an anchor and the side to run to, and costs the same at any depth. A jump to a
@@ -97,10 +100,12 @@ export type TableAnchorDirection = 'after' | 'before'
  */
 export interface TableViewportDescriptor {
   readonly filter: Record<string, unknown>
-  readonly sort: {
-    readonly field: string
-    readonly direction: 'asc' | 'desc'
-  } | null
+  readonly sort:
+    | readonly {
+        readonly field: string
+        readonly direction: 'asc' | 'desc'
+      }[]
+    | null
   readonly limit: number
   readonly anchor: TableAnchor | null
   readonly anchorDirection: TableAnchorDirection
@@ -625,7 +630,8 @@ export class HilosConnection {
 
   /**
    * Send a table viewport frame — `{type:'table_viewport', page, tableKey,
-   * filter?, sort?, limit, and either anchor + anchorDirection or pageIndex}` —
+   * filter?, sort?, limit, and either anchor + anchorDirection or pageIndex}`, the
+   * order riding as the list of its components —
    * declaring the window this connection wants for one table. The server replies a
    * table_window snapshot and scopes live deltas to the delivered rows. Returns false,
    * sending nothing, unless the connection is `connected`, like {@link send}.
@@ -635,7 +641,7 @@ export class HilosConnection {
    *
    * @param page The page the table belongs to.
    * @param tableKey The table key the viewport scopes.
-   * @param descriptor The window descriptor (filter, sort, size, address).
+   * @param descriptor The window descriptor (filter, order, size, address).
    */
   sendTableViewport(
     page: string,
@@ -657,7 +663,7 @@ export class HilosConnection {
     if (Object.keys(descriptor.filter).length > 0) {
       frame[FIELD_FILTER] = descriptor.filter
     }
-    if (descriptor.sort !== null) {
+    if (descriptor.sort !== null && descriptor.sort.length > 0) {
       frame[FIELD_SORT] = descriptor.sort
     }
 

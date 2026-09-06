@@ -72,7 +72,7 @@ export const botsTable = new TableViewportController<BotRow>({
   sendViewport: (descriptor) =>
     connection.sendTableViewport(PAGE_ADMIN_BOTS, BOTS_TABLE, descriptor),
   pageSize: BOTS_PAGE_SIZE,
-  initialSort: { field: 'name', direction: 'asc' },
+  initialOrder: [{ field: 'name', direction: 'asc' }],
 })
 
 const teardown: Array<() => void> = []

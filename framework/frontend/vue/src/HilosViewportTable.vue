@@ -9,7 +9,11 @@ pending bar stay framework-owned. (Distinct from HilosTable, the client-side
 view.) -->
 <script setup lang="ts" generic="R">
 import { computed } from 'vue'
-import type { HilosTableColumn, TableViewportController } from '@hilos/core'
+import type {
+  HilosTableColumn,
+  TableSort,
+  TableViewportController,
+} from '@hilos/core'
 
 import { useSignal } from './useSignal.js'
 
@@ -51,7 +55,7 @@ const props = withDefaults(
 
 const rows = useSignal(props.controller.rows)
 const search = useSignal(props.controller.search)
-const sort = useSignal(props.controller.sort)
+const order = useSignal(props.controller.order)
 const page = useSignal(props.controller.page)
 const pageCount = useSignal(props.controller.pageCount)
 const totalCount = useSignal(props.controller.totalCount)
@@ -76,12 +80,20 @@ function pendingClass(pending: 'update' | 'remove' | null): string | undefined {
   return pending ? PENDING_ROW_CLASS[pending] : undefined
 }
 
+// The arrow a header carries: every column the order runs by gets one, because
+// an order of two columns is sorted by both of them and a single arrow would
+// name one of the two as the whole answer.
+function sortComponent(key: string): TableSort | undefined {
+  return order.value?.find((component) => component.field === key)
+}
+
 function sortIcon(key: string): string {
-  if (sort.value?.field !== key) {
+  const component = sortComponent(key)
+  if (component === undefined) {
     return 'bi-arrow-down-up text-muted'
   }
 
-  return sort.value.direction === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down'
+  return component.direction === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down'
 }
 
 // A sortable header reports its current sort state to assistive tech through
@@ -93,11 +105,12 @@ function ariaSort(
   if (!column.sortable) {
     return undefined
   }
-  if (sort.value?.field !== column.key) {
+  const component = sortComponent(column.key)
+  if (component === undefined) {
     return 'none'
   }
 
-  return sort.value.direction === 'asc' ? 'ascending' : 'descending'
+  return component.direction === 'asc' ? 'ascending' : 'descending'
 }
 
 function onSearchInput(event: Event): void {

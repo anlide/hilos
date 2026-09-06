@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Router;
 
 use Hilos\Core\Table\DTO\TableAnchorDTO;
-use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 
@@ -41,7 +41,7 @@ final class TableViewportSubscription
     /**
      * @param string $tableKey Table the viewport scopes
      * @param array<string, mixed> $filter Open filter map, resolved to a query by the concrete table
-     * @param ?TableSortDTO $sort Requested ordering, or null for backend arrival order
+     * @param ?TableSortOrderDTO $sort Requested order, or null for backend arrival order
      * @param int $limit Window size (TableConstants::NO_LIMIT = all rows)
      * @param ?TableAnchorDTO $anchor Place the window was asked from, or null for the edge of the set
      * @param TableAnchorDirection $anchorDirection Side of the anchor, and which edge a null anchor means
@@ -50,7 +50,7 @@ final class TableViewportSubscription
     public function __construct(
         public readonly string $tableKey,
         public readonly array $filter = [],
-        public readonly ?TableSortDTO $sort = null,
+        public readonly ?TableSortOrderDTO $sort = null,
         public readonly int $limit = TableConstants::NO_LIMIT,
         public readonly ?TableAnchorDTO $anchor = null,
         public readonly TableAnchorDirection $anchorDirection = TableAnchorDirection::After,

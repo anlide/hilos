@@ -24,6 +24,7 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\DTO\TableViewportAppendDTO;
 use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
@@ -265,7 +266,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $viewport = new TableViewportSubscription(
             tableKey: ViewportDeltaUnitTable::TABLE,
             limit: 10,
-            sort: new TableSortDTO('key', TableConstants::ORDER_ASC),
+            sort: TableSortOrderDTO::of(new TableSortDTO('key', TableConstants::ORDER_ASC)),
         );
         $viewport->recordWindow(self::windowOf(['alpha', 'gamma']), 2, null, null);
         $context = $this->bootWithViewport(

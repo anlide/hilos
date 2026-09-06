@@ -9,7 +9,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
-use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Socket\Client\WebSocketClient;
@@ -23,8 +23,10 @@ use Hilos\Socket\WebSocket\Exception\InvalidFrameException;
  * wants for one table on its current page; the server answers with a table
  * window snapshot and remembers the delivered row-ids for live deltas.
  *
- * The sort rides the wire as a nested `{field, direction}` object and is held here as one
- * {@see TableSortDTO}, null when the window asked for no ordering.
+ * The order rides the wire as a list of nested `{field, direction}` objects, in the sequence
+ * they apply, and is held here as one {@see TableSortOrderDTO}, null when the window asked for
+ * no ordering. An empty list is no ordering too: the frame is what an SDK sends when it has
+ * none to report, so it is not a malformed frame.
  *
  * The window is addressed one of two ways and the frame carries one of them: an anchor with the
  * side it is taken from, or the index of a page to jump to. A frame carrying both is refused
@@ -51,7 +53,7 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
      * @param ?string $page Page the table belongs to, null when the signal name carries it
      * @param string $tableKey Table key the viewport scopes
      * @param array<string, mixed> $filter Open filter map resolved by the concrete table
-     * @param ?TableSortDTO $sort Requested ordering, or null for backend arrival order
+     * @param ?TableSortOrderDTO $sort Requested order, or null for backend arrival order
      * @param int $limit Window size (TableConstants::NO_LIMIT = all rows)
      * @param ?TableAnchorDTO $anchor Place the window is taken from, or null for the edge of the set
      * @param TableAnchorDirection $anchorDirection Side of the anchor, and which edge a null anchor means
@@ -62,7 +64,7 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
         public readonly ?string $page = null,
         public readonly string $tableKey = '',
         public readonly array $filter = [],
-        public readonly ?TableSortDTO $sort = null,
+        public readonly ?TableSortOrderDTO $sort = null,
         public readonly int $limit = TableConstants::NO_LIMIT,
         public readonly ?TableAnchorDTO $anchor = null,
         public readonly TableAnchorDirection $anchorDirection = TableAnchorDirection::After,
@@ -146,7 +148,7 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
             page: $page === '' ? null : $page,
             tableKey: self::requireString($data, self::TABLE_KEY),
             filter: self::optionalArray($data, self::FILTER) ?? [],
-            sort: TableSortDTO::fromWire($data[self::SORT] ?? null),
+            sort: TableSortOrderDTO::fromWire($data[self::SORT] ?? null),
             limit: self::requireInt($data, self::LIMIT),
             anchor: $anchor,
             anchorDirection: $direction === null

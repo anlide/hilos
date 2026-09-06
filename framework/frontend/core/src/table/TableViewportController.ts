@@ -30,29 +30,47 @@ import {
 /** Sort direction for the active sort field. */
 export type SortDirection = 'asc' | 'desc'
 
-/** The active sort: which field, which direction. */
+/** One component of the active order: which field, which direction. */
 export interface TableSort {
   readonly field: string
   readonly direction: SortDirection
 }
 
+/**
+ * The order a window runs in: its components in the sequence they apply, the
+ * first one deciding. An order of one component is a click on a column header;
+ * an order of more is one the table declared, picked whole.
+ */
+export type TableSortOrder = readonly TableSort[]
+
 /** Generic filter-map key the search box writes; matches the backend `FILTER_KEY_SEARCH`. */
 const SEARCH_FILTER_KEY = 'search'
 
 /**
- * Whether two sort states are the same state of the table — an absent sort (a
- * table opened without an initial sort) is a state of its own, equal only to
- * another absent sort.
+ * Whether two orders are the same state of the table — the same fields in the
+ * same directions in the same sequence. An absent order (a table opened without
+ * an initial one) is a state of its own, equal only to another absent order.
  *
  * @param one The state to compare.
  * @param other The state to compare it with.
- * @returns True when both name the same field and direction, or both are absent.
+ * @returns True when both run by the same components, or both are absent.
  */
-function isSameSort(
-  one: TableSort | undefined,
-  other: TableSort | undefined,
+function isSameOrder(
+  one: TableSortOrder | undefined,
+  other: TableSortOrder | undefined,
 ): boolean {
-  return one?.field === other?.field && one?.direction === other?.direction
+  if (one === undefined || other === undefined) {
+    return one === other
+  }
+
+  return (
+    one.length === other.length &&
+    one.every(
+      (component, index) =>
+        component.field === other[index]?.field &&
+        component.direction === other[index]?.direction,
+    )
+  )
 }
 
 /**
@@ -137,14 +155,24 @@ export interface TableViewportControllerOptions<R> {
   pageSize: number
   /** Initial filter map; empty by default. */
   initialFilter?: Record<string, unknown>
-  /** Initial sort; none by default (the backend's arrival order). */
-  initialSort?: TableSort
+  /** Initial order; none by default (the backend's arrival order). */
+  initialOrder?: TableSortOrder
+  /**
+   * Orders of more than one column this table declares, in the sequence the
+   * "Order" menu offers them. The backend holds a composite order against the
+   * very same list, so an order absent from here is one no window will be
+   * served in.
+   *
+   * SCAFFOLD: no table declares one yet, and no view reads them — the "Order"
+   * menu that offers them is HIL-802 (Vue) and HIL-811 (React, Angular).
+   */
+  declaredOrders?: readonly TableSortOrder[]
 }
 
 export class TableViewportController<R> implements TableWindowSink {
   private readonly filterSignal: WritableSignal<Record<string, unknown>>
 
-  private readonly sortSignal: WritableSignal<TableSort | undefined>
+  private readonly orderSignal: WritableSignal<TableSortOrder | undefined>
 
   private readonly pageSignal = createSignal(0)
 
@@ -214,7 +242,9 @@ export class TableViewportController<R> implements TableWindowSink {
     this.filterSignal = createSignal<Record<string, unknown>>({
       ...(options.initialFilter ?? {}),
     })
-    this.sortSignal = createSignal<TableSort | undefined>(options.initialSort)
+    this.orderSignal = createSignal<TableSortOrder | undefined>(
+      options.initialOrder,
+    )
     this.searchSignal = computedSignal(() => {
       const value = this.filterSignal.get()[SEARCH_FILTER_KEY]
 
@@ -248,9 +278,18 @@ export class TableViewportController<R> implements TableWindowSink {
     return this.searchSignal
   }
 
-  /** The active sort, or `undefined` when unsorted. */
-  get sort(): ReadonlySignal<TableSort | undefined> {
-    return this.sortSignal
+  /** The active order, or `undefined` when unsorted. */
+  get order(): ReadonlySignal<TableSortOrder | undefined> {
+    return this.orderSignal
+  }
+
+  /**
+   * The orders of more than one column this table declares, in menu sequence.
+   *
+   * SCAFFOLD: read by the "Order" menu, which is HIL-802 and HIL-811.
+   */
+  get orders(): readonly TableSortOrder[] {
+    return this.options.declaredOrders ?? []
   }
 
   /** The current zero-based page index. */
@@ -320,48 +359,68 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /**
    * Sort by a field — a cycle of three states on the clicked field: ascending,
-   * descending, then the sort the table opened with (no initial sort means the
+   * descending, then the order the table opened with (no initial order means the
    * backend's own order). Which state comes next is read from the state on
    * display, not from a click count: a state already on display is skipped, so
    * the column the table opened sorted by has no dead click, and clicking any
    * other column starts its cycle at ascending. Return to the first page, then
    * request the new window.
    *
+   * A click always leaves an order of one column, so it is also how a composite
+   * order is left: the mockup gives the header that job, and a click that added
+   * a column to the order would be the free builder the backend refuses to serve.
+   *
    * @param field The field key to sort by.
    */
   setSort(field: string): void {
-    const current = this.sortSignal.get()
-    const cycle: readonly (TableSort | undefined)[] = [
-      { field, direction: 'asc' },
-      { field, direction: 'desc' },
-      this.options.initialSort,
+    const current = this.orderSignal.get()
+    const cycle: readonly (TableSortOrder | undefined)[] = [
+      [{ field, direction: 'asc' }],
+      [{ field, direction: 'desc' }],
+      this.options.initialOrder,
     ]
-    const shown = cycle.findIndex((state) => isSameSort(state, current))
+    const shown = cycle.findIndex((state) => isSameOrder(state, current))
     const next = cycle.findIndex(
-      (state, position) => position > shown && !isSameSort(state, current),
+      (state, position) => position > shown && !isSameOrder(state, current),
     )
     const state = next < 0 ? cycle[0] : cycle[next]
-    if (isSameSort(state, this.options.initialSort)) {
+    if (isSameOrder(state, this.options.initialOrder)) {
       // The cycle came home, and coming home is one operation however it was
       // asked for — through the last click of the cycle here, or through the
       // reset a page offers on its own.
-      this.resetSort()
+      this.resetOrder()
 
       return
     }
-    this.sortSignal.set(state)
+    this.orderSignal.set(state)
     this.resetAddress()
     this.changeWindow()
   }
 
   /**
-   * Return to the sort the table opened with — for a table without an initial
-   * sort that is no sort at all, the backend's own order — return to the first
-   * page, then request the new window. The last click of a column's cycle
-   * arrives here; a page is free to call it from a reset control of its own.
+   * Run the window in one of the orders the table declares. The order is taken
+   * whole — the reader picks it from the list rather than assembling it — and the
+   * backend holds it against that same list before any of it reaches a query.
+   * Return to the first page, then request the new window.
+   *
+   * SCAFFOLD: called by the "Order" menu, which is HIL-802 and HIL-811.
+   *
+   * @param order The order to run the window in.
    */
-  resetSort(): void {
-    this.sortSignal.set(this.options.initialSort)
+  setOrder(order: TableSortOrder): void {
+    this.orderSignal.set(order)
+    this.resetAddress()
+    this.changeWindow()
+  }
+
+  /**
+   * Return to the order the table opened with — for a table without an initial
+   * one that is no order at all, the backend's own — return to the first page,
+   * then request the new window. The last click of a column's cycle arrives
+   * here; a page is free to call it from a reset control of its own.
+   */
+  resetOrder(): void {
+    this.orderSignal.set(this.options.initialOrder)
     this.resetAddress()
     this.changeWindow()
   }
@@ -720,13 +779,19 @@ export class TableViewportController<R> implements TableWindowSink {
     this.pendingKindSignal.set(pendingKinds)
   }
 
-  /** The viewport descriptor for the current filter, sort, size and address. */
+  /** The viewport descriptor for the current filter, order, size and address. */
   private descriptor(): TableViewportDescriptor {
-    const sort = this.sortSignal.get()
+    const order = this.orderSignal.get()
 
     return {
       filter: { ...this.filterSignal.get() },
-      sort: sort ? { field: sort.field, direction: sort.direction } : null,
+      sort:
+        order === undefined
+          ? null
+          : order.map((component) => ({
+              field: component.field,
+              direction: component.direction,
+            })),
       limit: this.pageSize,
       anchor: this.anchor,
       anchorDirection: this.anchorDirection,

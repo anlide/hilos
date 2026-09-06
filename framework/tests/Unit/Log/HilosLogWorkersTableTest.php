@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Log;
 
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
@@ -169,7 +170,7 @@ final class HilosLogWorkersTableTest extends TestCase
         ]));
 
         $rows = $this->rows(new TableQueryDTO(
-            sort: new TableSortDTO(HilosLogWorkersTableRow::bytes, TableConstants::ORDER_DESC),
+            sort: TableSortOrderDTO::of(new TableSortDTO(HilosLogWorkersTableRow::bytes, TableConstants::ORDER_DESC)),
         ));
 
         $this->assertSame([900, 500, 100], array_map(static fn($row): int => $row->bytes, $rows));

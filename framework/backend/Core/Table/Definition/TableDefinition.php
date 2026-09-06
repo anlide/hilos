@@ -13,6 +13,7 @@ use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Exception\TableActionsNotConfiguredException;
 use Hilos\Core\Table\Exception\TableOffsetSetNotSupportedException;
 use Hilos\Core\Table\Exception\TableOffsetUnsetNotSupportedException;
@@ -194,7 +195,14 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
-     * Declares which client-chosen sort fields this table serves, and what each one orders by.
+     * Declares this table's sort vocabulary: which fields it serves, and what each one orders by.
+     *
+     * The map does two things at once, and both of them are naming. It is the vocabulary every
+     * order of this table is written in — a field outside it reaches no column anywhere — and it
+     * is the declaration of the single-column orders themselves: a field named here is offered
+     * in both directions, which is what a click on a column header asks for. Orders of more than
+     * one column are declared separately, by {@see sortOrders()}, because an index lies under
+     * each of those and under a click on a header there is only the one column.
      *
      * The map is `wire row-field name => column`; the keys are what the browser sends, the
      * values are developer code. How far a value may go depends on who runs the query: a table
@@ -210,6 +218,35 @@ abstract class TableDefinition implements ArrayAccess
      * @return array<string, string> Allowed sort fields mapped to their columns; empty by default
      */
     protected function sortableFields(): array
+    {
+        return [];
+    }
+
+    /**
+     * Declares the orders of more than one column this table serves, each under a key of its own.
+     *
+     * A composite order is offered, never assembled: the reader picks one of these and cannot
+     * put an arbitrary pair of columns together. The reason is that an order is served by an
+     * index only when the index matches it in both the sequence of its columns and their
+     * directions — any two columns out of eight give dozens of combinations, and an uncovered
+     * one means the database sorts the whole filtered set on every show of the window. So
+     * declaring an order here is a promise that an index lies under it, and the declaration and
+     * its index travel as one change; the rules and the refusals are in
+     * `docs/agents/frontend/table-sort-orders.md`.
+     *
+     * Every component names a field of {@see sortableFields()}, and every component of one order
+     * runs the same way: a declaration that mixes directions or names a field outside the map is
+     * passed over as though it were not written, because neither can be honoured by an index
+     * this side can vouch for. The primary key is not part of a declaration — the query boundary
+     * settles the order with it.
+     *
+     * The key is the order's own slug, which is what the frontend builds the
+     * `hilos-table-order-<orderKey>` selector out of; it stays on this side of the wire, the
+     * chosen order itself being what travels.
+     *
+     * @return array<string, TableSortOrderDTO> Order key => order it stands for; empty by default
+     */
+    protected function sortOrders(): array
     {
         return [];
     }
@@ -305,9 +342,12 @@ abstract class TableDefinition implements ArrayAccess
      * objects; getFullSnapshot() is the empty-query case. The window's search,
      * sort, size and address — an anchor or a page number — are carried by the query.
      *
-     * The sort passes {@see sortableFields()} before the query sees it, because this is the
+     * The order passes both halves of the gate before the query sees it, because this is the
      * one point every path to a row source runs through — the DB-collection helper, a
-     * project table's own windowed query, and a table's hand-written SQL alike.
+     * project table's own windowed query, and a table's hand-written SQL alike. It is held
+     * against {@see sortOrders()} first, which is where an order of more than one column has to
+     * have been offered, and then against {@see sortableFields()}, which is where each of its
+     * components turns into a column.
      *
      * @param TableQueryDTO $query Window query parameters
      * @return TableSnapshotDTO Window snapshot with typed rows and metadata
@@ -315,7 +355,9 @@ abstract class TableDefinition implements ArrayAccess
      */
     public function getPage(TableQueryDTO $query): TableSnapshotDTO
     {
-        $sort = TableSortWhitelist::resolve($query->sort, $this->sortableFields(), static::class);
+        $sortableFields = $this->sortableFields();
+        $sort = TableSortWhitelist::holdComposite($query->sort, $this->sortOrders(), $sortableFields, static::class);
+        $sort = TableSortWhitelist::resolve($sort, $sortableFields, static::class);
         if ($sort !== $query->sort) {
             $query = new TableQueryDTO(
                 search: $query->search,

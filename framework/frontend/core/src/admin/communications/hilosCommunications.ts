@@ -323,7 +323,7 @@ export function createHilosChannelsTable(
         descriptor,
       ),
     pageSize: CHANNELS_PAGE_SIZE,
-    initialSort: { field: HilosChannelRowKey.channel, direction: 'asc' },
+    initialOrder: [{ field: HilosChannelRowKey.channel, direction: 'asc' }],
   })
   let teardown: Array<() => void> = []
 
@@ -379,7 +379,7 @@ export function createHilosChannelFields(
         descriptor,
       ),
     pageSize: FIELDS_PAGE_SIZE,
-    initialSort: { field: 'field', direction: 'asc' },
+    initialOrder: [{ field: 'field', direction: 'asc' }],
   })
   let teardown: Array<() => void> = []
   const rows = computedSignal<readonly HilosChannelFieldRow[]>(() => {

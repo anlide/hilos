@@ -9,6 +9,7 @@ use Hilos\Core\Router\SubscriptionRegistry;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableConstants;
 use PHPUnit\Framework\TestCase;
 
@@ -23,7 +24,7 @@ final class SubscriptionRegistryTableViewportTest extends TestCase
         $registry->setTableViewport('ak', new TableViewportSubscription(
             tableKey: 'settings',
             filter: ['search' => 'theme'],
-            sort: new TableSortDTO('key', TableConstants::ORDER_DESC),
+            sort: TableSortOrderDTO::of(new TableSortDTO('key', TableConstants::ORDER_DESC)),
             limit: 10,
             anchor: new TableAnchorDTO(['key' => 'theme.dark']),
         ));
@@ -33,7 +34,7 @@ final class SubscriptionRegistryTableViewportTest extends TestCase
         $this->assertNotNull($viewport);
         $this->assertSame('settings', $viewport->tableKey);
         $this->assertSame(['search' => 'theme'], $viewport->filter);
-        $this->assertEquals(new TableSortDTO('key', TableConstants::ORDER_DESC), $viewport->sort);
+        $this->assertEquals(TableSortOrderDTO::of(new TableSortDTO('key', TableConstants::ORDER_DESC)), $viewport->sort);
         $this->assertSame(10, $viewport->limit);
         $this->assertSame(['key' => 'theme.dark'], $viewport->anchor?->toArray());
     }
