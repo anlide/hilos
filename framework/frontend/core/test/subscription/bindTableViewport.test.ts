@@ -107,32 +107,40 @@ function fakeSink(): TableWindowSink & {
   windows: Array<{
     rows: readonly TableRow[]
     totalCount: number
+    totalExact: boolean
     firstAnchor: TableAnchor | null
     lastAnchor: TableAnchor | null
   }>
   deltas: TableViewportDelta[]
-  counts: number[]
-  appends: Array<{ row: TableRow; totalCount: number }>
+  counts: Array<{ totalCount: number; totalExact: boolean }>
+  appends: Array<{ row: TableRow; totalCount: number; totalExact: boolean }>
   ownCreates: Array<{
     row: TableRow
     position: number
     totalCount: number
+    totalExact: boolean
     requestId?: string | null
   }>
 } {
   const windows: Array<{
     rows: readonly TableRow[]
     totalCount: number
+    totalExact: boolean
     firstAnchor: TableAnchor | null
     lastAnchor: TableAnchor | null
   }> = []
   const deltas: TableViewportDelta[] = []
-  const counts: number[] = []
-  const appends: Array<{ row: TableRow; totalCount: number }> = []
+  const counts: Array<{ totalCount: number; totalExact: boolean }> = []
+  const appends: Array<{
+    row: TableRow
+    totalCount: number
+    totalExact: boolean
+  }> = []
   const ownCreates: Array<{
     row: TableRow
     position: number
     totalCount: number
+    totalExact: boolean
     requestId?: string | null
   }> = []
 
@@ -142,20 +150,20 @@ function fakeSink(): TableWindowSink & {
     counts,
     appends,
     ownCreates,
-    ingestWindow(rows, totalCount, firstAnchor, lastAnchor): void {
-      windows.push({ rows, totalCount, firstAnchor, lastAnchor })
+    ingestWindow(rows, totalCount, totalExact, firstAnchor, lastAnchor): void {
+      windows.push({ rows, totalCount, totalExact, firstAnchor, lastAnchor })
     },
     ingestDelta(delta): void {
       deltas.push(delta)
     },
-    ingestCount(totalCount): void {
-      counts.push(totalCount)
+    ingestCount(totalCount, totalExact): void {
+      counts.push({ totalCount, totalExact })
     },
-    ingestAppend(row, totalCount): void {
-      appends.push({ row, totalCount })
+    ingestAppend(row, totalCount, totalExact): void {
+      appends.push({ row, totalCount, totalExact })
     },
-    ingestOwnCreate(row, position, totalCount, requestId): void {
-      ownCreates.push({ row, position, totalCount, requestId })
+    ingestOwnCreate(row, position, totalCount, totalExact, requestId): void {
+      ownCreates.push({ row, position, totalCount, totalExact, requestId })
     },
   }
 }
@@ -188,6 +196,7 @@ describe('bindTableViewport', () => {
       tableKey: 'settings',
       rows: [{ rowKey: 'a', slots: { user: { id: 7, name: 'Ada' } } }],
       totalCount: 12,
+      totalExact: true,
       limit: 10,
       firstAnchor: { id: 1 },
       lastAnchor: { id: 10 },
@@ -290,6 +299,7 @@ describe('bindTableViewport', () => {
       tableKey: 'other',
       rows: [],
       totalCount: 0,
+      totalExact: true,
       limit: 10,
       firstAnchor: { id: 1 },
       lastAnchor: { id: 10 },
@@ -310,6 +320,7 @@ describe('bindTableViewport', () => {
       tableKey: 'settings',
       rows: [],
       totalCount: 0,
+      totalExact: true,
       limit: 10,
       firstAnchor: { id: 1 },
       lastAnchor: { id: 10 },
@@ -332,6 +343,7 @@ describe('bindTableViewport', () => {
       tableKey: 'settings',
       rows: [],
       totalCount: 0,
+      totalExact: true,
       limit: 10,
       firstAnchor: { id: 1 },
       lastAnchor: { id: 10 },
@@ -353,6 +365,7 @@ describe('bindTableViewport', () => {
       tableKey: 'settings',
       rows: [],
       totalCount: 0,
+      totalExact: true,
       limit: 10,
       firstAnchor: { id: 1 },
       lastAnchor: { id: 10 },
@@ -361,6 +374,7 @@ describe('bindTableViewport', () => {
       page: 'main',
       tableKey: 'settings',
       totalCount: 5,
+      totalExact: true,
       pageCount: 1,
     })
     connection.emitAppend({
@@ -368,6 +382,7 @@ describe('bindTableViewport', () => {
       tableKey: 'settings',
       row: { rowKey: 'a', slots: {} },
       totalCount: 1,
+      totalExact: true,
       pageCount: 1,
     })
 
@@ -388,10 +403,11 @@ describe('bindTableViewport', () => {
       page: 'main',
       tableKey: 'settings',
       totalCount: 9,
+      totalExact: true,
       pageCount: 1,
     })
 
-    expect(sink.counts).toEqual([9])
+    expect(sink.counts).toEqual([{ totalCount: 9, totalExact: true }])
   })
 
   it('routes an own create addressed to the table, normalizing the row', () => {
@@ -407,6 +423,7 @@ describe('bindTableViewport', () => {
       row: { rowKey: 'a', slots: { user: { id: 7, name: 'Ada' } } },
       position: 2,
       totalCount: 13,
+      totalExact: true,
       pageCount: 2,
       requestId: 'req-1',
     })
@@ -434,6 +451,7 @@ describe('bindTableViewport', () => {
       row: { rowKey: 'a', slots: {} },
       position: 0,
       totalCount: 1,
+      totalExact: true,
       pageCount: 1,
       requestId: null,
     })
@@ -453,6 +471,7 @@ describe('bindTableViewport', () => {
       tableKey: 'settings',
       row: { rowKey: 'a', slots: { user: { id: 7, name: 'Ada' } } },
       totalCount: 13,
+      totalExact: true,
       pageCount: 2,
     })
 

@@ -124,12 +124,17 @@ const tableRowFragmentSchema = z.looseObject({
  *
  * The two boundary anchors are what the next window is asked with — the last one pages
  * forward, the first one pages back — and an empty window carries neither.
+ *
+ * `totalExact` says what the total is. A windowed query counts only up to a ceiling, so
+ * past it the number is that ceiling and reads as "at least this many"; page numbers are
+ * what stops following from it.
  */
 export const tableWindowSignalDataSchema = z.looseObject({
   page: z.string(),
   tableKey: z.string(),
   rows: z.array(tableRowFragmentSchema),
   totalCount: z.number().int(),
+  totalExact: z.boolean(),
   limit: z.number().int(),
   firstAnchor: z.record(z.string(), z.unknown()).nullable(),
   lastAnchor: z.record(z.string(), z.unknown()).nullable(),
@@ -165,12 +170,16 @@ export type TableViewportDeltaSignalData = z.infer<
  * PHP `TableViewportCountDTO`): the addressed live total and page count for one
  * table's window. Navigation metadata, not row content — the frontend applies it
  * immediately instead of gating it as pending.
+ *
+ * `pageCount` is absent, not zero, whenever `totalExact` is false: a total that stopped
+ * at its ceiling supports no page count, and zero would read as a table with no pages.
  */
 export const tableViewportCountSignalDataSchema = z.looseObject({
   page: z.string(),
   tableKey: z.string(),
   totalCount: z.number().int(),
-  pageCount: z.number().int(),
+  totalExact: z.boolean(),
+  pageCount: z.number().int().optional(),
 })
 
 export type TableViewportCountSignalData = z.infer<
@@ -183,13 +192,17 @@ export type TableViewportCountSignalData = z.infer<
  * table's window, plus the new counts. Sent only when the window is the last page
  * with room, so the frontend applies it immediately. The row rides the
  * `{rowKey, slots}` shape.
+ *
+ * The row arrives whatever the counts say; `pageCount` is absent when `totalExact` is
+ * false, exactly as it is on the count signal.
  */
 export const tableViewportAppendSignalDataSchema = z.looseObject({
   page: z.string(),
   tableKey: z.string(),
   row: tableRowFragmentSchema,
   totalCount: z.number().int(),
-  pageCount: z.number().int(),
+  totalExact: z.boolean(),
+  pageCount: z.number().int().optional(),
 })
 
 export type TableViewportAppendSignalData = z.infer<
@@ -203,6 +216,8 @@ export type TableViewportAppendSignalData = z.infer<
  * receiver's window, and the new counts. `requestId` names the action that
  * created it, so a surface can tell which of its own presses this answers; it is
  * absent when the write was not tracked. The row rides the `{rowKey, slots}` shape.
+ *
+ * The counts follow the window's rule: `pageCount` is absent when `totalExact` is false.
  */
 export const tableViewportOwnCreateSignalDataSchema = z.looseObject({
   page: z.string(),
@@ -210,7 +225,8 @@ export const tableViewportOwnCreateSignalDataSchema = z.looseObject({
   row: tableRowFragmentSchema,
   position: z.number().int(),
   totalCount: z.number().int(),
-  pageCount: z.number().int(),
+  totalExact: z.boolean(),
+  pageCount: z.number().int().optional(),
   requestId: z.string().nullish(),
 })
 

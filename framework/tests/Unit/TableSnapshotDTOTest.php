@@ -21,6 +21,7 @@ final class TableSnapshotDTOTest extends TestCase
         $snapshot = new TableSnapshotDTO(
             rows: [GenericTableRow::fromArray(['id' => 1, 'name' => 'Ada'])],
             totalCount: 1,
+            totalExact: true,
             limit: 0,
             firstAnchor: new TableAnchorDTO(['id' => 1]),
             lastAnchor: new TableAnchorDTO(['id' => 1]),
@@ -29,6 +30,7 @@ final class TableSnapshotDTOTest extends TestCase
         $this->assertSame([
             'rows' => [['id' => 1, 'name' => 'Ada']],
             'totalCount' => 1,
+            'totalExact' => true,
             'limit' => 0,
             'firstAnchor' => ['id' => 1],
             'lastAnchor' => ['id' => 1],
@@ -40,6 +42,7 @@ final class TableSnapshotDTOTest extends TestCase
         $snapshot = TableSnapshotDTO::fromArray([
             'rows' => [['id' => 1, 'name' => 'Ada']],
             'totalCount' => 1,
+            'totalExact' => true,
             'limit' => 0,
         ]);
 
@@ -54,6 +57,7 @@ final class TableSnapshotDTOTest extends TestCase
             new TableSnapshotDTO(
                 rows: [],
                 totalCount: 91,
+                totalExact: true,
                 limit: 25,
                 firstAnchor: new TableAnchorDTO(['name' => 'Ada', 'id' => 50]),
                 lastAnchor: new TableAnchorDTO(['name' => 'Zoe', 'id' => 74]),
@@ -69,7 +73,7 @@ final class TableSnapshotDTOTest extends TestCase
     public function testAnEmptyWindowSerializesBothBoundariesAsNothing(): void
     {
         $snapshot = TableSnapshotDTO::fromArray(
-            new TableSnapshotDTO(rows: [], totalCount: 0, limit: 25)->toArray(),
+            new TableSnapshotDTO(rows: [], totalCount: 0, totalExact: true, limit: 25)->toArray(),
         );
 
         $this->assertNull($snapshot->firstAnchor);
@@ -84,7 +88,35 @@ final class TableSnapshotDTOTest extends TestCase
         TableSnapshotDTO::fromArray([
             TableConstants::RESULT_KEY_ROWS => [],
             TableConstants::RESULT_KEY_TOTAL_COUNT => 0,
+            TableConstants::RESULT_KEY_TOTAL_EXACT => true,
         ]);
+    }
+
+    public function testFromArrayRefusesAPayloadWithoutTheWordOnItsCount(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(TableConstants::RESULT_KEY_TOTAL_EXACT);
+
+        TableSnapshotDTO::fromArray([
+            TableConstants::RESULT_KEY_ROWS => [],
+            TableConstants::RESULT_KEY_TOTAL_COUNT => TableConstants::COUNT_CEILING,
+            TableConstants::RESULT_KEY_LIMIT => 25,
+        ]);
+    }
+
+    public function testACountStoppedAtItsCeilingSurvivesTheRoundTrip(): void
+    {
+        $snapshot = TableSnapshotDTO::fromArray(
+            new TableSnapshotDTO(
+                rows: [],
+                totalCount: TableConstants::COUNT_CEILING,
+                totalExact: false,
+                limit: 25,
+            )->toArray(),
+        );
+
+        $this->assertSame(TableConstants::COUNT_CEILING, $snapshot->totalCount);
+        $this->assertFalse($snapshot->totalExact);
     }
 
     public function testFromArrayRefusesARowThatIsNotAnArrayInsteadOfEmptyingIt(): void
@@ -94,6 +126,7 @@ final class TableSnapshotDTOTest extends TestCase
         TableSnapshotDTO::fromArray([
             TableConstants::RESULT_KEY_ROWS => ['Ada'],
             TableConstants::RESULT_KEY_TOTAL_COUNT => 1,
+            TableConstants::RESULT_KEY_TOTAL_EXACT => true,
             TableConstants::RESULT_KEY_LIMIT => TableConstants::NO_LIMIT,
         ]);
     }

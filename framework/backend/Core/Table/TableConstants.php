@@ -51,6 +51,18 @@ final class TableConstants
     /** Result key for total count. */
     public const string RESULT_KEY_TOTAL_COUNT = 'totalCount';
 
+    /** Result key for whether the total count is the size of the set rather than the ceiling it stopped at. */
+    public const string RESULT_KEY_TOTAL_EXACT = 'totalExact';
+
+    /**
+     * Rows a windowed query counts before it stops and reports "at least this many".
+     *
+     * Counting the whole set is a full pass over it, and a window repeats that pass every time
+     * it is served. Past this many rows the exact number buys nothing the reader can use — the
+     * table shows "500+" and offers no page numbers — so the count stops here instead.
+     */
+    public const int COUNT_CEILING = 500;
+
     /** Result key for objects array (Object layer queryPage intermediate result). */
     public const string RESULT_KEY_OBJECTS = 'objects';
 

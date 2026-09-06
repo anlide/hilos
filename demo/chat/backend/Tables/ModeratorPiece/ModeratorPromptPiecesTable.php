@@ -85,6 +85,23 @@ final class ModeratorPromptPiecesTable extends TableDefinition implements Viewpo
     }
 
     /**
+     * Answers whether one prompt piece belongs to the set a window query describes.
+     *
+     * The pieces reach the window by query rather than in memory, so a live count under an
+     * active search would otherwise re-run that query on every write; the question about one
+     * row is put to the same collection the window is served from.
+     *
+     * @param string|int $rowKey Prompt piece id to place against the set
+     * @param TableQueryDTO $query Window query whose search describes the set
+     * @return ?bool Whether the piece is in the set, or null when the collection cannot answer
+     * @throws DatabaseException When the prompt piece query fails
+     */
+    public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
+    {
+        return $this->containsRowInDbCollection(Hilos::$db->moderatorPromptPieces, $rowKey, $query);
+    }
+
+    /**
      * Serializes one prompt piece row into its internal browser-row envelope.
      *
      * The piece rides a single entity slot keyed by the DB source name (its `id`
@@ -140,6 +157,7 @@ final class ModeratorPromptPiecesTable extends TableDefinition implements Viewpo
                 $result[TableConstants::RESULT_KEY_ROWS],
             ),
             totalCount: $result[TableConstants::RESULT_KEY_TOTAL_COUNT],
+            totalExact: $result[TableConstants::RESULT_KEY_TOTAL_EXACT],
             limit: $query->limit,
             firstAnchor: $result[TableConstants::RESULT_KEY_FIRST_ANCHOR],
             lastAnchor: $result[TableConstants::RESULT_KEY_LAST_ANCHOR],

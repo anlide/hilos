@@ -176,7 +176,7 @@ export interface ViewportTableRowContext<R> {
       @if (paginated()) {
         <div class="d-flex justify-content-between align-items-center mt-3">
           <span class="text-muted small" data-id="hilos-table-count">
-            {{ totalCount() }} total
+            {{ countLabel() }}
           </span>
           <div class="btn-group" role="group" aria-label="Pagination">
             <button
@@ -188,17 +188,21 @@ export interface ViewportTableRowContext<R> {
             >
               Previous
             </button>
-            <span
-              class="btn btn-sm disabled"
-              [attr.aria-label]="'Page ' + (page() + 1) + ' of ' + pageCount()"
-              data-id="hilos-table-page"
-            >
-              {{ page() + 1 }} / {{ pageCount() }}
-            </span>
+            @if (pageCount() !== null) {
+              <span
+                class="btn btn-sm disabled"
+                [attr.aria-label]="
+                  'Page ' + (page() + 1) + ' of ' + pageCount()
+                "
+                data-id="hilos-table-page"
+              >
+                {{ page() + 1 }} / {{ pageCount() }}
+              </span>
+            }
             <button
               type="button"
               class="btn btn-outline-secondary btn-sm"
-              [disabled]="page() >= pageCount() - 1"
+              [disabled]="!hasNextPage()"
               data-id="hilos-table-next"
               (click)="controller().nextPage()"
             >
@@ -242,11 +246,26 @@ export class HilosViewportTable<R> {
   protected readonly search = signal('')
   protected readonly order = signal<TableSortOrder | undefined>(undefined)
   protected readonly page = signal(0)
-  protected readonly pageCount = signal(1)
+  protected readonly pageCount = signal<number | null>(1)
   protected readonly totalCount = signal(0)
+  protected readonly totalExact = signal(true)
+  protected readonly hasNextPage = signal(false)
   protected readonly pendingCount = signal(0)
   protected readonly loaded = signal(false)
-  protected readonly paginated = computed(() => this.pageCount() > 1)
+  // A table whose count stopped at its ceiling has no page count to compare against, and
+  // the footer is what such a table still needs: it is the only place saying there is more.
+  protected readonly paginated = computed(() => {
+    const pageCount = this.pageCount()
+
+    return pageCount === null || pageCount > 1
+  })
+  // The total reads as "at least this many" when the count stopped at its ceiling, which is
+  // what the trailing plus says.
+  protected readonly countLabel = computed(() =>
+    this.totalExact()
+      ? `${this.totalCount()} total`
+      : `${this.totalCount()}+ total`,
+  )
 
   // A row with an unapplied pending change gets a subtle, theme-aware tint that
   // stands out from the zebra striping: amber for a waiting update, red for a
@@ -278,6 +297,8 @@ export class HilosViewportTable<R> {
         bind(controller.page, this.page),
         bind(controller.pageCount, this.pageCount),
         bind(controller.totalCount, this.totalCount),
+        bind(controller.totalExact, this.totalExact),
+        bind(controller.hasNextPage, this.hasNextPage),
         bind(controller.pendingCount, this.pendingCount),
         bind(controller.loaded, this.loaded),
       ]

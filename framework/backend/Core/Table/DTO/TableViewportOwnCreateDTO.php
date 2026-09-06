@@ -7,6 +7,7 @@ namespace Hilos\Core\Table\DTO;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Table\TableConstants;
 
 /**
  * TableViewportOwnCreateDTO - Server-to-client live placed insert of the author's own new row.
@@ -24,6 +25,10 @@ use Hilos\Core\Router\SignalDataInterface;
  * position, because they carry different rules — "at the end whatever the sort"
  * against "where the sort puts it" — and a rule that shows up only as a present
  * field is a mode nobody declared.
+ *
+ * The counts follow the window's rule: past {@see TableConstants::COUNT_CEILING} the total is
+ * the ceiling, the word on it says so, and the page count is absent rather than zero. The row
+ * and its position are unaffected — they are read off the re-selected window, not off the count.
  */
 final class TableViewportOwnCreateDTO extends BaseDTO implements SignalDataInterface
 {
@@ -32,6 +37,7 @@ final class TableViewportOwnCreateDTO extends BaseDTO implements SignalDataInter
     public const string row = 'row';
     public const string position = 'position';
     public const string totalCount = 'totalCount';
+    public const string totalExact = 'totalExact';
     public const string pageCount = 'pageCount';
     public const string requestId = 'requestId';
 
@@ -43,7 +49,8 @@ final class TableViewportOwnCreateDTO extends BaseDTO implements SignalDataInter
      * @param array<string, mixed> $row Row to insert as a `{rowKey, slots}` fragment
      * @param int $position Zero-based index the row takes in the window
      * @param int $totalCount Total rows matching the filter
-     * @param int $pageCount Page count under the window size
+     * @param bool $totalExact Whether that total is the size of the set rather than the ceiling the count stopped at
+     * @param ?int $pageCount Page count under the window size, or null when the total is not exact
      * @param ?string $requestId Request id of the action that created the row, or null when it was not tracked
      */
     public function __construct(
@@ -52,7 +59,8 @@ final class TableViewportOwnCreateDTO extends BaseDTO implements SignalDataInter
         public readonly array $row,
         public readonly int $position,
         public readonly int $totalCount,
-        public readonly int $pageCount,
+        public readonly bool $totalExact,
+        public readonly ?int $pageCount,
         public readonly ?string $requestId = null,
     ) {
     }
@@ -64,15 +72,20 @@ final class TableViewportOwnCreateDTO extends BaseDTO implements SignalDataInter
      */
     public function toArray(): array
     {
-        return [
+        $payload = [
             self::page => $this->page,
             self::tableKey => $this->tableKey,
             self::row => $this->row,
             self::position => $this->position,
             self::totalCount => $this->totalCount,
-            self::pageCount => $this->pageCount,
-            self::requestId => $this->requestId,
+            self::totalExact => $this->totalExact,
         ];
+        if ($this->pageCount !== null) {
+            $payload[self::pageCount] = $this->pageCount;
+        }
+        $payload[self::requestId] = $this->requestId;
+
+        return $payload;
     }
 
     /**
@@ -80,7 +93,7 @@ final class TableViewportOwnCreateDTO extends BaseDTO implements SignalDataInter
      *
      * @param array<string, mixed> $data Source data in the table-viewport-own-create wire form
      * @return static Restored DTO instance
-     * @throws InvalidFormatException When the payload misses the addressed table, the row, the position or a count
+     * @throws InvalidFormatException When the payload misses the addressed table, the row, the position, the total or the word on it
      */
     public static function fromArray(array $data): static
     {
@@ -90,7 +103,8 @@ final class TableViewportOwnCreateDTO extends BaseDTO implements SignalDataInter
             row: self::requireArray($data, self::row),
             position: self::requireInt($data, self::position),
             totalCount: self::requireInt($data, self::totalCount),
-            pageCount: self::requireInt($data, self::pageCount),
+            totalExact: self::requireBool($data, self::totalExact),
+            pageCount: self::optionalInt($data, self::pageCount),
             requestId: self::optionalString($data, self::requestId),
         );
     }

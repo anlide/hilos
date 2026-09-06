@@ -480,6 +480,42 @@ abstract class Entity
     }
 
     /**
+     * Count entities matching the given filters, stopping once the count passes a ceiling.
+     *
+     * The rows are counted inside a subquery the database stops itself, so a set larger than the
+     * ceiling costs the ceiling rather than the whole of it — which is the point: {@see count()}
+     * reads every matching row, and a table window repeats that read every time it is served.
+     * One row past the ceiling is taken on purpose, because that is what tells a set of exactly
+     * the ceiling apart from a larger one.
+     *
+     * @param int $ceiling Rows to count before the database may stop
+     * @param array<string, mixed>|string $filters Column => value pairs or raw WHERE clause
+     * @param array<int, mixed>|string $filtersParam Bound parameters for raw WHERE clause
+     *
+     * @return int Rows counted, from zero to the ceiling plus one; the ceiling plus one means "more than the ceiling"
+     * @throws DatabaseException When SQL execution fails
+     */
+    public static function countUpTo(int $ceiling, array|string $filters = [], array|string $filtersParam = []): int
+    {
+        $table = static::class::_table;
+
+        [$whereClause, $params] = self::buildWhere($filters, $filtersParam);
+
+        $capped = $ceiling + 1;
+        $sql = "SELECT COUNT(*) as `cnt` FROM (SELECT 1 FROM `{$table}`{$whereClause} LIMIT {$capped}) as `capped`";
+
+        $resultSetCollection = Database::sql($sql, $params);
+        $firstResultSet = $resultSetCollection->first();
+
+        if ($firstResultSet === null) {
+            return 0;
+        }
+
+        $row = $firstResultSet->first();
+        return $row !== null ? (int) ($row['cnt'] ?? 0) : 0;
+    }
+
+    /**
      * Get entity by primary key value.
      *
      * @param mixed $id Primary key value

@@ -245,6 +245,67 @@ so `pageIndex` does not arise and jumping deep is done by value — a date in th
 filter. Where it is exact, the numbers are real and a jump by number is what
 serves them.
 
+**The ceiling is 500** and is a framework constant, settable by neither a table
+nor a project: one behavior always. It applies only to a **windowed** query. A
+query with no limit reads the whole set anyway, so its count is exact and free,
+and a set already held in PHP memory is counted as it always was — there is
+nothing to save there, and reporting a ceiling over a number already in hand
+would be a lie.
+
+The count is taken by counting **to the ceiling plus one**. That one extra row
+is what tells "exactly 500" apart from "more than 500"; without it an exact set
+of exactly the ceiling would be reported as approximate.
+
+### What moves the count while the window sits there
+
+A live change moves the count only when it can be settled by a question about
+**one row** — never by counting the set again, which is the pass this whole
+section exists to avoid. The question is `containsRow`, and it is asked of the
+row source rather than answered from the filter map: two descriptions of one
+condition drift apart silently.
+
+- **A created row** — one the set did not hold a moment ago. It adds one if it
+  belongs to the set, and moves nothing if it does not.
+- **A change or a removal of a row the window is holding** — the window is part
+  of the set, so the row was in it. A removal takes one off; a change takes one
+  off only if the row has left the set.
+- **A change or a removal of a row outside the window** — nobody can place it.
+  Whether it was in the set before the change is a question about its previous
+  state, and no previous state is kept: a source update carries the changed
+  columns and a delete need carry no row at all. **The count stands still and no
+  frame is sent.** It becomes right again at the next window request — a page
+  turn, a new search or sort, a resubscribe.
+- **A table that does not implement the question** answers "cannot say", and
+  keeps the whole-set re-query it always had. That is what the default is for: a
+  project table that never heard of this contract must not quietly stop counting.
+- **A refused question** is logged as an error with the table, page and row key.
+  A silent "the count did not change" is otherwise indistinguishable from a
+  source that failed to answer.
+
+### Silence above the ceiling
+
+While `totalExact` is false **no count frame is sent at all**. "At least 500" is
+neither truer nor newer for one more row, and finding out whether the set has
+fallen back under the ceiling would cost exactly the pass the ceiling avoids. A
+window in that state becomes exact again only by asking for a window.
+
+The one crossing that does travel is **upward**: an exact count that grows past
+the ceiling sends one frame — `totalCount` = the ceiling, `totalExact: false`,
+no `pageCount` — and then goes quiet. Without it the pager would sit on an exact
+number it has outgrown.
+
+Delivery of rows is not affected by any of this. A tail append and an own-create
+still arrive over a set whose count stopped at the ceiling; what they carry is
+the ceiling with `totalExact: false` and no `pageCount`.
+
+### Jumping by number without an exact count
+
+The client shows no page numbers and sends no `pageIndex` while the count is
+inexact. The backend is honest without it anyway: a `pageIndex` that arrives is
+counted **from the start of the set**, because "the nearer end" is derived from
+the exact total. For the same reason no page is refused as lying past the end —
+there is no known end — and an empty window is a legitimate answer.
+
 ## Showing work in progress
 
 Running work is **not a record of the set**, and it does not get a row. A
@@ -381,7 +442,7 @@ and everything below is addressed to the one connection it concerns:
 | `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed`), `rowKey`, `row` |
 | `table_viewport_append` | server → client, live | `page`, `tableKey`, `row`, `totalCount`, `totalExact`, `pageCount` — sent **only** when the row's place is the end of the window and the window has room |
 | `table_viewport_count` | server → client, live | `page`, `tableKey`, `totalCount`, `totalExact`, `pageCount` |
-| `table_viewport_own_create` | server → client, live | `page`, `tableKey`, `row`, `position`, `totalCount`, `pageCount`, `requestId` — unchanged from HIL-792; the row takes the place the sort gives it, not the tail |
+| `table_viewport_own_create` | server → client, live | `page`, `tableKey`, `row`, `position`, `totalCount`, `totalExact`, `pageCount`, `requestId` — the row takes the place the sort gives it, not the tail |
 | `table_viewport_announce` | server → client, live | `page`, `tableKey`, `rowKey`, `placement` (`above` / `inside`), `totalCount`, `totalExact`, `pageCount` |
 | `table_progress` | server → client, live | `page`, `tableKey`, `scope` (`row` / `table` / `bulk`), `progressKey`, `rowKey`, `current`, `total`, `ended`, `detail` |
 

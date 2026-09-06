@@ -23,7 +23,7 @@ use Hilos\Core\Table\Row\AbstractTableRow;
  * source-fanned table (the Hilos users table), independent of how the table
  * delivers its non-viewport page_response rows.
  *
- * getPage() and buildMutationForSourceEvent() are already concrete on
+ * getPage(), buildMutationForSourceEvent() and containsRow() are already concrete on
  * TableDefinition, so a TableDefinition subclass satisfies them by inheritance and
  * only browserRow() is feature-specific.
  */
@@ -36,6 +36,30 @@ interface ViewportTable
      * @return TableSnapshotDTO Window snapshot with typed rows and the total count
      */
     public function getPage(TableQueryDTO $query): TableSnapshotDTO;
+
+    /**
+     * Answers whether one row belongs to the set a window query describes.
+     *
+     * This is what a live count asks instead of counting the set again. A re-count under an
+     * active search is a full pass over the source on every foreign write and on every
+     * connection watching; the question about a single row is one indexed lookup, and it is
+     * all the count needs — a row that joined the set moves it by one, a row that left moves
+     * it by one the other way.
+     *
+     * The question goes to the row source rather than being answered from the filter map in
+     * PHP, because two descriptions of one condition drift apart silently, and the drift shows
+     * up as a counter nobody can explain.
+     *
+     * Null is a real answer and means "this table cannot say": a table with its own SQL and no
+     * implementation of this keeps the re-count it had. It is the default for exactly that
+     * reason — a table that knows nothing of this contract must not start reporting silence as
+     * "the row is not in the set".
+     *
+     * @param string|int $rowKey Row key to place against the set
+     * @param TableQueryDTO $query Window query whose search and filters describe the set
+     * @return ?bool Whether the row is in the set, or null when this table cannot answer
+     */
+    public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool;
 
     /**
      * Builds a row mutation for one source change this table reacts to.

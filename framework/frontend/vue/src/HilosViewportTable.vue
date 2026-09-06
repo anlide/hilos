@@ -59,10 +59,22 @@ const order = useSignal(props.controller.order)
 const page = useSignal(props.controller.page)
 const pageCount = useSignal(props.controller.pageCount)
 const totalCount = useSignal(props.controller.totalCount)
+const totalExact = useSignal(props.controller.totalExact)
+const hasNextPage = useSignal(props.controller.hasNextPage)
 const pendingCount = useSignal(props.controller.pendingCount)
 const loaded = useSignal(props.controller.loaded)
 
-const paginated = computed(() => pageCount.value > 1)
+// A table whose count stopped at its ceiling has no page count to compare against, and the
+// footer is exactly what such a table still needs: it is the only place saying there is more.
+const paginated = computed(
+  () => pageCount.value === null || pageCount.value > 1,
+)
+
+// The total reads as "at least this many" when the count stopped at its ceiling, which is
+// what the trailing plus says. Spelling it out in words would say the same thing longer.
+const countLabel = computed(() =>
+  totalExact.value ? `${totalCount.value} total` : `${totalCount.value}+ total`,
+)
 
 // A row with an unapplied pending change gets a subtle, theme-aware tint that
 // stands out from the zebra striping: amber for a waiting update, red for a
@@ -226,7 +238,7 @@ function onSearchInput(event: Event): void {
       class="d-flex justify-content-between align-items-center mt-3"
     >
       <span class="text-muted small" data-id="hilos-table-count">
-        {{ totalCount }} total
+        {{ countLabel }}
       </span>
       <div class="btn-group" role="group" aria-label="Pagination">
         <button
@@ -239,6 +251,7 @@ function onSearchInput(event: Event): void {
           Previous
         </button>
         <span
+          v-if="pageCount !== null"
           class="btn btn-sm disabled"
           :aria-label="`Page ${page + 1} of ${pageCount}`"
           data-id="hilos-table-page"
@@ -248,7 +261,7 @@ function onSearchInput(event: Event): void {
         <button
           type="button"
           class="btn btn-outline-secondary btn-sm"
-          :disabled="page >= pageCount - 1"
+          :disabled="!hasNextPage"
           data-id="hilos-table-next"
           @click="controller.nextPage()"
         >

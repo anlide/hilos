@@ -365,6 +365,61 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     }
 
     /**
+     * Builds the WHERE condition the window's search term stands for.
+     *
+     * One description of the search, read by the window and by the question about a single row
+     * alike: a second copy of these LIKE clauses would drift from this one without anything
+     * failing, and the drift would surface as a counter that disagrees with the rows on screen.
+     *
+     * @param TableQueryDTO $query Window query carrying the search term
+     * @return array{0: string, 1: list<SqlParam>} Raw WHERE clause, empty when nothing is searched, and its params
+     */
+    private function searchCondition(TableQueryDTO $query): array
+    {
+        $search = $query->search;
+        if ($search === null || $search === '') {
+            return ['', []];
+        }
+
+        $likeParts = [];
+        $filtersParam = [];
+        foreach ($this->getSearchableColumns() as $column) {
+            $likeParts[] = "`{$column}` LIKE ?";
+            $filtersParam[] = SqlParam::string("%{$search}%");
+        }
+
+        return $likeParts === [] ? ['', []] : ['(' . implode(' OR ', $likeParts) . ')', $filtersParam];
+    }
+
+    /**
+     * Answers whether the row under a key belongs to the set the window query describes.
+     *
+     * The set is described the same way the window describes it, plus the key of the one row
+     * being asked about, so the answer costs an indexed lookup rather than the pass over the
+     * whole set a re-count would cost. A composite primary key is addressed by its first
+     * column, which is the key {@see getById()} addresses a row by as well.
+     *
+     * @param TableQueryDTO $query Window query whose search describes the set
+     * @param string|int $rowKey Primary key value of the row to place against it
+     * @return bool Whether the row is in the set
+     * @throws DatabaseException If the database query fails
+     */
+    public function containsRow(TableQueryDTO $query, string|int $rowKey): bool
+    {
+        $objectClass = static::OBJECT_CLASS;
+        $entityClass = $objectClass::ENTITY_CLASS;
+
+        [$filters, $filtersParam] = $this->searchCondition($query);
+
+        $primaryColumn = is_array($entityClass::_primary) ? $entityClass::_primary[0] : $entityClass::_primary;
+        $keyCondition = "`{$primaryColumn}` = ?";
+        $filters = $filters === '' ? $keyCondition : "({$filters}) AND {$keyCondition}";
+        $filtersParam[] = SqlParam::auto($rowKey);
+
+        return $entityClass::count(filters: $filters, filtersParam: $filtersParam) > 0;
+    }
+
+    /**
      * Query a page of objects from DB with search, sort and keyset pagination.
      * Loaded objects are merged into $this->objects (common storage).
      *
@@ -390,9 +445,14 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * of the set is nearer. The worst skip is then half the set, and the last page costs what
      * the first one does.
      *
+     * A windowed query counts only up to {@see TableConstants::COUNT_CEILING} and says so, because
+     * the exact size of a large set costs a full pass over it on every window served and buys the
+     * reader nothing: past the ceiling the table shows "500+" and offers no page numbers. A query
+     * with no limit reads the whole set anyway, so there its count is exact and free.
+     *
      * @param TableQueryDTO $query Query parameters
      * @return array<string, mixed> Keys: objects (array<int|string, Object_>), totalCount (int),
-     *     firstAnchor (?TableAnchorDTO), lastAnchor (?TableAnchorDTO)
+     *     totalExact (bool), firstAnchor (?TableAnchorDTO), lastAnchor (?TableAnchorDTO)
      * @throws DatabaseException If database query fails
      * @throws InvalidArgumentException When an order direction is neither SqlSortDirection::ASC nor ::DESC
      */
@@ -401,21 +461,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         $objectClass = static::OBJECT_CLASS;
         $entityClass = $objectClass::ENTITY_CLASS;
 
-        $filters = '';
-        $filtersParam = [];
-
-        $search = $query->search;
-        if ($search !== null && $search !== '') {
-            $columns = $this->getSearchableColumns();
-            $likeParts = [];
-            foreach ($columns as $column) {
-                $likeParts[] = "`{$column}` LIKE ?";
-                $filtersParam[] = SqlParam::string("%{$search}%");
-            }
-            if (!empty($likeParts)) {
-                $filters = '(' . implode(' OR ', $likeParts) . ')';
-            }
-        }
+        [$filters, $filtersParam] = $this->searchCondition($query);
 
         $orderBy = [];
         $order = TableSortWhitelist::resolve(
@@ -442,16 +488,28 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             }
         }
 
-        $totalCount = $entityClass::count(
-            filters: $filters,
-            filtersParam: $filtersParam,
-        );
+        if ($query->limit === TableConstants::NO_LIMIT) {
+            $totalCount = $entityClass::count(
+                filters: $filters,
+                filtersParam: $filtersParam,
+            );
+            $totalExact = true;
+        } else {
+            $counted = $entityClass::countUpTo(
+                TableConstants::COUNT_CEILING,
+                filters: $filters,
+                filtersParam: $filtersParam,
+            );
+            $totalExact = $counted <= TableConstants::COUNT_CEILING;
+            $totalCount = $totalExact ? $counted : TableConstants::COUNT_CEILING;
+        }
 
-        $plan = TableWindowPlan::forQuery($query, $orderBy, $totalCount);
+        $plan = TableWindowPlan::forQuery($query, $orderBy, $totalCount, $totalExact);
         if ($plan === null) {
             return [
                 TableConstants::RESULT_KEY_OBJECTS => [],
                 TableConstants::RESULT_KEY_TOTAL_COUNT => $totalCount,
+                TableConstants::RESULT_KEY_TOTAL_EXACT => $totalExact,
                 TableConstants::RESULT_KEY_FIRST_ANCHOR => null,
                 TableConstants::RESULT_KEY_LAST_ANCHOR => null,
             ];
@@ -499,6 +557,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         return [
             TableConstants::RESULT_KEY_OBJECTS => $pageObjects,
             TableConstants::RESULT_KEY_TOTAL_COUNT => $totalCount,
+            TableConstants::RESULT_KEY_TOTAL_EXACT => $totalExact,
             TableConstants::RESULT_KEY_FIRST_ANCHOR => $firstKey === null
                 ? null
                 : TableAnchorDTO::fromRow($entities[$firstKey]->toArray(), $anchorColumns),

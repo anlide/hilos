@@ -7,6 +7,7 @@ namespace Hilos\Core\Table\DTO;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Table\TableConstants;
 
 /**
  * TableViewportAppendDTO - Server-to-client live tail append for one table window.
@@ -18,6 +19,11 @@ use Hilos\Core\Router\SignalDataInterface;
  * position. The frontend applies it immediately instead of queuing a pending
  * change and sets the carried counts authoritatively. The row rides the same
  * `{rowKey, slots}` wire fragment as the window snapshot. Addressed per accept key.
+ *
+ * The row arrives whatever the counts say: delivery does not depend on how well the set is
+ * counted. The page count, though, travels only while the total is exact — past
+ * {@see TableConstants::COUNT_CEILING} the total is the ceiling and nothing about pages
+ * follows from it, so the key is absent rather than zero.
  */
 final class TableViewportAppendDTO extends BaseDTO implements SignalDataInterface
 {
@@ -25,6 +31,7 @@ final class TableViewportAppendDTO extends BaseDTO implements SignalDataInterfac
     public const string tableKey = 'tableKey';
     public const string row = 'row';
     public const string totalCount = 'totalCount';
+    public const string totalExact = 'totalExact';
     public const string pageCount = 'pageCount';
 
     /**
@@ -34,14 +41,16 @@ final class TableViewportAppendDTO extends BaseDTO implements SignalDataInterfac
      * @param string $tableKey Table key the append is for
      * @param array<string, mixed> $row Row to append as a `{rowKey, slots}` fragment
      * @param int $totalCount Total rows matching the filter
-     * @param int $pageCount Page count under the window size
+     * @param bool $totalExact Whether that total is the size of the set rather than the ceiling the count stopped at
+     * @param ?int $pageCount Page count under the window size, or null when the total is not exact
      */
     public function __construct(
         public readonly string $page,
         public readonly string $tableKey,
         public readonly array $row,
         public readonly int $totalCount,
-        public readonly int $pageCount,
+        public readonly bool $totalExact,
+        public readonly ?int $pageCount,
     ) {
     }
 
@@ -52,13 +61,18 @@ final class TableViewportAppendDTO extends BaseDTO implements SignalDataInterfac
      */
     public function toArray(): array
     {
-        return [
+        $payload = [
             self::page => $this->page,
             self::tableKey => $this->tableKey,
             self::row => $this->row,
             self::totalCount => $this->totalCount,
-            self::pageCount => $this->pageCount,
+            self::totalExact => $this->totalExact,
         ];
+        if ($this->pageCount !== null) {
+            $payload[self::pageCount] = $this->pageCount;
+        }
+
+        return $payload;
     }
 
     /**
@@ -66,7 +80,7 @@ final class TableViewportAppendDTO extends BaseDTO implements SignalDataInterfac
      *
      * @param array<string, mixed> $data Source data in the table-viewport-append wire form
      * @return static Restored DTO instance
-     * @throws InvalidFormatException When the payload misses the addressed table, the row or one of the counts
+     * @throws InvalidFormatException When the payload misses the addressed table, the row, the total or the word on it
      */
     public static function fromArray(array $data): static
     {
@@ -75,7 +89,8 @@ final class TableViewportAppendDTO extends BaseDTO implements SignalDataInterfac
             tableKey: self::requireString($data, self::tableKey),
             row: self::requireArray($data, self::row),
             totalCount: self::requireInt($data, self::totalCount),
-            pageCount: self::requireInt($data, self::pageCount),
+            totalExact: self::requireBool($data, self::totalExact),
+            pageCount: self::optionalInt($data, self::pageCount),
         );
     }
 }

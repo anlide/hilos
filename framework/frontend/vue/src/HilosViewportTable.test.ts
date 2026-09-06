@@ -59,6 +59,7 @@ describe('HilosViewportTable', () => {
         { rowKey: 'b', slots: { name: 'Bob' } },
       ],
       2,
+      true,
       null,
       null,
     )
@@ -101,6 +102,7 @@ describe('HilosViewportTable', () => {
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'old' } }],
       1,
+      true,
       null,
       null,
     )
@@ -123,6 +125,7 @@ describe('HilosViewportTable', () => {
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'Alice' } }],
       1,
+      true,
       null,
       null,
     )
@@ -145,10 +148,11 @@ describe('HilosViewportTable', () => {
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'Alice' } }],
       1,
+      true,
       null,
       null,
     )
-    controller.ingestCount(5)
+    controller.ingestCount(5, true)
     const wrapper = mountTable(controller)
 
     expect(wrapper.find('[data-id="hilos-table-list-changed"]').exists()).toBe(
@@ -161,6 +165,7 @@ describe('HilosViewportTable', () => {
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'Alice' } }],
       1,
+      true,
       null,
       null,
     )

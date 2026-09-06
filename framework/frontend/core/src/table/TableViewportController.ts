@@ -124,16 +124,18 @@ export interface TableWindowSink {
   ingestWindow(
     rows: readonly TableRow[],
     totalCount: number,
+    totalExact: boolean,
     firstAnchor: TableAnchor | null,
     lastAnchor: TableAnchor | null,
   ): void
   ingestDelta(delta: TableViewportDelta): void
-  ingestCount(totalCount: number): void
-  ingestAppend(row: TableRow, totalCount: number): void
+  ingestCount(totalCount: number, totalExact: boolean): void
+  ingestAppend(row: TableRow, totalCount: number, totalExact: boolean): void
   ingestOwnCreate(
     row: TableRow,
     position: number,
     totalCount: number,
+    totalExact: boolean,
     requestId?: string | null,
   ): void
 }
@@ -195,6 +197,9 @@ export class TableViewportController<R> implements TableWindowSink {
 
   private readonly totalCountSignal = createSignal(0)
 
+  /** Whether the total is the size of the set rather than the ceiling the count stopped at. */
+  private readonly totalExactSignal = createSignal(true)
+
   /** False until the first window arrives — lets the view tell "loading" from "empty". */
   private readonly loadedSignal = createSignal(false)
 
@@ -228,8 +233,26 @@ export class TableViewportController<R> implements TableWindowSink {
   /** Total rows matching the filter, as the last applied window/change reported. */
   readonly totalCount: ReadonlySignal<number>
 
-  /** Number of pages under the window size; at least 1. */
-  readonly pageCount: ReadonlySignal<number>
+  /**
+   * Whether {@link totalCount} is the size of the set rather than the ceiling it stopped at.
+   *
+   * The backend counts a windowed query only up to a ceiling, so past it the total is that
+   * ceiling and reads as "at least this many". Everything a reader gets from the total —
+   * the page count, the numbered pages, the end of the set — follows from this too.
+   */
+  readonly totalExact: ReadonlySignal<boolean>
+
+  /** Number of pages under the window size; at least 1, and null while the total is not exact. */
+  readonly pageCount: ReadonlySignal<number | null>
+
+  /**
+   * Whether there is a page after this one to go to.
+   *
+   * With an exact total this is the page number against the page count. Without one there
+   * is no last page to compare against, so the answer is read off the window itself: a
+   * window filled to its size has rows behind it, and a short one is the end of the set.
+   */
+  readonly hasNextPage: ReadonlySignal<boolean>
 
   /** Count of accumulated pending changes (the badge); 0 when there is nothing to apply. */
   readonly pendingCount: ReadonlySignal<number>
@@ -266,9 +289,19 @@ export class TableViewportController<R> implements TableWindowSink {
       })
     })
     this.totalCount = this.totalCountSignal
+    this.totalExact = this.totalExactSignal
     this.pageCount = computedSignal(() =>
-      Math.max(1, Math.ceil(this.totalCountSignal.get() / this.pageSize)),
+      this.totalExactSignal.get()
+        ? Math.max(1, Math.ceil(this.totalCountSignal.get() / this.pageSize))
+        : null,
     )
+    this.hasNextPage = computedSignal(() => {
+      const pageCount = this.pageCount.get()
+
+      return pageCount === null
+        ? this.windowSignal.get().length >= this.pageSize
+        : this.pageSignal.get() < pageCount - 1
+    })
     this.pendingCount = this.pendingCountSignal
     this.loaded = this.loadedSignal
   }
@@ -434,11 +467,17 @@ export class TableViewportController<R> implements TableWindowSink {
    * Use {@link nextPage} and {@link prevPage} for the neighbours — their boundary is
    * already in hand, and asking for them by number would count rows for nothing.
    *
+   * Does nothing while the total is not exact: a page number is a place counted from an
+   * end of the set, and without the size of the set there is no such place to jump to.
+   *
    * @param page The requested zero-based page index.
    */
   setPage(page: number): void {
-    const last = this.pageCount.get() - 1
-    const target = Math.min(Math.max(0, page), Math.max(0, last))
+    const pageCount = this.pageCount.get()
+    if (pageCount === null) {
+      return
+    }
+    const target = Math.min(Math.max(0, page), Math.max(0, pageCount - 1))
     this.pageSignal.set(target)
     this.anchor = null
     this.anchorDirection = 'after'
@@ -451,12 +490,12 @@ export class TableViewportController<R> implements TableWindowSink {
    * nothing on the last page, where there is nothing after the window to ask for, and
    * nothing on an empty window: with no boundary in hand there is nothing to page from,
    * and moving the number anyway would show one page while asking for another.
+   *
+   * Whether there is a next page is {@link hasNextPage}, which is also what the view
+   * disables the control by — one rule, read in one place.
    */
   nextPage(): void {
-    if (
-      this.lastAnchor === null ||
-      this.pageSignal.get() >= this.pageCount.get() - 1
-    ) {
+    if (this.lastAnchor === null || !this.hasNextPage.get()) {
       return
     }
     this.anchor = this.lastAnchor
@@ -488,19 +527,26 @@ export class TableViewportController<R> implements TableWindowSink {
    * placeholders — the fresh window is authoritative. Called by the subscription
    * wiring; the rows are already normalized to references.
    *
+   * A window is also the only thing that makes an inexact total exact again: it is the one
+   * moment the set is read, so a window that stopped at the ceiling last time may well come
+   * back with a number this time, and the other way round.
+   *
    * @param rows The window's rows, in display order.
    * @param totalCount Total rows matching the filter.
+   * @param totalExact Whether that total is the size of the set rather than the ceiling it stopped at.
    * @param firstAnchor Place the first row sits at, or null when the window is empty.
    * @param lastAnchor Place the last row sits at, or null when the window is empty.
    */
   ingestWindow(
     rows: readonly TableRow[],
     totalCount: number,
+    totalExact: boolean,
     firstAnchor: TableAnchor | null,
     lastAnchor: TableAnchor | null,
   ): void {
     this.windowSignal.set(rows.slice())
     this.totalCountSignal.set(Math.max(0, totalCount))
+    this.totalExactSignal.set(totalExact)
     this.firstAnchor = firstAnchor
     this.lastAnchor = lastAnchor
     this.placeholderKeysSignal.set(new Set())
@@ -515,9 +561,11 @@ export class TableViewportController<R> implements TableWindowSink {
    * even while a removed row still shows as a placeholder.
    *
    * @param totalCount Total rows matching the filter.
+   * @param totalExact Whether that total is the size of the set rather than the ceiling it stopped at.
    */
-  ingestCount(totalCount: number): void {
+  ingestCount(totalCount: number, totalExact: boolean): void {
     this.totalCountSignal.set(Math.max(0, totalCount))
+    this.totalExactSignal.set(totalExact)
   }
 
   /**
@@ -528,10 +576,12 @@ export class TableViewportController<R> implements TableWindowSink {
    *
    * @param row The new row to append, in reference form.
    * @param totalCount Total rows matching the filter.
+   * @param totalExact Whether that total is the size of the set rather than the ceiling it stopped at.
    */
-  ingestAppend(row: TableRow, totalCount: number): void {
+  ingestAppend(row: TableRow, totalCount: number, totalExact: boolean): void {
     this.windowSignal.set([...this.windowSignal.get(), row])
     this.totalCountSignal.set(Math.max(0, totalCount))
+    this.totalExactSignal.set(totalExact)
   }
 
   /**
@@ -561,12 +611,14 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param row The new row to insert, in reference form.
    * @param position Zero-based index the row takes in the window.
    * @param totalCount Total rows matching the filter.
+   * @param totalExact Whether that total is the size of the set rather than the ceiling it stopped at.
    * @param requestId Request id of the action that created the row, when it was tracked.
    */
   ingestOwnCreate(
     row: TableRow,
     position: number,
     totalCount: number,
+    totalExact: boolean,
     requestId?: string | null,
   ): void {
     this.ownCreateRequestIdSignal.set(requestId ?? null)
@@ -581,6 +633,7 @@ export class TableViewportController<R> implements TableWindowSink {
     const evicted = rows.splice(this.pageSize)
     this.windowSignal.set(rows)
     this.totalCountSignal.set(Math.max(0, totalCount))
+    this.totalExactSignal.set(totalExact)
 
     const placeholders = new Set(this.placeholderKeysSignal.get())
     for (const gone of [...evicted, row]) {

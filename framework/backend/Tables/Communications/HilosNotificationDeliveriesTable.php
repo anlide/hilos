@@ -141,8 +141,12 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
      * skips rows, counted from whichever end of the set is nearer, and the far half comes back
      * turned over - which is why the rows are put back in the journal's own order below.
      *
+     * The count stops at {@see TableConstants::COUNT_CEILING} for the same reason the ORM path
+     * does: this journal is the one table here with no bound at all, so counting it whole is the
+     * one thing in serving a window whose cost grows without end.
+     *
      * @param TableQueryDTO $query Window query (search, filters, sort, size, address)
-     * @return TableSnapshotDTO Window snapshot with typed rows, the total count and its boundaries
+     * @return TableSnapshotDTO Window snapshot with typed rows, the count with its exactness, and the boundaries
      * @throws DatabaseException When the windowed query or count fails
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
@@ -154,13 +158,16 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
             . ' LEFT JOIN `' . self::NOTIFICATION_TABLE . '` n ON n.' . EntityNotification::id
             . ' = nd.' . EntityNotificationDelivery::notification_id;
 
-        $countSql = 'SELECT COUNT(*) AS cnt FROM ' . $join . $where;
-        $totalCount = (int) (Database::sql($countSql, $params)->firstRow()['cnt'] ?? 0);
+        $capped = TableConstants::COUNT_CEILING + 1;
+        $countSql = 'SELECT COUNT(*) AS cnt FROM (SELECT 1 FROM ' . $join . $where . " LIMIT {$capped}) AS `capped`";
+        $counted = (int) (Database::sql($countSql, $params)->firstRow()['cnt'] ?? 0);
+        $totalExact = $counted <= TableConstants::COUNT_CEILING;
+        $totalCount = $totalExact ? $counted : TableConstants::COUNT_CEILING;
 
         $orderColumns = $this->orderColumns($query);
-        $plan = TableWindowPlan::forQuery($query->withLimit($limit), $orderColumns, $totalCount);
+        $plan = TableWindowPlan::forQuery($query->withLimit($limit), $orderColumns, $totalCount, $totalExact);
         if ($plan === null) {
-            return new TableSnapshotDTO(rows: [], totalCount: $totalCount, limit: $limit);
+            return new TableSnapshotDTO(rows: [], totalCount: $totalCount, totalExact: $totalExact, limit: $limit);
         }
 
         $keyset = $plan->keyset;
@@ -196,6 +203,7 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
         return new TableSnapshotDTO(
             rows: array_map(fn(array $row): HilosNotificationDeliveryTableRow => $this->rowFromSql($row), $rows),
             totalCount: $totalCount,
+            totalExact: $totalExact,
             limit: $limit,
             firstAnchor: $rows === [] ? null : TableAnchorDTO::fromRow($rows[0], $anchorColumns),
             lastAnchor: $rows === [] ? null : TableAnchorDTO::fromRow($rows[count($rows) - 1], $anchorColumns),

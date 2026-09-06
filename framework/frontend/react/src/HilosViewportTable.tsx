@@ -79,9 +79,16 @@ export function HilosViewportTable<R>({
   const page = useSignal(controller.page)
   const pageCount = useSignal(controller.pageCount)
   const totalCount = useSignal(controller.totalCount)
+  const totalExact = useSignal(controller.totalExact)
+  const hasNextPage = useSignal(controller.hasNextPage)
   const pendingCount = useSignal(controller.pendingCount)
   const loaded = useSignal(controller.loaded)
-  const paginated = pageCount > 1
+  // A table whose count stopped at its ceiling has no page count to compare against, and
+  // the footer is what such a table still needs: it is the only place saying there is more.
+  const paginated = pageCount === null || pageCount > 1
+  // The total reads as "at least this many" when the count stopped at its ceiling, which is
+  // what the trailing plus says.
+  const countLabel = totalExact ? `${totalCount} total` : `${totalCount}+ total`
 
   // The arrow a header carries: every column the order runs by gets one, because
   // an order of two columns is sorted by both of them and a single arrow would
@@ -241,7 +248,7 @@ export function HilosViewportTable<R>({
       {paginated ? (
         <div className="d-flex justify-content-between align-items-center mt-3">
           <span className="text-muted small" data-id="hilos-table-count">
-            {totalCount} total
+            {countLabel}
           </span>
           <div className="btn-group" role="group" aria-label="Pagination">
             <button
@@ -253,17 +260,19 @@ export function HilosViewportTable<R>({
             >
               Previous
             </button>
-            <span
-              className="btn btn-sm disabled"
-              aria-label={`Page ${page + 1} of ${pageCount}`}
-              data-id="hilos-table-page"
-            >
-              {page + 1} / {pageCount}
-            </span>
+            {pageCount === null ? null : (
+              <span
+                className="btn btn-sm disabled"
+                aria-label={`Page ${page + 1} of ${pageCount}`}
+                data-id="hilos-table-page"
+              >
+                {page + 1} / {pageCount}
+              </span>
+            )}
             <button
               type="button"
               className="btn btn-outline-secondary btn-sm"
-              disabled={page >= pageCount - 1}
+              disabled={!hasNextPage}
               data-id="hilos-table-next"
               onClick={() => controller.nextPage()}
             >

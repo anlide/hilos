@@ -24,6 +24,11 @@ use Hilos\Database\SqlSortDirection;
  * A numbered page is counted from whichever end of the set is nearer, which is the whole reason
  * the far half is read turned over. The worst skip is half the set rather than all of it, and
  * the last page costs what the first one does.
+ *
+ * Both of those readings need the size of the set, so neither survives a count that stopped at
+ * its ceiling: which end is nearer and where the set ends are answers derived from the exact
+ * number. A numbered page against such a count is therefore run the plain way — skip from the
+ * start, take the window — and no page is refused as lying past an end nobody has found.
  */
 final readonly class TableWindowPlan
 {
@@ -49,9 +54,10 @@ final readonly class TableWindowPlan
      * @param TableQueryDTO $query Window query
      * @param array<string, string> $orderBy Key column => SqlSortDirection the whole set is ordered by
      * @param int $totalCount Rows matching the filter, which is what a numbered page is placed against
+     * @param bool $totalExact Whether that count is the size of the set rather than the ceiling it stopped at
      * @return ?self How to run the query, or null when the page asked for lies past the end of the set
      */
-    public static function forQuery(TableQueryDTO $query, array $orderBy, int $totalCount): ?self
+    public static function forQuery(TableQueryDTO $query, array $orderBy, int $totalCount, bool $totalExact): ?self
     {
         if ($query->limit === TableConstants::NO_LIMIT) {
             return new self($orderBy, 0, TableConstants::NO_LIMIT, false, null);
@@ -59,6 +65,10 @@ final readonly class TableWindowPlan
 
         if ($query->pageIndex !== null) {
             $start = max(0, $query->pageIndex) * $query->limit;
+            if (!$totalExact) {
+                return new self($orderBy, $start, $query->limit, false, null);
+            }
+
             $end = min($totalCount, $start + $query->limit);
             if ($start >= $end) {
                 return null;

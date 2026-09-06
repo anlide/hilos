@@ -39,6 +39,10 @@ final class InMemoryTableFilter
      * A jump to a numbered page still counts rows, because a page nobody has shown has no anchor
      * to walk to; here that costs nothing, the whole set being in memory already.
      *
+     * The count is exact and carries no ceiling, for the same reason: the rows are already in
+     * hand, so counting them costs nothing to save. Reporting the ceiling here would be lying
+     * about a number the filter is holding.
+     *
      * @param list<array<string, mixed>> $rows All rows to filter
      * @param TableQueryDTO $query Query parameters
      * @param string $keyField Payload field the row key travels under, used to settle the sort
@@ -65,6 +69,7 @@ final class InMemoryTableFilter
         return new TableSnapshotDTO(
             rows: $window,
             totalCount: $totalCount,
+            totalExact: true,
             limit: $query->limit,
             firstAnchor: $window === [] ? null : TableAnchorDTO::fromRow($window[0], $anchorFields),
             lastAnchor: $window === [] ? null : TableAnchorDTO::fromRow($window[count($window) - 1], $anchorFields),

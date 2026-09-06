@@ -9,6 +9,7 @@ use Countable;
 use Generator;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
@@ -541,7 +542,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      * @param TableQueryDTO $query Query parameters
      *
      * @return array<string, mixed> Keys: rows (list of item arrays), totalCount (int),
-     *     firstAnchor (?TableAnchorDTO), lastAnchor (?TableAnchorDTO)
+     *     totalExact (bool), firstAnchor (?TableAnchorDTO), lastAnchor (?TableAnchorDTO)
      * @throws DatabaseException On query or connection error
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
@@ -558,9 +559,33 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
         return [
             TableConstants::RESULT_KEY_ROWS => $rows,
             TableConstants::RESULT_KEY_TOTAL_COUNT => $result[TableConstants::RESULT_KEY_TOTAL_COUNT],
+            TableConstants::RESULT_KEY_TOTAL_EXACT => $result[TableConstants::RESULT_KEY_TOTAL_EXACT],
             TableConstants::RESULT_KEY_FIRST_ANCHOR => $result[TableConstants::RESULT_KEY_FIRST_ANCHOR],
             TableConstants::RESULT_KEY_LAST_ANCHOR => $result[TableConstants::RESULT_KEY_LAST_ANCHOR],
         ];
+    }
+
+    /**
+     * Answers whether the row under a key belongs to the set a window query describes.
+     *
+     * This is the count's question, not the window's: a live total under an active search moves
+     * by one row at a time, and asking about that one row costs an indexed lookup where counting
+     * the set again costs a pass over all of it.
+     *
+     * A manual collection has no queryable set behind it and therefore holds no row this
+     * question is about. Tables ask through {@see TableDefinition::containsRowInDbCollection()},
+     * which is where that case turns into "cannot say" and leaves the count where it was.
+     *
+     * @param TableQueryDTO $query Window query whose search describes the set
+     * @param string|int $rowKey Row key to place against the set
+     * @return bool Whether the row is in the set
+     * @throws DatabaseException On query or connection error
+     */
+    public function containsRow(TableQueryDTO $query, string|int $rowKey): bool
+    {
+        $objectCollection = $this->getObjectCollection();
+
+        return $objectCollection !== null && $objectCollection->containsRow($query, $rowKey);
     }
 
     /**
@@ -571,8 +596,9 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      *
      * @param TableQueryDTO $query Query parameters
      *
-     * @return array{rows: list<T>, totalCount: int, firstAnchor: ?TableAnchorDTO, lastAnchor: ?TableAnchorDTO}
-     *     Window rows, the size of the whole set, and the two places the window sits between
+     * @return array{rows: list<T>, totalCount: int, totalExact: bool, firstAnchor: ?TableAnchorDTO,
+     *     lastAnchor: ?TableAnchorDTO} Window rows, how many the set holds and whether that number is
+     *     the whole of it, and the two places the window sits between
      * @throws DatabaseException On query or connection error
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
@@ -584,6 +610,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
             return [
                 TableConstants::RESULT_KEY_ROWS => [],
                 TableConstants::RESULT_KEY_TOTAL_COUNT => 0,
+                TableConstants::RESULT_KEY_TOTAL_EXACT => true,
                 TableConstants::RESULT_KEY_FIRST_ANCHOR => null,
                 TableConstants::RESULT_KEY_LAST_ANCHOR => null,
             ];
@@ -602,6 +629,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
         return [
             TableConstants::RESULT_KEY_ROWS => $rows,
             TableConstants::RESULT_KEY_TOTAL_COUNT => $result[TableConstants::RESULT_KEY_TOTAL_COUNT],
+            TableConstants::RESULT_KEY_TOTAL_EXACT => $result[TableConstants::RESULT_KEY_TOTAL_EXACT],
             TableConstants::RESULT_KEY_FIRST_ANCHOR => $result[TableConstants::RESULT_KEY_FIRST_ANCHOR],
             TableConstants::RESULT_KEY_LAST_ANCHOR => $result[TableConstants::RESULT_KEY_LAST_ANCHOR],
         ];

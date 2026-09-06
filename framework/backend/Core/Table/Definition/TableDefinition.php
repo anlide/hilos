@@ -291,10 +291,43 @@ abstract class TableDefinition implements ArrayAccess
         return new TableSnapshotDTO(
             rows: $result[TableConstants::RESULT_KEY_ROWS],
             totalCount: $result[TableConstants::RESULT_KEY_TOTAL_COUNT],
+            totalExact: $result[TableConstants::RESULT_KEY_TOTAL_EXACT],
             limit: $query->limit,
             firstAnchor: $result[TableConstants::RESULT_KEY_FIRST_ANCHOR],
             lastAnchor: $result[TableConstants::RESULT_KEY_LAST_ANCHOR],
         );
+    }
+
+    /**
+     * Answers whether one row belongs to the set a window query describes, using a DB collection.
+     *
+     * This is the {@see queryDbCollection()} of the count path: a table whose rows come from one
+     * collection answers {@see ViewportTable::containsRow()} with this and nothing else.
+     *
+     * What the row is placed against is exactly what the collection builds out of the query —
+     * the search, and nothing more. That is the same condition the collection windows by, so a
+     * table served straight from it can hand the question over and be sure of the answer. **A
+     * table that narrows the set further in its own {@see query()} must not**: the helper would
+     * answer about a wider set than the window shows, and the live count would drift with
+     * nothing failing. Such a table answers {@see ViewportTable::containsRow()} itself, against
+     * its own conditions, or leaves it at "cannot say" and keeps the whole-set re-query.
+     *
+     * A collection with no object layer answers null rather than false: it cannot run the query,
+     * and "no" from a source that was never asked is the one answer that would move the count
+     * wrongly.
+     *
+     * @param DbCollection $collection Db collection used as the row source
+     * @param string|int $rowKey Row key to place against the set
+     * @param TableQueryDTO $query Window query whose search describes the set
+     * @return ?bool Whether the row is in the set, or null when the collection cannot answer
+     * @throws DatabaseException When query execution fails
+     */
+    protected function containsRowInDbCollection(
+        DbCollection $collection,
+        string|int $rowKey,
+        TableQueryDTO $query,
+    ): ?bool {
+        return $collection->getObjectCollection() === null ? null : $collection->containsRow($query, $rowKey);
     }
 
     /**
@@ -375,10 +408,33 @@ abstract class TableDefinition implements ArrayAccess
         return new TableSnapshotDTO(
             rows: $this->makeRows($result->rows),
             totalCount: $result->totalCount,
+            totalExact: $result->totalExact,
             limit: $result->limit,
             firstAnchor: $result->firstAnchor,
             lastAnchor: $result->lastAnchor,
         );
+    }
+
+    /**
+     * Answers whether one row belongs to the set a window query describes.
+     *
+     * The default is "cannot say", which is what keeps a table that knows nothing of this
+     * contract on the road it was already on: the live count re-queries the set for it, exactly
+     * as before. A table that can answer overrides this — most of them by handing the question
+     * to {@see containsRowInDbCollection()}.
+     *
+     * A table whose rows are already in PHP memory has no reason to override it either. Its
+     * count costs a walk over an array the table is holding, so there is nothing to save, and a
+     * second way of asking the same question would only be a second place to get it wrong.
+     *
+     * @param string|int $rowKey Row key to place against the set
+     * @param TableQueryDTO $query Window query whose search and filters describe the set
+     * @return ?bool Whether the row is in the set, or null when this table cannot answer
+     * @throws Throwable Whatever the concrete table's row source raises
+     */
+    public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
+    {
+        return null;
     }
 
     // ── Actions property ─────────────────────────────────────────────────

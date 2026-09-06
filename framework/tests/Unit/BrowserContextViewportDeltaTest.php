@@ -76,7 +76,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
     public function testUnchangedRenderedRowEmitsNothing(): void
     {
         $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
-        $viewport->recordWindow(self::deliveredWindow([new ViewportDeltaUnitRow('alpha', 'Alpha')]), 1, null, null);
+        $viewport->recordWindow(self::deliveredWindow([new ViewportDeltaUnitRow('alpha', 'Alpha')]), 1, true, null, null);
         $context = $this->bootWithViewport([new ViewportDeltaUnitRow('alpha', 'Alpha')], $viewport);
 
         $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Alpha']));
@@ -90,7 +90,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
     public function testChangeOutsideTheRenderedRowEmitsNothing(): void
     {
         $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
-        $viewport->recordWindow(self::deliveredWindow([new ViewportDeltaUnitRow('alpha', 'Alpha')]), 1, null, null);
+        $viewport->recordWindow(self::deliveredWindow([new ViewportDeltaUnitRow('alpha', 'Alpha')]), 1, true, null, null);
         $context = $this->bootWithViewport([new ViewportDeltaUnitRow('alpha', 'Alpha')], $viewport);
 
         // The source moved a field this table puts in no slot, so the row it rebuilds
@@ -104,7 +104,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
     public function testDeltaRefreshesTheStoredRow(): void
     {
         $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
-        $viewport->recordWindow(self::deliveredWindow([new ViewportDeltaUnitRow('alpha', 'Alpha')]), 1, null, null);
+        $viewport->recordWindow(self::deliveredWindow([new ViewportDeltaUnitRow('alpha', 'Alpha')]), 1, true, null, null);
         $context = $this->bootWithViewport([new ViewportDeltaUnitRow('alpha', 'Renamed')], $viewport);
 
         $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Renamed']));
@@ -130,7 +130,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
     public function testOwnUnchangedRowEmitsNothing(): void
     {
         $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
-        $viewport->recordWindow(self::deliveredWindow([new ViewportDeltaUnitRow('alpha', 'Alpha')]), 1, null, null);
+        $viewport->recordWindow(self::deliveredWindow([new ViewportDeltaUnitRow('alpha', 'Alpha')]), 1, true, null, null);
         $context = $this->bootWithViewport([new ViewportDeltaUnitRow('alpha', 'Alpha')], $viewport);
 
         // The author is no exception: there is nothing to apply for it either.
@@ -148,7 +148,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
     public function testInWindowDeleteEmitsRowRemovedDeltaAndForgetsTheRow(): void
     {
         $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
-        $viewport->recordWindow(self::windowOf(['alpha']), 1, null, null);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, null, null);
         $context = $this->bootWithViewport([], $viewport);
 
         $context->record(SourceChange::dbDeleted(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['key' => 'alpha']));
@@ -218,7 +218,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
     public function testOwnRemovalTagsDeltaOwn(): void
     {
         $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
-        $viewport->recordWindow(self::windowOf(['alpha']), 1, null, null);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, null, null);
         $context = $this->bootWithViewport([], $viewport);
 
         $context->record(SourceChange::dbDeleted(
@@ -236,7 +236,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
     public function testLastPageWithRoomCreateAppends(): void
     {
         $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
-        $viewport->recordWindow(self::windowOf(['alpha']), 1, null, null);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, null, null);
         $context = $this->bootWithViewport(
             [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
             $viewport,
@@ -268,7 +268,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
             limit: 10,
             sort: TableSortOrderDTO::of(new TableSortDTO('key', TableConstants::ORDER_ASC)),
         );
-        $viewport->recordWindow(self::windowOf(['alpha', 'gamma']), 2, null, null);
+        $viewport->recordWindow(self::windowOf(['alpha', 'gamma']), 2, true, null, null);
         $context = $this->bootWithViewport(
             [
                 new ViewportDeltaUnitRow('alpha', 'Alpha'),
@@ -309,7 +309,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
     public function testOwnCreateWithNoActionBehindItCarriesNoRequestId(): void
     {
         $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
-        $viewport->recordWindow(self::windowOf(['alpha']), 1, null, null);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, null, null);
         $context = $this->bootWithViewport(
             [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
             $viewport,
@@ -329,7 +329,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
     public function testNeighborOnTheSameCreateKeepsTheGeneralRules(): void
     {
         $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
-        $viewport->recordWindow(self::windowOf(['alpha']), 1, null, null);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, null, null);
         $context = $this->bootWithViewport(
             [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
             $viewport,
@@ -356,7 +356,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
             limit: 10,
             filter: [TableConstants::FILTER_KEY_SEARCH => 'alpha'],
         );
-        $viewport->recordWindow(self::windowOf(['alpha']), 1, null, null);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, null, null);
         $context = $this->bootWithViewport(
             [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
             $viewport,
@@ -379,7 +379,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
     public function testOwnCreateOnAFurtherPageLeavesOnlyTheCount(): void
     {
         $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 1);
-        $viewport->recordWindow(self::windowOf(['alpha']), 5, null, null);
+        $viewport->recordWindow(self::windowOf(['alpha']), 5, true, null, null);
         $context = $this->bootWithViewport(
             [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
             $viewport,
@@ -402,7 +402,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
     public function testCreateOffTheLastPageEmitsCount(): void
     {
         $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 1);
-        $viewport->recordWindow(self::windowOf(['alpha']), 5, null, null);
+        $viewport->recordWindow(self::windowOf(['alpha']), 5, true, null, null);
         $context = $this->bootWithViewport(
             [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
             $viewport,
@@ -489,7 +489,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
     private function boot(array $rows, array $windowRowIds, int $totalCount): ViewportDeltaUnitContext
     {
         $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
-        $viewport->recordWindow(self::windowOf($windowRowIds), $totalCount, null, null);
+        $viewport->recordWindow(self::windowOf($windowRowIds), $totalCount, true, null, null);
 
         return $this->bootWithViewport($rows, $viewport);
     }

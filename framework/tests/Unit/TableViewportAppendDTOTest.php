@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\DTO\TableViewportAppendDTO;
+use Hilos\Core\Table\TableConstants;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -17,14 +18,36 @@ final class TableViewportAppendDTOTest extends TestCase
     {
         $row = ['rowKey' => 'a', 'slots' => ['settings' => ['key' => 'a']]];
         $restored = TableViewportAppendDTO::fromArray(
-            new TableViewportAppendDTO('hilos_settings', 'settings', $row, 91, 1)->toArray(),
+            new TableViewportAppendDTO('hilos_settings', 'settings', $row, 91, true, 1)->toArray(),
         );
 
         $this->assertSame('hilos_settings', $restored->page);
         $this->assertSame('settings', $restored->tableKey);
         $this->assertSame($row, $restored->row);
         $this->assertSame(91, $restored->totalCount);
+        $this->assertTrue($restored->totalExact);
         $this->assertSame(1, $restored->pageCount);
+    }
+
+    public function testTheRowStillTravelsWhenTheCountStoppedAtItsCeiling(): void
+    {
+        $row = ['rowKey' => 'a', 'slots' => ['settings' => ['key' => 'a']]];
+        $wire = new TableViewportAppendDTO(
+            'hilos_settings',
+            'settings',
+            $row,
+            TableConstants::COUNT_CEILING,
+            false,
+            null,
+        )->toArray();
+
+        $this->assertArrayNotHasKey(TableViewportAppendDTO::pageCount, $wire);
+
+        $restored = TableViewportAppendDTO::fromArray($wire);
+
+        $this->assertSame($row, $restored->row);
+        $this->assertFalse($restored->totalExact);
+        $this->assertNull($restored->pageCount);
     }
 
     public function testFromArrayRefusesAnEmptyPayloadInsteadOfAppendingAnEmptyRow(): void
@@ -43,6 +66,7 @@ final class TableViewportAppendDTOTest extends TestCase
             TableViewportAppendDTO::page => 'hilos_settings',
             TableViewportAppendDTO::tableKey => 'settings',
             TableViewportAppendDTO::totalCount => 91,
+            TableViewportAppendDTO::totalExact => true,
             TableViewportAppendDTO::pageCount => 1,
         ]);
     }

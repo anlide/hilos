@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
+use Hilos\Core\Table\TableConstants;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -25,6 +26,7 @@ final class TableWindowSignalDataTest extends TestCase
             tableKey: 'settings',
             rows: $rows,
             totalCount: 42,
+            totalExact: true,
             limit: 10,
             firstAnchor: new TableAnchorDTO(['key' => 'a']),
             lastAnchor: new TableAnchorDTO(['key' => 'b']),
@@ -36,6 +38,7 @@ final class TableWindowSignalDataTest extends TestCase
         $this->assertSame('settings', $restored->tableKey);
         $this->assertSame($rows, $restored->rows);
         $this->assertSame(42, $restored->totalCount);
+        $this->assertTrue($restored->totalExact);
         $this->assertSame(10, $restored->limit);
         $this->assertSame(['key' => 'a'], $restored->firstAnchor?->toArray());
         $this->assertSame(['key' => 'b'], $restored->lastAnchor?->toArray());
@@ -48,6 +51,7 @@ final class TableWindowSignalDataTest extends TestCase
             tableKey: 'settings',
             rows: [],
             totalCount: 0,
+            totalExact: true,
             limit: 10,
         );
 
@@ -55,6 +59,37 @@ final class TableWindowSignalDataTest extends TestCase
 
         $this->assertNull($restored->firstAnchor);
         $this->assertNull($restored->lastAnchor);
+    }
+
+    public function testACountStoppedAtItsCeilingTravelsSayingSo(): void
+    {
+        $dto = new TableWindowSignalData(
+            page: 'hilos_notification_deliveries',
+            tableKey: 'deliveries',
+            rows: [],
+            totalCount: TableConstants::COUNT_CEILING,
+            totalExact: false,
+            limit: 25,
+        );
+
+        $restored = TableWindowSignalData::fromArray($dto->toArray());
+
+        $this->assertSame(TableConstants::COUNT_CEILING, $restored->totalCount);
+        $this->assertFalse($restored->totalExact);
+    }
+
+    public function testFromArrayRefusesAWindowWithoutTheWordOnItsCountAndNamesTheKey(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(TableWindowSignalData::totalExact);
+
+        TableWindowSignalData::fromArray([
+            TableWindowSignalData::page => 'hilos_settings',
+            TableWindowSignalData::tableKey => 'settings',
+            TableWindowSignalData::rows => [],
+            TableWindowSignalData::totalCount => 42,
+            TableWindowSignalData::limit => 10,
+        ]);
     }
 
     public function testFromArrayRefusesAnEmptyPayloadInsteadOfAnEmptyWindow(): void
@@ -74,6 +109,7 @@ final class TableWindowSignalDataTest extends TestCase
             TableWindowSignalData::tableKey => 'settings',
             TableWindowSignalData::rows => [],
             TableWindowSignalData::totalCount => 42,
+            TableWindowSignalData::totalExact => true,
         ]);
     }
 }

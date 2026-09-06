@@ -19,8 +19,9 @@ use Hilos\Core\Table\TableConstants;
  * and is it still the row this connection was given - while the memory a window
  * costs stays fixed per row rather than growing with the payload.
  *
- * The descriptor is immutable; the delivered rows, the total count and the two places the
- * window sits between are updated as windows are served and as rows leave the set.
+ * The descriptor is immutable; the delivered rows, the total count with the word on how exact
+ * it is, and the two places the window sits between are updated as windows are served and as
+ * rows leave the set.
  */
 final class TableViewportSubscription
 {
@@ -31,6 +32,9 @@ final class TableViewportSubscription
 
     /** Total rows matching the filter at the last window build. */
     private int $totalCount = 0;
+
+    /** Whether that total is the size of the set rather than the ceiling the count stopped at. */
+    private bool $totalExact = true;
 
     /** Place the first row of the last served window sits at, or null when that window was empty. */
     private ?TableAnchorDTO $firstAnchor = null;
@@ -64,13 +68,20 @@ final class TableViewportSubscription
      * @param array<string, array{rowKey: int|string, slots: array<string, mixed>}> $wireRows Wire rows
      *     delivered in the window, keyed by row-id key, in display order
      * @param int $totalCount Total rows matching the filter
+     * @param bool $totalExact Whether that total is the size of the set rather than the ceiling the count stopped at
      * @param ?TableAnchorDTO $firstAnchor Place the first delivered row sits at, or null when none was
      * @param ?TableAnchorDTO $lastAnchor Place the last delivered row sits at, or null when none was
      */
-    public function recordWindow(array $wireRows, int $totalCount, ?TableAnchorDTO $firstAnchor, ?TableAnchorDTO $lastAnchor): void
-    {
+    public function recordWindow(
+        array $wireRows,
+        int $totalCount,
+        bool $totalExact,
+        ?TableAnchorDTO $firstAnchor,
+        ?TableAnchorDTO $lastAnchor,
+    ): void {
         $this->rowDigests = array_map(self::digest(...), $wireRows);
         $this->totalCount = $totalCount;
+        $this->totalExact = $totalExact;
         $this->firstAnchor = $firstAnchor;
         $this->lastAnchor = $lastAnchor;
     }
@@ -90,10 +101,12 @@ final class TableViewportSubscription
      * Records a new total without touching the delivered rows.
      *
      * @param int $totalCount Total rows matching the filter
+     * @param bool $totalExact Whether that total is the size of the set rather than the ceiling the count stopped at
      */
-    public function recordTotal(int $totalCount): void
+    public function recordTotal(int $totalCount, bool $totalExact): void
     {
         $this->totalCount = $totalCount;
+        $this->totalExact = $totalExact;
     }
 
     /**
@@ -159,6 +172,20 @@ final class TableViewportSubscription
     }
 
     /**
+     * Whether the recorded total is the size of the set rather than the ceiling the count stopped at.
+     *
+     * Everything derived from the total is derived from this too: a count that stopped at its
+     * ceiling says "at least this many" and supports no page count, no nearer end of the set and
+     * no end at all.
+     *
+     * @return bool Whether the total is the size of the filtered set
+     */
+    public function totalExact(): bool
+    {
+        return $this->totalExact;
+    }
+
+    /**
      * Place the first row of the last served window sits at.
      *
      * SCAFFOLD: nothing on the server reads this yet — the client holds its own boundaries and
@@ -199,6 +226,11 @@ final class TableViewportSubscription
      * served: a row appended to a window with room joins it, and a stored flag would still be
      * describing the window before it.
      *
+     * The numbered-page reading is the one that needs the total, so it is the one an inexact
+     * count takes away: past the ceiling the number is not where the set ends, and answering
+     * yes off it would place the end of the set at 500 on every set larger than that. The
+     * anchored reading is untouched, because it reads the window's own size and not the total.
+     *
      * @return bool Whether the last row of the set is in the delivered window
      */
     public function reachesEnd(): bool
@@ -209,7 +241,7 @@ final class TableViewportSubscription
 
         $windowSize = count($this->rowDigests);
         if ($this->pageIndex !== null) {
-            return $this->pageIndex * $this->limit + $windowSize >= $this->totalCount;
+            return $this->totalExact && $this->pageIndex * $this->limit + $windowSize >= $this->totalCount;
         }
 
         return $this->anchorDirection === TableAnchorDirection::After && $windowSize < $this->limit;

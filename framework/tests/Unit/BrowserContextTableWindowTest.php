@@ -91,6 +91,7 @@ final class BrowserContextTableWindowTest extends TestCase
                     ],
                 ],
                 TableWindowSignalData::totalCount => 3,
+                TableWindowSignalData::totalExact => true,
                 TableWindowSignalData::limit => 1,
                 TableWindowSignalData::firstAnchor => ['key' => 'b'],
                 TableWindowSignalData::lastAnchor => ['key' => 'b'],

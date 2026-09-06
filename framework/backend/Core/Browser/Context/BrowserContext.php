@@ -432,7 +432,13 @@ abstract class BrowserContext
             $wireRows[(string) $browserRow[BrowserPageSignalData::rowKey]] = $wireRow;
         }
 
-        $viewport->recordWindow($wireRows, $snapshot->totalCount, $snapshot->firstAnchor, $snapshot->lastAnchor);
+        $viewport->recordWindow(
+            $wireRows,
+            $snapshot->totalCount,
+            $snapshot->totalExact,
+            $snapshot->firstAnchor,
+            $snapshot->lastAnchor,
+        );
 
         Hilos::$sr->queueSignal(
             signalSource: new SignalSource(SignalSource::WORKER),
@@ -444,6 +450,7 @@ abstract class BrowserContext
                     tableKey: $viewport->tableKey,
                     rows: $rows,
                     totalCount: $snapshot->totalCount,
+                    totalExact: $snapshot->totalExact,
                     limit: $snapshot->limit,
                     firstAnchor: $snapshot->firstAnchor,
                     lastAnchor: $snapshot->lastAnchor,
@@ -1647,7 +1654,13 @@ abstract class BrowserContext
             return false;
         }
 
-        $viewport->recordWindow($wireRows, $snapshot->totalCount, $snapshot->firstAnchor, $snapshot->lastAnchor);
+        $viewport->recordWindow(
+            $wireRows,
+            $snapshot->totalCount,
+            $snapshot->totalExact,
+            $snapshot->firstAnchor,
+            $snapshot->lastAnchor,
+        );
 
         $this->queueAddressedTableSignal(
             SignalTypeConstants::TABLE_VIEWPORT_OWN_CREATE,
@@ -1657,7 +1670,8 @@ abstract class BrowserContext
                 $wireRow,
                 $position,
                 $snapshot->totalCount,
-                $this->pageCount($snapshot->totalCount, $viewport->limit),
+                $snapshot->totalExact,
+                $this->pageCount($snapshot->totalCount, $viewport->limit, $snapshot->totalExact),
                 $requestId,
             ),
             $acceptKey,
@@ -1674,6 +1688,10 @@ abstract class BrowserContext
      * free slot — so nothing already shown shifts. The append carries the new total
      * and page count, so no separate count signal is sent. A filtered window falls
      * through to the count path (the new row may not match the search).
+     *
+     * The row is delivered whatever the count says. A window whose total has stopped at its
+     * ceiling still gets its new row; what it does not get is a page count, and its total
+     * travels as the ceiling with the word that it is not exact.
      *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its delivered rows and total are updated in place
@@ -1702,9 +1720,11 @@ abstract class BrowserContext
             return false;
         }
 
-        $newTotal = $viewport->totalCount() + 1;
+        $counted = $this->countedTotal($viewport, $viewport->totalCount() + 1);
+        $totalCount = $counted[TableConstants::RESULT_KEY_TOTAL_COUNT];
+        $totalExact = $counted[TableConstants::RESULT_KEY_TOTAL_EXACT];
         $wireRow = $this->browserRowToWire($table->browserRow($mutation->row));
-        $viewport->recordTotal($newTotal);
+        $viewport->recordTotal($totalCount, $totalExact);
         $viewport->recordRow((string) $mutation->rowKey, $wireRow);
 
         $this->queueAddressedTableSignal(
@@ -1713,8 +1733,9 @@ abstract class BrowserContext
                 $page,
                 $browserKey,
                 $wireRow,
-                $newTotal,
-                $this->pageCount($newTotal, $viewport->limit),
+                $totalCount,
+                $totalExact,
+                $this->pageCount($totalCount, $viewport->limit, $totalExact),
             ),
             $acceptKey,
         );
@@ -1747,7 +1768,18 @@ abstract class BrowserContext
      * row-level type (create +1, delete -1, update none) with no re-query — the
      * type is row-level faithful because each table builds it that way (a presence
      * or other secondary-source change is always an update). With a filter active,
-     * the total is recomputed via getPage, the costlier but transient path.
+     * the row is placed against the set by asking the table about that one row, and
+     * only a table that cannot answer falls back to the whole-set re-query.
+     *
+     * A window whose count already stopped at its ceiling is sent nothing at all. "At least 500"
+     * is neither truer nor newer for one more row, and finding out whether the set has fallen
+     * back under the ceiling would cost precisely the pass over it this path exists to avoid.
+     * Such a window becomes exact again the next time it asks for a window - a page turn, a new
+     * search, a resubscribe - and not before.
+     *
+     * The one signal that does cross that line is the crossing itself: an exact total that grows
+     * past the ceiling is sent once, as the ceiling with the word that it is not exact, and after
+     * that the window is silent. Without it the pager would sit on an exact number it outgrew.
      *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its total is updated in place
@@ -1764,29 +1796,84 @@ abstract class BrowserContext
         string $page,
         string $browserKey,
     ): void {
-        $newTotal = $this->viewportTotalAfterMutation($table, $viewport, $mutation, $page, $acceptKey);
-        if ($newTotal === null || $newTotal === $viewport->totalCount()) {
+        if (!$viewport->totalExact()) {
             return;
         }
 
-        $viewport->recordTotal($newTotal);
+        $total = $this->viewportTotalAfterMutation($table, $viewport, $mutation, $page, $acceptKey);
+        if ($total === null) {
+            return;
+        }
+
+        $totalCount = $total[TableConstants::RESULT_KEY_TOTAL_COUNT];
+        $totalExact = $total[TableConstants::RESULT_KEY_TOTAL_EXACT];
+        if ($totalCount === $viewport->totalCount() && $totalExact === $viewport->totalExact()) {
+            return;
+        }
+
+        $viewport->recordTotal($totalCount, $totalExact);
 
         $this->queueAddressedTableSignal(
             SignalTypeConstants::TABLE_VIEWPORT_COUNT,
-            new TableViewportCountDTO($page, $browserKey, $newTotal, $this->pageCount($newTotal, $viewport->limit)),
+            new TableViewportCountDTO(
+                $page,
+                $browserKey,
+                $totalCount,
+                $totalExact,
+                $this->pageCount($totalCount, $viewport->limit, $totalExact),
+            ),
             $acceptKey,
         );
     }
 
     /**
+     * Places a total under the ceiling a windowed count stops at.
+     *
+     * A window whose total grew past the ceiling reports the ceiling and says the number is not
+     * exact; a window with no limit reads its whole set anyway, so nothing is capped there.
+     *
+     * @param TableViewportSubscription $viewport Connection's window
+     * @param int $totalCount Total the mutation arithmetic arrived at
+     * @return array{totalCount: int, totalExact: bool} Total as it travels, with the word on it
+     */
+    private function countedTotal(TableViewportSubscription $viewport, int $totalCount): array
+    {
+        $overCeiling = $viewport->limit !== TableConstants::NO_LIMIT && $totalCount > TableConstants::COUNT_CEILING;
+
+        return [
+            TableConstants::RESULT_KEY_TOTAL_COUNT => $overCeiling ? TableConstants::COUNT_CEILING : $totalCount,
+            TableConstants::RESULT_KEY_TOTAL_EXACT => !$overCeiling,
+        ];
+    }
+
+    /**
      * Resolves the filtered total after a mutation, or null to leave it unchanged.
+     *
+     * With no filter of any kind the mutation type settles it: every row is in the set, so a
+     * create is one more and a delete is one fewer.
+     *
+     * With a filter active the set is not every row, and what the count needs is one bit — is
+     * this row in the set now? That is asked of the table, and the answer decides:
+     *
+     * - a created row is one the set did not hold a moment ago, so it moves the count by one
+     *   when it belongs to the set and not at all when it does not;
+     * - a row the window is holding was in the set by construction, the window being part of it,
+     *   so a delete takes one off and an update takes one off only if the row has left the set;
+     * - a row outside the window is one nobody can place: whether it was in the set before this
+     *   change is a question about its previous state, and no previous state is kept anywhere -
+     *   a source update carries the changed columns and a delete need carry no row at all. The
+     *   count stands still, and the next window request makes it right again.
+     *
+     * A table that does not answer keeps the whole-set re-query it always had, which is the
+     * point of letting it not answer: a project table that never heard of this contract must not
+     * quietly stop counting.
      *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
      * @param string $page Subscribed page key
      * @param string $acceptKey Target accept key
-     * @return ?int New filtered total, or null when the count does not change
+     * @return ?array{totalCount: int, totalExact: bool} New total with the word on it, or null when it does not change
      */
     private function viewportTotalAfterMutation(
         ViewportTable $table,
@@ -1794,15 +1881,44 @@ abstract class BrowserContext
         TableRowMutationDTO $mutation,
         string $page,
         string $acceptKey,
-    ): ?int {
-        if ($this->viewportQuery($viewport)->search !== null) {
+    ): ?array {
+        $query = $this->viewportQuery($viewport);
+        if ($query->search === null && $viewport->filter === []) {
+            return match ($mutation->type) {
+                TableMutationType::Create => $this->countedTotal($viewport, $viewport->totalCount() + 1),
+                TableMutationType::Delete => $this->countedTotal($viewport, max(0, $viewport->totalCount() - 1)),
+                TableMutationType::Update => null,
+                default => $this->viewportFilteredTotal($table, $viewport, $page, $acceptKey),
+            };
+        }
+
+        try {
+            $contains = $table->containsRow($mutation->rowKey, $query);
+        } catch (Throwable $e) {
+            // The count stands still on a refused question, exactly as it does on a row nobody
+            // can place - and without this line the two would look the same from outside, which
+            // is the same silence the re-query path below was given a log line for.
+            Logger::error(
+                "Viewport count kept a stale total after its row question failed: table={$viewport->tableKey}, "
+                    . "page={$page}, acceptKey={$acceptKey}, rowKey={$mutation->rowKey}, "
+                    . 'exception=' . $e::class . ", message={$e->getMessage()}, "
+                    . 'at=' . basename($e->getFile()) . ':' . $e->getLine(),
+            );
+
+            return null;
+        }
+
+        if ($contains === null) {
             return $this->viewportFilteredTotal($table, $viewport, $page, $acceptKey);
         }
 
+        $inWindow = $viewport->hasRow((string) $mutation->rowKey);
+        $oneFewer = $this->countedTotal($viewport, max(0, $viewport->totalCount() - 1));
+
         return match ($mutation->type) {
-            TableMutationType::Create => $viewport->totalCount() + 1,
-            TableMutationType::Delete => max(0, $viewport->totalCount() - 1),
-            TableMutationType::Update => null,
+            TableMutationType::Create => $contains ? $this->countedTotal($viewport, $viewport->totalCount() + 1) : null,
+            TableMutationType::Delete => $inWindow ? $oneFewer : null,
+            TableMutationType::Update => $inWindow && !$contains ? $oneFewer : null,
             default => $this->viewportFilteredTotal($table, $viewport, $page, $acceptKey),
         };
     }
@@ -1814,16 +1930,21 @@ abstract class BrowserContext
      * @param TableViewportSubscription $viewport Connection's window
      * @param string $page Subscribed page key
      * @param string $acceptKey Target accept key
-     * @return ?int Filtered total, or null when the query fails
+     * @return ?array{totalCount: int, totalExact: bool} Filtered total with the word on it, or null when the query fails
      */
     private function viewportFilteredTotal(
         ViewportTable $table,
         TableViewportSubscription $viewport,
         string $page,
         string $acceptKey,
-    ): ?int {
+    ): ?array {
         try {
-            return $table->getPage($this->viewportQuery($viewport))->totalCount;
+            $snapshot = $table->getPage($this->viewportQuery($viewport));
+
+            return [
+                TableConstants::RESULT_KEY_TOTAL_COUNT => $snapshot->totalCount,
+                TableConstants::RESULT_KEY_TOTAL_EXACT => $snapshot->totalExact,
+            ];
         } catch (Throwable $e) {
             // Null here means "the count did not change", so a refused re-query is
             // indistinguishable from a steady total: this window's paginator freezes
@@ -1928,14 +2049,22 @@ abstract class BrowserContext
     }
 
     /**
-     * Page count under a window size; at least one, and one when unpaginated.
+     * Page count under a window size; at least one, one when unpaginated, and none when unknown.
+     *
+     * A total that stopped at its ceiling supports no page count at all: the number would be the
+     * pages of the ceiling and not of the set. Null is what the frames turn into an absent key,
+     * because zero would read as a table with no pages.
      *
      * @param int $totalCount Total rows matching the filter
      * @param int $limit Window size (TableConstants::NO_LIMIT = all rows)
-     * @return int Page count
+     * @param bool $totalExact Whether that total is the size of the set rather than the ceiling it stopped at
+     * @return ?int Page count, or null when the total is not exact
      */
-    private function pageCount(int $totalCount, int $limit): int
+    private function pageCount(int $totalCount, int $limit, bool $totalExact): ?int
     {
+        if (!$totalExact) {
+            return null;
+        }
         if ($limit <= TableConstants::NO_LIMIT) {
             return 1;
         }

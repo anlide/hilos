@@ -68,6 +68,7 @@ export function bindTableViewport(
     sink.ingestWindow(
       data.rows.map((row) => normalizeTableRow(scope, row, options)),
       data.totalCount,
+      data.totalExact,
       data.firstAnchor,
       data.lastAnchor,
     )
@@ -93,7 +94,7 @@ export function bindTableViewport(
     if (data.tableKey !== address.tableKey || data.page !== address.page) {
       return
     }
-    sink.ingestCount(data.totalCount)
+    sink.ingestCount(data.totalCount, data.totalExact)
   })
 
   const unsubscribeAppend = connection.on('tableViewportAppend', (signal) => {
@@ -108,6 +109,7 @@ export function bindTableViewport(
     sink.ingestAppend(
       normalizeTableRow(scope, data.row, options),
       data.totalCount,
+      data.totalExact,
     )
   })
 
@@ -126,6 +128,7 @@ export function bindTableViewport(
         normalizeTableRow(scope, data.row, options),
         data.position,
         data.totalCount,
+        data.totalExact,
         data.requestId,
       )
     },

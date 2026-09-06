@@ -51,7 +51,7 @@ final class SubscriptionRegistryTableViewportTest extends TestCase
     public function testRecordWindowTracksDeliveredRowIdsAndTotal(): void
     {
         $viewport = new TableViewportSubscription(tableKey: 'settings');
-        $viewport->recordWindow(self::windowOf(['a', 'b', 'c']), 42, null, null);
+        $viewport->recordWindow(self::windowOf(['a', 'b', 'c']), 42, true, null, null);
 
         $this->assertSame(['a', 'b', 'c'], $viewport->rowIds());
         $this->assertSame(42, $viewport->totalCount());
@@ -62,7 +62,7 @@ final class SubscriptionRegistryTableViewportTest extends TestCase
     public function testNumericRowKeysComeBackAsStrings(): void
     {
         $viewport = new TableViewportSubscription(tableKey: 'settings');
-        $viewport->recordWindow(self::windowOf(['7', '11']), 2, null, null);
+        $viewport->recordWindow(self::windowOf(['7', '11']), 2, true, null, null);
 
         // PHP hands a numeric key back out of an array as an int, so the map the
         // window is kept in would silently retype rows every table keyed by an id.
@@ -73,7 +73,7 @@ final class SubscriptionRegistryTableViewportTest extends TestCase
     public function testForgetRowDropsItFromTheDeliveredSet(): void
     {
         $viewport = new TableViewportSubscription(tableKey: 'settings');
-        $viewport->recordWindow(self::windowOf(['a', 'b', 'c']), 3, null, null);
+        $viewport->recordWindow(self::windowOf(['a', 'b', 'c']), 3, true, null, null);
         $viewport->forgetRow('b');
 
         $this->assertSame(['a', 'c'], $viewport->rowIds());
