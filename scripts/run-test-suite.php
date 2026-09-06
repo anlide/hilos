@@ -507,7 +507,7 @@ function sweepStands(string $root): array
     $survived = [];
     foreach (tearDownStands($root, require $root . '/scripts/test-stands.php') as $result) {
         fwrite(STDOUT, describeTeardown($result) . "\n");
-        if ($result['residue']['containers'] !== [] || $result['residue']['networks'] !== []) {
+        if ($result['problem'] !== '' || $result['residue']['containers'] !== [] || $result['residue']['networks'] !== []) {
             $survived[] = $result['id'];
         }
     }

@@ -17,39 +17,31 @@ declare(strict_types=1);
  *   project      the compose project name, read off the file's own `name:` line. This is
  *                what docker labels every container and network of the stand with, and
  *                therefore what the residue is looked up by.
- *   mode         `project` drops the whole compose project; `named` touches only the
- *                containers listed here and leaves the rest of the project standing.
- *   services     `named` only: service names, because `docker compose rm` addresses
- *                services.
- *   containers   `named` only: container names, because `docker ps --filter name`
- *                addresses containers. Two lists rather than one because the two differ
- *                for three of the four entries below (`hilos-cli-test` is the container
- *                `hilos-cli-framework-test`), and a single list would silently take down
- *                nothing: compose answers an unknown service with `no such service` and
- *                keeps going.
+ *   mode         `project` drops the whole compose project; `profile` drops only the
+ *                profiles named below and leaves the rest of the project standing.
+ *   profiles     `profile` only: the compose profiles the stand's services sit behind. The
+ *                services themselves are NOT listed: compose resolves them out of the file
+ *                by these profiles, so one added to a profile is taken down without an edit
+ *                here. Empty on a `project` stand, which owns its whole file.
+ *   networks     `profile` only: the FULL docker names of the networks the stand owns, since
+ *                the project label is shared with whatever else lives in the file. A network
+ *                without its own `name:` is called the project name, an underscore and the
+ *                key it carries in the file — hence
+ *                `hilos-framework_hilos-framework-test-network` for the key
+ *                `hilos-framework-test-network` at
+ *                `framework/docker/docker-compose.yml:281`. Empty on a `project` stand, which
+ *                finds its networks by project label.
  */
 
 return [
-    // WHY THIS ONE IS NAMED AND NOT `project`: the owner's preview stand lives in the SAME
-    // compose project as the test one. `hilos-dev-dns` (framework/docker/docker-compose.yml:113),
-    // `hilos-preview-caddy` (:128) and `hilos-preview-control` (:150) run for weeks at a time
-    // out of this very file, so `down --remove-orphans` on the project would take the
-    // home.hilos console down with the stand — and the owner would find that out by opening
-    // the console, not by reading a run log. Proposal P-199 splits the two projects apart and
-    // retires this exception; until it lands, the four names below are the whole stand.
     [
         'id' => 'framework',
         'cwd' => '.',
         'composeFile' => 'framework/docker/docker-compose.yml',
         'project' => 'hilos-framework',
-        'mode' => 'named',
-        'services' => ['mysql-framework-test', 'sshd-framework-test', 'hilos-cli-test', 'hilos-frontend-cli'],
-        'containers' => [
-            'hilos-mysql-framework-test',
-            'hilos-sshd-framework-test',
-            'hilos-cli-framework-test',
-            'hilos-frontend-cli',
-        ],
+        'mode' => 'profile',
+        'profiles' => ['test', 'frontend'],
+        'networks' => ['hilos-framework_hilos-framework-test-network'],
     ],
     [
         'id' => 'chat',
@@ -57,8 +49,8 @@ return [
         'composeFile' => 'docker/docker-compose.test.yml',
         'project' => 'hilos-chat-test',
         'mode' => 'project',
-        'services' => [],
-        'containers' => [],
+        'profiles' => [],
+        'networks' => [],
     ],
     [
         'id' => 'tasks',
@@ -66,8 +58,8 @@ return [
         'composeFile' => 'docker/docker-compose.test.yml',
         'project' => 'hilos-tasks-test',
         'mode' => 'project',
-        'services' => [],
-        'containers' => [],
+        'profiles' => [],
+        'networks' => [],
     ],
     [
         'id' => 'polls',
@@ -75,8 +67,8 @@ return [
         'composeFile' => 'docker/docker-compose.test.yml',
         'project' => 'hilos-polls-test',
         'mode' => 'project',
-        'services' => [],
-        'containers' => [],
+        'profiles' => [],
+        'networks' => [],
     ],
     [
         'id' => 'cluster',
@@ -84,7 +76,7 @@ return [
         'composeFile' => 'docker/docker-compose.cluster.yml',
         'project' => 'hilos-cluster',
         'mode' => 'project',
-        'services' => [],
-        'containers' => [],
+        'profiles' => [],
+        'networks' => [],
     ],
 ];

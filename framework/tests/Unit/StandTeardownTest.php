@@ -15,10 +15,14 @@ require_once __DIR__ . '/../../../scripts/stand-teardown.php';
  *
  * Actually removing a container is out of scope on purpose — proving it would mean standing a
  * demo up, which is the very thing the full run already does. What is worth pinning here is the
- * shape of the commands, because the two mistakes this ticket was written about are both
- * invisible at runtime: a `named` stand that quietly grows `--remove-orphans` would take the
- * owner's preview stand down with it, and a service list addressed by container name answers
- * `no such service` and exits zero.
+ * shape of the commands, because the mistakes they guard against are invisible at runtime: a
+ * `profile` stand that quietly grew `--profile "*"` would take the owner's preview lane down with
+ * it, a residue lookup by project label alone would hand the preview containers to `docker rm`,
+ * and profiles matching no service take nothing down while exiting zero.
+ *
+ * Whether the registry agrees with the compose file — that `test` and `frontend` still name
+ * services — is not answerable here and is not tried: it needs docker. The teardown answers it at
+ * the moment it matters, by reporting a problem instead of a clean stand.
  *
  * The file under test is a plain script rather than a class, so it is required by path, the same
  * way `scripts/down-stands.php` requires it.
@@ -32,19 +36,19 @@ final class StandTeardownTest extends TestCase
         'composeFile' => 'docker/docker-compose.test.yml',
         'project' => 'hilos-chat-test',
         'mode' => 'project',
-        'services' => [],
-        'containers' => [],
+        'profiles' => [],
+        'networks' => [],
     ];
 
-    /** The framework stand: four containers inside a project that also holds the preview lane. */
-    private const array NAMED_STAND = [
+    /** The framework stand: two profiles inside a compose file that also holds the preview lane. */
+    private const array PROFILE_STAND = [
         'id' => 'framework',
         'cwd' => '.',
         'composeFile' => 'framework/docker/docker-compose.yml',
         'project' => 'hilos-framework',
-        'mode' => 'named',
-        'services' => ['mysql-framework-test', 'hilos-cli-test'],
-        'containers' => ['hilos-mysql-framework-test', 'hilos-cli-framework-test'],
+        'mode' => 'profile',
+        'profiles' => ['test', 'frontend'],
+        'networks' => ['hilos-framework_hilos-framework-test-network'],
     ];
 
     /** Every stand the run knows about, in the shape the teardown reads. */
@@ -54,30 +58,31 @@ final class StandTeardownTest extends TestCase
 
         $this->assertNotSame([], $stands);
         foreach ($stands as $stand) {
-            foreach (['id', 'cwd', 'composeFile', 'project', 'mode', 'services', 'containers'] as $key) {
+            foreach (['id', 'cwd', 'composeFile', 'project', 'mode', 'profiles', 'networks'] as $key) {
                 $this->assertArrayHasKey($key, $stand, 'stand ' . ($stand['id'] ?? '?') . ' is missing ' . $key);
             }
-            $this->assertContains($stand['mode'], ['project', 'named'], 'stand ' . $stand['id'] . ' has an unknown mode');
+            $this->assertContains($stand['mode'], ['project', 'profile'], 'stand ' . $stand['id'] . ' has an unknown mode');
         }
     }
 
-    /** A `named` stand names the services it drops, and nothing outside that list. */
-    public function testANamedStandDeclaresTheServicesAndContainersItOwns(): void
+    /**
+     * A `profile` stand names both what it drops and what it owns, and a `project` stand names
+     * neither. A profile-less `profile` stand would drop nothing while exiting zero, and a
+     * network-less one would ask `docker network ls` with no filter at all.
+     */
+    public function testAProfileStandDeclaresTheProfilesAndNetworksItOwns(): void
     {
         $stands = require __DIR__ . '/../../../scripts/test-stands.php';
 
         foreach ($stands as $stand) {
-            if ($stand['mode'] !== 'named') {
-                $this->assertSame([], $stand['services'], 'stand ' . $stand['id'] . ' lists services it never uses');
+            if ($stand['mode'] !== 'profile') {
+                $this->assertSame([], $stand['profiles'], 'stand ' . $stand['id'] . ' lists profiles it never uses');
+                $this->assertSame([], $stand['networks'], 'stand ' . $stand['id'] . ' lists networks it never asks about');
 
                 continue;
             }
-            $this->assertNotSame([], $stand['services'], 'named stand ' . $stand['id'] . ' drops nothing');
-            $this->assertCount(
-                count($stand['services']),
-                $stand['containers'],
-                'named stand ' . $stand['id'] . ' cannot look up what it drops',
-            );
+            $this->assertNotSame([], $stand['profiles'], 'profile stand ' . $stand['id'] . ' drops nothing');
+            $this->assertNotSame([], $stand['networks'], 'profile stand ' . $stand['id'] . ' owns no network to sweep');
         }
     }
 
@@ -91,16 +96,33 @@ final class StandTeardownTest extends TestCase
     }
 
     /**
-     * The framework stand goes down by service name. `--remove-orphans` here would take the
-     * owner's preview containers with it, since they share this compose project.
+     * The framework stand goes down by its own profiles. `--profile "*"` here would reach the
+     * owner's preview containers, since they sit behind profiles of the same compose file.
      */
-    public function testDropsTheFrameworkStandByNameWithoutTouchingItsProject(): void
+    public function testDropsTheFrameworkStandByItsOwnProfiles(): void
     {
-        $command = standDownCommand(self::NAMED_STAND);
+        $command = standDownCommand(self::PROFILE_STAND);
 
-        $this->assertStringContainsString("rm -sf 'mysql-framework-test' 'hilos-cli-test'", $command);
-        $this->assertStringNotContainsString('--remove-orphans', $command);
-        $this->assertStringNotContainsString(' down', $command);
+        $this->assertStringContainsString("--profile 'test' --profile 'frontend'", $command);
+        $this->assertStringContainsString('down --remove-orphans', $command);
+        $this->assertStringNotContainsString('--profile "*"', $command);
+    }
+
+    /** The services of a `profile` stand come out of the compose file, by the profiles it named. */
+    public function testAsksComposeWhichServicesTheProfilesHold(): void
+    {
+        $command = standServicesCommand(self::PROFILE_STAND);
+
+        $this->assertNotNull($command);
+        $this->assertStringContainsString("-f 'framework/docker/docker-compose.yml'", $command);
+        $this->assertStringContainsString("--profile 'test' --profile 'frontend'", $command);
+        $this->assertStringContainsString('config --services', $command);
+    }
+
+    /** A `project` stand owns every service in its file, so there is nothing to resolve. */
+    public function testAsksComposeNothingAboutADemoStandsServices(): void
+    {
+        $this->assertNull(standServicesCommand(self::DEMO_STAND));
     }
 
     /** The one-off containers are found by project label, which is the only thing they share. */
@@ -111,14 +133,16 @@ final class StandTeardownTest extends TestCase
         $this->assertStringContainsString("--filter 'label=com.docker.compose.project=hilos-chat-test'", $command);
     }
 
-    /** The framework stand is looked up by its own container names, anchored so no prefix matches. */
-    public function testLooksUpTheFrameworkStandByItsOwnContainerNames(): void
+    /**
+     * One lookup serves both modes, and it prints the service label beside the name: the project
+     * label is all docker can filter on, and php does the narrowing from there.
+     */
+    public function testLooksUpContainersByProjectLabelAndPrintsTheirService(): void
     {
-        $command = standResidueContainersCommand(self::NAMED_STAND);
+        $command = standResidueContainersCommand(self::PROFILE_STAND);
 
-        $this->assertStringContainsString("--filter 'name=^hilos-mysql-framework-test$'", $command);
-        $this->assertStringContainsString("--filter 'name=^hilos-cli-framework-test$'", $command);
-        $this->assertStringNotContainsString('label=com.docker.compose.project', $command);
+        $this->assertStringContainsString('{{.Names}}\t{{.Label "com.docker.compose.service"}}', $command);
+        $this->assertStringContainsString("--filter 'label=com.docker.compose.project=hilos-framework'", $command);
     }
 
     /** A demo stand owns its networks and is asked about them. */
@@ -126,14 +150,19 @@ final class StandTeardownTest extends TestCase
     {
         $command = standResidueNetworksCommand(self::DEMO_STAND);
 
-        $this->assertNotNull($command);
         $this->assertStringContainsString("--filter 'label=com.docker.compose.project=hilos-chat-test'", $command);
     }
 
-    /** The framework stand owns no networks: the project's are the preview lane's too. */
-    public function testAsksANamedStandAboutNoNetworksAtAll(): void
+    /**
+     * The framework stand is asked about the network it named, anchored: by project label it would
+     * also get the default network the preview lane shares with it.
+     */
+    public function testAsksAProfileStandAboutTheNetworksItNamed(): void
     {
-        $this->assertNull(standResidueNetworksCommand(self::NAMED_STAND));
+        $command = standResidueNetworksCommand(self::PROFILE_STAND);
+
+        $this->assertStringContainsString("--filter 'name=^hilos-framework_hilos-framework-test-network$'", $command);
+        $this->assertStringNotContainsString('label=com.docker.compose.project', $command);
     }
 
     /** What docker printed, read back as names. */
@@ -151,6 +180,34 @@ final class StandTeardownTest extends TestCase
         $this->assertSame([], teardownNames("\n"));
     }
 
+    /** A stand that owns its whole project keeps every container docker named. */
+    public function testKeepsEveryContainerOfAStandThatOwnsItsProject(): void
+    {
+        $this->assertSame(
+            ['hilos-chat-test-mysql-1', 'hilos-chat-test-app-run-abc123'],
+            teardownContainerNames("hilos-chat-test-mysql-1\tmysql\nhilos-chat-test-app-run-abc123\tapp\n", null),
+        );
+    }
+
+    /** A stand that shares its project keeps only the containers of its own services. */
+    public function testKeepsOnlyTheContainersOfTheStandsOwnServices(): void
+    {
+        $output = "hilos-mysql-framework-test\tmysql-framework-test\n"
+            . "hilos-preview-caddy\thilos-preview-caddy\n"
+            . "hilos-framework-hilos-cli-test-run-9f2\thilos-cli-test\n";
+
+        $this->assertSame(
+            ['hilos-mysql-framework-test', 'hilos-framework-hilos-cli-test-run-9f2'],
+            teardownContainerNames($output, ['mysql-framework-test', 'hilos-cli-test']),
+        );
+    }
+
+    /** Docker holding nothing prints a blank line here too, and it is not a container either. */
+    public function testReadsAnEmptyContainerAnswerAsNothingHeld(): void
+    {
+        $this->assertSame([], teardownContainerNames("\n", ['mysql-framework-test']));
+    }
+
     /** A stand that had nothing to remove says so, so that the log covers every stand. */
     public function testDescribesAStandThatWasAlreadyClean(): void
     {
@@ -165,6 +222,7 @@ final class StandTeardownTest extends TestCase
     {
         $result = [
             'id' => 'chat',
+            'problem' => '',
             'removedContainers' => ['hilos-chat-test-mysql-1', 'hilos-chat-test-app-run-abc123'],
             'removedNetworks' => ['hilos-chat-test_default'],
             'residue' => ['containers' => [], 'networks' => []],
@@ -178,6 +236,7 @@ final class StandTeardownTest extends TestCase
     {
         $result = [
             'id' => 'chat',
+            'problem' => '',
             'removedContainers' => ['hilos-chat-test-mysql-1'],
             'removedNetworks' => [],
             'residue' => ['containers' => ['hilos-chat-test-app-run-abc123'], 'networks' => ['hilos-chat-test_default']],
@@ -190,15 +249,54 @@ final class StandTeardownTest extends TestCase
     }
 
     /**
+     * A stand nobody could ask about says that first. Its residue is empty for the same reason its
+     * teardown did nothing, so reporting the residue would report the stand as clean.
+     */
+    public function testDescribesAStandItCouldNotAskAboutBeforeItsResidue(): void
+    {
+        $result = [
+            'id' => 'framework',
+            'problem' => 'profiles test, frontend match no service in framework/docker/docker-compose.yml',
+            'removedContainers' => [],
+            'removedNetworks' => [],
+            'residue' => ['containers' => [], 'networks' => []],
+        ];
+
+        $this->assertSame(
+            'stands: framework — CANNOT ASK: profiles test, frontend match no service'
+                . ' in framework/docker/docker-compose.yml',
+            describeTeardown($result),
+        );
+    }
+
+    /** The problem is the stand's own declaration, so it is named by what was declared. */
+    public function testNamesTheProfilesThatMatchedNoService(): void
+    {
+        $this->assertSame(
+            'profiles test, frontend match no service in framework/docker/docker-compose.yml',
+            standProblem(self::PROFILE_STAND, []),
+        );
+    }
+
+    /** A stand whose profiles resolved, and a stand with no profiles to resolve, both report none. */
+    public function testReportsNoProblemWhenTheStandCouldBeAsked(): void
+    {
+        $this->assertSame('', standProblem(self::PROFILE_STAND, ['mysql-framework-test']));
+        $this->assertSame('', standProblem(self::DEMO_STAND, null));
+    }
+
+    /**
      * A teardown result that removed nothing and left nothing.
      *
-     * @return array{id: string, removedContainers: array<int, string>, removedNetworks: array<int, string>,
+     * @return array{id: string, problem: string, removedContainers: array<int, string>,
+     *     removedNetworks: array<int, string>,
      *     residue: array{containers: array<int, string>, networks: array<int, string>}}
      */
     private static function cleanResult(string $id): array
     {
         return [
             'id' => $id,
+            'problem' => '',
             'removedContainers' => [],
             'removedNetworks' => [],
             'residue' => ['containers' => [], 'networks' => []],

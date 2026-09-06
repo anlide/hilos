@@ -25,7 +25,7 @@ declare(strict_types=1);
 /** Nothing was left behind. */
 const DOWN_STANDS_OK = 0;
 
-/** Something survived the teardown and is named on stderr. */
+/** Something survived the teardown, or could not be asked about, and is named on stderr. */
 const DOWN_STANDS_RESIDUE = 1;
 
 /** The command line named a stand that does not exist. */
@@ -42,7 +42,7 @@ exit(downStands($root, $stands, array_slice($argv, 1)));
  *
  * @param string $root Repository root.
  * @param array<int, array{id: string, cwd: string, composeFile: string, project: string,
- *     mode: string, services: array<int, string>, containers: array<int, string>}> $stands
+ *     mode: string, profiles: array<int, string>, networks: array<int, string>}> $stands
  * @param array<int, string> $arguments Stand ids; none means all of them.
  */
 function downStands(string $root, array $stands, array $arguments): int
@@ -55,7 +55,10 @@ function downStands(string $root, array $stands, array $arguments): int
     $status = DOWN_STANDS_OK;
     foreach (tearDownStands($root, $selected) as $result) {
         $line = describeTeardown($result);
-        if ($result['residue']['containers'] === [] && $result['residue']['networks'] === []) {
+        $quiet = $result['problem'] === ''
+            && $result['residue']['containers'] === []
+            && $result['residue']['networks'] === [];
+        if ($quiet) {
             fwrite(STDOUT, $line . "\n");
 
             continue;
@@ -75,10 +78,10 @@ function downStands(string $root, array $stands, array $arguments): int
  * mode this ticket exists to remove.
  *
  * @param array<int, array{id: string, cwd: string, composeFile: string, project: string,
- *     mode: string, services: array<int, string>, containers: array<int, string>}> $stands
+ *     mode: string, profiles: array<int, string>, networks: array<int, string>}> $stands
  * @param array<int, string> $arguments
  * @return array<int, array{id: string, cwd: string, composeFile: string, project: string,
- *     mode: string, services: array<int, string>, containers: array<int, string>}>|null
+ *     mode: string, profiles: array<int, string>, networks: array<int, string>}>|null
  */
 function selectStands(array $stands, array $arguments): ?array
 {
