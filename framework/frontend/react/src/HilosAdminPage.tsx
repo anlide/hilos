@@ -13,7 +13,13 @@
 // While the identity is still on the wire the heading is a neutral placeholder
 // and nothing else of the shell is drawn: the raw page key is never printed, and
 // an empty h1 under the same data-id would make "the name did not arrive" look
-// exactly like "the name arrived empty". Bootstrap classes only.
+// exactly like "the name arrived empty".
+//
+// A section ROOT that has content of its own passes it in the `body` prop
+// instead, which is drawn after the default body: it needs both, the cards to its
+// children and its own figures beneath them, and overriding the default body
+// would cost it the cards. A leaf page goes on overriding the default body with
+// children as before. Bootstrap classes only.
 import { useContext } from 'react'
 import type { ReactNode } from 'react'
 import { hilosChildLinks, hilosCrumbLinks } from '@hilos/core'
@@ -36,14 +42,21 @@ export interface HilosAdminPageProps {
   children?:
     | ReactNode
     | ((args: { adminChildren: HilosAdminChild[] }) => ReactNode)
+  /**
+   * The content of a section root, drawn AFTER the default body rather than in
+   * place of it: a root needs both, the cards to its children and its own
+   * figures beneath them. Children keeps its meaning — it replaces the body.
+   */
+  body?: ReactNode
 }
 
 /**
  * The admin section shell: breadcrumb, heading, lead, and a default body.
  *
- * @param props The admin page key and the optional body override.
+ * @param props The admin page key, the optional body override, and the optional
+ *   section root content drawn after the body.
  */
-export function HilosAdminPage({ page, children }: HilosAdminPageProps) {
+export function HilosAdminPage({ page, children, body }: HilosAdminPageProps) {
   const router = useContext(HilosRouterContext)
   if (!router) {
     throw new Error('HilosAdminPage requires a HilosRouterContext provider.')
@@ -62,7 +75,7 @@ export function HilosAdminPage({ page, children }: HilosAdminPageProps) {
     router.resolvePath,
   )
 
-  const body =
+  const defaultOrOverride =
     typeof children === 'function'
       ? children({ adminChildren })
       : children === undefined
@@ -90,6 +103,7 @@ export function HilosAdminPage({ page, children }: HilosAdminPageProps) {
           ) : null}
         </>
       )}
+      {defaultOrOverride}
       {body}
     </section>
   )

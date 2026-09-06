@@ -65,10 +65,13 @@ function renderPage(
   page: string,
   identity: HilosPageIdentity | undefined,
   children?: ReactNode,
+  body?: ReactNode,
 ) {
   return render(
     <HilosRouterContext.Provider value={router(identity)}>
-      <HilosAdminPage page={page}>{children}</HilosAdminPage>
+      <HilosAdminPage page={page} body={body}>
+        {children}
+      </HilosAdminPage>
     </HilosRouterContext.Provider>,
   )
 }
@@ -142,5 +145,26 @@ describe('HilosAdminPage', () => {
     expect(container.querySelector('[data-id="hilos-admin-empty"]')).toBeNull()
     // The page key is internal and never printed, least of all as a heading.
     expect(container.textContent).not.toContain(HilosPages.I18N)
+  })
+
+  it('draws a section root body after the child cards rather than in place of them', () => {
+    const { container } = renderPage(
+      HilosPages.I18N,
+      SECTION_IDENTITY,
+      undefined,
+      <p data-id="section-body">Figures of this section</p>,
+    )
+
+    const cards = container.querySelector('[data-id="hilos-admin-children"]')
+    const body = container.querySelector('[data-id="section-body"]')
+    if (cards === null || body === null) {
+      throw new Error('A section root draws both the cards and its own body.')
+    }
+
+    // A section root needs both, so the order is the contract and not an accident:
+    // the way onward stays above the figures it is offered alongside.
+    expect(
+      cards.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 })

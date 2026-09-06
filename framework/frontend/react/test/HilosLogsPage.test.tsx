@@ -5,6 +5,7 @@ import type {
   HilosConnection,
   HilosLogsOverview,
   HilosLogsOverviewNode,
+  HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
 } from '@hilos/core'
@@ -48,7 +49,32 @@ function overview(
   }
 }
 
-function router(): HilosRouter {
+/**
+ * The identity the section root answers with: the chain above it and the cards
+ * to its five child screens. The overview draws its own figures on top of them,
+ * so both have to be there at once.
+ */
+const SECTION_IDENTITY: HilosPageIdentity = {
+  label: 'Logs',
+  lead: 'What the journals weigh and where they are rotated.',
+  breadcrumb: [{ page: HilosPages.LOGS, label: 'Logs' }],
+  children: [
+    {
+      page: HilosPages.LOGS_KEYS,
+      label: 'By key',
+      lead: 'Every log key an agent writes.',
+      icon: null,
+    },
+    {
+      page: HilosPages.LOGS_ROTATIONS,
+      label: 'Rotations',
+      lead: 'The history of rotation batches.',
+      icon: null,
+    },
+  ],
+}
+
+function router(identity: HilosPageIdentity | undefined): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.LOGS,
@@ -59,9 +85,9 @@ function router(): HilosRouter {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: createSignal(identity),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: (page) => `/hilos/${page}`,
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -109,9 +135,12 @@ function makeConnection(): {
   }
 }
 
-function mountPage(connection: HilosConnection): HTMLElement {
+function mountPage(
+  connection: HilosConnection,
+  identity: HilosPageIdentity | undefined = undefined,
+): HTMLElement {
   return render(
-    <HilosRouterContext.Provider value={router()}>
+    <HilosRouterContext.Provider value={router(identity)}>
       <HilosLogsPage context={{ connection }} />
     </HilosRouterContext.Provider>,
   ).container
@@ -127,6 +156,22 @@ function textOf(container: HTMLElement, id: string): string {
 
 describe('HilosLogsPage', () => {
   afterEach(cleanup)
+
+  it('keeps the cards to its child screens and puts its own figures under them', () => {
+    // The section root is the one place both are needed: without the cards the
+    // five child screens are reachable by typed address only, and without the
+    // figures the overview is not an overview. The rest of this file mounts the
+    // page with no identity, where the cards are absent from sound and broken
+    // code alike — which is how the defect survived seventy-five scenarios.
+    const { connection } = makeConnection()
+    const container = mountPage(connection, SECTION_IDENTITY)
+
+    expect(byId(container, 'hilos-admin-children')).not.toBeNull()
+    expect(
+      byId(container, `hilos-admin-child-${HilosPages.LOGS_KEYS}`),
+    ).not.toBeNull()
+    expect(byId(container, 'hilos-logs-tiles')).not.toBeNull()
+  })
 
   it('keeps the tiles empty rather than zero before any picture arrives', () => {
     const { connection } = makeConnection()
