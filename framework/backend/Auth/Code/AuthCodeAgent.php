@@ -32,6 +32,7 @@ use Hilos\Database\Verification\VerificationType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Socket\SocketException;
+use Hilos\WiringRefusal;
 use Throwable;
 
 /**
@@ -667,6 +668,11 @@ class AuthCodeAgent extends AbstractAgent
      * person is owed that answer, and turning a delivered code into "send failed" over
      * a memory row would be a worse lie than losing the row.
      *
+     * The wiring refusing the read is told apart from the rest and written down louder: it
+     * says the sessions collection is not addressed to this process at all, so the row was
+     * never going to be written and no later attempt would write it either. It is still not
+     * raised - {@see self::finish()} sends the person's answer on the line after this call.
+     *
      * @param AuthCodeOperation $operation Operation whose code left a session waiting
      */
     private function rememberWait(AuthCodeOperation $operation): void
@@ -678,6 +684,11 @@ class AuthCodeAgent extends AbstractAgent
         try {
             Hilos::$db?->sessions->findByToken($operation->request->sessionToken)
                 ?->actions->holdPendingRegistration($operation->request->identifier);
+        } catch (WiringRefusal $refusal) {
+            // An error and not a warning: one lost wait is the smallest consequence of a process
+            // that reads none of this collection, and the operator needs to see the cause rather
+            // than the symptom. Answered all the same - the code went out.
+            $this->logAgentError($this->describe($operation) . ' cannot leave a wait behind: ' . $refusal->getMessage());
         } catch (Throwable $e) {
             $this->logAgentWarning($this->describe($operation) . ' left no wait behind: ' . $e->getMessage());
         }

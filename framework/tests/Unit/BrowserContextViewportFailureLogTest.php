@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserGuardKey;
+use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
+use Hilos\Core\Browser\Config\BrowserSourceKey;
+use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
@@ -23,6 +27,8 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Database\Context\DbContext;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Utils\Logger;
@@ -67,6 +73,7 @@ final class BrowserContextViewportFailureLogTest extends TestCase
 
         Hilos::$sr = null;
         Hilos::$table = null;
+        Hilos::$db = null;
 
         parent::tearDown();
     }
@@ -132,6 +139,48 @@ final class BrowserContextViewportFailureLogTest extends TestCase
         $this->assertStringContainsString('exception=' . RuntimeException::class, $line);
         $this->assertStringContainsString('message=' . ViewportFailureLogUnitTable::QUERY_FAILURE, $line);
         $this->assertStringContainsString('at=BrowserContextViewportFailureLogTest.php:', $line);
+    }
+
+    /**
+     * A guard that could not read is contained here too, and not only a broken declaration
+     * (HIL-575).
+     *
+     * This path is dispatched bare: PageSignalRouter::dispatchTableViewport calls it with nothing
+     * between it and WorkerApplication's exit, so an escaping throw takes the worker down on
+     * every window frame and ensureMinWorkers restarts it into the same frame. The trap used to
+     * name one species, which was enough while one species was all the guards could raise. A
+     * refused read is not that species and is not this connection's fault either, so it leaves
+     * by the same door: the window does not arrive, the journal says why, the worker lives.
+     */
+    public function testTheWindowContainsAGuardThatCouldNotRead(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportFailureLogUnitTable::TABLE,
+            limit: 10,
+        );
+        $this->boot($viewport);
+        $context = new ViewportFailureLogUnitContext();
+        Hilos::$db = new ViewportFailureLogRefusingDbContext();
+        Hilos::$sr?->subscribeToPage(
+            ViewportFailureLogUnitContext::GUARDED_PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-guarded', ViewportFailureLogUnitContext::GUARDED_PAGE),
+        );
+
+        $delivered = $context->sendTableWindow(
+            ViewportFailureLogUnitContext::GUARDED_PAGE,
+            'ak-guarded',
+            $viewport,
+        );
+
+        $this->assertFalse($delivered);
+        $lines = $this->writtenLines();
+        $this->assertCount(1, $lines);
+        $this->assertStringContainsString('Browser window skipped a broken declaration', $lines[0]);
+        $this->assertStringContainsString(
+            'page=' . ViewportFailureLogUnitContext::GUARDED_PAGE,
+            $lines[0],
+        );
+        $this->assertStringContainsString(ViewportFailureLogRefusingDbContext::REFUSAL, $lines[0]);
     }
 
     public function testATableUntouchedByTheChangeStaysSilent(): void
@@ -220,6 +269,10 @@ final class BrowserContextViewportFailureLogTest extends TestCase
 final class ViewportFailureLogUnitContext extends BrowserContext
 {
     public const string PAGE = 'viewport_failure_log_page';
+
+    /** Same table, behind a guard whose source is a collection this process may not read. */
+    public const string GUARDED_PAGE = 'viewport_failure_log_guarded_page';
+
     public const string SIGNAL = 'viewport_failure_log_signal';
 
     /**
@@ -231,6 +284,20 @@ final class ViewportFailureLogUnitContext extends BrowserContext
      */
     protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {
+        if ($page === self::GUARDED_PAGE) {
+            return BrowserPageConfig::fromArray([
+                BrowserConfigKey::SIGNAL => self::SIGNAL,
+                BrowserConfigKey::GUARDS => [[
+                    BrowserGuardKey::TYPE => BrowserGuardType::DB_EXISTS,
+                    BrowserGuardKey::SOURCE => [
+                        BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                        BrowserSourceKey::KEY => ViewportFailureLogRefusingDbContext::COLLECTION,
+                    ],
+                    BrowserGuardKey::KEY => 'alpha',
+                ]],
+            ]);
+        }
+
         if ($page !== self::PAGE) {
             return null;
         }
@@ -248,13 +315,38 @@ final class ViewportFailureLogUnitContext extends BrowserContext
      */
     protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
     {
-        if ($page !== self::PAGE) {
+        if ($page !== self::PAGE && $page !== self::GUARDED_PAGE) {
             return BrowserPageBindings::empty();
         }
 
         return BrowserPageBindings::fromArray([
             ViewportFailureLogUnitTable::TABLE => [],
         ]);
+    }
+}
+
+/**
+ * A database context that refuses every collection, the way a worker nobody addressed does.
+ */
+final class ViewportFailureLogRefusingDbContext extends DbContext
+{
+    public const string COLLECTION = 'viewportFailureLogGuardSource';
+
+    /** Words the refusal carries, asserted in the journal line */
+    public const string REFUSAL = 'no reader interest is registered for this test collection';
+
+    /**
+     * @param string $name Mounted collection name being read
+     * @return never Never returns
+     * @throws DbCollectionNotReadableException Always
+     */
+    public function __get(string $name)
+    {
+        throw new DbCollectionNotReadableException(self::REFUSAL);
+    }
+
+    public function configure(): void
+    {
     }
 }
 

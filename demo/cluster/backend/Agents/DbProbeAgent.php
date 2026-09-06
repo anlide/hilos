@@ -143,6 +143,7 @@ final class DbProbeAgent extends AbstractAgent
             } else {
                 $existing->actions->updateValue($value);
             }
+        // read-refusal-swallowed: this probe answers its caller with whatever failed, the refusal included
         } catch (HilosException $e) {
             return CommandReplyDTO::error($request->correlationId, $e->getMessage());
         }
@@ -174,6 +175,7 @@ final class DbProbeAgent extends AbstractAgent
 
         try {
             $setting = Hilos::$db->settings[$key];
+        // read-refusal-swallowed: this probe answers its caller with whatever failed, the refusal included
         } catch (HilosException $e) {
             return CommandReplyDTO::error($request->correlationId, $e->getMessage());
         }

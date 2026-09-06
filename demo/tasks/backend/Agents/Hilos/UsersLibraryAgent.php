@@ -29,6 +29,7 @@ use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
 use Hilos\Users\DTO\AdminRenameDoneSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
+use Hilos\WiringRefusal;
 
 /**
  * The tasks demo's users library - the project half of the framework sign-in feature (HIL-623).
@@ -151,6 +152,14 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
             // The same sentence the dispatcher would have put on the wire had this been thrown
             // on the page: a storage failure is told to nobody but the log.
             $this->logAgentError("Admin rename failed for userId={$rename->userId}: {$e->getMessage()}");
+
+            return SignalConstants::ACTION_FAILED_REASON;
+        } catch (WiringRefusal $refusal) {
+            // Answered like the storage failure above rather than raised (HIL-575): the ask
+            // arrived as a frame with a modal waiting on it, so a throw would hang the admin.
+            // What the branch below would have sent instead is the refusal's own words - the
+            // name of a collection nobody here reads, which is not an answer about this rename.
+            $this->logAgentError("Admin rename refused for userId={$rename->userId}: {$refusal->getMessage()}");
 
             return SignalConstants::ACTION_FAILED_REASON;
         } catch (HilosException $e) {

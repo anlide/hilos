@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserGuardKey;
@@ -18,6 +19,7 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\TableViewportSubscription;
@@ -171,6 +173,16 @@ final class BrowserContextTableWindowTest extends TestCase
             new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, limit: 10),
         );
 
+        // No window, and — since HIL-575 — not silence either: the connection is told once
+        // that its page could not be delivered, because a window that never comes is otherwise
+        // indistinguishable from a page with nothing new on it.
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(PageSubscriptionErrorSignalData::class, $signal->data->data);
+        $this->assertSame(500, $signal->data->data->httpCode);
+        $this->assertSame('Internal error while delivering the page', $signal->data->data->message);
         $this->assertNull(
             Hilos::$sr->getNextQueuedSignal(),
             'a broken declaration must receive no table window',

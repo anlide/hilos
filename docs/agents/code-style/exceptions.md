@@ -49,6 +49,23 @@ a base that carries it, or be named with a reason in the exempt list of the
 loses `implements MalformedInput` from its own declaration, which would unmark a whole
 branch at once.
 
+### The `WiringRefusal` marker
+
+`Hilos\WiringRefusal` is the second empty interface of this kind, and it says the
+opposite sort of thing: the failure is not about the data at all, it is the wiring
+refusing. `DbCollectionNotReadableException` and `RtCollectionNotReadableException`
+carry it — a collection this process never declared it reads, in two exception
+families that share no base below `HilosException`.
+
+It exists because such a refusal is the one failure that must not be answered with
+a fallback. A permission check reading `false` out of it denies a user who has the
+right; a lookup reading an empty list out of it renders a page that is not empty.
+Both happened before the marker existed.
+
+A broad `catch` around a read of `Hilos::$db` or `Hilos::$rt` is therefore a
+machine-checked violation — `WIRING-REFUSAL-SWALLOWED`, with three ways out. The
+whole of it is in [wiring-refusals.md](wiring-refusals.md).
+
 ### Page subscription exception vocabulary
 
 `PageSubscriptionException` has a deliberately complete set of HTTP-status

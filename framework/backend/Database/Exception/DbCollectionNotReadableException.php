@@ -6,6 +6,7 @@ namespace Hilos\Database\Exception;
 
 use Hilos\Database\Context\DbContext;
 use Hilos\HilosException;
+use Hilos\WiringRefusal;
 
 /**
  * Exception: a mounted database collection may not be read from this process yet.
@@ -23,7 +24,10 @@ use Hilos\HilosException;
  * Raised by the read guard in {@see DbContext::__get()}, which is the one place a collection is
  * handed out to application code; the delivery paths reach their collections by their own
  * accessors and are not judged by it.
+ *
+ * Carries {@see WiringRefusal} so a caller and the WIRING-REFUSAL-SWALLOWED guard can name this
+ * failure together with its runtime twin, which lives in another exception family.
  */
-class DbCollectionNotReadableException extends HilosException
+class DbCollectionNotReadableException extends HilosException implements WiringRefusal
 {
 }

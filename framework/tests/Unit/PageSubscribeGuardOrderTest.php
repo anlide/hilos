@@ -31,6 +31,7 @@ use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -44,9 +45,15 @@ use PHPUnit\Framework\TestCase;
  */
 final class PageSubscribeGuardOrderTest extends TestCase
 {
+    /** Temporary main log file the level assertions read their line back from */
+    private string $logFile = '';
+
     protected function setUp(): void
     {
         Hilos::$sr = new SignalRouter();
+
+        $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-subscribe-guard-order');
+        Logger::setLogFile($this->logFile);
     }
 
     protected function tearDown(): void
@@ -54,6 +61,11 @@ final class PageSubscribeGuardOrderTest extends TestCase
         Hilos::$sr = null;
         Hilos::$rt = null;
         Hilos::resetBrowser();
+
+        Logger::resetLogFile();
+        if (is_file($this->logFile)) {
+            unlink($this->logFile);
+        }
 
         parent::tearDown();
     }
@@ -146,15 +158,102 @@ final class PageSubscribeGuardOrderTest extends TestCase
     }
 
     /**
+     * A page broken about itself is not a verdict about the subscriber (HIL-575).
+     *
+     * It arrives on the same branch as every refusal, because the internal error is a child of
+     * the refusal class, and until this leaf it was answered like one: an info line nobody was
+     * going to act on, and the engine's own words handed to the browser. Both halves change
+     * here, and neither of them changes for the refusals beside it.
+     */
+    public function testABrokenGuardDeclarationIsLoggedAsAnErrorAndScrubbedOnTheWire(): void
+    {
+        Hilos::$browser = new SubscribeGuardOrderTestBrowser(7);
+        $factory = new SubscribeGuardOrderTestPageFactory(new SubscribeGuardOrderTestAgent());
+        $router = new PageSignalRouter($factory, new ActionRouteConfig());
+
+        $router->dispatchPageSubscribe(
+            new WebSocketPageSubscribeSignalDTO('ak-1', SubscribeGuardOrderTestBrokenGuardPage::PAGE),
+            'websocket',
+            SubscribeGuardOrderTestBrokenGuardPage::PAGE,
+        );
+
+        $this->assertSubscriptionError(
+            SubscribeGuardOrderTestBrokenGuardPage::PAGE,
+            500,
+            'internal_error',
+            'Internal error during subscription',
+        );
+
+        $lines = $this->writtenLines();
+        $this->assertCount(1, $lines);
+        $this->assertStringContainsString('ERROR', $lines[0]);
+        // The words the client no longer gets are the words the operator now does.
+        $this->assertStringContainsString('Unsupported browser guard type', $lines[0]);
+    }
+
+    /**
+     * The refusals keep their words, and that is the whole reason the internal error had to be
+     * split out rather than the branch scrubbed wholesale: "resource #9 not found" is about the
+     * resource, the subscriber can act on it, and the client renders it.
+     */
+    public function testARefusalStillTellsTheSubscriberWhatItRefused(): void
+    {
+        Hilos::$browser = new SubscribeGuardOrderTestBrowser(null);
+        $factory = new SubscribeGuardOrderTestPageFactory(new SubscribeGuardOrderTestAgent());
+        $router = new PageSignalRouter($factory, new ActionRouteConfig());
+
+        $router->dispatchPageSubscribe(
+            new WebSocketPageSubscribeSignalDTO('ak-1', SubscribeGuardOrderTestPage::PAGE),
+            'websocket',
+            SubscribeGuardOrderTestPage::PAGE,
+        );
+
+        $this->assertSubscriptionError(
+            SubscribeGuardOrderTestPage::PAGE,
+            401,
+            'unauthorized',
+            'Authentication required',
+        );
+
+        $lines = $this->writtenLines();
+        $this->assertCount(1, $lines);
+        $this->assertStringNotContainsString('ERROR', $lines[0]);
+    }
+
+    /**
+     * Reads back the journal lines written since the case started.
+     *
+     * @return list<string> Written lines, empty when the journal stayed silent
+     */
+    private function writtenLines(): array
+    {
+        if (!is_file($this->logFile)) {
+            return [];
+        }
+
+        $written = rtrim((string)file_get_contents($this->logFile), "\n");
+        if ($written === '') {
+            return [];
+        }
+
+        return explode("\n", $written);
+    }
+
+    /**
      * Asserts the only queued signal is the subscription error the client expects,
      * which also asserts no page_response went out ahead of it.
      *
      * @param string $page Page the error answers for
      * @param int $httpCode Expected refusal code
      * @param string $errorCode Expected refusal error code
+     * @param ?string $message Expected wire message, or null when the case does not judge it
      */
-    private function assertSubscriptionError(string $page, int $httpCode, string $errorCode): void
-    {
+    private function assertSubscriptionError(
+        string $page,
+        int $httpCode,
+        string $errorCode,
+        ?string $message = null,
+    ): void {
         $signal = Hilos::$sr->getNextQueuedSignal();
 
         $this->assertNotNull($signal);
@@ -165,6 +264,9 @@ final class PageSubscribeGuardOrderTest extends TestCase
         $this->assertSame($page, $signal->data->data->page);
         $this->assertSame($httpCode, $signal->data->data->httpCode);
         $this->assertSame($errorCode, $signal->data->data->errorCode);
+        if ($message !== null) {
+            $this->assertSame($message, $signal->data->data->message);
+        }
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
@@ -226,6 +328,14 @@ final class SubscribeGuardOrderTestSignallessPage extends SubscribeGuardOrderTes
     public const string PAGE = 'subscribe_guard_order_signalless_page';
 }
 
+/**
+ * Page whose guard names a type nothing implements — a mistake in the page, not in the request.
+ */
+final class SubscribeGuardOrderTestBrokenGuardPage extends SubscribeGuardOrderTestPage
+{
+    public const string PAGE = 'subscribe_guard_order_broken_guard_page';
+}
+
 final class SubscribeGuardOrderTestBrowser extends BrowserContext
 {
     public function __construct(private readonly ?int $currentUserId)
@@ -268,6 +378,13 @@ final class SubscribeGuardOrderTestBrowser extends BrowserContext
             return BrowserPageConfig::fromArray([BrowserConfigKey::GUARDS => $guards]);
         }
 
+        if ($page === SubscribeGuardOrderTestBrokenGuardPage::PAGE) {
+            return BrowserPageConfig::fromArray([
+                BrowserConfigKey::SIGNAL => 'subscribe_guard_order_signal',
+                BrowserConfigKey::GUARDS => [[BrowserGuardKey::TYPE => 'no_such_guard_type']],
+            ]);
+        }
+
         return null;
     }
 
@@ -300,7 +417,7 @@ final class SubscribeGuardOrderTestRtContext extends RtContext
 }
 
 /**
- * Page factory fixture exposing the three subscription test pages.
+ * Page factory fixture exposing the four subscription test pages.
  *
  * @extends AbstractPageFactory<SubscribeGuardOrderTestAgent>
  */
@@ -319,6 +436,7 @@ final class SubscribeGuardOrderTestPageFactory extends AbstractPageFactory
             SubscribeGuardOrderTestPage::PAGE => new SubscribeGuardOrderTestPage($this->agent),
             SubscribeGuardOrderTestConfiglessPage::PAGE => new SubscribeGuardOrderTestConfiglessPage($this->agent),
             SubscribeGuardOrderTestSignallessPage::PAGE => new SubscribeGuardOrderTestSignallessPage($this->agent),
+            SubscribeGuardOrderTestBrokenGuardPage::PAGE => new SubscribeGuardOrderTestBrokenGuardPage($this->agent),
             default => throw new PageNotFoundException($pageName),
         };
     }
@@ -327,7 +445,7 @@ final class SubscribeGuardOrderTestPageFactory extends AbstractPageFactory
      * Reports whether the page is one of the subscription test pages.
      *
      * @param string $pageName Page name
-     * @return bool True for the three test pages
+     * @return bool True for the four test pages
      */
     public function hasPage(string $pageName): bool
     {
@@ -335,6 +453,7 @@ final class SubscribeGuardOrderTestPageFactory extends AbstractPageFactory
             SubscribeGuardOrderTestPage::PAGE,
             SubscribeGuardOrderTestConfiglessPage::PAGE,
             SubscribeGuardOrderTestSignallessPage::PAGE,
+            SubscribeGuardOrderTestBrokenGuardPage::PAGE,
         ], true);
     }
 }

@@ -14,6 +14,7 @@ use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Database\View\Item\DbItem;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -33,17 +34,28 @@ final class DbReadGuardTest extends TestCase
     /** @var string Consumer the cases declare their interest under */
     private const string CONSUMER = 'db_read_guard_test';
 
+    /** Temporary main log file the refusal cases read their line back from */
+    private string $logFile = '';
+
     protected function setUp(): void
     {
         // The guard only decides anything where the copy is addressed, which is a worker;
         // elsewhere every mounted collection answers a read and there is nothing to prove.
         SourceInterestRegistry::readsWhatIsDelivered();
+
+        $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-db-read-guard');
+        Logger::setLogFile($this->logFile);
     }
 
     protected function tearDown(): void
     {
         SourceInterestRegistry::readsWhatItMounts();
         SourceInterestRegistry::releaseConsumer(SourceConsumer::agent(self::CONSUMER));
+
+        Logger::resetLogFile();
+        if (is_file($this->logFile)) {
+            unlink($this->logFile);
+        }
 
         parent::tearDown();
     }
@@ -112,6 +124,76 @@ final class DbReadGuardTest extends TestCase
     }
 
     /**
+     * The refusal is written down where it happens, not left to whoever catches it (HIL-575).
+     *
+     * Whoever catches it is the caller nearest the read, and that caller is the one most likely
+     * to answer with a fallback — a project's isAdmin() reading false out of a refusal is the
+     * incident this line came from, and it cost two full runs to find because the journal said
+     * nothing at all. Both messages reach the line, because which of the two defects it was is
+     * the whole diagnosis.
+     */
+    public function testARefusalIsInTheJournalBeforeItIsAnybodyElsesProblem(): void
+    {
+        $db = DbReadGuardDbContext::create();
+
+        try {
+            $db->{DbReadGuardDbContext::COLLECTION};
+            $this->fail('The guard was expected to refuse the read.');
+        } catch (DbCollectionNotReadableException) {
+            // The line, not the throw, is what this case is about.
+        }
+
+        $lines = $this->writtenLines();
+        $this->assertCount(1, $lines);
+        $this->assertStringContainsString('Database read refused', $lines[0]);
+        $this->assertStringContainsString('no reader interest is registered', $lines[0]);
+        $this->assertStringContainsString(DbReadGuardDbContext::COLLECTION, $lines[0]);
+    }
+
+    /**
+     * The other defect says the other thing, and says it in the journal too.
+     */
+    public function testALateReadinessIsNamedAsSuchInTheJournal(): void
+    {
+        $db = DbReadGuardDbContext::create();
+        SourceInterestRegistry::register(
+            SourceChange::KIND_DB,
+            DbReadGuardDbContext::COLLECTION,
+            SourceConsumer::agent(self::CONSUMER),
+        );
+
+        try {
+            $db->{DbReadGuardDbContext::COLLECTION};
+            $this->fail('The guard was expected to refuse the read.');
+        } catch (DbCollectionNotReadableException) {
+            // The line, not the throw, is what this case is about.
+        }
+
+        $lines = $this->writtenLines();
+        $this->assertCount(1, $lines);
+        $this->assertStringContainsString('was declared but its readiness has not arrived yet', $lines[0]);
+    }
+
+    /**
+     * A read that succeeds says nothing: the line is about a defect, and a line on every
+     * ordinary read would bury the one that matters.
+     */
+    public function testAnAnsweredReadWritesNothing(): void
+    {
+        $db = DbReadGuardDbContext::create();
+        SourceInterestRegistry::register(
+            SourceChange::KIND_DB,
+            DbReadGuardDbContext::COLLECTION,
+            SourceConsumer::agent(self::CONSUMER),
+        );
+        SourceInterestRegistry::markReady(SourceChange::KIND_DB, DbReadGuardDbContext::COLLECTION);
+
+        $db->{DbReadGuardDbContext::COLLECTION};
+
+        $this->assertSame([], $this->writtenLines());
+    }
+
+    /**
      * A collection that does not exist is a different defect from one that may not be read, and
      * has to stay so: the guard sits behind the existence check, or a typo in a collection name
      * would report itself as missing wiring.
@@ -123,6 +205,25 @@ final class DbReadGuardTest extends TestCase
         $this->expectExceptionMessage('does not exist');
 
         $db->noSuchCollection;
+    }
+
+    /**
+     * Reads back the journal lines written since the case started.
+     *
+     * @return list<string> Written lines, empty when the journal stayed silent
+     */
+    private function writtenLines(): array
+    {
+        if (!is_file($this->logFile)) {
+            return [];
+        }
+
+        $written = rtrim((string)file_get_contents($this->logFile), "\n");
+        if ($written === '') {
+            return [];
+        }
+
+        return explode("\n", $written);
     }
 }
 

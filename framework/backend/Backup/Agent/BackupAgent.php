@@ -98,6 +98,7 @@ use Hilos\Runtime\View\Item\RestoreRuntime;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\WiringRefusal;
 use Throwable;
 
 /**
@@ -3305,6 +3306,15 @@ final class BackupAgent extends AbstractAgent
             }
 
             return $references;
+        } catch (WiringRefusal $refusal) {
+            // Named apart from the rest, because an empty photograph is indistinguishable from a
+            // person with no identities and the restore will not recognize whoever asked for it.
+            // Not raised, though: the caller is the gate that arms the restore and reports by
+            // returning a string, so a throw from the middle of it would leave the arming half
+            // done with nobody told.
+            $this->logAgentError('Restore cannot photograph the initiator identities here: ' . $refusal->getMessage());
+
+            return [];
         } catch (Throwable $e) {
             $this->logAgentError('Restore could not photograph the initiator identities: ' . $e->getMessage());
 

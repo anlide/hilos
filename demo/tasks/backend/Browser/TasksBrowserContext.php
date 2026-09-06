@@ -7,8 +7,8 @@ namespace Demo\Tasks\Browser;
 use Demo\Tasks\Hilos;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
-use Throwable;
 
 /**
  * TasksBrowserContext - Browser-facing context ($browser layer) for tasks.
@@ -27,20 +27,17 @@ final class TasksBrowserContext extends BrowserContext
      * Answers the ADMIN page-level gate from the demo's user storage: the durable
      * user row's admin flag, the same flag the admin:grant command writes. Runs in
      * whatever worker serves the gated page (the framework admin surface is served
-     * by the hilos index agent), so the read stays as defensive as
-     * {@see self::resolveConnectionIdentity()} below: a missing row or any storage
-     * failure denies rather than opening the admin surface.
+     * by the hilos index agent). A missing row denies, as it always did; a read that failed no
+     * longer does (HIL-575). It answered 403 to an administrator whose only problem was that
+     * this worker had not been declared a reader of the collection, and it left nothing behind
+     * to say so.
      *
      * @param int $userId Authenticated durable user id
      * @return bool Whether this user may access ADMIN-level pages and actions
      */
     public function isAdmin(int $userId): bool
     {
-        try {
-            return (Hilos::$db->users[$userId] ?? null)?->admin === true;
-        } catch (Throwable) {
-            return false;
-        }
+        return (Hilos::$db->users[$userId] ?? null)?->admin === true;
     }
 
     /**
@@ -90,9 +87,13 @@ final class TasksBrowserContext extends BrowserContext
      * A registry row is written for every connection the handshake sees, so no row
      * means the row has not crossed the RT sync into this worker yet rather than
      * "nobody is there" - the frame waits instead of being refused as anonymous
-     * (HIL-599). An absent registry is the opposite case and answers a settled nobody,
-     * as does a storage failure: where the answer can never arrive there is nothing to
-     * wait for, and access must close rather than hang.
+     * (HIL-599). A demo that mounts no registry at all is the opposite case and answers a
+     * settled nobody: where the answer can never arrive there is nothing to wait for.
+     *
+     * Fail-closed stops there, and that is a change of behaviour (HIL-575). It belongs where
+     * the question is who this connection is; it does not belong to a read that was refused,
+     * which says nothing about the connection and everything about the wiring. Answered
+     * "anonymous", a refusal signed everybody out of a node that was merely wired wrong.
      *
      * @param string $acceptKey Subscriber accept key
      * @return ConnectionIdentity User behind the connection, or the pending state
@@ -110,7 +111,7 @@ final class TasksBrowserContext extends BrowserContext
             return $connection === null
                 ? ConnectionIdentity::pending()
                 : ConnectionIdentity::resolved($connection->userId);
-        } catch (Throwable) {
+        } catch (RtCollectionNotFoundException) {
             return ConnectionIdentity::resolved(null);
         }
     }
@@ -131,7 +132,7 @@ final class TasksBrowserContext extends BrowserContext
 
         try {
             $summary = Hilos::$rt?->connections->summaryForUser($userId);
-        } catch (Throwable) {
+        } catch (RtCollectionNotFoundException) {
             return null;
         }
 

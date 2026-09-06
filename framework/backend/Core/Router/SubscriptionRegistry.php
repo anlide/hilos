@@ -29,6 +29,17 @@ final class SubscriptionRegistry
     private array $tableViewports = [];
 
     /**
+     * @var array<string, true> Accept keys already told their page could not be delivered
+     *
+     * One bit per subscription, not per failure. A broken declaration or a refused read is
+     * present on every flush, and the fan-out reaches it once per subscriber per flush; without
+     * this the connection would be handed the same error frame ten times a second for as long
+     * as the defect lasted. Kept beside the viewports because it is the same kind of state —
+     * what this connection has been served — and is dropped at the same three moments.
+     */
+    private array $pageDeliveryFailures = [];
+
+    /**
      * @param string $acceptKey Client accept key
      * @param string $page Page identifier
      * @param array<string, mixed> $params Route params
@@ -42,6 +53,7 @@ final class SubscriptionRegistry
         $this->pages[$acceptKey] = new PageSubscription($page, $params);
         // A (re)subscribe reloads the page, so its table viewports no longer apply.
         unset($this->tableViewports[$acceptKey]);
+        unset($this->pageDeliveryFailures[$acceptKey]);
     }
 
     /**
@@ -132,6 +144,7 @@ final class SubscriptionRegistry
 
         unset($this->pages[$acceptKey]);
         unset($this->tableViewports[$acceptKey]);
+        unset($this->pageDeliveryFailures[$acceptKey]);
     }
 
     /**
@@ -233,6 +246,50 @@ final class SubscriptionRegistry
         unset($this->pages[$acceptKey]);
         unset($this->groups[$acceptKey]);
         unset($this->tableViewports[$acceptKey]);
+        unset($this->pageDeliveryFailures[$acceptKey]);
+    }
+
+    /**
+     * Records that a connection's page could not be delivered, and answers whether to say so.
+     *
+     * A test-and-set rather than a setter with a reader beside it: the answer has to be the
+     * state BEFORE this call, and two calls would leave room for the second flush of the same
+     * tick to read the flag this one had not written yet.
+     *
+     * @param string $acceptKey Client accept key
+     * @return bool Whether this connection has not been told yet, and is owed the error frame
+     */
+    public function markPageDeliveryFailure(string $acceptKey): bool
+    {
+        if ($acceptKey === '' || isset($this->pageDeliveryFailures[$acceptKey])) {
+            return false;
+        }
+
+        $this->pageDeliveryFailures[$acceptKey] = true;
+
+        return true;
+    }
+
+    /**
+     * Clears the mark after a delivery succeeds, and answers whether one was standing.
+     *
+     * The answer is what the caller owes the connection: a subscription that was told its page
+     * failed had its page scope wiped by the client's own refusal handling, so the delta this
+     * delivery is carrying would land on nothing. It is owed a full snapshot instead, and only
+     * a subscription that was actually told is.
+     *
+     * @param string $acceptKey Client accept key
+     * @return bool Whether a failure was standing, and the connection is owed a full snapshot
+     */
+    public function clearPageDeliveryFailure(string $acceptKey): bool
+    {
+        if (!isset($this->pageDeliveryFailures[$acceptKey])) {
+            return false;
+        }
+
+        unset($this->pageDeliveryFailures[$acceptKey]);
+
+        return true;
     }
 
     /**

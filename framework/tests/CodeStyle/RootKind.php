@@ -8,6 +8,7 @@ use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
+use Hilos\Tests\CodeStyle\Rule\WiringRefusalSwallowedRule;
 
 /**
  * What the code under a scanned root is, and therefore which rules judge it.
@@ -31,7 +32,7 @@ enum RootKind
     /** Code that runs in production, or that decides a run of it, judged by every rule. */
     case Production;
 
-    /** A test suite, judged by every rule but the four a suite is allowed to break. */
+    /** A test suite, judged by every rule but the five a suite is allowed to break. */
     case Suite;
 
     /**
@@ -46,6 +47,7 @@ enum RootKind
         FsSeamRule::ID,
         RandomSourceRule::ID,
         MagicRepeatRule::ID,
+        WiringRefusalSwallowedRule::ID,
     ];
 
     /**

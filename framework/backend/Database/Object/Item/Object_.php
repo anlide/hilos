@@ -17,6 +17,7 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Exception\PropertyNotAccessibleException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Objects;
 use Hilos\Hilos;
@@ -469,7 +470,8 @@ abstract class Object_
      *
      * @param string $property Property name
      * @return mixed Property value
-     * @throws DatabaseException If property does not exist or entity is misconfigured
+     * @throws DatabaseException If the entity is misconfigured
+     * @throws PropertyNotAccessibleException If property does not exist
      */
     public function __get(string $property): mixed
     {
@@ -477,7 +479,9 @@ abstract class Object_
             throw new DatabaseException('Final class wrongly configured - entity properties should not be accessed directly');
         }
 
-        throw new DatabaseException("Property [{$property}] does not exist or is not accessible");
+        // A species of its own, not the general database failure: a reader that falls back on
+        // a name an object does not carry must not fall back on a query or a wiring that broke.
+        throw new PropertyNotAccessibleException("Property [{$property}] does not exist or is not accessible");
     }
 
     /**

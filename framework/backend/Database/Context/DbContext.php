@@ -24,6 +24,7 @@ use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\HilosException;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Utils\Logger;
 
 /**
  * DbContext - Database context (instance layer only).
@@ -377,11 +378,16 @@ abstract class DbContext
             return;
         }
 
-        throw new DbCollectionNotReadableException(
-            SourceInterestRegistry::isDeclared(SourceChange::KIND_DB, $name)
-                ? "database collection '{$name}' was declared but its readiness has not arrived yet"
-                : "no reader interest is registered for database collection '{$name}'",
-        );
+        $reason = SourceInterestRegistry::isDeclared(SourceChange::KIND_DB, $name)
+            ? "database collection '{$name}' was declared but its readiness has not arrived yet"
+            : "no reader interest is registered for database collection '{$name}'";
+
+        // Written here and not left to whoever catches it: a refusal is a wiring defect, and the
+        // caller closest to it is the one most likely to answer it with a fallback. Both messages
+        // reach the journal, because which of the two it was is the whole diagnosis.
+        Logger::error("Database read refused: {$reason}");
+
+        throw new DbCollectionNotReadableException($reason);
     }
 
     /**

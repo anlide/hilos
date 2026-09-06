@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserGuardKey;
 use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Config\BrowserSourceConfig;
@@ -17,6 +19,7 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\Worker\WorkerTickUnit;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -53,8 +56,12 @@ final class BrowserContextBrokenDeclarationFanoutTest extends TestCase
     /** @var ?BrokenDeclarationFanoutContext Context the last arranged flush ran on */
     private ?BrokenDeclarationFanoutContext $context = null;
 
+    /** @var list<string> Accept keys the last drained queue told the page had failed */
+    private array $refusedAcceptKeys = [];
+
     protected function tearDown(): void
     {
+        $this->refusedAcceptKeys = [];
         Hilos::$rt = null;
         Hilos::$sr = null;
         Hilos::resetBrowser();
@@ -124,6 +131,91 @@ final class BrowserContextBrokenDeclarationFanoutTest extends TestCase
     }
 
     /**
+     * A guard the page declared wrongly reaches this trap now (HIL-575).
+     *
+     * It did not before: the guard check answered "denied" to a malformed declaration the same
+     * way it answers it to a connection without the rights, so the flush saw a subscriber that
+     * was simply not allowed anything. The subscriber's page went blank and stayed blank, and
+     * this trap — written for exactly this mistake — never ran. What the assertion is really
+     * about is that second half: the silence is contained AND named.
+     */
+    public function testABrokenGuardDeclarationReachesTheFanoutTrap(): void
+    {
+        $contained = $this->arrangeFlush(BrokenDeclarationFanoutContext::BROKEN_GUARD_PAGE);
+
+        $this->assertSame(['ak-healthy'], $this->deliveredAcceptKeys());
+        $this->assertSame(['ak-broken'], $this->refusedAcceptKeys);
+        $this->assertCount(1, $contained);
+        $this->assertSame(
+            'page=' . BrokenDeclarationFanoutContext::BROKEN_GUARD_PAGE . ' acceptKey=ak-broken',
+            $contained[0]->address,
+        );
+        $this->assertInstanceOf(PageInternalErrorException::class, $contained[0]->failure);
+    }
+
+    /**
+     * A subscription that failed HALFWAY through a flush sends nothing it collected first.
+     *
+     * The one case where the give-up set has to reach the second loop as well: change one built
+     * its rows, change two gave up, and the rows of the first are sitting in the payload table.
+     * Queued behind the error frame they would land on the scope the client wiped, and taking
+     * them out of the table is also what keeps the mark standing - the payload loop clears it,
+     * so a page that went out here would have the next flush announce the same failure again.
+     */
+    public function testRowsCollectedBeforeTheFailureAreNotQueuedBehindTheErrorFrame(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$rt = new BrokenDeclarationFanoutRtContext();
+        Hilos::$rt->configure();
+        Hilos::$rt->addRow(BrokenDeclarationFanoutState::create('1', 'Ada'));
+        Hilos::$rt->addRow(BrokenDeclarationFanoutState::create('2', 'Grace'));
+
+        Hilos::$sr->subscribeToPage(
+            BrokenDeclarationFanoutContext::LATE_FAILURE_PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-broken', BrokenDeclarationFanoutContext::LATE_FAILURE_PAGE),
+        );
+
+        $this->context = new BrokenDeclarationFanoutContext();
+        $this->context->record(SourceChange::rtUpdated(BrokenDeclarationFanoutRtContext::ROWS, '1', ['name' => 'Ada']));
+        $this->context->record(SourceChange::rtUpdated(BrokenDeclarationFanoutRtContext::ROWS, '2', ['name' => 'Grace']));
+        $contained = $this->context->flushToSignalRouter();
+
+        $this->assertCount(1, $contained);
+        $this->assertSame([], $this->deliveredAcceptKeys());
+        $this->assertSame(['ak-broken'], $this->refusedAcceptKeys);
+    }
+
+    /**
+     * One failure per subscription, not one per change (HIL-575).
+     *
+     * The cause is a declaration or the wiring, so every change of the same flush reaches it
+     * again: without the give-up set, a flush carrying five changes would write five identical
+     * contained failures and five identical refusal lines under them. The subscriber has also
+     * been told by then that its page could not be delivered, and rows arriving after that
+     * frame would deny it.
+     */
+    public function testASubscriptionThatFailedIsGivenUpOnForTheRestOfTheFlush(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$rt = new BrokenDeclarationFanoutRtContext();
+        Hilos::$rt->configure();
+        Hilos::$rt->addRow(BrokenDeclarationFanoutState::create('1', 'Ada'));
+        Hilos::$rt->addRow(BrokenDeclarationFanoutState::create('2', 'Grace'));
+
+        Hilos::$sr->subscribeToPage(
+            BrokenDeclarationFanoutContext::BROKEN_GUARD_PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-broken', BrokenDeclarationFanoutContext::BROKEN_GUARD_PAGE),
+        );
+
+        $this->context = new BrokenDeclarationFanoutContext();
+        $this->context->record(SourceChange::rtUpdated(BrokenDeclarationFanoutRtContext::ROWS, '1', ['name' => 'Ada']));
+        $this->context->record(SourceChange::rtUpdated(BrokenDeclarationFanoutRtContext::ROWS, '2', ['name' => 'Grace']));
+        $contained = $this->context->flushToSignalRouter();
+
+        $this->assertCount(1, $contained);
+    }
+
+    /**
      * Subscribes one healthy connection and one to the named broken page, then flushes
      * a change both of them observe.
      *
@@ -153,14 +245,27 @@ final class BrowserContextBrokenDeclarationFanoutTest extends TestCase
     }
 
     /**
+     * Drains the queue, collecting who was served a page and who was told it failed.
+     *
+     * The two are read apart because since HIL-575 a contained failure is not silence: the
+     * offending subscriber gets one error frame, and every assertion about the blast radius
+     * still means "who received the page".
+     *
      * @return list<string> Accept keys the flush queued a page response for, in queue order
      */
     private function deliveredAcceptKeys(): array
     {
         $acceptKeys = [];
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
-            $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
             $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+            if ($signal->signalName->getName() === SignalConstants::SUBSCRIPTION_PAGE_ERROR) {
+                $this->assertInstanceOf(PageSubscriptionErrorSignalData::class, $signal->data->data);
+                $this->refusedAcceptKeys[] = $signal->data->targetAcceptKey;
+
+                continue;
+            }
+
+            $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
             $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
             $acceptKeys[] = $signal->data->targetAcceptKey;
         }
@@ -170,9 +275,10 @@ final class BrowserContextBrokenDeclarationFanoutTest extends TestCase
 }
 
 /**
- * Serves four pages off one runtime collection: one declared correctly, one whose page
+ * Serves five pages off one runtime collection: one declared correctly, one whose page
  * declaration names a non-signal, one whose table joins a second source that names no
- * collection, and one whose rows are declared correctly and give up while being built.
+ * collection, one whose rows are declared correctly and give up while being built, and one
+ * whose page-level guard names a type the framework does not know.
  */
 final class BrokenDeclarationFanoutContext extends BrowserContext
 {
@@ -180,10 +286,16 @@ final class BrokenDeclarationFanoutContext extends BrowserContext
     public const string BROKEN_PAGE = 'broken_fanout_broken_page';
     public const string BROKEN_SOURCE_PAGE = 'broken_fanout_broken_source_page';
     public const string KEYLESS_ROW_PAGE = 'broken_fanout_keyless_row_page';
+    public const string BROKEN_GUARD_PAGE = 'broken_fanout_broken_guard_page';
+    public const string LATE_FAILURE_PAGE = 'broken_fanout_late_failure_page';
 
     public const string HEALTHY_TABLE = 'healthyRows';
     public const string BROKEN_SOURCE_TABLE = 'brokenSourceRows';
     public const string KEYLESS_ROW_TABLE = 'keylessRows';
+    public const string LATE_FAILURE_TABLE = 'lateFailureRows';
+
+    /** Row key the late-failure table builds; every other key gives up. */
+    public const string LATE_FAILURE_SURVIVING_KEY = '1';
 
     /** Computed field that gives up the way a placeholder row reaching a window does */
     public const string KEYLESS_FIELD = 'keylessField';
@@ -229,6 +341,12 @@ final class BrokenDeclarationFanoutContext extends BrowserContext
             throw new TableRowKeyMissingException(self::class);
         }
 
+        // The late-failure table builds its first row and gives up on the second, which is the
+        // only way to arrange a flush that collected something before it failed.
+        if ($browserKey === self::LATE_FAILURE_TABLE && (string) $rowKey !== self::LATE_FAILURE_SURVIVING_KEY) {
+            throw new TableRowKeyMissingException(self::class);
+        }
+
         return null;
     }
 
@@ -240,11 +358,20 @@ final class BrokenDeclarationFanoutContext extends BrowserContext
     protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {
         return match ($page) {
-            self::HEALTHY_PAGE, self::BROKEN_SOURCE_PAGE, self::KEYLESS_ROW_PAGE => BrowserPageConfig::fromArray([
+            self::HEALTHY_PAGE,
+            self::BROKEN_SOURCE_PAGE,
+            self::KEYLESS_ROW_PAGE,
+            self::LATE_FAILURE_PAGE => BrowserPageConfig::fromArray([
                 BrowserConfigKey::SIGNAL => self::SIGNAL,
             ]),
             self::BROKEN_PAGE => BrowserPageConfig::fromArray([
                 BrowserConfigKey::SIGNAL => ['not', 'a', 'name'],
+            ]),
+            // Named correctly all the way down to the guard, which names a type nothing
+            // implements: the page is readable, its own gate is not.
+            self::BROKEN_GUARD_PAGE => BrowserPageConfig::fromArray([
+                BrowserConfigKey::SIGNAL => self::SIGNAL,
+                BrowserConfigKey::GUARDS => [[BrowserGuardKey::TYPE => 'no_such_guard_type']],
             ]),
             default => null,
         };
@@ -257,9 +384,12 @@ final class BrokenDeclarationFanoutContext extends BrowserContext
     protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
     {
         return match ($page) {
-            self::HEALTHY_PAGE, self::BROKEN_PAGE => BrowserPageBindings::fromArray([self::HEALTHY_TABLE => []]),
+            self::HEALTHY_PAGE, self::BROKEN_PAGE, self::BROKEN_GUARD_PAGE => BrowserPageBindings::fromArray([
+                self::HEALTHY_TABLE => [],
+            ]),
             self::BROKEN_SOURCE_PAGE => BrowserPageBindings::fromArray([self::BROKEN_SOURCE_TABLE => []]),
             self::KEYLESS_ROW_PAGE => BrowserPageBindings::fromArray([self::KEYLESS_ROW_TABLE => []]),
+            self::LATE_FAILURE_PAGE => BrowserPageBindings::fromArray([self::LATE_FAILURE_TABLE => []]),
             default => BrowserPageBindings::empty(),
         };
     }
@@ -283,6 +413,16 @@ final class BrokenDeclarationFanoutContext extends BrowserContext
             // Declared correctly in every way; the computed field below is what gives up
             // while the row is being built.
             self::KEYLESS_ROW_TABLE => BrowserSourceConfig::fromArray([
+                BrowserTableConfigKey::ROWS => [
+                    [
+                        BrowserTableFieldKey::SOURCE => self::SOURCE,
+                        BrowserTableFieldKey::ROW_KEY => 'id',
+                        BrowserTableFieldKey::FIELDS => ['id', 'name'],
+                        BrowserTableFieldKey::COMPUTED => [self::KEYLESS_FIELD],
+                    ],
+                ],
+            ]),
+            self::LATE_FAILURE_TABLE => BrowserSourceConfig::fromArray([
                 BrowserTableConfigKey::ROWS => [
                     [
                         BrowserTableFieldKey::SOURCE => self::SOURCE,

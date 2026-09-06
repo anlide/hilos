@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Core\Browser\Context;
 
 use Hilos\Auth\Session\SessionCarrier;
+use Hilos\Constants\HttpConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
@@ -35,6 +37,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
@@ -66,9 +69,16 @@ use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
+use Hilos\Database\Exception\PropertyNotAccessibleException;
+use Hilos\Database\Exception\View\CollectionNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
+use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Hilos;
+use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
 use Throwable;
@@ -82,6 +92,23 @@ use Hilos\Core\Table\Definition\TableDefinition;
  */
 abstract class BrowserContext
 {
+    /**
+     * Machine-readable code the delivery-failure frame carries.
+     *
+     * The same code the subscribe path answers an unexpected failure with, because the client
+     * is looking at the same thing: a page it cannot have, for a reason that is not about it.
+     */
+    private const string DELIVERY_FAILURE_CODE = 'internal_error';
+
+    /**
+     * Wording the delivery-failure frame carries, scrubbed of everything about this node.
+     *
+     * Deliberately not the subscribe path's wording. A subscription that failed never opened;
+     * a delivery that failed means the page the person is looking at has stopped being fed, and
+     * the two are different things to be told.
+     */
+    private const string DELIVERY_FAILURE_MESSAGE = 'Internal error while delivering the page';
+
     protected SourceChangeSet $changes;
 
     /** @var class-string<Hilos> Active project facade class for topology registry reads. */
@@ -345,6 +372,10 @@ abstract class BrowserContext
         // the worker's exit and crash-loop it the same way the reactive fan-out would
         // — see the catch in emitBrowserSignals() for why that costs every other
         // subscriber too.
+        //
+        // Any failure and not only a broken declaration, for the same reason the fan-out
+        // gives: the blast radius is what is being contained, and it does not depend on
+        // which exception the guards happened to reach. A refused read reaches them now.
         try {
             $pageConfig = $this->pageConfig($page);
             if ($pageConfig !== null) {
@@ -353,10 +384,26 @@ abstract class BrowserContext
                     return false;
                 }
             }
-        } catch (PageInternalErrorException $e) {
+        } catch (Throwable $e) {
             Logger::error("Browser window skipped a broken declaration: page={$page}, error={$e->getMessage()}");
+            $this->tellPageDeliveryFailed($page, $acceptKey);
 
             return false;
+        }
+
+        // The guards passed, so whatever stopped this connection's page is over. A window
+        // landing on a scope the client wiped would be a table nothing holds, so the page goes
+        // out whole first and the window then has somewhere to arrive.
+        if (Hilos::$sr->clearPageDeliveryFailure($acceptKey)) {
+            // Written here rather than handed back: this path answers a bool and has no list for
+            // the worker's tick to write, so a re-send that failed would otherwise leave the
+            // journal with nothing at all - the very silence the frame above exists to end.
+            foreach ($this->resendWholePage($page, $acceptKey) as $contained) {
+                Logger::error(
+                    "Browser window could not re-send the page it owed: page={$page}, "
+                    . "acceptKey={$acceptKey}, error={$contained->failure->getMessage()}",
+                );
+            }
         }
 
         try {
@@ -596,8 +643,17 @@ abstract class BrowserContext
         // subscription (kept alive for live-promotion) receives no reactive fan-out
         // while the guard fails, and resumes the instant it passes.
         $guardAllows = [];
+        // Subscriptions this flush has already given up on. One failure per subscription and
+        // not one per change: the cause is a declaration or the wiring, so every remaining
+        // change of the same flush would reach it again, and the subscriber has by then been
+        // told its page could not be delivered - rows arriving after that frame would deny it.
+        $failedSubscriptions = [];
         foreach ($this->changes->all() as $change) {
             foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
+                if (isset($failedSubscriptions[$acceptKey])) {
+                    continue;
+                }
+
                 $page = $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY];
                 try {
                     $this->addBrowserChange($signalTables, $guardAllows, $change, $page, $acceptKey, $subscription);
@@ -616,14 +672,32 @@ abstract class BrowserContext
                         "page={$page} acceptKey={$acceptKey}",
                         $failure,
                     );
+                    $this->tellPageDeliveryFailed((string) $page, (string) $acceptKey);
+                    $failedSubscriptions[$acceptKey] = true;
                 }
             }
         }
 
         foreach ($this->buildBrowserPayloads($signalTables) as $acceptKey => $pages) {
+            if (isset($failedSubscriptions[$acceptKey])) {
+                // Rows this subscription collected BEFORE it failed, and they are not going out.
+                // It has been told its page could not be delivered, so a delta behind that frame
+                // would land on the scope the client just wiped; and the mark it is holding must
+                // survive the flush, or the next one would tell it the same thing all over again.
+                continue;
+            }
+
             foreach ($pages as $page => $tables) {
                 $payload = $this->pagePayloadFromBrowser($tables);
                 if ($payload->isEmpty()) {
+                    continue;
+                }
+
+                $subscriber = (string) $acceptKey;
+                $pageName = (string) $page;
+                if (Hilos::$sr->clearPageDeliveryFailure($subscriber)) {
+                    $contained = [...$contained, ...$this->resendWholePage($pageName, $subscriber)];
+
                     continue;
                 }
 
@@ -632,14 +706,97 @@ abstract class BrowserContext
                     signalType: new SignalType(SignalTypeConstants::WS_USER),
                     signalName: new SignalName(SignalTypeConstants::PAGE_RESPONSE),
                     signalData: new WebSocketSignalData(
-                        data: new PageResponseSignalData((string) $page, $payload),
-                        targetAcceptKey: $acceptKey,
+                        data: new PageResponseSignalData($pageName, $payload),
+                        targetAcceptKey: $subscriber,
                     ),
                 );
             }
         }
 
         return $contained;
+    }
+
+    /**
+     * Serves a whole page to a connection whose last word about it was that it had failed.
+     *
+     * A delta would land on nothing. Told its page failed, the client wipes the page scope and
+     * the frames it was holding, so that a stale `admin: true` cannot outlive the error - and
+     * the fan-out sends only the rows that changed. Handing it those rows would replace the
+     * error with a page that has three fields on it and no way to say what is missing.
+     *
+     * Contained the same way the row build above is, and for the same reason: this runs in the
+     * second loop, where nothing stands between a throw and the worker's exit. A re-send that
+     * fails is not a recovery, so the connection is told again rather than left believing the
+     * page in front of it is live.
+     *
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Subscriber accept key
+     * @return list<ContainedFailure> The re-send's own failure, or an empty list when it landed
+     */
+    private function resendWholePage(string $page, string $acceptKey): array
+    {
+        $subscription = Hilos::$sr?->getPageSubscriptions()[$acceptKey] ?? [];
+        $params = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
+
+        try {
+            $this->subscribeSnapshot($page, $acceptKey, new PageRouteParams(is_array($params) ? $params : []));
+
+            return [];
+        } catch (Throwable $failure) {
+            $this->tellPageDeliveryFailed($page, $acceptKey);
+
+            return [new ContainedFailure(
+                WorkerTickUnit::BROWSER_SUBSCRIPTION,
+                "page={$page} acceptKey={$acceptKey}",
+                $failure,
+            )];
+        }
+    }
+
+    /**
+     * Tells one connection that its page could not be delivered, at most once per subscription.
+     *
+     * Until this frame existed the delivery paths failed in silence: the page a subscriber was
+     * looking at simply stopped moving, with nothing on the wire to say so and no way for the
+     * person in front of it to tell a broken node from a quiet one. It reuses the subscription
+     * error frame rather than inventing a name, because the client already knows how to show
+     * one, and it carries the scrubbed wording for the same reason the subscribe path does: the
+     * text names the inside of the node and the subscriber can act on none of it.
+     *
+     * Once per subscription and not once per failure. The defect is in a declaration or in the
+     * wiring, so it is present on every flush; a frame per flush would be ten a second for as
+     * long as it lasted. The registry holds the bit, and a delivery that succeeds clears it.
+     *
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Subscriber accept key
+     */
+    private function tellPageDeliveryFailed(string $page, string $acceptKey): void
+    {
+        if (Hilos::$sr === null || !Hilos::$sr->markPageDeliveryFailure($acceptKey)) {
+            return;
+        }
+
+        try {
+            Hilos::$sr->queueSignal(
+                signalSource: new SignalSource(SignalSource::WORKER),
+                signalType: new SignalType(SignalTypeConstants::WS_USER),
+                signalName: new SignalName(SignalConstants::SUBSCRIPTION_PAGE_ERROR),
+                signalData: new WebSocketSignalData(
+                    data: new PageSubscriptionErrorSignalData(
+                        page: $page,
+                        httpCode: HttpConstants::HTTP_INTERNAL_ERROR,
+                        errorCode: self::DELIVERY_FAILURE_CODE,
+                        message: self::DELIVERY_FAILURE_MESSAGE,
+                    ),
+                    targetAcceptKey: $acceptKey,
+                ),
+            );
+        } catch (InvalidArgumentException $e) {
+            // The frame that says the page failed could not be named, which is a mistake in the
+            // constant above rather than anything about this subscription. Raising it here would
+            // replace a page that does not update with a worker that does not run.
+            Logger::error("Browser delivery error frame could not be sent: page={$page}, error={$e->getMessage()}");
+        }
     }
 
     /**
@@ -1864,22 +2021,25 @@ abstract class BrowserContext
      * DB-backed anchors must use a fresh full query so lazy key-only
      * collections do not shrink list pages to already-cached rows.
      *
+     * A query that fails is not an empty page. The refusal travels to the caller, which is the
+     * only place that can tell the subscriber its page did not arrive; swallowed here it would
+     * arrive looking complete and empty.
+     *
      * @param array<string, mixed> $source Browser source declaration
      * @return list<mixed> Snapshot source items
      * @throws PageInternalErrorException When a page or source declaration is malformed
+     * @throws DbCollectionNotReadableException When the database collection is mounted but not read here
+     * @throws RtCollectionNotReadableException When the runtime collection is mounted but not read here
+     * @throws DatabaseException When the source collection cannot be loaded or queried
      */
     private function sourceItemsForSnapshot(array $source): array
     {
         $collection = $this->sourceCollection($source);
         if ($collection instanceof DbCollection && $this->sourceType($source) === BrowserSourceType::DB) {
-            try {
-                $result = $collection->queryPageItems(new TableQueryDTO());
-                $rows = $result[TableConstants::RESULT_KEY_ROWS] ?? [];
+            $result = $collection->queryPageItems(new TableQueryDTO());
+            $rows = $result[TableConstants::RESULT_KEY_ROWS] ?? [];
 
-                return is_array($rows) ? array_values($rows) : [];
-            } catch (Throwable) {
-                return [];
-            }
+            return is_array($rows) ? array_values($rows) : [];
         }
 
         if (!is_iterable($collection)) {
@@ -2275,9 +2435,18 @@ abstract class BrowserContext
     /**
      * Reads a source collection from Hilos::$db or Hilos::$rt.
      *
+     * Null means one thing only: no collection of that name is mounted. A collection that IS
+     * mounted and refused the read raises instead, because the two are not the same answer —
+     * "the project mounts it later" is a state the page passes through on its way to working,
+     * while a refused read is a defect that would deliver an empty page as though the page
+     * itself were empty, and go on doing it for as long as the wiring stays wrong.
+     *
      * @param array<string, mixed> $source Browser source declaration
-     * @return ?iterable Current source collection, or null when unavailable
+     * @return ?iterable Current source collection, or null when no such collection is mounted
      * @throws PageInternalErrorException When a page or source declaration is malformed
+     * @throws DbCollectionNotReadableException When the database collection is mounted but not read here
+     * @throws RtCollectionNotReadableException When the runtime collection is mounted but not read here
+     * @throws DatabaseException When loading the mounted database collection fails
      */
     private function sourceCollection(array $source): ?iterable
     {
@@ -2291,7 +2460,7 @@ abstract class BrowserContext
             return $sourceType === BrowserSourceType::DB
                 ? Hilos::$db?->{$sourceKey}
                 : Hilos::$rt?->{$sourceKey};
-        } catch (Throwable) {
+        } catch (CollectionNotFoundException|RtCollectionNotFoundException) {
             // An unknown collection under a well-formed declaration: the project may mount
             // it later, and the caller reads that as "nothing to deliver yet".
             return null;
@@ -2301,10 +2470,17 @@ abstract class BrowserContext
     /**
      * Loads one source item by its source id.
      *
+     * Null means the collection holds no such id. A lookup that failed travels instead: the two
+     * were one answer before, and a row that refused to be read left the page looking like a
+     * page whose row had been deleted.
+     *
      * @param array<string, mixed> $source Browser source declaration
      * @param string $sourceId Source id from the DB/RT sync fact
-     * @return mixed Source item or null
+     * @return mixed Source item, or null when the collection holds no such id
      * @throws PageInternalErrorException When a page or source declaration is malformed
+     * @throws DbCollectionNotReadableException When the database collection is mounted but not read here
+     * @throws RtCollectionNotReadableException When the runtime collection is mounted but not read here
+     * @throws DatabaseException When the source collection cannot be loaded or the item cannot be read
      */
     private function sourceItemById(array $source, string $sourceId): mixed
     {
@@ -2313,24 +2489,30 @@ abstract class BrowserContext
             return null;
         }
 
-        try {
-            $item = $collection[$sourceId] ?? null;
-            if ($item !== null || !ctype_digit($sourceId)) {
-                return $item;
-            }
-
-            return $collection[(int) $sourceId] ?? null;
-        } catch (Throwable) {
-            return null;
+        $item = $collection[$sourceId] ?? null;
+        if ($item !== null || !ctype_digit($sourceId)) {
+            return $item;
         }
+
+        return $collection[(int) $sourceId] ?? null;
     }
 
     /**
      * Reads one field from an array or magic item.
      *
+     * The fallback below answers one question — "this item carries no such field" — so only that
+     * question is caught here. A field whose read failed for any other reason is not a field the
+     * item does not have, and answering it out of `toArray()` or with null would file a broken
+     * read under a missing name.
+     *
+     * Three species say that one thing, because three kinds of item can arrive: a database view
+     * item, a runtime view item, and the object layer underneath the first. They sit in three
+     * exception families and are named here one by one; there is no common base to narrow to
+     * that would not also catch a failed read.
+     *
      * @param mixed $item Source item or row
      * @param string $field Field name
-     * @return mixed Field value or null when unavailable
+     * @return mixed Field value, or null when the item carries no such field
      */
     private function fieldValue(mixed $item, string $field): mixed
     {
@@ -2340,7 +2522,7 @@ abstract class BrowserContext
 
         try {
             return $item->{$field};
-        } catch (Throwable) {
+        } catch (PropertyNotFoundException|PropertyNotAccessibleException|RtItemPropertyNotFoundException) {
             if (is_object($item) && method_exists($item, 'toArray')) {
                 $payload = $item->toArray();
                 if (is_array($payload) && array_key_exists($field, $payload)) {
@@ -2531,16 +2713,28 @@ abstract class BrowserContext
      * guard-failed subscription must receive nothing WHILE the guard fails yet
      * resume the instant it passes (the missing resource appears / access granted).
      *
+     * A malformed declaration is not a refusal and does not answer false: it leaves by the
+     * rethrow below. PageInternalErrorException is a child of PageSubscriptionException, so
+     * until that rethrow the two reached the same answer, and no caller could tell a connection
+     * that is denied from a page that is broken. Each delivery path holds a trap for the broken
+     * page — the traps sit outside this call and were unreachable for as long as it was
+     * swallowed here.
+     *
      * @param string $page Page name the config belongs to
      * @param BrowserPageConfig $pageConfig Browser page config
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
      * @return bool Whether this connection may receive the page's browser data now
+     * @throws PageInternalErrorException When a guard or a source declaration is malformed
+     * @throws DbCollectionNotReadableException When a guard's database collection is not read here
+     * @throws RtCollectionNotReadableException When a guard's runtime collection is not read here
      */
     private function pageGuardsAllow(string $page, BrowserPageConfig $pageConfig, string $acceptKey, array $pageParams): bool
     {
         try {
             $this->assertPageGuards($page, $pageConfig, $acceptKey, $pageParams);
+        } catch (PageInternalErrorException $e) {
+            throw $e;
         } catch (PageSubscriptionException) {
             return false;
         }

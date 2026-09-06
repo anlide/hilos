@@ -721,6 +721,28 @@ class SignalRouter
     }
 
     /**
+     * Records that a connection's page could not be delivered, and answers whether to say so.
+     *
+     * @param string $acceptKey Client accept key
+     * @return bool Whether this connection has not been told yet, and is owed the error frame
+     */
+    public function markPageDeliveryFailure(string $acceptKey): bool
+    {
+        return $this->subscriptions->markPageDeliveryFailure($acceptKey);
+    }
+
+    /**
+     * Clears the mark after a delivery succeeds, and answers whether one was standing.
+     *
+     * @param string $acceptKey Client accept key
+     * @return bool Whether a failure was standing, and the connection is owed a full snapshot
+     */
+    public function clearPageDeliveryFailure(string $acceptKey): bool
+    {
+        return $this->subscriptions->clearPageDeliveryFailure($acceptKey);
+    }
+
+    /**
      * Accept keys currently subscribed to a page, optionally filtered by a single route param.
      *
      * @param string $page Page identifier to match subscriptions against

@@ -22,6 +22,7 @@ use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\SecretInQueryRule;
 use Hilos\Tests\CodeStyle\Rule\ViewWrapperBindingRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
+use Hilos\Tests\CodeStyle\Rule\WiringRefusalSwallowedRule;
 use Hilos\Tests\CodeStyle\SourceScanner;
 use PHPUnit\Framework\TestCase;
 
@@ -316,6 +317,21 @@ final class RuleFixtureTest extends TestCase
                 'WIRE-KEY-CASE Bad/WireKeyCaseSamples.php:21 — field key \'default_kind\' is not camelCase; '
                     . 'one spelling has to serve PHP, the wire and TS '
                     . '(see docs/agents/code-style/cross-layer-field-names.md)',
+                'WIRING-REFUSAL-SWALLOWED Bad/WiringRefusalSamples.php:29 — catch (Throwable) swallows a '
+                    . 'read of Hilos::$db / Hilos::$rt; narrow it, rethrow WiringRefusal above it, or '
+                    . 'mark it with a reason (see docs/agents/code-style/wiring-refusals.md)',
+                'WIRING-REFUSAL-SWALLOWED Bad/WiringRefusalSamples.php:43 — catch (Exception) swallows a '
+                    . 'read of Hilos::$db / Hilos::$rt; narrow it, rethrow WiringRefusal above it, or '
+                    . 'mark it with a reason (see docs/agents/code-style/wiring-refusals.md)',
+                'WIRING-REFUSAL-SWALLOWED Bad/WiringRefusalSamples.php:62 — catch (HilosException) swallows a '
+                    . 'read of Hilos::$db / Hilos::$rt; narrow it, rethrow WiringRefusal above it, or '
+                    . 'mark it with a reason (see docs/agents/code-style/wiring-refusals.md)',
+                'WIRING-REFUSAL-SWALLOWED Bad/WiringRefusalSamples.php:77 — the '
+                    . '`// read-refusal-swallowed:` marker above the catch names no reason '
+                    . '(see docs/agents/code-style/wiring-refusals.md)',
+                'WIRING-REFUSAL-SWALLOWED Bad/WiringRefusalSamples.php:92 — catch (Throwable) swallows a '
+                    . 'read of Hilos::$db / Hilos::$rt; narrow it, rethrow WiringRefusal above it, or '
+                    . 'mark it with a reason (see docs/agents/code-style/wiring-refusals.md)',
                 'DB-OBJECT-MUTATE Database/Object/Collection/ObjectStoreMutate.php:26 — $this->objects is '
                     . 'written directly outside Objects; go through $this[$id] = $object for a new row, or '
                     . 'hydrate() for a row read out of storage (see docs/agents/orm/object.md)',
@@ -509,6 +525,7 @@ final class RuleFixtureTest extends TestCase
             new MalformedInputMarkerRule(),
             new SecretInQueryRule(),
             new MagicRepeatRule(),
+            new WiringRefusalSwallowedRule(),
             EmptyStringSentinelRule::forZone(self::ZONE_SEGMENTS),
             new PayloadSentinelRule(),
             new WireKeyCaseRule(),

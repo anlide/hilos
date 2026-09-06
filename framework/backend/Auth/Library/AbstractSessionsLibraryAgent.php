@@ -100,6 +100,7 @@ use Hilos\Users\DTO\AccountMergeResultSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\WiringRefusal;
 use Random\RandomException;
 use Throwable;
 
@@ -1124,6 +1125,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $expired = $userIdBeforeDoor !== null && $session->userId === null;
             $userId = $this->ensureAdminUser($session->userId);
             $this->authenticateSession($sessionToken, $userId, null);
+        } catch (WiringRefusal $refusal) {
+            // Answered rather than raised: the command socket parks its caller until a reply
+            // arrives ({@see self::onSignalCommand()}), so a throw would hang the operator at
+            // their prompt. What the reply says is the difference - the wiring, not the session,
+            // so nobody goes looking for a token that was never read.
+            $this->logAgentError("Admin create could not read the sessions here: {$refusal->getMessage()}");
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                'This process does not read the sessions collection: ' . $refusal->getMessage(),
+            ));
+
+            return;
         } catch (Throwable $e) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
 
@@ -1305,6 +1318,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 ));
                 $sessions++;
             }
+        } catch (WiringRefusal $refusal) {
+            // Told apart and written down as its own thing, then reported like any other reason:
+            // the caller answers a parked CLI with this announcement, so there is nowhere to
+            // raise it to. The line is what says this process was never going to announce.
+            $this->logAgentError("Admin grant for user #{$userId} cannot be announced here: {$refusal->getMessage()}");
+
+            return new AdminGrantAnnouncement($sessions, $refusal->getMessage());
         } catch (Throwable $e) {
             $this->logAgentError("Admin grant for user #{$userId} was not announced: {$e->getMessage()}");
 

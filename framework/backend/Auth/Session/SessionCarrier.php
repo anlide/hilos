@@ -12,6 +12,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
+use Hilos\WiringRefusal;
 
 /**
  * SessionCarrier - carries live authenticated sessions across a database replacement (HIL-479).
@@ -112,8 +113,13 @@ final class SessionCarrier
      * stop the rest - a restore that succeeded must not be undone by a session that could not
      * be written.
      *
+     * One failure is not a row, though: a refused read says the collection is not addressed to
+     * this process, and going on would drop every session left in the snapshot and report the
+     * number as if the restore had merely been unlucky.
+     *
      * @param list<SessionCarryover> $snapshot Sessions captured before the swap
      * @return SessionCarryResult Sessions written, sessions lost and sessions that needed no carrying
+     * @throws WiringRefusal When this process is not a declared reader of the sessions collection
      */
     public static function carryOver(array $snapshot): SessionCarryResult
     {
@@ -141,6 +147,11 @@ final class SessionCarrier
                     $carryover->createdAt,
                     $carryover->expiresAt,
                 );
+            } catch (WiringRefusal $refusal) {
+                // Not one session lost but all of them: the collection is not addressed to this
+                // process, so every remaining carryover of the loop would be dropped in silence
+                // and the restore would report a number that means nothing.
+                throw $refusal;
             } catch (HilosException $e) {
                 Logger::error('Session carry-over could not restore a session', [
                     'error' => $e->getMessage(),

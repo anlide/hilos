@@ -13,6 +13,7 @@ reviewing `catch (...)`, or documenting `@throws` in Hilos PHP code.
 - Exception taxonomy and examples: `docs/agents/code-style/exceptions.md`
 - PHPDoc rules for `@throws`: `docs/agents/code-style/phpdoc.md`
 - Page action error conversion: `docs/agents/code-style/page-action-handlers.md`
+- Broad catches around a facade read: `docs/agents/code-style/wiring-refusals.md`
 
 ## Workflow
 

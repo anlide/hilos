@@ -5558,7 +5558,10 @@ abstract class DaemonManager extends BaseManager implements
      * Nothing is thrown out of here either. A write this master is not (or no longer) the source
      * for raises, and an exception escaping the master loop ends {@see run()} and takes the node
      * down - so the failure is written and the node goes on serving, the same contract
-     * {@see sendToAgent()} keeps for the same reason.
+     * {@see sendToAgent()} keeps for the same reason. That contract is why the catch below wears
+     * the read-refusal marker rather than letting the wiring refusal past it: everywhere else a
+     * refusal is raised so it cannot be mistaken for an answer, and here there is no caller to
+     * raise it to - only the loop, which would end.
      */
     private function publishClusterNodes(): void
     {
@@ -5606,6 +5609,9 @@ abstract class DaemonManager extends BaseManager implements
             // Stamped only once the whole snapshot is through, so a publication that broke halfway
             // is retried by the next membership event rather than remembered as done.
             $this->publishedClusterVersion = $version;
+        // The master loop is the one place a refusal may not leave by a throw, and the line
+        // below names its species and its message, so nothing about it is hidden either.
+        // read-refusal-swallowed: a throw here would end run() and take the node down
         } catch (Throwable $e) {
             Logger::error(
                 'Cluster nodes: publishing ' . StateHilosClusterNode::RT_COLLECTION . ' failed: '

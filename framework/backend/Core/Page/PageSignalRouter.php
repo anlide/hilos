@@ -30,6 +30,7 @@ use Hilos\Core\Page\Exception\ActionForbiddenException;
 use Hilos\Core\Page\Exception\ActionRateLimitedException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
 use Hilos\Core\Page\Exception\PageForbiddenException;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\Exception\PageUnauthorizedException;
@@ -76,6 +77,18 @@ class PageSignalRouter
      * an identity that never arrives costs half a second and then today's verdict.
      */
     private const int IDENTITY_WAIT_TIMEOUT_MS = 500;
+
+    /**
+     * What a subscription that failed for a reason of the node's own tells the client.
+     *
+     * One name for two senders. The generic catch has always sent it; since HIL-575 the
+     * internal-error branch sends it too, in place of the engine's own words, and two spellings
+     * of one sentence would drift the moment either is reworded.
+     */
+    private const string SUBSCRIBE_INTERNAL_ERROR = 'Internal error during subscription';
+
+    /** The same sentence for an update, which the client shows against the page it is already on. */
+    private const string UPDATE_INTERNAL_ERROR = 'Internal error during subscription update';
 
     /** Signal-to-page route config for non-action routed signals. */
     private SignalRouteConfig $signalRoutes;
@@ -254,6 +267,23 @@ class PageSignalRouter
             PageAccessGate::assert($pageInstance::class, $data->acceptKey);
             Hilos::$browser?->assertSubscriptionAccess($page, $data->acceptKey, $params);
             $pageInstance->onSubscribe($data->acceptKey, $params);
+        } catch (PageInternalErrorException $e) {
+            // Ahead of its own base class, because it is not the same event. Every other species
+            // below is a verdict about the resource or the rights, reached on purpose and worth
+            // an info line and its own words to the subscriber. This one says the node is wrong
+            // about itself: error, because nobody comes to fix an info line, and scrubbed,
+            // because the text names the inside of the node and the subscriber can act on none
+            // of it. The frame it sends is the internal-error frame either way — the species
+            // already carries 500 and `internal_error`.
+            Logger::error("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
+            $this->sendSubscriptionError(
+                $pageInstance,
+                $page,
+                $data->acceptKey,
+                $e->httpCode,
+                $e->errorCode,
+                self::SUBSCRIBE_INTERNAL_ERROR,
+            );
         } catch (PageSubscriptionException $e) {
             // The subscription is intentionally KEPT alive, not torn down. A guard
             // failure is a transient state, not a dead end: if the missing resource
@@ -275,7 +305,7 @@ class PageSignalRouter
                 $data->acceptKey,
                 HttpConstants::HTTP_INTERNAL_ERROR,
                 'internal_error',
-                'Internal error during subscription',
+                self::SUBSCRIBE_INTERNAL_ERROR,
             );
         }
     }
@@ -368,6 +398,19 @@ class PageSignalRouter
                 // its update did happen, and the page already ran it.
                 Logger::error("Cannot mirror page subscription update: page={$page}, acceptKey={$data->acceptKey}, {$e->getMessage()}");
             }
+        } catch (PageInternalErrorException $e) {
+            // Same order and the same reason as in dispatchPageSubscribe(): a node wrong about
+            // itself is not a verdict about the subscriber, so it is logged as an error and its
+            // words stay inside.
+            Logger::error("Page update subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
+            $this->sendSubscriptionError(
+                $pageInstance,
+                $page,
+                $data->acceptKey,
+                $e->httpCode,
+                $e->errorCode,
+                self::UPDATE_INTERNAL_ERROR,
+            );
         } catch (PageSubscriptionException $e) {
             Logger::info("Page update subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
             $this->sendSubscriptionError($pageInstance, $page, $data->acceptKey, $e->httpCode, $e->errorCode, $e->getMessage());
@@ -379,7 +422,7 @@ class PageSignalRouter
                 $data->acceptKey,
                 HttpConstants::HTTP_INTERNAL_ERROR,
                 'internal_error',
-                'Internal error during subscription update',
+                self::UPDATE_INTERNAL_ERROR,
             );
         }
     }

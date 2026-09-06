@@ -18,6 +18,7 @@ use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\SecretInQueryRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
+use Hilos\Tests\CodeStyle\Rule\WiringRefusalSwallowedRule;
 use Hilos\Tests\CodeStyle\ScannedRoots;
 use PHPUnit\Framework\TestCase;
 
@@ -46,6 +47,7 @@ final class ScannedRootsTest extends TestCase
         FsSeamRule::ID,
         RandomSourceRule::ID,
         MagicRepeatRule::ID,
+        WiringRefusalSwallowedRule::ID,
     ];
 
     /**
@@ -94,7 +96,7 @@ final class ScannedRootsTest extends TestCase
         }
     }
 
-    public function testASuiteIsJudgedByEveryRuleButTheFourItIsAllowed(): void
+    public function testASuiteIsJudgedByEveryRuleButTheFiveItIsAllowed(): void
     {
         foreach (self::PRODUCTION_ONLY_RULE_IDS as $ruleId) {
             $this->assertFalse(RootKind::Suite->allows($ruleId), $ruleId . ' judges production code only');

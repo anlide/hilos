@@ -25,6 +25,7 @@ use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\SecretInQueryRule;
 use Hilos\Tests\CodeStyle\Rule\ViewWrapperBindingRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
+use Hilos\Tests\CodeStyle\Rule\WiringRefusalSwallowedRule;
 use Hilos\Tests\CodeStyle\ScannedRoots;
 use Hilos\Tests\CodeStyle\SourceScanner;
 use Hilos\Tests\CodeStyle\Throws\CrossFileRule;
@@ -217,6 +218,7 @@ final class CodeStyleGuardTest extends TestCase
             new MalformedInputMarkerRule(),
             new SecretInQueryRule(),
             new MagicRepeatRule(),
+            new WiringRefusalSwallowedRule(),
             $root === self::PHASED_EMPTY_STRING_ROOT
                 ? EmptyStringSentinelRule::forZone(self::PHASED_EMPTY_STRING_ZONE)
                 : EmptyStringSentinelRule::forWholeRoot(),
