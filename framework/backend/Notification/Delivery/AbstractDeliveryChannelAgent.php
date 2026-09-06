@@ -13,6 +13,7 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
@@ -55,6 +56,15 @@ use Hilos\Sms\Exception\SmsTemplateParamMissingException;
  */
 abstract class AbstractDeliveryChannelAgent extends AbstractAgent
 {
+    /**
+     * @var list<string> The notification each dispatched delivery is about, reloaded by
+     *     {@see startOp()} through {@see notifications()}. Read rather than claimed: the rows are
+     *     the notifications library's ({@see AbstractNotificationsLibraryAgent}), and a collection
+     *     has one owner. The delivery journal is absent on purpose - {@see onStart()} claims it,
+     *     and a claim is the owner's own interest.
+     */
+    public const array READS_DB = [HilosDbContext::notifications];
+
     /** Default ceiling on concurrently pumped attempts (outbound I/O, not CPU). */
     private const int DEFAULT_MAX_CONCURRENT = 16;
 
@@ -92,6 +102,7 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
      * @throws MailTemplateParamMissingException When a param the mail template requires is absent
      * @throws SmsTemplateNotInCatalogException When the SMS template key is not in the catalog
      * @throws SmsTemplateParamMissingException When a param the SMS template requires is absent
+     * @throws DbCollectionNotReadableException When nothing here reads what the channel needs, or its readiness is on its way
      */
     abstract protected function createAttempt(string $address, ObjectNotification $notification): DeliveryAttempt;
 

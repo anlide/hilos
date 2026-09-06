@@ -6,6 +6,7 @@ namespace Hilos\Notification;
 
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
@@ -38,6 +39,7 @@ final class NotificationChannelPreferenceProjector
      * @return array<string, bool> Channel name → allowed (true) / muted (false), over globally-enabled channels the recipient has an address on
      * @throws DatabaseException When a preference or address lookup query fails
      * @throws SettingException When the settings accessor refuses a channel's enablement key
+     * @throws DbCollectionNotReadableException When nothing here reads the preferences collection, or its readiness is on its way
      */
     public function channelPreferenceMap(int $userId): array
     {
@@ -72,6 +74,7 @@ final class NotificationChannelPreferenceProjector
      * @return NotificationPreferencesSectionData Section payload for the profile subscription scope
      * @throws DatabaseException When a preference or address lookup query fails
      * @throws SettingException When the settings accessor refuses a channel's enablement key
+     * @throws DbCollectionNotReadableException When nothing here reads the preferences collection, or its readiness is on its way
      */
     public function sectionData(int $userId): NotificationPreferencesSectionData
     {
@@ -107,6 +110,7 @@ final class NotificationChannelPreferenceProjector
      * @param int $userId Recipient user id
      * @return list<string> Muted channel names
      * @throws DatabaseException When the preference lookup query fails
+     * @throws DbCollectionNotReadableException When nothing here reads the preferences collection, or its readiness is on its way
      */
     private function mutedChannels(int $userId): array
     {

@@ -43,6 +43,9 @@ final class WiringRefusalSwallowedRule implements CodeStyleRule
     /** Facade properties whose `->` read reaches the read guard. */
     private const array GUARDED_PROPERTIES = ['$db', '$rt'];
 
+    /** The one method of a context that is a read: the application's way into the object layer. */
+    private const string GUARDED_METHOD = 'getObjectCollection';
+
     /** Catch types that stand above both refusal species and therefore swallow them. */
     private const array BROAD_TYPES = ['Throwable', 'Exception', 'HilosException'];
 
@@ -244,10 +247,13 @@ final class WiringRefusalSwallowedRule implements CodeStyleRule
     /**
      * Whether what follows the arrow is a collection read rather than a call on the context.
      *
-     * Only the read goes through the context's `__get()`, which is where the read guard stands.
-     * `Hilos::$db->reHydrateDbBackedCollections()` is an ordinary method of the context itself
-     * and can raise anything, none of it a refusal — judging it here would put records in the
-     * baseline that no narrowing could ever remove.
+     * A named collection goes through the context's `__get()`, which is where the read guard
+     * stands, and so does one method of the context itself: `getObjectCollection()` is the
+     * application's entrance to the object layer and is judged by the same guard (HIL-900).
+     * Every other method is an ordinary one — `Hilos::$db->reHydrateDbBackedCollections()` can
+     * raise anything, none of it a refusal, and `mountedObjectCollection()` is the layer's own
+     * unjudged entrance — so judging those here would put records in the baseline that no
+     * narrowing could ever remove.
      *
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
      * @param int $arrowIndex Index of the `->` or `?->` after the facade property
@@ -267,8 +273,11 @@ final class WiringRefusalSwallowedRule implements CodeStyleRule
         }
 
         $after = $this->nextMeaningful($tokens, $name + 1);
+        if ($after === null || $tokens[$after] !== '(') {
+            return true;
+        }
 
-        return $after === null || $tokens[$after] !== '(';
+        return $named[1] === self::GUARDED_METHOD;
     }
 
     /**

@@ -8,6 +8,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrationReservations;
 use Hilos\Hilos;
 
@@ -44,6 +45,7 @@ final class RegistrationReservationSweeper
      * @throws DatabaseException When a reservation query fails
      * @throws LogicException When the reservations object collection is unavailable
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws DbCollectionNotReadableException When nothing here reads the reservations collection, or its readiness is on its way
      */
     public function sweep(): array
     {
@@ -55,6 +57,7 @@ final class RegistrationReservationSweeper
      *
      * @return ObjectRegistrationReservations Reservation persistence primitives
      * @throws LogicException When the collection is missing or misconfigured
+     * @throws DbCollectionNotReadableException When nothing here reads the reservations collection, or its readiness is on its way
      */
     private function collection(): ObjectRegistrationReservations
     {

@@ -35,6 +35,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Exception\TableNotActivatedException;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
@@ -399,6 +400,8 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * @throws LogicException When the notifications object collection is unavailable
      * @throws InvalidArgumentException When the live or channel signal cannot be named or queued
      * @throws SettingException When the settings accessor refuses a channel's enablement key
+     * @throws DbCollectionNotReadableException When nothing here reads the notifications, deliveries or preferences collection, or its readiness is
+     *   on its way
      */
     public function emit(NotificationDraft $draft): int
     {

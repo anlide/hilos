@@ -14,6 +14,7 @@ use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Database\Object\Item\PushSubscription as ObjectPushSubscription;
@@ -53,6 +54,15 @@ use Hilos\Socket\SocketException;
  */
 class PushDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 {
+    /**
+     * @var list<string> The devices a recipient subscribed, re-resolved per attempt by
+     *     {@see subscriptions()} and {@see PushDeliveryAttempt}, on top of everything the base
+     *     channel reads. The parent's list is spelled out because `READS_DB` is not merged up the
+     *     chain the way a claim is: naming only this collection would drop the notifications the
+     *     base pipeline reloads and refuse this channel's every send.
+     */
+    public const array READS_DB = [...parent::READS_DB, HilosDbContext::pushSubscriptions];
+
     public const string AGENT_TYPE = HilosAgentType::HILOS_PUSH;
 
     /**
@@ -125,6 +135,7 @@ class PushDeliveryChannelAgent extends AbstractDeliveryChannelAgent
      * @param ObjectNotification $notification Notification to render and deliver
      * @return DeliveryAttempt The started multi-endpoint push attempt
      * @throws DatabaseException When the subscription lookup fails
+     * @throws DbCollectionNotReadableException When nothing here reads the subscriptions collection, or its readiness is on its way
      */
     protected function createAttempt(string $address, ObjectNotification $notification): DeliveryAttempt
     {
@@ -230,6 +241,7 @@ class PushDeliveryChannelAgent extends AbstractDeliveryChannelAgent
      *
      * @return ObjectPushSubscriptions Subscription persistence primitives
      * @throws DatabaseException When the subscription collection is not configured
+     * @throws DbCollectionNotReadableException When nothing here reads the subscriptions collection, or its readiness is on its way
      */
     private function subscriptions(): ObjectPushSubscriptions
     {

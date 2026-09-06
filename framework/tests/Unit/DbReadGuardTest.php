@@ -115,12 +115,41 @@ final class DbReadGuardTest extends TestCase
 
         $this->assertInstanceOf(
             DbReadGuardObjects::class,
-            $db->getObjectCollection(DbReadGuardDbContext::COLLECTION),
+            $db->mountedObjectCollection(DbReadGuardDbContext::COLLECTION),
         );
         $this->assertInstanceOf(
             DbReadGuardDbCollection::class,
             $db->getDbItemCollection(DbReadGuardDbContext::COLLECTION),
         );
+    }
+
+    /**
+     * And the application's way into the object layer is judged, with the same words the View
+     * layer is refused in (HIL-900). Reading past the agent used to be trusted rather than
+     * judged, which is how a worker nobody addressed kept answering out of a copy no write
+     * reaches - the push channel read a subscription that had been revoked on another worker.
+     */
+    public function testReadingTheObjectLayerIsRefusedForACollectionNobodyDeclared(): void
+    {
+        $db = DbReadGuardDbContext::create();
+
+        $this->expectException(DbCollectionNotReadableException::class);
+        $this->expectExceptionMessage("no reader interest is registered for database collection");
+
+        $db->getObjectCollection(DbReadGuardDbContext::COLLECTION);
+    }
+
+    /**
+     * A name nothing mounted is still answered with null, and the mount is asked about first.
+     * The other order would tell a caller its interest is missing when what is missing is the
+     * feature: the push channel reads a null here as "the subscriptions table is not activated"
+     * and hands the dispatcher an absent address rather than a wiring error.
+     */
+    public function testAnUnmountedNameAnswersNullBeforeTheGuardIsEvenAsked(): void
+    {
+        $db = DbReadGuardDbContext::create();
+
+        $this->assertNull($db->getObjectCollection('nothing_mounted_under_this_name'));
     }
 
     /**

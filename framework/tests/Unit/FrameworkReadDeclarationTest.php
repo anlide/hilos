@@ -4,17 +4,21 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Closure;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
+use Hilos\Push\Delivery\PushDeliveryChannelAgent;
 use Hilos\Runtime\State\Collection\HilosConnections as StateHilosConnections;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\HilosConnection as StateHilosConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -200,6 +204,48 @@ final class FrameworkReadDeclarationTest extends TestCase
             SourceChange::KIND_DB,
             HilosDbContext::notifications,
         ));
+    }
+
+    /**
+     * The reader the process-wide row was carrying, now saying so on its own class (HIL-900).
+     * A delivery channel agent reloads the notification it is sending, and the push channel also
+     * re-resolves the recipient's devices; both collections belong to the notifications library,
+     * so a channel declares a read and never a claim. The journal it does claim is absent from
+     * both lists on purpose: a claim is already the owner's interest.
+     */
+    public function testEveryDeliveryChannelDeclaresTheRowsItReadsPastTheAgentThatOwnsThem(): void
+    {
+        $channels = [
+            MailDeliveryChannelAgent::READS_DB,
+            SmsDeliveryChannelAgent::READS_DB,
+            PushDeliveryChannelAgent::READS_DB,
+        ];
+
+        foreach ($channels as $readsDb) {
+            $this->assertContains(HilosDbContext::notifications, $readsDb);
+            $this->assertNotContains(
+                HilosDbContext::notificationDeliveries,
+                $readsDb,
+                'The journal is claimed by the channel, and a claim is the interest of its owner',
+            );
+        }
+
+        $this->assertContains(HilosDbContext::pushSubscriptions, PushDeliveryChannelAgent::READS_DB);
+    }
+
+    /**
+     * The third reader the guard found, and the one the e2e of all three demos found first: the
+     * sessions library asks on every handshake whether the code a session is parked on is still
+     * alive, which is a read of a collection the users library owns. Undeclared, a worker holding
+     * this library was refused it, and every browser reopened on a code or new-password step
+     * landed back on the identifier field instead.
+     *
+     * Unconditional on purpose: a class constant cannot ask whether the project has a sign-in
+     * surface, and the collection is mounted by every context whether or not anything reads it.
+     */
+    public function testTheSessionsLibraryDeclaresTheCodeItAsksAboutOnEveryHandshake(): void
+    {
+        $this->assertContains(HilosDbContext::verifications, AbstractSessionsLibraryAgent::READS_DB);
     }
 
     /**

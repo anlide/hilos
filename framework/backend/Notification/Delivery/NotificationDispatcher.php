@@ -13,6 +13,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Notification as EntityNotification;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
@@ -49,6 +50,7 @@ class NotificationDispatcher
      * @throws DatabaseException When a delivery row cannot be persisted
      * @throws InvalidArgumentException When a channel's deliver signal cannot be named or queued
      * @throws SettingException When the settings accessor refuses a channel's enablement key
+     * @throws DbCollectionNotReadableException When nothing here reads the deliveries or preferences collection, or its readiness is on its way
      */
     public function dispatch(ObjectNotification $notification, ?array $channels): void
     {
@@ -104,6 +106,7 @@ class NotificationDispatcher
      * @param ObjectNotificationDelivery $delivery Loaded failed delivery row
      * @throws DatabaseException When the row reset fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws DbCollectionNotReadableException When nothing here reads the deliveries collection, or its readiness is on its way
      */
     public function requeue(ObjectNotificationDelivery $delivery): void
     {
@@ -146,6 +149,7 @@ class NotificationDispatcher
      * @param string $channel Channel name
      * @return bool True when the recipient allows the channel
      * @throws DatabaseException When the preference lookup query fails
+     * @throws DbCollectionNotReadableException When nothing here reads the preferences collection, or its readiness is on its way
      */
     protected function passesUserPreferences(int $userId, string $channel): bool
     {
@@ -209,6 +213,7 @@ class NotificationDispatcher
      *
      * @return ObjectNotificationDeliveries Delivery persistence primitives
      * @throws DatabaseException When the deliveries object collection is unavailable
+     * @throws DbCollectionNotReadableException When nothing here reads the deliveries collection, or its readiness is on its way
      */
     private function deliveries(): ObjectNotificationDeliveries
     {

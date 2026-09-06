@@ -56,9 +56,12 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
 {
     /**
      * @var list<string> What this demo's sign-in reaches for beyond the sessions it owns: the
-     *     person behind the session, and the message row a parked sign-in surface belongs to.
+     *     person behind the session, and the message row a parked sign-in surface belongs to,
+     *     on top of everything the framework library reads. The parent's list is spelled out
+     *     because `READS_DB` is not merged up the chain the way a claim is.
      */
     public const array READS_DB = [
+        ...parent::READS_DB,
         ChatDbContext::users,
         ChatDbContext::eventMessages,
     ];

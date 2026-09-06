@@ -16,6 +16,7 @@ use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\Object\Item\UserVerification as ObjectUserVerification;
 use Hilos\Database\Verification\VerificationType;
@@ -78,6 +79,7 @@ class VerificationService
      * @throws InvalidArgumentException When the transport's send signal cannot be named or queued
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws DbCollectionNotReadableException When nothing here reads the verifications collection, or its readiness is on its way
      */
     public function issue(string $type, string $identifier, ?int $userId): VerificationSendOutcome
     {
@@ -145,6 +147,7 @@ class VerificationService
      *   or of the wrong type
      * @throws InvalidArgumentException When a verification query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws DbCollectionNotReadableException When nothing here reads the verifications collection, or its readiness is on its way
      */
     public function issueForChannel(
         string $type,
@@ -191,6 +194,7 @@ class VerificationService
      * @throws LogicException When the verifications object collection is unavailable
      * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
      *   or not an int
+     * @throws DbCollectionNotReadableException When nothing here reads the verifications collection, or its readiness is on its way
      */
     public function activeChannel(string $type, string $identifier): ?string
     {
@@ -216,6 +220,7 @@ class VerificationService
      * @throws LogicException When the verifications object collection is unavailable
      * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
      *   or not an int
+     * @throws DbCollectionNotReadableException When nothing here reads the verifications collection, or its readiness is on its way
      */
     public function activeExpiresAt(string $type, string $identifier): ?int
     {
@@ -248,6 +253,7 @@ class VerificationService
      * @throws LogicException When the verifications object collection is unavailable
      * @throws EnvException When a send-gate env key is missing, outside the catalog, or
      *   not an int
+     * @throws DbCollectionNotReadableException When nothing here reads the verifications collection, or its readiness is on its way
      */
     public function resendAllowedInSeconds(string $type, string $identifier): int
     {
@@ -276,6 +282,7 @@ class VerificationService
      * @throws LogicException When the verifications object collection is unavailable
      * @throws EnvException When a send-gate env key is missing, outside the catalog, or
      *   not an int
+     * @throws DbCollectionNotReadableException When nothing here reads the verifications collection, or its readiness is on its way
      */
     public function resendAllowedAt(string $type, string $identifier): int
     {
@@ -306,6 +313,7 @@ class VerificationService
      * @throws LogicException When the verifications object collection is unavailable
      * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
      *   or not an int
+     * @throws DbCollectionNotReadableException When nothing here reads the verifications collection, or its readiness is on its way
      */
     public function verify(string $type, string $identifier, string $code): ?int
     {
@@ -356,6 +364,7 @@ class VerificationService
      * @throws LogicException When the verifications object collection is unavailable
      * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
      *   or not an int
+     * @throws DbCollectionNotReadableException When nothing here reads the verifications collection, or its readiness is on its way
      */
     public function verifyCode(string $type, string $identifier, string $code): bool
     {
@@ -378,6 +387,7 @@ class VerificationService
      * @throws LogicException When the verifications object collection is unavailable
      * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
      *   or not an int
+     * @throws DbCollectionNotReadableException When nothing here reads the verifications collection, or its readiness is on its way
      */
     public function hasActive(string $type, string $identifier): bool
     {
@@ -418,6 +428,7 @@ class VerificationService
      * @throws LogicException When the verifications object collection is unavailable
      * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
      *   or not an int
+     * @throws DbCollectionNotReadableException When nothing here reads the verifications collection, or its readiness is on its way
      */
     public function matchCode(string $type, string $identifier, string $code): bool
     {
@@ -469,6 +480,7 @@ class VerificationService
      * @throws LogicException When the verifications object collection is unavailable
      * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
      *   or not an int
+     * @throws DbCollectionNotReadableException When nothing here reads the verifications collection, or its readiness is on its way
      */
     public function consumeActive(string $type, string $identifier): bool
     {
@@ -562,6 +574,7 @@ class VerificationService
      * @return ?ObjectUserVerification Consumed challenge on success, null on any failure
      * @throws DatabaseException When a verification query fails
      * @throws LogicException When the verifications object collection is unavailable
+     * @throws DbCollectionNotReadableException When nothing here reads the verifications collection, or its readiness is on its way
      */
     private function consumeIfMatches(string $type, string $identifier, string $code): ?ObjectUserVerification
     {
@@ -823,6 +836,7 @@ class VerificationService
      *
      * @return ObjectUserVerifications Verifications persistence primitives
      * @throws LogicException When the collection is missing or misconfigured
+     * @throws DbCollectionNotReadableException When nothing here reads the verifications collection, or its readiness is on its way
      */
     private function collection(): ObjectUserVerifications
     {

@@ -332,6 +332,9 @@ final class RuleFixtureTest extends TestCase
                 'WIRING-REFUSAL-SWALLOWED Bad/WiringRefusalSamples.php:92 — catch (Throwable) swallows a '
                     . 'read of Hilos::$db / Hilos::$rt; narrow it, rethrow WiringRefusal above it, or '
                     . 'mark it with a reason (see docs/agents/code-style/wiring-refusals.md)',
+                'WIRING-REFUSAL-SWALLOWED Bad/WiringRefusalSamples.php:108 — catch (Throwable) swallows a '
+                    . 'read of Hilos::$db / Hilos::$rt; narrow it, rethrow WiringRefusal above it, or '
+                    . 'mark it with a reason (see docs/agents/code-style/wiring-refusals.md)',
                 'DB-OBJECT-MUTATE Database/Object/Collection/ObjectStoreMutate.php:26 — $this->objects is '
                     . 'written directly outside Objects; go through $this[$id] = $object for a new row, or '
                     . 'hydrate() for a row read out of storage (see docs/agents/orm/object.md)',

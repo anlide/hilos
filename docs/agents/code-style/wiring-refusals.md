@@ -48,9 +48,14 @@ other, and PHP offers no way to stop that. What stands in the way is the guard.
 
 What counts as a read is the collection named after the arrow —
 `Hilos::$db->users`, `Hilos::$rt?->connections`, the dynamic `Hilos::$db?->{$key}`
-— because that is what reaches `__get()`, where the guard stands. A method of the
-context itself (`Hilos::$db->reHydrateDbBackedCollections()`) is not judged: it
-never passes the guard and can raise nothing a narrowing would catch.
+— because that is what reaches `__get()`, where the guard stands, and one method
+of the context beside them: `Hilos::$db->getObjectCollection()` is the
+application's entrance to the object layer and passes the same guard (HIL-900).
+Every other method of the context is not judged
+(`Hilos::$db->reHydrateDbBackedCollections()`, and
+`Hilos::$db->mountedObjectCollection()`, which is the layer's own entrance and
+deliberately unjudged): they never pass the guard and can raise nothing a
+narrowing would catch.
 
 A narrower family that happens to contain a refusal — `RtBaseException` over a
 runtime read — is not judged either. The rule pins the reflex of catching

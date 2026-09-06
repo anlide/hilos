@@ -13,6 +13,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Environment\Exception\EnvException;
@@ -71,6 +72,7 @@ final class PasswordRecoveryService
      *   catalog, or of the wrong type
      * @throws ValidationException When the code was issued for a target the transport refuses
      * @throws InvalidArgumentException When the transport's send signal cannot be named or queued
+     * @throws DbCollectionNotReadableException When nothing here reads the identities or verifications collection, or its readiness is on its way
      */
     public function requestCode(string $email): ?VerificationSendOutcome
     {
@@ -148,6 +150,7 @@ final class PasswordRecoveryService
      * @throws LogicException When the identities or verifications object collection is unavailable
      * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
      *   or not an int
+     * @throws DbCollectionNotReadableException When nothing here reads the identities or verifications collection, or its readiness is on its way
      */
     public function complete(string $email, string $newPassword): ?int
     {
@@ -179,6 +182,7 @@ final class PasswordRecoveryService
      * @return ?int Owning user id when the address's account has a password, or null when it has none
      * @throws DatabaseException When an identity query fails
      * @throws LogicException When the identities object collection is unavailable
+     * @throws DbCollectionNotReadableException When nothing here reads the identities collection, or its readiness is on its way
      */
     private function passwordUserId(string $email): ?int
     {
@@ -194,6 +198,7 @@ final class PasswordRecoveryService
      *
      * @return ObjectIdentities Identity persistence primitives
      * @throws LogicException When the collection is missing or misconfigured
+     * @throws DbCollectionNotReadableException When nothing here reads the identities collection, or its readiness is on its way
      */
     private function identities(): ObjectIdentities
     {

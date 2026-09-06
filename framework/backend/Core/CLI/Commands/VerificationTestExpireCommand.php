@@ -8,6 +8,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\Object\Item\UserVerification as ObjectUserVerification;
 use Hilos\Database\Verification\VerificationType;
@@ -91,6 +92,7 @@ HELP;
      * @param list<string> $args Positional args: [0] type, [1] identifier
      * @return int Exit code (0 on success)
      * @throws DatabaseException When the lookup or expiry query fails
+     * @throws DbCollectionNotReadableException When nothing here reads the verifications collection, or its readiness is on its way
      */
     protected function run(array $options, array $args): int
     {

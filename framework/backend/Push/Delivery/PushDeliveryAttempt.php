@@ -7,6 +7,7 @@ namespace Hilos\Push\Delivery;
 use Hilos\API\Exception\AsyncHttpResultUnavailableException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
 use Hilos\Hilos;
 use Hilos\Notification\Delivery\DeliveryAttempt;
@@ -44,6 +45,7 @@ final class PushDeliveryAttempt implements DeliveryAttempt
      *
      * @param float $nowMs Current time in milliseconds
      * @throws AsyncHttpResultUnavailableException When a client reports a result it then withholds
+     * @throws DbCollectionNotReadableException When nothing here reads the subscriptions collection, or its readiness is on its way
      */
     public function tick(float $nowMs): void
     {
@@ -99,6 +101,7 @@ final class PushDeliveryAttempt implements DeliveryAttempt
 
     /**
      * Latches the aggregate outcome and prunes every gone endpoint.
+     * @throws DbCollectionNotReadableException When nothing here reads the subscriptions collection, or its readiness is on its way
      */
     private function settle(): void
     {
@@ -131,6 +134,7 @@ final class PushDeliveryAttempt implements DeliveryAttempt
      * Removes every gone endpoint from the subscription store, best-effort.
      *
      * @param list<string> $endpoints Endpoints the transport reported gone (404/410)
+     * @throws DbCollectionNotReadableException When nothing here reads the subscriptions collection, or its readiness is on its way
      */
     private function pruneGone(array $endpoints): void
     {

@@ -64,7 +64,7 @@ final class DbSyncApplicator
             return;
         }
 
-        $collection = Hilos::$db->getObjectCollection($data->collectionKey);
+        $collection = Hilos::$db->mountedObjectCollection($data->collectionKey);
         if (!$collection instanceof Objects) {
             return;
         }
@@ -127,7 +127,7 @@ final class DbSyncApplicator
             return;
         }
 
-        $collection = Hilos::$db->getObjectCollection($data->collectionKey);
+        $collection = Hilos::$db->mountedObjectCollection($data->collectionKey);
         if (!$collection instanceof Objects) {
             return;
         }
@@ -161,7 +161,7 @@ final class DbSyncApplicator
             return;
         }
 
-        $collection = Hilos::$db->getObjectCollection($data->collectionKey);
+        $collection = Hilos::$db->mountedObjectCollection($data->collectionKey);
         if (!$collection instanceof Objects) {
             return;
         }

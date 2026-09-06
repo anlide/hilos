@@ -126,4 +126,19 @@ final class WiringRefusalLookAlikes
             return [];
         }
     }
+
+    /**
+     * Not a hit: the layer's own entrance into the object layer is not judged by the read guard,
+     * so a broad catch over it swallows no refusal.
+     *
+     * @return bool Whether anything is mounted under that name
+     */
+    public function usersAreMounted(): bool
+    {
+        try {
+            return Hilos::$db->mountedObjectCollection('users') !== null;
+        } catch (Throwable) {
+            return false;
+        }
+    }
 }

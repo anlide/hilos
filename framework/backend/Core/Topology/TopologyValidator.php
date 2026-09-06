@@ -193,7 +193,7 @@ final class TopologyValidator
         foreach ($declarations as $identity => $path) {
             [$type, $name] = explode(':', $identity, 2);
             if ($type === BrowserSourceType::DB) {
-                if (Hilos::$db?->getObjectCollection($name) === null) {
+                if (Hilos::$db?->mountedObjectCollection($name) === null) {
                     $errors[] = "{$path} source key {$name} is not a mounted db collection";
                 }
 
@@ -234,7 +234,7 @@ final class TopologyValidator
     private function validateBrowserJoinColumns(array $joins, array &$errors): void
     {
         foreach ($joins as $join) {
-            $collection = Hilos::$db?->getObjectCollection($join['sourceKey']);
+            $collection = Hilos::$db?->mountedObjectCollection($join['sourceKey']);
             if ($collection === null) {
                 // An unmounted collection is already reported above, and by its own name.
                 continue;

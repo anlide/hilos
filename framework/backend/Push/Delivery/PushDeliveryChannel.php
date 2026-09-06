@@ -8,6 +8,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
@@ -83,6 +84,7 @@ class PushDeliveryChannel extends AbstractDeliveryChannel
      * @param int $userId Recipient user id
      * @return ?string The subscription count as a presence marker, or null when the recipient is unreachable
      * @throws DatabaseException When the subscription lookup fails
+     * @throws DbCollectionNotReadableException When nothing here reads the subscriptions collection, or its readiness is on its way
      */
     public function resolveAddress(int $userId): ?string
     {

@@ -11,6 +11,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
@@ -103,6 +104,7 @@ final class IdentifierDetector
      * @throws InvalidFormatException When the identifier is neither an email address nor a phone number
      * @throws DatabaseException When an identity or reservation query fails
      * @throws LogicException When the identities or reservations object collection is unavailable
+     * @throws DbCollectionNotReadableException When nothing here reads the identities or reservations collection, or its readiness is on its way
      */
     public function detect(string $identifier, string $sessionToken): IdentifierDetection
     {
@@ -282,6 +284,7 @@ final class IdentifierDetector
      *
      * @return ObjectIdentities Identity persistence primitives
      * @throws LogicException When the collection is missing or misconfigured
+     * @throws DbCollectionNotReadableException When nothing here reads the identities collection, or its readiness is on its way
      */
     private function identities(): ObjectIdentities
     {

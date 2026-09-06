@@ -268,13 +268,34 @@ back — a seam has no end the way a subscription or an agent does; it stops bei
 read when the process stops. And the list is named rather than derived: nothing
 in a mounted collection says who reads it.
 
-The guard on reading stands on the View layer only. `DbContext::assertReadable()`
-refuses a mounted collection nobody here reads, and says which of two defects it
-found — no consumer declared it, or one did and the master's confirmation has
-not landed yet. The object layer checks nothing: `DbContext::getObjectCollection()`
-hands the collection back to whoever asks. The interest reaches the object layer
-as well, so that a read there is judged and not merely trusted
-(not in the code yet — HIL-900).
+The guard on reading stands wherever the application reads.
+`DbContext::assertReadable()` refuses a mounted collection nobody here reads, and
+says which of two defects it found — no consumer declared it, or one did and the
+master's confirmation has not landed yet. It is called from the View layer's
+`__get()` and from `DbContext::getObjectCollection()`, the way into the object
+layer, so a read past the agent is judged rather than merely trusted (HIL-900).
+
+The layer's own machinery goes by a second name, `DbContext::mountedObjectCollection()`,
+which answers what is mounted without asking whether it is readable. Delivery
+cannot be judged by the guard it feeds: applying an incoming row change is what
+makes a collection readable in the first place, so a judged delivery would refuse
+to deliver the very state it was refused for lacking. The two are told apart by
+the name and not by the caller — reading the stack is out — and the familiar name
+is the judged one, so a reader who reaches for it without thinking lands on the
+guard. `DbContext::getDbItemCollection()`, which repairs a view cache after that
+same delivery, is unjudged for the same reason.
+
+The readers this guard found were named on their class rather than in the
+process-wide list. A delivery channel agent reads the notification it is sending
+(`AbstractDeliveryChannelAgent::READS_DB`), and the push channel also reads the
+recipient's devices (`PushDeliveryChannelAgent::READS_DB`, which spells the
+parent's list out because `READS_DB` is not merged up the chain). Both collections
+belong to the notifications library, so a channel declares a read and never a
+claim. The third is `AbstractSessionsLibraryAgent::READS_DB`, which names the
+verifications: every handshake asks whether the code a session is parked on is
+still alive, and that row belongs to the users library. It is declared without a
+condition because a class constant has none to ask — a project that carries
+sessions with no login mounts the collection all the same and never reaches it.
 
 ## Why The Unit Is A Collection
 

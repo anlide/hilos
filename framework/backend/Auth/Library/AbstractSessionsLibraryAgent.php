@@ -144,6 +144,17 @@ use Throwable;
  */
 abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 {
+    /**
+     * @var list<string> The live code behind the step a session stands on, asked about on every
+     *     handshake ({@see pendingAuthStepFor()}) and again when the recovery is finished
+     *     ({@see RecoveryCommands}). Read rather than claimed: the challenge is the users
+     *     library's row, and this library only wants to know whether it is still alive.
+     *     Unconditional because the collection is, and because a class constant cannot ask
+     *     {@see hasSignInSurface()} - a project carrying sessions with no login mounts the
+     *     collection all the same and simply never reaches it.
+     */
+    public const array READS_DB = [HilosDbContext::verifications];
+
     public const string AGENT_TYPE = HilosAgentType::HILOS_SESSIONS_LIBRARY;
 
     /**

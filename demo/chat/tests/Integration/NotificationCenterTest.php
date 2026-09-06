@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\Hilos\NotificationsLibraryAgent;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Notification as EntityNotification;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\SqlParam;
@@ -43,6 +47,9 @@ final class NotificationCenterTest extends IntegrationTestCase
 
     /** Second synthetic recipient, so mark-all-read cannot pass by touching foreign rows. */
     private const int OTHER_RECIPIENT_ID = 909002;
+
+    /** Consumer the read-guard case declares its interest under, standing in for a channel agent. */
+    private const string READER_CONSUMER = 'notification_center_test_reader';
 
     /** @var ?NotificationsLibraryAgent Owner of the notification set, built on first use */
     private ?NotificationsLibraryAgent $library = null;
@@ -135,6 +142,100 @@ final class NotificationCenterTest extends IntegrationTestCase
         self::assertSame(3, $collection->markAllReadForUser(self::RECIPIENT_ID));
         self::assertSame(0, $collection->countUnreadForUser(self::RECIPIENT_ID));
         self::assertSame(1, $collection->countUnreadForUser(self::OTHER_RECIPIENT_ID));
+    }
+
+    /**
+     * The guard reaches the object layer too, and here against the live tables (HIL-900).
+     *
+     * A delivery channel agent reads these rows past the agent that owns them - it reloads the
+     * notification it is sending - and that read used to be trusted rather than judged. In a
+     * worker it is now refused for the same reason the View layer is: an unaddressed process
+     * would get the row back out of the shared database and never hear the next write to it.
+     * With the interest declared and ready, the same call answers the row the library just wrote.
+     */
+    public function testAWorkerIsRefusedTheObjectLayerUntilItDeclaresWhatItReads(): void
+    {
+        $id = $this->library()->emit(new NotificationDraft(
+            userId: self::RECIPIENT_ID,
+            type: 'demo.chat.test',
+            title: 'Read past the agent',
+        ));
+        $borrowed = [];
+        $refused = null;
+
+        SourceInterestRegistry::readsWhatIsDelivered();
+        try {
+            $borrowed = $this->takeTheInterestInNotifications();
+            try {
+                Hilos::$db->getObjectCollection(HilosDbContext::notifications);
+            } catch (DbCollectionNotReadableException $exception) {
+                $refused = $exception;
+            }
+
+            self::assertInstanceOf(DbCollectionNotReadableException::class, $refused);
+            self::assertStringContainsString('no reader interest is registered', $refused->getMessage());
+
+            SourceInterestRegistry::register(
+                SourceChange::KIND_DB,
+                HilosDbContext::notifications,
+                SourceConsumer::agent(self::READER_CONSUMER),
+            );
+            SourceInterestRegistry::markReady(SourceChange::KIND_DB, HilosDbContext::notifications);
+            $collection = Hilos::$db->getObjectCollection(HilosDbContext::notifications);
+
+            self::assertInstanceOf(ObjectNotifications::class, $collection);
+            self::assertSame($id, $collection->listForUser(self::RECIPIENT_ID, 20)[0]->id);
+        } finally {
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent(self::READER_CONSUMER));
+            $this->putTheInterestBack($borrowed);
+            SourceInterestRegistry::readsWhatItMounts();
+        }
+    }
+
+    /**
+     * Lets go of every interest in the notifications, so the refusal above has something to be
+     * about, and remembers what to put back.
+     *
+     * The registry is process-wide and this one is held twice over by the time any case runs:
+     * the framework declares the bell's rows for every process, and the library claims them when
+     * it starts. A consumer is released whole rather than per collection, so everything each of
+     * them reads is remembered, not just this collection - and readiness is remembered with it,
+     * because the two holders do not leave it the same: a claim is ready at once, a process-wide
+     * declaration waits for the master. Read while the guard is on, which is the only mode that
+     * answers the state honestly.
+     *
+     * @return array<string, array<string, bool>> Whether each collection was ready, per consumer
+     */
+    private function takeTheInterestInNotifications(): array
+    {
+        $borrowed = [];
+        foreach (SourceInterestRegistry::consumersOf(SourceChange::KIND_DB, HilosDbContext::notifications) as $id) {
+            $held = [];
+            foreach (SourceInterestRegistry::collectionsOfConsumer($id, SourceChange::KIND_DB) as $collectionKey) {
+                $held[$collectionKey] = SourceInterestRegistry::isReady(SourceChange::KIND_DB, $collectionKey);
+            }
+            $borrowed[$id] = $held;
+            SourceInterestRegistry::releaseConsumer($id);
+        }
+
+        return $borrowed;
+    }
+
+    /**
+     * Puts every borrowed interest back exactly as it was found, readiness included.
+     *
+     * @param array<string, array<string, bool>> $borrowed Whether each collection was ready, per consumer
+     */
+    private function putTheInterestBack(array $borrowed): void
+    {
+        foreach ($borrowed as $id => $collections) {
+            foreach ($collections as $collectionKey => $wasReady) {
+                SourceInterestRegistry::register(SourceChange::KIND_DB, $collectionKey, $id);
+                if ($wasReady) {
+                    SourceInterestRegistry::markReady(SourceChange::KIND_DB, $collectionKey);
+                }
+            }
+        }
     }
 
     /**

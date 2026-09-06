@@ -17,6 +17,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrationReservations;
@@ -76,6 +77,7 @@ final class RegistrationReservationService
      * @return ?ObjectRegistrationReservation Live reservation, or null when this browser holds none
      * @throws DatabaseException When a reservation query fails
      * @throws LogicException When the reservations object collection is unavailable
+     * @throws DbCollectionNotReadableException When nothing here reads the reservations collection, or its readiness is on its way
      */
     public function findActiveForSession(string $sessionToken): ?ObjectRegistrationReservation
     {
@@ -117,6 +119,7 @@ final class RegistrationReservationService
      *   insert left no hold to answer with
      * @throws EnvException When the reservation TTL key is missing, outside the catalog, or
      *   not an int
+     * @throws DbCollectionNotReadableException When nothing here reads the reservations collection, or its readiness is on its way
      */
     public function hold(
         string $type,
@@ -168,6 +171,7 @@ final class RegistrationReservationService
      *   catalog, or of the wrong type
      * @throws ValidationException When the confirmation code cannot be delivered to the identifier
      * @throws InvalidArgumentException When the transport's send signal cannot be named or queued
+     * @throws DbCollectionNotReadableException When nothing here reads the reservations or verifications collection, or its readiness is on its way
      */
     public function reserve(
         string $type,
@@ -195,6 +199,7 @@ final class RegistrationReservationService
      * @throws EnvException When the reservation TTL key is missing, outside the catalog, or
      *   not an int
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws DbCollectionNotReadableException When nothing here reads the reservations collection, or its readiness is on its way
      */
     public function extendTo(string $sessionToken): void
     {
@@ -217,6 +222,7 @@ final class RegistrationReservationService
      * @throws DatabaseException When the reservation delete query fails
      * @throws LogicException When the reservations object collection is unavailable
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws DbCollectionNotReadableException When nothing here reads the reservations collection, or its readiness is on its way
      */
     public function release(string $sessionToken): void
     {
@@ -282,6 +288,7 @@ final class RegistrationReservationService
      * @throws InvalidFormatException When the proven identifier is neither an address nor a number
      * @throws DatabaseException When an identity or reservation query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws DbCollectionNotReadableException When nothing here reads the reservations or identities collection, or its readiness is on its way
      */
     public function confirmProvenAddress(string $sessionToken, string $identifier, int $userId): array
     {
@@ -320,6 +327,7 @@ final class RegistrationReservationService
      * @throws DuplicateValueException When the identifier gained an identity of that type meanwhile
      * @throws EmptyValueException When the reservation holds an empty identifier
      * @throws DatabaseException When an identity or reservation query fails
+     * @throws DbCollectionNotReadableException When nothing here reads the identities collection, or its readiness is on its way
      */
     private function land(ObjectRegistrationReservation $reservation, int $userId): void
     {
@@ -361,6 +369,7 @@ final class RegistrationReservationService
      * @throws EmptyValueException When the identifier is empty
      * @throws DatabaseException When the identity query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws DbCollectionNotReadableException When nothing here reads the identities collection, or its readiness is on its way
      */
     private function landWithoutHold(string $identifier, int $userId): void
     {
@@ -375,6 +384,7 @@ final class RegistrationReservationService
      *
      * @return ObjectRegistrationReservations Reservation persistence primitives
      * @throws LogicException When the collection is missing or misconfigured
+     * @throws DbCollectionNotReadableException When nothing here reads the reservations collection, or its readiness is on its way
      */
     private function collection(): ObjectRegistrationReservations
     {
@@ -391,6 +401,7 @@ final class RegistrationReservationService
      *
      * @return ObjectIdentities Identity persistence primitives
      * @throws LogicException When the collection is missing or misconfigured
+     * @throws DbCollectionNotReadableException When nothing here reads the identities collection, or its readiness is on its way
      */
     private function identities(): ObjectIdentities
     {

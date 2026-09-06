@@ -6,6 +6,7 @@ namespace Hilos\Notification\Delivery;
 
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 
@@ -83,6 +84,7 @@ abstract class AbstractDeliveryChannel
      * @param int $userId Recipient user id
      * @return ?string Channel address, or null when the recipient has none
      * @throws DatabaseException When the channel's address store cannot be read
+     * @throws DbCollectionNotReadableException When nothing here reads the channel's address store, or its readiness is on its way
      */
     abstract public function resolveAddress(int $userId): ?string;
 

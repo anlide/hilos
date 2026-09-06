@@ -11,6 +11,7 @@ use Hilos\Core\Group\Exception\GroupSubscriptionException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Hilos;
@@ -72,6 +73,7 @@ abstract class AbstractHilosNotificationsGroup extends AbstractGroup
      * @throws GroupSubscriptionException When the recipient cannot be resolved off the connection
      * @throws LogicException When the notifications object collection is not configured
      * @throws DatabaseException When the snapshot list or the unread count query fails
+     * @throws DbCollectionNotReadableException When nothing here reads the notifications collection, or its readiness is on its way
      */
     protected function buildGroupPayload(array $params): SignalDataInterface
     {
@@ -105,6 +107,7 @@ abstract class AbstractHilosNotificationsGroup extends AbstractGroup
      * @return NotificationsSnapshotSignalData Snapshot payload for the join answer
      * @throws LogicException When the notifications object collection is not configured
      * @throws DatabaseException When the list or unread count query fails
+     * @throws DbCollectionNotReadableException When nothing here reads the notifications collection, or its readiness is on its way
      */
     private function buildSnapshot(int $userId): NotificationsSnapshotSignalData
     {
@@ -147,6 +150,7 @@ abstract class AbstractHilosNotificationsGroup extends AbstractGroup
      *
      * @return ObjectNotifications Notifications persistence primitives
      * @throws LogicException When the collection is missing or misconfigured
+     * @throws DbCollectionNotReadableException When nothing here reads the notifications collection, or its readiness is on its way
      */
     private function notificationsCollection(): ObjectNotifications
     {

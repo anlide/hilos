@@ -95,4 +95,18 @@ final class WiringRefusalSamples
             throw $refusal;
         }
     }
+
+    /**
+     * The object layer is judged too, so the same catch over it swallows the same refusal.
+     *
+     * @return bool Whether this process can reach the users at all
+     */
+    public function usersAreReachable(): bool
+    {
+        try {
+            return Hilos::$db->getObjectCollection('users') !== null;
+        } catch (Throwable) {
+            return false;
+        }
+    }
 }

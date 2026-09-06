@@ -13,6 +13,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Verification\VerificationType;
@@ -87,6 +88,8 @@ final class MagicLinkService
      *   catalog, or of the wrong type
      * @throws ValidationException When the link cannot be delivered to the address
      * @throws InvalidArgumentException When the transport's send signal cannot be named or queued
+     * @throws DbCollectionNotReadableException When nothing here reads the identities, reservations or verifications collection, or its readiness is
+     *   on its way
      */
     public function send(string $email, string $sessionToken): VerificationSendOutcome
     {
@@ -205,6 +208,7 @@ final class MagicLinkService
      *
      * @return ObjectIdentities Identity persistence primitives
      * @throws LogicException When the collection is missing or misconfigured
+     * @throws DbCollectionNotReadableException When nothing here reads the identities collection, or its readiness is on its way
      */
     private function identities(): ObjectIdentities
     {

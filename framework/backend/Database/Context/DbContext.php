@@ -109,12 +109,48 @@ abstract class DbContext
     }
 
     /**
-     * Get object collection by name.
+     * Get object collection by name, refusing one this process does not read.
+     *
+     * The application's way into the object layer, and judged like the View layer is
+     * ({@see self::__get()}): a read past the agent is a read all the same, and answering it out
+     * of a copy the master never updates would be worse than refusing it, because the rows come
+     * back and are wrong only later. The mount is answered before the interest, so a name nothing
+     * mounted still answers null - a caller asking about a feature this installation did not
+     * activate must not be told its interest is missing.
+     *
+     * The layer's own machinery goes through {@see self::mountedObjectCollection()} instead.
      *
      * @param string $name Collection name (e.g. users, events)
      * @return ?Objects Object collection or null if not found
+     * @throws DbCollectionNotReadableException When nothing here reads the collection, or its readiness is on its way
      */
     public function getObjectCollection(string $name): ?Objects
+    {
+        if (!isset($this->_objectCollections[$name])) {
+            return null;
+        }
+
+        $this->assertReadable($name);
+
+        return $this->_objectCollections[$name];
+    }
+
+    /**
+     * Get object collection by name as it is mounted, without asking whether it is readable.
+     *
+     * For the two callers that are the layer itself rather than a reader of rows: DbSyncApplicator
+     * applying an incoming row change, and TopologyValidator asking whether a collection is
+     * mounted at all. Delivery cannot be judged by the guard it feeds - it is what makes a
+     * collection readable in the first place, so a judged delivery would refuse to deliver the
+     * very state it was refused for lacking.
+     *
+     * Told apart by the name and not by the caller: reading the stack or the call site is out by
+     * the style rules, and a reader reaching for the familiar name lands on the judged entrance.
+     *
+     * @param string $name Collection name (e.g. users, events)
+     * @return ?Objects Object collection or null if nothing is mounted under that name
+     */
+    public function mountedObjectCollection(string $name): ?Objects
     {
         return $this->_objectCollections[$name] ?? null;
     }
