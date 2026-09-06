@@ -189,10 +189,10 @@ final class TableViewportSubscription
     /**
      * Place the first row of the last served window sits at.
      *
-     * SCAFFOLD: nothing on the server reads this yet — the client holds its own boundaries and
-     * echoes them back, so paging needs no help from here. It is kept because the server is
-     * about to need it for itself: saying whether an arriving row falls above the window means
-     * comparing it against this boundary, which is HIL-791.
+     * The server reads it for itself: an arriving row is above the window when it places above
+     * this boundary, which is how a create is judged before anything is sent (HIL-791). The
+     * client holds its own copy of the same boundary and echoes it back for paging, so the two
+     * readings never meet.
      *
      * @return ?TableAnchorDTO Boundary the window pages back from, or null when it was empty
      */
@@ -204,8 +204,9 @@ final class TableViewportSubscription
     /**
      * Place the last row of the last served window sits at.
      *
-     * SCAFFOLD: unread for the same reason as {@see firstAnchor()}, and kept beside it — the
-     * pair is what a window sits between, and one of them alone answers nothing.
+     * Read together with {@see firstAnchor()} — the pair is what a window sits between, and one
+     * of them alone answers nothing: a row not above the first boundary is inside the window
+     * only if it is also not below this one.
      *
      * @return ?TableAnchorDTO Boundary the window pages on from, or null when it was empty
      */

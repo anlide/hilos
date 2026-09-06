@@ -66,6 +66,7 @@ use Hilos\Core\Table\DTO\TableViewportOwnCreateDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableRowPlacement;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Database\DatabaseException;
@@ -1839,11 +1840,11 @@ abstract class BrowserContext
     /**
      * Emits live viewport signals for a source change scoped to a connection's window.
      *
-     * A change yields one or two addressed signals. A create whose row lands on the
-     * last page with room is appended live (table_viewport_append, counts included)
-     * and nothing else is sent. Otherwise a live table_viewport_count carries any
-     * total shift (navigation metadata the frontend applies at once), and a pending
-     * table_viewport_delta carries an in-window row edit or removal.
+     * A change yields one or two addressed signals. A create whose row belongs at the tail of
+     * this window is appended live (table_viewport_append, counts included) and nothing else is
+     * sent. Otherwise a live table_viewport_count carries any total shift (navigation metadata
+     * the frontend applies at once), and a pending table_viewport_delta carries an in-window row
+     * edit or removal.
      *
      * The originator is distinguished here: the delta is tagged `own` when the
      * grouped change's origin equals this receiver's accept key, so its own edit
@@ -1933,8 +1934,11 @@ abstract class BrowserContext
      * a count — announcing a row it cannot show is HIL-794's job, not this one's.
      *
      * The whole-window re-select is the expensive road, taken because the event is one
-     * person's single press rather than a stream of foreign writes. HIL-791 replaces it
-     * with a classifier over the window's boundary sort keys, and this path goes away.
+     * person's single press rather than a stream of foreign writes, and it stays: the
+     * classifier that judges a foreign create ({@see self::viewportPlacement()}) answers about
+     * the boundaries of the window, and the author needs the index its row goes in at. That
+     * index costs nothing only to something holding both the set and the readers' windows,
+     * which is the table's own agent (HIL-914) and not this path.
      *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its delivered rows and total are updated in place
@@ -2025,13 +2029,14 @@ abstract class BrowserContext
     }
 
     /**
-     * Appends a created row to a last-page-with-room window, or returns false.
+     * Appends a created row to the tail of a window it belongs at, or returns false.
      *
-     * The frozen-viewport rule: a new row is appended at the END of the window
-     * regardless of sort — only when the window reaches the dataset end and has a
-     * free slot — so nothing already shown shifts. The append carries the new total
-     * and page count, so no separate count signal is sent. A filtered window falls
-     * through to the count path (the new row may not match the search).
+     * The frozen-viewport rule: a new row arrives on its own only where its arrival shifts
+     * nothing already shown, which is the tail of a window that reaches the end of the set and
+     * has a free slot — {@see self::viewportPlacement()} is what decides that, and the tail is
+     * the one of its four answers this path serves. The append carries the new total and page
+     * count, so no separate count signal is sent. Every other placement, and every window whose
+     * place cannot be read at all, falls through to the count path.
      *
      * The row is delivered whatever the count says. A window whose total has stopped at its
      * ceiling still gets its new row; what it does not get is a page count, and its total
@@ -2060,7 +2065,8 @@ abstract class BrowserContext
         if ($viewport->hasRow((string) $mutation->rowKey)) {
             return false;
         }
-        if ($this->viewportQuery($viewport)->search !== null || !$this->viewportIsLastPageWithRoom($viewport)) {
+        $placement = $this->viewportPlacement($table, $viewport, $mutation, $this->viewportQuery($viewport));
+        if ($placement !== TableRowPlacement::Tail) {
             return false;
         }
 
@@ -2085,6 +2091,70 @@ abstract class BrowserContext
         );
 
         return true;
+    }
+
+    /**
+     * Reads where a created row falls against one connection's window.
+     *
+     * The place is read off the two boundaries the window was served with, in the order that
+     * window asked for, and the table does the comparing because the boundaries are written in
+     * its own names ({@see ViewportTable::placeRowAgainst()}). Nothing here asks the row source
+     * for anything: this runs once per window per foreign write, and every window of every
+     * connection watching the table runs it.
+     *
+     * Two windows are refused before any comparison, and both mean "the place cannot be read",
+     * not "the row is elsewhere". A window with a filter map — a search, or a table's own
+     * filters — is judged by whether the row is in its SET, and that question belongs to the
+     * source rather than to the order; the count path already asks it. A window that asked for
+     * no order is held in the row source's own sequence, and no comparison of field values
+     * reproduces that.
+     *
+     * A zero from the comparison reads as "not above this boundary". The order is total, the
+     * row key settling it (HIL-786), so a new row cannot sit exactly where a live one sits: a
+     * boundary it matches is the place of a row that has since left the set.
+     *
+     * @param ViewportTable $table Viewport table the window is on
+     * @param TableViewportSubscription $viewport Connection's window
+     * @param TableRowMutationDTO $mutation Mutation the table built for the change
+     * @param TableQueryDTO $query Query this window was served by
+     * @return ?TableRowPlacement Where the row lands, or null when the window cannot say
+     */
+    private function viewportPlacement(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        TableRowMutationDTO $mutation,
+        TableQueryDTO $query,
+    ): ?TableRowPlacement {
+        $row = $mutation->row;
+        if ($row === null || $viewport->filter !== [] || $query->sort === null) {
+            return null;
+        }
+
+        $firstAnchor = $viewport->firstAnchor();
+        $lastAnchor = $viewport->lastAnchor();
+        if ($firstAnchor === null || $lastAnchor === null) {
+            // An empty window shifts nothing by definition, and it reaches the end of the set
+            // by holding all of it, so the first row of the set arrives on its own.
+            return TableRowPlacement::Tail;
+        }
+
+        $againstFirst = $table->placeRowAgainst($row, $firstAnchor, $query);
+        if ($againstFirst === null) {
+            return null;
+        }
+        if ($againstFirst < 0) {
+            return TableRowPlacement::Above;
+        }
+
+        $againstLast = $table->placeRowAgainst($row, $lastAnchor, $query);
+        if ($againstLast === null) {
+            return null;
+        }
+        if ($againstLast <= 0) {
+            return TableRowPlacement::Inside;
+        }
+
+        return $this->viewportIsLastPageWithRoom($viewport) ? TableRowPlacement::Tail : TableRowPlacement::Below;
     }
 
     /**

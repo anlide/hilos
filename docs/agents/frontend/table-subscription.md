@@ -487,7 +487,8 @@ an address does not:
 | Concern | Where |
 |---|---|
 | the descriptor and the delivered keys | `framework/backend/Core/Router/TableViewportSubscription.php` |
-| judging a mutation against a window, and emitting the live frames | `framework/backend/Core/Browser/Context/BrowserContext.php` (`tryEmitViewportAppend`, `viewportTotalAfterMutation`, `rowDeltaForMutation`) |
+| judging a mutation against a window, and emitting the live frames | `framework/backend/Core/Browser/Context/BrowserContext.php` (`viewportPlacement`, `tryEmitViewportAppend`, `viewportTotalAfterMutation`, `rowDeltaForMutation`) |
+| placing one row against a window boundary, in the table's own key names | `framework/backend/Core/Table/Definition/ViewportTable.php` (`placeRowAgainst`) |
 | the `ORDER BY` and the window query | `framework/backend/Database/Object/Objects.php` |
 | the headless state machine | `framework/frontend/core/src/table/TableViewportController.ts` |
 | routing the frames into it | `framework/frontend/core/src/subscription/bindTableViewport.ts` |

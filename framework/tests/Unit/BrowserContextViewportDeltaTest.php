@@ -20,6 +20,7 @@ use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -235,8 +236,14 @@ final class BrowserContextViewportDeltaTest extends TestCase
 
     public function testLastPageWithRoomCreateAppends(): void
     {
-        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
-        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, null, null);
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            limit: 10,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+        );
+        // The row the window ends on is what the arriving one is placed against: 'beta' sorts
+        // after 'alpha', and the window has room and holds the end of the set.
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, self::anchorAt('alpha'), self::anchorAt('alpha'));
         $context = $this->bootWithViewport(
             [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
             $viewport,
@@ -328,8 +335,12 @@ final class BrowserContextViewportDeltaTest extends TestCase
 
     public function testNeighborOnTheSameCreateKeepsTheGeneralRules(): void
     {
-        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
-        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, null, null);
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            limit: 10,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+        );
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, self::anchorAt('alpha'), self::anchorAt('alpha'));
         $context = $this->bootWithViewport(
             [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
             $viewport,
@@ -346,6 +357,176 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $context->flushToSignalRouter();
 
         $this->assertSame(2, $this->nextAppend()->totalCount);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testARowSortedAboveADescendingWindowIsOnlyCounted(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            limit: 10,
+            sort: self::byKey(TableConstants::ORDER_DESC),
+        );
+        $viewport->recordWindow(self::windowOf(['gamma', 'beta']), 2, true, self::anchorAt('gamma'), self::anchorAt('beta'));
+        $context = $this->bootWithViewport(
+            [
+                new ViewportDeltaUnitRow('gamma', 'Gamma'),
+                new ViewportDeltaUnitRow('beta', 'Beta'),
+                new ViewportDeltaUnitRow('zeta', 'Zeta'),
+            ],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'zeta', ['key' => 'zeta', 'label' => 'Zeta']));
+        $context->flushToSignalRouter();
+
+        // The table this leaf was written for: newest first, so the new row's place is the top
+        // of the first page. The window has room at its tail, and that is not where it belongs.
+        $this->assertSame(3, $this->nextCount()->totalCount);
+        $this->assertFalse($viewport->hasRow('zeta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testARowBelowAFullWindowThatHoldsTheEndIsOnlyCounted(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            limit: 2,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+            pageIndex: 0,
+        );
+        $viewport->recordWindow(self::windowOf(['alpha', 'gamma']), 2, true, self::anchorAt('alpha'), self::anchorAt('gamma'));
+        $context = $this->bootWithViewport(
+            [
+                new ViewportDeltaUnitRow('alpha', 'Alpha'),
+                new ViewportDeltaUnitRow('gamma', 'Gamma'),
+                new ViewportDeltaUnitRow('zeta', 'Zeta'),
+            ],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'zeta', ['key' => 'zeta', 'label' => 'Zeta']));
+        $context->flushToSignalRouter();
+
+        // The place is right, but there is no slot to put it in: arriving here would push the
+        // last row of the window onto the next page.
+        $this->assertSame(3, $this->nextCount()->totalCount);
+        $this->assertFalse($viewport->hasRow('zeta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testARowBelowAWindowThatDoesNotHoldTheEndIsOnlyCounted(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            limit: 3,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+            pageIndex: 0,
+        );
+        $viewport->recordWindow(self::windowOf(['alpha']), 5, true, self::anchorAt('alpha'), self::anchorAt('alpha'));
+        $context = $this->bootWithViewport(
+            [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('zeta', 'Zeta')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'zeta', ['key' => 'zeta', 'label' => 'Zeta']));
+        $context->flushToSignalRouter();
+
+        // Room is not enough: four rows of the set are on later pages, so the row that sorts
+        // below this window belongs to one of them and not to the empty slot at its tail.
+        $this->assertSame(6, $this->nextCount()->totalCount);
+        $this->assertFalse($viewport->hasRow('zeta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testARowBetweenTheBoundariesIsOnlyCounted(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            limit: 10,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+        );
+        $viewport->recordWindow(self::windowOf(['alpha', 'gamma']), 2, true, self::anchorAt('alpha'), self::anchorAt('gamma'));
+        $context = $this->bootWithViewport(
+            [
+                new ViewportDeltaUnitRow('alpha', 'Alpha'),
+                new ViewportDeltaUnitRow('beta', 'Beta'),
+                new ViewportDeltaUnitRow('gamma', 'Gamma'),
+            ],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['key' => 'beta', 'label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        // Inserting it would move every row under it down one line, which is the one thing a
+        // window standing under someone's eyes does not do on its own.
+        $this->assertSame(3, $this->nextCount()->totalCount);
+        $this->assertFalse($viewport->hasRow('beta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAWindowWithNoOrderTakesNoRowOfItsOwn(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, self::anchorAt('alpha'), self::anchorAt('alpha'));
+        $context = $this->bootWithViewport(
+            [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['key' => 'beta', 'label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        // Such a window runs in the source's own sequence, so where the row belongs cannot be
+        // read from its values - and a tail it was never shown to sit at is a guess.
+        $this->assertSame(2, $this->nextCount()->totalCount);
+        $this->assertFalse($viewport->hasRow('beta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAWindowWithATableFilterTakesNoRowOfItsOwn(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            filter: ['status' => 'failed'],
+            limit: 10,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+        );
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, self::anchorAt('alpha'), self::anchorAt('alpha'));
+        $context = $this->bootWithViewport(
+            [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['key' => 'beta', 'label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        // A filter the table resolves itself, not a search: whether the row is in this set at
+        // all is the source's question, and the place in the order does not answer it.
+        $this->assertSame(2, $this->nextCount()->totalCount);
+        $this->assertFalse($viewport->hasRow('beta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testTheFirstRowOfASetArrivesInAnEmptyWindow(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            limit: 10,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+        );
+        $viewport->recordWindow([], 0, true, null, null);
+        $context = $this->bootWithViewport([new ViewportDeltaUnitRow('alpha', 'Alpha')], $viewport);
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['key' => 'alpha', 'label' => 'Alpha']));
+        $context->flushToSignalRouter();
+
+        // An empty window shifts nothing whatever the order says, so the boundaries it has none
+        // of are not needed to decide this one.
+        $append = $this->nextAppend();
+        $this->assertSame(1, $append->totalCount);
+        $this->assertTrue($viewport->hasRow('alpha'));
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
@@ -453,6 +634,28 @@ final class BrowserContextViewportDeltaTest extends TestCase
         }
 
         return $window;
+    }
+
+    /**
+     * Builds the one-column order the windows of these tests are held in.
+     *
+     * @param string $direction Direction the order runs in
+     * @return TableSortOrderDTO Order over the row key
+     */
+    private static function byKey(string $direction): TableSortOrderDTO
+    {
+        return TableSortOrderDTO::of(new TableSortDTO('key', $direction));
+    }
+
+    /**
+     * Builds the place a boundary row of such a window sits at.
+     *
+     * @param string $rowKey Row key of the boundary row
+     * @return TableAnchorDTO Place that row sits at in the window's order
+     */
+    private static function anchorAt(string $rowKey): TableAnchorDTO
+    {
+        return new TableAnchorDTO(['key' => $rowKey]);
     }
 
     /**

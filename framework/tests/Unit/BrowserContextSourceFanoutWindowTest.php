@@ -21,6 +21,8 @@ use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -28,6 +30,7 @@ use Hilos\Core\Table\DTO\TableViewportAppendDTO;
 use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Hilos;
@@ -137,8 +140,15 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
 
     public function testLastPageWithRoomCreateAppends(): void
     {
-        $viewport = new TableViewportSubscription(tableKey: SourceFanoutWindowUnitTable::TABLE, limit: 10);
-        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, null, null);
+        $viewport = new TableViewportSubscription(
+            tableKey: SourceFanoutWindowUnitTable::TABLE,
+            limit: 10,
+            sort: TableSortOrderDTO::of(new TableSortDTO('key', TableConstants::ORDER_ASC)),
+        );
+        // The window says where its rows end, and 'beta' sorts after that: the tail it would
+        // arrive at is its own place, not merely the nearest free slot.
+        $anchor = new TableAnchorDTO(['key' => 'alpha']);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, $anchor, $anchor);
         $context = $this->bootWithViewport(
             [new SourceFanoutWindowUnitRow('alpha', 'Alpha'), new SourceFanoutWindowUnitRow('beta', 'Beta')],
             $viewport,

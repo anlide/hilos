@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Table\Definition;
 
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
@@ -24,9 +25,9 @@ use Hilos\HilosException;
  * source-fanned table (the Hilos users table), independent of how the table
  * delivers its non-viewport page_response rows.
  *
- * getPage(), buildMutationForSourceEvent() and containsRow() are already concrete on
- * TableDefinition, so a TableDefinition subclass satisfies them by inheritance and
- * only browserRow() is feature-specific.
+ * getPage(), buildMutationForSourceEvent(), containsRow() and placeRowAgainst() are
+ * already concrete on TableDefinition, so a TableDefinition subclass satisfies them by
+ * inheritance and only browserRow() is feature-specific.
  */
 interface ViewportTable
 {
@@ -61,6 +62,33 @@ interface ViewportTable
      * @return ?bool Whether the row is in the set, or null when this table cannot answer
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool;
+
+    /**
+     * Places one row against a boundary of a window, in the order that window asked for.
+     *
+     * This is what tells an arriving row's place from the window's own edges without asking the
+     * source for the window again: a row above the first boundary is on an earlier page, one
+     * below the last boundary is on a later one, and one between them would push the shown rows
+     * apart.
+     *
+     * The comparison belongs to the table because the key space of an anchor belongs to the row
+     * source (HIL-787): a table windowed in memory anchors by the fields of its row payload, a
+     * table with its own SQL by its own columns, and the two write the same place under
+     * different names. A caller building the row's anchor itself would be comparing two maps of
+     * names that agree on no installation.
+     *
+     * Null is a real answer and means "this table cannot say": the window asked for no order, so
+     * a place cannot be read off values at all, or the anchor is written in names the row does
+     * not carry. It is the honest answer where a sign would be a guess — the sign decides
+     * whether a row arrives on its own, and a misplaced row either shows up where a reload would
+     * not put it or never shows up at all.
+     *
+     * @param AbstractTableRow $row Row to place
+     * @param TableAnchorDTO $anchor Boundary of the window the row is placed against
+     * @param TableQueryDTO $query Window query whose sort names the order the place is read in
+     * @return ?int Negative above the anchor, zero at it, positive below it, or null when this table cannot say
+     */
+    public function placeRowAgainst(AbstractTableRow $row, TableAnchorDTO $anchor, TableQueryDTO $query): ?int;
 
     /**
      * Builds a row mutation for one source change this table reacts to.

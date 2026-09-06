@@ -10,6 +10,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Actions\TableActions;
 use Hilos\Core\Table\Actions\TableItemActions;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -435,6 +436,50 @@ abstract class TableDefinition implements ArrayAccess
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
         return null;
+    }
+
+    /**
+     * Places one row against a boundary of a window, in the order that window asked for.
+     *
+     * The default serves the table windowed in memory, which is nearly every one of them: its
+     * anchors are the row payload's own fields, so the row is placed by the comparison the
+     * window itself was sorted and sliced by — {@see InMemoryTableFilter::compare()}, reached
+     * here rather than written again so that one order cannot be described two ways.
+     *
+     * "Cannot say" is answered in two cases, and both of them are a place that does not exist
+     * rather than one this method failed to find. A window that asked for no order is held in
+     * the row source's own sequence, which no comparison of field values reproduces. And an
+     * anchor that does not carry every field of the order is not an anchor of this order at
+     * all: it belongs to a table that writes its boundaries in its own columns (the
+     * delivery-logs table anchors by `created_at` where its row payload says `createdAt`), or
+     * to a window that was served without the order it is asking about.
+     * Comparing across either gap reads missing values as nulls and answers with a sign that
+     * was never computed from anything.
+     *
+     * A table that anchors in its own names overrides this against those names. Leaving it is
+     * also a full answer: its rows keep the road they were already on, the count.
+     *
+     * @param AbstractTableRow $row Row to place
+     * @param TableAnchorDTO $anchor Boundary of the window the row is placed against
+     * @param TableQueryDTO $query Window query whose sort names the order the place is read in
+     * @return ?int Negative above the anchor, zero at it, positive below it, or null when this table cannot say
+     */
+    public function placeRowAgainst(AbstractTableRow $row, TableAnchorDTO $anchor, TableQueryDTO $query): ?int
+    {
+        if ($query->sort === null) {
+            return null;
+        }
+
+        $rowClass = $this->getRowClass();
+        $keyField = $rowClass::keyField();
+        $values = $row->toArray();
+        foreach (InMemoryTableFilter::anchorFields($query->sort, $keyField) as $field) {
+            if (!array_key_exists($field, $values) || !array_key_exists($field, $anchor->values)) {
+                return null;
+            }
+        }
+
+        return InMemoryTableFilter::compare($values, $anchor->values, $query->sort, $keyField);
     }
 
     // ── Actions property ─────────────────────────────────────────────────

@@ -12,13 +12,16 @@ use Hilos\Core\Table\TableConstants;
 /**
  * TableViewportAppendDTO - Server-to-client live tail append for one table window.
  *
- * Sent only to a connection whose window is on the last page with room
- * (windowSize < limit) when a new row enters its filtered set. The row is added at
- * the END of the window regardless of sort - a viewport touch (navigate, sort, or
- * search) pulls a fresh, re-sorted window - so the server never recomputes the
- * position. The frontend applies it immediately instead of queuing a pending
- * change and sets the carried counts authoritatively. The row rides the same
- * `{rowKey, slots}` wire fragment as the window snapshot. Addressed per accept key.
+ * Sent only to a connection whose window the new row belongs at the tail of: the window
+ * reaches the end of the filtered set, has a free slot (windowSize < limit), and the row's
+ * own place in the order that window asked for is below every row it is showing. The server
+ * reads that place off the window's boundaries before sending anything, so the END of the
+ * window is where the row goes because that is where it belongs - a reload puts it in the
+ * same slot, and nothing already shown moves. Every other place, and every window whose
+ * place cannot be read at all, travels as a count instead. The frontend applies the append
+ * immediately instead of queuing a pending change and sets the carried counts
+ * authoritatively. The row rides the same `{rowKey, slots}` wire fragment as the window
+ * snapshot. Addressed per accept key.
  *
  * The row arrives whatever the counts say: delivery does not depend on how well the set is
  * counted. The page count, though, travels only while the total is exact — past

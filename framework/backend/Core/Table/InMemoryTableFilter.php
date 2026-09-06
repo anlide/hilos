@@ -176,13 +176,18 @@ final class InMemoryTableFilter
      * through one place: an anchor is the values a row carried in the fields the order is
      * settled by, so putting a row beside it asks exactly what putting it beside that row did.
      *
+     * It is public for that third caller — a row that has just been created, placed against the
+     * boundary of a window that is already standing ({@see TableDefinition::placeRowAgainst()}).
+     * A second comparator beside this one would be a second description of one order, and the
+     * two would disagree about the row a window is built to hold.
+     *
      * @param array<string, mixed> $values Values of the row to place
      * @param array<string, mixed> $against Values to place it against — another row, or an anchor's
      * @param TableSortOrderDTO $order Order the window asked for
      * @param string $keyField Payload field the row key travels under
      * @return int Negative, zero or positive in the ordering's sense
      */
-    private static function compare(array $values, array $against, TableSortOrderDTO $order, string $keyField): int
+    public static function compare(array $values, array $against, TableSortOrderDTO $order, string $keyField): int
     {
         foreach ($order->components as $component) {
             $direction = self::directionSign($component);
@@ -214,11 +219,16 @@ final class InMemoryTableFilter
      * key last: an anchor names a place in the order, and a place is only named once every field
      * that decides it has a value.
      *
+     * It is public alongside {@see compare()} and for the same reason: this list is what says
+     * whether an anchor belongs to the order at all, and a caller that wrote its own copy of it
+     * would eventually be comparing against a place named by different fields than the ones the
+     * window was cut by.
+     *
      * @param ?TableSortOrderDTO $order Order the window asked for, or null when the source ordered the rows
      * @param string $keyField Payload field the row key travels under
      * @return list<string> Fields the anchor carries, in the order's own sequence
      */
-    private static function anchorFields(?TableSortOrderDTO $order, string $keyField): array
+    public static function anchorFields(?TableSortOrderDTO $order, string $keyField): array
     {
         $fields = [];
         foreach ($order?->components ?? [] as $component) {
