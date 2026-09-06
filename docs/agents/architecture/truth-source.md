@@ -30,7 +30,7 @@ Everything else writes through the owner. A process that wants a row changed
 and does not own it sends the owner a signal and lets the owner write; it does
 not reach into the registry, and it does not list the collection among its reads
 in order to write it. What the declaration looks like is in *Interest And
-Ownership Are One Fact*; what it replaces is in *The Form That Is Going Away*.
+Ownership Are One Fact*; what it replaces is in *The Form That Is Gone*.
 
 ## Interest And Ownership Are One Fact
 
@@ -336,27 +336,32 @@ own completeness, which is worse than no rule. A collection without an owner is
 caught where it is caught today: at the write, by the registry's guard, with
 "no truth source registered".
 
-## The Form That Is Going Away
+## The Form That Is Gone
 
 An agent used to claim in `onStart()`, through two helpers on its base class:
 `AbstractAgent::registerDbTruthSource()` for a database collection and
 `AbstractAgent::registerRtTruthSource()` for a runtime one. Each registered the
 grant with its registry and raised the owner's reader interest, ready, in the
-same call; a claim written against the registry directly
-(`TruthSourceRegistry::register()`, `RtTruthSourceRegistry::register()`) was the
-same form without the seam. After `onStop()` returns or throws, `WorkerManager`
-takes the grants back — that half is unchanged, and a declared claim is taken
-back the same way.
+same call. Neither exists any more, and neither is kept as a deprecated second
+way: a second way of saying one thing, with zero users left, is a fork every
+reader has to learn and every guard has to allow. The order was the owner's
+(2026-09-05): deprecate, then refuse a new call by guard, then remove.
 
-Not one live claim is written that way any more (HIL-897). The helpers stand
-with no caller but the tests of the seam itself, and the `onStart()` overrides
-that held nothing else are gone with them.
+What is left of that road is the registry itself. `TruthSourceRegistry::register()`
+and `RtTruthSourceRegistry::register()` are the same form without the seam, and
+they are refused in production code by a guard. Exactly four files may still
+reach them: the resolver, which lays the claim down having read the constant off
+the class, and the three registries, where `register()` is their own method and
+an inside road to it is a claim being carried out rather than declared. A test
+suite is not judged at all — an agent a test starts outside `WorkerManager` gets
+no claim from a declaration, because the resolver runs on the worker's start
+path, so there the call is the only form there is.
 
-The helpers are not kept as a deprecated second way. A second way of saying one
-thing with zero users is a fork every reader has to learn and every guard has to
-allow. The order is the owner's (2026-09-05): deprecate, then refuse a new call
-by guard, then remove. A code-style guard refuses a new call to either helper,
-and the helpers are removed (not in the code yet — HIL-898).
+Checked automatically: `TRUTH-SOURCE-CLAIM`, see
+[automated-checks.md](../code-style/automated-checks.md).
+
+After `onStop()` returns or throws, `WorkerManager` takes the grants back — that
+half never moved, and a declared claim is taken back the same way.
 
 ## Anti-Patterns
 
@@ -388,4 +393,4 @@ refusals (`DeclaredRowOwnershipTest`), the operation axis and the guards on it
 (`WorkerManagerStopCleanupTest`), the node-level map of runtime owners
 (`RtNodeSourceMapTest`), and the markdown rules that keep this file's links
 intact (`AgentDocGuardTest`, `DOC-LINK`). The guard that refuses the call itself
-is HIL-898's, and is described in *The Form That Is Going Away*.
+is `TRUTH-SOURCE-CLAIM`, and is described in *The Form That Is Gone*.

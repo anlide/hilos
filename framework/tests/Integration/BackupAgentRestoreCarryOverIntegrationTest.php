@@ -20,6 +20,7 @@ use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Database;
 use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Environment\EnvAccessor;
@@ -636,16 +637,16 @@ final class CarryOverTestViewConnections extends ViewHilosSessionConnections
  */
 final class CarryOverTestOwnerAgent extends AbstractAgent
 {
+    /**
+     * @var array<string, list<TruthSourceOperation>> The connections, claimed by declaration
+     *
+     * The claim is what makes this agent the one allowed to strike a row, and it is written on
+     * the class because the resolver reads it there before the instance exists.
+     */
+    public const array OWNS_RT = [CarryOverTestRtContext::connections => TruthSourceOperation::BY_KIND];
+
     /** @var string Agent type identifier */
     public const string AGENT_TYPE = 'carryover_connections_owner';
-
-    /**
-     * Claims the connections, which is what makes this agent the one allowed to strike a row.
-     */
-    public function onStart(): void
-    {
-        $this->registerRtTruthSource(CarryOverTestRtContext::connections);
-    }
 
     public function onStop(): void
     {

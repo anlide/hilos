@@ -20,6 +20,7 @@ use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateMutationRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\SecretInQueryRule;
+use Hilos\Tests\CodeStyle\Rule\TruthSourceClaimRule;
 use Hilos\Tests\CodeStyle\Rule\ViewWrapperBindingRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
 use Hilos\Tests\CodeStyle\Rule\WiringRefusalSwallowedRule;
@@ -302,6 +303,22 @@ final class RuleFixtureTest extends TestCase
                 'EMPTY-STRING-SENTINEL Bad/Tables/MarkerWithoutReason.php:32 — the `// external-boundary:` '
                     . 'marker above the fallback names no reason '
                     . '(see docs/agents/code-style/method-contracts.md)',
+                'TRUTH-SOURCE-CLAIM Bad/TruthSourceClaimSamples.php:24 — TruthSourceRegistry::register() '
+                    . 'declares ownership in a call; name the collection in'
+                    . ' OWNS_DB or OWNS_RT on the class, which the resolver reads before the instance exists '
+                    . '(see docs/agents/architecture/truth-source.md)',
+                'TRUTH-SOURCE-CLAIM Bad/TruthSourceClaimSamples.php:25 — RtTruthSourceRegistry::register() '
+                    . 'declares ownership in a call; name the collection in'
+                    . ' OWNS_DB or OWNS_RT on the class, which the resolver reads before the instance exists '
+                    . '(see docs/agents/architecture/truth-source.md)',
+                'TRUTH-SOURCE-CLAIM Bad/TruthSourceClaimSamples.php:26 — AbstractTruthSourceRegistry::register() '
+                    . 'declares ownership in a call; name the collection in'
+                    . ' OWNS_DB or OWNS_RT on the class, which the resolver reads before the instance exists '
+                    . '(see docs/agents/architecture/truth-source.md)',
+                'TRUTH-SOURCE-CLAIM Bad/TruthSourceClaimSamples.php:42 — self::register() '
+                    . 'declares ownership in a call; name the collection in'
+                    . ' OWNS_DB or OWNS_RT on the class, which the resolver reads before the instance exists '
+                    . '(see docs/agents/architecture/truth-source.md)',
                 'WIRE-KEY-CASE Bad/WireKeyCaseSamples.php:15 — field key \'created_at\' is not camelCase; '
                     . 'one spelling has to serve PHP, the wire and TS '
                     . '(see docs/agents/code-style/cross-layer-field-names.md)',
@@ -526,6 +543,7 @@ final class RuleFixtureTest extends TestCase
             new RandomSourceRule(),
             new BlockingResolutionRule(),
             new MalformedInputMarkerRule(),
+            new TruthSourceClaimRule(),
             new SecretInQueryRule(),
             new MagicRepeatRule(),
             new WiringRefusalSwallowedRule(),

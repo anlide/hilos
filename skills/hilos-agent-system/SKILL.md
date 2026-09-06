@@ -48,12 +48,11 @@ Use this skill for agent business logic and registration work. Start by reading 
 6. Declare what the agent owns, and check the registry's
    `AgentRegistryKey::SCOPE` against that declaration. A database collection is
    declared on the class, in `OWNS_DB`: a map from collection key to the
-   operations the owner may perform on its rows. Do not add a new
-   `registerDbTruthSource()` call in `onStart()`; the helper is deprecated and
-   goes away with HIL-898. A runtime collection is declared the same way, in
-   `OWNS_RT`; do not add a new `registerRtTruthSource()` call either, for the
-   same reason. Both maps, and what a claim carries, are in
-   `docs/agents/architecture/truth-source.md`. Nothing
+   operations the owner may perform on its rows. A runtime collection is
+   declared the same way, in `OWNS_RT`. There is no second form: production code
+   that reaches the ownership registry and claims a collection in a call is
+   refused by the `TRUTH-SOURCE-CLAIM` guard. Both maps, and what a claim
+   carries, are in `docs/agents/architecture/truth-source.md`. Nothing
    takes a claim back from a hook: `WorkerManager` does, after `onStop()` has
    returned or thrown. An RT truth source is unique for the whole cluster, not
    per node, so an agent that owns one keeps the default `AgentScope::CLUSTER`

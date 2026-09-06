@@ -32,6 +32,7 @@ rule.
 | `DOC-ROUTE` | Every file of this catalog, at any depth, is mentioned by at least one `skills/*/SKILL.md`, or declines a route in itself and says why. A file that is both routed and declining is reported the same way. | [rule-authoring.md](../rule-authoring.md) |
 | `DOC-LINK` | A local reference in the agent docs names something that exists. In a skill wrapper both a markdown link and a backticked path count as one; in a document only a markdown link does. | [rule-authoring.md](../rule-authoring.md) |
 | `SECRET-IN-QUERY` | A query parameter is read only under a name the rule lists. It reads the by-key readers of `RequestQueryParams` — `getString()`, `requireString()`, `requireStringMatching()`, `has()` — and matches the text of the argument as written at the call site, because a token walk cannot resolve another class's constant. Two names are listed today, each with its reason; `toArray()` is out of scope. Every root. | [secret-in-query.md](../antipatterns/secret-in-query.md) |
+| `TRUTH-SOURCE-CLAIM` | Ownership of a collection is declared on the class, in `OWNS_DB` or `OWNS_RT`, never claimed in a call. The direct road into the ownership registry is what is read: `register()` reached on one of five names — `TruthSourceRegistry`, `RtTruthSourceRegistry`, `AbstractTruthSourceRegistry`, and the `self` / `static` of a class extending one, which is how a subclass of the registry would otherwise walk past. Four files may reach it, matched by the tail of their path so that the fixture proving the resolver silent is judged the way the resolver is: `OwnershipDeclaration`, under the reason that it lays the claim down having read the constant off the class, and the three registries, under the reason that `register()` is their own method. Not caught, each a different mechanism: `registerCreate()` / `unregisterCreate()`, the right to bring a row into being; `registerDaemon()` / `unregisterDaemon()`, a daemon's claim rather than an agent's; `unregister()` / `unregisterAgent()`, giving a claim back. Production roots only. | [truth-source.md](../architecture/truth-source.md) |
 
 `RT-STATE-MUTATE` recognizes its receiver lexically, and three narrownesses
 follow from that. A collection that reaches the code some other way — as a method
@@ -291,9 +292,12 @@ file of the repository stays outside every root on purpose:
 
 The kind states a property of the code and not the name of the directory holding it.
 A production root is judged by every rule; a suite is judged by every rule but the
-five a suite is allowed to break — `ERROR-SUPPRESSION`, `FS-SEAM`, `RANDOM-SOURCE`,
-`MAGIC-REPEAT` and `WIRING-REFUSAL-SWALLOWED`, the five marked *Production roots only*
-in the table above. A rule
+six a suite is allowed to break — `ERROR-SUPPRESSION`, `FS-SEAM`, `RANDOM-SOURCE`,
+`MAGIC-REPEAT`, `WIRING-REFUSAL-SWALLOWED` and `TRUTH-SOURCE-CLAIM`, the six marked
+*Production roots only* in the table above. The last of them is there because a suite
+legitimately lays a claim down in a call: an agent a test starts outside
+`WorkerManager` gets nothing from the declaration on its class, since the resolver
+runs on the worker's start path. A rule
 cannot draw that line for itself: it is handed the path relative to the scanned
 root, so `framework/tests/Unit/X.php` arrives as `Unit/X.php` and reads exactly like
 a backend file.

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
-use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\AgentConstants;
@@ -26,9 +25,6 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Core\Source\Interest\SourceConsumer;
-use Hilos\Core\Source\Interest\SourceInterestRegistry;
-use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
@@ -39,7 +35,6 @@ use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Core\TruthSource\Exception\ClaimedRowKeysMissingException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
-use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceOwner;
@@ -76,7 +71,6 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
-use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use Throwable;
@@ -102,9 +96,10 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * @var list<string> RT collection keys this agent reads. Declared on the class and not
      *     registered from onStart(), because the worker has to raise the interest and wait for
      *     the state to arrive BEFORE the instance exists - an agent asked to start without its
-     *     data would have to know how to run without it. Writing stays imperative
-     *     ({@see self::registerRtTruthSource()}): a claim is made by the agent that holds it,
-     *     while what it reads is a fact about the class.
+     *     data would have to know how to run without it. What the agent WRITES is declared the
+     *     same way ({@see TruthSourceOwner::OWNS_RT}), and for the same reason: both are facts
+     *     about the class, and what separates them is the right they carry, not how they are
+     *     written down.
      *
      *     A collection this agent claims does not belong here: a claim holds the copy already, and
      *     two lists for one fact would have to be kept in step. What belongs here is what the agent
@@ -119,7 +114,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      *     against a copy nobody is addressing.
      *
      *     A collection this agent claims does not belong here either - a claim is its own reader
-     *     interest ({@see self::registerDbTruthSource()}). What belongs here is what the agent
+     *     interest ({@see TruthSourceOwner::OWNS_DB}). What belongs here is what the agent
      *     reads out of somebody else's collection.
      *
      *     A subclass declaring this REPLACES what its parent declared, so one that has a parent
@@ -308,102 +303,6 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     public function ownedRtRowKeys(string $collection): array
     {
         return [];
-    }
-
-    /**
-     * Register this agent as truth source for a database collection.
-     *
-     * The claim is its own reader interest, and a ready one (HIL-750). The argument is not the
-     * one the runtime half makes - the rows are in a database anybody can read - but it comes to
-     * the same place: the copy this process caches lives only under an interest, so a cache with
-     * anything in it means a holder is already registered and the frames are already coming,
-     * while an empty one means the next read goes to the database.
-     *
-     * Raised at the claim rather than at the report that follows it, for the reason the runtime
-     * twin gives: an agent writing its first row inside onStart() reads the collection before
-     * that report is built.
-     *
-     * One claim may say more than the agent's kind does. A library adds and removes and never
-     * updates ({@see AbstractUsersLibraryAgent::defaultTruthSourceOperations()}), yet the
-     * tables it holds the commands for are edited in place - a code is spent, a secret is
-     * rewritten, an attempt counter goes up - so the claim over those tables has to name the
-     * update it performs. Omit the argument and the agent's kind answers, which is what every
-     * claim of a collection the agent owns outright wants.
-     *
-     * Both widths and both operation sets are optional here where the registry demands them,
-     * because this seam is on its way out (HIL-898) and its callers are the claims HIL-897
-     * moves onto the declaration: naming the whole collection at seventy-odd call sites would
-     * be writing out an argument to delete it again. The registry underneath still hears the
-     * width spelled out.
-     *
-     * @deprecated Declare the collection in {@see self::OWNS_DB} instead. The constant is read
-     *     off the class before the instance exists, which this call cannot be; it stays working
-     *     until every live claim has moved (HIL-897), after which a guard refuses new calls and
-     *     the helper is removed (HIL-898).
-     *
-     * @param string $collection Collection/table name
-     * @param ?TruthSourceKeys $keys Rows this claim covers, or null for the whole collection
-     * @param ?TruthSourceOperations $operations Operations this claim allows, or null for the agent's default
-     */
-    protected function registerDbTruthSource(
-        string $collection,
-        ?TruthSourceKeys $keys = null,
-        ?TruthSourceOperations $operations = null,
-    ): void {
-        TruthSourceRegistry::register(
-            $collection,
-            $keys ?? TruthSourceKeys::all(),
-            $this->getId(),
-            $operations ?? static::defaultTruthSourceOperations(),
-        );
-
-        SourceInterestRegistry::register(SourceChange::KIND_DB, $collection, SourceConsumer::agent($this->getId()));
-        SourceInterestRegistry::markReady(SourceChange::KIND_DB, $collection);
-    }
-
-    /**
-     * Register this agent as truth source for a runtime collection.
-     *
-     * The claim is its own reader interest, and a ready one (HIL-717): a writer holds the copy of
-     * what it writes, so there is no state on its way here for it to wait for. Raised at the
-     * claim rather than at the report that follows it, because an agent publishing its first row
-     * inside onStart() reads the collection before that report is even built - the report goes
-     * out once the hook has returned ({@see WorkerManager::handleAgentStart()}).
-     *
-     * One claim may say less than the agent's kind does. The chat demo's user library holds the
-     * connections collection for updating alone, and until this seam had an operation set to take
-     * there was no way to say so through it - that claim went round the seam and into the registry
-     * by hand, which is the example the next one would have copied. Omit the argument and the
-     * agent's kind answers, which is what a claim over a collection the agent owns outright wants.
-     *
-     * Both widths and both operation sets are optional here where the registry demands them,
-     * because this seam is on its way out (HIL-898) and its callers are the claims HIL-897 moves
-     * onto the declaration: naming the whole collection at every call site would be writing out an
-     * argument to delete it again. The registry underneath still hears the width spelled out.
-     *
-     * @deprecated Declare the collection in {@see self::OWNS_RT} instead. The constant is read
-     *     off the class before the instance exists, which this call cannot be; it stays working
-     *     until every live claim has moved (HIL-897), after which a guard refuses new calls and
-     *     the helper is removed (HIL-898).
-     *
-     * @param string $collection Runtime collection name
-     * @param ?TruthSourceKeys $keys Rows this claim covers, or null for the whole collection
-     * @param ?TruthSourceOperations $operations Operations this claim allows, or null for the agent's default
-     */
-    protected function registerRtTruthSource(
-        string $collection,
-        ?TruthSourceKeys $keys = null,
-        ?TruthSourceOperations $operations = null,
-    ): void {
-        RtTruthSourceRegistry::register(
-            $collection,
-            $keys ?? TruthSourceKeys::all(),
-            $this->getId(),
-            $operations ?? static::defaultTruthSourceOperations(),
-        );
-
-        SourceInterestRegistry::register(SourceChange::KIND_RT, $collection, SourceConsumer::agent($this->getId()));
-        SourceInterestRegistry::markReady(SourceChange::KIND_RT, $collection);
     }
 
     /**

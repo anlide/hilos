@@ -23,6 +23,7 @@ use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateMutationRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\SecretInQueryRule;
+use Hilos\Tests\CodeStyle\Rule\TruthSourceClaimRule;
 use Hilos\Tests\CodeStyle\Rule\ViewWrapperBindingRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
 use Hilos\Tests\CodeStyle\Rule\WiringRefusalSwallowedRule;
@@ -216,6 +217,7 @@ final class CodeStyleGuardTest extends TestCase
             new RandomSourceRule(),
             new BlockingResolutionRule(),
             new MalformedInputMarkerRule(),
+            new TruthSourceClaimRule(),
             new SecretInQueryRule(),
             new MagicRepeatRule(),
             new WiringRefusalSwallowedRule(),

@@ -8,6 +8,7 @@ use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
+use Hilos\Tests\CodeStyle\Rule\TruthSourceClaimRule;
 use Hilos\Tests\CodeStyle\Rule\WiringRefusalSwallowedRule;
 
 /**
@@ -19,8 +20,10 @@ use Hilos\Tests\CodeStyle\Rule\WiringRefusalSwallowedRule;
  * failure it is about to assert, opening by hand the file whose refusal it stages
  * rather than taking the seam that would raise on it, repeating one number across
  * a dozen assertions where a constant would hide from the reader the very value
- * under test, and drawing throwaway tokens and names from the tolerant axis of the
- * random helper, which it also has to call in order to check it.
+ * under test, drawing throwaway tokens and names from the tolerant axis of the
+ * random helper, which it also has to call in order to check it, and laying a
+ * claim of ownership down by hand, because an agent a test starts outside
+ * `WorkerManager` gets nothing from the declaration on its class.
  *
  * A rule cannot tell the two apart on its own: it is handed the path relative to
  * the scanned root, so `framework/tests/Unit/X.php` reaches it as `Unit/X.php` and
@@ -32,7 +35,7 @@ enum RootKind
     /** Code that runs in production, or that decides a run of it, judged by every rule. */
     case Production;
 
-    /** A test suite, judged by every rule but the five a suite is allowed to break. */
+    /** A test suite, judged by every rule but the six a suite is allowed to break. */
     case Suite;
 
     /**
@@ -48,6 +51,7 @@ enum RootKind
         RandomSourceRule::ID,
         MagicRepeatRule::ID,
         WiringRefusalSwallowedRule::ID,
+        TruthSourceClaimRule::ID,
     ];
 
     /**

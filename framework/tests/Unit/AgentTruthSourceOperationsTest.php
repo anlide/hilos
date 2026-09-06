@@ -7,13 +7,16 @@ namespace Hilos\Tests\Unit;
 use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Tests\Integration\AuthThrottleIntegrationTest;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -53,7 +56,7 @@ final class AgentTruthSourceOperationsTest extends TestCase
         SourceInterestRegistry::readsWhatIsDelivered();
         $agent = new AgentTruthSourceOperationsTestAgent();
 
-        $agent->onStart();
+        $this->startAgent($agent);
 
         $this->assertTrue(SourceInterestRegistry::isReady(
             SourceChange::KIND_RT,
@@ -72,7 +75,7 @@ final class AgentTruthSourceOperationsTest extends TestCase
         SourceInterestRegistry::readsWhatIsDelivered();
         $agent = new AgentTruthSourceOperationsTestAgent();
 
-        $agent->onStart();
+        $this->startAgent($agent);
 
         $this->assertTrue(SourceInterestRegistry::isReady(
             SourceChange::KIND_DB,
@@ -83,7 +86,7 @@ final class AgentTruthSourceOperationsTest extends TestCase
     public function testOrdinaryAgentClaimsEveryOperation(): void
     {
         $agent = new AgentTruthSourceOperationsTestAgent();
-        $agent->onStart();
+        $this->startAgent($agent);
         ExecutionContext::setCurrentAgentId($agent->getId());
 
         foreach (TruthSourceOperation::ALL as $operation) {
@@ -100,7 +103,7 @@ final class AgentTruthSourceOperationsTest extends TestCase
     public function testLibraryAgentMayBringARowAndTakeItAway(): void
     {
         $agent = new AgentTruthSourceOperationsTestLibrary();
-        $agent->onStart();
+        $this->startLibrary($agent);
         ExecutionContext::setCurrentAgentId($agent->getId());
 
         RtTruthSourceRegistry::checkCanWriteState(
@@ -120,7 +123,7 @@ final class AgentTruthSourceOperationsTest extends TestCase
     public function testLibraryAgentMayNotEditWhatIsAlreadyWritten(): void
     {
         $agent = new AgentTruthSourceOperationsTestLibrary();
-        $agent->onStart();
+        $this->startLibrary($agent);
         ExecutionContext::setCurrentAgentId($agent->getId());
 
         $this->expectExceptionMessage(
@@ -132,6 +135,38 @@ final class AgentTruthSourceOperationsTest extends TestCase
             TruthSourceOperation::Update,
         );
     }
+
+    /**
+     * Lays the claims of an ordinary agent down and starts it, the way a worker would.
+     *
+     * An agent built here is never started through {@see WorkerManager}, and a declaration on its
+     * own reaches nothing: the resolver runs on the worker's start path, not in the constructor.
+     * So the claims are laid by hand first, exactly as every harness that builds an agent itself
+     * does ({@see AuthThrottleIntegrationTest}).
+     *
+     * @param AgentTruthSourceOperationsTestAgent $agent Agent to claim for and start
+     */
+    private function startAgent(AgentTruthSourceOperationsTestAgent $agent): void
+    {
+        OwnershipDeclaration::claimDb($agent::class, $agent->getId());
+        OwnershipDeclaration::claimRt($agent::class, $agent->getId());
+        $agent->onStart();
+    }
+
+    /**
+     * The same for the library double, whose runtime claim alone is what these cases ask about.
+     *
+     * Its database half is deliberately not laid down: the declaration merges upwards, so
+     * {@see AbstractUsersLibraryAgent}'s own OWNS_DB - identities, verifications, sessions - would
+     * be claimed here under a test agent id, over collections no case in this file touches.
+     *
+     * @param AgentTruthSourceOperationsTestLibrary $agent Library agent to claim for and start
+     */
+    private function startLibrary(AgentTruthSourceOperationsTestLibrary $agent): void
+    {
+        OwnershipDeclaration::claimRt($agent::class, $agent->getId());
+        $agent->onStart();
+    }
 }
 
 /**
@@ -139,18 +174,15 @@ final class AgentTruthSourceOperationsTest extends TestCase
  */
 final class AgentTruthSourceOperationsTestAgent extends AbstractAgent
 {
+    /** @var array<string, list<TruthSourceOperation>> The one database collection this test asks about */
+    public const array OWNS_DB = [self::DB_COLLECTION => TruthSourceOperation::BY_KIND];
+
+    /** @var array<string, list<TruthSourceOperation>> The one runtime collection this test asks about */
+    public const array OWNS_RT = [self::RT_COLLECTION => TruthSourceOperation::BY_KIND];
+
     public const string AGENT_TYPE = 'unit_truth_source_operations';
     public const string RT_COLLECTION = 'unit_truth_source_operations_rt';
     public const string DB_COLLECTION = 'unit_truth_source_operations_db';
-
-    /**
-     * Claims the one runtime and the one database collection this test asks about.
-     */
-    public function onStart(): void
-    {
-        $this->registerRtTruthSource(self::RT_COLLECTION);
-        $this->registerDbTruthSource(self::DB_COLLECTION);
-    }
 
     /**
      * Holds nothing across a stop.
@@ -168,17 +200,18 @@ final class AgentTruthSourceOperationsTestAgent extends AbstractAgent
  */
 final class AgentTruthSourceOperationsTestLibrary extends AbstractUsersLibraryAgent
 {
+    /**
+     * @var array<string, list<TruthSourceOperation>> The one runtime collection this test asks about
+     *
+     * {@see TruthSourceOperation::BY_KIND} and not a set written out here, so that the claim
+     * carries the base class's own default: the resolver asks
+     * {@see AbstractUsersLibraryAgent::defaultTruthSourceOperations()} of the class that is
+     * starting, which is the answer under test.
+     */
+    public const array OWNS_RT = [self::RT_COLLECTION => TruthSourceOperation::BY_KIND];
+
     public const string AGENT_TYPE = 'unit_truth_source_operations_library';
     public const string RT_COLLECTION = 'unit_truth_source_operations_library_rt';
-
-    /**
-     * Claims the one runtime collection this test asks about, through the helper the seam it
-     * belongs to is still reached by, so the claim carries the base class's default.
-     */
-    public function onStart(): void
-    {
-        $this->registerRtTruthSource(self::RT_COLLECTION);
-    }
 
     /**
      * @param string $displayName Name the account would be minted under

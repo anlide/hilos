@@ -16,6 +16,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
@@ -189,6 +190,18 @@ final class WorkerManagerStopCleanupTestAgentManager extends AgentManager
 
 final class WorkerManagerStopCleanupTestAgent extends AbstractAgent
 {
+    /**
+     * @var array<string, list<TruthSourceOperation>> The database collection this double holds
+     *
+     * Declared and not claimed from onStart(), because the resolver reads the constant off the
+     * class before the instance exists - which is what the test drives here through
+     * {@see WorkerManager::handleDaemonMessage()}.
+     */
+    public const array OWNS_DB = [self::DB_COLLECTION => TruthSourceOperation::BY_KIND];
+
+    /** @var array<string, list<TruthSourceOperation>> The runtime collection this double holds */
+    public const array OWNS_RT = [self::RT_COLLECTION => TruthSourceOperation::BY_KIND];
+
     public const string AGENT_TYPE = 'unit_stop_cleanup';
     public const string DB_COLLECTION = 'unit_stop_cleanup_db';
     public const string RT_COLLECTION = 'unit_stop_cleanup_rt';
@@ -211,25 +224,19 @@ final class WorkerManagerStopCleanupTestAgent extends AbstractAgent
     }
 
     /**
-     * @return string Truth-source collection owned by this instance alone
+     * @return string Truth-source collection this double holds, as declared on the class
      */
     public function dbCollection(): string
     {
-        return self::DB_COLLECTION . (string)$this->agentIndex;
+        return self::DB_COLLECTION;
     }
 
     /**
-     * @return string Runtime truth-source collection owned by this instance alone
+     * @return string Runtime truth-source collection this double holds, as declared on the class
      */
     public function rtCollection(): string
     {
-        return self::RT_COLLECTION . (string)$this->agentIndex;
-    }
-
-    public function onStart(): void
-    {
-        $this->registerDbTruthSource($this->dbCollection());
-        $this->registerRtTruthSource($this->rtCollection());
+        return self::RT_COLLECTION;
     }
 
     public function onStop(): void

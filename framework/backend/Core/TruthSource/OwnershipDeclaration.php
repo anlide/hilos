@@ -50,9 +50,9 @@ final class OwnershipDeclaration
      * declared in the other map of this half and laid down by {@see self::claimDbRows()}, which
      * asks the instance for them.
      *
-     * Each claim is its own reader interest, and a ready one, exactly as the seam it replaces made
-     * it ({@see AbstractAgent::registerDbTruthSource()}): the copy this process caches lives only
-     * under an interest, and the owner reads its own rows the moment it starts writing them.
+     * Each claim is its own reader interest, and a ready one - a property of the claim itself and
+     * not an inheritance from the seam it replaced: the copy this process caches lives only under
+     * an interest, and the owner reads its own rows the moment it starts writing them.
      *
      * A class that declares nothing registers nothing - the empty map never reaches a registry.
      *
@@ -152,9 +152,9 @@ final class OwnershipDeclaration
      * keys only the live instance knows belongs in the other map of this half and is laid down by
      * {@see self::claimRtRows()}.
      *
-     * Each claim is its own reader interest, and a ready one, exactly as the seam it replaces made
-     * it ({@see AbstractAgent::registerRtTruthSource()}): a writer holds the copy of what it
-     * writes, so there is no state on its way here for it to wait for.
+     * Each claim is its own reader interest, and a ready one, by the same property the database
+     * half names: a writer holds the copy of what it writes, so there is no state on its way here
+     * for it to wait for.
      *
      * A class that declares nothing registers nothing - the empty map never reaches a registry.
      *
