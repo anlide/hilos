@@ -547,7 +547,12 @@ function dropStandAfterStep(string $root, array $step): void
 }
 
 /**
- * Plan ids ordered longest-first, so that the tail of the run is short.
+ * Plan ids ordered by their OWN duration, longest first.
+ *
+ * Not by the work waiting behind a step: `fe-install` costs two seconds and holds up
+ * the entire frontend chain, and it still sorts near the end. That was measured and
+ * left alone deliberately — the head of `scripts/test-suite.php` says what a full run
+ * is actually bound by, and why reordering buys at most 85 seconds of it (HIL-854).
  *
  * @param array<string, array{seconds: int}> $manifest Steps by id.
  * @param array<int, string> $plan Step ids to run.

@@ -181,7 +181,8 @@ php scripts/run-test-suite.php --list         the plan, without running it
 ```
 
 A target is a step id or a tag, and whatever it selects pulls its dependencies in.
-Steps run **concurrently up to a global limit**, longest expected step first. The
+Steps run **concurrently up to a global limit**, the longest expected step first —
+by its **own** duration, not by the chain waiting behind it. The
 limit defaults to 2 on a machine with at least 8 cores and about 4 GB available and
 to **1 everywhere else**, so a small CI runner degrades to the old serial run
 instead of thrashing; `HILOS_TEST_LANES` or `--lanes=N` overrides it.
@@ -205,6 +206,16 @@ The graph is where the safety lives, and two kinds of constraint carry it:
   `test:e2e-full` starts by taking that project down. Group members never run at the
   same time, but a red one does not skip the others: `<demo>-php` is backend-only
   and keeps its own verdict when `<demo>-check` fails.
+
+Reordering is not the lever it looks like. The three steps of the `chat` demo share
+a group, so 19 + 169 + 618 = 806s of them can never overlap: **13m26s is the floor of
+a full run at any lane count**, below even what two lanes could otherwise pack
+(772s). Against a current cost of about 14m30s, ordering by the critical path behind
+each step buys 22 seconds, and counting group load as well buys 85 — measured
+2026-09-05 (HIL-854). Both were declined: every faster order puts `chat-e2e` beside
+the live cluster fleet, which once cost it 16m10s against 9m36s (HIL-752). The
+numbers, and what re-measuring them can quietly break, are in the head of
+[`scripts/test-suite.php`](../../scripts/test-suite.php).
 
 There is **no fail-fast**. A red step skips what depends on it, unrelated branches
 finish, and the runner exits non-zero if anything was red. Each step writes its own

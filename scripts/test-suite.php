@@ -25,9 +25,35 @@ declare(strict_types=1);
  *            `frontend` plus whatever those steps depend on.
  *   seconds  the last measured duration (HIL-733, 2026-08-27), read off a GREEN
  *            single-lane run so it is the step's own cost rather than an overlap
- *            with whoever shared the box. A scheduling HINT only — the longest
- *            ready step starts first, so that chat-e2e does not become the tail.
- *            A stale number costs wall clock, never correctness.
+ *            with whoever shared the box. A scheduling HINT only, and a narrow
+ *            one: of the steps ready to go, the one with the longest OWN duration
+ *            starts first, and nothing here looks at the work waiting behind a
+ *            step. A stale number costs wall clock, never correctness.
+ *
+ * WHAT BOUNDS A FULL RUN, and why the order is not the lever it looks like.
+ * Measured 2026-09-05 (HIL-854) on the durations below, two lanes:
+ *
+ *   13m26s  the floor, at ANY lane count. chat-check, chat-php and chat-e2e share
+ *           `group => 'chat'`, so no two of them ever overlap: 19 + 169 + 618 is
+ *           806s that has to be laid end to end. Three lanes finish no sooner.
+ *   12m52s  what the sum of every step (1543s) would allow at two lanes if nothing
+ *           were serialized. It sits BELOW the floor above, which is the whole
+ *           point: this run is bound by the chat group, not by the lane count.
+ *   14m51s  what the current order costs on these numbers; the green run of
+ *           2026-08-27 measured 14m28s. Ordering by the critical path behind each
+ *           step — the obvious fix, and the one HIL-854 was raised to make — buys
+ *           22 seconds of that. Counting each step's group load as well reaches
+ *           the floor and buys 85. Both were declined, for the reason below.
+ *
+ * The order is also the only thing keeping `cluster` and `chat-e2e` apart, and that
+ * is an accident of these numbers rather than something the graph enforces: today
+ * cluster runs 0..178s and chat-e2e starts at 254s. Every faster order sends the
+ * frontend chain first and puts chat-e2e beside the live five-daemon cluster fleet
+ * — 115s of overlap ordering by critical path, 53s counting group load — and that
+ * neighbour once cost chat-e2e 16m10s against 9m36s plus fourteen failures that
+ * were nothing but the neighbour (HIL-752). Re-measuring the numbers below can lose
+ * the separation with nothing saying so, so check it here rather than trusting that
+ * a run which used to be green stays that way.
  */
 
 /** Demos carrying a tests/e2e suite, with their measured per-step durations. */
