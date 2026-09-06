@@ -16,6 +16,7 @@ use Demo\Chat\Runtime\View\DTO\ChatContextUpdateData;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\HilosException;
 use Hilos\LLM\Agent\AbstractLlmChatAgent;
 use Hilos\LLM\DTO\ChatGenerateOptions;
@@ -37,6 +38,12 @@ final class ChatContextAnalyzerAgent extends AbstractLlmChatAgent
      */
     public const array READS_DB = [ChatDbContext::events, ChatDbContext::eventMessages];
 
+    /**
+     * @var array<string, list<TruthSourceOperation>> The running summary of the room, which this
+     *     agent is the only writer of.
+     */
+    public const array OWNS_RT = [ChatRtContext::chatContext => TruthSourceOperation::BY_KIND];
+
     public const string AGENT_TYPE = AgentType::CHAT_CONTEXT_ANALYZER;
 
     private bool $pendingSummarize = false;
@@ -47,14 +54,6 @@ final class ChatContextAnalyzerAgent extends AbstractLlmChatAgent
     protected function profileKey(): string
     {
         return ChatLLMConstants::PROFILE_ANALYZER;
-    }
-
-    /**
-     * Registers the chat context runtime truth source and initializes the main context when missing.
-     */
-    public function onStart(): void
-    {
-        $this->registerRtTruthSource(ChatRtContext::chatContext);
     }
 
     /**

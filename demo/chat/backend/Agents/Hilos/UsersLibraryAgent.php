@@ -51,7 +51,6 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\HilosException;
@@ -95,6 +94,46 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
         ChatDbContext::events,
         ChatDbContext::eventUserRenames,
     ];
+
+    /**
+     * The chat tables this library writes from its OWN process, the account set among them.
+     *
+     * The account set is the claim the framework library cannot make: which collection the user
+     * rows live in is a name only this demo knows. Every operation, and not the library's
+     * add-and-remove default: a library that renames somebody edits the row it owns, and the
+     * profile submits that used to do it from a page come here now (HIL-771).
+     *
+     * The registry is per process, and the account event is written HERE rather than in the agent
+     * that owns the room: a claim registered by the chat agent covers the chat agent's worker and
+     * nothing else, so without this the "registered in chat" line would be refused as a write with
+     * no truth source behind it. The same second claim the admin index agent makes on these
+     * tables, and for the same reason. The rename's log line lands in the same pair, so
+     * `eventUserRenames` joins them (HIL-771).
+     *
+     * The two claims never reach the cluster's arbiter as a clash, because both agents are placed
+     * the same way - neither names a placement, so both are the leader's, and a second claim from
+     * the node that already holds one is not a second node.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_DB = [
+        ChatDbContext::users => TruthSourceOperation::ALL,
+        ChatDbContext::events => TruthSourceOperation::BY_KIND,
+        ChatDbContext::eventUserRegistrations => TruthSourceOperation::BY_KIND,
+        ChatDbContext::eventUserRenames => TruthSourceOperation::BY_KIND,
+    ];
+
+    /**
+     * The connection rows, claimed update-only and deliberately so.
+     *
+     * They belong to the chat agent, which registers, moves and strikes them out; what this
+     * library touches on one is the moderation phase of a rename it is running, three fields of a
+     * row somebody else brought into being. The same shape of co-ownership the delivery journal
+     * has.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_RT = [ChatRtContext::connections => [TruthSourceOperation::Update]];
 
     /**
      * @var list<string> The sockets it acts for: a profile submit names its person by the
@@ -171,40 +210,6 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
         ChatSignalConstants::USER_ADMIN_RENAME => AdminRenameSignalData::class,
         HilosSignalConstants::HILOS_USER_ADMIN_RENAME => AdminRenameSignalData::class,
     ];
-
-    /**
-     * Claims the chat tables and connection rows this library writes from its OWN process.
-     *
-     * The registry is per process, and the account event below is written HERE rather than
-     * in the agent that owns the room: a claim registered by the chat agent covers the chat
-     * agent's worker and nothing else, so without this the "registered in chat" line would
-     * be refused as a write with no truth source behind it. The same second claim the
-     * admin index agent makes on these tables, and for the same reason.
-     *
-     * The rename's log line lands in the same pair of tables, so `eventUserRenames` joins them
-     * (HIL-771). The connection rows are claimed update-only and deliberately so: they belong to
-     * the chat agent, which registers, moves and strikes them out; what this library touches on
-     * one is the moderation phase of a rename it is running, three fields of a row somebody else
-     * brought into being. The same shape of co-ownership the delivery journal has.
-     *
-     * The two claims never reach the cluster's arbiter as a clash, because both agents are placed
-     * the same way - neither names a placement, so both are the leader's, and a second claim from
-     * the node that already holds one is not a second node.
-     *
-     * @throws HilosException On database or runtime startup failure
-     */
-    public function onStart(): void
-    {
-        parent::onStart();
-
-        $this->registerDbTruthSource(ChatDbContext::events);
-        $this->registerDbTruthSource(ChatDbContext::eventUserRegistrations);
-        $this->registerDbTruthSource(ChatDbContext::eventUserRenames);
-        $this->registerRtTruthSource(
-            ChatRtContext::connections,
-            operations: TruthSourceOperations::of(TruthSourceOperation::Update),
-        );
-    }
 
     /**
      * Runs one of the chat's own profile submits, or hands the name back to the framework.
@@ -400,16 +405,6 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
         }
 
         return null;
-    }
-
-    /**
-     * Names the chat's own members collection.
-     *
-     * @return string Collection name of the chat users
-     */
-    protected function usersCollection(): string
-    {
-        return ChatDbContext::users;
     }
 
     /**

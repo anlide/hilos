@@ -11,8 +11,12 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
-use Hilos\Environment\Exception\EnvException;
+use Hilos\Core\Feature\Definition\AuthFeature;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
+use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
 /**
  * The tasks demo's sessions library - and the two seams a project can be asked to answer.
@@ -30,20 +34,44 @@ use Hilos\HilosException;
 final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
 {
     /**
-     * Claims the users table this library mints into, from its OWN process.
+     * The users table this library mints into, and the holds a registration parks on.
      *
-     * The truth-source registry is per process, so the claim the project agent makes covers
-     * that agent's worker and nothing else: without this the minted administrator would be
-     * refused as a write with no truth source behind it.
+     * The users table is claimed from this library's OWN process. The truth-source registry is
+     * per process, so the claim the project agent makes covers that agent's worker and nothing
+     * else: without this the minted administrator would be refused as a write with no truth
+     * source behind it.
      *
-     * @throws EnvException When the sweep schedule key is missing, outside the catalog, or of the wrong type
+     * The registration holds are the framework library's claim, made here because only a project
+     * knows whether it has a sign-in surface at all. The table is mounted by
+     * {@see AuthFeature::mount()} and written by the hold sweep the library arms behind the same
+     * question, and a class constant has no way to ask it - so the demo that has the surface says
+     * so, and one that has none claims a table it never writes.
+     *
+     * @var array<string, list<TruthSourceOperation>>
      */
-    public function onStart(): void
-    {
-        parent::onStart();
+    public const array OWNS_DB = [
+        TasksDbContext::users => TruthSourceOperation::BY_KIND,
+        // TODO(HIL-630): borrowed claim - the users library owns the reservation table. The hold
+        // sweep is armed here because the expiry it announces rolls back a WAIT, which is the
+        // sessions library's row; the sweep itself belongs with the table.
+        HilosDbContext::registrationReservations => TruthSourceOperation::BY_KIND,
+    ];
 
-        $this->registerDbTruthSource(TasksDbContext::users);
-    }
+    /**
+     * The two waits a sign-in parks a browser on: a registration in progress and a recovery.
+     *
+     * Declared here rather than by {@see AbstractSessionsLibraryAgent} because the collections
+     * exist only where a sign-in surface does: {@see AuthFeature::mount()} mounts them and nothing
+     * else does, so a library that claimed them in a project without one would read a collection
+     * that is not there on every tick. The users library stands beside this claim as a declared
+     * add/remove co-owner (HIL-685) rather than as a second full owner.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_RT = [
+        StateRegistrationWaiter::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+        StateRecoveryWaiter::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+    ];
 
     /**
      * Makes one user an administrator, minting the row when the session carries none.
@@ -80,7 +108,7 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
      * the library's too since HIL-729 - it states the session and this demo's project agent
      * says it out loud, which is the one path every other identity change already travels.
      *
-     * It writes under the same claim {@see self::onStart()} makes for the minting seam above:
+     * It writes under the same claim {@see self::OWNS_DB} makes for the minting seam above:
      * the truth-source registry is per process, and this library has its own.
      *
      * @param int $userId Target user id, already validated as positive

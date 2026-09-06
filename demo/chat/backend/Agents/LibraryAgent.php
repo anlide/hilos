@@ -7,6 +7,7 @@ namespace Demo\Chat\Agents;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Database\ChatDbContext;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 
 /**
  * Monopolistic library worker for admin-managed chat catalog entities.
@@ -15,16 +16,16 @@ use Hilos\Core\Agent\AbstractAgent;
  */
 final class LibraryAgent extends AbstractAgent
 {
-    public const string AGENT_TYPE = AgentType::LIBRARY;
-
     /**
-     * Registers library DB truth sources for admin CRUD pages.
+     * @var array<string, list<TruthSourceOperation>> The two catalogs its admin CRUD pages write:
+     *     the bots of the chat and the pieces a moderator prompt is built from.
      */
-    public function onStart(): void
-    {
-        $this->registerDbTruthSource(ChatDbContext::bots);
-        $this->registerDbTruthSource(ChatDbContext::moderatorPromptPieces);
-    }
+    public const array OWNS_DB = [
+        ChatDbContext::bots => TruthSourceOperation::BY_KIND,
+        ChatDbContext::moderatorPromptPieces => TruthSourceOperation::BY_KIND,
+    ];
+
+    public const string AGENT_TYPE = AgentType::LIBRARY;
 
     /**
      * Library data is durable, so stop cleanup only unregisters truth sources via WorkerManager.

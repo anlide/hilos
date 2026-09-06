@@ -83,7 +83,7 @@ final class ChatContextAnalyzerAgentTest extends IntegrationTestCase
             $chatClient = new ControlledAnalyzerChatClient();
             self::replaceChatClient($agent, $chatClient);
 
-            $agent->onStart();
+            $this->startAgent($agent);
             Hilos::$rt->chatContext->actions->update(
                 new ChatContextUpdateData('AI', 0.75, 'Old summary'),
             );
@@ -126,7 +126,7 @@ final class ChatContextAnalyzerAgentTest extends IntegrationTestCase
             $chatClient = new ControlledAnalyzerChatClient();
             self::replaceChatClient($agent, $chatClient);
 
-            $agent->onStart();
+            $this->startAgent($agent);
             Hilos::$db->events->actions->addMessage(
                 'first message',
                 userId: Hilos::$db->users->actions->createWithName('User')->id,

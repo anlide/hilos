@@ -33,6 +33,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
@@ -104,6 +105,29 @@ use Throwable;
  */
 abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
 {
+    /**
+     * The notification set: the letters, the preferences behind them, the delivery journal and
+     * the browser endpoints a push is sent to.
+     *
+     * All four are claimed OUTRIGHT and unconditionally. Nothing may write a framework
+     * collection until somebody says who owns it, so a project that never registers this agent
+     * simply has no notifications - rather than notifications written in whichever process
+     * happened to hold the owner of something else.
+     *
+     * The journal is the one claim that is not exclusive: a channel agent holds an update-only
+     * grant on the same collection ({@see AbstractDeliveryChannelAgent::OWNS_DB}), which the
+     * registry allows because a grant is per agent and the two do not overlap in what they may
+     * do.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_DB = [
+        HilosDbContext::notifications => TruthSourceOperation::BY_KIND,
+        HilosDbContext::notificationPreferences => TruthSourceOperation::BY_KIND,
+        HilosDbContext::notificationDeliveries => TruthSourceOperation::BY_KIND,
+        HilosDbContext::pushSubscriptions => TruthSourceOperation::BY_KIND,
+    ];
+
     public const string AGENT_TYPE = HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY;
 
     /**
@@ -195,19 +219,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Claims the notification set and arms the journal prune.
-     *
-     * All four collections are claimed OUTRIGHT and unconditionally. Nothing may write a
-     * framework collection until somebody says who owns it, so a project that never registers
-     * this agent simply has no notifications - rather than notifications written in whichever
-     * process happened to hold the owner of something else.
-     *
-     * The journal is the one claim that is not exclusive: a channel agent holds an
-     * update-only grant on the same collection ({@see AbstractDeliveryChannelAgent::onStart()}),
-     * which the registry allows because a grant is per agent and the two do not overlap in
-     * what they may do.
-     *
-     * A subclass that overrides this MUST call up: the claims are what the library stands on.
+     * Arms the journal prune and sends what was written while this library was not running.
      *
      * The journal prune is armed only where deliveries are written. Whether the project declared
      * {@see HilosFeature::NOTIFICATION_DELIVERY} is a fact about how it was built, settled before
@@ -219,16 +231,11 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      *
      * The last thing it does is send the letters written while it was not running (HIL-771): a
      * restore emits with the node frozen or the daemon down, and those drafts waited in
-     * {@see DeferredNotificationQueue} for exactly this moment. Sent after the claims, because
-     * sending one writes a row.
+     * {@see DeferredNotificationQueue} for exactly this moment. Sending one writes a row, which
+     * {@see self::OWNS_DB} has granted before this hook is called at all.
      */
     public function onStart(): void
     {
-        $this->registerDbTruthSource(HilosDbContext::notifications);
-        $this->registerDbTruthSource(HilosDbContext::notificationPreferences);
-        $this->registerDbTruthSource(HilosDbContext::notificationDeliveries);
-        $this->registerDbTruthSource(HilosDbContext::pushSubscriptions);
-
         if (Hilos::hasFeature(HilosFeature::NOTIFICATION_DELIVERY)) {
             $this->deliveryLogPruneRule = new CronRule(self::DELIVERY_LOG_PRUNE_RULE, self::DELIVERY_LOG_PRUNE_SCHEDULE);
         }

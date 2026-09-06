@@ -13,6 +13,7 @@ use Demo\Polls\Database\PollsDbContext;
 use Demo\Polls\Hilos;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Daemon\WorkerManager;
@@ -21,6 +22,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
@@ -93,7 +95,7 @@ abstract class IntegrationTestCase extends TestCase
     {
         if ($this->sessionsLibrary === null) {
             $this->sessionsLibrary = new SessionsLibraryAgent();
-            $this->sessionsLibrary->onStart();
+            $this->startAgent($this->sessionsLibrary);
         }
 
         return $this->sessionsLibrary;
@@ -168,7 +170,7 @@ abstract class IntegrationTestCase extends TestCase
     {
         if ($this->usersLibrary === null) {
             $this->usersLibrary = new UsersLibraryAgent();
-            $this->usersLibrary->onStart();
+            $this->startAgent($this->usersLibrary);
         }
 
         return $this->usersLibrary;
@@ -187,7 +189,7 @@ abstract class IntegrationTestCase extends TestCase
     {
         if ($this->notificationsLibrary === null) {
             $this->notificationsLibrary = new NotificationsLibraryAgent();
-            $this->notificationsLibrary->onStart();
+            $this->startAgent($this->notificationsLibrary);
         }
 
         return $this->notificationsLibrary;
@@ -234,6 +236,32 @@ abstract class IntegrationTestCase extends TestCase
         foreach ($rest as $signal) {
             Hilos::$sr?->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
         }
+    }
+
+    /**
+     * Starts one agent the way a node does: its declared claims first, then the hook.
+     *
+     * The order is the mechanism and not a tidiness. An agent writes its first row inside
+     * {@see AbstractAgent::onStart()}, so the grant has to stand by then - which is why
+     * {@see WorkerManager} lays it before calling the hook and why a case that calls the hook
+     * itself has to do the same. A case that skips this finds every write of the agent refused
+     * with "no truth source registered", however correct the declaration on its class is.
+     *
+     * Both halves and both widths, exactly as the worker asks for them: the whole-collection
+     * claims are read off the CLASS, and the by-row claims off the INSTANCE, which is the only
+     * thing that knows which rows it holds.
+     *
+     * @param AbstractAgent $agent Agent to claim for and start
+     * @throws HilosException When the agent's own startup fails
+     */
+    protected function startAgent(AbstractAgent $agent): void
+    {
+        OwnershipDeclaration::claimDb($agent::class, $agent->getId());
+        OwnershipDeclaration::claimRt($agent::class, $agent->getId());
+        OwnershipDeclaration::claimDbRows($agent);
+        OwnershipDeclaration::claimRtRows($agent);
+
+        $agent->onStart();
     }
 
     /**

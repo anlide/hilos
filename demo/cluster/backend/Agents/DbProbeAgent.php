@@ -11,6 +11,7 @@ use Hilos\Constants\CommandConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Settings\SettingsCatalogConstants;
@@ -39,6 +40,21 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
  */
 final class DbProbeAgent extends AbstractAgent
 {
+    /**
+     * The settings collection, because a write needs a truth source to be allowed one.
+     *
+     * Claimed rather than listed as a read: {@see AbstractAgent::READS_DB} is for a collection
+     * somebody else owns, and a claim is its own reader interest anyway (HIL-750), so declaring
+     * both would be one fact kept in two places.
+     *
+     * Every node claims it and nothing objects. The cluster-wide two-owner guard is over runtime
+     * collections, whose rows live in one process's memory; these rows are on a disk all five
+     * nodes share, and any of them may legitimately write there.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_DB = [HilosDbContext::settings => TruthSourceOperation::BY_KIND];
+
     public const string AGENT_TYPE = AgentType::DB_PROBE;
 
     /**
@@ -56,22 +72,6 @@ final class DbProbeAgent extends AbstractAgent
         CliCommands::CLUSTER_TEST_DB_WRITE,
         CliCommands::CLUSTER_TEST_DB_READ,
     ];
-
-    /**
-     * Claims the settings collection, because a write needs a truth source to be allowed one.
-     *
-     * Claimed rather than listed as a read: {@see AbstractAgent::READS_DB} is for a collection
-     * somebody else owns, and a claim is its own reader interest anyway (HIL-750), so
-     * declaring both would be one fact kept in two places.
-     *
-     * Every node claims it and nothing objects. The cluster-wide two-owner guard is over
-     * runtime collections, whose rows live in one process's memory; these rows are on a disk
-     * all five nodes share, and any of them may legitimately write there.
-     */
-    public function onStart(): void
-    {
-        $this->registerDbTruthSource(HilosDbContext::settings);
-    }
 
     /**
      * Lets the replica go without clearing anything: the row it wrote is in the database.

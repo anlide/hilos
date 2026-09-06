@@ -198,8 +198,8 @@ an account to belong to. The machine does not check this: nullability is a fact 
 live schema, not of a constant, and the rule is applied by whoever writes the Entity.
 
 The declaration names the column and not the parent class, because the framework does not
-know the class of a project's `user` — it asks a collection key through
-`AbstractUsersLibraryAgent::usersCollection()`. Who stands behind the column is said by
+know the class of a project's `user` — the collection key is the project's to name, and it
+does so in the `OWNS_DB` of its own users library. Who stands behind the column is said by
 `_foreign` where there is one; framework Entities have none on purpose, `user_id` being a
 soft reference across the framework/project boundary.
 

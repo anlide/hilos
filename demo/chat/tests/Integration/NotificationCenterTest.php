@@ -250,7 +250,7 @@ final class NotificationCenterTest extends IntegrationTestCase
     {
         if ($this->library === null) {
             $this->library = new NotificationsLibraryAgent();
-            $this->library->onStart();
+            $this->startAgent($this->library);
         }
 
         return $this->library;

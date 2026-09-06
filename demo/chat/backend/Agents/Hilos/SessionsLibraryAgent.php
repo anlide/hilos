@@ -13,10 +13,12 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Core\TruthSource\TruthSourceOperations;
-use Hilos\Environment\Exception\EnvException;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
+use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
 /**
  * The chat demo's sessions library - four seams wide, and every one of them a chat column
@@ -67,35 +69,51 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
     ];
 
     /**
-     * Claims the two chat tables this library writes on its way through a person.
+     * The two chat tables this library writes on its way through a person, and the holds a
+     * registration parks on.
      *
-     * Both are borrowed and both are narrow, and the reason they have to be said out loud at
-     * all is HIL-716: the right used to be asked only of a collection loaded whole, so a
-     * lazily loaded table was written by anybody in silence. It is asked of every table now,
-     * and the registry is per process - so this library holds its own grant rather than
-     * leaning on the one the owner registered in some other worker. The two demos beside this
-     * one already claimed their user table here for the same reason.
+     * The chat pair is borrowed and narrow, and the reason the rights have to be said out loud at
+     * all is HIL-716: they used to be asked only of a collection loaded whole, so a lazily loaded
+     * table was written by anybody in silence. They are asked of every table now, and the registry
+     * is per process - so this library holds its own grant rather than leaning on the one the
+     * owner registered in some other worker.
      *
-     * @throws EnvException When the sweep schedule key the library reads is missing or malformed
+     * The registration holds are the framework library's claim, made here because only a project
+     * knows whether it has a sign-in surface at all. The table is mounted by
+     * {@see AuthFeature::mount()} and written by the hold sweep the library arms behind the same
+     * question, and a class constant has no way to ask it - so the demo that has the surface says
+     * so, and one that has none claims a table it never writes.
+     *
+     * @var array<string, list<TruthSourceOperation>>
      */
-    public function onStart(): void
-    {
-        parent::onStart();
-
+    public const array OWNS_DB = [
         // TODO(HIL-630): borrowed claim - the users library owns the account set. What this
-        // library does to a chat user is set the admin flag and tombstone the loser of a
-        // merge, both of them edits of a row that already exists.
-        $this->registerDbTruthSource(
-            ChatDbContext::users,
-            operations: TruthSourceOperations::of(TruthSourceOperation::Update),
-        );
+        // library does to a chat user is set the admin flag and tombstone the loser of a merge.
+        ChatDbContext::users => [TruthSourceOperation::Update],
         // TODO(HIL-626): borrowed claim - the chat agent owns the message rows. A merge
         // re-points the loser's messages onto the survivor, which edits them and nothing more.
-        $this->registerDbTruthSource(
-            ChatDbContext::eventMessages,
-            operations: TruthSourceOperations::of(TruthSourceOperation::Update),
-        );
-    }
+        ChatDbContext::eventMessages => [TruthSourceOperation::Update],
+        // TODO(HIL-630): borrowed claim - the users library owns the reservation table. The hold
+        // sweep is armed here because the expiry it announces rolls back a WAIT, which is the
+        // sessions library's row; the sweep itself belongs with the table.
+        HilosDbContext::registrationReservations => TruthSourceOperation::BY_KIND,
+    ];
+
+    /**
+     * The two waits a sign-in parks a browser on: a registration in progress and a recovery.
+     *
+     * Declared here rather than by {@see AbstractSessionsLibraryAgent} because the collections
+     * exist only where a sign-in surface does: {@see AuthFeature::mount()} mounts them and nothing
+     * else does, so a library that claimed them in a project without one would read a collection
+     * that is not there on every tick. The users library stands beside this claim as a declared
+     * add/remove co-owner (HIL-685) rather than as a second full owner.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_RT = [
+        StateRegistrationWaiter::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+        StateRecoveryWaiter::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+    ];
 
     /**
      * Writes the admin flag of one chat user - and nothing else.

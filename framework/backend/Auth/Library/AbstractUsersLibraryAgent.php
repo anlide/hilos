@@ -62,10 +62,8 @@ use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
-use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Runtime\State\Item\RecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter;
@@ -105,6 +103,61 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      *     ({@see PasskeyCommands}), which no page topology names and which nothing else declares.
      */
     public const array READS_DB = [HilosDbContext::passkeyCredentials];
+
+    /**
+     * The proofs an account is reached by: its ways in, the codes that check them, the holds a
+     * registration takes, the credentials a passkey enrols - and the one column of a session row
+     * a parked wait is written into.
+     *
+     * The first four are claimed OUTRIGHT and with every operation. They used to be described as
+     * needing no claim of their own, and that sentence held on nothing but the guard's silence:
+     * the right was asked only of the four eagerly loaded collections, and these four are lazy
+     * (HIL-716). Every write to them goes through a command of this library - a code is issued and
+     * spent, a password secret is rewritten, a hold is taken and released - so the operation set
+     * is spelled out per entry rather than left to {@see self::defaultTruthSourceOperations()}:
+     * that default is what a library does to a row it SHARES, and the rows carrying an account's
+     * proofs are edited in place.
+     *
+     * The account set itself is NOT here. Which collection the user rows live in is a name only
+     * the project knows, and a class constant cannot ask - so the project subclass declares it,
+     * with every operation, for the reason the claim over it is a whole one and not the
+     * create-only right it began as (HIL-771): a page carries no claim, so the writers that used
+     * to rename somebody from a profile submit come here instead, and renaming is editing the row.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_DB = [
+        HilosDbContext::identities => TruthSourceOperation::ALL,
+        HilosDbContext::verifications => TruthSourceOperation::ALL,
+        HilosDbContext::registrationReservations => TruthSourceOperation::ALL,
+        HilosDbContext::passkeyCredentials => TruthSourceOperation::ALL,
+        // TODO(HIL-626): borrowed claim - the sessions library owns the session set. A command
+        // that parks a browser on a code screen writes the durable half of that wait on the
+        // session row itself ({@see PasswordCommands::parkRegistrationWait()}), and until that
+        // half travels as a frame the claim is named as narrowly as the write is: an update of a
+        // row that already exists, never a create or a remove.
+        HilosDbContext::sessions => [TruthSourceOperation::Update],
+    ];
+
+    /**
+     * The two parked-surface collections, claimed because a command parks a browser on the code
+     * step it just opened and a runtime write with no claim behind it is refused.
+     *
+     * The session holder claims them too, and for its own half - it parks a reconnecting socket
+     * and releases every wait a converge or a dead connection ends. Which of the two OWNS the wait
+     * was open when this was written (HIL-622, P-125) and is answered now: the holder does,
+     * wholly, and this library is a declared add/remove co-owner beside it (HIL-685). So the pair
+     * is not two writers of one row - what the library brings into being it may also take away,
+     * and everything else about a row that already exists it says in a frame. That add-and-remove
+     * is what {@see TruthSourceOperation::BY_KIND} resolves to here, through
+     * {@see self::defaultTruthSourceOperations()}.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_RT = [
+        RegistrationWaiter::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+        RecoveryWaiter::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+    ];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
 
@@ -228,67 +281,13 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     private ?IdentityCommands $identityCommands = null;
 
     /**
-     * Claims the people this library answers for and resolves the project's auth seams.
-     *
-     * The claim over the account set is a whole one now, not the create-only right it began
-     * as (HIL-771): a page carries no claim, so the writers that used to rename somebody from
-     * a profile submit come here instead, and renaming is editing the row.
-     *
-     * It is registered against the registry rather than through
-     * {@see AbstractAgent::registerDbTruthSource()} because the interest side the seam raises
-     * is already covered - every project names its account collection in
-     * {@see AbstractAgent::READS_DB}, so the worker raised and awaited it before this hook ran.
-     *
-     * The identity, verification, reservation and credential tables are claimed OUTRIGHT and
-     * with every operation. They used to be described here as needing no claim of their own,
-     * and that sentence held on nothing but the guard's silence: the right was asked only of
-     * the four eagerly loaded collections, and these four are lazy (HIL-716). Every write to
-     * them goes through a command of this library - a code is issued and spent, a password
-     * secret is rewritten, a hold is taken and released - so the operation set is spelled out
-     * per claim rather than taken from {@see self::defaultTruthSourceOperations()}: that
-     * default is what a library does to a row it SHARES, and the rows carrying an account's
-     * proofs are edited in place.
-     *
-     * The two parked-surface collections are claimed because a command parks a browser on the
-     * code step it just opened, and a runtime write with no claim behind it is refused. The
-     * session holder claims them too, and for its own half - it parks a reconnecting socket
-     * and releases every wait a converge or a dead connection ends.
-     *
-     * Which of the two OWNS the wait was open when this was written (HIL-622, P-125) and is
-     * answered now: the holder does, wholly, and this library is a declared add/remove
-     * co-owner beside it (HIL-685). So the pair is not two writers of one row - what the
-     * library brings into being it may also take away, and everything else about a row that
-     * already exists it says in a frame.
+     * Resolves the project's auth seams.
      *
      * @throws HilosException On database or runtime startup failure
      */
     public function onStart(): void
     {
         $this->authMethods = $this->buildAuthMethods();
-        TruthSourceRegistry::register(
-            $this->usersCollection(),
-            TruthSourceKeys::all(),
-            $this->getId(),
-            TruthSourceOperations::all(),
-        );
-        $this->registerDbTruthSource(HilosDbContext::identities, operations: TruthSourceOperations::all());
-        $this->registerDbTruthSource(HilosDbContext::verifications, operations: TruthSourceOperations::all());
-        $this->registerDbTruthSource(
-            HilosDbContext::registrationReservations,
-            operations: TruthSourceOperations::all(),
-        );
-        $this->registerDbTruthSource(HilosDbContext::passkeyCredentials, operations: TruthSourceOperations::all());
-        // TODO(HIL-626): borrowed claim - the sessions library owns the session set. A
-        // command that parks a browser on a code screen writes the durable half of that
-        // wait on the session row itself ({@see PasswordCommands::parkRegistrationWait()}),
-        // and until that half travels as a frame the claim is named as narrowly as the
-        // write is: an update of a row that already exists, never a create or a remove.
-        $this->registerDbTruthSource(
-            HilosDbContext::sessions,
-            operations: TruthSourceOperations::of(TruthSourceOperation::Update),
-        );
-        $this->registerRtTruthSource(RegistrationWaiter::RT_COLLECTION);
-        $this->registerRtTruthSource(RecoveryWaiter::RT_COLLECTION);
     }
 
     /**
@@ -299,9 +298,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * another holder is keeping is not this library's to reword, which is why updating is
      * absent and why the pair is not two writers of one row.
      *
-     * The account set is deliberately not among them: it is claimed whole in {@see onStart()},
-     * because a library that renames somebody edits the row it owns, and there it owns rather
-     * than shares.
+     * The account set is deliberately not among them: the project subclass claims it whole in its
+     * own `OWNS_DB`, because a library that renames somebody edits the row it owns, and there it
+     * owns rather than shares.
      *
      * @return TruthSourceOperations Adding and removing, never updating
      */
@@ -616,16 +615,6 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             new AuthRecoveryWaitMovedSignalData($acting->acceptKey, $identifier, $acting->sessionToken),
         );
     }
-
-    /**
-     * Names the project collection the user rows live in.
-     *
-     * The framework knows a user by id and nothing else; which collection holds the row is
-     * the project's, which is why the truth-source claim asks rather than assumes.
-     *
-     * @return string Collection name of the project's users
-     */
-    abstract protected function usersCollection(): string;
 
     /**
      * Creates one user row in the project's own users table.

@@ -574,11 +574,10 @@ table's first window (HIL-642).
 
 ```php
 // Wrong: one holder for several entities - the monolith at an earlier size.
-public function onStart(): void
-{
-    $this->registerDbTruthSource(ChatDbContext::bots);
-    $this->registerDbTruthSource(ChatDbContext::moderatorPromptPieces);
-}
+public const array OWNS_DB = [
+    ChatDbContext::bots => TruthSourceOperation::BY_KIND,
+    ChatDbContext::moderatorPromptPieces => TruthSourceOperation::BY_KIND,
+];
 ```
 
 One library per entity. Two entities in one holder cannot be placed

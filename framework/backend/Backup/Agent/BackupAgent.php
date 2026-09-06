@@ -67,6 +67,7 @@ use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ProcessException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Environment\Exception\EnvException;
@@ -136,6 +137,28 @@ final class BackupAgent extends AbstractAgent
 {
     use DirectoryWatchTrait;
     use ProtectedModeOperatorTrait;
+
+    /**
+     * The three runtime records the backup section is read from: the index of what is on disk,
+     * the state of a create in flight and the state of a restore in flight.
+     *
+     * Declared without the condition the claim used to carry. It used to be laid inside
+     * {@see onStart()}, past the early return that leaves when {@see EnvConstants::BACKUP_ENABLED}
+     * is off, so a node with backups disabled owned none of the three. A constant has no
+     * environment to ask, so the claim now stands whether backups are enabled or not, and on a
+     * node with them off the agent owns three records nobody writes. That costs nothing and
+     * splits nothing: this agent is cluster-scope and exists in one instance, so there is no
+     * second owner for the claim to collide with. The early return itself stays where it is and
+     * goes on sparing the rest of the start - the storage watch, the history scan and the
+     * schedule.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_RT = [
+        StateBackupHistory::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+        StateBackupRuntime::RT_ITEM => TruthSourceOperation::BY_KIND,
+        StateRestoreRuntime::RT_ITEM => TruthSourceOperation::BY_KIND,
+    ];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_BACKUP;
 
@@ -438,8 +461,7 @@ final class BackupAgent extends AbstractAgent
     private ?string $pendingInitiatorRequestId = null;
 
     /**
-     * Takes storage under watch, registers truth sources, rebuilds the runtime backup index,
-     * and loads the schedule.
+     * Takes storage under watch, rebuilds the runtime backup index, and loads the schedule.
      *
      * No-ops entirely when disabled: nothing is watched, no scan, and no cron rules, so
      * scheduling is off.
@@ -468,10 +490,6 @@ final class BackupAgent extends AbstractAgent
         ) as $key) {
             $this->logAgentError("Backups are enabled but {$key} is not configured; no backup can be created");
         }
-
-        $this->registerRtTruthSource(StateBackupHistory::RT_COLLECTION);
-        $this->registerRtTruthSource(StateBackupRuntime::RT_ITEM);
-        $this->registerRtTruthSource(StateRestoreRuntime::RT_ITEM);
 
         $this->watchDirectories($this->watchedBackupDirectories());
         $this->refreshHistory();

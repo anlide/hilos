@@ -25,6 +25,7 @@ use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -66,6 +67,21 @@ use Throwable;
  */
 abstract class AbstractOAuthAgent extends AbstractAgent
 {
+    /**
+     * The identity table, which a completed exchange writes a linked provider account into.
+     *
+     * A borrowed claim, and the TODO on the entry says whose it is: the users library owns the
+     * identity table, and a linked provider account is one of its rows. The write is here only
+     * because the exchange that proves the account ends in this agent's tick, so it is this
+     * process that finds out what to write; the entity-owner leaf moves it behind a command.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_DB = [
+        // TODO(HIL-630): borrowed claim - the identity table belongs to the users library.
+        HilosDbContext::identities => TruthSourceOperation::BY_KIND,
+    ];
+
     public const string AGENT_TYPE = HilosAgentType::HILOS_OAUTH;
 
     /**
@@ -112,11 +128,6 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     {
         $this->providers = $this->buildProviderRegistry();
         $this->pending = OAuthPendingLogins::init();
-        // TODO(HIL-630): borrowed claim - the users library owns the identity table, and a
-        // linked provider account is one of its rows. The write is here only because the
-        // exchange that proves the account ends in this agent's tick, so it is this process
-        // that finds out what to write; the entity-owner leaf moves it behind a command.
-        $this->registerDbTruthSource(HilosDbContext::identities);
 
         $refused = $this->providers->refusedOfflineKeys();
         if ($refused !== []) {

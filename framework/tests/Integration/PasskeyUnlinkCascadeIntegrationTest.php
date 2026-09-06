@@ -468,14 +468,6 @@ final class PasskeyUnlinkTestRtContext extends RtContext
 final class PasskeyUnlinkTestLibrary extends AbstractUsersLibraryAgent
 {
     /**
-     * @return string Collection the project's user rows would live in
-     */
-    protected function usersCollection(): string
-    {
-        return 'users';
-    }
-
-    /**
      * @param string $displayName Name the new account would be created with
      * @return int Never returns
      * @throws LogicException Always: these cases unlink from accounts that already exist

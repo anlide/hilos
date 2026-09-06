@@ -172,20 +172,12 @@ final class AgentTruthSourceOperationsTestLibrary extends AbstractUsersLibraryAg
     public const string RT_COLLECTION = 'unit_truth_source_operations_library_rt';
 
     /**
-     * Claims the one runtime collection this test asks about, through the same helper the
-     * real library uses, so the claim carries the base class's default.
+     * Claims the one runtime collection this test asks about, through the helper the seam it
+     * belongs to is still reached by, so the claim carries the base class's default.
      */
     public function onStart(): void
     {
         $this->registerRtTruthSource(self::RT_COLLECTION);
-    }
-
-    /**
-     * @return string Table this library would mint accounts in
-     */
-    protected function usersCollection(): string
-    {
-        return 'unit_truth_source_operations_users';
     }
 
     /**

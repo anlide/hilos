@@ -23,6 +23,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\DatabaseException;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationDraft;
@@ -56,6 +57,27 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     public const array READS_DB = [...parent::READS_DB, PollsDbContext::users, PollsDbContext::userRenames];
 
     /**
+     * The account set and the rename journal, both written from this library's OWN process.
+     *
+     * The account set is the claim the framework library cannot make: which collection the user
+     * rows live in is a name only this demo knows. Every operation, and not the library's
+     * add-and-remove default: a library that renames somebody edits the row it owns, and the
+     * profile submits that used to do it from a page come here now (HIL-771).
+     *
+     * The registry is per process, and the audit row is written HERE rather than in the agent
+     * that catalogs it: a claim registered by the admin index agent covers that agent's worker and
+     * nothing else, so without this the rename's log line would be refused as a write with no
+     * truth source behind it. The same second claim, for the same reason, that the account set
+     * itself carries.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_DB = [
+        PollsDbContext::users => TruthSourceOperation::ALL,
+        PollsDbContext::userRenames => TruthSourceOperation::BY_KIND,
+    ];
+
+    /**
      * The write half of the admin rename, addressed here because the account row is this
      * library's (HIL-771).
      *
@@ -67,24 +89,6 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
         ...parent::AGENT_SIGNALS,
         HilosSignalConstants::HILOS_USER_ADMIN_RENAME => AdminRenameSignalData::class,
     ];
-
-    /**
-     * Claims the rename journal this library writes from its OWN process.
-     *
-     * The registry is per process, and the audit row below is written HERE rather than in the
-     * agent that catalogs it: a claim registered by the admin index agent covers that agent's
-     * worker and nothing else, so without this the rename's log line would be refused as a write
-     * with no truth source behind it. The same second claim, for the same reason, that the
-     * account set itself carries.
-     *
-     * @throws HilosException On database or runtime startup failure
-     */
-    public function onStart(): void
-    {
-        parent::onStart();
-
-        $this->registerDbTruthSource(PollsDbContext::userRenames);
-    }
 
     /**
      * Renames one account for an administrator, logs it, and tells the person it happened.
@@ -206,16 +210,6 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
         } catch (HilosException $e) {
             $this->logAgentError("Rename notification failed for userId={$userId}: {$e->getMessage()}");
         }
-    }
-
-    /**
-     * Names this demo's own accounts collection.
-     *
-     * @return string Collection name of the polls users
-     */
-    protected function usersCollection(): string
-    {
-        return PollsDbContext::users;
     }
 
     /**

@@ -17,7 +17,7 @@ Agent ID: `"type"` or `"type:index"` for multi-instance agents.
 
 | Method | When called | Notes |
 |---|---|---|
-| `onStart()` | After agent created in worker | Register truth sources, seed runtime state |
+| `onStart()` | After agent created in worker, and after its claims are laid | Seed runtime state; the claims are declared on the class, not registered here |
 | `onTick()` | Every worker loop iteration | **Must complete in < 0.1s** |
 | `onStop()` | Before removal | Cleanup while truth-source rights are still active |
 

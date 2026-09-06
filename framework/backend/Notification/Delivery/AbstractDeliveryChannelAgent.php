@@ -51,8 +51,8 @@ use Hilos\Sms\Exception\SmsTemplateParamMissingException;
  *
  * It co-owns the delivery journal with {@see AbstractNotificationsLibraryAgent} (HIL-771):
  * the library adds and prunes rows, a channel agent updates the one attempt it is running.
- * A subclass that overrides {@see onStart()} MUST call up, or its bookkeeping writes into a
- * collection it no longer holds.
+ * The claim is {@see self::OWNS_DB} on this class and is merged down every subclass, so a leaf
+ * carries it whatever else it declares.
  */
 abstract class AbstractDeliveryChannelAgent extends AbstractAgent
 {
@@ -60,10 +60,29 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
      * @var list<string> The notification each dispatched delivery is about, reloaded by
      *     {@see startOp()} through {@see notifications()}. Read rather than claimed: the rows are
      *     the notifications library's ({@see AbstractNotificationsLibraryAgent}), and a collection
-     *     has one owner. The delivery journal is absent on purpose - {@see onStart()} claims it,
-     *     and a claim is the owner's own interest.
+     *     has one owner. The delivery journal is absent on purpose - {@see self::OWNS_DB} claims
+     *     it, and a claim is the owner's own interest.
      */
     public const array READS_DB = [HilosDbContext::notifications];
+
+    /**
+     * This channel's own rows in the delivery journal (HIL-771).
+     *
+     * A co-owner rather than the owner: the journal belongs to
+     * {@see AbstractNotificationsLibraryAgent}, which brings rows into being and prunes them
+     * away, while a channel agent only ever edits the row of the attempt it is running -
+     * {@see pumpInFlight()} and {@see startOp()} below are the whole of it. The registry keeps
+     * a grant per agent, so the two stand side by side on one collection with no overlap in
+     * what they may do; which operations a channel gets is answered by
+     * {@see self::defaultTruthSourceOperations()}, editing alone.
+     *
+     * Claiming it here rather than routing the bookkeeping through the library is the shape
+     * the dispatcher was written for: delivery must not queue behind a single owner, and one
+     * signal per attempt per channel would put that latency back.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_DB = [HilosDbContext::notificationDeliveries => TruthSourceOperation::BY_KIND];
 
     /** Default ceiling on concurrently pumped attempts (outbound I/O, not CPU). */
     private const int DEFAULT_MAX_CONCURRENT = 16;
@@ -109,7 +128,7 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
     /**
      * A delivery agent edits the attempts it runs and creates or removes nothing.
      *
-     * The narrower half of the claim {@see onStart()} makes, and the reason it is safe: a row
+     * The narrower half of the claim {@see self::OWNS_DB} makes, and the reason it is safe: a row
      * is minted by the dispatch that queued this attempt and removed by the library's prune,
      * so a channel that could add or remove would be claiming the journal rather than sharing
      * it.
@@ -135,25 +154,6 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
     protected function maxAttempts(): int
     {
         return self::DEFAULT_MAX_ATTEMPTS;
-    }
-
-    /**
-     * Claims this channel's own rows in the delivery journal (HIL-771).
-     *
-     * A co-owner rather than the owner: the journal belongs to
-     * {@see AbstractNotificationsLibraryAgent}, which brings rows into being and prunes them
-     * away, while a channel agent only ever edits the row of the attempt it is running -
-     * {@see pumpInFlight()} and {@see startOp()} below are the whole of it. The registry keeps
-     * a grant per agent, so the two stand side by side on one collection with no overlap in
-     * what they may do.
-     *
-     * Claiming it here rather than routing the bookkeeping through the library is the shape
-     * the dispatcher was written for: delivery must not queue behind a single owner, and one
-     * signal per attempt per channel would put that latency back.
-     */
-    public function onStart(): void
-    {
-        $this->registerDbTruthSource(HilosDbContext::notificationDeliveries);
     }
 
     /**

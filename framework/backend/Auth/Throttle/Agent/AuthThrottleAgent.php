@@ -18,6 +18,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\View\Collection\AuthBlocks;
 use Hilos\Database\View\Item\AuthBlock;
@@ -58,6 +59,26 @@ final class AuthThrottleAgent extends AbstractAgent
      */
     public const array READS_DB = [HilosDbContext::authBlocks];
 
+    /**
+     * The durable half of the counters, which the ladder writes its verdicts into.
+     *
+     * Claimed here rather than by the users library, although the library is what the throttled
+     * actions belong to: a block is written by nobody else and read on start by this agent alone,
+     * and the two halves of one counter - the runtime row every worker's fast path reads and the
+     * row that survives a restart - are better held by one process than split between two
+     * (HIL-716).
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_DB = [HilosDbContext::authBlocks => TruthSourceOperation::BY_KIND];
+
+    /**
+     * @var array<string, list<TruthSourceOperation>> The attempt counters, which is what makes
+     *     this an agent at all: a worker may read its replica of them but not write it, so the
+     *     counting happens in one process and is handed to the rest over runtime sync.
+     */
+    public const array OWNS_RT = [StateAuthAttempt::RT_COLLECTION => TruthSourceOperation::BY_KIND];
+
     public const string AGENT_TYPE = HilosAgentType::HILOS_AUTH_THROTTLE;
 
     /**
@@ -90,21 +111,10 @@ final class AuthThrottleAgent extends AbstractAgent
     /** @var float Timestamp of the last sweep, for throttling */
     private float $lastSweepAt = 0.0;
 
-    /**
-     * Claims the counters and their durable half, reads the policy, and replays the blocks
-     * still in force.
-     *
-     * The block table is claimed here rather than by the users library, although the library
-     * is what the throttled actions belong to: a block is written by nobody else and read on
-     * start by this agent alone, and the two halves of one counter - the runtime row every
-     * worker's fast path reads and the row that survives a restart - are better held by one
-     * process than split between two (HIL-716).
-     */
+    /** Reads the policy and replays the blocks still in force. */
     public function onStart(): void
     {
         $this->policy = ThrottlePolicy::fromEnv();
-        $this->registerRtTruthSource(StateAuthAttempt::RT_COLLECTION);
-        $this->registerDbTruthSource(HilosDbContext::authBlocks);
         $this->lastSweepAt = microtime(true);
         $this->replayDurableBlocks();
     }

@@ -23,6 +23,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
@@ -45,6 +46,20 @@ final class PollsAgent extends AbstractAgent
     /** @var list<string> The guest rows behind the people it serves, owned by the users library */
     public const array READS_DB = [PollsDbContext::guests];
 
+    /**
+     * @var array<string, list<TruthSourceOperation>> The accounts it serves and the guest rows
+     *     behind them, so their changes fan out to the browser. The guest table is this agent's
+     *     own: it is the one process that mints a guest row for a session and drops it when that
+     *     session signs in (HIL-716).
+     */
+    public const array OWNS_DB = [
+        PollsDbContext::users => TruthSourceOperation::BY_KIND,
+        PollsDbContext::guests => TruthSourceOperation::BY_KIND,
+    ];
+
+    /** @var array<string, list<TruthSourceOperation>> Who is on the wire */
+    public const array OWNS_RT = [PollsRtContext::connections => TruthSourceOperation::BY_KIND];
+
     public const string AGENT_TYPE = AgentType::POLLS;
 
     // The session frame is declared HERE and not in the library, which is what routes it to
@@ -53,20 +68,6 @@ final class PollsAgent extends AbstractAgent
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class,
     ];
-
-    /**
-     * Registers the user and guest tables and the connections runtime collection as
-     * this worker's truth sources so their changes fan out to the browser.
-     *
-     * The guest table is this agent's own: it is the one process that mints a guest row
-     * for a session and drops it when that session signs in (HIL-716).
-     */
-    public function onStart(): void
-    {
-        $this->registerDbTruthSource(PollsDbContext::users);
-        $this->registerDbTruthSource(PollsDbContext::guests);
-        $this->registerRtTruthSource(PollsRtContext::connections);
-    }
 
     /**
      * Says out loud what the sessions library concluded about one session (HIL-710).

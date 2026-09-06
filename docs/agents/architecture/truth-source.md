@@ -171,13 +171,17 @@ the resolution reading gets — the nearest declaration wins and the walk stops;
 the merge promised at the top of this section walks the same chain and keeps
 everything it finds.
 
-Merging also removes a fork. `AbstractSessionsLibraryAgent::onStart()` claims
-two waiter collections and the reservations table only behind
-`if ($this->hasSignInSurface())` — the base class deciding for the project. With
-a merged map the fork is unnecessary: the project subclass that has a sign-in
-surface declares the reservations table itself (not in the code yet — HIL-897)
-and the two waiter collections the same way (not in the code yet — HIL-897),
-while the base declares only what every sessions library owns.
+Merging also removed a fork. `AbstractSessionsLibraryAgent` used to claim two
+waiter collections and the reservations table from `onStart()`, behind
+`if ($this->hasSignInSurface())` — the base class deciding for the project. The
+merged map made the fork unnecessary, and HIL-897 spent it: the base declares
+only what every sessions library owns — the session set, the rotations, the
+toast stacks and the identity rows a merge moves — and each project subclass
+with a sign-in surface declares the three collections behind that question in
+its own `OWNS_DB` and `OWNS_RT`. The same shape one section over, where the
+verifier circle left `AbstractHilosIndexAgent` for the one demo that declares
+`HilosFeature::BACKUP`: a class constant has no feature flag to ask, so the
+project that knows the answer says it.
 
 ## Three Cases A Flat Constant Cannot Say
 
@@ -209,11 +213,14 @@ the folded maps, so a parent contradicting its subclass is caught as readily as
 a class contradicting itself.
 
 **The collection's name is given by the project, not by the class.** The
-framework's `AbstractUsersLibraryAgent` claims the account table under a name
-only the project knows (`usersCollection()`), so it registers directly and
-names the table at run time. The project subclass declares it, since it is the
-one that knows its name, and the base declares only what it owns under names of
-its own (not in the code yet — HIL-897).
+framework's `AbstractUsersLibraryAgent` needs the account table, under a name
+only the project knows. It used to ask for the name at run time through a seam,
+`usersCollection()`, and register the claim against the registry directly. The
+project subclass declares it now, since it is the one that knows its name, and
+the base declares only what it owns under names of its own — so the seam had no
+caller left and went with the claim (HIL-897). The operations are spelled out
+there rather than left to the kind: the library's default is adding and
+removing, and a project that renames somebody edits the row.
 
 **The claimant is not an agent at all.** A test-fixture CLI command such as
 `UserTestSeedCommand` mutates a table from a process that has no agent, and the
@@ -331,21 +338,25 @@ caught where it is caught today: at the write, by the registry's guard, with
 
 ## The Form That Is Going Away
 
-Today an agent claims in `onStart()`, through two helpers on its base class:
+An agent used to claim in `onStart()`, through two helpers on its base class:
 `AbstractAgent::registerDbTruthSource()` for a database collection and
-`AbstractAgent::registerRtTruthSource()` for a runtime one. Each registers the
-grant with its registry and raises the owner's reader interest, ready, in the
+`AbstractAgent::registerRtTruthSource()` for a runtime one. Each registered the
+grant with its registry and raised the owner's reader interest, ready, in the
 same call; a claim written against the registry directly
-(`TruthSourceRegistry::register()`, `RtTruthSourceRegistry::register()`) is the
+(`TruthSourceRegistry::register()`, `RtTruthSourceRegistry::register()`) was the
 same form without the seam. After `onStop()` returns or throws, `WorkerManager`
-takes the grants back.
+takes the grants back — that half is unchanged, and a declared claim is taken
+back the same way.
 
-The helpers are not kept as a deprecated second way. Once every live claim is
-declared (HIL-897) no caller remains, and a second way of saying one thing with
-zero users is a fork every reader has to learn and every guard has to allow.
-The order is the owner's (2026-09-05): deprecate, then refuse a new call by
-guard, then remove. A code-style guard refuses a new call to either helper, and
-the helpers are removed (not in the code yet — HIL-898).
+Not one live claim is written that way any more (HIL-897). The helpers stand
+with no caller but the tests of the seam itself, and the `onStart()` overrides
+that held nothing else are gone with them.
+
+The helpers are not kept as a deprecated second way. A second way of saying one
+thing with zero users is a fork every reader has to learn and every guard has to
+allow. The order is the owner's (2026-09-05): deprecate, then refuse a new call
+by guard, then remove. A code-style guard refuses a new call to either helper,
+and the helpers are removed (not in the code yet — HIL-898).
 
 ## Anti-Patterns
 
@@ -357,9 +368,10 @@ the helpers are removed (not in the code yet — HIL-898).
   will not be.
 - **Declaring in a subclass and losing what the parent declared.** For reads,
   `READS_*` replaces — write `[...parent::READS_DB, …]`. For ownership the same
-  loss is an `onStart()` override that does not call up: every claim the base
-  made is gone, and nothing says so until a write is refused. *Merging Up The
-  Parent Chain* is what closes the second half.
+  loss used to be an `onStart()` override that did not call up: every claim the
+  base made was gone, and nothing said so until a write was refused. *Merging Up
+  The Parent Chain* is what closes that half — a subclass writes its own map and
+  keeps everything above it.
 - **Taking the right to create for a mechanism of its own** — a flag, a second
   registry, a special seam. It is a claim of zero width with the single
   operation `Add`, and the same guard judges it.

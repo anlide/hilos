@@ -26,6 +26,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
 use Hilos\Runtime\View\Collection\HilosSessionConnections;
@@ -52,6 +53,39 @@ use Hilos\Users\DTO\AccountMergeResultSignalData;
  */
 final class ChatAgent extends AbstractAgent
 {
+    /**
+     * The room and everything written into it: the events, their messages, who joined, who was
+     * renamed, and what was attached.
+     *
+     * The session set is not among them, nor are the two runtime lists of the browsers parked on
+     * a confirmation code: they belong to {@see SessionsLibraryAgent}, which claims them in its
+     * own process (HIL-710).
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_DB = [
+        ChatDbContext::events => TruthSourceOperation::BY_KIND,
+        ChatDbContext::eventMessages => TruthSourceOperation::BY_KIND,
+        ChatDbContext::eventUserRegistrations => TruthSourceOperation::BY_KIND,
+        ChatDbContext::eventUserRenames => TruthSourceOperation::BY_KIND,
+        ChatDbContext::eventAttachments => TruthSourceOperation::BY_KIND,
+        ChatDbContext::users => TruthSourceOperation::BY_KIND,
+    ];
+
+    /**
+     * Who is on the wire, what each of them is doing, and what they have half-uploaded.
+     *
+     * The connections stay this agent's, because who is on the wire is this node's truth and the
+     * row carries chat's own fields.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_RT = [
+        ChatRtContext::connections => TruthSourceOperation::BY_KIND,
+        ChatRtContext::userStates => TruthSourceOperation::BY_KIND,
+        ChatRtContext::attachmentDrafts => TruthSourceOperation::BY_KIND,
+    ];
+
     public const string AGENT_TYPE = AgentType::CHAT;
 
     // Both library frames are declared HERE and not in the library, which is what routes them
@@ -65,27 +99,12 @@ final class ChatAgent extends AbstractAgent
     ];
 
     /**
-     * Registers chat truth sources and records chat startup.
-     *
-     * The session set is not among them any more, nor are the two runtime lists of the
-     * browsers parked on a confirmation code: they belong to {@see SessionsLibraryAgent},
-     * which claims them in its own process (HIL-710). The connections stay, because who is
-     * on the wire is this node's truth and the row carries chat's own fields.
+     * Records chat startup.
      *
      * @throws HilosException On database or runtime startup failure
      */
     public function onStart(): void
     {
-        $this->registerDbTruthSource(ChatDbContext::events);
-        $this->registerDbTruthSource(ChatDbContext::eventMessages);
-        $this->registerDbTruthSource(ChatDbContext::eventUserRegistrations);
-        $this->registerDbTruthSource(ChatDbContext::eventUserRenames);
-        $this->registerDbTruthSource(ChatDbContext::eventAttachments);
-        $this->registerDbTruthSource(ChatDbContext::users);
-        $this->registerRtTruthSource(ChatRtContext::connections);
-        $this->registerRtTruthSource(ChatRtContext::userStates);
-        $this->registerRtTruthSource(ChatRtContext::attachmentDrafts);
-
         Hilos::$db->events->actions->addChatStarted();
     }
 

@@ -11,6 +11,7 @@ use Hilos\AI\Agent\AiAgentInterface;
 use Hilos\AI\Agent\GuardianAiAgentId;
 use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
 use Hilos\Core\Agent\Hilos\GuardianRunStatus;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 
 /**
  * Chat demo guardian agent that wires project AI agents into the Hilos guardian page.
@@ -19,6 +20,12 @@ use Hilos\Core\Agent\Hilos\GuardianRunStatus;
  */
 final class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
 {
+    /**
+     * @var array<string, list<TruthSourceOperation>> The run status of each guardian AI agent,
+     *     which the browser rows of the guardian screen are built from.
+     */
+    public const array OWNS_RT = [ChatRtContext::guardianAgentStatuses => TruthSourceOperation::BY_KIND];
+
     /** @var list<string> */
     private const array DEMO_ONLY_AGENT_IDS = [
         'oss_budget_distribution',
@@ -32,8 +39,6 @@ final class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
      */
     public function onStart(): void
     {
-        $this->registerRtTruthSource(ChatRtContext::guardianAgentStatuses);
-
         $this->guardianAiAgents = ChatAiAgentFactory::createAll();
         Hilos::$rt->guardianAgentStatuses->actions->syncStatuses($this->getGuardianRunStatuses());
     }

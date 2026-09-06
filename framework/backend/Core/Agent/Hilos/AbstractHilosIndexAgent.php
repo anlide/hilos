@@ -11,6 +11,7 @@ use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -34,6 +35,27 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
 {
     use ProtectedModeOperatorTrait;
     use ProtectedModeTestDriverTrait;
+
+    /**
+     * Settings, which the admin pages this agent serves write through.
+     *
+     * Unconditionally: every project that mounts this agent has them. The same arrangement one
+     * section over, where {@see AbstractHilosLogsAgent} holds the settings the modes screen it
+     * serves writes; two owners of one collection are two writers in two processes, and neither
+     * reaches into the other's.
+     *
+     * The verifier circle is NOT here. It is claimed only where backup is declared (HIL-643), for
+     * the reason the sessions library's reservations are conditional too: the table is created by
+     * the backup feature's migration alone, and an agent claiming a table its project never
+     * created would be claiming a name nothing behind it answers to. A class constant has no way
+     * to ask {@see Hilos::hasFeature()}, so the project subclass of a project that declares
+     * {@see HilosFeature::BACKUP} declares the circle itself. It belongs on this agent's side of
+     * the line rather than on the backup agent because the backup page is served by THIS agent,
+     * so the circle write lands in this worker.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_DB = [HilosDbContext::settings => TruthSourceOperation::BY_KIND];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_INDEX;
 
@@ -73,27 +95,6 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
         CliCommands::PROTECTED_MODE_TEST_PASS,
         CliCommands::PROTECTED_MODE_TEST_CLOSE,
     ];
-
-    /**
-     * Registers the DB tables the admin pages this agent serves write through.
-     *
-     * Settings unconditionally: every project that mounts this agent has them.
-     *
-     * The verifier circle only where backup is declared (HIL-643), for the reason the sessions
-     * library claims its reservations conditionally: the table is created by the backup feature's
-     * migration alone, and an agent claiming a table its project never created would be claiming
-     * a name nothing behind it answers to. The claim belongs here rather than on
-     * the backup agent because the backup page is served by THIS agent, so the circle write lands
-     * in this worker - the same arrangement under which the settings page writes.
-     */
-    public function onStart(): void
-    {
-        $this->registerDbTruthSource(HilosDbContext::settings);
-
-        if (Hilos::hasFeature(HilosFeature::BACKUP)) {
-            $this->registerDbTruthSource(HilosDbContext::verifierCircle);
-        }
-    }
 
     /**
      * Finishes any protected-mode drive in flight.

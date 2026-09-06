@@ -13,12 +13,14 @@ use Hilos\Auth\Throttle\ThrottleScope;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Feature\Definition\AuthThrottleFeature;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -244,13 +246,20 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
     }
 
     /**
-     * Starts an agent over the mounted counters and the live table.
+     * Starts an agent over the mounted counters and the live table, claims first.
+     *
+     * The order is the node's: {@see WorkerManager} lays an agent's declared claims before it
+     * calls {@see AuthThrottleAgent::onStart()}, because the hook writes its first row. A case
+     * that calls the hook itself has to lay them itself, or every write here is refused for
+     * want of a truth source.
      *
      * @return AuthThrottleAgent Started agent
      */
     private function startedAgent(): AuthThrottleAgent
     {
         $agent = new AuthThrottleAgent();
+        OwnershipDeclaration::claimDb($agent::class, $agent->getId());
+        OwnershipDeclaration::claimRt($agent::class, $agent->getId());
         $agent->onStart();
 
         return $agent;

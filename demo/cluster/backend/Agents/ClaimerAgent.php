@@ -8,6 +8,7 @@ use Demo\Cluster\Constants\AgentType;
 use Demo\Cluster\Runtime\View\Context\ClusterRtContext;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Utils\Logger;
 
 /**
@@ -29,6 +30,16 @@ use Hilos\Utils\Logger;
  */
 final class ClaimerAgent extends AbstractAgent
 {
+    /**
+     * The whole worker-status collection, and stopping there is the point.
+     *
+     * No keys, so the claim is over every row: that is what makes it overlap whichever rows the
+     * fleet holds elsewhere, whatever indices the fleet happens to run under.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_RT = [ClusterRtContext::workerStatuses => TruthSourceOperation::BY_KIND];
+
     public const string AGENT_TYPE = AgentType::CLAIMER;
 
     /**
@@ -44,16 +55,9 @@ final class ClaimerAgent extends AbstractAgent
         $this->agentIndex = $agentIndex;
     }
 
-    /**
-     * Declares this agent the truth source of the whole collection, and stops there.
-     *
-     * No keys, so the claim is over every row: that is what makes it overlap whichever rows the
-     * fleet holds elsewhere, whatever indices the fleet happens to run under.
-     */
+    /** Says out loud that the claim {@see self::OWNS_RT} makes has landed on this node. */
     public function onStart(): void
     {
-        $this->registerRtTruthSource(ClusterRtContext::workerStatuses);
-
         Logger::info("Claimer {$this->getId()} started on this node: it claims all of "
             . ClusterRtContext::workerStatuses);
     }

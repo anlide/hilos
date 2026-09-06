@@ -70,7 +70,6 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -86,8 +85,6 @@ use Hilos\Pages\Users\AbstractHilosUsersPage;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
-use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
-use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 use Hilos\Runtime\View\Actions\Collection\RecoveryWaitersActions;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -154,6 +151,55 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *     collection all the same and simply never reaches it.
      */
     public const array READS_DB = [HilosDbContext::verifications];
+
+    /**
+     * The session set, plus the identity rows an account merge moves.
+     *
+     * The session set is claimed OUTRIGHT: a session belongs to this library whole. Nothing may
+     * write a framework collection until somebody says who owns it, so a project that never
+     * registers this agent simply has no sessions rather than sessions changing in a process no
+     * one else hears.
+     *
+     * The identity table is a borrowed claim, and the TODO on the entry says whose it is. It is
+     * here because the account merge is here: {@see Identities::rePointToUser()} moves the loser's
+     * identities onto the survivor and demotes or drops the password among them, so the claim
+     * covers editing and removal and nothing else. That the right had to be said out loud is what
+     * HIL-716 changed - it used to be asked only of the four eagerly loaded collections, and this
+     * one is lazy. Unconditional because the writer is a method of this class, not a project seam:
+     * a project that wires the merge inherits it.
+     *
+     * The registration holds are NOT here. They are the users library's row and are claimed only
+     * where a sign-in surface exists, which a class constant cannot ask - so the project subclass
+     * that has one declares them itself, under the same condition that arms the hold sweep.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_DB = [
+        HilosDbContext::sessions => TruthSourceOperation::BY_KIND,
+        // TODO(HIL-630): borrowed claim - the identity table belongs to the users library.
+        HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
+    ];
+
+    /**
+     * The runtime halves of a session: where it is being rotated, and what it is being shown.
+     *
+     * Both are claimed unconditionally and for the same reason the session set is: what a browser
+     * is being shown is decided by its session, which every project carrying this agent has
+     * (HIL-768).
+     *
+     * The two WAIT collections are NOT here. They are mounted by {@see AuthFeature::mount()} and
+     * by nothing else, so in a project with no sign-in surface there is no collection to own - and
+     * a library that claimed one anyway would go on to read it every tick and raise on every pass.
+     * A constant has no way to ask {@see hasSignInSurface()}, so the project subclass that has the
+     * surface declares them, and the users library stands beside it on both as a declared
+     * add/remove co-owner (HIL-685) rather than as a second full owner.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_RT = [
+        StateHilosSessionRotation::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+        StateHilosSessionToastStack::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+    ];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_SESSIONS_LIBRARY;
 
@@ -308,59 +354,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private ?CronRule $reservationSweepRule = null;
 
     /**
-     * Claims the session set and arms the two sweeps that keep it honest.
-     *
-     * The session set, the rotations and the toast stacks are claimed OUTRIGHT: a session
-     * belongs to this library whole. Nothing may write a framework collection until somebody
-     * says who owns it, so a project that never registers this agent simply has no sessions
-     * rather than sessions changing in a process no one else hears. The stacks (HIL-768) are
-     * claimed unconditionally like the rotations and for the same reason: what a browser is
-     * being shown is decided by its session, which every project carrying this agent has.
-     *
-     * The two WAIT collections are claimed only where they exist. They are mounted by
-     * {@see AuthFeature::mount()} and by nothing else, so in a project with no sign-in
-     * surface there is no collection to own - and a library that claimed one anyway would
-     * go on to read it every tick and raise on every pass. The users library stands beside
-     * this one on both as a declared add/remove co-owner (HIL-685) rather than as a second
-     * full owner, and it is only ever registered where the feature is.
-     *
-     * The identity table is a borrowed claim, and the comment on it says whose it is. It is
-     * here because the account merge is here: {@see Identities::rePointToUser()} moves the
-     * loser's identities onto the survivor and demotes or drops the password among them, so
-     * the claim covers editing and removal and nothing else. That the right had to be said
-     * out loud is what HIL-716 changed - it used to be asked only of the four eagerly loaded
-     * collections, and this one is lazy.
-     *
-     * A subclass that overrides this MUST call up: the claims are what the whole library
-     * stands on.
+     * Arms the two sweeps that keep the session set honest and replays a restore's logins.
      *
      * @throws EnvException When the sweep schedule key is missing, outside the catalog, or of the wrong type
      */
     public function onStart(): void
     {
-        $this->registerDbTruthSource(HilosDbContext::sessions);
-        $this->registerRtTruthSource(StateHilosSessionRotation::RT_COLLECTION);
-        $this->registerRtTruthSource(StateHilosSessionToastStack::RT_COLLECTION);
-        if ($this->hasSignInSurface()) {
-            $this->registerRtTruthSource(StateRegistrationWaiter::RT_COLLECTION);
-            $this->registerRtTruthSource(StateRecoveryWaiter::RT_COLLECTION);
-            // TODO(HIL-630): borrowed claim - the users library owns the reservation table.
-            // The hold sweep is armed here because the expiry it announces rolls back a WAIT,
-            // which is this library's row; the sweep itself belongs with the table. Claimed
-            // under the same condition that arms the sweep, so a project with no sign-in
-            // surface does not claim a table it never writes.
-            $this->registerDbTruthSource(HilosDbContext::registrationReservations);
-        }
-        // TODO(HIL-630): borrowed claim - the users library owns the identity table. The
-        // merge runs here because it is the sessions that have to be signed out with it,
-        // and the claim is named as narrowly as its write: rows that already exist are
-        // edited or taken away, never minted. Unconditional because the writer is a method
-        // of this class, not a project seam - a project that wires the merge inherits it.
-        $this->registerDbTruthSource(
-            HilosDbContext::identities,
-            operations: TruthSourceOperations::of(TruthSourceOperation::Update, TruthSourceOperation::Remove),
-        );
-
         $this->armPendingRegistrationSweep();
         $this->armReservationSweep();
 
@@ -372,8 +371,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * The last thing the library does on its way up, and the reason the queue exists at all: the
      * restore runs with this agent stopped by the freeze, so it cannot ask - it leaves the picture
-     * in {@see DeferredSessionCarryoverQueue} and this is where the picture is used. After the
-     * claim above, because applying one WRITES the rows this library owns.
+     * in {@see DeferredSessionCarryoverQueue} and this is where the picture is used. Applying one
+     * WRITES the rows this library owns, which {@see self::OWNS_DB} has granted before this hook
+     * runs at all.
      *
      * The queue is empty in ordinary life: only a restore ever fills it, and only on the branch
      * where the swap succeeded. Contained like everything else about a finished restore - a
