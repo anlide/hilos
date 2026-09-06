@@ -28,6 +28,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
+use Hilos\Runtime\View\Collection\HilosSessionConnections;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Users\DTO\AccountMergeResultSignalData;
@@ -102,8 +103,10 @@ final class ChatAgent extends AbstractAgent
      * 1. the connection rows are written first, because everything below is read against
      *    them - the page re-decision judges "this connection belongs to N", and a browser
      *    told who it is before the row said so would be judged as the person it no longer is;
-     * 2. each named socket is then handed the identity, stamped by the framework with the
-     *    clock and the registration step the frame carried;
+     * 2. every socket of the session is then handed the identity, stamped by the framework
+     *    with the clock and the registration step the frame carried - the ones the frame names
+     *    and the ones only this register knows of yet
+     *    ({@see HilosSessionConnections::acceptKeysForSessionFrame()});
      * 3. a rotation ticket goes to the one socket that earned it, AFTER that identity, so the
      *    browser reconnects knowing who it already is;
      * 4. the pages are re-asked their access question once, not once per socket;
@@ -122,14 +125,17 @@ final class ChatAgent extends AbstractAgent
             Hilos::$rt->userStates->actions->ensure($userId);
         }
 
-        // One identity for the whole frame: every socket it names belongs to the one session
+        // One identity for the whole frame: every socket it reaches belongs to the one session
         // it is about, so the user, the name and the administrator behind them are the same
         // for all of them. A session with nobody in it needs no lookup to be described.
         $identity = $this->handshakeResponseFor(
             $userId === null ? null : Hilos::$db->sessions->findByToken($frame->sessionToken),
         );
 
-        foreach ($frame->acceptKeys as $acceptKey) {
+        foreach (
+            Hilos::$rt->connections->acceptKeysForSessionFrame($frame->acceptKeys, $frame->sessionToken)
+            as $acceptKey
+        ) {
             $this->settleConnection($acceptKey, $frame);
             $this->sendHandshakeResponse(ChatSignalConstants::HANDSHAKE_RESPONSE, $acceptKey, $identity, $frame);
         }

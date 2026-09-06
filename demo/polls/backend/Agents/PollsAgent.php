@@ -93,13 +93,17 @@ final class PollsAgent extends AbstractAgent
     private function applySessionState(SessionStateSignalData $frame): void
     {
         $userId = $frame->userId;
-        // One identity for the whole frame: every socket it names belongs to the one session
-        // it is about. A session with nobody in it needs no lookup to be described.
+        // One identity for the whole frame: every socket it reaches belongs to the one session
+        // it is about - the ones it names and the rest of the session's, which only this
+        // register knows of yet. A session with nobody in it needs no lookup to be described.
         $identity = $this->handshakeResponseFor(
             $userId === null ? null : Hilos::$db->sessions->findByToken($frame->sessionToken),
         );
 
-        foreach ($frame->acceptKeys as $acceptKey) {
+        foreach (
+            Hilos::$rt->connections->acceptKeysForSessionFrame($frame->acceptKeys, $frame->sessionToken)
+            as $acceptKey
+        ) {
             $this->settleConnection($acceptKey, $frame);
             $this->nameTheVisitor($acceptKey, $frame);
             $this->sendHandshakeResponse(PollsSignalConstants::HANDSHAKE_RESPONSE, $acceptKey, $identity, $frame);
