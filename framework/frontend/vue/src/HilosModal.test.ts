@@ -21,15 +21,6 @@ describe('HilosModal', () => {
     expect(document.querySelector('.modal-backdrop')).not.toBeNull()
   })
 
-  it('emits ok from the default OK button', async () => {
-    const wrapper = mount(HilosModal, { props: { modelValue: true } })
-    document
-      .querySelector<HTMLButtonElement>('.modal-footer .btn-primary')
-      ?.click()
-    await wrapper.vm.$nextTick()
-    expect(wrapper.emitted('ok')).toHaveLength(1)
-  })
-
   it('names the dialog from ariaLabelledby when it carries no visible title', () => {
     mount(HilosModal, {
       props: {
@@ -58,9 +49,22 @@ describe('HilosModal', () => {
     expect(dialog?.getAttribute('aria-label')).toBe('Edit')
   })
 
-  it('renders no footer at all when showFooter is false', () => {
-    mount(HilosModal, { props: { modelValue: true, showFooter: false } })
+  it('renders no footer at all when the dialog declares no actions', () => {
+    mount(HilosModal, { props: { modelValue: true } })
     expect(document.querySelector('.modal-footer')).toBeNull()
+  })
+
+  it('renders the footer with exactly the declared actions', () => {
+    mount(HilosModal, {
+      props: { modelValue: true },
+      slots: {
+        actions: '<button type="button" data-id="only-one">Close</button>',
+      },
+    })
+    const footer = document.querySelector('.modal-footer')
+    expect(footer).not.toBeNull()
+    expect(footer?.querySelectorAll('button')).toHaveLength(1)
+    expect(footer?.querySelector('[data-id="only-one"]')).not.toBeNull()
   })
 
   it('closes via the close button when not guarding', async () => {

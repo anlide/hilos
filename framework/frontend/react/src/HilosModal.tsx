@@ -1,10 +1,11 @@
 // HilosModal — the one home for editing (edit-in-modal is a hard Hilos rule;
 // docs/agents/frontend/conflict-resolution.md). A slot-first dialog: the parent
 // fills `header` (defaults to the title), the body (children), and `actions`
-// (defaults to Cancel/OK, and receives `requestClose` so a custom footer can
-// close through the confirm guard). showFooter=false renders no footer element
-// at all — that, not an empty actions declaration, is how a dialog says it has
-// no footer. Open state is controlled (`open` +
+// (which receives `requestClose` so a footer button closes through the confirm
+// guard). The footer exists exactly when `actions` is given: a dialog with no
+// buttons of its own gets no footer element — neither buttons nor the bordered
+// strip — and there is no default footer to opt out of.
+// Open state is controlled (`open` +
 // `onClose`); the dialog portals to <body>, traps Tab focus and returns focus to
 // the opener on close, and is keyboard- and ARIA-labelled (a11y ships in v1).
 // With confirmOnClose, an Esc/backdrop/close attempt raises an inline confirm
@@ -62,26 +63,18 @@ export interface HilosModalProps {
   confirmCancelText?: string
   /** Dismiss the dialog — the parent sets `open` to false. */
   onClose?: () => void
-  /** The default OK action fired. */
-  onOk?: () => void
   /** Replace the header (defaults to the title). */
   header?: ReactNode
   /** The dialog body. */
   children?: ReactNode
   /** Replace the footer; receives `requestClose` to close through the guard. */
   actions?: (args: { requestClose: () => void }) => ReactNode
-  /**
-   * Whether the dialog has a footer at all. False draws no footer element —
-   * neither buttons nor the bordered strip: a surface that ends with its own
-   * last button says so here instead of declaring empty actions.
-   */
-  showFooter?: boolean
 }
 
 /**
  * The edit-in-modal dialog with built-in discard-confirmation.
  *
- * @param props The open state, labels, dismiss / OK handlers, and the header,
+ * @param props The open state, labels, the dismiss handler, and the header,
  *   body, and actions slots.
  */
 export function HilosModal({
@@ -97,11 +90,9 @@ export function HilosModal({
   confirmOkText = 'Discard',
   confirmCancelText = 'Keep editing',
   onClose,
-  onOk,
   header,
   children,
   actions,
-  showFooter = true,
 }: HilosModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const confirmRef = useRef<HTMLDivElement>(null)
@@ -204,28 +195,9 @@ export function HilosModal({
               />
             </div>
             <div className="modal-body">{children}</div>
-            {showFooter ? (
+            {actions ? (
               <div className="modal-footer">
-                {actions ? (
-                  actions({ requestClose: () => modal.requestClose() })
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => modal.requestClose()}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={() => onOk?.()}
-                    >
-                      OK
-                    </button>
-                  </>
-                )}
+                {actions({ requestClose: () => modal.requestClose() })}
               </div>
             ) : null}
           </div>

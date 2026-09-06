@@ -349,6 +349,17 @@ const RETENTION_CLASS: Record<string, string> = {
           runs. The weight column still includes them: that is what the
           directory costs.
         </p>
+
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            data-id="hilos-rotation-legend-close"
+            (click)="requestClose()"
+          >
+            Close
+          </button>
+        </ng-template>
       </hilos-modal>
     </hilos-admin-page>
   `,

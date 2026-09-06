@@ -596,6 +596,17 @@ const legendOpen = ref(false)
         they belong to the node rather than to anything the installation runs.
         The weight column still includes them: that is what the directory costs.
       </p>
+
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          data-id="hilos-rotation-legend-close"
+          @click="requestClose"
+        >
+          Close
+        </button>
+      </template>
     </HilosModal>
   </HilosAdminPage>
 </template>

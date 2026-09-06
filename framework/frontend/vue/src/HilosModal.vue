@@ -1,9 +1,10 @@
 <!-- HilosModal — the one home for editing (edit-in-modal is a hard Hilos rule;
 docs/agents/frontend/conflict-resolution.md). A slot-first dialog: the parent
 fills #header (defaults to the title), the body (default slot), and #actions
-(defaults to Cancel/OK, and receives `requestClose` so a custom footer can close
-through the confirm guard). showFooter=false renders no footer element at all —
-that, not an empty actions declaration, is how a dialog says it has no footer.
+(which receives `requestClose` so a footer button closes through the confirm
+guard). The footer exists exactly when #actions is declared: a dialog with no
+buttons of its own gets no footer element — neither buttons nor the bordered
+strip — and there is no default footer to opt out of.
 Open state is v-model (`v-model="open"`); the dialog
 teleports to <body>, traps Tab focus and returns focus to the opener on close,
 and is keyboard- and ARIA-labelled (a11y ships in v1, styling-rules.md). With
@@ -60,12 +61,6 @@ const props = withDefaults(
     confirmOkText?: string
     /** Confirm-step keep-editing label. */
     confirmCancelText?: string
-    /**
-     * Whether the dialog has a footer at all. False draws no footer element —
-     * neither buttons nor the bordered strip: a surface that ends with its own
-     * last button says so here instead of declaring empty actions.
-     */
-    showFooter?: boolean
   }>(),
   {
     title: '',
@@ -78,13 +73,11 @@ const props = withDefaults(
     confirmMessage: 'You have unsaved changes. Discard them?',
     confirmOkText: 'Discard',
     confirmCancelText: 'Keep editing',
-    showFooter: true,
   },
 )
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
-  ok: []
   cancel: []
 }>()
 
@@ -143,10 +136,6 @@ function onTab(event: KeyboardEvent): void {
     trap.handleTab(root, event)
   }
 }
-
-function onOk(): void {
-  emit('ok')
-}
 </script>
 
 <template>
@@ -187,19 +176,8 @@ function onOk(): void {
             <div class="modal-body">
               <slot />
             </div>
-            <div v-if="showFooter" class="modal-footer">
-              <slot name="actions" :request-close="modal.requestClose">
-                <button
-                  type="button"
-                  class="btn btn-secondary"
-                  @click="modal.requestClose()"
-                >
-                  Cancel
-                </button>
-                <button type="button" class="btn btn-primary" @click="onOk">
-                  OK
-                </button>
-              </slot>
+            <div v-if="$slots.actions" class="modal-footer">
+              <slot name="actions" :request-close="modal.requestClose" />
             </div>
           </div>
         </div>

@@ -31,25 +31,26 @@ describe('HilosModal', () => {
     expect(byId('modal')?.contains(document.activeElement)).toBe(true)
   })
 
-  it('calls onOk from the default OK button', () => {
-    let oks = 0
+  it('renders no footer at all when the dialog declares no actions', () => {
+    render(<HilosModal open />)
+    expect(document.querySelector('.modal-footer')).toBeNull()
+  })
+
+  it('renders the footer with exactly the declared actions', () => {
     render(
       <HilosModal
         open
-        onOk={() => {
-          oks += 1
-        }}
+        actions={() => (
+          <button type="button" data-id="only-one">
+            Close
+          </button>
+        )}
       />,
     )
-    fireEvent.click(
-      document.querySelector('.modal-footer .btn-primary') as Element,
-    )
-    expect(oks).toBe(1)
-  })
-
-  it('renders no footer at all when showFooter is false', () => {
-    render(<HilosModal open showFooter={false} />)
-    expect(document.querySelector('.modal-footer')).toBeNull()
+    const footer = document.querySelector('.modal-footer')
+    expect(footer).not.toBeNull()
+    expect(footer?.querySelectorAll('button')).toHaveLength(1)
+    expect(footer?.querySelector('[data-id="only-one"]')).not.toBeNull()
   })
 
   it('calls onClose from the close button when not guarding', () => {

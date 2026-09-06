@@ -558,5 +558,17 @@ describe('HilosLogsRotationsPage', () => {
     await wrapper.find('[data-id="hilos-rotation-legend"]').trigger('click')
 
     expect(document.body.textContent).toContain('What is in a batch')
+
+    // The legend edits nothing, so its one way out through the footer is a
+    // single Close button - not the OK that used to do nothing.
+    const close = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-rotation-legend-close"]',
+    )
+    expect(close).not.toBeNull()
+
+    close?.click()
+    await nextTick()
+
+    expect(document.body.textContent).not.toContain('What is in a batch')
   })
 })

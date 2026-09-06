@@ -115,7 +115,6 @@ export function HilosView({ pages, authSurface, authGate }: HilosViewProps) {
           ariaLabel="Sign in"
           ariaLabelledby={AUTH_SURFACE_HEADING_ID}
           onClose={() => authGate.dismiss()}
-          showFooter={false}
         >
           <AuthSurface />
         </HilosModal>

@@ -79,7 +79,6 @@ import { HILOS_ROUTER } from './hilosRouterToken.js'
         [open]="modalOpen()"
         [ariaLabel]="'Sign in'"
         [ariaLabelledby]="headingId"
-        [showFooter]="false"
         (cancel)="onModalDismiss()"
       >
         <!-- Gated HERE and not by the modal's own @if around <ng-content/>:

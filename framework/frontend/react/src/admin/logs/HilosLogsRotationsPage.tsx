@@ -508,6 +508,16 @@ export function HilosLogsRotationsPage({
         open={legendOpen}
         title="What is in a batch"
         onClose={() => setLegendOpen(false)}
+        actions={({ requestClose }) => (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            data-id="hilos-rotation-legend-close"
+            onClick={requestClose}
+          >
+            Close
+          </button>
+        )}
       >
         <p>
           A batch is one archive directory, written by one rotation on one node.

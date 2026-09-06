@@ -190,6 +190,14 @@ Topic documents are referenced by filename; several are still being authored.
   blocked, the primary button reads "Deleted", and the user's draft stays
   visible and extractable — never silently discarded. See
   [conflict-resolution.md](conflict-resolution.md).
+- **A modal that edits nothing closes with one Close button.** A legend, a
+  refusal reason, the output of a command — a surface that only shows something
+  carries a single secondary `Close` in the footer, going through
+  `requestClose`, plus the header's own X. `HilosModal` has no default footer:
+  the footer element exists exactly when the parent declared its buttons, so a
+  dialog that declares none renders no footer at all. Do not offer a
+  confirm-and-dismiss pair where there is nothing to confirm. See
+  [conflict-resolution.md](conflict-resolution.md).
 
 ## F. View layer, SDK, and components
 

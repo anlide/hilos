@@ -1,10 +1,11 @@
 // HilosModal — the one home for editing (edit-in-modal is a hard Hilos rule;
 // docs/agents/frontend/conflict-resolution.md). A slot-first dialog: the parent
 // fills `[modalHeader]` (defaults to the title), the body (default content), and
-// an `<ng-template #modalActions>` (defaults to Cancel/OK, and receives
-// `requestClose` so a custom footer can close through the confirm guard).
-// showFooter=false renders no footer element at all — that, not an empty actions
-// declaration, is how a dialog says it has no footer. Open
+// an `<ng-template #modalActions>` (which receives `requestClose` so a footer
+// button closes through the confirm guard). The footer exists exactly when that
+// template is declared: a dialog with no buttons of its own gets no footer
+// element — neither buttons nor the bordered strip — and there is no default
+// footer to opt out of. Open
 // state is two-way (`[(open)]`); it traps Tab focus and returns focus to the
 // opener on close, and is keyboard- and ARIA-labelled (a11y ships in v1). With
 // confirmOnClose, an Esc/backdrop/close attempt raises an inline confirm step
@@ -87,29 +88,12 @@ export interface ModalActionsContext {
               ></button>
             </div>
             <div class="modal-body"><ng-content /></div>
-            @if (showFooter()) {
+            @if (actions(); as tpl) {
               <div class="modal-footer">
-                @if (actions(); as tpl) {
-                  <ng-container
-                    [ngTemplateOutlet]="tpl"
-                    [ngTemplateOutletContext]="{ requestClose: requestClose }"
-                  />
-                } @else {
-                  <button
-                    type="button"
-                    class="btn btn-secondary"
-                    (click)="modal.requestClose()"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-primary"
-                    (click)="ok.emit()"
-                  >
-                    OK
-                  </button>
-                }
+                <ng-container
+                  [ngTemplateOutlet]="tpl"
+                  [ngTemplateOutletContext]="{ requestClose: requestClose }"
+                />
               </div>
             }
           </div>
@@ -195,15 +179,6 @@ export class HilosModal {
   readonly confirmOkText = input('Discard')
   /** Confirm-step keep-editing label. */
   readonly confirmCancelText = input('Keep editing')
-  /**
-   * Whether the dialog has a footer at all. False draws no footer element —
-   * neither buttons nor the bordered strip: a surface that ends with its own
-   * last button says so here instead of declaring empty actions.
-   */
-  readonly showFooter = input(true)
-
-  /** The default OK action fired. */
-  readonly ok = output<void>()
   /** The dialog was dismissed. */
   readonly cancel = output<void>()
 
