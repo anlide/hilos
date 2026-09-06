@@ -27,6 +27,13 @@ import {
   type ReadonlySignal,
   type WritableSignal,
 } from '../state/signal.js'
+import {
+  type HilosTableBody,
+  type HilosTableFilterView,
+  type HilosTableFooter,
+  type HilosTableFrame,
+  type HilosTableFrameState,
+} from './tableFrame.js'
 /** Sort direction for the active sort field. */
 export type SortDirection = 'asc' | 'desc'
 
@@ -177,6 +184,18 @@ export interface TableViewportControllerOptions<R> {
    * menu that offers them is HIL-802 (Vue) and HIL-811 (React, Angular).
    */
   declaredOrders?: readonly TableSortOrder[]
+  /**
+   * What this table's page declares about its frame — title, search, filters,
+   * main action, columns, bulk actions, empty state. Optional because a table
+   * that declares nothing still has a frame state to read: the footer and the
+   * body follow from the window, not from the declaration.
+   *
+   * SCAFFOLD: no table declares one yet, and no view reads it — the bar and the
+   * footer drawn from it are HIL-801 (Vue) and HIL-810 (React, Angular), and the
+   * five framework pages move onto it in HIL-819. Until then a view keeps taking
+   * its columns, label, and empty text as props.
+   */
+  frame?: HilosTableFrame
 }
 
 export class TableViewportController<R> implements TableWindowSink {
@@ -268,6 +287,9 @@ export class TableViewportController<R> implements TableWindowSink {
   /** False until the first window has been ingested — the view shows "loading" rather than "empty". */
   readonly loaded: ReadonlySignal<boolean>
 
+  /** The readable frame state, built once from the declaration and the window signals. */
+  private readonly frameState: HilosTableFrameState
+
   constructor(private readonly options: TableViewportControllerOptions<R>) {
     this.pageSize = Math.max(1, Math.trunc(options.pageSize))
     this.filterSignal = createSignal<Record<string, unknown>>({
@@ -312,6 +334,65 @@ export class TableViewportController<R> implements TableWindowSink {
     })
     this.pendingCount = this.pendingCountSignal
     this.loaded = this.loadedSignal
+    const declaration = options.frame ?? null
+    const filterViews = computedSignal<readonly HilosTableFilterView[]>(() => {
+      const filter = this.filterSignal.get()
+
+      return (declaration?.filters ?? []).map((declared) => {
+        if (declared.kind === 'date_range') {
+          const from = filter[declared.fromKey]
+          const to = filter[declared.toKey]
+
+          return {
+            filter: declared,
+            value: { from, to },
+            active: from !== undefined || to !== undefined,
+          }
+        }
+
+        return {
+          filter: declared,
+          value: filter[declared.key],
+          active: filter[declared.key] !== undefined,
+        }
+      })
+    })
+    const activeFilterCount = computedSignal(
+      () => filterViews.get().filter((view) => view.active).length,
+    )
+    this.frameState = {
+      declaration,
+      filters: filterViews,
+      activeFilterCount,
+      footer: computedSignal<HilosTableFooter>(() => {
+        const shown = this.windowSignal.get().length
+        const page = this.pageSignal.get()
+        const firstRow = shown === 0 ? 0 : page * this.pageSize + 1
+
+        return {
+          firstRow,
+          lastRow: shown === 0 ? 0 : firstRow + shown - 1,
+          totalCount: this.totalCountSignal.get(),
+          totalExact: this.totalExactSignal.get(),
+          page,
+          pageCount: this.pageCount.get(),
+          hasPreviousPage: page > 0,
+          hasNextPage: this.hasNextPage.get(),
+        }
+      }),
+      body: computedSignal<HilosTableBody>(() => {
+        if (!this.loadedSignal.get()) {
+          return 'loading'
+        }
+        if (this.windowSignal.get().length > 0) {
+          return 'rows'
+        }
+
+        return this.searchSignal.get() !== '' || activeFilterCount.get() > 0
+          ? 'empty_filtered'
+          : 'empty'
+      }),
+    }
   }
 
   /** The current search query (empty string when unset). */
@@ -331,6 +412,18 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   get orders(): readonly TableSortOrder[] {
     return this.options.declaredOrders ?? []
+  }
+
+  /**
+   * The frame state a view renders the bar and the footer from: what the page
+   * declared, and the parts that follow from the window. A table that declared
+   * no frame still has one to read — `declaration` is then null.
+   *
+   * SCAFFOLD: read by the bar and the footer, which are HIL-801 (Vue) and
+   * HIL-810 (React, Angular).
+   */
+  get frame(): HilosTableFrameState {
+    return this.frameState
   }
 
   /** The current zero-based page index. */
@@ -381,19 +474,54 @@ export class TableViewportController<R> implements TableWindowSink {
    * to dropping the key rather than sending an empty value the backend must
    * special-case. The free-text search box has its own {@link setSearch}; this
    * drives the domain filters a page renders as its own controls (channel, status,
-   * period, …), which ride the same open filter map to the backend query.
+   * period, …), which ride the same open filter map to the backend query. It is
+   * the one-entry case of {@link setFilters}, so the clearing rule lives in one
+   * place.
    *
    * @param key The filter-map key (matches the backend TableQueryDTO filter key).
    * @param value The new value, or null/undefined/'' to clear the key.
    */
   setFilter(key: string, value: unknown): void {
+    this.setFilters({ [key]: value })
+  }
+
+  /**
+   * Set SEVERAL domain filter-map entries in one window change, then behave
+   * exactly as {@link setFilter} does — the clearing rule is the same and lives
+   * here, and the entries not named are left as they are.
+   *
+   * One control over two keys is what needs this: a date range writes both of
+   * its bounds, and setting them one at a time would send two windows and show a
+   * window filtered by a start with no end in between.
+   *
+   * @param values The filter-map entries to write; a null/undefined/'' value clears its key.
+   */
+  setFilters(values: Record<string, unknown>): void {
     const filter = { ...this.filterSignal.get() }
-    if (value === null || value === undefined || value === '') {
-      delete filter[key]
-    } else {
-      filter[key] = value
+    for (const [key, value] of Object.entries(values)) {
+      if (value === null || value === undefined || value === '') {
+        delete filter[key]
+      } else {
+        filter[key] = value
+      }
     }
     this.filterSignal.set(filter)
+    this.resetAddress()
+    this.changeWindow()
+  }
+
+  /**
+   * Return the filters to the ones the table opened with and request that
+   * window — what the "Reset filters" control of the "Nothing found" state does.
+   *
+   * The table opens with `initialFilter`, and that is what a reset comes back
+   * to rather than an empty map: a route preset arrives that way, so resetting
+   * to empty would turn the log of one channel into the log of all of them. The
+   * search box is cleared along with the filters, being an entry of the very
+   * same map — and "Nothing found" names the query and the filters together.
+   */
+  resetFilters(): void {
+    this.filterSignal.set({ ...(this.options.initialFilter ?? {}) })
     this.resetAddress()
     this.changeWindow()
   }

@@ -76,6 +76,19 @@ export {
   type HilosTableColumnOf,
 } from './table/hilosTableColumn.js'
 export {
+  type HilosTableBody,
+  type HilosTableBulkAction,
+  type HilosTableEmpty,
+  type HilosTableFilter,
+  type HilosTableFilterOption,
+  type HilosTableFilterView,
+  type HilosTableFooter,
+  type HilosTableFrame,
+  type HilosTableFrameState,
+  type HilosTableMainAction,
+  type HilosTableSearch,
+} from './table/tableFrame.js'
+export {
   createLoadingButtonState,
   DEFAULT_SPINNER_DELAY_MS,
   type LoadingButtonState,

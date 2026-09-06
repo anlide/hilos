@@ -111,6 +111,65 @@ window. A reconnect is the same event with the same outcome: filter, sort, and
 page are restored so the reader does not lose their place, and whatever had
 accumulated before the break is gone — the window that arrives outranks it.
 
+## What the page declares
+
+> **The declaration below is in the core, and no table uses it yet (not in the
+> code yet — HIL-801, HIL-810, HIL-819).** A page declares its frame today and
+> nothing is drawn from it: the bar and the footer that render it are HIL-801
+> (Vue) and HIL-810 (React, Angular), and the framework's own pages move onto it
+> in HIL-819. Until then a view still takes its columns, its label, and its empty
+> text as props.
+
+**The page declares; the view draws.** The framework owns the whole bar above the
+table and the whole footer below it, and a page that wants a title, a filter, or
+a main action there says so rather than rendering one. Otherwise every page
+builds its own bar, and the delivery log stops looking like the user list, which
+stops looking like settings — each of them fixing the narrow screen and the empty
+states again.
+
+The declaration is one value, `HilosTableFrame`
+(`framework/frontend/core/src/table/tableFrame.ts`), handed to the controller as
+its `frame` option:
+
+| Declared | What it is |
+|---|---|
+| `title`, `subtitle` | what the table is called |
+| `search` | present means the table searches; carries the placeholder |
+| `filters` | the filters offered in the bar, each a dropdown, a date range, or a toggle |
+| `mainAction` | the one button at the right of the bar, offered again by the empty state |
+| `columns` | the columns, in display order |
+| `bulkActions` | the operations offered for the marked rows — key, label, danger |
+| `empty` | what the table says when it is empty and nothing is filtering it |
+
+Everything else on the bar and everything in the footer is the framework's:
+the count and its precision, the row range, the pager, "Nothing found", the row
+skeleton, the announcement and staleness bars. **A page owns the content of a
+cell and nothing around it.**
+
+Three things follow from the declaration and are read off the controller's
+`frame` getter rather than recomputed per view layer:
+
+- **the declared filters with their values** — one filter as declared, the value
+  it holds, and whether it is active. A date range holds both bounds under
+  `{ from, to }`, because in the bar it is one control over two filter-map keys;
+- **the count of active filters** — the badge in the bar. It counts DECLARED
+  filters that hold a value, not the size of the filter map: search rides that
+  map and has its own field, and a route preset counts only when a control is
+  declared for its key;
+- **the state of the body** — `loading`, `empty`, `empty_filtered`, or `rows`.
+  Deciding this in the core is the point: three view layers deciding it apart
+  would drift. A page that refuses altogether is none of these — that is
+  `HilosRouter.pageError`, the page's own refusal, not a state of its table.
+
+Several filter-map entries are set in one window change with `setFilters()`, and
+`resetFilters()` returns the map to the filters the table opened with —
+`initialFilter`, not an empty map, since a route preset arrives that way. Search
+is cleared along with them, being an entry of the same map.
+
+The declaration carries no facet counts (a number beside an option is HIL-240)
+and no executor for a bulk action: what an operation does to each row, and how it
+names the ones it left alone, is the bulk-action contract below.
+
 ## Custom filters and search-as-filter
 
 - **Project filters are extensible.** The framework does not know in advance what
@@ -491,5 +550,6 @@ an address does not:
 | placing one row against a window boundary, in the table's own key names | `framework/backend/Core/Table/Definition/ViewportTable.php` (`placeRowAgainst`) |
 | the `ORDER BY` and the window query | `framework/backend/Database/Object/Objects.php` |
 | the headless state machine | `framework/frontend/core/src/table/TableViewportController.ts` |
+| the frame a page declares | `framework/frontend/core/src/table/tableFrame.ts` |
 | routing the frames into it | `framework/frontend/core/src/subscription/bindTableViewport.ts` |
 | the thin view | `framework/frontend/{vue,react,angular}/src/HilosViewportTable.*` |
