@@ -248,9 +248,9 @@ describe('HilosMagicLinkPage', () => {
   })
 
   it('drops a retry whose view went away, leaving the token unspent', async () => {
-    // Last in the file on purpose: the page-ready latch is module state that only
-    // goes one way, so by here the gate is open and a retry reaches the wire
-    // through one microtask — which is the window this asserts on.
+    // The page is answered before the mount, so the gate is open throughout and a
+    // retry reaches the wire through one microtask — which is the window this
+    // asserts on.
     const world = relayWorld(false)
     world.answerPage()
     mountRelay(world)
@@ -265,6 +265,37 @@ describe('HilosMagicLinkPage', () => {
     await flush()
 
     expect(world.dispatched).toHaveLength(1)
+    expect(world.navigated).toEqual([])
+  })
+
+  it('ignores the answer to a confirm whose view went away', async () => {
+    // The other half of the guard: a confirm already on the wire is not recalled,
+    // so this one succeeds — but its answer belongs to a view that is gone, and
+    // acting on it would navigate the person out of wherever they went instead.
+    const world = relayWorld(true)
+    world.answerPage()
+    mountRelay(world)
+    // Stop inside the window the guard covers: the confirm has reached the wire,
+    // its answer has not been read yet. Driven by the dispatch actually showing
+    // up rather than by a tick count, so the window is not missed by an await
+    // more or less along the way. Drained by hand rather than through `flush`,
+    // whose `act` spins ten ticks unconditionally — it would read the answer
+    // before the view is taken away, and there would be no window left to assert
+    // on.
+    for (let tick = 0; tick < 20 && world.dispatched.length === 0; tick += 1) {
+      await Promise.resolve()
+    }
+
+    // Without this the window was missed, and everything below would pass on an
+    // empty world rather than on the guard.
+    expect(world.dispatched).toHaveLength(1)
+
+    cleanup()
+    // The answer arrives now, to a screen nobody is on.
+    for (let tick = 0; tick < 10; tick += 1) {
+      await Promise.resolve()
+    }
+
     expect(world.navigated).toEqual([])
   })
 })
