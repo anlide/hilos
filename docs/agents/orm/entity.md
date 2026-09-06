@@ -57,6 +57,22 @@ live schema through `Hilos\Database\Schema\EntitySchemaAudit`, comparing the dec
 `_types` against the raw column type via `PhpType::forMysqlType()`. Add both migration
 stub files (`create_<table>.sql` and its `_down`) when adding a framework Entity.
 
+An index declaration names the **direction** of each of its columns. An element of
+`_indexes[<name>][Entity::INDEX_COLUMNS]` is either a column name, which declares that
+column ascending, or an `[Entity::INDEX_COLUMN => <column>, Entity::INDEX_DIRECTION =>
+SqlSortDirection::DESC]` pair. Both forms are read by `Entity::indexComponents()` and
+nowhere else, and a pair naming anything but `ASC` or `DESC` is refused where it is read
+rather than turning into a finding about the database.
+
+The audit holds those directions against the live index the same way it holds columns and
+uniqueness: `Hilos\Database\Schema\EntitySchemaIndexAudit` reads
+`information_schema.STATISTICS.COLLATION` (`D` is descending, anything else including NULL
+is ascending) and reports a divergence on the `INDEX` axis. This is what closes the hole a
+`DESC` written straight into a migration used to fall through: the audit compared columns
+only, so the direction vanished the next time the index was rebuilt from the declaration
+and nothing said so. Only descending columns are spelled in the report — `(channel,
+created_at DESC)` — so an all-ascending index reads exactly as it always did.
+
 The audit also reads the **typed property** behind each mapped column, because that is
 the shape hydration writes into, and its nullability is a claim about the column:
 

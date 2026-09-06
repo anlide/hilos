@@ -293,6 +293,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      *
      * @param string $column Entity column name, or the object field name standing for it
      * @return bool True when an index of this entity begins with the column
+     * @throws InvalidArgumentException When an index declaration names a direction it cannot name
      */
     public function isIndexLeadColumn(string $column): bool
     {
@@ -308,8 +309,8 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             ? constant("{$entityClass}::" . Entity::META_INDEXES)
             : [];
         foreach ($indexes as $index) {
-            $columns = $index[Entity::INDEX_COLUMNS] ?? [];
-            if (is_array($columns) && ($columns[0] ?? null) === $resolvedColumn) {
+            $components = Entity::indexComponents($index);
+            if ($components !== [] && $components[0]['column'] === $resolvedColumn) {
                 return true;
             }
         }

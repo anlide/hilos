@@ -12,6 +12,7 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\CLI\CliApplication;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\CLI\Commands\UserTestSeedCommand;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Feature\DeferredFeatureRequirementsValidator;
 use Hilos\Core\Feature\Exception\FeatureRuntimeOverwrittenException;
@@ -945,6 +946,7 @@ abstract class Hilos
      * {@see RtContext::assertFeatureRuntimeIntact()} already form around mounting.
      *
      * @throws InvalidTopologyException When a declaration names a collection no layer mounts
+     * @throws InvalidArgumentException When an index declaration names a direction it cannot name
      */
     public static function validateTopologyReferences(): void
     {

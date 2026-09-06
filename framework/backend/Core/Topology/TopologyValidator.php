@@ -33,6 +33,7 @@ use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Group\Config\GroupAddressSource;
 use Hilos\Core\Page\AbstractPage;
@@ -161,6 +162,7 @@ final class TopologyValidator
      *
      * @param class-string<Hilos> $hilosClass Project facade class
      * @throws InvalidTopologyException When a declaration names a collection no layer mounts
+     * @throws InvalidArgumentException When an index declaration names a direction it cannot name
      */
     public function validateReferences(string $hilosClass): void
     {
@@ -217,6 +219,7 @@ final class TopologyValidator
      * @param list<array{registry: string, browserKey: string, sourceKey: string, column: string}> $joins
      *     Declared database joins, in declaration order
      * @param list<string> $errors Validation error accumulator
+     * @throws InvalidArgumentException When an index declaration names a direction it cannot name
      */
     private function validateBrowserJoinColumns(array $joins, array &$errors): void
     {

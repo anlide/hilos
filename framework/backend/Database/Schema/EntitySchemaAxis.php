@@ -55,7 +55,11 @@ enum EntitySchemaAxis: string
     /** _primary and the live PRIMARY KEY disagree, or the PRIMARY KEY is missing. */
     case PRIMARY = 'primary';
 
-    /** _indexes and the live secondary indexes disagree by name, columns, or uniqueness. */
+    /**
+     * _indexes and the live secondary indexes disagree by name, by uniqueness, or by their
+     * ordered columns - each of which carries the direction it is stored in, so an index that
+     * kept its columns but lost a DESC is as much a divergence as one that lost a column.
+     */
     case INDEX = 'index';
 
     /** _foreign and the live foreign keys disagree. */

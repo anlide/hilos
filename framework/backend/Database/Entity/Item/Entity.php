@@ -23,7 +23,9 @@ use Hilos\Database\SqlSortDirection;
  * - const array _columns — all column names
  * - const array _types — column types mapping
  * - const array _foreign — foreign key relationships (optional)
- * - const array _indexes — index definitions (optional)
+ * - const array _indexes — index definitions (optional). An element of an index's column
+ *   list is either a column name, which declares that column ascending, or an
+ *   {@see Entity::INDEX_COLUMN} / {@see Entity::INDEX_DIRECTION} pair naming its direction.
  * - const array|AnonymizationStrategy _pii — the personal-data verdict: a column to
  *   {@see AnonymizationStrategy} map, or {@see AnonymizationStrategy::PURGE} for a table
  *   emptied whole. Absent means the table was never classified, which is what the
@@ -58,6 +60,10 @@ abstract class Entity
     // Index definition keys (for _indexes array structure)
     public const string INDEX_COLUMNS = 'columns';
     public const string INDEX_UNIQUE = 'unique';
+
+    // Keys of the pair form an element of INDEX_COLUMNS takes when it names a direction
+    public const string INDEX_COLUMN = 'column';
+    public const string INDEX_DIRECTION = 'direction';
 
     // Internal property names
     public const string PROP_RELATED = '_related';
@@ -521,6 +527,47 @@ abstract class Entity
         $entity = new static();
         $entity->setRelatedData($row);
         return $entity;
+    }
+
+    /**
+     * Read one index definition as its ordered columns, each with the direction it was
+     * declared in. A column written as a bare name is ascending — the form all existing
+     * declarations use. This is the only place that reads the shape of an index's column
+     * list, so the ORM and the schema audit cannot come to disagree about what it says.
+     *
+     * @param array<string, mixed> $definition One entry of the entity's _indexes
+     * @return list<array{column: string, direction: string}> Columns in declared order, each with its direction
+     * @throws InvalidArgumentException When a column pair is incomplete or names an unknown direction
+     */
+    public static function indexComponents(array $definition): array
+    {
+        /** @var list<string|array<string, string>> $declared */
+        $declared = $definition[self::INDEX_COLUMNS] ?? [];
+
+        $components = [];
+        foreach ($declared as $element) {
+            if (!is_array($element)) {
+                $components[] = ['column' => (string) $element, 'direction' => SqlSortDirection::ASC];
+                continue;
+            }
+            if (!isset($element[self::INDEX_COLUMN], $element[self::INDEX_DIRECTION])) {
+                throw new InvalidArgumentException(
+                    "An index column written as a pair must carry both '" . self::INDEX_COLUMN
+                    . "' and '" . self::INDEX_DIRECTION . "', got: " . implode(', ', array_keys($element)),
+                );
+            }
+            $column = (string) $element[self::INDEX_COLUMN];
+            $direction = (string) $element[self::INDEX_DIRECTION];
+            if ($direction !== SqlSortDirection::ASC && $direction !== SqlSortDirection::DESC) {
+                throw new InvalidArgumentException(
+                    "Order direction must be " . SqlSortDirection::ASC . " or " . SqlSortDirection::DESC
+                    . ", got '{$direction}' for column '{$column}'",
+                );
+            }
+            $components[] = ['column' => $column, 'direction' => $direction];
+        }
+
+        return $components;
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Schema;
 
 use FilesystemIterator;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
@@ -34,17 +35,27 @@ use ReflectionClass;
  *
  * All divergences for an entity are collected into a list so the caller reports
  * every problem at once instead of failing on the first.
+ *
+ * One axis lives elsewhere: {@see EntitySchemaIndexAudit} holds _indexes against the
+ * live ones. It is handed the rows this class queried and touches no database itself,
+ * which is what makes that axis reachable from a unit test.
  */
 final class EntitySchemaAudit
 {
-    /** `information_schema.COLUMNS` / `STATISTICS` / `KEY_COLUMN_USAGE` result keys. */
-    private const string COL_NAME = 'COLUMN_NAME';
+    /**
+     * `information_schema.COLUMNS` / `STATISTICS` / `KEY_COLUMN_USAGE` result keys. The four the
+     * STATISTICS rows are read by are public because {@see EntitySchemaIndexAudit} is handed
+     * those rows and reads them there; the query that names the columns still lives here, so
+     * the keys are spelled once.
+     */
+    public const string COL_NAME = 'COLUMN_NAME';
     private const string COL_TYPE = 'COLUMN_TYPE';
     private const string COL_IS_NULLABLE = 'IS_NULLABLE';
     private const string COL_DEFAULT = 'COLUMN_DEFAULT';
     private const string COL_EXTRA = 'EXTRA';
-    private const string COL_INDEX_NAME = 'INDEX_NAME';
-    private const string COL_NON_UNIQUE = 'NON_UNIQUE';
+    public const string COL_INDEX_NAME = 'INDEX_NAME';
+    public const string COL_NON_UNIQUE = 'NON_UNIQUE';
+    public const string COL_COLLATION = 'COLLATION';
     private const string COL_CONSTRAINT_NAME = 'CONSTRAINT_NAME';
     private const string COL_REFERENCED_TABLE_NAME = 'REFERENCED_TABLE_NAME';
     private const string COL_TABLE_NAME = 'TABLE_NAME';
@@ -62,8 +73,11 @@ final class EntitySchemaAudit
     private const string EXTRA_AUTO_INCREMENT = 'auto_increment';
     private const string EXTRA_GENERATED = 'GENERATED';
 
-    /** Reserved index name that is compared through the PRIMARY axis, never the INDEX axis. */
-    private const string INDEX_PRIMARY = 'PRIMARY';
+    /**
+     * Reserved index name that is compared through the PRIMARY axis, never the INDEX axis.
+     * Public for the same reason as the STATISTICS keys above: the INDEX axis drops it too.
+     */
+    public const string INDEX_PRIMARY = 'PRIMARY';
 
     /**
      * Discover concrete Entity classes under a project directory via PSR-4.
@@ -107,6 +121,7 @@ final class EntitySchemaAudit
      * @param ?int $index Connection index (default: current)
      * @return list<EntitySchemaMismatch> Every divergence found, across all classes
      * @throws DatabaseException When an introspection query fails
+     * @throws InvalidArgumentException When an index declaration names a direction it cannot name
      */
     public static function audit(array $entityClasses, ?int $index = null): array
     {
@@ -280,6 +295,7 @@ final class EntitySchemaAudit
      * @param class-string<Entity> $entityClass Entity to audit
      * @return list<EntitySchemaMismatch> Divergences for this entity
      * @throws DatabaseException When an introspection query fails
+     * @throws InvalidArgumentException When an index declaration names a direction it cannot name
      */
     private static function auditEntity(string $entityClass): array
     {
@@ -318,7 +334,13 @@ final class EntitySchemaAudit
         $statistics = self::liveStatistics($table);
         $liveForeignKeys = self::liveForeignKeys($table);
         self::auditPrimary($mismatches, $entityClass, $table, $columns, $primary, $statistics);
-        self::auditIndexes($mismatches, $entityClass, $table, $indexes, $statistics, $liveForeignKeys);
+        $mismatches = array_merge($mismatches, EntitySchemaIndexAudit::audit(
+            $entityClass,
+            $table,
+            $indexes,
+            $statistics,
+            array_keys($liveForeignKeys),
+        ));
         self::auditForeign($mismatches, $entityClass, $table, $foreign, $liveForeignKeys);
 
         return $mismatches;
@@ -593,70 +615,6 @@ final class EntitySchemaAudit
     }
 
     /**
-     * Axis INDEX: _indexes matches the live secondary indexes both directions, by
-     * ordered columns and uniqueness. PRIMARY and FK-backing indexes are excluded.
-     *
-     * @param list<EntitySchemaMismatch> $mismatches Accumulator, appended in place
-     * @param class-string<Entity> $entityClass Entity being audited
-     * @param string $table The Entity's _table
-     * @param array<string, array<string, mixed>> $indexes The Entity's _indexes
-     * @param list<array<string, mixed>> $statistics Live `information_schema.STATISTICS` rows
-     * @param array<string, array{columns: list<string>, table: string}> $liveForeignKeys Live FKs by constraint name
-     */
-    private static function auditIndexes(
-        array &$mismatches,
-        string $entityClass,
-        string $table,
-        array $indexes,
-        array $statistics,
-        array $liveForeignKeys,
-    ): void {
-        $liveIndexes = self::groupLiveIndexes($statistics, array_keys($liveForeignKeys));
-
-        foreach ($indexes as $name => $definition) {
-            $declaredColumns = $definition[Entity::INDEX_COLUMNS];
-            $declaredUnique = $definition[Entity::INDEX_UNIQUE] ?? false;
-
-            if (!isset($liveIndexes[$name])) {
-                $mismatches[] = new EntitySchemaMismatch(
-                    EntitySchemaAxis::INDEX,
-                    $entityClass,
-                    $table,
-                    $name,
-                    'index (' . implode(',', $declaredColumns) . ')',
-                    'missing',
-                );
-                continue;
-            }
-
-            $live = $liveIndexes[$name];
-            if ($live['columns'] !== array_values($declaredColumns) || $live['unique'] !== $declaredUnique) {
-                $mismatches[] = new EntitySchemaMismatch(
-                    EntitySchemaAxis::INDEX,
-                    $entityClass,
-                    $table,
-                    $name,
-                    self::describeIndex(array_values($declaredColumns), (bool) $declaredUnique),
-                    self::describeIndex($live['columns'], $live['unique']),
-                );
-            }
-        }
-
-        foreach ($liveIndexes as $name => $live) {
-            if (!isset($indexes[$name])) {
-                $mismatches[] = new EntitySchemaMismatch(
-                    EntitySchemaAxis::INDEX,
-                    $entityClass,
-                    $table,
-                    $name,
-                    'declared in _indexes',
-                    self::describeIndex($live['columns'], $live['unique']),
-                );
-            }
-        }
-    }
-
-    /**
      * Axis FOREIGN: forward, each _foreign pair has a real single-column FK;
      * backward, an undeclared single-column FK is a mismatch. Composite FKs are
      * skipped as inexpressible in _foreign.
@@ -754,7 +712,8 @@ final class EntitySchemaAudit
     private static function liveStatistics(string $table): array
     {
         Database::sql(
-            'SELECT ' . self::COL_INDEX_NAME . ', SEQ_IN_INDEX, ' . self::COL_NAME . ', ' . self::COL_NON_UNIQUE
+            'SELECT ' . self::COL_INDEX_NAME . ', SEQ_IN_INDEX, ' . self::COL_NAME . ', '
+            . self::COL_NON_UNIQUE . ', ' . self::COL_COLLATION
             . ' FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?'
             . ' ORDER BY ' . self::COL_INDEX_NAME . ', SEQ_IN_INDEX',
             SqlParamCollection::fromArray([$table]),
@@ -788,28 +747,6 @@ final class EntitySchemaAudit
     }
 
     /**
-     * Group STATISTICS rows into secondary indexes, dropping PRIMARY and any
-     * index that backs a foreign key.
-     *
-     * @param list<array<string, mixed>> $statistics Live STATISTICS rows
-     * @param list<string> $foreignKeyNames Constraint names of the table's foreign keys
-     * @return array<string, array{columns: list<string>, unique: bool}> Secondary indexes by name
-     */
-    private static function groupLiveIndexes(array $statistics, array $foreignKeyNames): array
-    {
-        $indexes = [];
-        foreach ($statistics as $row) {
-            $name = (string) $row[self::COL_INDEX_NAME];
-            if ($name === self::INDEX_PRIMARY || in_array($name, $foreignKeyNames, true)) {
-                continue;
-            }
-            $indexes[$name] ??= ['columns' => [], 'unique' => (int) $row[self::COL_NON_UNIQUE] === 0];
-            $indexes[$name]['columns'][] = (string) $row[self::COL_NAME];
-        }
-        return $indexes;
-    }
-
-    /**
      * @param array<string, mixed> $columnInfo Live column row (IS_NULLABLE, COLUMN_DEFAULT, EXTRA)
      * @return bool Whether saveInsert() may legally omit this column
      */
@@ -824,16 +761,5 @@ final class EntitySchemaAudit
         $extra = (string) $columnInfo[self::COL_EXTRA];
         return stripos($extra, self::EXTRA_AUTO_INCREMENT) !== false
             || stripos($extra, self::EXTRA_GENERATED) !== false;
-    }
-
-    /**
-     * @param list<string> $columns Index columns in order
-     * @param bool $unique Whether the index is unique
-     * @return string Human description, e.g. `unique(a,b)` or `(a)`
-     */
-    private static function describeIndex(array $columns, bool $unique): string
-    {
-        // external-boundary: the neutral element of the signature — a plain index is spelled without the word
-        return ($unique ? 'unique' : '') . '(' . implode(',', $columns) . ')';
     }
 }
