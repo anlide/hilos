@@ -10,6 +10,7 @@ use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Backup\BackupSchedule;
 use Hilos\Backup\Exception\BackupScheduleException;
+use Hilos\Cluster\AgentSignalMesh;
 use Hilos\Cluster\AgentSignalSink;
 use Hilos\Cluster\ClientMesh;
 use Hilos\Cluster\ClientSignalSink;
@@ -4769,15 +4770,16 @@ abstract class DaemonManager extends BaseManager implements
      * the connection whose close is being fanned out is the very connection that left.
      *
      * @param WorkerServer $workerServer Worker server hosting the agents of this node
-     * @param ?PeerServer $peerServer Peer server for the cross-node forward, or null when cluster mode is off
+     * @param ?AgentSignalMesh $mesh Outbound peer port for the cross-node forward, or null when cluster mode is off
      * @param AgentAddressedDestination $destination Agent to reach, already placed
      * @param SignalDTO $signal Signal to deliver
      * @return AgentDeliveryOutcome Delivered, or the reason it reached nobody
      * @throws AgentException When a local agent cannot be reached and the daemon is not shutting down
+     * @throws HilosException Whatever the project's agent-daemon factory raises while the local agent starts
      */
-    private function deliverToAgentDestination(
+    protected function deliverToAgentDestination(
         WorkerServer $workerServer,
-        ?PeerServer $peerServer,
+        ?AgentSignalMesh $mesh,
         AgentAddressedDestination $destination,
         SignalDTO $signal,
     ): AgentDeliveryOutcome {
@@ -4785,14 +4787,14 @@ abstract class DaemonManager extends BaseManager implements
         $signalName = $signal->signalName->getName();
 
         if ($destination instanceof RemoteAgentDestination) {
-            if ($peerServer === null) {
+            if ($mesh === null) {
                 Logger::error("Peer signal dropped: {$signalType}/{$signalName}"
                     . " -> node {$destination->nodeId} agent {$destination->agentType} - no peer server");
 
                 return AgentDeliveryOutcome::RemoteUnreachable;
             }
 
-            $delivered = $peerServer->sendSignalToNode(
+            $delivered = $mesh->sendSignalToNode(
                 $destination->nodeId,
                 $destination->agentType,
                 $destination->agentIndex,

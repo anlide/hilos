@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Peer;
 
+use Hilos\Cluster\AgentSignalMesh;
 use Hilos\Cluster\ClientMesh;
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\ClusterRegistry;
@@ -129,7 +130,8 @@ final class PeerServer extends AbstractServer implements
     RtSyncMesh,
     DbSyncMesh,
     SourceInterestMesh,
-    ClientMesh
+    ClientMesh,
+    AgentSignalMesh
 {
     /** @var float Seconds to wait before retrying a failed or dropped seed dial */
     private const float DIAL_RETRY_INTERVAL_SEC = 5.0;

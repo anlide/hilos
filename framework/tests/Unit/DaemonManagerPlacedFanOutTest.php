@@ -31,7 +31,6 @@ use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
-use Hilos\Tests\Unit\Cluster\Peer\PeerSignalDTOTest;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -50,11 +49,11 @@ use ReflectionClass;
  * carrier because no demo page is one yet, and the placement lookup is a fixture: the point is
  * which of the three answers each delivery gets, not how a real cluster arrives at them.
  *
- * What the mesh hop itself carries is out of reach here and stays uncovered: PeerServer is
- * final and takes a socket, so no unit test can watch a peer send, and nothing today pins
- * PeerServer::sendSignalToNode() beyond the shape of the frame it wraps
- * ({@see PeerSignalDTOTest}). What this file can hold to account - and does - is that a
- * non-local answer stops the local delivery dead, which is the half the defect lived in.
+ * What the mesh hop itself carries is watched one file over: the send has its own port now, so
+ * a fake can stand where the final PeerServer used to, and the frame that leaves this node is
+ * held to account by {@see DaemonManagerAgentSignalPeerTest} (HIL-851). What this file holds to
+ * account is the other half, the one the defect lived in: a non-local answer stops the local
+ * delivery dead.
  */
 final class DaemonManagerPlacedFanOutTest extends TestCase
 {
