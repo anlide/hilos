@@ -174,3 +174,23 @@ final class TopologyInvalidAgentSignalDtoAgentDaemon extends TopologyTestAgentDa
 {
     public const string AGENT_TYPE = 'invalid_agent_signal_dto_agent';
 }
+
+final class TopologyThrottleParkingAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'throttle_parking_agent';
+}
+
+final class TopologyThrottleVerdictAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'throttle_verdict_agent';
+}
+
+final class TopologyThrottleUntypedVerdictAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'throttle_untyped_verdict_agent';
+}
+
+final class TopologyThrottleIndexedAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'throttle_indexed_agent';
+}

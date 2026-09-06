@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page;
 
+use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\ActionHostInterface;
 use Hilos\Core\Action\ActionReply;
@@ -24,6 +25,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogResolver;
@@ -98,6 +100,15 @@ abstract class AbstractPage implements ActionHostInterface
      * onAction runs — the framework never sleeps a single-threaded worker. A page
      * declares its expensive auth/detection actions here; the throttle is
      * framework-owned and activatable, so an empty list opts the page out.
+     *
+     * The list obliges the agent, not the page: a listed action is parked in the
+     * worker of the {@see self::SUBSCRIPTION_AGENT_TYPE} agent, and the verdict is
+     * addressed back there by signal name. That agent must therefore declare
+     * HILOS_AUTH_THROTTLE_VERDICT in AGENT_SIGNALS with
+     * {@see ThrottleVerdictSignalData} - and, when it is registered indexed, with
+     * AgentSignalConfigKey::INDEX_FIELD => 'agentIndex', which names the parking
+     * instance. A start whose page lists actions its agent cannot be answered
+     * about is refused by {@see TopologyValidator}.
      */
     public const array THROTTLED_ACTIONS = [];
 

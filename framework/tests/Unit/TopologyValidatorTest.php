@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\HilosPageConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentRegistry;
@@ -1013,6 +1015,92 @@ final class TopologyValidatorTest extends TestCase
         }
 
         $this->fail('Expected topology reference validation to run once the layers were up');
+    }
+
+    public function testAnAgentParkingThrottledActionsIsRefusedWhenNobodyTakesTheVerdict(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyThrottleNoVerdictHilos::validateTopology();
+            },
+            [
+                'AGENTS[' . TopologyThrottleParkingAgent::AGENT_TYPE . '] class ' . TopologyThrottleParkingAgent::class
+                    . ' parks throttled actions (its own THROTTLED_ACTIONS) but no agent declares '
+                    . HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT . ' in AGENT_SIGNALS',
+                'Declare it with ' . ThrottleVerdictSignalData::class,
+            ],
+        );
+    }
+
+    public function testAPageParkingThrottledActionsIsNamedInTheRefusalOfItsAgent(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyThrottlePageHilos::validateTopology();
+            },
+            [
+                'AGENTS[' . TopologyValidAgent::AGENT_TYPE . '] class ' . TopologyValidAgent::class
+                    . ' parks throttled actions (PAGES[' . TopologyThrottlePage::PAGE . ']) but no agent declares '
+                    . HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT . ' in AGENT_SIGNALS',
+            ],
+        );
+    }
+
+    public function testAParkingAgentIsRefusedWhenAnotherAgentHoldsTheVerdict(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyThrottleVerdictElsewhereHilos::validateTopology();
+            },
+            [
+                'AGENTS[' . TopologyThrottleParkingAgent::AGENT_TYPE . '] class ' . TopologyThrottleParkingAgent::class
+                    . ' parks throttled actions (its own THROTTLED_ACTIONS) but '
+                    . HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT . ' is declared by AGENTS['
+                    . TopologyThrottleVerdictAgent::AGENT_TYPE . ']',
+                'One agent holds throttled actions per application',
+            ],
+        );
+    }
+
+    public function testAParkingAgentIsRefusedWhenItTakesTheVerdictUntyped(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyThrottleUntypedVerdictHilos::validateTopology();
+            },
+            [
+                'AGENTS[' . TopologyThrottleUntypedVerdictAgent::AGENT_TYPE . '] class '
+                    . TopologyThrottleUntypedVerdictAgent::class
+                    . ' parks throttled actions (its own THROTTLED_ACTIONS) and declares '
+                    . HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT . ' without '
+                    . ThrottleVerdictSignalData::class,
+                'the verdict arrives untyped',
+            ],
+        );
+    }
+
+    public function testAnIndexedParkingAgentIsRefusedWhenTheVerdictNamesNoIndexField(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyThrottleIndexedHilos::validateTopology();
+            },
+            [
+                'AGENTS[' . TopologyThrottleIndexedAgent::AGENT_TYPE . '] class '
+                    . TopologyThrottleIndexedAgent::class
+                    . ' is indexed and parks throttled actions (its own THROTTLED_ACTIONS), but declares '
+                    . HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT . " without an '"
+                    . AgentSignalConfigKey::INDEX_FIELD . "'",
+                "Declare AgentSignalConfigKey::INDEX_FIELD => '" . ThrottleVerdictSignalData::agentIndex . "'",
+            ],
+        );
+    }
+
+    public function testAnAgentTakingTheVerdictWithItsDtoMayParkThrottledActions(): void
+    {
+        TopologyThrottleVerdictHilos::validateTopology();
+
+        $this->addToAssertionCount(1);
     }
 
     /**
@@ -3571,6 +3659,226 @@ final class TopologyPerInstancePublicSessionUserHilos extends HilosFacade
         TopologyValidAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => TopologyValidAgent::class,
             AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyThrottleParkingAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'throttle_parking_agent';
+
+    public const string PARKED_ACTION = 'throttle_parked_action';
+
+    public const array AGENT_ACTIONS = [
+        self::PARKED_ACTION => TopologyTestActionPayloadDTO::class,
+    ];
+
+    public const array THROTTLED_ACTIONS = [
+        self::PARKED_ACTION,
+    ];
+}
+
+final class TopologyThrottleVerdictAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'throttle_verdict_agent';
+
+    public const string PARKED_ACTION = 'throttle_verdict_parked_action';
+
+    public const array AGENT_ACTIONS = [
+        self::PARKED_ACTION => TopologyTestActionPayloadDTO::class,
+    ];
+
+    public const array THROTTLED_ACTIONS = [
+        self::PARKED_ACTION,
+    ];
+
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
+    ];
+}
+
+final class TopologyThrottleUntypedVerdictAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'throttle_untyped_verdict_agent';
+
+    public const string PARKED_ACTION = 'throttle_untyped_parked_action';
+
+    public const array AGENT_ACTIONS = [
+        self::PARKED_ACTION => TopologyTestActionPayloadDTO::class,
+    ];
+
+    public const array THROTTLED_ACTIONS = [
+        self::PARKED_ACTION,
+    ];
+
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT,
+    ];
+}
+
+final class TopologyThrottleIndexedAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'throttle_indexed_agent';
+
+    public const string PARKED_ACTION = 'throttle_indexed_parked_action';
+
+    public const array AGENT_ACTIONS = [
+        self::PARKED_ACTION => TopologyTestActionPayloadDTO::class,
+    ];
+
+    public const array THROTTLED_ACTIONS = [
+        self::PARKED_ACTION,
+    ];
+
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => [
+            AgentSignalConfigKey::DTO => ThrottleVerdictSignalData::class,
+        ],
+    ];
+}
+
+final class TopologyThrottlePage extends AbstractPage
+{
+    public const string PAGE = 'throttle_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const string PARKED_ACTION = 'throttle_page_parked_action';
+
+    public const array ACTIONS = [
+        self::PARKED_ACTION => TopologyTestActionPayloadDTO::class,
+    ];
+
+    public const array THROTTLED_ACTIONS = [
+        self::PARKED_ACTION,
+    ];
+}
+
+final class TopologyThrottleNoVerdictHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyThrottleParkingAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleParkingAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleParkingAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyThrottlePageHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyThrottlePage::PAGE => TopologyThrottlePage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyThrottleVerdictElsewhereHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyThrottleParkingAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleParkingAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleParkingAgentDaemon::class,
+        ],
+        TopologyThrottleVerdictAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleVerdictAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleVerdictAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyThrottleUntypedVerdictHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyThrottleUntypedVerdictAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleUntypedVerdictAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleUntypedVerdictAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyThrottleIndexedHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyThrottleIndexedAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleIndexedAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleIndexedAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyThrottleVerdictHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyThrottleVerdictAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyThrottleVerdictAgent::class,
+            AgentRegistryKey::DAEMON => TopologyThrottleVerdictAgentDaemon::class,
         ],
     ];
 

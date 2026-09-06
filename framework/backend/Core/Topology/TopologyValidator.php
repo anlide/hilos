@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Topology;
 
+use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentRegistry;
@@ -122,6 +124,14 @@ final class TopologyValidator
             $errors,
         );
         $this->validateAgentActionGuards($agents, $errors);
+        $this->validateThrottleVerdictRoutes(
+            $agents,
+            $pages,
+            $hilosClass::getAgentSignalRoutes(),
+            $hilosClass::getAgentSignalDtoRoutes(),
+            $hilosClass::getAgentSignalIndexFields(),
+            $errors,
+        );
         $this->validatePageSignalRoutes($pages, $hilosClass::getPageSignalRoutes(), $errors);
         $this->validatePageSignalDtoRoutes($pages, $hilosClass::getPageSignalDtoRoutes(), $errors);
         $this->validateAgentSignalRoutes(
@@ -1518,6 +1528,104 @@ final class TopologyValidator
                             . 'which it does not own through AGENT_ACTIONS';
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Validates that every agent parking a throttled action can be told the verdict.
+     *
+     * A throttled action is parked in the worker of one agent - its own when the agent lists the
+     * action in THROTTLED_ACTIONS, the page's SUBSCRIPTION_AGENT_TYPE agent when a page lists it -
+     * and the verdict travels back by signal name, which names one agent type and cannot read the
+     * addressee from the payload. A parking agent that does not declare the verdict is therefore
+     * never told one: its parked actions wait out the deadline and then run unguarded, so the
+     * guard reads as working while it guards nothing. That is silent, which is why it is refused
+     * at startup (HIL-858).
+     *
+     * @param array $agents Agent registry
+     * @param array $pages Page registry
+     * @param array $agentSignalRoutes Computed agent signal route registry
+     * @param array $agentSignalDtoRoutes Computed agent signal payload DTO registry
+     * @param array $agentSignalIndexFields Computed index fields of indexed agent signal routes
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateThrottleVerdictRoutes(
+        array $agents,
+        array $pages,
+        array $agentSignalRoutes,
+        array $agentSignalDtoRoutes,
+        array $agentSignalIndexFields,
+        array &$errors,
+    ): void {
+        $agentClasses = [];
+        foreach ($agents as $agentType => $registryEntry) {
+            $agentClass = AgentRegistry::workerClass($registryEntry);
+            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
+                continue;
+            }
+
+            $agentClasses[$agentType] = $agentClass;
+        }
+
+        // One entry per parking agent, sources accumulated into it: an agent that parks both for
+        // itself and for three pages is one omission and reads better as one line.
+        $parkingSources = [];
+        foreach ($agentClasses as $agentType => $agentClass) {
+            if ($agentClass::THROTTLED_ACTIONS !== []) {
+                $parkingSources[$agentType][] = 'its own THROTTLED_ACTIONS';
+            }
+        }
+
+        foreach ($pages as $page => $pageClass) {
+            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
+                continue;
+            }
+
+            // A page naming an agent that is absent or malformed is already refused by
+            // validatePageRoutes() and validateAgents(); saying it twice only lengthens the refusal.
+            if ($pageClass::THROTTLED_ACTIONS === [] || !isset($agentClasses[$pageClass::SUBSCRIPTION_AGENT_TYPE])) {
+                continue;
+            }
+
+            $parkingSources[$pageClass::SUBSCRIPTION_AGENT_TYPE][] = "PAGES[{$page}]";
+        }
+
+        $verdict = HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT;
+        $verdictDto = ThrottleVerdictSignalData::class;
+        $indexField = ThrottleVerdictSignalData::agentIndex;
+        foreach ($parkingSources as $agentType => $sources) {
+            $where = "AGENTS[{$agentType}] class {$agentClasses[$agentType]}";
+            $parks = 'parks throttled actions (' . implode(', ', $sources) . ')';
+            $holder = $agentSignalRoutes[$verdict] ?? null;
+            if ($holder === null) {
+                $errors[] = "{$where} {$parks} but no agent declares {$verdict} in AGENT_SIGNALS: its parked"
+                    . " actions wait out the verdict deadline and then run unguarded. Declare it with {$verdictDto}.";
+                continue;
+            }
+
+            if ($holder !== $agentType) {
+                $errors[] = "{$where} {$parks} but {$verdict} is declared by AGENTS[{$holder}]: the verdict is"
+                    . ' addressed to whoever declares it, so these parked actions wait out the verdict deadline and'
+                    . ' then run unguarded. One agent holds throttled actions per application, because an agent'
+                    . ' signal names one agent type and cannot read it from the payload.';
+                continue;
+            }
+
+            if (($agentSignalDtoRoutes[$verdict] ?? null) !== $verdictDto) {
+                $errors[] = "{$where} {$parks} and declares {$verdict} without {$verdictDto}: the verdict arrives"
+                    . ' untyped and the parked actions run unguarded after the deadline.';
+                continue;
+            }
+
+            if (
+                AgentRegistry::requiresIndex($agents[$agentType])
+                && ($agentSignalIndexFields[$verdict] ?? null) !== $indexField
+            ) {
+                $errors[] = "{$where} is indexed and {$parks}, but declares {$verdict} without an"
+                    . " '" . AgentSignalConfigKey::INDEX_FIELD . "': the verdict names the parking instance in its"
+                    . " {$indexField} payload field, and without the declaration it is delivered to the wrong"
+                    . ' instance. Declare AgentSignalConfigKey::INDEX_FIELD => ' . "'{$indexField}'.";
             }
         }
     }

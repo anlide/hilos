@@ -6,6 +6,7 @@ namespace Hilos\Core\Agent;
 
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\ActionHostInterface;
@@ -35,6 +36,7 @@ use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -170,8 +172,12 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     /**
      * @var list<string> Action names of this agent the anti-abuse layer rate-limits (HIL-420).
      *     Read by the action dispatcher exactly as a page's THROTTLED_ACTIONS is; the agent
-     *     must also declare HILOS_AUTH_THROTTLE_VERDICT in AGENT_SIGNALS, because the verdict
-     *     is addressed back to whoever parked the action.
+     *     must also declare HILOS_AUTH_THROTTLE_VERDICT in AGENT_SIGNALS with
+     *     {@see ThrottleVerdictSignalData}, because the verdict is addressed back to whoever
+     *     parked the action. An indexed agent declares it with
+     *     AgentSignalConfigKey::INDEX_FIELD => 'agentIndex' as well, since the verdict names
+     *     the parking instance in that payload field. Both are refused at startup by
+     *     {@see TopologyValidator} rather than left to go silently unanswered.
      */
     public const array THROTTLED_ACTIONS = [];
 

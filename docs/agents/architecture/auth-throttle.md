@@ -143,6 +143,14 @@ proves the rule: an action answering whether an account exists is what an enumer
 wants, and the list is the whole of what keeps that answer expensive. Actions
 requiring a signed-in session are absent on purpose — nothing there to brute force.
 
+**The list obliges the agent whose worker parks the action, not the one who wrote
+the list.** An agent listing its own actions parks them itself; a page listing its
+actions parks them in the agent named by its `SUBSCRIPTION_AGENT_TYPE`, and that
+agent is the one that has to be able to receive a verdict. The verdict travels by
+signal name, and an agent signal names one agent type and cannot read the addressee
+out of the payload — so the doors an application guards are all held by **exactly
+one agent**. A start where they are not is refused; see the workflow below.
+
 ## What The Client Sees
 
 A refusal is `ActionRateLimitedException`: error code `rate_limited`, HTTP 429
@@ -291,9 +299,17 @@ theirs to document; these are signposts only.
 4. If the action authenticates a session, make sure the flow reports it
    (`ThrottleGate::reportAuthenticated()`), or that session's counters are never
    forgiven on success.
-5. On an agent host, run the topology validation: `THROTTLED_ACTIONS` is checked
-   against that agent's own `AGENT_ACTIONS`, so a name it does not own fails at
-   startup rather than guarding nothing in silence.
+5. Run the topology validation. Two things are checked, and both fail the start
+   rather than guard nothing in silence:
+   - on an agent host, every name in `THROTTLED_ACTIONS` is checked against that
+     agent's own `AGENT_ACTIONS`, so a name it does not own is refused;
+   - the agent whose worker parks the action — the host itself on an agent, the
+     `SUBSCRIPTION_AGENT_TYPE` agent on a page — has to be able to take the verdict.
+     It is refused when nobody declares `hilos_auth_throttle_verdict` in
+     `AGENT_SIGNALS`, when another agent declares it, when it is declared without
+     `ThrottleVerdictSignalData`, and, on an agent registered `INDEXED`, when it is
+     declared without `AgentSignalConfigKey::INDEX_FIELD => 'agentIndex'` — the
+     field naming the instance that is holding the action.
 
 ## Anti-Patterns
 

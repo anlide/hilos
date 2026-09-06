@@ -1243,6 +1243,10 @@ class PageSignalRouter
             // route with its DTO in AGENT_SIGNALS. Without that declaration every throttled
             // action on this agent's pages waits out its deadline and then runs, which is a
             // guard that quietly does nothing - so the omission is named.
+            // Since HIL-858 the same omission is also refused at startup, by
+            // TopologyValidator::validateThrottleVerdictRoutes(). This stays: it costs nothing
+            // and still catches a topology that never went past the validator at all - a unit
+            // test building the router directly, without Hilos::init().
             Logger::error(
                 HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT
                     . ' arrived as ' . $data->data::class . '; the page agent must declare it in AGENT_SIGNALS'
