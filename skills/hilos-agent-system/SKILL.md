@@ -12,6 +12,8 @@ Use this skill for agent business logic and registration work. Start by reading 
 - Adding a new agent type: `docs/agents/agent-system/adding-agent.md`
 - Writing or reviewing `onTick()`: `docs/agents/agent-system/ontick-rule.md`
 - Truth sources, shared state, long operations: `docs/agents/agent-system/monopolistic-agent.md`
+- Declaring what an agent owns and what it reads, and the operations a claim
+  carries: `docs/agents/architecture/truth-source.md`
 - Agent lifecycle and signal methods, and how long an agent that serves one
   instance stays alive: `docs/agents/architecture/agent-lifecycle.md`
 - An agent that holds a whole entity's set — one entity one library, and which
@@ -40,23 +42,35 @@ Use this skill for agent business logic and registration work. Start by reading 
 4. Move long or blocking work out of `onTick()` and signal handlers.
 5. In named signal handlers, omit empty `default` branches for intentionally
    ignored shared-broadcast names and document the ignore contract in PHPDoc.
-6. Register and unregister truth sources in matching lifecycle hooks, and check
-   the registry's `AgentRegistryKey::SCOPE` against what the agent registers: an
-   RT truth source is unique for the whole cluster, not per node, so an agent
-   that registers one keeps the default `AgentScope::CLUSTER` and exists once —
+6. Declare what the agent owns, and check the registry's
+   `AgentRegistryKey::SCOPE` against that declaration. A database collection is
+   declared on the class, in `OWNS_DB`: a map from collection key to the
+   operations the owner may perform on its rows. Do not add a new
+   `registerDbTruthSource()` call in `onStart()`; the helper is deprecated and
+   goes away with HIL-898. A runtime collection is today claimed by a
+   `registerRtTruthSource()` call in `onStart()`, and moves to the same map on
+   the class, `OWNS_RT` (not in the code yet — HIL-894). Both forms, and what a
+   claim carries, are in `docs/agents/architecture/truth-source.md`. Nothing
+   takes a claim back from a hook: `WorkerManager` does, after `onStop()` has
+   returned or thrown. An RT truth source is unique for the whole cluster, not
+   per node, so an agent that owns one keeps the default `AgentScope::CLUSTER`
+   and exists once —
    hosted by the leader, or placed by the policy where `AgentPlacement::POLICY`
    is declared. An agent declared `AgentScope::NODE` runs on every node and must
    therefore own no RT collection — a second owner splits it, and all the daemon
    can do about that is refuse the other node's writes and log
    `RT collection <key> has truth sources on two nodes` — and only when both nodes
    claim the same ROW with every operation. A claim by keys is the way to have
-   one collection written from several nodes: an indexed agent registers its own
-   index (`registerRtTruthSource($key, [$this->agentIndex])`) and owns those rows
-   alone, which is what makes a placed fleet's state converge across the mesh.
+   one collection written from several nodes: an indexed agent claims its own
+   index — today `registerRtTruthSource($key, TruthSourceKeys::listed($this->agentIndex))`,
+   and as one `OWNS_RT` record whose keys come from a seam on the instance
+   (not in the code yet — HIL-895) — and owns those rows alone, which is what
+   makes a placed fleet's state converge across the mesh.
    Say what the agent may DO with the rows it claims when that is less than
    everything: `AbstractAgent::defaultTruthSourceOperations()` is the one place a
    kind of agent answers, and `AbstractUsersLibraryAgent` overrides it with adding
-   and removing. Per-claim exceptions go in the fourth argument of `register()`.
+   and removing. One claim may still differ from its kind, wider or narrower,
+   and then carries its own list of `TruthSourceOperation`.
    The guard names the operation it refused, so a wrong answer here reads as a
    `RtTruthSourceWriteNotAllowedException` on one action rather than on the agent.
 7. When the agent answers for a *set* — a list, a search, a create with nothing
@@ -90,7 +104,7 @@ Use this skill for agent business logic and registration work. Start by reading 
 - Never add routing logic directly inside agents; use topology declarations or `SignalRouter`.
 - Routing for indexed multi-instance agents must stay declarative in `AGENT_SIGNALS` with `AgentSignalConfigKey::INDEX_FIELD`; do not add `switch` by signal name inside agents or routers for this purpose.
 - Never let non-truth-source agents write to a DB/RT collection they do not own.
-- Never register an RT truth source in an agent declared `AgentScope::NODE`; a
+- Never let an agent declared `AgentScope::NODE` own an RT collection; a
   per-node replica may read a shared collection, and changes what it does not own
   by signalling the owner. An agent that owns rows rather than a collection claims
   them by key and still keeps `AgentScope::CLUSTER`: what may not be duplicated is

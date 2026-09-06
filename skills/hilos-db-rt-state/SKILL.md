@@ -19,6 +19,8 @@ table or page.
   `$hilos-runtime`, `docs/agents/runtime/rt-context.md`, and
   `docs/agents/runtime/rt-state.md`.
 - DB vs RT choice and extension checklist: use `$hilos-data-extension`.
+- Declaring what an agent owns and what it reads, and the operations a claim
+  carries: `docs/agents/architecture/truth-source.md`
 
 ## Mental Model
 

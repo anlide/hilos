@@ -18,6 +18,8 @@ you choose.
   `docs/agents/runtime/rt-state.md`.
 - DB-backed item plus live runtime overlay: use `$hilos-db-rt-state`.
 - Truth source ownership: `docs/agents/agent-system/monopolistic-agent.md`.
+- Declaring what an agent owns and what it reads, and the operations a claim
+  carries: `docs/agents/architecture/truth-source.md`
 - Repository/service anti-pattern:
   `docs/agents/antipatterns/no-repository-service.md`.
 - Test command selection: use `$hilos-testing-cli`.
@@ -104,7 +106,7 @@ For RT changes:
    and call `$item->actions->...`; do not add a collection action that accepts
    the item key for that one-item write.
 6. Verify the truth source agent owns writes before mutating shared RT state, and
-   that its claim covers the operation: `register()` takes a list of
+   that its claim covers the operation: a claim carries a list of
    `TruthSourceOperation`, and an agent granted only some of them is refused on
    the rest.
 7. Keep direct backing-state access (`getStateCollection()`, `getStateItem()`,

@@ -36,6 +36,8 @@ touched ORM surfaces.
   `docs/agents/orm/entity.md`
 - Repository/service anti-pattern: `docs/agents/antipatterns/no-repository-service.md`
 - Test commands: use `$hilos-testing-cli`
+- Declaring what an agent owns and what it reads, and the operations a claim
+  carries: `docs/agents/architecture/truth-source.md`
 
 ## Mental Model
 
@@ -165,5 +167,5 @@ Hilos::$db->users->findBySession($sessionToken);
 - Never map a nullable property over a NOT NULL column with a DB-level `DEFAULT`;
   such a value has exactly one owner, and `docs/agents/orm/entity.md` decides which.
 - Only the truth source agent writes to its owned DB/RT collection, and only the
-  operations its claim covers: `TruthSourceRegistry::register()` takes a list of
-  `TruthSourceOperation`, and `registerCreate()` is that list with adding alone.
+  operations its claim covers: a claim carries a list of `TruthSourceOperation`,
+  and the right to create is that list with adding alone over no rows at all.

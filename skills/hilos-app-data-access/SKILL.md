@@ -36,6 +36,8 @@ switch to the focused data-layer skill first.
 - Signal routing and DTO payloads: use `$hilos-signals`.
 - A value out of `Hilos::$env` or `Hilos::$setting`, which is a catalog and not a
   collection: `docs/agents/code-style/catalog-backed-accessors.md`.
+- Declaring what an agent owns and what it reads, and the operations a claim
+  carries: `docs/agents/architecture/truth-source.md`
 
 ## Mental Model
 

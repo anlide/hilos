@@ -13,6 +13,8 @@ Start with `agents.md`, then read the matching runtime guide.
 - `Hilos::$rt`, runtime collections, worker sync: `docs/agents/runtime/rt-context.md`
 - `RtState` subclasses and state item access: `docs/agents/runtime/rt-state.md`
 - Truth sources and shared state ownership: `docs/agents/agent-system/monopolistic-agent.md`
+- Declaring what an agent owns and what it reads, and the operations a claim
+  carries: `docs/agents/architecture/truth-source.md`
 - Why a direct state write never leaves its worker: `docs/agents/antipatterns/rt-write-outside-actions.md`
 - RT sync signal flow: use `$hilos-signals`
 
@@ -34,7 +36,7 @@ Start with `agents.md`, then read the matching runtime guide.
   agent of the node owns; the two collections the daemon master registers itself
   are framework-owned exceptions, named in `DaemonManager` and explained in
   `docs/agents/runtime/rt-context.md`.
-- Ownership is claimed per collection OR per row: `register()` with a list of keys
+- Ownership is claimed per collection OR per row: a claim naming a list of keys
   owns those entities, which is how a fleet splits one collection across nodes,
   each member writing its own rows. A replica of an unreachable owner is still
   served, and carries the moment it stopped being kept up to date:
@@ -201,7 +203,7 @@ of duplicating runtime mutation logic in the page/table layer.
 
 - Never run `git commit` or `git push`.
 - Only the truth source agent writes to its owned RT collection, and only the
-  operations its claim covers: `register()` takes a list of `TruthSourceOperation`
+  operations its claim covers: a claim carries a list of `TruthSourceOperation`
   and the guard refuses the others by name. An `AbstractUsersLibraryAgent` adds
   and removes rows it may never edit.
 - Never write to an `RtStates` collection directly (`add()`, `remove()`,
