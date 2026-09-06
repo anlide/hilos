@@ -37,6 +37,7 @@ use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Topology\TopologyValidator;
+use Hilos\Core\TruthSource\Exception\ClaimedRowKeysMissingException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -127,6 +128,42 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      *     happen, in whatever action reached for them.
      */
     public const array READS_DB = [];
+
+    /**
+     * @var array<string, list<TruthSourceOperation>> DB collections this agent owns NOT WHOLE but
+     *     by rows, each mapped to the operations it may perform on them. The same form
+     *     {@see TruthSourceOwner::OWNS_DB} has, {@see TruthSourceOperation::BY_KIND} included, and
+     *     the other width of the same half: a collection stands in exactly one of the two maps,
+     *     and one named by both refuses the agent's start
+     *     ({@see OwnershipDeclaration::claimDbRows()}).
+     *
+     *     WHICH collection is declared here; WHICH ROWS of it are not, and this map knows nothing
+     *     about them: they are named by {@see self::ownedDbRowKeys()} on the live instance, asked
+     *     once when the agent starts. That is the whole reason the width is split in two - a row
+     *     key that only the instance knows cannot be written on a class.
+     *
+     *     A collection named here does not belong in {@see self::READS_DB}, exactly as one named
+     *     in the whole-collection map does not: the claim is the reader interest already.
+     */
+    public const array OWNS_DB_ROWS = [];
+
+    /**
+     * @var array<string, list<TruthSourceOperation>> Runtime collections this agent owns NOT WHOLE
+     *     but by rows, each mapped to the operations it may perform on them. The runtime twin of
+     *     {@see self::OWNS_DB_ROWS}, and the narrow width of {@see TruthSourceOwner::OWNS_RT}: a
+     *     collection stands in exactly one of the two maps, and one named by both refuses the
+     *     agent's start ({@see OwnershipDeclaration::claimRtRows()}).
+     *
+     *     WHICH collection is declared here; WHICH ROWS of it are named by
+     *     {@see self::ownedRtRowKeys()} on the live instance, asked once when the agent starts.
+     *
+     *     This is how one collection converges across a mesh: every node runs agents of the same
+     *     type, each owning the rows of its own instance, and no node ever claims another's row.
+     *
+     *     A collection named here does not belong in {@see self::READS_RT}: the claim is the
+     *     reader interest already.
+     */
+    public const array OWNS_RT_ROWS = [];
 
     /** @var list<string> CLI command names owned directly by this agent. */
     public const array AGENT_COMMANDS = [];
@@ -231,6 +268,46 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     public static function defaultTruthSourceOperations(): TruthSourceOperations
     {
         return TruthSourceOperations::all();
+    }
+
+    /**
+     * Rows of a narrowly declared database collection this instance owns.
+     *
+     * The half of a narrow claim a class cannot carry: {@see self::OWNS_DB_ROWS} says which
+     * collection, this says which of its rows, and only the live instance knows them - a bot id,
+     * a fleet index, the row of the entity the agent answers for.
+     *
+     * Asked once, between the instance being built and its {@see self::onStart()}, by
+     * {@see OwnershipDeclaration::claimDbRows()}. Public because that resolver stands outside the
+     * class; application code has no reason to call it, and an agent that overrides it is
+     * answering the resolver, not offering an accessor.
+     *
+     * The base answer is the empty list, which is a REFUSAL and not a claim of nothing: a
+     * collection declared narrowly whose seam names no row stops the agent's start
+     * ({@see ClaimedRowKeysMissingException}), because a width of no rows is already the right to
+     * create ({@see TruthSourceRegistry::registerCreate()}).
+     *
+     * @param string $collection Collection the resolver is asking about, as named in the map
+     * @return list<string> Row keys this instance claims in that collection
+     */
+    public function ownedDbRowKeys(string $collection): array
+    {
+        return [];
+    }
+
+    /**
+     * Rows of a narrowly declared runtime collection this instance owns.
+     *
+     * The runtime twin of {@see self::ownedDbRowKeys()}, asked at the same beat and refusing the
+     * same way: {@see self::OWNS_RT_ROWS} names the collection, this names its rows, and an empty
+     * answer stops the agent's start.
+     *
+     * @param string $collection Collection the resolver is asking about, as named in the map
+     * @return list<string> Row keys this instance claims in that collection
+     */
+    public function ownedRtRowKeys(string $collection): array
+    {
+        return [];
     }
 
     /**

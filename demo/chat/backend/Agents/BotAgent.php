@@ -28,7 +28,7 @@ use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
-use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\HilosException;
 use Hilos\LLM\Agent\AbstractLlmChatAgent;
 use Hilos\LLM\DTO\ChatGenerateOptions;
@@ -53,6 +53,13 @@ final class BotAgent extends AbstractLlmChatAgent
         ChatDbContext::bots,
         ChatDbContext::events,
     ];
+
+    /**
+     * @var array<string, list<TruthSourceOperation>> The status row of this bot alone. Narrow and
+     *     not whole, because every bot of the chat runs its own agent and each answers for one row
+     *     of the same collection; which row is the instance's business ({@see self::ownedRtRowKeys()}).
+     */
+    public const array OWNS_RT_ROWS = [ChatRtContext::botAgentStatuses => TruthSourceOperation::BY_KIND];
 
     public const string AGENT_TYPE = AgentType::BOT;
 
@@ -102,6 +109,15 @@ final class BotAgent extends AbstractLlmChatAgent
     }
 
     /**
+     * @param string $collection Collection the resolver is asking about
+     * @return list<string> The status row of this bot, keyed by its id
+     */
+    public function ownedRtRowKeys(string $collection): array
+    {
+        return [(string)$this->botId];
+    }
+
+    /**
      * @return string The chat bot LLM profile key
      */
     protected function profileKey(): string
@@ -116,7 +132,6 @@ final class BotAgent extends AbstractLlmChatAgent
      */
     public function onStart(): void
     {
-        $this->registerRtTruthSource(ChatRtContext::botAgentStatuses, TruthSourceKeys::listed((string)$this->botId));
         Hilos::$rt->botAgentStatuses->actions->ensure($this->botId)->actions->markJoined();
         $this->scheduleReaction();
     }

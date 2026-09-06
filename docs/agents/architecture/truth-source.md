@@ -64,6 +64,13 @@ a collection. A map and not a list of names, because some
 claims narrow their operations and a list would need a second constant to say
 so — two ways of saying one thing.
 
+Beside each of them stands the same form at the other width: `OWNS_DB_ROWS` and
+`OWNS_RT_ROWS`, on `AbstractAgent` rather than on the interface, for a
+collection the owner holds not whole but by rows. A collection stands in exactly
+one of the two maps of its half, and one named by both refuses the agent's
+start — see *Three Cases A Flat Constant Cannot Say* for why the rows themselves
+are not written there.
+
 A record naming no operation gets `TruthSourceOperation::BY_KIND` and is answered
 by the kind of the agent, which is the empty list under a name: a bare one would
 say both "nothing may be done here" and "the set was never written".
@@ -182,9 +189,24 @@ Each has its answer, and none of them is a second mechanism.
 `workerStatuses` by its own worker index. A claim by keys is ownership of those
 entities and not of the collection around them — every node runs members of the
 same collection, each owning its own rows — and the class cannot know an id that
-exists only once the instance is built. The class declares statically WHICH
-collection is held narrowly, and the keys come from a seam on the instance
-(not in the code yet — HIL-895).
+exists only once the instance is built.
+
+So the claim is written in two halves. WHICH collection is held narrowly is a
+constant like any other, `OWNS_RT_ROWS` or `OWNS_DB_ROWS`, which is what leaves
+the width readable by a validator with nothing running. WHICH rows comes from a
+seam on the instance, `ownedRtRowKeys()` and `ownedDbRowKeys()`, asked once at
+the beat the whole-collection claims are laid down — between the instance being
+built and its `onStart()`.
+
+Two things refuse the agent's start there rather than being resolved. A seam
+that names no row is not a claim over nothing: that width is already the right
+to create, and a collection registered with no holder of its rows would say so
+only at the first foreign write. And a collection named by both maps of one half
+is a contradiction with no reading — the registry keeps one grant per
+(collection, agent) pair and a repeated registration replaces it, so the order
+of the two calls would otherwise decide the width in silence. Both are read on
+the folded maps, so a parent contradicting its subclass is caught as readily as
+a class contradicting itself.
 
 **The collection's name is given by the project, not by the class.** The
 framework's `AbstractUsersLibraryAgent` claims the account table under a name
@@ -325,8 +347,9 @@ the helpers are removed (not in the code yet — HIL-898).
 
 `composer run test:framework:unit` — ownership read off the class and merged up
 the chain, over each half (`DeclaredDbOwnershipTest`,
-`DeclaredRtOwnershipTest`) and over a claimant that is not an agent
-(`DeclaredCommandOwnershipTest`), the operation axis and the guards on it
+`DeclaredRtOwnershipTest`), over a claimant that is not an agent
+(`DeclaredCommandOwnershipTest`) and over the narrow width with its two
+refusals (`DeclaredRowOwnershipTest`), the operation axis and the guards on it
 (`TruthSourceRegistryTest`, `AgentTruthSourceOperationsTest`,
 `DbWriteGuardLazyCollectionsTest`), the grants a stop takes back
 (`WorkerManagerStopCleanupTest`), the node-level map of runtime owners

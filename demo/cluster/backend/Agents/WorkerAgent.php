@@ -11,7 +11,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
-use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -36,6 +36,15 @@ final class WorkerAgent extends AbstractAgent
     use ProtectedModeTestDriverTrait;
 
     public const string AGENT_TYPE = AgentType::WORKER;
+
+    /**
+     * @var array<string, list<TruthSourceOperation>> The status row of this fleet member alone, and
+     *     that is the whole point of the fleet here: every node runs members of the same
+     *     collection, each owning its own row, so the collection converges across the mesh without
+     *     any node ever claiming another's row (HIL-589). Which row is the instance's business
+     *     ({@see self::ownedRtRowKeys()}).
+     */
+    public const array OWNS_RT_ROWS = [ClusterRtContext::workerStatuses => TruthSourceOperation::BY_KIND];
 
     /**
      * The protected-mode drive trio (HIL-344, HIL-481), carried here as well as on the Hilos
@@ -86,19 +95,22 @@ final class WorkerAgent extends AbstractAgent
     }
 
     /**
-     * Takes ownership of this member's row, publishes it, and arms the report.
-     *
-     * The claim names one key - this member's index - and that is the whole point of the fleet
-     * here: every node runs members of the same collection, each owning its own rows, so the
-     * collection converges across the mesh without any node ever claiming another's row
-     * (HIL-589).
+     * @param string $collection Collection the resolver is asking about
+     * @return list<string> The status row of this fleet member, keyed by its index
+     */
+    public function ownedRtRowKeys(string $collection): array
+    {
+        return [(string)$this->agentIndex];
+    }
+
+    /**
+     * Publishes this member's row and arms the report.
      *
      * @throws HilosException When the first report cannot be written
      */
     public function onStart(): void
     {
         $this->reportDueAt = microtime(true) + self::REPORT_INTERVAL_SEC;
-        $this->registerRtTruthSource(ClusterRtContext::workerStatuses, TruthSourceKeys::listed($this->agentIndex));
         $this->report();
 
         Logger::info("Worker {$this->getId()} started on this node: it is now carrying load");

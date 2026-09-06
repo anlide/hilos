@@ -47,10 +47,10 @@ Use this skill for agent business logic and registration work. Start by reading 
    declared on the class, in `OWNS_DB`: a map from collection key to the
    operations the owner may perform on its rows. Do not add a new
    `registerDbTruthSource()` call in `onStart()`; the helper is deprecated and
-   goes away with HIL-898. A runtime collection is today claimed by a
-   `registerRtTruthSource()` call in `onStart()`, and moves to the same map on
-   the class, `OWNS_RT` (not in the code yet — HIL-894). Both forms, and what a
-   claim carries, are in `docs/agents/architecture/truth-source.md`. Nothing
+   goes away with HIL-898. A runtime collection is declared the same way, in
+   `OWNS_RT`; do not add a new `registerRtTruthSource()` call either, for the
+   same reason. Both maps, and what a claim carries, are in
+   `docs/agents/architecture/truth-source.md`. Nothing
    takes a claim back from a hook: `WorkerManager` does, after `onStop()` has
    returned or thrown. An RT truth source is unique for the whole cluster, not
    per node, so an agent that owns one keeps the default `AgentScope::CLUSTER`
@@ -61,11 +61,12 @@ Use this skill for agent business logic and registration work. Start by reading 
    can do about that is refuse the other node's writes and log
    `RT collection <key> has truth sources on two nodes` — and only when both nodes
    claim the same ROW with every operation. A claim by keys is the way to have
-   one collection written from several nodes: an indexed agent claims its own
-   index — today `registerRtTruthSource($key, TruthSourceKeys::listed($this->agentIndex))`,
-   and as one `OWNS_RT` record whose keys come from a seam on the instance
-   (not in the code yet — HIL-895) — and owns those rows alone, which is what
-   makes a placed fleet's state converge across the mesh.
+   one collection written from several nodes: an indexed agent names the
+   collection in `OWNS_RT_ROWS` and its own index in `ownedRtRowKeys()`, the
+   seam the resolver asks the live instance once at start, and owns those rows
+   alone — which is what makes a placed fleet's state converge across the mesh.
+   The two maps of a half are exclusive: a collection named by both, or declared
+   narrowly with a seam that names no row, refuses the agent's start.
    Say what the agent may DO with the rows it claims when that is less than
    everything: `AbstractAgent::defaultTruthSourceOperations()` is the one place a
    kind of agent answers, and `AbstractUsersLibraryAgent` overrides it with adding

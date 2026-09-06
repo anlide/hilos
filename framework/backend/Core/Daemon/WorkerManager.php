@@ -58,6 +58,8 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SignalName;
+use Hilos\Core\TruthSource\Exception\ClaimedRowKeysMissingException;
+use Hilos\Core\TruthSource\Exception\ClaimWidthConflictException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Hilos;
@@ -701,6 +703,8 @@ abstract class WorkerManager extends BaseManager
      *
      * @param AgentStartDTO $data Agent start request
      * @throws AgentCreationFailedException When agent creation fails
+     * @throws ClaimWidthConflictException When the agent declares one collection both whole and by rows
+     * @throws ClaimedRowKeysMissingException When the agent declares a collection by rows and names none of them
      * @throws HilosException Whatever the started agent's start hook raises, or the roster reconcile after it
      */
     private function handleAgentStart(AgentStartDTO $data): void
@@ -751,8 +755,27 @@ abstract class WorkerManager extends BaseManager
         // the same declaration be answered where no instance exists at all. Both halves stand here
         // for that one reason; the runtime half also travels to the node, but not from this line -
         // notifyRtSourcesRegistered() below asks the registry once the hook has returned.
-        OwnershipDeclaration::claimDb($agent::class, $agentId);
-        OwnershipDeclaration::claimRt($agent::class, $agentId);
+        // The narrow halves ask the INSTANCE for the rows it holds, and this is the one place that
+        // is allowed to: the reader interest was raised above and off the class, while a claim is
+        // laid on something already alive.
+        try {
+            OwnershipDeclaration::claimDb($agent::class, $agentId);
+            OwnershipDeclaration::claimRt($agent::class, $agentId);
+            OwnershipDeclaration::claimDbRows($agent);
+            OwnershipDeclaration::claimRtRows($agent);
+        } catch (Throwable $refusal) {
+            // Half the claims may already stand, and the agent is in the manager since
+            // createAndAddAgent() above: without this the worker would hold an agent nobody ever
+            // started, with some of its rights. Taken back the way runAgentStopHook() takes them,
+            // minus onStop() - a hook that opened nothing has nothing to close.
+            TruthSourceRegistry::unregisterAgent($agentId);
+            RtTruthSourceRegistry::unregisterAgent($agentId);
+            $this->releaseSourceInterest(SourceConsumer::agent($agentId));
+            $this->agentManager->removeAgent($agentId);
+            $this->agentIdleTracker->forget($agentId);
+
+            throw $refusal;
+        }
         $agent->onStart();
         Hilos::$ac?->openAgentSession($agentType, $agentIndex);
         Logger::info("Agent '{$agentId}' started");

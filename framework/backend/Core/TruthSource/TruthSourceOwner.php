@@ -18,8 +18,11 @@ use Hilos\Core\Agent\AbstractAgent;
  * OwnershipDeclaration} reads it off the class-string, and so does the validator that judges a
  * topology before the first process is built.
  *
- * The interface carries no width. A claim whose keys only the live instance knows is a seam of its
- * own (HIL-895); everything declared here is the whole collection.
+ * The interface carries no width: everything declared here is the whole collection. Saying
+ * otherwise is possible, but only for an agent - {@see AbstractAgent::OWNS_RT_ROWS} names the
+ * collection and a seam on the live instance names its rows. It is not here because the other two
+ * kinds have no instance to ask: a test-only command and the application class both claim under
+ * one shared id, and a row key of an instance is exactly what neither of them has.
  */
 interface TruthSourceOwner
 {
