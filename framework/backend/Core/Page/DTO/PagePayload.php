@@ -38,6 +38,16 @@ final class PagePayload
     /** Per-row/per-item source fragments, keyed by source key. */
     public const string slots = 'slots';
 
+    /**
+     * Source keys of a table row whose values stopped being kept up to date (HIL-800).
+     *
+     * A list of the same keys the row's `slots` are keyed by, and only the ones that froze;
+     * a row every source of which is current carries no such key at all. Whoever assembled
+     * the fragment names its freshness, because only they know what the fragment was read
+     * from — a per-row runtime item for a declarative row, a summary over many for a typed one.
+     */
+    public const string staleSources = 'staleSources';
+
     /** Removed row/item keys in an incremental update. */
     public const string deleted = 'deleted';
 

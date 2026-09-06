@@ -42,11 +42,13 @@ in fifty rows is stored once and referenced fifty times.
 
 ### Table-rows store
 
-Keyed by table. Each row carries its `rowKey`, its own and computed cells, and
-**references** for entity-derived columns. It renders by resolving those
-references against the entity store. Implemented as `TableRowsStore`, the twin
-of the list store; it ingests the `tables` payload section the same way lists
-ingest theirs — a snapshot plus live per-row deltas (see [table-subscription.md](table-subscription.md)).
+Keyed by table. Each row carries its `rowKey`, its own and computed cells,
+**references** for entity-derived columns, and — when a source of the row has
+stopped being kept up to date — `staleSources`, the list of the slot keys that
+froze. It renders by resolving those references against the entity store.
+Implemented as `TableRowsStore`, the twin of the list store; it ingests the
+`tables` payload section the same way lists ingest theirs — a snapshot plus live
+per-row deltas (see [table-subscription.md](table-subscription.md)).
 
 ### List store
 
@@ -134,6 +136,10 @@ Three keys are distinct and must never be conflated:
 
 The entity key is `(entityType, id)` — never `(sourceKey, id)`, because
 `sourceKey` is only a local alias.
+
+The keys stay three. A row's `staleSources` is **not** a fourth: it is a list of
+`sourceKey`s the row already names, saying which of its slots stopped being kept
+up to date ([table-subscription.md](table-subscription.md)).
 
 ## Entity detection (the convention)
 

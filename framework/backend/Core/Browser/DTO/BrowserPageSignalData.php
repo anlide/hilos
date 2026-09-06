@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Browser\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
@@ -20,8 +21,17 @@ final class BrowserPageSignalData extends BaseDTO implements SignalDataInterface
     public const string sources = 'sources';
 
     /**
+     * Source keys of a row whose values stopped being kept up to date (HIL-800).
+     *
+     * The internal half of {@see PagePayload::staleSources}: it is written under the same
+     * name the wire carries, and by whoever built the row's fragments. A row with nothing
+     * frozen in it carries no such key.
+     */
+    public const string staleSources = 'staleSources';
+
+    /**
      * @param array<string, array{
-     *     rows?: list<array{rowKey: int|string, sources: array<string, mixed>}>,
+     *     rows?: list<array{rowKey: int|string, sources: array<string, mixed>, staleSources?: list<string>}>,
      *     deleted?: list<int|string>,
      *     cleared?: bool
      * }> $tables Browser table changes keyed by table name

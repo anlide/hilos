@@ -19,6 +19,7 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DatabaseException;
+use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Tables\Users\AbstractHilosUsersTable;
@@ -93,6 +94,7 @@ final class HilosUsersTable extends AbstractHilosUsersTable
      * @param int $userId User id to project into a row
      * @return ?HilosUserTableRow Current row, or null when the user no longer exists
      * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
+     * @throws HilosException When the bound presence source cannot read its runtime state
      */
     protected function rowForUserId(int $userId): ?HilosUserTableRow
     {
@@ -127,6 +129,7 @@ final class HilosUsersTable extends AbstractHilosUsersTable
      * @param DbUser $user User DB item to project into the Hilos users table
      * @return HilosUserTableRow Runtime-enriched Hilos users table row
      * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
+     * @throws HilosException When the bound presence source cannot read its runtime state
      */
     public function rowFromUser(DbUser $user): HilosUserTableRow
     {

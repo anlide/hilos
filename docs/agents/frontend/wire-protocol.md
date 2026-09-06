@@ -299,7 +299,17 @@ each optional and omitted when empty:
   `{"items": [{"itemKey": <key>, "slots": {…}}], "deleted": [<key>, …]}`, both
   arrays optional: a snapshot omits `deleted`, a delete-only delta omits
   `items`. A slot is an entity fragment (told apart by its `id`) or a plain
-  value; the normalizer references the former and keeps the latter inline.
+  value; the normalizer references the former and keeps the latter inline;
+- `tables` — table row collections by table key, the same shape with `rows` in
+  place of `items`. A row is
+  `{"rowKey": <key>, "slots": {…}, "staleSources": [<sourceKey>, …]}`, where
+  `staleSources` names the slots whose values have stopped being kept up to date
+  and is **absent** on a row that is entirely current — which is nearly every
+  row, so the ordinary case pays nothing for it. The same row envelope, with the
+  same optional key, is what `table_window`, `table_viewport_delta`,
+  `table_viewport_append` and `table_viewport_own_create` carry: a row reaches
+  the client in one shape whichever frame brings it
+  ([table-subscription.md](table-subscription.md)).
 
 **Every accepted subscription is answered exactly once**, and the answer is the
 last frame the subscription produces: a page that contributes no payload sends

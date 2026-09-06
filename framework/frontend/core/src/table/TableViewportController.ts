@@ -78,7 +78,9 @@ function isSameOrder(
  * a `table_viewport_delta` signal (the row already reduced to references):
  *
  * - `row_updated` — a shown row's content changed; carries the new row;
- * - `row_removed` — a shown row was deleted or left the set; carries the reason.
+ * - `row_removed` — a shown row was deleted or left the set; carries the reason;
+ * - `row_stale` — which of a shown row's sources stopped being kept up to date;
+ *   carries the new list and nothing else.
  *
  * Count and append changes are live, not pending, and arrive through their own
  * sink methods ({@link TableWindowSink.ingestCount} / `ingestAppend`).
@@ -101,6 +103,12 @@ export type TableViewportDelta =
       readonly live?: boolean
       /** The backend tagged this receiver as the change's author: apply it now, resolving any queued pending. */
       readonly own?: boolean
+    }
+  | {
+      readonly kind: 'row_stale'
+      readonly rowKey: string
+      /** The row's slot keys that stopped being kept up to date; empty means current again. */
+      readonly staleSources: readonly string[]
     }
 
 /** A displayed row: its key, the resolved view-model, and whether it is a removed placeholder. */
@@ -652,9 +660,18 @@ export class TableViewportController<R> implements TableWindowSink {
    * for the connection that authored it, and it applies immediately via
    * {@link applyOwnDelta}.
    *
+   * A freshness delta is taken before either of those doors and passes through
+   * neither: it changes no value, so there is nothing for the gate to hold, and
+   * nothing queued for the row may be resolved by it.
+   *
    * @param delta The normalized viewport delta.
    */
   ingestDelta(delta: TableViewportDelta): void {
+    if (delta.kind === 'row_stale') {
+      this.applyRowStaleness(delta.rowKey, delta.staleSources)
+
+      return
+    }
     if (delta.live === true) {
       this.applyLiveDelta(delta)
 
@@ -683,6 +700,44 @@ export class TableViewportController<R> implements TableWindowSink {
         break
     }
     this.refreshPendingSignals()
+  }
+
+  /**
+   * Replace one shown row's list of sources that are no longer being kept up to date.
+   *
+   * The row's VALUES are left exactly as they are, and nothing queued for the row is
+   * resolved or dropped: this says nothing about content, and a reader who has not pressed
+   * Apply has not accepted anything by learning that a source went quiet. Holding the mark
+   * behind that gate was the alternative, and it is the outcome the ticket exists to
+   * prevent — until the press, a frozen number would go on looking fresh.
+   *
+   * A queued update for the same row is re-stamped with the new list for exactly that
+   * reason. The mark belongs to the row and not to one copy of it, and the queued copy was
+   * built when the server sent it — pressing Apply would otherwise put a row carrying the
+   * freshness of that earlier moment on screen, silently taking the mark off values that
+   * are still frozen.
+   *
+   * A row outside the window is ignored, the way a content delta for one is.
+   *
+   * @param rowKey The shown row whose freshness moved.
+   * @param staleSources The row's slot keys that are no longer current; empty clears the mark.
+   */
+  private applyRowStaleness(
+    rowKey: string,
+    staleSources: readonly string[],
+  ): void {
+    if (!this.isInWindow(rowKey)) {
+      return
+    }
+    this.windowSignal.set(
+      this.windowSignal
+        .get()
+        .map((row) => (row.rowKey === rowKey ? { ...row, staleSources } : row)),
+    )
+    const queued = this.pendingUpdates.get(rowKey)
+    if (queued) {
+      this.pendingUpdates.set(rowKey, { ...queued, staleSources })
+    }
   }
 
   /**

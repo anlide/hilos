@@ -102,9 +102,16 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
      * profile fields — ride the {@see self::SLOT_USER} entity slot the frontend
      * resolves through its user collection (so a rename still fans out for free).
      *
+     * Only the connections slot can go quiet. The user slot is a database row, and a cluster
+     * shares one database — there is no second copy of it to fall behind (HIL-800). The
+     * presence source is asked at serialization rather than read off the row, because the
+     * freshness is a fact about the runtime rows the summary was drawn from and the row keeps
+     * only the number they add up to.
+     *
      * @param AbstractTableRow $row Users-table row from this table's window or mutation
-     * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
+     * @return array{rowKey: int|string, sources: array<string, mixed>, staleSources?: list<string>} Internal browser-row envelope
      * @throws TableRowKeyMissingException When the row is a placeholder and carries no key
+     * @throws HilosException When the project presence source cannot read its runtime state
      */
     public function browserRow(AbstractTableRow $row): array
     {
@@ -118,13 +125,19 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
             $fields[AbstractHilosUserTableRow::onlineSessionCount],
         );
 
-        return [
-            BrowserPageSignalData::rowKey => $row->requireRowKey(),
+        $rowKey = $row->requireRowKey();
+        $browserRow = [
+            BrowserPageSignalData::rowKey => $rowKey,
             BrowserPageSignalData::sources => [
                 self::SLOT_USER => $fields,
                 self::SLOT_CONNECTIONS => $connections,
             ],
         ];
+        if ($this->presenceForUser((int) $rowKey)->stale) {
+            $browserRow[BrowserPageSignalData::staleSources] = [self::SLOT_CONNECTIONS];
+        }
+
+        return $browserRow;
     }
 
     /**
@@ -175,6 +188,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
      *
      * @param int $userId User id to summarize
      * @return HilosUserPresenceSummary Presence and active session count
+     * @throws HilosException When the project presence source cannot read its runtime state
      */
     protected function presenceForUser(int $userId): HilosUserPresenceSummary
     {

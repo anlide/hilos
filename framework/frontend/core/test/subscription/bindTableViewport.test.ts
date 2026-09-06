@@ -287,6 +287,49 @@ describe('bindTableViewport', () => {
     })
   })
 
+  it('reduces a freshness delta to its row key and list', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitDelta({
+      page: 'main',
+      tableKey: 'settings',
+      kind: 'row_stale',
+      rowKey: 'a',
+      staleSources: ['connections'],
+    })
+
+    expect(sink.deltas[0]).toEqual({
+      kind: 'row_stale',
+      rowKey: 'a',
+      staleSources: ['connections'],
+    })
+  })
+
+  it('reads a freshness delta with no list as the empty one', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitDelta({
+      page: 'main',
+      tableKey: 'settings',
+      kind: 'row_stale',
+      rowKey: 'a',
+    })
+
+    expect(sink.deltas[0]).toEqual({
+      kind: 'row_stale',
+      rowKey: 'a',
+      staleSources: [],
+    })
+  })
+
   it('drops a window addressed to another table', () => {
     const connection = fakeConnection()
     const scopes = new ScopeManager()

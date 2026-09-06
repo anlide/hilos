@@ -174,6 +174,18 @@ function toViewportDelta(
         live: data.live === true,
         own: data.own === true,
       }
+    case 'row_stale':
+      if (data.rowKey === undefined) {
+        return null
+      }
+
+      // An absent list is the empty one: this kind says what the row's frozen
+      // sources ARE now, and having none of them is how a thaw is spelled.
+      return {
+        kind: 'row_stale',
+        rowKey: String(data.rowKey),
+        staleSources: data.staleSources ?? [],
+      }
     default:
       return null
   }

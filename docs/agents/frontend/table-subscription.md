@@ -373,6 +373,31 @@ while the rest are live. The row carries `staleSources` — the list of
 `sourceKey`s whose values have stopped updating — and the bar above the table is
 the union of that over the window.
 
+**The list rides inside the row envelope**, in every frame a row travels in:
+`page_response`, `table_window`, `table_viewport_delta`, `table_viewport_append`
+and `table_viewport_own_create`. It is **absent** on a row that is entirely
+current, so the ordinary case pays nothing, and a tab that opened while a source
+was already behind learns of it from the first row it is given rather than
+waiting for a link to move.
+
+**A change of the list arrives as its own kind of delta**, `row_stale`, carrying
+the row key and the new list and no row. Neither of the other two kinds would do:
+an ordinary pending delta shows the mark only after Apply is pressed, which is
+exactly the interval in which a frozen number goes on looking fresh, and a live
+one replaces the row and resolves everything queued for it — a source going quiet
+would then apply an edit the reader has not accepted. `row_stale` therefore
+**does not pass through the Apply gate**, and it touches neither the row's values
+nor anything pending on it: the mark is a statement *about* the data, not a change
+to it. The gate holds the position and the composition of rows, and that boundary
+is unaffected.
+
+**Who names the frozen sources is who assembled the fragment.** A declaratively
+built row is asked per source by the framework; a typed table names its own,
+because its fragment can be a summary over many runtime rows and only it knows
+which of them went into it. And freshness stays **out of the delivered row's
+digest**: it is not content, and counted in it would raise a content delta for
+every row of the window the moment a link dropped.
+
 **This is not a lost connection.** The transport is up, the server answered, and
 the other columns are live and true; refusing the whole page here would be a lie
 in the other direction. The rule "either the connection is there or there is no
@@ -439,7 +464,7 @@ and everything below is addressed to the one connection it concerns:
 |---|---|---|
 | `table_viewport` | client → server | `page`, `tableKey`, `filter`, `sort` (a **list** of `{field, direction}`, in the sequence they apply), `limit`, and then either `anchor` + `anchorDirection` or `pageIndex` — never both |
 | `table_window` | server → client, reply only | `page`, `tableKey`, `rows`, `limit`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor` |
-| `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed`), `rowKey`, `row` |
+| `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed` / `row_stale`), `rowKey`, `row`, `staleSources` (`row_stale` only, in place of `row`) |
 | `table_viewport_append` | server → client, live | `page`, `tableKey`, `row`, `totalCount`, `totalExact`, `pageCount` — sent **only** when the row's place is the end of the window and the window has room |
 | `table_viewport_count` | server → client, live | `page`, `tableKey`, `totalCount`, `totalExact`, `pageCount` |
 | `table_viewport_own_create` | server → client, live | `page`, `tableKey`, `row`, `position`, `totalCount`, `totalExact`, `pageCount`, `requestId` — the row takes the place the sort gives it, not the tail |

@@ -480,7 +480,11 @@ brings the copy back in line and clears the mark by that very act — which is w
 hand-over has to cover rows and not only whole collections, since delivery has no
 retries and everything written during the break is otherwise lost. The browser
 sees the same state as one snowflake on the SDK shell's connection indicator,
-raised only when a collection the OPEN page reads is frozen.
+raised only when a collection the OPEN page reads is frozen. The snowflake is no
+longer the only surface: a table assembled out of a frozen source names the
+affected slots per row, so the mark reaches the cells the frozen values are in
+([table-subscription.md](../frontend/table-subscription.md), *Per-source
+staleness*).
 
 Application code should write through runtime actions, typed `RtState` fields,
 and `sync()`. Reserve `applyDiff()` / `applyDiffToState()` for inbound RT

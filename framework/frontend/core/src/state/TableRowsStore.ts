@@ -29,6 +29,14 @@ export interface TableRow {
    * store treats them opaquely; downstream code resolves references reactively.
    */
   readonly slots: Readonly<Record<string, unknown>>
+  /**
+   * Slot keys whose values have stopped being kept up to date, absent when every
+   * slot of the row is current. The keys are the row's own `slots` keys and not
+   * entities, so they are stored exactly as they arrive; what a view does with
+   * them — a mark in those cells, a word above the table — is the view's own
+   * decision.
+   */
+  readonly staleSources?: readonly string[]
 }
 
 export class TableRowsStore {
@@ -48,16 +56,20 @@ export class TableRowsStore {
    * @param tableKey The table the row belongs to.
    * @param rowKey The row's identity key; `1` and `'1'` name the same row.
    * @param slots The row's normalized slots (entity refs and plain values).
+   * @param staleSources The row's slot keys that are no longer being kept up to date.
    */
   upsert(
     tableKey: string,
     rowKey: string | number,
     slots: Readonly<Record<string, unknown>>,
+    staleSources?: readonly string[],
   ): void {
     const key = String(rowKey)
     const cell = this.cell(tableKey)
     const rows = cell.get()
-    const row: TableRow = { rowKey: key, slots }
+    const row: TableRow = staleSources
+      ? { rowKey: key, slots, staleSources }
+      : { rowKey: key, slots }
     const index = rows.findIndex((existing) => existing.rowKey === key)
     if (index === -1) {
       cell.set([...rows, row])

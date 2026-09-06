@@ -56,6 +56,13 @@ export interface ListSection {
 export interface TableRowFragment {
   rowKey: EntityId
   slots: Record<string, unknown>
+
+  /**
+   * Slot keys whose values have stopped being kept up to date, absent on a row
+   * that is entirely current. Carried through untouched: these are the row's own
+   * slot keys, not entities, and there is nothing in them to normalize.
+   */
+  staleSources?: readonly string[]
 }
 
 /**
@@ -217,7 +224,7 @@ function ingestTable(
     for (const [sourceKey, value] of Object.entries(row.slots)) {
       slots[sourceKey] = normalizeSlot(scope, sourceKey, value, options)
     }
-    scope.tables.upsert(tableKey, row.rowKey, slots)
+    scope.tables.upsert(tableKey, row.rowKey, slots, row.staleSources)
   }
   for (const rowKey of section.deleted ?? []) {
     scope.tables.delete(tableKey, rowKey)
@@ -246,7 +253,13 @@ export function normalizeTableRow(
     slots[sourceKey] = normalizeSlot(scope, sourceKey, value, options)
   }
 
-  return { rowKey: String(fragment.rowKey), slots }
+  return fragment.staleSources
+    ? {
+        rowKey: String(fragment.rowKey),
+        slots,
+        staleSources: fragment.staleSources,
+      }
+    : { rowKey: String(fragment.rowKey), slots }
 }
 
 /**

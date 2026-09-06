@@ -31,6 +31,22 @@ describe('TableRowsStore', () => {
     ])
   })
 
+  it('keeps the list of sources that stopped being kept up to date', () => {
+    const store = new TableRowsStore()
+    store.upsert('users', 1, { name: 'a' }, ['connections'])
+
+    expect(store.signal('users').get()).toEqual([
+      { rowKey: '1', slots: { name: 'a' }, staleSources: ['connections'] },
+    ])
+  })
+
+  it('carries no freshness key for a row that is entirely current', () => {
+    const store = new TableRowsStore()
+    store.upsert('users', 1, { name: 'a' })
+
+    expect(store.signal('users').get()[0]).not.toHaveProperty('staleSources')
+  })
+
   it('matches row keys stringified, so 1 and "1" are one row', () => {
     const store = new TableRowsStore()
     store.upsert('users', 1, { name: 'a' })

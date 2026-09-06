@@ -80,6 +80,7 @@ use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Runtime\View\Item\RtItem;
 use Hilos\Utils\Logger;
 use Throwable;
 use ArrayAccess;
@@ -111,6 +112,16 @@ abstract class BrowserContext
 
     protected SourceChangeSet $changes;
 
+    /**
+     * Rows whose source freshness moved this tick, by RT collection and state id.
+     *
+     * A set and not a list: the same row can be named by a link dropping and by the snapshot
+     * that follows it inside one tick, and a reader is owed one answer either way.
+     *
+     * @var array<string, array<string, true>>
+     */
+    private array $staleness = [];
+
     /** @var class-string<Hilos> Active project facade class for topology registry reads. */
     private string $hilosClass = Hilos::class;
 
@@ -140,6 +151,29 @@ abstract class BrowserContext
     public function record(SourceChange $change): void
     {
         $this->changes->add($change);
+    }
+
+    /**
+     * Records that the freshness of some rows of one RT collection has moved.
+     *
+     * Kept beside {@see self::record()} rather than travelling as a source change, because it
+     * is not one: no field of those rows changed, and the trigger lists a table declares are
+     * about fields — a change carrying an empty row would be swallowed by them without a word
+     * (HIL-800). It is buffered the same way and flushed by the same
+     * {@see self::flushToSignalRouter()}, so a freeze and the writes around it reach a window
+     * in one tick and in the order they happened.
+     *
+     * Both directions ride this: the list a row ends up with is read off the store when the
+     * flush builds the answer, so a thaw is the same call with the same rows.
+     *
+     * @param string $collectionKey RT collection whose rows froze or thawed
+     * @param list<string> $stateIds Rows of that collection whose freshness moved
+     */
+    public function recordSourceStaleness(string $collectionKey, array $stateIds): void
+    {
+        foreach ($stateIds as $stateId) {
+            $this->staleness[$collectionKey][$stateId] = true;
+        }
     }
 
     /**
@@ -492,19 +526,53 @@ abstract class BrowserContext
      * Converts an internal browser row to its wire form.
      *
      * The internal envelope keys the source fragments under `sources`; the wire
-     * row the frontend normalizer ingests keys them under `slots`, the same shape
-     * page_response table rows use. table_window and table_viewport_delta rows go
-     * through here so every table row reaches the client in one shape.
+     * row the frontend normalizer ingests keys them under `slots`. Every frame a
+     * table row rides — page_response, table_window, table_viewport_delta,
+     * table_viewport_append, table_viewport_own_create — goes through here, so a
+     * field added to the row is on the wire in all of them or in none.
      *
-     * @param array{rowKey: int|string, sources: array<string, mixed>} $browserRow Internal browser row
-     * @return array{rowKey: int|string, slots: array<string, mixed>} Wire row
+     * The freshness list travels only when something in the row is frozen. A fresh
+     * row is the overwhelmingly common one, and it pays nothing: no key, no bytes,
+     * and no digest change to raise a content delta out of (HIL-800).
+     *
+     * @param array{rowKey: int|string, sources: array<string, mixed>, staleSources?: list<string>} $browserRow Internal browser row
+     * @return array{rowKey: int|string, slots: array<string, mixed>, staleSources?: list<string>} Wire row
      */
     private function browserRowToWire(array $browserRow): array
     {
-        return [
+        $wireRow = [
             PagePayload::rowKey => $browserRow[BrowserPageSignalData::rowKey],
             PagePayload::slots => $browserRow[BrowserPageSignalData::sources],
         ];
+
+        $staleSources = $this->staleSourcesOfRow($browserRow);
+        if ($staleSources !== []) {
+            $wireRow[PagePayload::staleSources] = $staleSources;
+        }
+
+        return $wireRow;
+    }
+
+    /**
+     * Reads the frozen source keys off an already-built browser row.
+     *
+     * Both row builders write the same key on the same envelope — the declarative one in
+     * {@see self::buildBrowserRow()}, the typed one in the table's own
+     * {@see ViewportTable::browserRow()} — and both are read back here, so the two roads a
+     * row can travel cannot come to disagree about what counts as frozen. A table that
+     * declares nothing writes nothing, and answers an empty list.
+     *
+     * @param array<string, mixed> $browserRow Internal browser row
+     * @return list<string> Frozen source keys of the row, empty when all of it is current
+     */
+    private function staleSourcesOfRow(array $browserRow): array
+    {
+        $staleSources = $browserRow[BrowserPageSignalData::staleSources] ?? [];
+        if (!is_array($staleSources)) {
+            return [];
+        }
+
+        return array_values(array_filter($staleSources, is_string(...)));
     }
 
     /**
@@ -520,7 +588,7 @@ abstract class BrowserContext
      */
     public function flushToSignalRouter(): array
     {
-        if ($this->changes->isEmpty()) {
+        if ($this->changes->isEmpty() && $this->staleness === []) {
             return [];
         }
 
@@ -532,6 +600,7 @@ abstract class BrowserContext
             // Dropped however the flush ended. A set held back because something threw is
             // the same frame again on the next tick, and on every tick after that one.
             $this->changes = new SourceChangeSet();
+            $this->staleness = [];
         }
     }
 
@@ -629,8 +698,12 @@ abstract class BrowserContext
      * Emits browser signals produced from grouped DB/RT source changes in $this->changes.
      *
      * A row that refuses to be built no longer leaves this method: the guard below
-     * contains it per subscription. What is still raised comes from the second loop,
+     * contains it per subscription. What is still raised comes from the last loop,
      * where the collected payloads are queued.
+     *
+     * The freshness moves buffered beside the changes are fanned out in a loop of their own,
+     * over the same subscriptions and into the same accumulator, so a row that both changed
+     * and froze in one tick reaches its reader in one page answer (HIL-800).
      *
      * @return list<ContainedFailure> Subscriptions whose fan-out failed, in the order they failed
      * @throws InvalidArgumentException When a fanned-out signal cannot be named
@@ -674,6 +747,37 @@ abstract class BrowserContext
                     // radius is the point and it does not depend on which exception the
                     // row-building happened to reach. The line is not written here: it
                     // belongs to the worker's tick, which is handed this list.
+                    $contained[] = new ContainedFailure(
+                        WorkerTickUnit::BROWSER_SUBSCRIPTION,
+                        "page={$page} acceptKey={$acceptKey}",
+                        $failure,
+                    );
+                    $this->tellPageDeliveryFailed((string) $page, (string) $acceptKey);
+                    $failedSubscriptions[$acceptKey] = true;
+                }
+            }
+        }
+
+        foreach ($this->staleness as $collectionKey => $stateIds) {
+            foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
+                if (isset($failedSubscriptions[$acceptKey])) {
+                    continue;
+                }
+
+                $page = $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY];
+                try {
+                    $this->addBrowserStaleness(
+                        $signalTables,
+                        $guardAllows,
+                        (string) $collectionKey,
+                        array_map(strval(...), array_keys($stateIds)),
+                        (string) $page,
+                        (string) $acceptKey,
+                        $subscription,
+                    );
+                } catch (Throwable $failure) {
+                    // Contained per subscription for the reason the loop above is: this runs on
+                    // the same reactive path, with nothing between a throw and the worker's exit.
                     $contained[] = new ContainedFailure(
                         WorkerTickUnit::BROWSER_SUBSCRIPTION,
                         "page={$page} acceptKey={$acceptKey}",
@@ -895,6 +999,207 @@ abstract class BrowserContext
 
             $this->addBrowserRow($signalTables, $acceptKey, $page, $browserKey, $rowKey, $row);
         }
+    }
+
+    /**
+     * Collects one subscription's answer to a freshness move in one RT collection.
+     *
+     * The shape of {@see self::addBrowserChange()} and deliberately not that method: the two
+     * questions differ in what reaches the reader. A table serving a window is told which of
+     * its shown rows changed freshness and nothing else — the values did not move, and a
+     * content delta would either wait behind the Apply gate (leaving a frozen number looking
+     * fresh until it is pressed) or, sent live, resolve everything the reader has not accepted
+     * yet. A table without a window has no gate at all, so its row simply goes out whole with
+     * the list inside it (HIL-800).
+     *
+     * @param array<string, array<string, array<string, array<string, mixed>>>> $signalTables Collected
+     *     rows, keyed by accept key, page and browser key
+     * @param array<string, bool> $guardAllows Memoized page-guard result per accept key
+     * @param string $collectionKey RT collection whose rows froze or thawed
+     * @param list<string> $stateIds Rows of that collection whose freshness moved
+     * @param string $page Page name from the subscription mirror
+     * @param string $acceptKey Subscriber accept key
+     * @param array<string, mixed> $subscription Page subscription mirror entry
+     * @throws PageInternalErrorException When a page or source declaration is malformed
+     * @throws DatabaseException When reading a joined database source fails
+     * @throws LogicException When a database collection is not configured with its class constants
+     * @throws CollectionNotManualException When the collection built for a join refuses its own items
+     */
+    private function addBrowserStaleness(
+        array &$signalTables,
+        array &$guardAllows,
+        string $collectionKey,
+        array $stateIds,
+        string $page,
+        string $acceptKey,
+        array $subscription,
+    ): void {
+        $pageConfig = $this->pageConfig($page);
+        if ($pageConfig === null || $pageConfig->signalName === null) {
+            return;
+        }
+
+        $pageParams = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY];
+        $guardAllows[$acceptKey] ??= $this->pageGuardsAllow($page, $pageConfig, $acceptKey, $pageParams);
+        if (!$guardAllows[$acceptKey]) {
+            return;
+        }
+
+        foreach ($this->pageBindings($page) as $pageBinding) {
+            $browserKey = $pageBinding->browserKey;
+
+            $viewportTable = $this->viewportTable($browserKey);
+            if ($viewportTable !== null) {
+                // A viewport table is delivered only through its window, exactly as it is for a
+                // content change: with no window open there is nowhere for this to land, and it
+                // never falls through to the page_response fan-out below.
+                $viewport = Hilos::$sr?->getTableViewport($acceptKey, $browserKey);
+                if ($viewport === null) {
+                    continue;
+                }
+
+                foreach ($stateIds as $stateId) {
+                    $this->emitViewportStaleness(
+                        $viewportTable,
+                        $viewport,
+                        SourceChange::rtUpdated($collectionKey, $stateId, []),
+                        $acceptKey,
+                        $page,
+                        $browserKey,
+                    );
+                }
+
+                continue;
+            }
+
+            $browserConfig = $this->browserConfig($browserKey);
+            if ($browserConfig === null) {
+                continue;
+            }
+
+            $browserParams = $this->browserParams($pageBinding, $acceptKey, $pageParams);
+            foreach ($stateIds as $stateId) {
+                $rowKey = $this->staleRowKey($browserConfig, $collectionKey, $stateId, $browserParams);
+                if ($rowKey === null) {
+                    continue;
+                }
+
+                $row = $this->buildBrowserRow(
+                    browserKey: $browserKey,
+                    browserConfig: $browserConfig,
+                    rowKey: $rowKey,
+                    acceptKey: $acceptKey,
+                    pageParams: $pageParams,
+                    browserParams: $browserParams,
+                    joinedItems: [],
+                );
+                if ($row !== null) {
+                    $this->addBrowserRow($signalTables, $acceptKey, $page, $browserKey, $rowKey, $row);
+                }
+            }
+        }
+    }
+
+    /**
+     * Tells one window that a row it shows changed which of its sources are current.
+     *
+     * The row is rebuilt through the table's own mutation builder — the same door a content
+     * delta comes through — so the table names its own frozen slots; a typed table assembles
+     * its fragments itself, and one of them can be a summary over many runtime rows. The row
+     * is then thrown away: what goes out is the list alone, and the values the reader is
+     * looking at are left exactly as they are (Flow F3).
+     *
+     * The delivered digest is not touched, and does not need to be: freshness is kept out of
+     * it on purpose ({@see TableViewportSubscription::digest()}), so this row is still the
+     * row the connection was given.
+     *
+     * A table that refuses to build the row leaves this window on its old marks and says so in
+     * the log, rather than telling the subscriber its page failed. Freshness is the least of
+     * what a page carries, and taking the page down over it would be the wrong trade
+     * ({@see self::emitViewportDelta()} contains its build for the same reason).
+     *
+     * @param ViewportTable $table Viewport table the window is on
+     * @param TableViewportSubscription $viewport Connection's window
+     * @param SourceChange $address Address of the runtime row whose freshness moved
+     * @param string $acceptKey Target accept key
+     * @param string $page Subscribed page key
+     * @param string $browserKey Browser table key
+     */
+    private function emitViewportStaleness(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        SourceChange $address,
+        string $acceptKey,
+        string $page,
+        string $browserKey,
+    ): void {
+        try {
+            $mutation = $table->buildMutationForSourceEvent($address);
+            if ($mutation?->row === null || !$viewport->hasRow((string) $mutation->rowKey)) {
+                return;
+            }
+
+            $staleSources = $this->staleSourcesOfRow($table->browserRow($mutation->row));
+        } catch (Throwable $e) {
+            Logger::error(
+                "Viewport staleness skipped a row the table failed to build: table={$browserKey}, "
+                    . "page={$page}, acceptKey={$acceptKey}, "
+                    . "source={$address->sourceKey}#{$address->sourceId}, "
+                    . 'exception=' . $e::class . ", message={$e->getMessage()}",
+            );
+
+            return;
+        }
+
+        $this->queueAddressedTableSignal(
+            SignalTypeConstants::TABLE_VIEWPORT_DELTA,
+            TableViewportDeltaDTO::rowStale($page, $browserKey, $mutation->rowKey, $staleSources),
+            $acceptKey,
+        );
+    }
+
+    /**
+     * Resolves the browser row one RT row of a frozen collection belongs to.
+     *
+     * The trigger fields a row source may declare are deliberately not consulted: they name
+     * the fields of the source whose change should rebuild the row, and freshness is not one
+     * of them — asked, they would answer no every time and the mark would never leave here
+     * ({@see self::rowConfigTriggersOnChange()}). The address handed to the row-key reader is
+     * an address and nothing more: it names the collection and the row, carries no fields, and
+     * never leaves this method.
+     *
+     * @param BrowserSourceConfig $browserConfig Browser source config of the bound table
+     * @param string $collectionKey RT collection whose row froze or thawed
+     * @param string $stateId Row of that collection
+     * @param array<string, mixed> $browserParams Resolved table params
+     * @return int|string|null Browser row key, or null when this table draws no row from it
+     * @throws PageInternalErrorException When a page or source declaration is malformed
+     * @throws DatabaseException When the source collection cannot be loaded
+     * @throws LogicException When a database collection is not configured with its class constants
+     */
+    private function staleRowKey(
+        BrowserSourceConfig $browserConfig,
+        string $collectionKey,
+        string $stateId,
+        array $browserParams,
+    ): int|string|null {
+        $address = SourceChange::rtUpdated($collectionKey, $stateId, []);
+        foreach ($this->rowConfigs($browserConfig) as $rowConfig) {
+            $source = $rowConfig[BrowserFieldKey::SOURCE] ?? [];
+            if (!is_array($source)
+                || $this->sourceType($source) !== SourceChange::KIND_RT
+                || $this->sourceKey($source) !== $collectionKey
+            ) {
+                continue;
+            }
+
+            $rowKey = $this->rowKeyValue($rowConfig, $address, $browserParams);
+            if ($rowKey !== null) {
+                return $rowKey;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -1358,6 +1663,7 @@ abstract class BrowserContext
         array $joinedItems,
     ): ?array {
         $sources = [];
+        $staleSources = [];
         $anchorChecked = false;
         $anchorFound = false;
         foreach ($this->rowConfigs($browserConfig) as $rowConfig) {
@@ -1401,6 +1707,9 @@ abstract class BrowserContext
                     ),
                     $items,
                 );
+                if ($this->itemsAreFrozen($items)) {
+                    $staleSources[] = $sourceKey;
+                }
                 continue;
             }
 
@@ -1425,16 +1734,51 @@ abstract class BrowserContext
                 browserParams: $browserParams,
                 sources: $sources,
             );
+            if ($this->itemsAreFrozen([$items[0]])) {
+                $staleSources[] = $sourceKey;
+            }
         }
 
         if ($sources === [] || ($anchorChecked && !$anchorFound)) {
             return null;
         }
 
-        return [
+        $browserRow = [
             BrowserPageSignalData::rowKey => $rowKey,
             BrowserPageSignalData::sources => $sources,
         ];
+        if ($staleSources !== []) {
+            $browserRow[BrowserPageSignalData::staleSources] = $staleSources;
+        }
+
+        return $browserRow;
+    }
+
+    /**
+     * Whether any of the items a slot was built from is a copy that stopped being updated.
+     *
+     * The question is asked of the item and not of the collection it came from: on a cluster a
+     * collection holds this node's own rows beside replicas of somebody else's, and only some of
+     * the replicas are behind a link that dropped ({@see RtItem::staleSince()}). A database item
+     * is never asked, because a cluster shares one database and a database row has no other copy
+     * to fall behind (HIL-800).
+     *
+     * One frozen item is enough for the whole slot. A slot built out of many rows shows one value
+     * assembled from all of them, and a value assembled partly out of frozen rows is a frozen
+     * value — there is no part of the cell to mark separately.
+     *
+     * @param list<mixed> $items Source items the slot was built from
+     * @return bool Whether the slot draws on a copy that is no longer kept up to date
+     */
+    private function itemsAreFrozen(array $items): bool
+    {
+        foreach ($items as $item) {
+            if ($item instanceof RtItem && $item->staleSince() !== null) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -3260,7 +3604,7 @@ abstract class BrowserContext
                         $section[PagePayload::cleared] = true;
                     }
                     if ($rows !== []) {
-                        $section[PagePayload::items] = $this->renameRowSlots($rows, PagePayload::itemKey);
+                        $section[PagePayload::items] = $this->listItemsToWire($rows);
                     }
                     if ($deleted !== []) {
                         $section[PagePayload::deleted] = array_values($deleted);
@@ -3286,7 +3630,7 @@ abstract class BrowserContext
                         $section[PagePayload::cleared] = true;
                     }
                     if ($rows !== []) {
-                        $section[PagePayload::rows] = $this->renameRowSlots($rows, PagePayload::rowKey);
+                        $section[PagePayload::rows] = array_values(array_map($this->browserRowToWire(...), $rows));
                     }
                     if ($deleted !== []) {
                         $section[PagePayload::deleted] = array_values($deleted);
@@ -3299,17 +3643,20 @@ abstract class BrowserContext
     }
 
     /**
-     * Renames each browser row's `sources` bag to `slots` under the given key.
+     * Renames each browser list item's `sources` bag to `slots` under the item key.
+     *
+     * A table row of the same page answer is shaped by {@see self::browserRowToWire()} instead,
+     * which is where the row's own optional fields live: a list item is addressed by its place
+     * in an order and carries none of them.
      *
      * @param list<array{rowKey: int|string, sources: array<string, mixed>}> $rows Browser rows
-     * @param string $keyName Identity key name for the section (rowKey or itemKey)
-     * @return list<array<string, mixed>> Rows reshaped for the page_response section
+     * @return list<array<string, mixed>> Items reshaped for the page_response list section
      */
-    private function renameRowSlots(array $rows, string $keyName): array
+    private function listItemsToWire(array $rows): array
     {
         return array_values(array_map(
             static fn(array $row): array => [
-                $keyName => $row[BrowserPageSignalData::rowKey],
+                PagePayload::itemKey => $row[BrowserPageSignalData::rowKey],
                 PagePayload::slots => $row[BrowserPageSignalData::sources],
             ],
             $rows,

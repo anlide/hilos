@@ -10,6 +10,7 @@ use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\HilosException;
 
 /**
  * Contract for a table that can serve a server-windowed viewport.
@@ -77,9 +78,16 @@ interface ViewportTable
      * shape page_response table rows use, so a windowed row reaches the client
      * identically to a fanned-out one.
      *
+     * A third, optional key names the slots this row assembled out of a copy that stopped
+     * being kept up to date (HIL-800). It is the table's own answer and not the framework's,
+     * because a typed table builds its fragments itself and one of them can be a summary over
+     * many runtime rows — which of those went into it is known here and nowhere else. A table
+     * with nothing that can fall behind writes no such key.
+     *
      * @param AbstractTableRow $row Typed table row from this table's window or mutation
-     * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
+     * @return array{rowKey: int|string, sources: array<string, mixed>, staleSources?: list<string>} Internal browser-row envelope
      * @throws TableRowKeyMissingException When the row is a placeholder and carries no key
+     * @throws HilosException When the table's own sources refuse the reads its fragments need
      */
     public function browserRow(AbstractTableRow $row): array;
 }

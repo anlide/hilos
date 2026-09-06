@@ -70,12 +70,32 @@ abstract class HilosConnections extends RtCollection implements HilosPresenceSou
     /**
      * Builds the runtime presence summary used by user-facing table rows.
      *
+     * The freshness is asked of THIS collection and never of what {@see self::forUser()}
+     * hands back. That copy is deliberately detached from the runtime collection name, and
+     * a mark is kept beside the rows under that name — so every item of the copy answers
+     * "fresh" whatever the link is doing, and a summary built out of it would be a green
+     * light wired to nothing (HIL-800).
+     *
+     * One frozen connection is enough for the whole summary: the count it qualifies is a
+     * single number over all of them, and a number partly assembled out of copies nobody
+     * is hearing about is not a fresh number.
+     *
      * @param ?int $userId User id to summarize active runtime connections for
      * @return HilosUserPresenceSummary Runtime presence and session count summary
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      */
     public function summaryForUser(?int $userId): HilosUserPresenceSummary
     {
-        return new HilosUserPresenceSummary(count($this->forUser($userId)));
+        $stateConnections = $this->getStateCollection()->findByUser($userId);
+        $stale = false;
+        foreach (array_keys($stateConnections) as $stateId) {
+            if ($this->getRtItemForKey((string) $stateId)?->staleSince() !== null) {
+                $stale = true;
+
+                break;
+            }
+        }
+
+        return new HilosUserPresenceSummary(count($stateConnections), $stale);
     }
 }

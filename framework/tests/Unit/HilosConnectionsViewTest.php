@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\State\Collection\HilosConnections as StateHilosConnections;
 use Hilos\Runtime\State\Collection\HilosSessionConnections as StateHilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosConnection as StateHilosConnection;
@@ -29,6 +30,15 @@ use PHPUnit\Framework\TestCase;
  */
 final class HilosConnectionsViewTest extends TestCase
 {
+    private const string COLLECTION = 'presenceConnections';
+
+    protected function tearDown(): void
+    {
+        RtStaleness::reset();
+
+        parent::tearDown();
+    }
+
     public function testPresenceStageFiltersByUserAndSummarizesPresence(): void
     {
         $connections = $this->presenceConnections();
@@ -76,6 +86,51 @@ final class HilosConnectionsViewTest extends TestCase
     }
 
     /**
+     * One connection of a user frozen makes the user's whole summary a frozen one: the count
+     * it qualifies is a single number over all of them, and it is no longer moving (HIL-800).
+     */
+    public function testTheSummaryOfAUserWithAFrozenConnectionSaysSo(): void
+    {
+        $connections = $this->presenceConnections();
+        RtStaleness::mark(self::COLLECTION, ['view-ak-2'], 1000.0);
+
+        $summary = $connections->summaryForUser(1);
+
+        $this->assertTrue($summary->stale);
+        $this->assertSame(2, $summary->onlineSessionCount, 'a frozen copy is still served, and still counted');
+        $this->assertFalse(
+            $connections->summaryForUser(2)->stale,
+            'a user with no connection of that collection is not dragged into it',
+        );
+    }
+
+    public function testAUserWhoseConnectionsAreAllCurrentIsNotCalledFrozen(): void
+    {
+        $connections = $this->presenceConnections();
+        RtStaleness::mark(self::COLLECTION, ['view-ak-3'], 1000.0);
+
+        $this->assertFalse($connections->summaryForUser(1)->stale);
+    }
+
+    /**
+     * The trap the summary must not fall into, pinned from the outside: the filtered copy is
+     * detached from the collection name the marks are kept under, so every item of it answers
+     * "fresh" whatever the link is doing. A summary counted off that copy would be a green
+     * light wired to nothing, which is why it is counted off the collection itself.
+     */
+    public function testTheFilteredCopyAnswersFreshWhileTheSummaryDoesNot(): void
+    {
+        $connections = $this->presenceConnections();
+        RtStaleness::mark(self::COLLECTION, ['view-ak-1', 'view-ak-2'], 1000.0);
+
+        foreach ($connections->forUser(1) as $item) {
+            $this->assertNull($item->staleSince(), 'the copy carries no collection name to ask under');
+        }
+
+        $this->assertTrue($connections->summaryForUser(1)->stale);
+    }
+
+    /**
      * Builds a presence-stage view over three rows, two of them one user's.
      *
      * @return PresenceViewConnections View collection over the fixture rows
@@ -89,6 +144,7 @@ final class HilosConnectionsViewTest extends TestCase
 
         $view = PresenceViewConnections::init();
         $view->setStateCollection($state);
+        $view->setCollectionName(self::COLLECTION);
 
         return $view;
     }

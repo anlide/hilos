@@ -122,15 +122,48 @@ final class AbstractHilosUsersTableTest extends TestCase
     }
 
     /**
+     * The presence slot is assembled out of runtime rows, so it is the one that can go quiet;
+     * the user slot is a database row and a cluster shares one database (HIL-800).
+     */
+    public function testBrowserRowNamesTheConnectionsSlotWhenPresenceIsFrozen(): void
+    {
+        $table = $this->table(presenceStale: true);
+        $mutation = $table->buildMutationForSourceEvent(SourceChange::dbUpdated('users', '5', []));
+        $this->assertNotNull($mutation);
+        $this->assertNotNull($mutation->row);
+
+        $browserRow = $table->browserRow($mutation->row);
+
+        $this->assertSame(
+            [AbstractHilosUsersTable::SLOT_CONNECTIONS],
+            $browserRow[BrowserPageSignalData::staleSources],
+        );
+    }
+
+    public function testBrowserRowOfAUserWhosePresenceIsCurrentCarriesNoFreshnessKey(): void
+    {
+        $table = $this->table();
+        $mutation = $table->buildMutationForSourceEvent(SourceChange::dbUpdated('users', '5', []));
+        $this->assertNotNull($mutation);
+        $this->assertNotNull($mutation->row);
+
+        $this->assertArrayNotHasKey(
+            BrowserPageSignalData::staleSources,
+            $table->browserRow($mutation->row),
+        );
+    }
+
+    /**
      * Builds a test users table bound to in-memory sources.
      *
      * @param ?int $missingUserId User id the row builder treats as gone, or null
+     * @param bool $presenceStale Whether the bound presence source reports a frozen summary
      * @return AbstractHilosUsersTable Concrete table over fixed source keys
      */
-    private function table(?int $missingUserId = null): AbstractHilosUsersTable
+    private function table(?int $missingUserId = null, bool $presenceStale = false): AbstractHilosUsersTable
     {
-        return new class($missingUserId) extends AbstractHilosUsersTable {
-            public function __construct(public ?int $missingUserId)
+        return new class($missingUserId, $presenceStale) extends AbstractHilosUsersTable {
+            public function __construct(public ?int $missingUserId, public bool $presenceStale)
             {
                 parent::__construct();
             }
@@ -147,10 +180,14 @@ final class AbstractHilosUsersTableTest extends TestCase
 
             protected function presenceSource(): HilosPresenceSource
             {
-                return new class implements HilosPresenceSource {
+                return new class($this->presenceStale) implements HilosPresenceSource {
+                    public function __construct(private readonly bool $stale)
+                    {
+                    }
+
                     public function summaryForUser(?int $userId): HilosUserPresenceSummary
                     {
-                        return new HilosUserPresenceSummary($userId ?? 0);
+                        return new HilosUserPresenceSummary($userId ?? 0, $this->stale);
                     }
                 };
             }

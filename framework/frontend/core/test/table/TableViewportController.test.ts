@@ -353,6 +353,109 @@ describe('TableViewportController', () => {
     expect(controller.pageCount.get()).toBe(5)
   })
 
+  it('marks a shown row stale without touching its values or its pending change', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'old' } }],
+      1,
+      true,
+      null,
+      null,
+    )
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_stale',
+      rowKey: 'a',
+      staleSources: ['presence'],
+    })
+
+    // The freshness mark is not a change to the row, so what the reader has not
+    // accepted stays unaccepted and what is on screen stays on screen.
+    expect(controller.pendingCount.get()).toBe(1)
+    expect(controller.rows.get()[0]?.row).toEqual({
+      rowKey: 'a',
+      slots: { name: 'old' },
+      staleSources: ['presence'],
+    })
+  })
+
+  it('re-stamps a queued update, so Apply cannot take the mark off frozen values', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'old' } }],
+      1,
+      true,
+      null,
+      null,
+    )
+    // The update was built and sent before the source went quiet, so it carries
+    // the freshness of that earlier moment.
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_stale',
+      rowKey: 'a',
+      staleSources: ['presence'],
+    })
+    controller.apply()
+
+    expect(controller.rows.get()[0]?.row).toEqual({
+      rowKey: 'a',
+      slots: { name: 'new' },
+      staleSources: ['presence'],
+    })
+  })
+
+  it('clears the mark when the sources are current again', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'old' }, staleSources: ['presence'] }],
+      1,
+      true,
+      null,
+      null,
+    )
+    controller.ingestDelta({
+      kind: 'row_stale',
+      rowKey: 'a',
+      staleSources: [],
+    })
+
+    expect(controller.rows.get()[0]?.row).toEqual({
+      rowKey: 'a',
+      slots: { name: 'old' },
+      staleSources: [],
+    })
+  })
+
+  it('ignores a freshness mark for a row it is not showing', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'old' } }],
+      1,
+      true,
+      null,
+      null,
+    )
+    controller.ingestDelta({
+      kind: 'row_stale',
+      rowKey: 'b',
+      staleSources: ['presence'],
+    })
+
+    expect(controller.rows.get()[0]?.row).toEqual({
+      rowKey: 'a',
+      slots: { name: 'old' },
+    })
+  })
+
   it('applies a live row update at once, with nothing left pending', () => {
     const { controller } = makeController()
     controller.ingestWindow(

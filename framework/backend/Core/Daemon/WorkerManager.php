@@ -842,14 +842,19 @@ abstract class WorkerManager extends BaseManager
         // included. A worker whose last reader of it went away stops being sent the thaw frames -
         // they are addressed by interest - so a mark from before would otherwise survive a
         // snapshot that says the rows are current.
-        RtStaleness::clear(
-            $data->collectionKey,
-            array_map(strval(...), array_keys(RtStaleness::staleRows($data->collectionKey))),
-        );
+        $wereFrozen = array_map(strval(...), array_keys(RtStaleness::staleRows($data->collectionKey)));
+        RtStaleness::clear($data->collectionKey, $wereFrozen);
         foreach ($data->staleRows as $stateId => $since) {
             RtStaleness::mark($data->collectionKey, [$stateId], $since);
         }
         SourceInterestRegistry::markReady(SourceChange::KIND_RT, $data->collectionKey);
+        // Both halves of the replacement are named to the tables: the rows this snapshot thawed
+        // and the rows it froze. A window shows the mark per row, so it has to be told about a
+        // row leaving the frozen set exactly as loudly as about one joining it (HIL-800).
+        Hilos::$browser?->recordSourceStaleness(
+            $data->collectionKey,
+            [...$wereFrozen, ...array_map(strval(...), array_keys($data->staleRows))],
+        );
     }
 
     /**
@@ -895,6 +900,10 @@ abstract class WorkerManager extends BaseManager
         }
 
         $this->notifyStalenessToPages($data->collectionKey);
+        // The page-wide snowflake says THAT something a page reads is frozen; this says WHICH
+        // rows of which table, which is what a cell can be marked from (HIL-800). Buffered
+        // rather than sent: the browser fan-out owns the addressing and runs later this tick.
+        Hilos::$browser?->recordSourceStaleness($data->collectionKey, $data->stateIds);
     }
 
     /**

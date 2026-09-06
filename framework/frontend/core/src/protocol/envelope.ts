@@ -110,10 +110,19 @@ export type ActionSuccessSignalData = z.infer<
   typeof actionSuccessSignalDataSchema
 >
 
-/** One table row on the wire: its identity key plus its normalized slots. */
+/**
+ * One table row on the wire: its identity key plus its normalized slots.
+ *
+ * `staleSources` names the slots whose values have stopped being kept up to date —
+ * a source of the row is behind a link that dropped, while the rest of it is live. It
+ * is absent on a row that is entirely current, which is nearly every row, and a
+ * malformed one is dropped rather than allowed to refuse the row it came on: a row
+ * shown without a mark is a smaller loss than a row not shown at all.
+ */
 const tableRowFragmentSchema = z.looseObject({
   rowKey: z.union([z.string(), z.number()]),
   slots: z.record(z.string(), z.unknown()),
+  staleSources: z.array(z.string()).optional().catch(undefined),
 })
 
 /**
@@ -145,10 +154,15 @@ export type TableWindowSignalData = z.infer<typeof tableWindowSignalDataSchema>
 /**
  * Payload of the framework table viewport delta (`type: 'table_viewport_delta'`,
  * PHP `TableViewportDeltaDTO`): the addressed live PENDING row change for one
- * table, discriminated by `kind` (`row_updated` / `row_removed`). A row rides the
- * `{rowKey, slots}` shape; `kind` and `reason` stay loose strings so a newer
- * backend kind survives parsing. Count and append changes ride their own live
- * signals; this carries only row edits and removals, never auto-applied.
+ * table, discriminated by `kind` (`row_updated` / `row_removed` / `row_stale`). A
+ * row rides the `{rowKey, slots}` shape; `kind` and `reason` stay loose strings so a
+ * newer backend kind survives parsing. Count and append changes ride their own live
+ * signals; this carries only row edits, removals and freshness marks, never
+ * auto-applied.
+ *
+ * `row_stale` carries `staleSources` in place of a row: which of the row's sources
+ * stopped being kept up to date, with the list replacing whatever the row held and an
+ * empty one meaning it is current again.
  */
 export const tableViewportDeltaSignalDataSchema = z.looseObject({
   page: z.string(),
@@ -157,6 +171,7 @@ export const tableViewportDeltaSignalDataSchema = z.looseObject({
   rowKey: z.union([z.string(), z.number()]).optional(),
   row: tableRowFragmentSchema.optional(),
   reason: z.string().optional(),
+  staleSources: z.array(z.string()).optional(),
   live: z.boolean().optional(),
   own: z.boolean().optional(),
 })

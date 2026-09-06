@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Router;
 
+use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableAnchorDirection;
@@ -65,7 +66,7 @@ final class TableViewportSubscription
     /**
      * Records the rows and total count of a freshly served window.
      *
-     * @param array<string, array{rowKey: int|string, slots: array<string, mixed>}> $wireRows Wire rows
+     * @param array<string, array{rowKey: int|string, slots: array<string, mixed>, staleSources?: list<string>}> $wireRows Wire rows
      *     delivered in the window, keyed by row-id key, in display order
      * @param int $totalCount Total rows matching the filter
      * @param bool $totalExact Whether that total is the size of the set rather than the ceiling the count stopped at
@@ -90,7 +91,7 @@ final class TableViewportSubscription
      * Records one row delivered to this connection outside a whole-window build.
      *
      * @param string $rowKey Row-id key
-     * @param array{rowKey: int|string, slots: array<string, mixed>} $wireRow Wire row delivered for that key
+     * @param array{rowKey: int|string, slots: array<string, mixed>, staleSources?: list<string>} $wireRow Wire row delivered for that key
      */
     public function recordRow(string $rowKey, array $wireRow): void
     {
@@ -116,7 +117,7 @@ final class TableViewportSubscription
      * not be encoded - never matches: only a proven match may silence a delta.
      *
      * @param string $rowKey Row-id key
-     * @param array{rowKey: int|string, slots: array<string, mixed>} $wireRow Wire row to compare
+     * @param array{rowKey: int|string, slots: array<string, mixed>, staleSources?: list<string>} $wireRow Wire row to compare
      * @return bool Whether the delivered row and the given one are the same
      */
     public function matchesRow(string $rowKey, array $wireRow): bool
@@ -250,11 +251,17 @@ final class TableViewportSubscription
     /**
      * Digest of one delivered wire row, or null when it cannot be encoded.
      *
-     * @param array{rowKey: int|string, slots: array<string, mixed>} $wireRow Wire row as delivered
+     * The freshness list is dropped before the row is hashed. The digest answers one question -
+     * is this the same CONTENT this connection was given - and a source falling behind changes
+     * no content: counted in, a link dropping would raise a content delta for every row of the
+     * window, which is the very lie about a change HIL-790 closed (HIL-800).
+     *
+     * @param array{rowKey: int|string, slots: array<string, mixed>, staleSources?: list<string>} $wireRow Wire row as delivered
      * @return ?string Digest of the row, or null when json_encode refused it
      */
     private static function digest(array $wireRow): ?string
     {
+        unset($wireRow[PagePayload::staleSources]);
         $encoded = json_encode($wireRow);
 
         return $encoded === false ? null : hash(self::ROW_DIGEST_ALGO, $encoded);

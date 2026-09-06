@@ -43,6 +43,14 @@ Start with `agents.md`, then read the matching runtime guide.
   `RtItem::staleSince()` for a row, `RtCollection::staleSince()` for the earliest
   among a collection's rows, `null` in both when the copy is current. Both in
   `docs/agents/runtime/rt-context.md`.
+- **A table slot assembled out of a runtime source must name its own freshness**,
+  and there is exactly one way to ask: `staleSince()` on the ITEM the slot was
+  built from. Never on a filtered copy of a collection — a copy is detached from
+  the collection name the marks are kept under, so every item of it answers
+  "fresh" whatever the link is doing, and a slot counted off one is a green light
+  wired to nothing. A slot that summarizes many rows asks the owning collection
+  for each of them and is frozen when any one is. The row then carries the slot
+  keys in `staleSources`; see `docs/agents/frontend/table-subscription.md`.
 - `RtCollection` and `RtItem` expose read-oriented app APIs around the backing
   state rows. RT View collection reads treat `null` offsets as missing optional
   keys.

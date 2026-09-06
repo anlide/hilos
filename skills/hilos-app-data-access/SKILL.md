@@ -57,7 +57,10 @@ switch to the focused data-layer skill first.
   including a replica whose owner is unreachable — it is still served, and
   `RtItem::staleSince()` / `RtCollection::staleSince()` say since when it stopped
   being kept up to date, `null` when it is current
-  (`docs/agents/runtime/rt-context.md`).
+  (`docs/agents/runtime/rt-context.md`). Building a table slot out of such a
+  collection means naming that slot's freshness too, and asking the ITEM rather
+  than a filtered copy of the collection — a copy answers "fresh" always
+  (`skills/hilos-runtime/SKILL.md`).
 - A *set* of an entity is not the rows this process happens to hold. Ask the
   agent that holds that set, or query the database; iterating a lazy collection
   returns whatever was loaded earlier, and the end of it cannot be told apart
