@@ -221,7 +221,7 @@ function onSearchInput(event: Event): void {
           class="btn btn-outline-secondary btn-sm"
           :disabled="page === 0"
           data-id="hilos-table-prev"
-          @click="controller.setPage(page - 1)"
+          @click="controller.prevPage()"
         >
           Previous
         </button>
@@ -237,7 +237,7 @@ function onSearchInput(event: Event): void {
           class="btn btn-outline-secondary btn-sm"
           :disabled="page >= pageCount - 1"
           data-id="hilos-table-next"
-          @click="controller.setPage(page + 1)"
+          @click="controller.nextPage()"
         >
           Next
         </button>

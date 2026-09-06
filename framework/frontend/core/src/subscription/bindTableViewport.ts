@@ -68,6 +68,8 @@ export function bindTableViewport(
     sink.ingestWindow(
       data.rows.map((row) => normalizeTableRow(scope, row, options)),
       data.totalCount,
+      data.firstAnchor,
+      data.lastAnchor,
     )
   })
 

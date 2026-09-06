@@ -438,7 +438,7 @@ class PageSignalRouter
      * identity. A refusal here answers nothing at all to the client, which is why it
      * now leaves a log line instead of only an absence.
      *
-     * @param WebSocketTableViewportSignalDTO $data Viewport signal (acceptKey, tableKey, filter, sort, offset, limit)
+     * @param WebSocketTableViewportSignalDTO $data Viewport signal (acceptKey, tableKey, filter, sort, limit, address)
      * @param string $source Signal source
      * @param string $name Signal name (page name)
      * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
@@ -460,7 +460,7 @@ class PageSignalRouter
     /**
      * Stores one viewport descriptor and replies its window, parked or not.
      *
-     * @param WebSocketTableViewportSignalDTO $data Viewport signal (acceptKey, tableKey, filter, sort, offset, limit)
+     * @param WebSocketTableViewportSignalDTO $data Viewport signal (acceptKey, tableKey, filter, sort, limit, address)
      * @param string $source Signal source
      * @param string $name Signal name (page name)
      * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
@@ -472,8 +472,10 @@ class PageSignalRouter
             tableKey: $data->tableKey,
             filter: $data->filter,
             sort: $data->sort,
-            offset: $data->offset,
             limit: $data->limit,
+            anchor: $data->anchor,
+            anchorDirection: $data->anchorDirection,
+            pageIndex: $data->pageIndex,
         );
         Hilos::$sr?->setTableViewport($data->acceptKey, $viewport);
         if (Hilos::$browser?->sendTableWindow($name, $data->acceptKey, $viewport) === false) {

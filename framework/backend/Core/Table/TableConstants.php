@@ -54,8 +54,11 @@ final class TableConstants
     /** Result key for objects array (Object layer queryPage intermediate result). */
     public const string RESULT_KEY_OBJECTS = 'objects';
 
-    /** Result key for offset. */
-    public const string RESULT_KEY_OFFSET = 'offset';
+    /** Result key for the place the first row of the window sits at. */
+    public const string RESULT_KEY_FIRST_ANCHOR = 'firstAnchor';
+
+    /** Result key for the place the last row of the window sits at. */
+    public const string RESULT_KEY_LAST_ANCHOR = 'lastAnchor';
 
     /** Result key for limit. */
     public const string RESULT_KEY_LIMIT = 'limit';

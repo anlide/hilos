@@ -15,7 +15,11 @@
 // instead, since the new window the server returns is authoritative. The
 // controller owns no rendering and no DOM.
 
-import { type TableViewportDescriptor } from '../connection/HilosConnection.js'
+import {
+  type TableAnchor,
+  type TableAnchorDirection,
+  type TableViewportDescriptor,
+} from '../connection/HilosConnection.js'
 import { type TableRow } from '../state/TableRowsStore.js'
 import {
   computedSignal,
@@ -99,7 +103,12 @@ export interface TableViewportRow<R> {
  * A pending row delta gates on apply(); a count update and a tail append are live.
  */
 export interface TableWindowSink {
-  ingestWindow(rows: readonly TableRow[], totalCount: number): void
+  ingestWindow(
+    rows: readonly TableRow[],
+    totalCount: number,
+    firstAnchor: TableAnchor | null,
+    lastAnchor: TableAnchor | null,
+  ): void
   ingestDelta(delta: TableViewportDelta): void
   ingestCount(totalCount: number): void
   ingestAppend(row: TableRow, totalCount: number): void
@@ -138,6 +147,21 @@ export class TableViewportController<R> implements TableWindowSink {
   private readonly sortSignal: WritableSignal<TableSort | undefined>
 
   private readonly pageSignal = createSignal(0)
+
+  /** Place the window is asked from, or null for the edge {@link anchorDirection} points away from. */
+  private anchor: TableAnchor | null = null
+
+  /** Side of the anchor the window is asked from. */
+  private anchorDirection: TableAnchorDirection = 'after'
+
+  /** Page a jump asks for, or null while the window is paged by anchor. */
+  private pageIndex: number | null = null
+
+  /** Place the first row of the delivered window sits at, or null while it is empty. */
+  private firstAnchor: TableAnchor | null = null
+
+  /** Place the last row of the delivered window sits at, or null while it is empty. */
+  private lastAnchor: TableAnchor | null = null
 
   private readonly windowSignal = createSignal<readonly TableRow[]>([])
 
@@ -266,7 +290,7 @@ export class TableViewportController<R> implements TableWindowSink {
       filter[SEARCH_FILTER_KEY] = query
     }
     this.filterSignal.set(filter)
-    this.pageSignal.set(0)
+    this.resetAddress()
     this.changeWindow()
   }
 
@@ -290,7 +314,7 @@ export class TableViewportController<R> implements TableWindowSink {
       filter[key] = value
     }
     this.filterSignal.set(filter)
-    this.pageSignal.set(0)
+    this.resetAddress()
     this.changeWindow()
   }
 
@@ -326,7 +350,7 @@ export class TableViewportController<R> implements TableWindowSink {
       return
     }
     this.sortSignal.set(state)
-    this.pageSignal.set(0)
+    this.resetAddress()
     this.changeWindow()
   }
 
@@ -338,19 +362,64 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   resetSort(): void {
     this.sortSignal.set(this.options.initialSort)
-    this.pageSignal.set(0)
+    this.resetAddress()
     this.changeWindow()
   }
 
   /**
-   * Go to a zero-based page, clamped into `[0, pageCount - 1]`, then request that
-   * page's window.
+   * Jump to a zero-based page, clamped into `[0, pageCount - 1]`, then request that
+   * page's window. This is the one address an anchor cannot express: page seven has no
+   * anchor until somebody has shown it, so the server is asked for it by number and
+   * counts to it from whichever end of the set is nearer.
+   *
+   * Use {@link nextPage} and {@link prevPage} for the neighbours — their boundary is
+   * already in hand, and asking for them by number would count rows for nothing.
    *
    * @param page The requested zero-based page index.
    */
   setPage(page: number): void {
     const last = this.pageCount.get() - 1
-    this.pageSignal.set(Math.min(Math.max(0, page), Math.max(0, last)))
+    const target = Math.min(Math.max(0, page), Math.max(0, last))
+    this.pageSignal.set(target)
+    this.anchor = null
+    this.anchorDirection = 'after'
+    this.pageIndex = target
+    this.changeWindow()
+  }
+
+  /**
+   * Go to the next page — the rows after the window's last one — then request it. Does
+   * nothing on the last page, where there is nothing after the window to ask for, and
+   * nothing on an empty window: with no boundary in hand there is nothing to page from,
+   * and moving the number anyway would show one page while asking for another.
+   */
+  nextPage(): void {
+    if (
+      this.lastAnchor === null ||
+      this.pageSignal.get() >= this.pageCount.get() - 1
+    ) {
+      return
+    }
+    this.anchor = this.lastAnchor
+    this.anchorDirection = 'after'
+    this.pageIndex = null
+    this.pageSignal.set(this.pageSignal.get() + 1)
+    this.changeWindow()
+  }
+
+  /**
+   * Go to the previous page — the rows before the window's first one — then request it.
+   * Does nothing on the first page, where there is nothing before the window to ask for,
+   * and nothing on an empty window, for the reason {@link nextPage} gives.
+   */
+  prevPage(): void {
+    if (this.firstAnchor === null || this.pageSignal.get() <= 0) {
+      return
+    }
+    this.anchor = this.firstAnchor
+    this.anchorDirection = 'before'
+    this.pageIndex = null
+    this.pageSignal.set(this.pageSignal.get() - 1)
     this.changeWindow()
   }
 
@@ -362,10 +431,19 @@ export class TableViewportController<R> implements TableWindowSink {
    *
    * @param rows The window's rows, in display order.
    * @param totalCount Total rows matching the filter.
+   * @param firstAnchor Place the first row sits at, or null when the window is empty.
+   * @param lastAnchor Place the last row sits at, or null when the window is empty.
    */
-  ingestWindow(rows: readonly TableRow[], totalCount: number): void {
+  ingestWindow(
+    rows: readonly TableRow[],
+    totalCount: number,
+    firstAnchor: TableAnchor | null,
+    lastAnchor: TableAnchor | null,
+  ): void {
     this.windowSignal.set(rows.slice())
     this.totalCountSignal.set(Math.max(0, totalCount))
+    this.firstAnchor = firstAnchor
+    this.lastAnchor = lastAnchor
     this.placeholderKeysSignal.set(new Set())
     this.loadedSignal.set(true)
     this.clearPending()
@@ -642,16 +720,29 @@ export class TableViewportController<R> implements TableWindowSink {
     this.pendingKindSignal.set(pendingKinds)
   }
 
-  /** The viewport descriptor for the current filter, sort, and page. */
+  /** The viewport descriptor for the current filter, sort, size and address. */
   private descriptor(): TableViewportDescriptor {
     const sort = this.sortSignal.get()
 
     return {
       filter: { ...this.filterSignal.get() },
       sort: sort ? { field: sort.field, direction: sort.direction } : null,
-      offset: this.pageSignal.get() * this.pageSize,
       limit: this.pageSize,
+      anchor: this.anchor,
+      anchorDirection: this.anchorDirection,
+      pageIndex: this.pageIndex,
     }
+  }
+
+  /**
+   * Send the window back to the start of the set, which is what a new filter or sort asks
+   * for: the anchors in hand belong to an ordering that no longer exists.
+   */
+  private resetAddress(): void {
+    this.anchor = null
+    this.anchorDirection = 'after'
+    this.pageIndex = null
+    this.pageSignal.set(0)
   }
 
   private send(): void {

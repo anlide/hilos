@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use PHPUnit\Framework\TestCase;
 
@@ -24,8 +25,9 @@ final class TableWindowSignalDataTest extends TestCase
             tableKey: 'settings',
             rows: $rows,
             totalCount: 42,
-            offset: 10,
             limit: 10,
+            firstAnchor: new TableAnchorDTO(['key' => 'a']),
+            lastAnchor: new TableAnchorDTO(['key' => 'b']),
         );
 
         $restored = TableWindowSignalData::fromArray($dto->toArray());
@@ -34,8 +36,25 @@ final class TableWindowSignalDataTest extends TestCase
         $this->assertSame('settings', $restored->tableKey);
         $this->assertSame($rows, $restored->rows);
         $this->assertSame(42, $restored->totalCount);
-        $this->assertSame(10, $restored->offset);
         $this->assertSame(10, $restored->limit);
+        $this->assertSame(['key' => 'a'], $restored->firstAnchor?->toArray());
+        $this->assertSame(['key' => 'b'], $restored->lastAnchor?->toArray());
+    }
+
+    public function testAnEmptyWindowTravelsWithNeitherBoundary(): void
+    {
+        $dto = new TableWindowSignalData(
+            page: 'hilos_settings',
+            tableKey: 'settings',
+            rows: [],
+            totalCount: 0,
+            limit: 10,
+        );
+
+        $restored = TableWindowSignalData::fromArray($dto->toArray());
+
+        $this->assertNull($restored->firstAnchor);
+        $this->assertNull($restored->lastAnchor);
     }
 
     public function testFromArrayRefusesAnEmptyPayloadInsteadOfAnEmptyWindow(): void
@@ -55,7 +74,6 @@ final class TableWindowSignalDataTest extends TestCase
             TableWindowSignalData::tableKey => 'settings',
             TableWindowSignalData::rows => [],
             TableWindowSignalData::totalCount => 42,
-            TableWindowSignalData::offset => 10,
         ]);
     }
 }

@@ -46,21 +46,35 @@ derived from this one rule.
 ## The viewport descriptor
 
 The client declares, per visible table (addressed by its `page` and `tableKey`),
-a **viewport descriptor**:
+a **viewport descriptor**. It has two forms, and a frame carries exactly one:
 
 ```
-{ page, tableKey, filter, sort, limit, anchor, anchorDirection }
+{ page, tableKey, filter, sort, limit, anchor, anchorDirection }   paging
+{ page, tableKey, filter, sort, limit, pageIndex }                 a jump
 ```
 
 `anchor` is an open map of the sort key's values, the primary key included;
-`anchorDirection` is `after` or `before`; `anchor: null` asks for the start of
-the set. There is **no** `offset`.
+`anchorDirection` is `after` or `before`; `anchor: null` asks for the edge the
+direction points away from — the start of the set with `after`, its end with
+`before`. There is **no** `offset` in either form, and a frame carrying both
+forms is refused rather than resolved: either reading of it is a window the
+client did not ask for.
 
 The window is taken by key — "give me twenty rows after this one" — and not by
 offset — "skip two hundred thousand, give me twenty". A key window costs the same
 at any depth and does not shift because somebody deleted a row above it. The
 price is the page number and the exact total, and the count section below says
 what the table shows instead.
+
+`pageIndex` is the one address a key cannot express: page seven has no anchor
+until somebody has shown it. It exists because the mockup has numbered pages, and
+it lives exactly where the count is exact — the count section below is what
+decides that. The server, not the client, turns the number into rows to skip: only
+it knows the total at the moment of the request, and it counts from whichever end
+of the set is nearer, so the worst skip is half the set and the last page costs
+what the first does. Ask for a neighbouring page this way and the count is paid for
+nothing — its boundary is already in hand, which is what `nextPage` / `prevPage`
+use and what `setPage` does not.
 
 **Every declared order ends with the primary key**, so the order is total.
 Without that, a column with repeats (a status, a kind) lets two adjacent pages
@@ -222,8 +236,10 @@ The window reply carries `totalCount` and `totalExact`.
 
 This is not a second mode of the table. It is the consequence of whether the
 number is known: "page 7 of 512" over a large set means nothing and costs a full
-pass over the database. Jumping deep is done by value — a date in the filter —
-and not by a page number.
+pass over the database. Where the count is a ceiling there is no page to jump to,
+so `pageIndex` does not arise and jumping deep is done by value — a date in the
+filter. Where it is exact, the numbers are real and a jump by number is what
+serves them.
 
 ## Showing work in progress
 
@@ -356,7 +372,7 @@ and everything below is addressed to the one connection it concerns:
 
 | Frame | Direction | Carries |
 |---|---|---|
-| `table_viewport` | client → server | `page`, `tableKey`, `filter`, `sort`, `limit`, `anchor`, `anchorDirection` |
+| `table_viewport` | client → server | `page`, `tableKey`, `filter`, `sort`, `limit`, and then either `anchor` + `anchorDirection` or `pageIndex` — never both |
 | `table_window` | server → client, reply only | `page`, `tableKey`, `rows`, `limit`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor` |
 | `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed`), `rowKey`, `row` |
 | `table_viewport_append` | server → client, live | `page`, `tableKey`, `row`, `totalCount`, `totalExact`, `pageCount` — sent **only** when the row's place is the end of the window and the window has room |

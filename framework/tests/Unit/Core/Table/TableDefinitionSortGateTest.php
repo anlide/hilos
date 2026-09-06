@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Core\Table;
 
 use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use PHPUnit\Framework\TestCase;
 
@@ -56,16 +58,18 @@ final class TableDefinitionSortGateTest extends TestCase
         $table->getPage(new TableQueryDTO(
             search: 'alpha',
             sort: new TableSortDTO(SortGateUnitRow::LABEL),
-            offset: 20,
             limit: 10,
             filter: ['channel' => 'email'],
+            anchor: new TableAnchorDTO([SortGateUnitRow::KEY => 'a']),
+            anchorDirection: TableAnchorDirection::Before,
         ));
 
         self::assertNotNull($table->received);
         self::assertSame('alpha', $table->received->search);
-        self::assertSame(20, $table->received->offset);
         self::assertSame(10, $table->received->limit);
         self::assertSame(['channel' => 'email'], $table->received->filter);
+        self::assertSame([SortGateUnitRow::KEY => 'a'], $table->received->anchor?->toArray());
+        self::assertSame(TableAnchorDirection::Before, $table->received->anchorDirection);
     }
 
     public function testATableThatDeclaresNoSortableFieldsSortsAsItAlwaysHas(): void
@@ -128,7 +132,6 @@ final class SortGateUnitTable extends TableDefinition
         return new TableSnapshotDTO(
             rows: [[SortGateUnitRow::KEY => 'a', SortGateUnitRow::LABEL => 'Alpha']],
             totalCount: 1,
-            offset: $query->offset,
             limit: $query->limit,
         );
     }

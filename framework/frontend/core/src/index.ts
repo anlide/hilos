@@ -492,6 +492,8 @@ export {
   type HilosConnectionEventMap,
   type HilosConnectionOptions,
   type TableViewportDescriptor,
+  type TableAnchor,
+  type TableAnchorDirection,
 } from './connection/HilosConnection.js'
 export {
   createHilosConnection,

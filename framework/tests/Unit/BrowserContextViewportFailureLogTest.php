@@ -75,10 +75,9 @@ final class BrowserContextViewportFailureLogTest extends TestCase
     {
         $viewport = new TableViewportSubscription(
             tableKey: ViewportFailureLogUnitTable::TABLE,
-            offset: 0,
             limit: 10,
         );
-        $viewport->recordWindow(self::windowOf(['alpha']), 1);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, null, null);
         $context = $this->boot($viewport, throwOnMutation: true);
 
         $context->record(SourceChange::dbUpdated(ViewportFailureLogUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Alpha']));
@@ -110,10 +109,9 @@ final class BrowserContextViewportFailureLogTest extends TestCase
         $viewport = new TableViewportSubscription(
             tableKey: ViewportFailureLogUnitTable::TABLE,
             filter: [TableConstants::FILTER_KEY_SEARCH => 'alp'],
-            offset: 0,
             limit: 10,
         );
-        $viewport->recordWindow(self::windowOf(['alpha']), 7);
+        $viewport->recordWindow(self::windowOf(['alpha']), 7, null, null);
         $context = $this->boot($viewport, throwOnQuery: true);
 
         // A row outside the delivered set: its edit shifts only the total, so the count path
@@ -140,10 +138,9 @@ final class BrowserContextViewportFailureLogTest extends TestCase
     {
         $viewport = new TableViewportSubscription(
             tableKey: ViewportFailureLogUnitTable::TABLE,
-            offset: 0,
             limit: 10,
         );
-        $viewport->recordWindow(self::windowOf(['alpha']), 1);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, null, null);
         $context = $this->boot($viewport);
 
         // Another collection entirely: the table answers null, which is the ordinary

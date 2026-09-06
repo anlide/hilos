@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\TableViewportSubscription;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -18,15 +19,15 @@ final class SignalRouterTableViewportTest extends TestCase
         $router = new SignalRouter();
         $router->setTableViewport('ak', new TableViewportSubscription(
             tableKey: 'settings',
-            offset: 10,
             limit: 10,
+            anchor: new TableAnchorDTO(['key' => 'theme.dark']),
         ));
 
         $viewport = $router->getTableViewport('ak', 'settings');
 
         $this->assertNotNull($viewport);
         $this->assertSame('settings', $viewport->tableKey);
-        $this->assertSame(10, $viewport->offset);
+        $this->assertSame(['key' => 'theme.dark'], $viewport->anchor?->toArray());
     }
 
     public function testGetTableViewportsReturnsAllForTheConnection(): void

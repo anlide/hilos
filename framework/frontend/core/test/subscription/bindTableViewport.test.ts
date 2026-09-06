@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { bindTableViewport } from '../../src/subscription/bindTableViewport.js'
-import { type HilosConnection } from '../../src/connection/HilosConnection.js'
+import {
+  type HilosConnection,
+  type TableAnchor,
+} from '../../src/connection/HilosConnection.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { type EntityRef } from '../../src/state/EntityStore.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
@@ -101,7 +104,12 @@ function fakeConnection() {
 
 /** A controller double recording the windows, deltas, counts, appends and own creates fed to it. */
 function fakeSink(): TableWindowSink & {
-  windows: Array<{ rows: readonly TableRow[]; totalCount: number }>
+  windows: Array<{
+    rows: readonly TableRow[]
+    totalCount: number
+    firstAnchor: TableAnchor | null
+    lastAnchor: TableAnchor | null
+  }>
   deltas: TableViewportDelta[]
   counts: number[]
   appends: Array<{ row: TableRow; totalCount: number }>
@@ -112,7 +120,12 @@ function fakeSink(): TableWindowSink & {
     requestId?: string | null
   }>
 } {
-  const windows: Array<{ rows: readonly TableRow[]; totalCount: number }> = []
+  const windows: Array<{
+    rows: readonly TableRow[]
+    totalCount: number
+    firstAnchor: TableAnchor | null
+    lastAnchor: TableAnchor | null
+  }> = []
   const deltas: TableViewportDelta[] = []
   const counts: number[] = []
   const appends: Array<{ row: TableRow; totalCount: number }> = []
@@ -129,8 +142,8 @@ function fakeSink(): TableWindowSink & {
     counts,
     appends,
     ownCreates,
-    ingestWindow(rows, totalCount): void {
-      windows.push({ rows, totalCount })
+    ingestWindow(rows, totalCount, firstAnchor, lastAnchor): void {
+      windows.push({ rows, totalCount, firstAnchor, lastAnchor })
     },
     ingestDelta(delta): void {
       deltas.push(delta)
@@ -175,8 +188,9 @@ describe('bindTableViewport', () => {
       tableKey: 'settings',
       rows: [{ rowKey: 'a', slots: { user: { id: 7, name: 'Ada' } } }],
       totalCount: 12,
-      offset: 0,
       limit: 10,
+      firstAnchor: { id: 1 },
+      lastAnchor: { id: 10 },
     })
 
     expect(sink.windows).toHaveLength(1)
@@ -276,8 +290,9 @@ describe('bindTableViewport', () => {
       tableKey: 'other',
       rows: [],
       totalCount: 0,
-      offset: 0,
       limit: 10,
+      firstAnchor: { id: 1 },
+      lastAnchor: { id: 10 },
     })
 
     expect(sink.windows).toHaveLength(0)
@@ -295,8 +310,9 @@ describe('bindTableViewport', () => {
       tableKey: 'settings',
       rows: [],
       totalCount: 0,
-      offset: 0,
       limit: 10,
+      firstAnchor: { id: 1 },
+      lastAnchor: { id: 10 },
     })
 
     expect(sink.windows).toHaveLength(0)
@@ -316,8 +332,9 @@ describe('bindTableViewport', () => {
       tableKey: 'settings',
       rows: [],
       totalCount: 0,
-      offset: 0,
       limit: 10,
+      firstAnchor: { id: 1 },
+      lastAnchor: { id: 10 },
     })
 
     expect(sink.windows).toHaveLength(0)
@@ -336,8 +353,9 @@ describe('bindTableViewport', () => {
       tableKey: 'settings',
       rows: [],
       totalCount: 0,
-      offset: 0,
       limit: 10,
+      firstAnchor: { id: 1 },
+      lastAnchor: { id: 10 },
     })
     connection.emitCount({
       page: 'main',

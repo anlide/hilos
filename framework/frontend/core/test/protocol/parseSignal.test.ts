@@ -258,7 +258,7 @@ describe('parseSignal', () => {
 
   it('parses a table_window frame as a framework signal', () => {
     const result = parseSignal(
-      '{"type":"table_window","data":{"page":"hilos_settings","tableKey":"settings","rows":[{"rowKey":"theme","slots":{"settings":{"key":"theme"}}}],"totalCount":12,"offset":0,"limit":10}}',
+      '{"type":"table_window","data":{"page":"hilos_settings","tableKey":"settings","rows":[{"rowKey":"theme","slots":{"settings":{"key":"theme"}}}],"totalCount":12,"limit":10,"firstAnchor":{"key":"theme"},"lastAnchor":{"key":"theme"}}}',
     )
     expect(result.ok).toBe(true)
     if (result.ok && result.signal.kind === 'tableWindow') {
@@ -266,8 +266,9 @@ describe('parseSignal', () => {
         page: 'hilos_settings',
         tableKey: 'settings',
         totalCount: 12,
-        offset: 0,
         limit: 10,
+        firstAnchor: { key: 'theme' },
+        lastAnchor: { key: 'theme' },
       })
       expect(result.signal.data.rows[0]).toEqual({
         rowKey: 'theme',

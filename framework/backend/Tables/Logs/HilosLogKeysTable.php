@@ -120,7 +120,7 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
      * ordering gets the default one and a window that asked for another keeps that order inside
      * its ties.
      *
-     * @param TableQueryDTO $query Window query (search, filters, sort, offset, limit)
+     * @param TableQueryDTO $query Window query (search, filters, sort, size, address)
      * @return TableSnapshotDTO Window snapshot with raw rows and the total count
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
@@ -131,9 +131,11 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
         // would search the byte weights and the batch counts as well.
         $ordering = new TableQueryDTO(
             sort: self::orderingSort($query->sort),
-            offset: $query->offset,
             limit: $query->limit,
             filter: $query->filter,
+            anchor: $query->anchor,
+            anchorDirection: $query->anchorDirection,
+            pageIndex: $query->pageIndex,
         );
 
         return $this->filterInMemory($rows, $ordering);

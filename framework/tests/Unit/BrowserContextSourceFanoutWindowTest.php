@@ -20,6 +20,7 @@ use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\ViewportTable;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -59,7 +60,7 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
         ]);
         Hilos::$table->configure();
 
-        $viewport = new TableViewportSubscription(tableKey: SourceFanoutWindowUnitTable::TABLE, offset: 1, limit: 1);
+        $viewport = new TableViewportSubscription(tableKey: SourceFanoutWindowUnitTable::TABLE, limit: 1, anchor: new TableAnchorDTO(['key' => 'a']));
         new SourceFanoutWindowUnitContext()->sendTableWindow(
             SourceFanoutWindowUnitContext::PAGE,
             'ak-1',
@@ -85,8 +86,9 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
                     ],
                 ],
                 TableWindowSignalData::totalCount => 3,
-                TableWindowSignalData::offset => 1,
                 TableWindowSignalData::limit => 1,
+                TableWindowSignalData::firstAnchor => ['key' => 'b'],
+                TableWindowSignalData::lastAnchor => ['key' => 'b'],
             ],
             $signal->data->data->toArray(),
         );
@@ -116,8 +118,8 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
 
     public function testInWindowDeleteEmitsRowRemovedDeltaAndForgetsTheRow(): void
     {
-        $viewport = new TableViewportSubscription(tableKey: SourceFanoutWindowUnitTable::TABLE, offset: 0, limit: 10);
-        $viewport->recordWindow(self::windowOf(['alpha']), 1);
+        $viewport = new TableViewportSubscription(tableKey: SourceFanoutWindowUnitTable::TABLE, limit: 10);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, null, null);
         $context = $this->bootWithViewport([], $viewport);
 
         $context->record(SourceChange::dbDeleted(SourceFanoutWindowUnitTable::SOURCE_KEY, 'alpha', ['key' => 'alpha']));
@@ -134,8 +136,8 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
 
     public function testLastPageWithRoomCreateAppends(): void
     {
-        $viewport = new TableViewportSubscription(tableKey: SourceFanoutWindowUnitTable::TABLE, offset: 0, limit: 10);
-        $viewport->recordWindow(self::windowOf(['alpha']), 1);
+        $viewport = new TableViewportSubscription(tableKey: SourceFanoutWindowUnitTable::TABLE, limit: 10);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, null, null);
         $context = $this->bootWithViewport(
             [new SourceFanoutWindowUnitRow('alpha', 'Alpha'), new SourceFanoutWindowUnitRow('beta', 'Beta')],
             $viewport,
@@ -162,8 +164,8 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
 
     public function testCreateOffTheLastPageEmitsCount(): void
     {
-        $viewport = new TableViewportSubscription(tableKey: SourceFanoutWindowUnitTable::TABLE, offset: 0, limit: 1);
-        $viewport->recordWindow(self::windowOf(['alpha']), 5);
+        $viewport = new TableViewportSubscription(tableKey: SourceFanoutWindowUnitTable::TABLE, limit: 1);
+        $viewport->recordWindow(self::windowOf(['alpha']), 5, null, null);
         $context = $this->bootWithViewport(
             [new SourceFanoutWindowUnitRow('alpha', 'Alpha'), new SourceFanoutWindowUnitRow('beta', 'Beta')],
             $viewport,
@@ -226,8 +228,8 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
      */
     private function boot(array $rows, array $windowRowIds, int $totalCount): SourceFanoutWindowUnitContext
     {
-        $viewport = new TableViewportSubscription(tableKey: SourceFanoutWindowUnitTable::TABLE, offset: 0, limit: 10);
-        $viewport->recordWindow(self::windowOf($windowRowIds), $totalCount);
+        $viewport = new TableViewportSubscription(tableKey: SourceFanoutWindowUnitTable::TABLE, limit: 10);
+        $viewport->recordWindow(self::windowOf($windowRowIds), $totalCount, null, null);
 
         return $this->bootWithViewport($rows, $viewport);
     }

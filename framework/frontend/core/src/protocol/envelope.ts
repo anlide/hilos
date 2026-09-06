@@ -121,14 +121,18 @@ const tableRowFragmentSchema = z.looseObject({
  * `TableWindowSignalData`): the rows currently in the window plus the descriptor
  * metadata. A row rides the `{rowKey, slots}` fragment shape the normalizer
  * ingests. Sent only in reply to a table_viewport request, never live.
+ *
+ * The two boundary anchors are what the next window is asked with — the last one pages
+ * forward, the first one pages back — and an empty window carries neither.
  */
 export const tableWindowSignalDataSchema = z.looseObject({
   page: z.string(),
   tableKey: z.string(),
   rows: z.array(tableRowFragmentSchema),
   totalCount: z.number().int(),
-  offset: z.number().int(),
   limit: z.number().int(),
+  firstAnchor: z.record(z.string(), z.unknown()).nullable(),
+  lastAnchor: z.record(z.string(), z.unknown()).nullable(),
 })
 
 export type TableWindowSignalData = z.infer<typeof tableWindowSignalDataSchema>

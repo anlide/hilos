@@ -12,8 +12,10 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableWindowPlan;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Notification as EntityNotification;
@@ -29,8 +31,8 @@ use Hilos\Notification\Delivery\DeliveryStatus;
  * NOT held in runtime: it implements {@see ViewportTable} and serves each window
  * straight from SQL. {@see query()} runs a windowed SELECT over
  * hilos_notification_delivery joined to hilos_notification (for the recipient, type,
- * and title), with a matching COUNT for the total — LIMIT/OFFSET on the server, no
- * RT projection. The consequence, taken deliberately, is that the journal has no
+ * and title), with a matching COUNT for the total — the window placed by its anchor on
+ * the server, no RT projection. The consequence, taken deliberately, is that the journal has no
  * live per-row deltas: {@see buildMutationForSourceEvent()} returns null and the
  * frontend refreshes by re-requesting the window.
  *
@@ -68,6 +70,24 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
 
     /** Notification table alias in the windowed SQL. */
     private const string NOTIFICATION_TABLE = 'hilos_notification';
+
+    /** Alias the delivery table carries in the windowed SQL, where two tables are joined. */
+    private const string DELIVERY_ALIAS = 'nd';
+
+    /** Delivery column each sortable wire field orders by, unaliased. */
+    private const array SORT_COLUMNS = [
+        HilosNotificationDeliveryTableRow::createdAt => EntityNotificationDelivery::created_at,
+        HilosNotificationDeliveryTableRow::channel => EntityNotificationDelivery::channel,
+        HilosNotificationDeliveryTableRow::status => EntityNotificationDelivery::status,
+        HilosNotificationDeliveryTableRow::attempts => EntityNotificationDelivery::attempts,
+        HilosNotificationDeliveryTableRow::deliveredAt => EntityNotificationDelivery::delivered_at,
+    ];
+
+    /** Order the journal falls back to when the window asked for none: newest first, the id settling it. */
+    private const array DEFAULT_ORDER = [
+        EntityNotificationDelivery::created_at => SqlSortDirection::DESC,
+        EntityNotificationDelivery::id => SqlSortDirection::DESC,
+    ];
 
     /** Hard window cap applied when a caller asks for an unbounded snapshot of this unbounded table. */
     private const int DEFAULT_LIMIT = 50;
@@ -107,32 +127,48 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
      */
     protected function sortableFields(): array
     {
-        return [
-            HilosNotificationDeliveryTableRow::createdAt => 'nd.' . EntityNotificationDelivery::created_at,
-            HilosNotificationDeliveryTableRow::channel => 'nd.' . EntityNotificationDelivery::channel,
-            HilosNotificationDeliveryTableRow::status => 'nd.' . EntityNotificationDelivery::status,
-            HilosNotificationDeliveryTableRow::attempts => 'nd.' . EntityNotificationDelivery::attempts,
-            HilosNotificationDeliveryTableRow::deliveredAt => 'nd.' . EntityNotificationDelivery::delivered_at,
-        ];
+        return array_map(
+            static fn(string $column): string => self::DELIVERY_ALIAS . '.' . $column,
+            self::SORT_COLUMNS,
+        );
     }
 
     /**
      * Serves one window of the journal from SQL: the joined page plus the total count.
      *
-     * @param TableQueryDTO $query Window query (search, filters, sort, offset, limit)
-     * @return TableSnapshotDTO Window snapshot with typed rows and the total count
+     * The window is placed by the same keyset condition the ORM path uses, so a deep page of
+     * this unbounded journal costs what a shallow one does. A jump to a numbered page still
+     * skips rows, counted from whichever end of the set is nearer, and the far half comes back
+     * turned over - which is why the rows are put back in the journal's own order below.
+     *
+     * @param TableQueryDTO $query Window query (search, filters, sort, size, address)
+     * @return TableSnapshotDTO Window snapshot with typed rows, the total count and its boundaries
      * @throws DatabaseException When the windowed query or count fails
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
         [$where, $params] = $this->buildWhere($query);
-        $orderBy = $this->buildOrderBy($query);
         $limit = $query->limit === TableConstants::NO_LIMIT ? self::DEFAULT_LIMIT : $query->limit;
-        $offset = max(0, $query->offset);
 
-        $join = '`' . self::DELIVERY_TABLE . '` nd'
+        $join = '`' . self::DELIVERY_TABLE . '` ' . self::DELIVERY_ALIAS
             . ' LEFT JOIN `' . self::NOTIFICATION_TABLE . '` n ON n.' . EntityNotification::id
             . ' = nd.' . EntityNotificationDelivery::notification_id;
+
+        $countSql = 'SELECT COUNT(*) AS cnt FROM ' . $join . $where;
+        $totalCount = (int) (Database::sql($countSql, $params)->firstRow()['cnt'] ?? 0);
+
+        $orderColumns = $this->orderColumns($query);
+        $plan = TableWindowPlan::forQuery($query->withLimit($limit), $orderColumns, $totalCount);
+        if ($plan === null) {
+            return new TableSnapshotDTO(rows: [], totalCount: $totalCount, limit: $limit);
+        }
+
+        $keyset = $plan->keyset;
+        if ($keyset !== null) {
+            $condition = $keyset->toSql(self::DELIVERY_TABLE, self::DELIVERY_ALIAS);
+            $where = $where === '' ? " WHERE {$condition}" : "{$where} AND {$condition}";
+            $params = array_merge($params, $keyset->getParams());
+        }
 
         $sql = 'SELECT'
             . ' nd.' . EntityNotificationDelivery::id . ' AS id,'
@@ -147,19 +183,22 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
             . ' n.' . EntityNotification::title . ' AS notification_title'
             . ' FROM ' . $join
             . $where
-            . $orderBy
-            . " LIMIT {$limit} OFFSET {$offset}";
+            . self::renderOrderBy($plan->orderBy)
+            . " LIMIT {$plan->limit} OFFSET {$plan->offset}";
 
         $rows = Database::sql($sql, $params)->rows();
+        if ($plan->reversed) {
+            $rows = array_reverse($rows);
+        }
 
-        $countSql = 'SELECT COUNT(*) AS cnt FROM ' . $join . $where;
-        $totalCount = (int) (Database::sql($countSql, $params)->firstRow()['cnt'] ?? 0);
+        $anchorColumns = array_keys($orderColumns);
 
         return new TableSnapshotDTO(
             rows: array_map(fn(array $row): HilosNotificationDeliveryTableRow => $this->rowFromSql($row), $rows),
             totalCount: $totalCount,
-            offset: $offset,
             limit: $limit,
+            firstAnchor: $rows === [] ? null : TableAnchorDTO::fromRow($rows[0], $anchorColumns),
+            lastAnchor: $rows === [] ? null : TableAnchorDTO::fromRow($rows[count($rows) - 1], $anchorColumns),
         );
     }
 
@@ -249,7 +288,18 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     }
 
     /**
-     * Builds the ORDER BY clause from the already-allowed column, defaulting to newest first.
+     * Builds the ORDER BY clause the window runs by.
+     *
+     * @param TableQueryDTO $query Window query
+     * @return string The `ORDER BY ...` clause
+     */
+    protected function buildOrderBy(TableQueryDTO $query): string
+    {
+        return self::renderOrderBy($this->orderColumns($query));
+    }
+
+    /**
+     * Reads the window's ordering as the delivery columns it runs by, defaulting to newest first.
      *
      * The sort arrives resolved: {@see TableDefinition::getPage()} has held it against
      * {@see sortableFields()} and either attached the column it may order by or dropped it,
@@ -258,26 +308,44 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
      * The delivery id settles the order in the direction the sorted column runs, so one index
      * over both columns serves either direction by being scanned backwards. Fixing the id to
      * descending would instead ask the server for two columns running opposite ways, which no
-     * single index answers.
+     * single index answers. The same total key is what the window's anchor is read against.
+     *
+     * The columns are unaliased here, because this map is read twice - once to write the clause,
+     * where the join needs the alias, and once to place the anchor, where the alias is the
+     * builder's own argument.
      *
      * @param TableQueryDTO $query Window query
-     * @return string The `ORDER BY ...` clause
+     * @return array<string, string> Delivery column => SqlSortDirection, the id settling the order
      */
-    protected function buildOrderBy(TableQueryDTO $query): string
+    protected function orderColumns(TableQueryDTO $query): array
     {
         $sort = $query->sort;
-        $column = $sort?->column;
+        $column = $sort?->column === null ? null : self::SORT_COLUMNS[$sort->field] ?? null;
         if ($column === null) {
-            return ' ORDER BY nd.' . EntityNotificationDelivery::created_at . ' ' . SqlSortDirection::DESC
-                . ', nd.' . EntityNotificationDelivery::id . ' ' . SqlSortDirection::DESC;
+            return self::DEFAULT_ORDER;
         }
 
         $direction = $sort->direction === TableConstants::ORDER_ASC
             ? SqlSortDirection::ASC
             : SqlSortDirection::DESC;
 
-        return ' ORDER BY ' . $column . ' ' . $direction
-            . ', nd.' . EntityNotificationDelivery::id . ' ' . $direction;
+        return [$column => $direction, EntityNotificationDelivery::id => $direction];
+    }
+
+    /**
+     * Writes an ordering out as the clause the joined SQL takes, every column on the delivery alias.
+     *
+     * @param array<string, string> $orderColumns Delivery column => SqlSortDirection
+     * @return string The `ORDER BY ...` clause
+     */
+    private static function renderOrderBy(array $orderColumns): string
+    {
+        $parts = [];
+        foreach ($orderColumns as $column => $direction) {
+            $parts[] = self::DELIVERY_ALIAS . '.' . $column . ' ' . $direction;
+        }
+
+        return ' ORDER BY ' . implode(', ', $parts);
     }
 
     /**

@@ -14,6 +14,10 @@ use Hilos\Core\Table\TableConstants;
  * Full snapshot of a table.
  *
  * Contains all rows and metadata needed for initial frontend rendering.
+ *
+ * The two boundary anchors are how the next window is asked for: the last one carries paging
+ * forward, the first one carries it back. They are what the window says about where it sits,
+ * and there is nothing else — a window addressed by anchor has no position to report.
  */
 class TableSnapshotDTO extends BaseDTO
 {
@@ -22,21 +26,23 @@ class TableSnapshotDTO extends BaseDTO
      *
      * @param list<AbstractTableRow|array<string, mixed>> $rows Snapshot rows
      * @param int $totalCount Total rows in the full snapshot
-     * @param int $offset Zero-based offset used
      * @param int $limit Page size used (TableConstants::NO_LIMIT = all rows)
+     * @param ?TableAnchorDTO $firstAnchor Place the first row sits at, or null when the window is empty
+     * @param ?TableAnchorDTO $lastAnchor Place the last row sits at, or null when the window is empty
      */
     public function __construct(
         public readonly array $rows = [],
         public readonly int $totalCount = 0,
-        public readonly int $offset = 0,
         public readonly int $limit = TableConstants::NO_LIMIT,
+        public readonly ?TableAnchorDTO $firstAnchor = null,
+        public readonly ?TableAnchorDTO $lastAnchor = null,
     ) {
     }
 
     /**
      * Converts the snapshot to array for WebSocket serialization.
      *
-     * @return array<string, mixed> Rows, totalCount, offset, limit keys
+     * @return array<string, mixed> Rows, totalCount, limit and the two boundary anchors
      */
     public function toArray(): array
     {
@@ -46,8 +52,9 @@ class TableSnapshotDTO extends BaseDTO
                 $this->rows,
             ),
             TableConstants::RESULT_KEY_TOTAL_COUNT => $this->totalCount,
-            TableConstants::RESULT_KEY_OFFSET => $this->offset,
             TableConstants::RESULT_KEY_LIMIT => $this->limit,
+            TableConstants::RESULT_KEY_FIRST_ANCHOR => $this->firstAnchor?->toArray(),
+            TableConstants::RESULT_KEY_LAST_ANCHOR => $this->lastAnchor?->toArray(),
         ];
     }
 
@@ -59,9 +66,10 @@ class TableSnapshotDTO extends BaseDTO
      * cannot address rather than as the malformed payload it is. The window
      * descriptor is required whole, the page size included — defaulted it reads
      * as {@see TableConstants::NO_LIMIT}, so a payload that lost the field would
-     * describe a page of the collection as the whole of it.
+     * describe a page of the collection as the whole of it. The boundary anchors
+     * are the exception, because an empty window really has none.
      *
-     * @param array<string, mixed> $data Raw payload with rows, totalCount, offset, limit keys
+     * @param array<string, mixed> $data Raw payload with rows, totalCount, limit and boundary anchor keys
      * @return static DTO instance
      * @throws InvalidFormatException When the payload misses the rows or a descriptor field, or a row is not an array
      */
@@ -75,8 +83,9 @@ class TableSnapshotDTO extends BaseDTO
                 self::requireArray($data, TableConstants::RESULT_KEY_ROWS),
             ),
             totalCount: self::requireInt($data, TableConstants::RESULT_KEY_TOTAL_COUNT),
-            offset: self::requireInt($data, TableConstants::RESULT_KEY_OFFSET),
             limit: self::requireInt($data, TableConstants::RESULT_KEY_LIMIT),
+            firstAnchor: TableAnchorDTO::fromWire(self::optionalArray($data, TableConstants::RESULT_KEY_FIRST_ANCHOR)),
+            lastAnchor: TableAnchorDTO::fromWire(self::optionalArray($data, TableConstants::RESULT_KEY_LAST_ANCHOR)),
         );
     }
 }

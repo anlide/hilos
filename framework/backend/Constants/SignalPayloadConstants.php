@@ -54,11 +54,23 @@ final class SignalPayloadConstants
     /** @var string Payload field key for a table viewport sort ({field, direction}) */
     public const string FIELD_SORT = 'sort';
 
-    /** @var string Payload field key for a table viewport offset */
-    public const string FIELD_OFFSET = 'offset';
-
     /** @var string Payload field key for a table viewport limit */
     public const string FIELD_LIMIT = 'limit';
+
+    /** @var string Payload field key for the place a table viewport is taken from */
+    public const string FIELD_ANCHOR = 'anchor';
+
+    /** @var string Payload field key for the side of the anchor a table viewport is taken from */
+    public const string FIELD_ANCHOR_DIRECTION = 'anchorDirection';
+
+    /** @var string Payload field key for the page a table viewport jumps to */
+    public const string FIELD_PAGE_INDEX = 'pageIndex';
+
+    /** @var string Payload field key for the place the first row of a table window sits at */
+    public const string FIELD_FIRST_ANCHOR = 'firstAnchor';
+
+    /** @var string Payload field key for the place the last row of a table window sits at */
+    public const string FIELD_LAST_ANCHOR = 'lastAnchor';
 
     /** @var string Subscription payload key for page (same wire key as FIELD_PAGE) */
     public const string SUBSCRIPTION_PAGE_KEY = self::FIELD_PAGE;

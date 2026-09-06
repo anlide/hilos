@@ -7,6 +7,7 @@ namespace Hilos\Database\View\Collection;
 use ArrayAccess;
 use Countable;
 use Generator;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Actions\Collection\DbActions;
@@ -539,7 +540,8 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      *
      * @param TableQueryDTO $query Query parameters
      *
-     * @return array<string, mixed> Keys: rows (list of item arrays), totalCount (int)
+     * @return array<string, mixed> Keys: rows (list of item arrays), totalCount (int),
+     *     firstAnchor (?TableAnchorDTO), lastAnchor (?TableAnchorDTO)
      * @throws DatabaseException On query or connection error
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
@@ -553,7 +555,12 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
             $rows[] = $item->toArray(toFrontend: true);
         }
 
-        return [TableConstants::RESULT_KEY_ROWS => $rows, TableConstants::RESULT_KEY_TOTAL_COUNT => $result[TableConstants::RESULT_KEY_TOTAL_COUNT]];
+        return [
+            TableConstants::RESULT_KEY_ROWS => $rows,
+            TableConstants::RESULT_KEY_TOTAL_COUNT => $result[TableConstants::RESULT_KEY_TOTAL_COUNT],
+            TableConstants::RESULT_KEY_FIRST_ANCHOR => $result[TableConstants::RESULT_KEY_FIRST_ANCHOR],
+            TableConstants::RESULT_KEY_LAST_ANCHOR => $result[TableConstants::RESULT_KEY_LAST_ANCHOR],
+        ];
     }
 
     /**
@@ -564,7 +571,8 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      *
      * @param TableQueryDTO $query Query parameters
      *
-     * @return array{rows: list<T>, totalCount: int} Keys: rows (list of DbItems), totalCount (int)
+     * @return array{rows: list<T>, totalCount: int, firstAnchor: ?TableAnchorDTO, lastAnchor: ?TableAnchorDTO}
+     *     Window rows, the size of the whole set, and the two places the window sits between
      * @throws DatabaseException On query or connection error
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
@@ -573,7 +581,12 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
     {
         $objectCollection = $this->getObjectCollection();
         if ($objectCollection === null) {
-            return [TableConstants::RESULT_KEY_ROWS => [], TableConstants::RESULT_KEY_TOTAL_COUNT => 0];
+            return [
+                TableConstants::RESULT_KEY_ROWS => [],
+                TableConstants::RESULT_KEY_TOTAL_COUNT => 0,
+                TableConstants::RESULT_KEY_FIRST_ANCHOR => null,
+                TableConstants::RESULT_KEY_LAST_ANCHOR => null,
+            ];
         }
 
         $result = $objectCollection->queryPage($query);
@@ -586,7 +599,12 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
             }
         }
 
-        return [TableConstants::RESULT_KEY_ROWS => $rows, TableConstants::RESULT_KEY_TOTAL_COUNT => $result[TableConstants::RESULT_KEY_TOTAL_COUNT]];
+        return [
+            TableConstants::RESULT_KEY_ROWS => $rows,
+            TableConstants::RESULT_KEY_TOTAL_COUNT => $result[TableConstants::RESULT_KEY_TOTAL_COUNT],
+            TableConstants::RESULT_KEY_FIRST_ANCHOR => $result[TableConstants::RESULT_KEY_FIRST_ANCHOR],
+            TableConstants::RESULT_KEY_LAST_ANCHOR => $result[TableConstants::RESULT_KEY_LAST_ANCHOR],
+        ];
     }
 
     /**

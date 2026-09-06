@@ -385,7 +385,7 @@ abstract class BrowserContext
             $wireRows[(string) $browserRow[BrowserPageSignalData::rowKey]] = $wireRow;
         }
 
-        $viewport->recordWindow($wireRows, $snapshot->totalCount);
+        $viewport->recordWindow($wireRows, $snapshot->totalCount, $snapshot->firstAnchor, $snapshot->lastAnchor);
 
         Hilos::$sr->queueSignal(
             signalSource: new SignalSource(SignalSource::WORKER),
@@ -397,8 +397,9 @@ abstract class BrowserContext
                     tableKey: $viewport->tableKey,
                     rows: $rows,
                     totalCount: $snapshot->totalCount,
-                    offset: $snapshot->offset,
                     limit: $snapshot->limit,
+                    firstAnchor: $snapshot->firstAnchor,
+                    lastAnchor: $snapshot->lastAnchor,
                 ),
                 targetAcceptKey: $acceptKey,
             ),
@@ -425,9 +426,11 @@ abstract class BrowserContext
         return new TableQueryDTO(
             search: is_string($search) ? $search : null,
             sort: $viewport->sort,
-            offset: $viewport->offset,
             limit: $viewport->limit,
             filter: $viewport->filter,
+            anchor: $viewport->anchor,
+            anchorDirection: $viewport->anchorDirection,
+            pageIndex: $viewport->pageIndex,
         );
     }
 
@@ -1487,7 +1490,7 @@ abstract class BrowserContext
             return false;
         }
 
-        $viewport->recordWindow($wireRows, $snapshot->totalCount);
+        $viewport->recordWindow($wireRows, $snapshot->totalCount, $snapshot->firstAnchor, $snapshot->lastAnchor);
 
         $this->queueAddressedTableSignal(
             SignalTypeConstants::TABLE_VIEWPORT_OWN_CREATE,
@@ -1566,7 +1569,7 @@ abstract class BrowserContext
      * Whether the window reaches the dataset end and has a free slot for one row.
      *
      * A non-paginated window (no limit) always has room; otherwise the window must
-     * hold fewer than its limit and end at the total, so a new tail row neither
+     * hold fewer than its limit and reach the end of the set, so a new tail row neither
      * pushes a row out nor belongs to a later page.
      *
      * @param TableViewportSubscription $viewport Connection's window
@@ -1574,10 +1577,9 @@ abstract class BrowserContext
      */
     private function viewportIsLastPageWithRoom(TableViewportSubscription $viewport): bool
     {
-        $windowSize = count($viewport->rowIds());
-        $hasRoom = $viewport->limit === TableConstants::NO_LIMIT || $windowSize < $viewport->limit;
+        $hasRoom = $viewport->limit === TableConstants::NO_LIMIT || count($viewport->rowIds()) < $viewport->limit;
 
-        return $hasRoom && $viewport->offset + $windowSize >= $viewport->totalCount();
+        return $hasRoom && $viewport->reachesEnd();
     }
 
     /**

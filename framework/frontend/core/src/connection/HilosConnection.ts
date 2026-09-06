@@ -4,12 +4,14 @@
 // Authentication and authorization are separate machines and do not live here.
 import {
   FIELD_ACTION,
+  FIELD_ANCHOR,
+  FIELD_ANCHOR_DIRECTION,
   FIELD_DATA,
   FIELD_FILTER,
-  FIELD_LIMIT,
-  FIELD_OFFSET,
   FIELD_GROUP,
+  FIELD_LIMIT,
   FIELD_PAGE,
+  FIELD_PAGE_INDEX,
   FIELD_REQUEST_ID,
   FIELD_SORT,
   FIELD_TABLE_KEY,
@@ -74,9 +76,24 @@ export type ConnectionState =
   | 'disconnected'
 
 /**
+ * The place in a table's own order a window is taken from: the value it carries in every
+ * column that order is settled by. It names a position rather than a row, so the row it
+ * was read from may be gone by the next window and the window still continues from the
+ * same place. Its shape belongs to the server; a client only ever echoes one back.
+ */
+export type TableAnchor = Readonly<Record<string, unknown>>
+
+/** Which side of the anchor a window is taken from, and which edge a null anchor means. */
+export type TableAnchorDirection = 'after' | 'before'
+
+/**
  * The window a connection requests for one table: an open filter map the table
- * resolves, an optional sort, and the offset/limit window. Sent over
+ * resolves, an optional sort, the window size, and where the window sits. Sent over
  * {@link HilosConnection.sendTableViewport}.
+ *
+ * The window is addressed one of two ways and the frame carries one of them. Paging
+ * names an anchor and the side to run to, and costs the same at any depth. A jump to a
+ * numbered page names the page, because a page nobody has shown has no anchor yet.
  */
 export interface TableViewportDescriptor {
   readonly filter: Record<string, unknown>
@@ -84,8 +101,10 @@ export interface TableViewportDescriptor {
     readonly field: string
     readonly direction: 'asc' | 'desc'
   } | null
-  readonly offset: number
   readonly limit: number
+  readonly anchor: TableAnchor | null
+  readonly anchorDirection: TableAnchorDirection
+  readonly pageIndex: number | null
 }
 
 /**
@@ -606,14 +625,17 @@ export class HilosConnection {
 
   /**
    * Send a table viewport frame — `{type:'table_viewport', page, tableKey,
-   * filter?, sort?, offset, limit}` — declaring the window this connection wants
-   * for one table. The server replies a table_window snapshot and scopes live
-   * deltas to the delivered rows. Returns false, sending nothing, unless the
-   * connection is `connected`, like {@link send}.
+   * filter?, sort?, limit, and either anchor + anchorDirection or pageIndex}` —
+   * declaring the window this connection wants for one table. The server replies a
+   * table_window snapshot and scopes live deltas to the delivered rows. Returns false,
+   * sending nothing, unless the connection is `connected`, like {@link send}.
+   *
+   * Only one form of the address goes on the wire: a frame carrying both is refused by
+   * the server, because either reading of it is a window nobody asked for.
    *
    * @param page The page the table belongs to.
    * @param tableKey The table key the viewport scopes.
-   * @param descriptor The window descriptor (filter, sort, offset, limit).
+   * @param descriptor The window descriptor (filter, sort, size, address).
    */
   sendTableViewport(
     page: string,
@@ -624,8 +646,13 @@ export class HilosConnection {
       [FIELD_TYPE]: SIGNAL_TYPE_TABLE_VIEWPORT,
       [FIELD_PAGE]: page,
       [FIELD_TABLE_KEY]: tableKey,
-      [FIELD_OFFSET]: descriptor.offset,
       [FIELD_LIMIT]: descriptor.limit,
+    }
+    if (descriptor.pageIndex === null) {
+      frame[FIELD_ANCHOR] = descriptor.anchor
+      frame[FIELD_ANCHOR_DIRECTION] = descriptor.anchorDirection
+    } else {
+      frame[FIELD_PAGE_INDEX] = descriptor.pageIndex
     }
     if (Object.keys(descriptor.filter).length > 0) {
       frame[FIELD_FILTER] = descriptor.filter

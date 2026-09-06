@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table;
 
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
 
 /**
@@ -17,7 +19,7 @@ use Hilos\Core\Table\Definition\TableDefinition;
 final class InMemoryTableFilter
 {
     /**
-     * Applies search, sort and pagination to an in-memory row set.
+     * Applies search, sort and the window to an in-memory row set.
      *
      * The sort is settled by the row key: a sorted field with repeats orders the rows that
      * share a value arbitrarily, and two neighbouring pages sliced out of two such orderings
@@ -26,10 +28,20 @@ final class InMemoryTableFilter
      * lose its tie-breaker without saying so — {@see TableDefinition::filterInMemory()} is
      * where a table gets it from its own row class.
      *
+     * The window is taken from the anchor by walking to the place it names, which is what keeps
+     * a row deleted above the window from shifting it. Where a column was sorted by, the walk
+     * compares values and needs no row to still exist. Where none was, the order is the row
+     * source's own — newest batch first, the roster's own sequence — and no comparison of field
+     * values reproduces it, so the anchor is found by its key instead; a row deleted out from
+     * under it sends the window back to the edge it was heading away from.
+     *
+     * A jump to a numbered page still counts rows, because a page nobody has shown has no anchor
+     * to walk to; here that costs nothing, the whole set being in memory already.
+     *
      * @param list<array<string, mixed>> $rows All rows to filter
      * @param TableQueryDTO $query Query parameters
      * @param string $keyField Payload field the row key travels under, used to settle the sort
-     * @return TableSnapshotDTO Filtered/sorted/paginated snapshot
+     * @return TableSnapshotDTO Filtered, sorted and windowed snapshot
      */
     public static function apply(array $rows, TableQueryDTO $query, string $keyField): TableSnapshotDTO
     {
@@ -41,32 +53,150 @@ final class InMemoryTableFilter
         }
 
         $sort = $query->sort;
+        $direction = $sort !== null && strtolower($sort->direction) === TableConstants::ORDER_DESC ? -1 : 1;
         if ($sort !== null) {
-            $dir = strtolower($sort->direction) === TableConstants::ORDER_DESC ? -1 : 1;
-            usort($rows, static function (array $a, array $b) use ($sort, $dir, $keyField): int {
-                $byValue = self::compareValues($a[$sort->field] ?? null, $b[$sort->field] ?? null, $dir);
+            usort($rows, static function (array $a, array $b) use ($sort, $direction, $keyField): int {
+                $byValue = self::compareValues($a[$sort->field] ?? null, $b[$sort->field] ?? null, $direction);
                 if ($byValue !== 0) {
                     return $byValue;
                 }
 
-                return $dir * self::compareKeys($a[$keyField] ?? null, $b[$keyField] ?? null);
+                return $direction * self::compareKeys($a[$keyField] ?? null, $b[$keyField] ?? null);
             });
         }
 
         $totalCount = count($rows);
-
-        if ($query->limit !== TableConstants::NO_LIMIT) {
-            $rows = array_slice($rows, $query->offset, $query->limit);
-        } elseif ($query->offset > 0) {
-            $rows = array_slice($rows, $query->offset);
-        }
+        $window = self::window($rows, $query, $keyField, $direction);
+        $anchorFields = $sort === null || $sort->field === $keyField ? [$keyField] : [$sort->field, $keyField];
 
         return new TableSnapshotDTO(
-            rows: $rows,
+            rows: $window,
             totalCount: $totalCount,
-            offset: $query->offset,
             limit: $query->limit,
+            firstAnchor: $window === [] ? null : TableAnchorDTO::fromRow($window[0], $anchorFields),
+            lastAnchor: $window === [] ? null : TableAnchorDTO::fromRow($window[count($window) - 1], $anchorFields),
         );
+    }
+
+    /**
+     * Cuts the window the query asked for out of the ordered rows.
+     *
+     * @param list<array<string, mixed>> $rows Ordered rows of the whole filtered set
+     * @param TableQueryDTO $query Query parameters
+     * @param string $keyField Payload field the row key travels under
+     * @param int $direction 1 ascending, -1 descending
+     * @return list<array<string, mixed>> Rows of the window, in the set's own order
+     */
+    private static function window(array $rows, TableQueryDTO $query, string $keyField, int $direction): array
+    {
+        if ($query->limit === TableConstants::NO_LIMIT) {
+            return $rows;
+        }
+        if ($query->pageIndex !== null) {
+            return array_slice($rows, max(0, $query->pageIndex) * $query->limit, $query->limit);
+        }
+
+        $takesFromEnd = $query->anchorDirection === TableAnchorDirection::Before;
+        if ($query->anchor === null) {
+            return $takesFromEnd
+                ? array_slice($rows, max(0, count($rows) - $query->limit), $query->limit)
+                : array_slice($rows, 0, $query->limit);
+        }
+
+        $boundary = self::boundary($rows, $query->anchor, $query->sort, $keyField, $direction, $takesFromEnd);
+        if (!$takesFromEnd) {
+            return array_slice($rows, $boundary, $query->limit);
+        }
+
+        $start = max(0, $boundary - $query->limit);
+
+        return array_slice($rows, $start, $boundary - $start);
+    }
+
+    /**
+     * Walks the rows to the place the anchor names.
+     *
+     * @param list<array<string, mixed>> $rows Rows of the whole filtered set, in the set's own order
+     * @param TableAnchorDTO $anchor Place the window is taken from
+     * @param ?TableSortDTO $sort Ordering the window asked for, or null when the source ordered the rows
+     * @param string $keyField Payload field the row key travels under
+     * @param int $direction 1 ascending, -1 descending
+     * @param bool $takesFromEnd Whether the window runs back from the anchor rather than on from it
+     * @return int Index the window starts at, or ends before when it runs back
+     */
+    private static function boundary(
+        array $rows,
+        TableAnchorDTO $anchor,
+        ?TableSortDTO $sort,
+        string $keyField,
+        int $direction,
+        bool $takesFromEnd,
+    ): int {
+        if ($sort === null) {
+            return self::keyBoundary($rows, $anchor, $keyField, $takesFromEnd);
+        }
+
+        foreach ($rows as $index => $row) {
+            $comparison = self::compareToAnchor($row, $anchor, $sort, $keyField, $direction);
+            if ($takesFromEnd ? $comparison >= 0 : $comparison > 0) {
+                return $index;
+            }
+        }
+
+        return count($rows);
+    }
+
+    /**
+     * Finds the anchored row in a set whose order is the row source's own.
+     *
+     * Nothing here compares two rows: the order was not built out of their values and cannot be
+     * reproduced from them, so the anchor is the one row carrying its key. A row that is no longer
+     * there leaves the window with no place to continue from, and it goes back to the edge it was
+     * heading away from — the same window a null anchor asks for.
+     *
+     * @param list<array<string, mixed>> $rows Rows of the whole filtered set, in the source's order
+     * @param TableAnchorDTO $anchor Place the window is taken from
+     * @param string $keyField Payload field the row key travels under
+     * @param bool $takesFromEnd Whether the window runs back from the anchor rather than on from it
+     * @return int Index the window starts at, or ends before when it runs back
+     */
+    private static function keyBoundary(array $rows, TableAnchorDTO $anchor, string $keyField, bool $takesFromEnd): int
+    {
+        $anchorKey = $anchor->values[$keyField] ?? null;
+        if ($anchorKey !== null) {
+            foreach ($rows as $index => $row) {
+                if (($row[$keyField] ?? null) == $anchorKey) {
+                    return $takesFromEnd ? $index : $index + 1;
+                }
+            }
+        }
+
+        return $takesFromEnd ? count($rows) : 0;
+    }
+
+    /**
+     * Places one row against the anchor, the same walk down the key the ordering makes.
+     *
+     * @param array<string, mixed> $row Row to place
+     * @param TableAnchorDTO $anchor Place the window is taken from
+     * @param TableSortDTO $sort Ordering the window asked for
+     * @param string $keyField Payload field the row key travels under
+     * @param int $direction 1 ascending, -1 descending
+     * @return int Negative, zero or positive in the ordering's sense
+     */
+    private static function compareToAnchor(
+        array $row,
+        TableAnchorDTO $anchor,
+        TableSortDTO $sort,
+        string $keyField,
+        int $direction,
+    ): int {
+        $byValue = self::compareValues($row[$sort->field] ?? null, $anchor->values[$sort->field] ?? null, $direction);
+        if ($byValue !== 0) {
+            return $byValue;
+        }
+
+        return $direction * self::compareKeys($row[$keyField] ?? null, $anchor->values[$keyField] ?? null);
     }
 
     /**

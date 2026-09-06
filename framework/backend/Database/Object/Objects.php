@@ -9,7 +9,9 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\TableWindowPlan;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
@@ -363,7 +365,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     }
 
     /**
-     * Query a page of objects from DB with search, sort and pagination.
+     * Query a page of objects from DB with search, sort and keyset pagination.
      * Loaded objects are merged into $this->objects (common storage).
      *
      * The sort field is held against the entity's own columns here as well as at the table
@@ -376,8 +378,19 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * one row twice and another not at all. With no sort at all the key alone orders the
      * page ascending, so the default is unambiguous too.
      *
+     * The window is taken from an anchor, so a page costs the same at any depth and a row
+     * deleted above the window no longer shifts it. Paging back inverts the order and turns
+     * the rows over afterwards; without the inversion LIMIT would hand back the start of the
+     * set instead of the rows next to the anchor.
+     *
+     * A jump to a numbered page is the one thing an anchor cannot express — page seven has no
+     * anchor until somebody has shown it — so it still skips rows, counted from whichever edge
+     * of the set is nearer. The worst skip is then half the set, and the last page costs what
+     * the first one does.
+     *
      * @param TableQueryDTO $query Query parameters
-     * @return array<string, mixed> Keys: objects (array<int|string, Object_>), totalCount (int)
+     * @return array<string, mixed> Keys: objects (array<int|string, Object_>), totalCount (int),
+     *     firstAnchor (?TableAnchorDTO), lastAnchor (?TableAnchorDTO)
      * @throws DatabaseException If database query fails
      * @throws InvalidArgumentException When an order direction is neither SqlSortDirection::ASC nor ::DESC
      */
@@ -423,21 +436,47 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             }
         }
 
-        $entityCollection = $entityClass::get(
-            filters: $filters,
-            filtersParam: $filtersParam,
-            orderBy: $orderBy,
-            limit: $query->limit,
-            offset: $query->offset,
-        );
-
         $totalCount = $entityClass::count(
             filters: $filters,
             filtersParam: $filtersParam,
         );
 
-        $pageObjects = [];
+        $plan = TableWindowPlan::forQuery($query, $orderBy, $totalCount);
+        if ($plan === null) {
+            return [
+                TableConstants::RESULT_KEY_OBJECTS => [],
+                TableConstants::RESULT_KEY_TOTAL_COUNT => $totalCount,
+                TableConstants::RESULT_KEY_FIRST_ANCHOR => null,
+                TableConstants::RESULT_KEY_LAST_ANCHOR => null,
+            ];
+        }
+
+        if ($plan->keyset !== null) {
+            $condition = $plan->keyset->toSql($entityClass::_table);
+            $filters = $filters === '' ? $condition : "({$filters}) AND {$condition}";
+            foreach ($plan->keyset->getParams() as $value) {
+                $filtersParam[] = SqlParam::auto($value);
+            }
+        }
+
+        $entityCollection = $entityClass::get(
+            filters: $filters,
+            filtersParam: $filtersParam,
+            orderBy: $plan->orderBy,
+            limit: $plan->limit,
+            offset: $plan->offset,
+        );
+
+        $entities = [];
         foreach ($entityCollection as $key => $entity) {
+            $entities[$key] = $entity;
+        }
+        if ($plan->reversed) {
+            $entities = array_reverse($entities, preserve_keys: true);
+        }
+
+        $pageObjects = [];
+        foreach ($entities as $key => $entity) {
             if (isset($this->objects[$key])) {
                 $pageObjects[$key] = $this->objects[$key];
             } else {
@@ -447,7 +486,20 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             }
         }
 
-        return [TableConstants::RESULT_KEY_OBJECTS => $pageObjects, TableConstants::RESULT_KEY_TOTAL_COUNT => $totalCount];
+        $anchorColumns = array_keys($orderBy);
+        $firstKey = array_key_first($entities);
+        $lastKey = array_key_last($entities);
+
+        return [
+            TableConstants::RESULT_KEY_OBJECTS => $pageObjects,
+            TableConstants::RESULT_KEY_TOTAL_COUNT => $totalCount,
+            TableConstants::RESULT_KEY_FIRST_ANCHOR => $firstKey === null
+                ? null
+                : TableAnchorDTO::fromRow($entities[$firstKey]->toArray(), $anchorColumns),
+            TableConstants::RESULT_KEY_LAST_ANCHOR => $lastKey === null
+                ? null
+                : TableAnchorDTO::fromRow($entities[$lastKey]->toArray(), $anchorColumns),
+        ];
     }
 
     /**

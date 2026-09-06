@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Core\Table;
 
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
@@ -94,6 +95,10 @@ final class InMemoryTableFilterSortTest extends TestCase
     /**
      * Walks every page of the repeated-value set and collects the keys in the order they arrived.
      *
+     * Each page is asked for from the boundary of the one before it, the way a client pages:
+     * that is what a repeated column can lose a row in, because the two pages are cut out of
+     * one ordering rather than out of two runs of it.
+     *
      * @param TableSortDTO $sort Ordering to ask each page for
      * @return list<int> Row keys across all pages, in the order the pages delivered them
      */
@@ -102,12 +107,14 @@ final class InMemoryTableFilterSortTest extends TestCase
         $rows = $this->repeatedRows();
 
         $keys = [];
-        for ($offset = 0; $offset < count($rows); $offset += self::PAGE_SIZE) {
-            $snapshot = $this->page($rows, $sort, $offset);
+        $anchor = null;
+        do {
+            $snapshot = $this->page($rows, $sort, $anchor);
             foreach ($snapshot->rows as $row) {
                 $keys[] = (int) $row[self::KEY_FIELD];
             }
-        }
+            $anchor = $snapshot->lastAnchor;
+        } while (count($snapshot->rows) === self::PAGE_SIZE);
 
         return $keys;
     }
@@ -117,14 +124,14 @@ final class InMemoryTableFilterSortTest extends TestCase
      *
      * @param list<array<string, mixed>> $rows Rows the table produced
      * @param TableSortDTO $sort Ordering the window asked for
-     * @param int $offset Zero-based offset of the page
+     * @param ?TableAnchorDTO $anchor Boundary of the previous page, or null for the first one
      * @return TableSnapshotDTO Snapshot of that one page
      */
-    private function page(array $rows, TableSortDTO $sort, int $offset): TableSnapshotDTO
+    private function page(array $rows, TableSortDTO $sort, ?TableAnchorDTO $anchor): TableSnapshotDTO
     {
         return InMemoryTableFilter::apply(
             $rows,
-            new TableQueryDTO(sort: $sort, offset: $offset, limit: self::PAGE_SIZE),
+            new TableQueryDTO(sort: $sort, limit: self::PAGE_SIZE, anchor: $anchor),
             self::KEY_FIELD,
         );
     }

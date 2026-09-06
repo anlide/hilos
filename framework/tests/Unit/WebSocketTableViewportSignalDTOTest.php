@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use PHPUnit\Framework\TestCase;
@@ -23,8 +25,9 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
             tableKey: 'settings',
             filter: ['search' => 'theme'],
             sort: new TableSortDTO('key', TableConstants::ORDER_DESC),
-            offset: 10,
             limit: 10,
+            anchor: new TableAnchorDTO(['key' => 'theme.dark']),
+            anchorDirection: TableAnchorDirection::Before,
         );
 
         $restored = WebSocketTableViewportSignalDTO::fromArray($dto->toArray());
@@ -34,8 +37,45 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
         $this->assertSame('settings', $restored->tableKey);
         $this->assertSame(['search' => 'theme'], $restored->filter);
         $this->assertEquals(new TableSortDTO('key', TableConstants::ORDER_DESC), $restored->sort);
-        $this->assertSame(10, $restored->offset);
         $this->assertSame(10, $restored->limit);
+        $this->assertSame(['key' => 'theme.dark'], $restored->anchor?->toArray());
+        $this->assertSame(TableAnchorDirection::Before, $restored->anchorDirection);
+        $this->assertNull($restored->pageIndex);
+    }
+
+    public function testAJumpTravelsAsAPageIndexAndNothingElse(): void
+    {
+        $array = new WebSocketTableViewportSignalDTO(acceptKey: 'ak', tableKey: 't', limit: 10, pageIndex: 7)->toArray();
+
+        $this->assertSame(7, $array[WebSocketTableViewportSignalDTO::PAGE_INDEX]);
+        $this->assertArrayNotHasKey(WebSocketTableViewportSignalDTO::ANCHOR, $array);
+        $this->assertArrayNotHasKey(WebSocketTableViewportSignalDTO::ANCHOR_DIRECTION, $array);
+        $this->assertSame(7, WebSocketTableViewportSignalDTO::fromArray($array)->pageIndex);
+    }
+
+    public function testAFrameAddressingTheWindowTwiceIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        WebSocketTableViewportSignalDTO::fromArray([
+            WebSocketTableViewportSignalDTO::ACCEPT_KEY => 'ak',
+            WebSocketTableViewportSignalDTO::TABLE_KEY => 't',
+            WebSocketTableViewportSignalDTO::LIMIT => 10,
+            WebSocketTableViewportSignalDTO::PAGE_INDEX => 7,
+            WebSocketTableViewportSignalDTO::ANCHOR => ['id' => 3],
+        ]);
+    }
+
+    public function testASideTheAnchorHasNoMeaningOnIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        WebSocketTableViewportSignalDTO::fromArray([
+            WebSocketTableViewportSignalDTO::ACCEPT_KEY => 'ak',
+            WebSocketTableViewportSignalDTO::TABLE_KEY => 't',
+            WebSocketTableViewportSignalDTO::LIMIT => 10,
+            WebSocketTableViewportSignalDTO::ANCHOR_DIRECTION => 'sideways',
+        ]);
     }
 
     public function testSortRidesAsNestedFieldDirection(): void
@@ -66,7 +106,6 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
         $dto = WebSocketTableViewportSignalDTO::fromArray([
             WebSocketTableViewportSignalDTO::ACCEPT_KEY => 'ak',
             WebSocketTableViewportSignalDTO::TABLE_KEY => 't',
-            WebSocketTableViewportSignalDTO::OFFSET => 0,
             WebSocketTableViewportSignalDTO::LIMIT => TableConstants::NO_LIMIT,
         ]);
 
@@ -75,8 +114,9 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
         $this->assertSame('t', $dto->tableKey);
         $this->assertSame([], $dto->filter);
         $this->assertNull($dto->sort);
-        $this->assertSame(0, $dto->offset);
         $this->assertSame(TableConstants::NO_LIMIT, $dto->limit);
+        $this->assertNull($dto->anchor);
+        $this->assertSame(TableAnchorDirection::After, $dto->anchorDirection);
     }
 
     public function testFromArrayRefusesAFrameNamingNoTable(): void
@@ -88,20 +128,18 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
 
         WebSocketTableViewportSignalDTO::fromArray([
             WebSocketTableViewportSignalDTO::ACCEPT_KEY => 'ak',
-            WebSocketTableViewportSignalDTO::OFFSET => 0,
             WebSocketTableViewportSignalDTO::LIMIT => 10,
         ]);
     }
 
-    public function testFromArrayRefusesAWindowWithoutItsBounds(): void
+    public function testFromArrayRefusesAWindowWithoutItsSize(): void
     {
         $this->expectException(InvalidFormatException::class);
-        $this->expectExceptionMessage(WebSocketTableViewportSignalDTO::OFFSET);
+        $this->expectExceptionMessage(WebSocketTableViewportSignalDTO::LIMIT);
 
         WebSocketTableViewportSignalDTO::fromArray([
             WebSocketTableViewportSignalDTO::ACCEPT_KEY => 'ak',
             WebSocketTableViewportSignalDTO::TABLE_KEY => 't',
-            WebSocketTableViewportSignalDTO::LIMIT => 10,
         ]);
     }
 
@@ -110,7 +148,6 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
         $dto = WebSocketTableViewportSignalDTO::fromArray([
             WebSocketTableViewportSignalDTO::ACCEPT_KEY => 'ak',
             WebSocketTableViewportSignalDTO::TABLE_KEY => 't',
-            WebSocketTableViewportSignalDTO::OFFSET => 0,
             WebSocketTableViewportSignalDTO::LIMIT => 10,
             WebSocketTableViewportSignalDTO::SORT => [TableSortDTO::DIRECTION => TableConstants::ORDER_DESC],
         ]);

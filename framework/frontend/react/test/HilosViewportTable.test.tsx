@@ -48,6 +48,8 @@ describe('HilosViewportTable', () => {
         { rowKey: 'b', slots: { name: 'Bob' } },
       ],
       2,
+      null,
+      null,
     )
     const { container } = renderTable(controller)
 
@@ -72,7 +74,12 @@ describe('HilosViewportTable', () => {
 
   it('shows the apply button with the pending count and applies in place', () => {
     const { controller } = makeController()
-    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'old' } }], 1)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'old' } }],
+      1,
+      null,
+      null,
+    )
     controller.ingestDelta({
       kind: 'row_updated',
       rowKey: 'a',
@@ -93,7 +100,12 @@ describe('HilosViewportTable', () => {
 
   it('renders a placeholder for an applied removal', () => {
     const { controller } = makeController()
-    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'Alice' } }], 1)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      null,
+      null,
+    )
     controller.ingestDelta({
       kind: 'row_removed',
       rowKey: 'a',
@@ -110,7 +122,12 @@ describe('HilosViewportTable', () => {
 
   it('does not render a list-changed banner on a set change (no layout shift)', () => {
     const { controller } = makeController()
-    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'Alice' } }], 1)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      null,
+      null,
+    )
     controller.ingestCount(5)
     const { container } = renderTable(controller)
 
@@ -121,7 +138,12 @@ describe('HilosViewportTable', () => {
 
   it('names the table with a caption and reports sort state to assistive tech', () => {
     const { controller } = makeController()
-    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'Alice' } }], 1)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      null,
+      null,
+    )
     const { container } = render(
       <HilosViewportTable
         controller={controller}

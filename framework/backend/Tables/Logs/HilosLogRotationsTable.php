@@ -158,7 +158,7 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
      * for no ordering gets the default one and a window that asked for another keeps that order
      * inside its ties.
      *
-     * @param TableQueryDTO $query Window query (search, filters, sort, offset, limit)
+     * @param TableQueryDTO $query Window query (search, filters, sort, size, address)
      * @return TableSnapshotDTO Window snapshot with raw rows and the total count
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
@@ -169,9 +169,11 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
         // would search the byte weights and the file counts as well.
         $ordering = new TableQueryDTO(
             sort: $query->sort,
-            offset: $query->offset,
             limit: $query->limit,
             filter: $query->filter,
+            anchor: $query->anchor,
+            anchorDirection: $query->anchorDirection,
+            pageIndex: $query->pageIndex,
         );
 
         return $this->filterInMemory($rows, $ordering);

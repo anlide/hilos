@@ -27,6 +27,7 @@ use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -59,7 +60,7 @@ final class BrowserContextTableWindowTest extends TestCase
         ]);
         Hilos::$table->configure();
 
-        $viewport = new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, offset: 1, limit: 1);
+        $viewport = new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, limit: 1, anchor: new TableAnchorDTO(['key' => 'a']));
         $delivered = new TableWindowUnitBrowserContext()->sendTableWindow(
             TableWindowUnitBrowserContext::PAGE,
             'ak-1',
@@ -88,8 +89,9 @@ final class BrowserContextTableWindowTest extends TestCase
                     ],
                 ],
                 TableWindowSignalData::totalCount => 3,
-                TableWindowSignalData::offset => 1,
                 TableWindowSignalData::limit => 1,
+                TableWindowSignalData::firstAnchor => ['key' => 'b'],
+                TableWindowSignalData::lastAnchor => ['key' => 'b'],
             ],
             $signal->data->data->toArray(),
         );
@@ -135,7 +137,7 @@ final class BrowserContextTableWindowTest extends TestCase
         $delivered = new TableWindowGuardUnitBrowserContext()->sendTableWindow(
             TableWindowGuardUnitBrowserContext::PAGE,
             'ak-1',
-            new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, offset: 0, limit: 10),
+            new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, limit: 10),
         );
 
         // The refusal is answered as well as silent on the wire: this is what the
@@ -166,7 +168,7 @@ final class BrowserContextTableWindowTest extends TestCase
         new TableWindowBrokenDeclarationBrowserContext()->sendTableWindow(
             TableWindowBrokenDeclarationBrowserContext::PAGE,
             'ak-1',
-            new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, offset: 0, limit: 10),
+            new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, limit: 10),
         );
 
         $this->assertNull(
@@ -189,7 +191,7 @@ final class BrowserContextTableWindowTest extends TestCase
         new TableWindowUnitBrowserContext()->sendTableWindow(
             TableWindowUnitBrowserContext::PAGE,
             'ak-1',
-            new TableViewportSubscription(tableKey: TableWindowRefusedRowTable::TABLE, offset: 0, limit: 10),
+            new TableViewportSubscription(tableKey: TableWindowRefusedRowTable::TABLE, limit: 10),
         );
         $logged = (string)ob_get_clean();
 

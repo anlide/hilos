@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Row\GenericTableRow;
 use Hilos\Core\Table\TableConstants;
@@ -20,15 +21,17 @@ final class TableSnapshotDTOTest extends TestCase
         $snapshot = new TableSnapshotDTO(
             rows: [GenericTableRow::fromArray(['id' => 1, 'name' => 'Ada'])],
             totalCount: 1,
-            offset: 0,
             limit: 0,
+            firstAnchor: new TableAnchorDTO(['id' => 1]),
+            lastAnchor: new TableAnchorDTO(['id' => 1]),
         );
 
         $this->assertSame([
             'rows' => [['id' => 1, 'name' => 'Ada']],
             'totalCount' => 1,
-            'offset' => 0,
             'limit' => 0,
+            'firstAnchor' => ['id' => 1],
+            'lastAnchor' => ['id' => 1],
         ], $snapshot->toArray());
     }
 
@@ -37,7 +40,6 @@ final class TableSnapshotDTOTest extends TestCase
         $snapshot = TableSnapshotDTO::fromArray([
             'rows' => [['id' => 1, 'name' => 'Ada']],
             'totalCount' => 1,
-            'offset' => 0,
             'limit' => 0,
         ]);
 
@@ -49,12 +51,29 @@ final class TableSnapshotDTOTest extends TestCase
     public function testFromArrayKeepsTheWindowItWasSerializedWith(): void
     {
         $snapshot = TableSnapshotDTO::fromArray(
-            new TableSnapshotDTO(rows: [], totalCount: 91, offset: 50, limit: 25)->toArray(),
+            new TableSnapshotDTO(
+                rows: [],
+                totalCount: 91,
+                limit: 25,
+                firstAnchor: new TableAnchorDTO(['name' => 'Ada', 'id' => 50]),
+                lastAnchor: new TableAnchorDTO(['name' => 'Zoe', 'id' => 74]),
+            )->toArray(),
         );
 
         $this->assertSame(91, $snapshot->totalCount);
-        $this->assertSame(50, $snapshot->offset);
         $this->assertSame(25, $snapshot->limit);
+        $this->assertSame(['name' => 'Ada', 'id' => 50], $snapshot->firstAnchor?->toArray());
+        $this->assertSame(['name' => 'Zoe', 'id' => 74], $snapshot->lastAnchor?->toArray());
+    }
+
+    public function testAnEmptyWindowSerializesBothBoundariesAsNothing(): void
+    {
+        $snapshot = TableSnapshotDTO::fromArray(
+            new TableSnapshotDTO(rows: [], totalCount: 0, limit: 25)->toArray(),
+        );
+
+        $this->assertNull($snapshot->firstAnchor);
+        $this->assertNull($snapshot->lastAnchor);
     }
 
     public function testFromArrayRefusesAPayloadWithoutTheWindowSize(): void
@@ -65,7 +84,6 @@ final class TableSnapshotDTOTest extends TestCase
         TableSnapshotDTO::fromArray([
             TableConstants::RESULT_KEY_ROWS => [],
             TableConstants::RESULT_KEY_TOTAL_COUNT => 0,
-            TableConstants::RESULT_KEY_OFFSET => 0,
         ]);
     }
 
@@ -76,7 +94,6 @@ final class TableSnapshotDTOTest extends TestCase
         TableSnapshotDTO::fromArray([
             TableConstants::RESULT_KEY_ROWS => ['Ada'],
             TableConstants::RESULT_KEY_TOTAL_COUNT => 1,
-            TableConstants::RESULT_KEY_OFFSET => 0,
             TableConstants::RESULT_KEY_LIMIT => TableConstants::NO_LIMIT,
         ]);
     }

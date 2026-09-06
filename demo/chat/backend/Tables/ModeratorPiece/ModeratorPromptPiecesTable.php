@@ -140,8 +140,9 @@ final class ModeratorPromptPiecesTable extends TableDefinition implements Viewpo
                 $result[TableConstants::RESULT_KEY_ROWS],
             ),
             totalCount: $result[TableConstants::RESULT_KEY_TOTAL_COUNT],
-            offset: $query->offset,
             limit: $query->limit,
+            firstAnchor: $result[TableConstants::RESULT_KEY_FIRST_ANCHOR],
+            lastAnchor: $result[TableConstants::RESULT_KEY_LAST_ANCHOR],
         );
     }
 

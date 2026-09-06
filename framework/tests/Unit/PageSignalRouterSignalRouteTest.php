@@ -81,8 +81,8 @@ final class PageSignalRouterSignalRouteTest extends TestCase
                     acceptKey: 'ak',
                     page: PageSignalRouterTestPage::PAGE,
                     tableKey: 'settings',
-                    offset: 10,
                     limit: 10,
+                    pageIndex: 1,
                 ),
                 'websocket',
                 PageSignalRouterTestPage::PAGE,
@@ -91,7 +91,7 @@ final class PageSignalRouterSignalRouteTest extends TestCase
             $viewport = HilosFacade::$sr->getTableViewport('ak', 'settings');
             $this->assertNotNull($viewport);
             $this->assertSame('settings', $viewport->tableKey);
-            $this->assertSame(10, $viewport->offset);
+            $this->assertSame(1, $viewport->pageIndex);
         } finally {
             HilosFacade::$sr = $previousRouter;
         }

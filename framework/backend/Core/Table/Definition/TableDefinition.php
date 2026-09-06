@@ -254,8 +254,9 @@ abstract class TableDefinition implements ArrayAccess
         return new TableSnapshotDTO(
             rows: $result[TableConstants::RESULT_KEY_ROWS],
             totalCount: $result[TableConstants::RESULT_KEY_TOTAL_COUNT],
-            offset: $query->offset,
             limit: $query->limit,
+            firstAnchor: $result[TableConstants::RESULT_KEY_FIRST_ANCHOR],
+            lastAnchor: $result[TableConstants::RESULT_KEY_LAST_ANCHOR],
         );
     }
 
@@ -302,7 +303,7 @@ abstract class TableDefinition implements ArrayAccess
      *
      * Runs the concrete table query and wraps the result rows as typed row
      * objects; getFullSnapshot() is the empty-query case. The window's search,
-     * sort, offset, and limit are carried by the query.
+     * sort, size and address — an anchor or a page number — are carried by the query.
      *
      * The sort passes {@see sortableFields()} before the query sees it, because this is the
      * one point every path to a row source runs through — the DB-collection helper, a
@@ -319,9 +320,11 @@ abstract class TableDefinition implements ArrayAccess
             $query = new TableQueryDTO(
                 search: $query->search,
                 sort: $sort,
-                offset: $query->offset,
                 limit: $query->limit,
                 filter: $query->filter,
+                anchor: $query->anchor,
+                anchorDirection: $query->anchorDirection,
+                pageIndex: $query->pageIndex,
             );
         }
 
@@ -330,8 +333,9 @@ abstract class TableDefinition implements ArrayAccess
         return new TableSnapshotDTO(
             rows: $this->makeRows($result->rows),
             totalCount: $result->totalCount,
-            offset: $result->offset,
             limit: $result->limit,
+            firstAnchor: $result->firstAnchor,
+            lastAnchor: $result->lastAnchor,
         );
     }
 

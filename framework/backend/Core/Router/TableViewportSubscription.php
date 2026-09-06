@@ -4,21 +4,23 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Router;
 
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 
 /**
  * TableViewportSubscription - Worker-local record of one table's live viewport.
  *
- * Holds the window descriptor a connection requested for a table (filter, sort,
- * offset, limit) plus, for every row the server has actually delivered to that
+ * Holds the window descriptor a connection requested for a table (filter, sort, size, and the
+ * anchor or page number it is addressed by) plus, for every row the server has actually delivered to that
  * connection, a digest of the delivered row. The digest is kept, never the row
  * body: it answers both questions the delta path asks - is this row in the window,
  * and is it still the row this connection was given - while the memory a window
  * costs stays fixed per row rather than growing with the payload.
  *
- * The descriptor is immutable; the delivered rows and the total count are updated
- * as windows are served and as rows leave the set.
+ * The descriptor is immutable; the delivered rows, the total count and the two places the
+ * window sits between are updated as windows are served and as rows leave the set.
  */
 final class TableViewportSubscription
 {
@@ -30,19 +32,29 @@ final class TableViewportSubscription
     /** Total rows matching the filter at the last window build. */
     private int $totalCount = 0;
 
+    /** Place the first row of the last served window sits at, or null when that window was empty. */
+    private ?TableAnchorDTO $firstAnchor = null;
+
+    /** Place the last row of the last served window sits at, or null when that window was empty. */
+    private ?TableAnchorDTO $lastAnchor = null;
+
     /**
      * @param string $tableKey Table the viewport scopes
      * @param array<string, mixed> $filter Open filter map, resolved to a query by the concrete table
      * @param ?TableSortDTO $sort Requested ordering, or null for backend arrival order
-     * @param int $offset Zero-based window offset
      * @param int $limit Window size (TableConstants::NO_LIMIT = all rows)
+     * @param ?TableAnchorDTO $anchor Place the window was asked from, or null for the edge of the set
+     * @param TableAnchorDirection $anchorDirection Side of the anchor, and which edge a null anchor means
+     * @param ?int $pageIndex Zero-based page the window jumped to, or null when it is paged by anchor
      */
     public function __construct(
         public readonly string $tableKey,
         public readonly array $filter = [],
         public readonly ?TableSortDTO $sort = null,
-        public readonly int $offset = 0,
         public readonly int $limit = TableConstants::NO_LIMIT,
+        public readonly ?TableAnchorDTO $anchor = null,
+        public readonly TableAnchorDirection $anchorDirection = TableAnchorDirection::After,
+        public readonly ?int $pageIndex = null,
     ) {
     }
 
@@ -52,11 +64,15 @@ final class TableViewportSubscription
      * @param array<string, array{rowKey: int|string, slots: array<string, mixed>}> $wireRows Wire rows
      *     delivered in the window, keyed by row-id key, in display order
      * @param int $totalCount Total rows matching the filter
+     * @param ?TableAnchorDTO $firstAnchor Place the first delivered row sits at, or null when none was
+     * @param ?TableAnchorDTO $lastAnchor Place the last delivered row sits at, or null when none was
      */
-    public function recordWindow(array $wireRows, int $totalCount): void
+    public function recordWindow(array $wireRows, int $totalCount, ?TableAnchorDTO $firstAnchor, ?TableAnchorDTO $lastAnchor): void
     {
         $this->rowDigests = array_map(self::digest(...), $wireRows);
         $this->totalCount = $totalCount;
+        $this->firstAnchor = $firstAnchor;
+        $this->lastAnchor = $lastAnchor;
     }
 
     /**
@@ -140,6 +156,63 @@ final class TableViewportSubscription
     public function totalCount(): int
     {
         return $this->totalCount;
+    }
+
+    /**
+     * Place the first row of the last served window sits at.
+     *
+     * SCAFFOLD: nothing on the server reads this yet — the client holds its own boundaries and
+     * echoes them back, so paging needs no help from here. It is kept because the server is
+     * about to need it for itself: saying whether an arriving row falls above the window means
+     * comparing it against this boundary, which is HIL-791.
+     *
+     * @return ?TableAnchorDTO Boundary the window pages back from, or null when it was empty
+     */
+    public function firstAnchor(): ?TableAnchorDTO
+    {
+        return $this->firstAnchor;
+    }
+
+    /**
+     * Place the last row of the last served window sits at.
+     *
+     * SCAFFOLD: unread for the same reason as {@see firstAnchor()}, and kept beside it — the
+     * pair is what a window sits between, and one of them alone answers nothing.
+     *
+     * @return ?TableAnchorDTO Boundary the window pages on from, or null when it was empty
+     */
+    public function lastAnchor(): ?TableAnchorDTO
+    {
+        return $this->lastAnchor;
+    }
+
+    /**
+     * Whether the delivered window runs to the end of the filtered set.
+     *
+     * A window addressed by anchor has no position to report, so the end is read off the one
+     * thing that does say: a window shorter than what it asked for ran out of rows. That answers
+     * only while it is paging forward - paging back the window stops at the anchor, and a full
+     * last page is not recognized until the client asks once more and gets nothing. A window that
+     * jumped to a numbered page does know its place, and a window with no limit holds the set.
+     *
+     * The answer is read rather than stored because the delivered set moves after the window is
+     * served: a row appended to a window with room joins it, and a stored flag would still be
+     * describing the window before it.
+     *
+     * @return bool Whether the last row of the set is in the delivered window
+     */
+    public function reachesEnd(): bool
+    {
+        if ($this->limit === TableConstants::NO_LIMIT) {
+            return true;
+        }
+
+        $windowSize = count($this->rowDigests);
+        if ($this->pageIndex !== null) {
+            return $this->pageIndex * $this->limit + $windowSize >= $this->totalCount;
+        }
+
+        return $this->anchorDirection === TableAnchorDirection::After && $windowSize < $this->limit;
     }
 
     /**

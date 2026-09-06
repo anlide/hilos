@@ -115,11 +115,17 @@ export const FIELD_FILTER = 'filter'
 /** Viewport frame key carrying the sort `{field, direction}` (PHP `SignalPayloadConstants::FIELD_SORT`). */
 export const FIELD_SORT = 'sort'
 
-/** Viewport frame key carrying the window offset (PHP `SignalPayloadConstants::FIELD_OFFSET`). */
-export const FIELD_OFFSET = 'offset'
-
 /** Viewport frame key carrying the window limit (PHP `SignalPayloadConstants::FIELD_LIMIT`). */
 export const FIELD_LIMIT = 'limit'
+
+/** Viewport frame key carrying the place the window is taken from (PHP `SignalPayloadConstants::FIELD_ANCHOR`). */
+export const FIELD_ANCHOR = 'anchor'
+
+/** Viewport frame key carrying the side of the anchor (PHP `SignalPayloadConstants::FIELD_ANCHOR_DIRECTION`). */
+export const FIELD_ANCHOR_DIRECTION = 'anchorDirection'
+
+/** Viewport frame key carrying the page a jump asks for (PHP `SignalPayloadConstants::FIELD_PAGE_INDEX`). */
+export const FIELD_PAGE_INDEX = 'pageIndex'
 
 /** Keepalive text frame the client sends (PHP `WebSocketConstants::KEEPALIVE_TEXT_PING`). */
 export const KEEPALIVE_TEXT_PING = 'ping'

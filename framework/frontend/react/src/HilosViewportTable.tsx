@@ -236,7 +236,7 @@ export function HilosViewportTable<R>({
               className="btn btn-outline-secondary btn-sm"
               disabled={page === 0}
               data-id="hilos-table-prev"
-              onClick={() => controller.setPage(page - 1)}
+              onClick={() => controller.prevPage()}
             >
               Previous
             </button>
@@ -252,7 +252,7 @@ export function HilosViewportTable<R>({
               className="btn btn-outline-secondary btn-sm"
               disabled={page >= pageCount - 1}
               data-id="hilos-table-next"
-              onClick={() => controller.setPage(page + 1)}
+              onClick={() => controller.nextPage()}
             >
               Next
             </button>

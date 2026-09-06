@@ -22,12 +22,21 @@ describe('TableViewportController', () => {
   it('start sends the initial descriptor', () => {
     const { controller, sent } = makeController()
     controller.start()
-    expect(sent).toEqual([{ filter: {}, sort: null, offset: 0, limit: 10 }])
+    expect(sent).toEqual([
+      {
+        filter: {},
+        sort: null,
+        limit: 10,
+        anchor: null,
+        anchorDirection: 'after',
+        pageIndex: null,
+      },
+    ])
   })
 
   it('setSearch sets the search filter, resets to page 0, and resends', () => {
     const { controller, sent } = makeController()
-    controller.ingestWindow([], 50)
+    controller.ingestWindow([], 50, null, null)
     controller.setPage(2)
     controller.setSearch('theme')
 
@@ -35,8 +44,10 @@ describe('TableViewportController', () => {
     expect(sent.at(-1)).toEqual({
       filter: { search: 'theme' },
       sort: null,
-      offset: 0,
       limit: 10,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
     })
   })
 
@@ -47,22 +58,26 @@ describe('TableViewportController', () => {
     expect(sent.at(-1)).toEqual({
       filter: {},
       sort: null,
-      offset: 0,
       limit: 10,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
     })
   })
 
   it('setFilter sets a domain filter entry, resets to page 0, and resends', () => {
     const { controller, sent } = makeController()
-    controller.ingestWindow([], 50)
+    controller.ingestWindow([], 50, null, null)
     controller.setPage(2)
     controller.setFilter('status', 'failed')
 
     expect(sent.at(-1)).toEqual({
       filter: { status: 'failed' },
       sort: null,
-      offset: 0,
       limit: 10,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
     })
   })
 
@@ -75,8 +90,10 @@ describe('TableViewportController', () => {
     expect(sent.at(-1)).toEqual({
       filter: { search: 'mail', status: 'failed', channel: 'sms' },
       sort: null,
-      offset: 0,
       limit: 10,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
     })
   })
 
@@ -89,8 +106,10 @@ describe('TableViewportController', () => {
     expect(sent.at(-1)).toEqual({
       filter: { channel: 'sms' },
       sort: null,
-      offset: 0,
       limit: 10,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
     })
   })
 
@@ -136,8 +155,10 @@ describe('TableViewportController', () => {
     expect(sent.at(-1)).toEqual({
       filter: {},
       sort: null,
-      offset: 0,
       limit: 10,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
     })
   })
 
@@ -168,7 +189,7 @@ describe('TableViewportController', () => {
       field: 'id',
       direction: 'asc',
     })
-    controller.ingestWindow([], 50) // 5 pages of 10
+    controller.ingestWindow([], 50, null, null) // 5 pages of 10
     controller.setSort('name')
     controller.setPage(2)
     controller.resetSort()
@@ -176,24 +197,91 @@ describe('TableViewportController', () => {
     expect(sent.at(-1)).toEqual({
       filter: {},
       sort: { field: 'id', direction: 'asc' },
-      offset: 0,
       limit: 10,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
     })
   })
 
-  it('setPage sends the offset for the page, clamped to the page count', () => {
+  it('setPage asks for the page by number, clamped to the page count', () => {
     const { controller, sent } = makeController()
-    controller.ingestWindow([], 50) // 5 pages of 10
+    controller.ingestWindow([], 50, null, null) // 5 pages of 10
     controller.setPage(3)
-    expect(sent.at(-1)).toMatchObject({ offset: 30, limit: 10 })
+    expect(sent.at(-1)).toMatchObject({ pageIndex: 3, anchor: null, limit: 10 })
 
     controller.setPage(99)
-    expect(sent.at(-1)).toMatchObject({ offset: 40 }) // clamped to page 4
+    expect(sent.at(-1)).toMatchObject({ pageIndex: 4 }) // clamped to the last page
+  })
+
+  it('nextPage asks for the rows after the window rather than for a page number', () => {
+    const { controller, sent } = makeController()
+    controller.ingestWindow([], 50, { id: 1 }, { id: 10 }) // 5 pages of 10
+
+    controller.nextPage()
+
+    expect(controller.page.get()).toBe(1)
+    expect(sent.at(-1)).toMatchObject({
+      anchor: { id: 10 },
+      anchorDirection: 'after',
+      pageIndex: null,
+    })
+  })
+
+  it('prevPage asks for the rows before the window', () => {
+    const { controller, sent } = makeController()
+    controller.ingestWindow([], 50, { id: 1 }, { id: 10 }) // 5 pages of 10
+    controller.setPage(3)
+    controller.ingestWindow([], 50, { id: 31 }, { id: 40 })
+
+    controller.prevPage()
+
+    expect(controller.page.get()).toBe(2)
+    expect(sent.at(-1)).toMatchObject({
+      anchor: { id: 31 },
+      anchorDirection: 'before',
+      pageIndex: null,
+    })
+  })
+
+  it('neither neighbour is asked for past the edge of the set', () => {
+    const { controller, sent } = makeController()
+    controller.ingestWindow([], 10, { id: 1 }, { id: 10 }) // one page
+
+    controller.prevPage()
+    controller.nextPage()
+
+    expect(controller.page.get()).toBe(0)
+    expect(sent).toEqual([])
+  })
+
+  it('an empty window is not paged from, however many pages the count claims', () => {
+    const { controller, sent } = makeController()
+    controller.ingestWindow([], 50, null, null)
+
+    controller.nextPage()
+
+    expect(controller.page.get()).toBe(0)
+    expect(sent).toEqual([])
+  })
+
+  it('a new filter sends the window back to the start of the set', () => {
+    const { controller, sent } = makeController()
+    controller.ingestWindow([], 50, { id: 1 }, { id: 10 })
+    controller.nextPage()
+    controller.setFilter('status', 'failed')
+
+    expect(controller.page.get()).toBe(0)
+    expect(sent.at(-1)).toMatchObject({
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
+    })
   })
 
   it('ingestWindow sets the resolved rows and the total / page counts', () => {
     const { controller } = makeController()
-    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 42)
+    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 42, null, null)
 
     expect(controller.rows.get()).toEqual([
       {
@@ -209,7 +297,12 @@ describe('TableViewportController', () => {
 
   it('applies a live row update at once, with nothing left pending', () => {
     const { controller } = makeController()
-    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'old' } }], 1)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'old' } }],
+      1,
+      null,
+      null,
+    )
     controller.ingestDelta({
       kind: 'row_updated',
       rowKey: 'a',
@@ -232,6 +325,8 @@ describe('TableViewportController', () => {
         { rowKey: 'a', slots: { name: 'stored' } },
       ],
       2,
+      null,
+      null,
     )
     controller.ingestDelta({
       kind: 'row_removed',
@@ -248,7 +343,12 @@ describe('TableViewportController', () => {
 
   it('accumulates a row update as pending without changing the rows', () => {
     const { controller } = makeController()
-    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'old' } }], 1)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'old' } }],
+      1,
+      null,
+      null,
+    )
     controller.ingestDelta({
       kind: 'row_updated',
       rowKey: 'a',
@@ -277,6 +377,8 @@ describe('TableViewportController', () => {
         { rowKey: 'b', slots: {} },
       ],
       2,
+      null,
+      null,
     )
     controller.ingestDelta({
       kind: 'row_removed',
@@ -298,7 +400,7 @@ describe('TableViewportController', () => {
 
   it('applies a live count update at once without pending', () => {
     const { controller } = makeController()
-    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1)
+    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1, null, null)
     controller.ingestCount(5)
 
     expect(controller.totalCount.get()).toBe(5)
@@ -307,7 +409,7 @@ describe('TableViewportController', () => {
 
   it('appends a live tail row at once and bumps the total', () => {
     const { controller } = makeController()
-    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1)
+    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1, null, null)
     controller.ingestAppend({ rowKey: 'b', slots: {} }, 2)
 
     const rows = controller.rows.get()
@@ -324,6 +426,8 @@ describe('TableViewportController', () => {
         { rowKey: 'c', slots: {} },
       ],
       2,
+      null,
+      null,
     )
     controller.ingestOwnCreate({ rowKey: 'b', slots: {} }, 1, 3, 'req-1')
 
@@ -342,6 +446,8 @@ describe('TableViewportController', () => {
         { rowKey: 'c', slots: {} },
       ],
       2,
+      null,
+      null,
     )
     controller.ingestOwnCreate({ rowKey: 'b', slots: {} }, 1, 3)
 
@@ -357,6 +463,8 @@ describe('TableViewportController', () => {
         { rowKey: 'c', slots: {} },
       ],
       2,
+      null,
+      null,
     )
     controller.ingestDelta({
       kind: 'row_updated',
@@ -380,6 +488,8 @@ describe('TableViewportController', () => {
         { rowKey: 'theme', slots: {} },
       ],
       2,
+      null,
+      null,
     )
     // The row is deleted and its removal applied, so a placeholder stands in its slot.
     controller.ingestDelta({
@@ -406,7 +516,7 @@ describe('TableViewportController', () => {
 
   it('an own create with no action behind it reports no request id', () => {
     const { controller } = makeController()
-    controller.ingestWindow([], 0)
+    controller.ingestWindow([], 0, null, null)
     controller.ingestOwnCreate({ rowKey: 'a', slots: {} }, 0, 1, null)
 
     expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a'])
@@ -415,7 +525,7 @@ describe('TableViewportController', () => {
 
   it('ignores a delta for a row outside the window', () => {
     const { controller } = makeController()
-    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1)
+    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1, null, null)
     controller.ingestDelta({
       kind: 'row_updated',
       rowKey: 'z',
@@ -427,7 +537,7 @@ describe('TableViewportController', () => {
 
   it('discards pending when the window changes', () => {
     const { controller } = makeController()
-    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1)
+    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1, null, null)
     controller.ingestDelta({
       kind: 'row_removed',
       rowKey: 'a',
@@ -441,7 +551,12 @@ describe('TableViewportController', () => {
 
   it('applies a server-tagged own change at once, with no pre-mark', () => {
     const { controller } = makeController()
-    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'old' } }], 1)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'old' } }],
+      1,
+      null,
+      null,
+    )
     // The backend tags the delta `own` for the author connection; the client keeps
     // no per-row mark and simply trusts it.
     controller.ingestDelta({
@@ -460,7 +575,12 @@ describe('TableViewportController', () => {
 
   it('a server-tagged own change resolves a pending change racing on the same row', () => {
     const { controller } = makeController()
-    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'old' } }], 1)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'old' } }],
+      1,
+      null,
+      null,
+    )
     // A concurrent change for the same row lands first as pending (not own)...
     controller.ingestDelta({
       kind: 'row_updated',
@@ -486,7 +606,7 @@ describe('TableViewportController', () => {
 
   it('applies a server-tagged own removal at once as a placeholder', () => {
     const { controller } = makeController()
-    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1)
+    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1, null, null)
     controller.ingestDelta({
       kind: 'row_removed',
       rowKey: 'a',
@@ -505,7 +625,7 @@ describe('TableViewportController', () => {
 
   it('applies a server-tagged own edit to a server-minted create key the client never pre-marked', () => {
     const { controller } = makeController()
-    controller.ingestWindow([], 0)
+    controller.ingestWindow([], 0, null, null)
     // The server mints the new row's key and appends it live — the old client-side
     // mark could never have named it up front.
     controller.ingestAppend({ rowKey: 'srv-1', slots: { name: 'fresh' } }, 1)
@@ -526,7 +646,12 @@ describe('TableViewportController', () => {
 
   it('queues an untagged delta as pending — only the server can grant own', () => {
     const { controller } = makeController()
-    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'old' } }], 1)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'old' } }],
+      1,
+      null,
+      null,
+    )
     // No own tag: another connection's edit gates as pending, never auto-applies.
     controller.ingestDelta({
       kind: 'row_updated',
@@ -544,7 +669,7 @@ describe('TableViewportController', () => {
   it('is not loaded until the first window arrives', () => {
     const { controller } = makeController()
     expect(controller.loaded.get()).toBe(false)
-    controller.ingestWindow([], 0)
+    controller.ingestWindow([], 0, null, null)
     expect(controller.loaded.get()).toBe(true)
   })
 
@@ -557,6 +682,8 @@ describe('TableViewportController', () => {
         { rowKey: 'c', slots: {} },
       ],
       3,
+      null,
+      null,
     )
     controller.ingestDelta({
       kind: 'row_updated',
@@ -577,7 +704,12 @@ describe('TableViewportController', () => {
 
   it('applyAndResolve applies pending and returns the fresh row', () => {
     const { controller } = makeController()
-    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'old' } }], 1)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'old' } }],
+      1,
+      null,
+      null,
+    )
     controller.ingestDelta({
       kind: 'row_updated',
       rowKey: 'a',
@@ -593,7 +725,7 @@ describe('TableViewportController', () => {
 
   it('applyAndResolve returns null for a row whose removal it applies', () => {
     const { controller } = makeController()
-    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1)
+    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1, null, null)
     controller.ingestDelta({
       kind: 'row_removed',
       rowKey: 'a',

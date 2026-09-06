@@ -121,6 +121,9 @@ final class ObjectsPageOrderIntegrationTest extends FrameworkIntegrationTestCase
     /**
      * Walks every page of the scratch table and collects the row keys in the order they arrived.
      *
+     * Each page is asked for from the boundary of the one before it, which is how a client pages
+     * now: two statements again, and the order has to hold between them for the same reason.
+     *
      * @param ?TableSortDTO $sort Ordering to ask each page for, or null to ask for none
      * @return list<int> Row keys across all pages, in the order the pages delivered them
      * @throws DatabaseException When a page query fails
@@ -131,16 +134,19 @@ final class ObjectsPageOrderIntegrationTest extends FrameworkIntegrationTestCase
         $objects = PageOrderTestObjects::initEmpty();
 
         $keys = [];
-        for ($offset = 0; $offset < count(self::STATES); $offset += self::PAGE_SIZE) {
+        $anchor = null;
+        do {
             $page = $objects->queryPage(new TableQueryDTO(
                 sort: $sort,
-                offset: $offset,
                 limit: self::PAGE_SIZE,
+                anchor: $anchor,
             ));
-            foreach (array_keys($page[TableConstants::RESULT_KEY_OBJECTS]) as $key) {
+            $delivered = array_keys($page[TableConstants::RESULT_KEY_OBJECTS]);
+            foreach ($delivered as $key) {
                 $keys[] = (int) $key;
             }
-        }
+            $anchor = $page[TableConstants::RESULT_KEY_LAST_ANCHOR];
+        } while (count($delivered) === self::PAGE_SIZE);
 
         return $keys;
     }

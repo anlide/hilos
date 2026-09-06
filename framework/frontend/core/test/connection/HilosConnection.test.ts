@@ -343,8 +343,10 @@ describe('table viewport send', () => {
     const sent = connection.sendTableViewport('hilos_settings', 'settings', {
       filter: { search: 'theme' },
       sort: { field: 'key', direction: 'asc' },
-      offset: 10,
       limit: 10,
+      anchor: { key: 'theme.dark' },
+      anchorDirection: 'before',
+      pageIndex: null,
     })
 
     expect(sent).toBe(true)
@@ -352,10 +354,37 @@ describe('table viewport send', () => {
       type: 'table_viewport',
       page: 'hilos_settings',
       tableKey: 'settings',
-      offset: 10,
       limit: 10,
+      anchor: { key: 'theme.dark' },
+      anchorDirection: 'before',
       filter: { search: 'theme' },
       sort: { field: 'key', direction: 'asc' },
+    })
+  })
+
+  it('a jump travels as a page index and nothing else', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.open()
+
+    connection.sendTableViewport('p', 't', {
+      filter: {},
+      sort: null,
+      limit: 10,
+      anchor: { id: 7 },
+      anchorDirection: 'after',
+      pageIndex: 3,
+    })
+
+    // The server refuses a frame addressed both ways, so the anchor a jump leaves
+    // behind stays off the wire rather than riding along beside the page number.
+    expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({
+      type: 'table_viewport',
+      page: 'p',
+      tableKey: 't',
+      limit: 10,
+      pageIndex: 3,
     })
   })
 
@@ -368,16 +397,19 @@ describe('table viewport send', () => {
     connection.sendTableViewport('p', 't', {
       filter: {},
       sort: null,
-      offset: 0,
       limit: 10,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
     })
 
     expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({
       type: 'table_viewport',
       page: 'p',
       tableKey: 't',
-      offset: 0,
       limit: 10,
+      anchor: null,
+      anchorDirection: 'after',
     })
   })
 
@@ -390,8 +422,10 @@ describe('table viewport send', () => {
       connection.sendTableViewport('p', 't', {
         filter: {},
         sort: null,
-        offset: 0,
         limit: 10,
+        anchor: null,
+        anchorDirection: 'after',
+        pageIndex: null,
       }),
     ).toBe(false)
     expect(socket.sent).toEqual([])

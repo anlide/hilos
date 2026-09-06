@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Router\SubscriptionRegistry;
 use Hilos\Core\Router\TableViewportSubscription;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\TableConstants;
 use PHPUnit\Framework\TestCase;
@@ -23,8 +24,8 @@ final class SubscriptionRegistryTableViewportTest extends TestCase
             tableKey: 'settings',
             filter: ['search' => 'theme'],
             sort: new TableSortDTO('key', TableConstants::ORDER_DESC),
-            offset: 10,
             limit: 10,
+            anchor: new TableAnchorDTO(['key' => 'theme.dark']),
         ));
 
         $viewport = $registry->getTableViewport('ak', 'settings');
@@ -33,23 +34,23 @@ final class SubscriptionRegistryTableViewportTest extends TestCase
         $this->assertSame('settings', $viewport->tableKey);
         $this->assertSame(['search' => 'theme'], $viewport->filter);
         $this->assertEquals(new TableSortDTO('key', TableConstants::ORDER_DESC), $viewport->sort);
-        $this->assertSame(10, $viewport->offset);
         $this->assertSame(10, $viewport->limit);
+        $this->assertSame(['key' => 'theme.dark'], $viewport->anchor?->toArray());
     }
 
     public function testSetTableViewportReplacesTheSameTable(): void
     {
         $registry = new SubscriptionRegistry();
-        $registry->setTableViewport('ak', new TableViewportSubscription(tableKey: 'settings', offset: 0));
-        $registry->setTableViewport('ak', new TableViewportSubscription(tableKey: 'settings', offset: 20));
+        $registry->setTableViewport('ak', new TableViewportSubscription(tableKey: 'settings', limit: 10));
+        $registry->setTableViewport('ak', new TableViewportSubscription(tableKey: 'settings', limit: 20));
 
-        $this->assertSame(20, $registry->getTableViewport('ak', 'settings')?->offset);
+        $this->assertSame(20, $registry->getTableViewport('ak', 'settings')?->limit);
     }
 
     public function testRecordWindowTracksDeliveredRowIdsAndTotal(): void
     {
         $viewport = new TableViewportSubscription(tableKey: 'settings');
-        $viewport->recordWindow(self::windowOf(['a', 'b', 'c']), 42);
+        $viewport->recordWindow(self::windowOf(['a', 'b', 'c']), 42, null, null);
 
         $this->assertSame(['a', 'b', 'c'], $viewport->rowIds());
         $this->assertSame(42, $viewport->totalCount());
@@ -60,7 +61,7 @@ final class SubscriptionRegistryTableViewportTest extends TestCase
     public function testNumericRowKeysComeBackAsStrings(): void
     {
         $viewport = new TableViewportSubscription(tableKey: 'settings');
-        $viewport->recordWindow(self::windowOf(['7', '11']), 2);
+        $viewport->recordWindow(self::windowOf(['7', '11']), 2, null, null);
 
         // PHP hands a numeric key back out of an array as an int, so the map the
         // window is kept in would silently retype rows every table keyed by an id.
@@ -71,7 +72,7 @@ final class SubscriptionRegistryTableViewportTest extends TestCase
     public function testForgetRowDropsItFromTheDeliveredSet(): void
     {
         $viewport = new TableViewportSubscription(tableKey: 'settings');
-        $viewport->recordWindow(self::windowOf(['a', 'b', 'c']), 3);
+        $viewport->recordWindow(self::windowOf(['a', 'b', 'c']), 3, null, null);
         $viewport->forgetRow('b');
 
         $this->assertSame(['a', 'c'], $viewport->rowIds());
