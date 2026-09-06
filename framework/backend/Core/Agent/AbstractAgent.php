@@ -152,6 +152,34 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      */
     public const array OWNS_DB = [];
 
+    /**
+     * @var array<string, list<TruthSourceOperation>> Runtime collections this agent OWNS, each
+     *     mapped to the operations it may perform on their rows. Read off the class before the
+     *     instance exists ({@see OwnershipDeclaration::claimRt()}), which is what a call inside
+     *     onStart() can never be: the worker deciding whether to build the agent, and the
+     *     validator judging a topology with nothing running, both have only the class to ask.
+     *
+     *     A subclass declaring this MERGES with what its parents declared, where
+     *     {@see self::READS_RT} replaces: a repeated collection gets the union of both operation
+     *     sets, so a subclass widens its parent's claim and cannot narrow it. A parent's methods
+     *     run on the instance of its subclass and were written for a parent's rights, so a right
+     *     taken away here would be refused somewhere else entirely.
+     *
+     *     A record here is read by the whole node and not by this worker alone: the master
+     *     replicates runtime state by the map of owners, so a collection named here becomes the
+     *     single place in the cluster its rows may be written from, and every other node reaches
+     *     it by frame. That makes an entry cost more than one in {@see self::OWNS_DB}, where the
+     *     rows sit in a database each process can read for itself.
+     *
+     *     {@see TruthSourceOperation::BY_KIND} leaves the answer to the kind of the agent - it is
+     *     resolved through {@see self::defaultTruthSourceOperations()} of the class that is
+     *     STARTING, the same way the database half resolves it.
+     *
+     *     A collection named here does not belong in {@see self::READS_RT}: the claim is the
+     *     reader interest already.
+     */
+    public const array OWNS_RT = [];
+
     /** @var list<string> CLI command names owned directly by this agent. */
     public const array AGENT_COMMANDS = [];
 
@@ -317,16 +345,36 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * inside onStart() reads the collection before that report is even built - the report goes
      * out once the hook has returned ({@see WorkerManager::handleAgentStart()}).
      *
+     * One claim may say less than the agent's kind does. The chat demo's user library holds the
+     * connections collection for updating alone, and until this seam had an operation set to take
+     * there was no way to say so through it - that claim went round the seam and into the registry
+     * by hand, which is the example the next one would have copied. Omit the argument and the
+     * agent's kind answers, which is what a claim over a collection the agent owns outright wants.
+     *
+     * Both widths and both operation sets are optional here where the registry demands them,
+     * because this seam is on its way out (HIL-898) and its callers are the claims HIL-897 moves
+     * onto the declaration: naming the whole collection at every call site would be writing out an
+     * argument to delete it again. The registry underneath still hears the width spelled out.
+     *
+     * @deprecated Declare the collection in {@see self::OWNS_RT} instead. The constant is read
+     *     off the class before the instance exists, which this call cannot be; it stays working
+     *     until every live claim has moved (HIL-897), after which a guard refuses new calls and
+     *     the helper is removed (HIL-898).
+     *
      * @param string $collection Runtime collection name
      * @param ?TruthSourceKeys $keys Rows this claim covers, or null for the whole collection
+     * @param ?TruthSourceOperations $operations Operations this claim allows, or null for the agent's default
      */
-    protected function registerRtTruthSource(string $collection, ?TruthSourceKeys $keys = null): void
-    {
+    protected function registerRtTruthSource(
+        string $collection,
+        ?TruthSourceKeys $keys = null,
+        ?TruthSourceOperations $operations = null,
+    ): void {
         RtTruthSourceRegistry::register(
             $collection,
             $keys ?? TruthSourceKeys::all(),
             $this->getId(),
-            static::defaultTruthSourceOperations(),
+            $operations ?? static::defaultTruthSourceOperations(),
         );
 
         SourceInterestRegistry::register(SourceChange::KIND_RT, $collection, SourceConsumer::agent($this->getId()));

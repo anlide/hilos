@@ -748,8 +748,11 @@ abstract class WorkerManager extends BaseManager
         // Before the start hook and not inside it: an agent writes its first row within onStart(),
         // so the claim has to stand by then - this is the same beat at which the helper calls the
         // hook still makes take effect. Reading the class rather than the instance is what lets
-        // the same declaration be answered where no instance exists at all.
+        // the same declaration be answered where no instance exists at all. Both halves stand here
+        // for that one reason; the runtime half also travels to the node, but not from this line -
+        // notifyRtSourcesRegistered() below asks the registry once the hook has returned.
         OwnershipDeclaration::claimDb($agent::class, $agentId);
+        OwnershipDeclaration::claimRt($agent::class, $agentId);
         $agent->onStart();
         Hilos::$ac?->openAgentSession($agentType, $agentIndex);
         Logger::info("Agent '{$agentId}' started");
@@ -1983,7 +1986,7 @@ abstract class WorkerManager extends BaseManager
         // already registered the interest, of whichever kind it was over, so what is left here is
         // telling the master about it. The claim does it rather than this line because an agent
         // that publishes its first row inside onStart() reads the collection before this line is
-        // reached at all ({@see AbstractAgent::registerRtTruthSource()}).
+        // reached at all ({@see OwnershipDeclaration::claimRt()}).
         $collectionKeys = RtTruthSourceRegistry::collectionsOf($agentId);
         foreach ($collectionKeys as $collectionKey) {
             SourceInterestRegistry::register(

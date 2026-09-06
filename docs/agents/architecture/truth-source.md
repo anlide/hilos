@@ -54,7 +54,7 @@ agent reads out of a collection another agent owns.
 The declaration of ownership is a map, `OWNS_DB`, from a database collection key
 to the operations the owner may perform on its rows, written on the class beside
 `READS_DB`. The runtime half is `OWNS_RT`, the same shape over runtime collection
-keys (not in the code yet — HIL-894). A map and not a list of names, because some
+keys. A map and not a list of names, because some
 claims narrow their operations and a list would need a second constant to say
 so — two ways of saying one thing.
 
@@ -94,12 +94,12 @@ yet is not among the rows it was given. Creation therefore asks for a grant that
 allows adding and is not row-limited — the whole collection, or the mint-only
 claim that owns no row at all.
 
-The runtime registry keeps operations on every grant already, and so does the
-runtime declaration (not in the code yet — HIL-894). What has no way to name
-them today is the claim as an agent makes it through its runtime seam: that
-seam takes no operations, which is why a runtime claim that narrows — the chat's
-users library holding `connections` for updating only — bypasses the seam and
-registers directly.
+Both runtime forms carry operations: the registry keeps them on every grant, the
+declaration names them per collection, and the runtime seam takes them as its
+third argument. That last one is recent, and it closed the one bypass this
+document used to record — the chat's users library holds `connections` for
+updating only, and until the seam had an axis to say so, it registered in the
+registry by hand. Nothing in the tree goes round either seam today.
 
 ## Who Reads The Declaration, And When
 
@@ -133,7 +133,8 @@ Ownership merges up the chain: a subclass that declares its own database
 collections keeps every one its parents declared, and a collection both named
 carries the union of the two operation sets
 (`OwnershipDeclaration::dbCollectionsOf()`). The runtime map merges the same way
-(not in the code yet — HIL-894).
+(`OwnershipDeclaration::rtCollectionsOf()`), through the same walk: both
+resolvers hand one private method the constant to read.
 
 Reading does not merge. A subclass declaring `READS_DB` replaces what its
 parent declared, so one whose parent has a list of its own carries it:
@@ -162,7 +163,7 @@ two waiter collections and the reservations table only behind
 `if ($this->hasSignInSurface())` — the base class deciding for the project. With
 a merged map the fork is unnecessary: the project subclass that has a sign-in
 surface declares the reservations table itself (not in the code yet — HIL-897)
-and the two waiter collections the same way (not in the code yet — HIL-894),
+and the two waiter collections the same way (not in the code yet — HIL-897),
 while the base declares only what every sessions library owns.
 
 ## Three Cases A Flat Constant Cannot Say
@@ -304,7 +305,8 @@ the helpers are removed (not in the code yet — HIL-898).
 ## Validation
 
 `composer run test:framework:unit` — ownership read off the class and merged up
-the chain (`DeclaredDbOwnershipTest`), the operation axis and the guards on it
+the chain, over each half (`DeclaredDbOwnershipTest`,
+`DeclaredRtOwnershipTest`), the operation axis and the guards on it
 (`TruthSourceRegistryTest`, `AgentTruthSourceOperationsTest`,
 `DbWriteGuardLazyCollectionsTest`), the grants a stop takes back
 (`WorkerManagerStopCleanupTest`), the node-level map of runtime owners

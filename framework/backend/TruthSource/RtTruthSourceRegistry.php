@@ -7,6 +7,7 @@ namespace Hilos\TruthSource;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\AbstractTruthSourceRegistry;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceGrant;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -20,8 +21,9 @@ use Hilos\Runtime\State\Item\RtState;
  * Only registered agents can write to runtime data.
  *
  * Usage:
- *   // In Agent::onStart()
- *   RtTruthSourceRegistry::register('connections', TruthSourceKeys::all(), $this->getId());
+ *   // On the agent class, not in a call: {@see OwnershipDeclaration::claimRt()} reads it and
+ *   // registers the claim before onStart() runs.
+ *   public const array OWNS_RT = ['connections' => [TruthSourceOperation::Update]];
  *
  *   // After Agent::onStop() returns or throws, WorkerManager unregisters the agent.
  *   RtTruthSourceRegistry::unregisterAgent($agent->getId());
