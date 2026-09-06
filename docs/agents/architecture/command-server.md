@@ -17,9 +17,10 @@ the HTTP-status and WebSocket servers.
 **This page is the transport.** Which process a command's work happens in is a separate
 question with its own rule — the daemon does the work, the CLI initiates it — and its own
 page: [../cli/command-execution.md](../cli/command-execution.md). The two are independent
-on purpose: `daemon:status` reaches the daemon over the HTTP status endpoint and is no less
-daemon-executed for it, and the presence probe in front of a CLI-side write opens a socket
-here without ever speaking the protocol above.
+on purpose: `backup:restore-request` reaches the daemon over this channel and hands the
+work to an agent, `cli-offline-write` does its work in the CLI process without opening a
+socket at all, and the presence probe in front of that write opens a socket here without
+ever speaking the protocol above.
 
 ## Who may call a command — nobody is asked
 
@@ -59,14 +60,21 @@ caller puts that in front of the door: a port that is not published, a network p
 separate entrance of their own for operators. The framework declares no extension point
 inside the channel.
 
-**The second door asks nobody either.** `daemon:status` and `daemon:monitor` do not travel
-this channel at all — they read the HTTP status endpoint, an `AsyncHttpClient` on
-`HILOS_DAEMON_HOST:HTTP_STATUS_PORT` opened by `StatusCommand::fetchDaemonStatus()`
-(`framework/backend/Core/CLI/Commands/StatusCommand.php`) and by `CliMonitorManager`
-(`framework/backend/Core/Daemon/CliMonitorManager.php`), against `ApiEndpoint::STATUS`
-(`/status`, declared in `framework/backend/Constants/ApiEndpoint.php`). That door is
-recognized as redundant and closes in HIL-749, which is why it is named here with an end
-to it.
+**The CLI has one door, and this is it (HIL-749).** `daemon:status` and `daemon:monitor`
+used to be the exception: they read the HTTP status endpoint instead of this channel. Both
+now send `CliCommands::DAEMON_STATUS` here — the command through
+`CommandChannelClientTrait`, the monitor through an `AsyncCommandClient` it holds itself,
+because a five-second round-trip would freeze a screen that repaints once a second. So
+there is one port to close and one place the "nobody is asked" rule has to hold.
+
+**The endpoint itself stays, and is no longer a CLI door.** `GET /status` serves the
+preview stand, which publishes each demo's status port under a subdomain of its own
+(`framework/docker/caddy/Caddyfile`), so it is an outside observation surface with a live
+consumer. What changed is that the framework registers it once, in `DaemonManager::boot()`
+next to the root hint that promises it, instead of each project repeating the line —
+and that both doors now read one snapshot, `DaemonStatusSource::daemonStatusSnapshot()`
+(`framework/backend/Core/Daemon/DaemonStatusSource.php`), so they cannot disagree about
+the uptime or the CPU delta of the same daemon.
 
 ## Request / reply DTOs
 

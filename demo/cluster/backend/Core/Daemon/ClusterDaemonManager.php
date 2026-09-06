@@ -11,14 +11,12 @@ use Demo\Cluster\Hilos;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Constants\EnvConstants;
-use Hilos\Constants\HttpConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonContext;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\Module\DaemonModule;
 use Hilos\Core\Daemon\Module\PeerModule;
-use Hilos\Core\Http\StatusHandler;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Server\CommandServer;
@@ -55,7 +53,7 @@ final class ClusterDaemonManager extends DaemonManager
     /** @var ?float Placement view has settled after this microtime; null while not leader or still settling */
     private ?float $placeSettleDeadline = null;
 
-    /** @var ClusterWorkerServer Worker server, stashed while composing so the status route can read its counts */
+    /** @var ClusterWorkerServer Worker server, held while composing so the server set below names the built instance */
     private ClusterWorkerServer $workerServer;
 
     /**
@@ -108,19 +106,6 @@ final class ClusterDaemonManager extends DaemonManager
                 Hilos::$env[EnvConstants::COMMAND_HOST]->string(),
                 Hilos::$env[EnvConstants::COMMAND_PORT]->int(),
             ),
-        ];
-    }
-
-    /**
-     * The cluster node HTTP routes: the shared readiness/health status endpoint.
-     *
-     * @param DaemonContext $context Resolved path context
-     * @return iterable<array{0: string, 1: string, 2: callable}> Route triples [method, path, handler]
-     */
-    protected function httpRoutes(DaemonContext $context): iterable
-    {
-        return [
-            [HttpConstants::METHOD_GET, '/status', new StatusHandler($this->workerServer)],
         ];
     }
 

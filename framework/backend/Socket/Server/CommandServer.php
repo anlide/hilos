@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\DaemonStatusSource;
 use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\HilosException;
@@ -42,6 +44,9 @@ class CommandServer extends AbstractServer
 
     /** @var ?ProtectedModeSnapshotSource Master seam that reports the protected-mode state, wired at registration */
     private ?ProtectedModeSnapshotSource $protectedModeSnapshotSource = null;
+
+    /** @var ?DaemonStatusSource Master seam that samples this daemon's runtime status, wired at registration */
+    private ?DaemonStatusSource $daemonStatusSource = null;
 
     /**
      * Called when a new command client connection is accepted.
@@ -159,6 +164,34 @@ class CommandServer extends AbstractServer
     public function protectedModeSnapshot(): array
     {
         return $this->protectedModeSnapshotSource?->protectedModeSnapshot() ?? [];
+    }
+
+    /**
+     * Wires the master seam used to sample this daemon's runtime status.
+     *
+     * Set by {@see DaemonManager::registerServer()} so the `daemon:status` command can read the
+     * master-owned uptime, memory, CPU and worker counts through the command channel.
+     *
+     * @param DaemonStatusSource $daemonStatusSource Master seam sampling the daemon status
+     */
+    public function setDaemonStatusSource(DaemonStatusSource $daemonStatusSource): void
+    {
+        $this->daemonStatusSource = $daemonStatusSource;
+    }
+
+    /**
+     * Samples this daemon's runtime status through the master seam.
+     *
+     * Answers null when no source is wired, so the command branch can refuse in words instead of
+     * inventing a status. This is where it parts from {@see protectedModeSnapshot()}, whose empty
+     * array reads as "this installation has no such subsystem": a daemon always has an uptime and
+     * a memory figure, so an empty status would not be a verdict but a lie.
+     *
+     * @return ?DaemonStatusDTO Fresh status sample, or null when no source is wired
+     */
+    public function daemonStatusSnapshot(): ?DaemonStatusDTO
+    {
+        return $this->daemonStatusSource?->daemonStatusSnapshot();
     }
 
     /**

@@ -63,6 +63,7 @@ final class RandomSourceRule implements CodeStyleRule
         'Core/CLI/Commands/CommandChannelClientTrait.php',
         'Core/CLI/Commands/ConnectionTestDropCommand.php',
         'Core/CLI/Commands/PingCommand.php',
+        'Core/Daemon/CliMonitorManager.php',
         'Core/Router/SignalRouter.php',
         'Fs/FsTmpDirectory.php',
         'Agents/BotAgent.php',

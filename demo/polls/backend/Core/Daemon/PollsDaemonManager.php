@@ -9,13 +9,11 @@ use Demo\Polls\Core\Socket\Server\PollsWebSocketServer;
 use Demo\Polls\Core\Socket\Server\PollsWorkerServer;
 use Demo\Polls\Hilos;
 use Hilos\Constants\EnvConstants;
-use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonContext;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\Module\BuildTimestampModule;
 use Hilos\Core\Daemon\Module\DaemonModule;
-use Hilos\Core\Http\StatusHandler;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Server\CommandServer;
@@ -26,11 +24,11 @@ use Hilos\Socket\Server\ServerInterface;
  * PollsDaemonManager - Main daemon manager for the polls demo.
  *
  * Extends framework DaemonManager: declares the poll server set (HTTP status, worker,
- * WebSocket), the shared status route, and the build-timestamp module. No cron rules yet.
+ * WebSocket) and the build-timestamp module. No cron rules yet.
  */
 final class PollsDaemonManager extends DaemonManager
 {
-    /** @var PollsWorkerServer Worker server, stashed while composing so the status route can read its counts */
+    /** @var PollsWorkerServer Worker server, held while composing so the server set below names the built instance */
     private PollsWorkerServer $workerServer;
 
     /**
@@ -87,19 +85,6 @@ final class PollsDaemonManager extends DaemonManager
                 Hilos::$env[EnvConstants::COMMAND_HOST]->string(),
                 Hilos::$env[EnvConstants::COMMAND_PORT]->int(),
             ),
-        ];
-    }
-
-    /**
-     * The poll HTTP routes: the shared status endpoint.
-     *
-     * @param DaemonContext $context Resolved path context
-     * @return iterable<array{0: string, 1: string, 2: callable}> Route triples [method, path, handler]
-     */
-    protected function httpRoutes(DaemonContext $context): iterable
-    {
-        return [
-            [HttpConstants::METHOD_GET, '/status', new StatusHandler($this->workerServer)],
         ];
     }
 

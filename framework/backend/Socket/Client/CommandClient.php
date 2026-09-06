@@ -143,6 +143,18 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
+            if ($request->command === CliCommands::DAEMON_STATUS) {
+                // Answered here and not parked, for the same reason ping is: uptime, memory, CPU
+                // and the worker counts are the master's own, an agent holds none of them, and in
+                // a cluster the agent that would answer may be reporting from another node.
+                $snapshot = $this->server->daemonStatusSnapshot();
+                $reply = $snapshot === null
+                    ? CommandReplyDTO::error($request->correlationId, 'This daemon reports no status')
+                    : CommandReplyDTO::ok($request->correlationId, $snapshot->toArray());
+                $this->writeBuffer .= $reply->toJson() . "\n";
+                continue;
+            }
+
             if ($request->command === CliCommands::CLUSTER_NODES) {
                 // A misconfigured cluster must reply an error, not throw inside the master loop.
                 try {

@@ -13,8 +13,10 @@ use Hilos\Environment\Exception\EnvException;
  * PingCommand - probe the daemon command channel.
  *
  * Sends a `ping` over the dedicated command socket and prints the echoed reply.
- * A health check for the CLI<->daemon command transport (the AsyncCommandClient /
- * CommandServer round-trip), separate from the HTTP `daemon:status` endpoint.
+ * A health check for the CLI<->daemon command transport itself (the AsyncCommandClient /
+ * CommandServer round-trip): the master echoes the payload back without asking any
+ * subsystem, so a green ping says the channel is up and nothing more. `daemon:status`
+ * rides the same channel and reports what the daemon is doing.
  */
 class PingCommand implements CommandInterface
 {
@@ -63,7 +65,7 @@ Command: daemon:ping
 Description:
   Probe the CLI<->daemon command channel. Sends a ping over the dedicated
   command socket and prints the echoed reply. Useful to verify the command
-  transport is up, independently of the HTTP status endpoint.
+  transport is up without asking the daemon about itself.
 
 Usage:
   php cli.php daemon:ping [message]

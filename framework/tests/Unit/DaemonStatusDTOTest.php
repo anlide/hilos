@@ -5,16 +5,15 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Closure;
-use Hilos\API\DTO\AsyncHttpResponse;
 use Hilos\Constants\DaemonConstants;
-use Hilos\Constants\HttpConstants;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\CliMonitorManager;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Tests the daemon status payload the CLI monitor reads over HTTP.
+ * Tests the daemon status payload the CLI monitor reads over the command channel.
  *
  * The status is a measurement, so a field that did not arrive has no stand-in:
  * a CPU load of 0.0 or the reader's own clock in place of the daemon's would
@@ -65,18 +64,16 @@ final class DaemonStatusDTOTest extends TestCase
             . '"workersRegular":0,"workersMonopolistic":0,"workersMaxRegular":0}');
     }
 
-    public function testTheMonitorReadsARefusedStatusAsOffline(): void
+    public function testTheMonitorReadsAHalfStatusAsNotResponding(): void
     {
+        // Something answered on that port, so the daemon is not the thing that is missing:
+        // OFFLINE would send the operator looking for a process that is running all along.
         $monitor = new CliMonitorManager();
-        $response = new AsyncHttpResponse(
-            statusCode: HttpConstants::HTTP_OK,
-            headersRaw: '',
-            body: '{"uptime":1,"memory":1,"timestamp":1786000000}',
-        );
+        $reply = CommandReplyDTO::ok('c0ffee00', ['uptime' => 1, 'memory' => 1, 'timestamp' => 1786000000]);
 
         $status = Closure::bind(
-            static function (CliMonitorManager $monitor, AsyncHttpResponse $response): string {
-                $monitor->processHttpResult($response);
+            static function (CliMonitorManager $monitor, CommandReplyDTO $reply): string {
+                $monitor->processReply($reply);
 
                 return $monitor->getStatusValue();
             },
@@ -84,6 +81,6 @@ final class DaemonStatusDTOTest extends TestCase
             CliMonitorManager::class,
         );
 
-        $this->assertSame(DaemonConstants::STATUS_OFFLINE, $status($monitor, $response));
+        $this->assertSame(DaemonConstants::STATUS_NOT_RESPONDING, $status($monitor, $reply));
     }
 }

@@ -20,7 +20,6 @@ use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\Module\BuildTimestampModule;
 use Hilos\Core\Daemon\Module\DaemonModule;
 use Hilos\Core\Daemon\Module\PeerModule;
-use Hilos\Core\Http\StatusHandler;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Server\CommandServer;
@@ -31,12 +30,12 @@ use Hilos\Socket\Server\ServerInterface;
  * ChatDaemonManager - Main daemon manager for chat demo.
  *
  * Extends framework DaemonManager to provide chat functionality: declares the chat
- * server set, the status and attachment-download routes, and the peer/build-timestamp/
+ * server set, the attachment-download route, and the peer/build-timestamp/
  * frontend-html modules the demo opts into.
  */
 final class ChatDaemonManager extends DaemonManager
 {
-    /** @var ChatWorkerServer Worker server, stashed while composing so the status route can read its counts */
+    /** @var ChatWorkerServer Worker server, held while composing so the server set below names the built instance */
     private ChatWorkerServer $workerServer;
 
     /**
@@ -112,7 +111,7 @@ final class ChatDaemonManager extends DaemonManager
     }
 
     /**
-     * The chat HTTP routes: the shared status endpoint and the attachment download.
+     * The chat HTTP routes: the attachment download.
      *
      * @param DaemonContext $context Resolved path context
      * @return iterable<array{0: string, 1: string, 2: callable}> Route triples [method, path, handler]
@@ -120,7 +119,6 @@ final class ChatDaemonManager extends DaemonManager
     protected function httpRoutes(DaemonContext $context): iterable
     {
         return [
-            [HttpConstants::METHOD_GET, '/status', new StatusHandler($this->workerServer)],
             [
                 HttpConstants::METHOD_GET,
                 '/chat/attachment',

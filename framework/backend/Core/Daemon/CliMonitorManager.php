@@ -4,27 +4,34 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
-use Hilos\API\AsyncHttpClient;
-use Hilos\API\DTO\AsyncHttpResponse;
-use Hilos\Constants\ApiEndpoint;
+use Hilos\API\AsyncCommandClient;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\DaemonConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\CLI\Commands\CommandChannelClientTrait;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\StringHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use Throwable;
 
 /**
- * Interactive CLI monitor for a running daemon. Polls the daemon status
- * endpoint over async HTTP and renders live status, memory, CPU, and heartbeat
- * updates in the terminal.
+ * Interactive CLI monitor for a running daemon. Polls `daemon:status` over the CLI command
+ * channel and renders live status, memory, CPU, and heartbeat updates in the terminal.
+ *
+ * A poll and not a subscription: a stream would need a second protocol on top of a channel that
+ * is request/reply, for a screen that repaints once a second anyway. It holds the async client
+ * itself rather than taking {@see CommandChannelClientTrait}, whose one round-trip blocks for
+ * five seconds - a budget that would freeze this display rather than refresh it.
  */
 class CliMonitorManager extends BaseManager
 {
@@ -34,8 +41,14 @@ class CliMonitorManager extends BaseManager
     /** @var float UI update interval in milliseconds (1000ms = 1 second) */
     private float $uiUpdateInterval = 1000.0;
 
-    /** @var float HTTP request delay after completion in milliseconds */
-    private float $httpRequestDelay = 350.0;
+    /** @var string Word the Status row shows while no status is held */
+    private string $statusWithoutAnswer = DaemonConstants::STATUS_OFFLINE;
+
+    /** @var float Delay between one poll completing and the next starting, in milliseconds */
+    private float $requestDelay = 350.0;
+
+    /** @var float Wait budget for one poll's reply, in milliseconds */
+    private float $requestTimeout = 400.0;
 
     /**
      * Run monitor - main method.
@@ -43,10 +56,10 @@ class CliMonitorManager extends BaseManager
      * Starts the interactive monitoring loop with real-time updates.
      * Main loop runs at 10ms (0.01s) intervals.
      * UI updates every 1 second.
-     * HTTP requests every 350ms after completion.
+     * Polls the daemon every 350ms after completion.
      *
      * @throws MissingRequiredParameterException When required process-control functions are unavailable
-     * @throws EnvException When daemon status env values are missing or invalid
+     * @throws EnvException When the command channel env values are missing or invalid
      */
     public function run(): void
     {
@@ -65,19 +78,20 @@ class CliMonitorManager extends BaseManager
         Logger::info("Starting Hilos Daemon Monitor...");
         Logger::info("Press Ctrl+C to exit");
 
-        // Initialize HTTP client
+        // Initialize the command-channel client
         $host = Hilos::$env[EnvConstants::HILOS_DAEMON_HOST]->string();
-        $port = Hilos::$env[EnvConstants::HTTP_STATUS_PORT]->int();
+        $port = Hilos::$env[EnvConstants::COMMAND_PORT]->int();
 
-        $httpClient = new AsyncHttpClient($host, $port, ApiEndpoint::STATUS);
-        $httpClient->timeout = 400.0;  // 0.4 seconds timeout
+        $commandClient = new AsyncCommandClient($host, $port);
 
         // Initialize timers
         $currentTimeMs = microtime(true) * TimeConstants::MS_PER_SECOND;
 
         $lastUiUpdate = $currentTimeMs;
 
-        $lastHttpCompletion = $currentTimeMs - $this->httpRequestDelay; // Allow first request immediately
+        $lastRequestCompletion = $currentTimeMs - $this->requestDelay; // Allow first request immediately
+
+        $requestStartedAt = $currentTimeMs;
 
         // Main monitoring loop - 10ms ticks
         while (!$this->shouldExit) {
@@ -85,23 +99,32 @@ class CliMonitorManager extends BaseManager
             $currentTimeMs = $loopStartTime * TimeConstants::MS_PER_SECOND;
 
             try {
-                if (!$httpClient->isBusy()) {
-                    $timeSinceLastRequest = $currentTimeMs - $lastHttpCompletion;
-                    if ($timeSinceLastRequest >= $this->httpRequestDelay) {
-                        $httpClient->startNewRequest($currentTimeMs);
+                if (!$commandClient->isBusy()) {
+                    $timeSinceLastRequest = $currentTimeMs - $lastRequestCompletion;
+                    if ($timeSinceLastRequest >= $this->requestDelay) {
+                        $commandClient->startRequest($this->statusRequest());
+                        $requestStartedAt = $currentTimeMs;
                     }
+                } elseif (($currentTimeMs - $requestStartedAt) > $this->requestTimeout) {
+                    // The budget lives here because the channel client has no clock of its own,
+                    // and a poll that runs past it is the case worth naming: the socket opened,
+                    // so the daemon IS there, and it is the answer that never came.
+                    $commandClient->reset();
+                    $this->showNoStatus(DaemonConstants::STATUS_NOT_RESPONDING);
+                    $lastRequestCompletion = $currentTimeMs;
                 }
 
-                $httpClient->tick($currentTimeMs);
+                $commandClient->tick();
 
-                if ($httpClient->hasResult()) {
-                    $this->processHttpResult($httpClient->consumeResult());
-                    $lastHttpCompletion = $currentTimeMs;
+                if ($commandClient->hasResult()) {
+                    $this->processReply($commandClient->consumeResult());
+                    $lastRequestCompletion = $currentTimeMs;
                 }
             } catch (HilosException $e) {
-                $httpClient->reset();
-                $this->daemonStatus = null;
-                $lastHttpCompletion = $currentTimeMs;
+                // Nothing accepted the connection, or it broke mid-poll: the channel is not there.
+                $commandClient->reset();
+                $this->showNoStatus(DaemonConstants::STATUS_OFFLINE);
+                $lastRequestCompletion = $currentTimeMs;
             }
 
             // Update UI every 1 second
@@ -193,33 +216,68 @@ class CliMonitorManager extends BaseManager
     }
 
     /**
-     * Process HTTP result from async client.
+     * Builds one status request for the command channel.
      *
-     * @param AsyncHttpResponse $response Completed daemon status response
+     * The correlation id is drawn from the tolerant axis: it pairs one reply with one request
+     * on a socket this process opened itself, so it only has to not collide with the poll
+     * before it - nobody outside ever sees it, and there is nothing in it to guess.
+     *
+     * @return CommandRequestDTO Request asking the master for its status
      */
-    private function processHttpResult(AsyncHttpResponse $response): void
+    private function statusRequest(): CommandRequestDTO
+    {
+        return new CommandRequestDTO(
+            correlationId: RandomHelper::hex(8),
+            command: CliCommands::DAEMON_STATUS,
+            payload: [],
+        );
+    }
+
+    /**
+     * Takes one poll's reply and refreshes the status the display draws.
+     *
+     * A refusal, or a payload that is not a status, reads as NOT RESPONDING and not as OFFLINE:
+     * something answered on that port, so the daemon is not the thing that is missing.
+     *
+     * @param CommandReplyDTO $reply Completed reply to the status poll
+     */
+    private function processReply(CommandReplyDTO $reply): void
     {
         try {
-            $dto = DaemonStatusDTO::fromJson($response->body);
-            $this->daemonStatus = DaemonStatus::fromDTO($dto);
+            $this->daemonStatus = DaemonStatus::fromDTO(DaemonStatusDTO::fromArray($reply->payload));
         } catch (Throwable $e) {
-            $this->daemonStatus = null;
+            $this->showNoStatus(DaemonConstants::STATUS_NOT_RESPONDING);
         }
+    }
+
+    /**
+     * Drops the status the display holds and names what the Status row shows instead.
+     *
+     * The loop goes on either way: the monitor is watched while a daemon is restarted, so it
+     * has to survive the gap rather than exit into it - Ctrl+C is the way out.
+     *
+     * @param string $word {@see DaemonConstants::STATUS_OFFLINE} or {@see DaemonConstants::STATUS_NOT_RESPONDING}
+     */
+    private function showNoStatus(string $word): void
+    {
+        $this->daemonStatus = null;
+        $this->statusWithoutAnswer = $word;
     }
 
     /**
      * Get daemon status value.
      *
-     * @return string STATUS_ONLINE or STATUS_OFFLINE or VALUE_NOT_AVAILABLE
+     * @return string STATUS_ONLINE, STATUS_NOT_RESPONDING or STATUS_OFFLINE
      */
     private function getStatusValue(): string
     {
-        if ($this->daemonStatus === null) {
-            return DaemonConstants::STATUS_OFFLINE;
+        if ($this->daemonStatus !== null) {
+            return DaemonConstants::STATUS_ONLINE;
         }
 
-        // If we have status, daemon is online
-        return DaemonConstants::STATUS_ONLINE;
+        // The same distinction the command draws: a channel that opened and then went quiet is
+        // a daemon in trouble, and drawing it as OFFLINE would report it as simply absent.
+        return $this->statusWithoutAnswer;
     }
 
     /**

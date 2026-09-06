@@ -40,7 +40,7 @@ reason in its `execution()` declaration. See
 
 | Command | Site | Description |
 |---|---|---|
-| `daemon:status` | `daemon` | Show daemon status (workers, memory, uptime) — over the HTTP status endpoint, which is a transport and not a site |
+| `daemon:status` | `daemon` | Show daemon status (workers, memory, uptime) — over the command channel; exits 0 when no daemon answers, non-zero when one answers late or refuses |
 | `daemon:monitor` | `daemon` | Live monitoring of daemon (continuous blocking watch — use `daemon:status` for a one-shot check, not for an AI agent) |
 | `daemon:ping` | `daemon` | Probe the command channel itself |
 | `help` | `cli-read` | List available commands — runs while the server is still down |

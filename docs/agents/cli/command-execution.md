@@ -51,10 +51,16 @@ reason that is blank fails `CommandExecutionRoleTest`.
 
 ## The transport is not the site
 
-`daemon:status` and `daemon:monitor` reach the daemon over the HTTP status endpoint rather
-than the command channel, and they are still `daemon`: the work happens in the daemon
-either way. The site answers *which process does the work*, never *which socket carries the
-request*.
+`backup:restore-request` sends one frame over the command channel and an agent does the
+work; a `cli-offline-write` migration writes the schema from the CLI process itself, even
+though a socket is opened in front of it — the presence probe below. Both declarations
+describe *which process does the work*, and neither is about the socket: the site never
+answers *which transport carries the request*, nor whether one was opened at all.
+
+The rule was written with `daemon:status` as its example, back when that command read the
+HTTP status endpoint and was `daemon` all the same. HIL-749 moved it to the command
+channel — its declaration did not move with it, which is the rule holding rather than
+lapsing.
 
 ## Writing beside a live daemon is refused
 

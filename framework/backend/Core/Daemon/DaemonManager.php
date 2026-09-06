@@ -44,6 +44,7 @@ use Hilos\Cluster\RtReplicaInspector;
 use Hilos\Cluster\RtSyncMesh;
 use Hilos\Cluster\RtSyncSink;
 use Hilos\Cluster\SourceInterestMesh;
+use Hilos\Constants\ApiEndpoint;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
@@ -60,7 +61,9 @@ use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Core\Agent\Exception\WorkerClientNotFoundException;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Core\Daemon\Master\MasterFailureUnit;
 use Hilos\Core\Daemon\Module\DaemonModule;
 use Hilos\Core\EventLoop\EventLoop;
@@ -70,6 +73,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Http\RootInfoHandler;
+use Hilos\Core\Http\StatusHandler;
 use Hilos\Core\Page\Config\PageAgentIndexSource;
 use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
@@ -211,6 +215,7 @@ abstract class DaemonManager extends BaseManager implements
     ContainedFailureSink,
     AgentLossSink,
     MasterSignalSender,
+    DaemonStatusSource,
     ProtectedModeSnapshotSource,
     ProtectedModeAdmissionRecorder,
     ProtectedModeClientNotifier,
@@ -404,6 +409,15 @@ abstract class DaemonManager extends BaseManager implements
     private ProtectedModeLiftAnnouncer $protectedModeLiftAnnouncer;
 
     /**
+     * @var DaemonStatus This daemon's own runtime status, sampled on demand by both status doors.
+     *
+     * Built with the manager rather than in {@see boot()}: its construction is what starts the
+     * uptime clock, and the moment an operator calls the daemon's birth is the moment the master
+     * came up, not the moment its servers finished binding.
+     */
+    private DaemonStatus $daemonStatus;
+
+    /**
      * Initializes daemon manager.
      *
      * Initializes signal router via Hilos::initSignalRouter() and creates
@@ -414,6 +428,9 @@ abstract class DaemonManager extends BaseManager implements
     {
         Hilos::initSignalRouter($this->createSignalRouter());
         $this->agentManagerDaemon = $this->createAgentManagerDaemon();
+        // Here and not in boot(): this constructor call starts the uptime clock the operator
+        // reads, and the daemon is born when the master process is, not when it finishes binding.
+        $this->daemonStatus = new DaemonStatus();
         $this->protectedModeWatchdog = new ProtectedModeWatchdog();
         $this->protectedModeLiftAnnouncer = new ProtectedModeLiftAnnouncer();
         $this->rtClaimRegistry = new RtClusterClaimRegistry();
@@ -525,6 +542,10 @@ abstract class DaemonManager extends BaseManager implements
 
         $router = new HttpRouter();
         $router->addRoute(HttpConstants::METHOD_GET, HttpConstants::PATH_ROOT, new RootInfoHandler());
+        // Unconditional, like the root hint that advertises it: the hint promises /status on every
+        // daemon, so a project that forgot to declare the route used to break that promise. Ahead
+        // of the project's own routes, so a daemon that wants its own /status still overrides this.
+        $router->addRoute(HttpConstants::METHOD_GET, ApiEndpoint::STATUS->value, new StatusHandler($this));
         foreach ($this->httpRoutes($context) as [$method, $path, $handler]) {
             $router->addRoute($method, $path, $handler);
         }
@@ -547,7 +568,7 @@ abstract class DaemonManager extends BaseManager implements
      * The core servers this daemon binds (http-status, worker, websocket, command, ...).
      *
      * Built from env and the resolved {@see DaemonContext}. A manager stashes any server it
-     * needs later (e.g. the worker server for the status route) into a typed field while
+     * needs later (e.g. the peer server a module registers against) into a typed field while
      * building. Default is empty; a daemon overrides to declare its server set.
      *
      * @param DaemonContext $context Resolved path context
@@ -988,6 +1009,10 @@ abstract class DaemonManager extends BaseManager implements
         if ($server instanceof CommandServer) {
             $server->setConnectionDropper($this);
             $server->setProtectedModeSnapshotSource($this);
+            // And the seam behind daemon:status: uptime, memory and the worker counts are the
+            // master's own, so the command branch reads them here instead of asking an agent
+            // that in a cluster may be answering from another node entirely.
+            $server->setDaemonStatusSource($this);
         }
 
         // The same seam, for the same reason, one layer down: a handshake that trades a
@@ -1247,6 +1272,35 @@ abstract class DaemonManager extends BaseManager implements
                 get_class($e) . ': ' . $e->getMessage(),
             );
         }
+    }
+
+    /**
+     * Samples this node's runtime status for both doors that publish it.
+     *
+     * Implements {@see DaemonStatusSource}. The sample is taken here rather than in either door
+     * because the master is where it exists: the uptime anchor and the CPU delta belong to the
+     * one {@see DaemonStatus} this manager built, and the worker counts are read off the server
+     * this manager registered.
+     *
+     * A daemon with no worker server reports three zeroes rather than refusing: it has no workers,
+     * which is an answer about this daemon and not a failure to answer.
+     *
+     * @return DaemonStatusDTO Fresh status sample of this daemon
+     */
+    public function daemonStatusSnapshot(): DaemonStatusDTO
+    {
+        $this->daemonStatus->update();
+        $workerServer = $this->findWorkerServer();
+
+        return new DaemonStatusDTO(
+            uptime: $this->daemonStatus->getUptime(),
+            memory: $this->daemonStatus->memoryUsage,
+            cpu: $this->daemonStatus->cpuUsage,
+            timestamp: time(),
+            workersRegular: $workerServer?->getRegularWorkersCount() ?? 0,
+            workersMonopolistic: $workerServer?->getMonopolisticWorkersCount() ?? 0,
+            workersMaxRegular: $workerServer?->getMaxRegularWorkers() ?? 0,
+        );
     }
 
     /**

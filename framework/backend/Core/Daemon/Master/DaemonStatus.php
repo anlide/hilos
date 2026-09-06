@@ -10,8 +10,8 @@ use Hilos\Core\Daemon\Cli\CpuStats;
 /**
  * Holds daemon status information.
  *
- * Contains runtime information about daemon state that can be
- * exposed via HTTP status endpoint.
+ * Contains runtime information about daemon state. One of these lives in the master and is
+ * what both status doors report: the GET /status endpoint and the daemon:status command.
  */
 class DaemonStatus
 {

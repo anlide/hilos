@@ -5,29 +5,26 @@ declare(strict_types=1);
 namespace Hilos\Core\Http;
 
 use Hilos\Constants\HttpConstants;
-use Hilos\Core\CLI\DTO\DaemonStatusDTO;
-use Hilos\Core\Daemon\Master\DaemonStatus;
-use Hilos\Socket\Server\WorkerServer;
+use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\DaemonStatusSource;
 
 /**
- * Invokable handler for the GET /status endpoint, shared by every daemon.
+ * Invokable handler for the GET /status endpoint, registered on every daemon.
  *
- * Samples the live daemon status and worker counts on each request and returns the
- * DaemonStatusDTO as JSON. Registered as a route callable with the daemon's worker
- * server, which supplies the worker-count fields.
+ * Asks the master for a fresh status sample on each request and returns it as JSON.
+ * Registered by {@see DaemonManager::boot()} with the manager itself as the source, so the
+ * endpoint and the `daemon:status` command read the one status object the master holds - two
+ * samplers would each anchor uptime and the CPU delta of their own, and the two doors would
+ * disagree about the same daemon.
  */
 final class StatusHandler
 {
-    /** @var DaemonStatus Daemon status sampled per request; its start time anchors uptime */
-    private DaemonStatus $status;
-
     /**
-     * @param WorkerServer $workerServer Worker server the status counts are read from
+     * @param DaemonStatusSource $source Master seam the status sample is read from
      */
     public function __construct(
-        private readonly WorkerServer $workerServer,
+        private readonly DaemonStatusSource $source,
     ) {
-        $this->status = new DaemonStatus();
     }
 
     /**
@@ -38,22 +35,10 @@ final class StatusHandler
      */
     public function __invoke(array $args): array
     {
-        $this->status->update();
-
-        $dto = new DaemonStatusDTO(
-            uptime: $this->status->getUptime(),
-            memory: $this->status->memoryUsage,
-            cpu: $this->status->cpuUsage,
-            timestamp: time(),
-            workersRegular: $this->workerServer->getRegularWorkersCount(),
-            workersMonopolistic: $this->workerServer->getMonopolisticWorkersCount(),
-            workersMaxRegular: $this->workerServer->getMaxRegularWorkers(),
-        );
-
         return [
             HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_OK,
             HttpConstants::RESPONSE_KEY_HEADERS => [HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_JSON],
-            HttpConstants::RESPONSE_KEY_BODY => $dto->toJson(),
+            HttpConstants::RESPONSE_KEY_BODY => $this->source->daemonStatusSnapshot()->toJson(),
         ];
     }
 }
