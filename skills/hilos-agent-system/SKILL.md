@@ -1,6 +1,6 @@
 ---
 name: hilos-agent-system
-description: Add, modify, or review Hilos agents, AgentDaemon classes, AgentType constants, AgentManager factories, onStart/onTick/onStop hooks, signal handlers, truth sources, monopolistic agents, and long-running agent workflows. Use when creating a new agent type or changing agent lifecycle behavior, when declaring an agent that answers for a whole set of an entity rather than for one instance, where how many of it run and which node runs it are two separate questions, and when an agent serves one instance of something — a user, a document, a room — and you do not want one of them alive for every instance that was ever opened.
+description: Add, modify, or review Hilos agents, AgentDaemon classes, AgentType constants, AgentManager factories, onStart/onTick/onStop hooks, signal handlers, truth sources, monopolistic agents, and long-running agent workflows. Use when creating a new agent type or changing agent lifecycle behavior, when declaring an agent that answers for a whole set of an entity rather than for one instance, where how many of it run and which node runs it are two separate questions, and when an agent serves one instance of something — a user, a document, a room — and you do not want one of them alive for every instance that was ever opened. Use it too when the agent answers for a table rather than for an entity — the surface a page draws over a set or over one instance, with the viewers' windows inside it.
 ---
 
 # Hilos Agent System
@@ -18,6 +18,9 @@ Use this skill for agent business logic and registration work. Start by reading 
   instance stays alive: `docs/agents/architecture/agent-lifecycle.md`
 - An agent that holds a whole entity's set — one entity one library, and which
   of the two placement axes is yours: `docs/agents/architecture/entity-libraries.md`
+- An agent that answers for a table rather than for an entity — one holder per
+  table per subject, the viewer's window as state inside it, reading without
+  owning: `docs/agents/architecture/table-agents.md`
 - An agent that owns a directory of files on one node, and why the picture it
   holds lives in its own memory rather than in RT: `docs/agents/architecture/logs.md`
 - The agent writes a fact somebody has on screen right now — when the server

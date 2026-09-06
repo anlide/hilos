@@ -12,7 +12,11 @@ here so the next leaf does not coin its own: say *library* for the unit and
 "manager".
 
 The counterpart is the **instance owner** — the agent that owns one row and its
-contents (epic HIL-626; the rule itself is HIL-632's document). A library exists
+contents (epic HIL-626; the rule itself is HIL-632's document). The third figure
+is the **table agent** — the agent that answers for the surface a page draws over
+the set or over one instance, holding its viewers' windows and running the bulk
+action, and reading from the library or the owner without owning a row
+([table-agents.md](table-agents.md)). A library exists
 because a read must not raise owners: an admin list of ten thousand users cannot
 start ten thousand agents to draw a table.
 
@@ -608,6 +612,9 @@ Answer `SUBSCRIPTION_PAGE_ERROR`. An empty list is a claim about the data.
 
 ## Related
 
+- [table-agents.md](table-agents.md) — the third figure: the agent that answers
+  for a table's surface beside a library or an instance owner; its holder keeps
+  the viewers' windows and reads without owning.
 - [agent-lifecycle.md](agent-lifecycle.md) — `onStart()` / `onStop()`, agent
   identity, registration.
 - [browser-source-fanout.md](browser-source-fanout.md) — how a source change

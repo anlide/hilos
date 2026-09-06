@@ -29,6 +29,10 @@ read the canonical spec before editing.
   closes it today, and the two-step form when the name stays on the page:
   `docs/agents/architecture/entity-libraries.md`
   (section "The Lock Does Not Travel With The Name")
+- An admin table is the first consumer of the table-agent rule — one holder per
+  table per subject, the administrators' windows as state inside it, and a
+  refusal instead of an empty list when no holder answers:
+  `docs/agents/architecture/table-agents.md`
 
 ## Workflow
 

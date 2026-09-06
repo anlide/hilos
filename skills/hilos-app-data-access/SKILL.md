@@ -1,6 +1,6 @@
 ---
 name: hilos-app-data-access
-description: Use Hilos::$db and Hilos::$rt correctly from application code. Use when reading DB or runtime data in pages, tables, agents, action handlers, table actions, signal handlers, page/table topology code, or when choosing collection access, item access, action calls, settings access, existing magic/result accessors, array access, or find helpers. Use it too when you need every row of an entity — a list, a search, a count — or need to create a row that has no owner yet.
+description: Use Hilos::$db and Hilos::$rt correctly from application code. Use when reading DB or runtime data in pages, tables, agents, action handlers, table actions, signal handlers, page/table topology code, or when choosing collection access, item access, action calls, settings access, existing magic/result accessors, array access, or find helpers. Use it too when you need every row of an entity — a list, a search, a count — or need to create a row that has no owner yet, or when the reader is a table — a surface drawn over a set or over one instance — and you need to know who serves it and where its rows come from.
 ---
 
 # Hilos App Data Access
@@ -25,6 +25,9 @@ switch to the focused data-layer skill first.
   is in progress: `docs/agents/orm/collection-iteration.md`.
 - Reading a whole set of an entity, or writing a row that has no owner yet:
   `docs/agents/architecture/entity-libraries.md`.
+- Serving a table rather than an entity — who holds a viewer's window, where the
+  rows of a table over a set or over one instance come from, and why the table
+  agent never writes: `docs/agents/architecture/table-agents.md`.
 - An action that changes what its page does not own — what closes it today, and
   why the name may not follow the write to the owner:
   `docs/agents/architecture/entity-libraries.md`
