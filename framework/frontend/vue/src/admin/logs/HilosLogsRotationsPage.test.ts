@@ -461,6 +461,26 @@ describe('HilosLogsRotationsPage', () => {
     expect(document.body.textContent).not.toContain('Where it lies')
   })
 
+  /**
+   * The confirmation is not the end of the batch, and the modal that asks for it
+   * has to say so: a promise that nothing will be touched would read as though the
+   * click could not be taken back, which is the opposite of what the node does.
+   */
+  it('says the confirmation can still be taken back, while the batch is there', async () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([batch({ retentionState: 'due' })])
+    await nextTick()
+    await wrapper.find('[data-id="hilos-rotation-takeout"]').trigger('click')
+
+    expect(document.body.textContent).toContain('but not straight away')
+    expect(document.body.textContent).not.toContain(
+      'until then it will not be touched',
+    )
+  })
+
   it('offers the withdrawal only on a batch somebody said was carried off', async () => {
     const { connection, pushHeader, pushWindow } = makeConnection()
     const wrapper = mountPage(connection)

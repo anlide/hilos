@@ -6,11 +6,13 @@
 // filter exist only where nodes have names. Search, the node filter and the
 // All / awaiting switch ride the open viewport filter map (server-side, no local
 // filtering); the window is re-served by the page whenever the cluster picture or
-// the rule moves. A recommended batch carries the one command of this screen: a
-// modal saying where the batch lies and how to copy it off, and a confirmation that
-// it was (HIL-483) — the badge then repaints when the holding node's next index
-// arrives, not when the ack does. Deleting a taken batch is HIL-382, taking a
-// confirmation back is HIL-759, and there is no way through to the viewer yet
+// the rule moves. A recommended batch carries the first of this screen's two
+// commands: a modal saying where the batch lies and how to copy it off, and a
+// confirmation that it was (HIL-483) — the badge then repaints when the holding
+// node's next index arrives, not when the ack does. A taken batch carries the other
+// half of that (HIL-759): a trigger that takes the word back while the batch is
+// still on disk, behind a modal naming when its node's cleaner may first delete it.
+// Deleting a taken batch is HIL-382, and there is no way through to the viewer yet
 // because it takes no batch address (HIL-388). All table logic, the row
 // view-model, the empty-state discrimination and the wording are the core headless's
 // (hilosLogRotations); this view owns only the markup, so a project mounts it by
@@ -25,6 +27,7 @@ import {
 } from '@angular/core'
 import {
   HILOS_PAGE_ROUTES,
+  HILOS_ROTATION_STATE_CARRYING,
   HILOS_ROTATION_STATE_DUE,
   HILOS_ROTATION_STATE_OPTIONS,
   HILOS_ROTATION_STATE_TAKEN,
@@ -63,14 +66,20 @@ import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 
-// The retention badge: a recommendation is a warning and not a fault, a taken
-// batch is settled, and a kept one is the quiet default.
+// The retention badge: a batch on its way is in motion and not in trouble, a
+// recommendation is a warning and not a fault, a taken batch is settled, and a kept
+// one is the quiet default. Neither row action reads this map — both compare with
+// the state they act on, so a carrying row offers neither by construction.
 const RETENTION_CLASS: Record<string, string> = {
+  [HILOS_ROTATION_STATE_CARRYING]: 'text-bg-info',
   [HILOS_ROTATION_STATE_DUE]: 'text-bg-warning',
   [HILOS_ROTATION_STATE_TAKEN]: 'text-bg-secondary',
 }
 
-/** The framework rotation-history page: the archive, the rule and the takeout dialog. */
+/**
+ * The framework rotation-history page: the archive, the rule, and the two dialogs —
+ * carrying a batch off, and taking that word back.
+ */
 @Component({
   selector: 'hilos-logs-rotations-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -200,6 +209,21 @@ const RETENTION_CLASS: Record<string, string> = {
                 How to carry it off
               </button>
             }
+            <!-- A link by sight and a button by nature, the way the legend trigger
+            below is: the design asks for a link because withdrawing is not the
+            action the row is there for, but this one opens a dialog and navigates
+            nowhere, so an <a href="#"> would answer a ctrl-click with a pointless
+            new tab and announce itself to a screen reader as a link. -->
+            @if (offersUndo(row)) {
+              <button
+                type="button"
+                class="btn btn-link btn-sm p-0 align-baseline"
+                data-id="hilos-rotation-undo"
+                (click)="openUndo(row)"
+              >
+                I did not carry this one off
+              </button>
+            }
           </td>
         </ng-template>
 
@@ -302,8 +326,10 @@ const RETENTION_CLASS: Record<string, string> = {
           </div>
         } @else {
           <div class="alert alert-secondary small py-2 mb-0">
-            Once confirmed, the batch becomes available to the cleaner — until
-            then it will not be touched.
+            Once confirmed, the batch becomes available to the cleaner — but not
+            straight away: this node keeps a confirmed batch for a while, and
+            you can take the confirmation back for as long as the batch is
+            there.
           </div>
         }
         <ng-template #modalActions let-requestClose="requestClose">
@@ -323,6 +349,50 @@ const RETENTION_CLASS: Record<string, string> = {
             (click)="submitTakeout()"
           >
             I have taken this batch
+          </button>
+        </ng-template>
+      </hilos-modal>
+
+      <hilos-modal
+        [(open)]="undoOpen"
+        title="Has the batch not been carried off?"
+        [closeOnBackdrop]="!undo.busy()"
+        [closeOnEsc]="!undo.busy()"
+      >
+        <hilos-action-error [action]="undo" />
+        <p>
+          Your word that you have taken it is the only thing that lets the
+          cleaner delete this batch. Take that word back and the batch returns
+          to the list of the ones recommended for carrying off.
+        </p>
+        <p
+          class="small text-body-secondary"
+          data-id="hilos-rotation-undo-deadline"
+        >
+          {{ undoDeadline() }}
+        </p>
+        <div class="alert alert-secondary small py-2 mb-0">
+          It can only be taken back while the batch is still there. Once the
+          cleaner has passed there is nothing to bring back — which is exactly
+          why deleting waits for your word.
+        </div>
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            [disabled]="undo.busy()"
+            (click)="requestClose()"
+          >
+            Leave it as it is
+          </button>
+          <button
+            hilosLoadingButton
+            class="btn-primary"
+            [loading]="undo.loading()"
+            data-id="hilos-rotation-undo-confirm"
+            (click)="submitUndo()"
+          >
+            Withdraw the acknowledgement
           </button>
         </ng-template>
       </hilos-modal>
@@ -409,6 +479,13 @@ export class HilosLogsRotationsPage {
   protected readonly takeoutRow = signal<HilosLogRotationRow | null>(null)
   protected readonly takeout = createHilosTrackedAction()
 
+  // Taking the word back (HIL-759). Offered on a taken batch and on no other. The
+  // judge is the physical batch and never a timer in this tab — the node refuses
+  // only when the directory is gone.
+  protected readonly undoOpen = signal(false)
+  protected readonly undoRow = signal<HilosLogRotationRow | null>(null)
+  protected readonly undo = createHilosTrackedAction()
+
   protected readonly legendOpen = signal(false)
 
   // The node column and the node filter exist only where nodes have names: in a
@@ -482,6 +559,19 @@ export class HilosLogsRotationsPage {
     return `Carrying off the batch of ${this.batchTime(row)}${row.node ? ` · ${row.node}` : ''}`
   })
 
+  // What the batch's own node promises: the instant its cleaner may first take it.
+  // One word for one actor on this screen — the class behind it is a pruner, but the
+  // operator has been reading "cleaner" since the takeout modal. Null is the
+  // installation that told it not to wait, and that is said in words too: a blank
+  // would read as "we do not know" rather than "at any moment".
+  protected readonly undoDeadline = computed(() => {
+    const pruneNotBefore = this.undoRow()?.pruneNotBefore
+
+    return pruneNotBefore == null
+      ? 'The cleaner may delete this batch as soon as it next runs.'
+      : `The cleaner may delete this batch after ${new Date(pruneNotBefore * 1000).toLocaleString()}.`
+  })
+
   constructor() {
     // Bind the server-windowed table and start listening for the header once the
     // context input is bound; the header also arrives once as the answer to the
@@ -545,6 +635,29 @@ export class HilosLogsRotationsPage {
     // reason the confirmation travels to the node that holds the directory.
     if (await this.takeout.run(this.actions().sendTakeoutConfirm(row))) {
       this.takeoutOpen.set(false)
+    }
+  }
+
+  protected offersUndo(row: HilosLogRotationRow): boolean {
+    return row.retentionState === HILOS_ROTATION_STATE_TAKEN
+  }
+
+  protected openUndo(row: HilosLogRotationRow): void {
+    this.undo.clearError()
+    this.undoRow.set(row)
+    this.undoOpen.set(true)
+  }
+
+  protected async submitUndo(): Promise<void> {
+    const row = this.undoRow()
+    if (row === null || this.undo.busy()) {
+      return
+    }
+    // Closes on the server's word, like the confirmation: the one refusal this can
+    // meet — the batch is no longer on the node — is exactly what the operator has
+    // to see instead of a modal that closed as though it had worked.
+    if (await this.undo.run(this.actions().sendTakeoutUndo(row))) {
+      this.undoOpen.set(false)
     }
   }
 

@@ -180,6 +180,7 @@ function batch(
     workerMonopolisticFileCount: 2,
     bytes: 1536 * 1024 * 1024,
     retentionState: 'kept',
+    pruneNotBefore: null,
     ...overrides,
   }
 }
@@ -418,6 +419,138 @@ describe('HilosLogsRotationsPage', () => {
     await settled()
 
     expect(document.body.textContent).not.toContain('Where it lies')
+  })
+
+  /**
+   * The confirmation is not the end of the batch, and the modal that asks for it
+   * has to say so: a promise that nothing will be touched would read as though the
+   * click could not be taken back, which is the opposite of what the node does.
+   */
+  it('says the confirmation can still be taken back, while the batch is there', () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const container = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([batch({ retentionState: 'due' })])
+    fireEvent.click(byId(container, 'hilos-rotation-takeout') as HTMLElement)
+
+    expect(document.body.textContent).toContain('but not straight away')
+    expect(document.body.textContent).not.toContain(
+      'until then it will not be touched',
+    )
+  })
+
+  /**
+   * A batch on its way to the archive is a fourth state, and it is the state in
+   * which neither action applies: it is not being recommended for carrying off, and
+   * nobody has said it was carried off. The badge has to say where it is instead.
+   */
+  it('shows a batch still being carried as such, and offers it neither action', () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const container = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([
+      batch({ rowKey: 'a:1', batchAt: 1, retentionState: 'carrying' }),
+    ])
+
+    expect(container.textContent).toContain('Moving to the archive')
+    expect(container.querySelector('.badge')?.className).toContain(
+      'text-bg-info',
+    )
+    expect(
+      container.querySelectorAll('[data-id="hilos-rotation-takeout"]'),
+    ).toHaveLength(0)
+    expect(
+      container.querySelectorAll('[data-id="hilos-rotation-undo"]'),
+    ).toHaveLength(0)
+  })
+
+  it('offers the withdrawal only on a batch somebody said was carried off', () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const container = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([
+      batch({ rowKey: 'a:1', batchAt: 1, retentionState: 'kept' }),
+      batch({ rowKey: 'a:2', batchAt: 2, retentionState: 'due' }),
+      batch({ rowKey: 'a:3', batchAt: 3, retentionState: 'taken' }),
+    ])
+
+    expect(
+      container.querySelectorAll('[data-id="hilos-rotation-undo"]'),
+    ).toHaveLength(1)
+  })
+
+  /**
+   * The deadline is the node's own promise, and the screen has to say it out loud:
+   * somebody reading this modal is deciding whether they still have time.
+   */
+  it('names the instant the batch stops being safe from the cleaner', () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const container = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([batch({ retentionState: 'taken', pruneNotBefore: 1800086400 })])
+    fireEvent.click(byId(container, 'hilos-rotation-undo') as HTMLElement)
+
+    expect(
+      document.querySelector('[data-id="hilos-rotation-undo-deadline"]')
+        ?.textContent,
+    ).toContain(
+      `The cleaner may delete this batch after ${new Date(1800086400 * 1000).toLocaleString()}.`,
+    )
+  })
+
+  /**
+   * A node whose window is zero told the pruner not to wait, so there is no instant
+   * to name — and saying nothing would read as "we do not know" rather than "now".
+   */
+  it('says the cleaner may come at its next pass when the node will not wait', () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const container = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([batch({ retentionState: 'taken', pruneNotBefore: null })])
+    fireEvent.click(byId(container, 'hilos-rotation-undo') as HTMLElement)
+
+    expect(
+      document.querySelector('[data-id="hilos-rotation-undo-deadline"]')
+        ?.textContent,
+    ).toContain('as soon as it next runs')
+  })
+
+  it("withdraws under its own action name, and closes only on the server's word", async () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const container = mountPage(connection, actions)
+
+    pushHeader(header({ nodes: ['node-1'] }))
+    pushWindow([batch({ node: 'node-1', retentionState: 'taken' })])
+    fireEvent.click(byId(container, 'hilos-rotation-undo') as HTMLElement)
+    fireEvent.click(
+      document.querySelector(
+        '[data-id="hilos-rotation-undo-confirm"]',
+      ) as HTMLElement,
+    )
+    await settled()
+
+    expect(dispatched).toMatchObject([
+      {
+        action: 'logs_takeout_undo',
+        payload: { nodeId: 'node-1', batchTimestamp: 1800000000 },
+      },
+    ])
+    expect(document.body.textContent).toContain(
+      'Has the batch not been carried off?',
+    )
+
+    dispatched[0]?.settle({ action: 'logs_takeout_undo' } as ActionResult)
+    await settled()
+
+    expect(document.body.textContent).not.toContain(
+      'Has the batch not been carried off?',
+    )
   })
 
   it('opens the legend modal, which is where the three numbers are explained', () => {
