@@ -155,10 +155,55 @@ current build does.
 The build is **hybrid**. The authenticated, real-time area is a pure SPA shell
 (skeletons fill it as data streams — there is nothing for SSG to prerender behind
 auth). The public, SEO-relevant surface — the framework's footer pages (About,
-Terms, Privacy, License; `HILOS_FOOTER_LINKS`) — is **statically prerendered**:
-each is a framework-declared static page whose content needs no socket, so it is
-prerendered to static HTML through the view framework's own server renderer. Vue
-and React run a Vite SSR build of a prerender entry that writes a flat
+Terms, Privacy, License; `HILOS_FOOTER_LINKS`) — is **statically prerendered**,
+all four pages, through the view framework's own server renderer. A public page
+is no longer prose alone — three of the four carry framework-owned behavior and
+Terms a line that differs per reader ([sdk-packaging.md](sdk-packaging.md), tier
+2) — and no page leaves the prerendered set for having a per-reader part. What
+is prerendered is the **guest view**: what a person with no session sees. The
+per-reader part arrives over the page subscription once the SPA has mounted, on
+a page that is by then a live SPA page like any other. /terms and /privacy are
+the most linked-to surfaces the product has and the reason this pipeline
+exists; dropping one to avoid a line only a signed-in reader sees would trade
+the page for the line. Three rules follow, and every public page keeps them:
+
+- **The client re-mounts; it does not hydrate.** On a cold load nginx serves
+  the static file, the SPA boots and builds the page again over the prerendered
+  markup, and the page subscribes like any other. The mount call is the plain
+  one in every demo — Vue's `createApp().mount`, React's `createRoot().render`,
+  Angular's `bootstrapApplication` — and stays so: do not switch it to React's
+  `hydrateRoot` or add Angular's `provideClientHydration`. The guest view and
+  the signed-in view differ on purpose, and a hydrating client would report
+  that difference as a mismatch on every signed-in load — the framework
+  shouting about the thing that was designed on purpose.
+- **A behavior block renders with no browser present.** Every public page is
+  executed at build time by a server renderer — `vite build --ssr` of the
+  prerender entry for Vue and React, `@angular/ssr` with `RenderMode.Prerender`
+  for Angular — so a block does not touch `window`, `document`, `localStorage`
+  or `sessionStorage` while rendering; it reads them only when the person acts.
+  The core already holds this line and says why: `protectedModePass.ts` reaches
+  storage through a guard because "the core also runs where there is no browser
+  at all (prerender)". The erase button renders as a button and a description;
+  the registry sweep happens on the click.
+- **The license inventory is a build-time snapshot.** It is gathered while the
+  project's frontend is built, carried into the artifact and handed to the page
+  as an input, so /license's static file holds the whole list and the page asks
+  the backend for nothing. Gathering it at runtime would make the static file —
+  the one a crawler and a person without a socket see — the only version of the
+  page without its main content; it would buy no freshness, because the list
+  changes when dependencies change and dependencies change by rebuilding; and it
+  would have the daemon parse `composer.lock` and `package.json` per request and
+  then cache it — the same snapshot, built later and in the wrong process.
+
+What each static file contains: /about the prose, the support block and the
+modal in its closed state; /privacy the prose and the erase block, button
+included, inert until the SPA mounts; /license the prose and the full inventory;
+/terms the prose and the guest header, with the accepted-revision line, the
+countdown and the history absent from the file and arriving over the
+subscription. The backend page behind each answers the subscription with nothing
+— only Terms grows a payload, and it grows it in HIL-501.
+
+Vue and React run a Vite SSR build of a prerender entry that writes a flat
 `<route>.html` (and `robots.txt` + `sitemap.xml`). Angular uses its **native
 static output** (`@angular/build` `outputMode: static` + `@angular/ssr` route
 render modes): the client app routes through the framework's `HilosRouter` and
@@ -176,7 +221,12 @@ only for the app's own deep links, so the authed area is never forced through th
 prerender path ([core-and-connection.md](core-and-connection.md)). SSG is low
 priority but part of v1; a project adds a public route by mapping a content
 component to its page key — the prerender step picks it up from
-`HILOS_FOOTER_LINKS`.
+`HILOS_FOOTER_LINKS`. For the framework's four that component is usually thin:
+the project's prose inside the framework page. Failure stays where it is: a
+footer link with no route or no component fails the build in the prerender
+package's discovery, and a failed render fails the build before anything is
+written — a page that now renders more can fail in more ways, and it fails in
+the same place.
 
 ## Building a demo against the vendored SDK
 

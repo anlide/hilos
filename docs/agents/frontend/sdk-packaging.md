@@ -122,6 +122,39 @@ The framework ships a real default page for every admin key, collected by
 only the pages it customizes (see
 [page-module-structure.md](page-module-structure.md)).
 
+The public framework pages are tier 2 as well. A public page is no longer prose
+alone — License carries a dependency inventory with a search, a filter, a
+per-row modal and an export; Privacy an erase of what this browser holds, behind
+a confirmation; About a support modal; Terms the revision this reader accepted —
+and none of that behavior has a project-specific half, so the framework owns
+it: `HilosAboutPage`, `HilosTermsPage`, `HilosPrivacyPage` and
+`HilosLicensePage` under `@hilos/vue/src/public/` (and the React / Angular
+twins), one file per page. Each renders the tier-1 `HilosStaticPage` frame with
+the page's own title around two things: the project's prose, taken through the
+**default slot** and placed above, and the framework's behavior block for that
+page, placed below. The framework owns the frame and the behavior; the project
+owns the words. Leaving the behavior as blocks a project pastes in would make
+"Privacy without the erase button" indistinguishable from a deliberate choice.
+
+No aggregate collects the four — there is no `hilosPublicViews()`. Each needs a
+project-supplied input, which is the same exception `hilosAdminViews.ts` already
+makes for `HilosUsersPage` / `HilosSettingsPage` / `HilosBackupPage`: a project
+mounts them directly under their `HilosPages` keys. A project that wants its own
+License page mounts its own component under `HilosPages.LICENSE` and gets none
+of the framework behavior — the existing extension model, and the reason the
+prose comes through a slot rather than through configuration. The project's own
+view keeps its file and its name (`views/License/License.vue` and the twins) and
+wraps its paragraphs in the framework page instead of in `HilosStaticPage`;
+nothing else in the project moves — not the page key, not the route, not the
+footer link, not the prerender entry's component map. A behavior block takes
+its data as an input, never as a fetch from inside the page: `HilosLicensePage`
+takes the inventory as a prop, and the project passes the snapshot its own build
+produced ([build-and-docker.md](build-and-docker.md), *SSG and the public
+surface*). Each page is created by the leaf that first needs it:
+`HilosLicensePage` (not in the code yet — HIL-838), `HilosPrivacyPage` (not in
+the code yet — HIL-839), `HilosAboutPage` (not in the code yet — HIL-840),
+`HilosTermsPage` (not in the code yet — HIL-501).
+
 The mechanism across both tiers is the same — slots + scoped slots + shared
 composables, no mixins — and "empty inheritance" (a one-line re-export) is the
 default when nothing is customized.
@@ -138,12 +171,15 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   links come from the framework (`HILOS_FOOTER_LINKS`), so every project shows
   the same About / Terms / Privacy / License set and supplies only each page's
   content;
-- **`HilosStaticPage`** — the frame for a static, content-only page (the public
-  About / Terms / Privacy / License pages and the like): a centered reading
-  column with a heading, the project filling the body. These framework pages are
-  declared in `@hilos/core` (`HilosPages` / `HILOS_PAGE_ROUTES`) and subscribe
-  like any page, but the backend page carries no payload — the visible content is
-  the project's own view;
+- **`HilosStaticPage`** — the frame for a static page: a centered reading
+  column with a heading, the project filling the body. It frames a project's own
+  static pages, and it is what the four public framework pages (tier 2, above)
+  render inside themselves; it is neither the public pages' component nor
+  widened for their behavior. The public pages are declared in `@hilos/core`
+  (`HilosPages` / `HILOS_PAGE_ROUTES`) and subscribe like any page; their
+  backend pages carry no payload today — Terms grows one (not in the code yet —
+  HIL-501) — so the visible content is the project's prose plus the framework's
+  behavior block;
 - a **`HilosErrorBoundary`** wrapping each page or major block, so one
   component's runtime error degrades locally instead of blanking the long-lived
   SPA;
