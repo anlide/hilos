@@ -24,7 +24,9 @@ declare(strict_types=1);
  *                  is the lever the attribution rule needs: a step that goes red
  *                  under concurrency is not a verdict until it has been re-run
  *                  alone on the same HEAD.
- *   --log-dir=DIR  where the per-step logs land (default `var/test-suite`).
+ *   --log-dir=DIR  where the per-step logs land (default `var/test-suite`). A full run
+ *                  also sweeps out of it the logs of steps the manifest no longer
+ *                  lists; a re-run of one step sweeps nothing.
  *   --rc-file=PATH where the `<id> rc=<n>` ledger lands (default `<log-dir>/rc`).
  *   --artifact-dir=DIR
  *                  where each step's snapshot of the stand lands (default
@@ -86,6 +88,7 @@ $root = dirname(__DIR__);
 require_once $root . '/scripts/unstable-line.php';
 require_once $root . '/scripts/step-artifacts.php';
 require_once $root . '/scripts/stand-teardown.php';
+require_once $root . '/scripts/evidence-sweep.php';
 $options = parseArguments(array_slice($argv, 1));
 $manifest = indexById(require $root . '/scripts/test-suite.php');
 $plan = planFor($manifest, $options['targets']);
@@ -408,9 +411,11 @@ function exportTimeoutScale(int $lanes): void
  * @param string $logDir Directory for the per-step logs.
  * @param string $rcFile Path of the `<id> rc=<n>` ledger.
  * @param string $artifactDir Directory the per-step snapshots of the stand go under.
- * @param bool $sweepFirst Whether to take every known stand down before the first step. True
- *     for a full run and false for a re-run of one step, which follows a full run onto a box
- *     that is already clean.
+ * @param bool $fullRun Whether the plan is the whole manifest. It decides both of the
+ *     tidyings the run does before its first step: taking every known stand down, which a
+ *     re-run of one step does not need on a box a full run has just left clean, and
+ *     sweeping the evidence of steps the manifest no longer lists, which is only sound
+ *     when "not in the plan" reliably means "not there at all".
  * @return int
  */
 function runPlan(
@@ -421,11 +426,14 @@ function runPlan(
     string $logDir,
     string $rcFile,
     string $artifactDir,
-    bool $sweepFirst,
+    bool $fullRun,
 ): int {
     $logs = prepareLogDir($logDir, $plan);
     prepareArtifactDir($artifactDir, $plan);
-    if ($sweepFirst) {
+    if ($fullRun) {
+        // Nothing is written here unless something was swept, so a clean box keeps the
+        // text it has always had and the section showing up is itself the news.
+        fwrite(STDOUT, sweptEvidenceSection(sweepStaleEvidence($logDir, $artifactDir, array_keys($manifest))));
         $survived = sweepStands($root);
         if ($survived !== []) {
             fwrite(STDERR, 'stands: run not started, these stands would not go down: '
@@ -915,30 +923,6 @@ function prepareArtifactDir(string $artifactDir, array $plan): void
     foreach ($plan as $id) {
         removeArtifactTree($artifactDir . '/' . $id);
     }
-}
-
-/**
- * Delete one step's previous snapshot, whole. A snapshot is the runner's own output
- * and nothing else writes there, so this walks the tree rather than shelling out.
- *
- * @param string $path The directory to remove.
- */
-function removeArtifactTree(string $path): void
-{
-    if (!is_dir($path)) {
-        return;
-    }
-    foreach (scandir($path) ?: [] as $entry) {
-        if ($entry === '.' || $entry === '..') {
-            continue;
-        }
-        if (is_dir($path . '/' . $entry)) {
-            removeArtifactTree($path . '/' . $entry);
-            continue;
-        }
-        unlink($path . '/' . $entry);
-    }
-    rmdir($path);
 }
 
 /**

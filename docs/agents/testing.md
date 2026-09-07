@@ -261,6 +261,16 @@ log under `var/test-suite/`, its output is replayed to stdout between a `START` 
 an `END` line once it finishes, and `<log-dir>/rc` carries one `<id> rc=<n>` line
 per step — the run stays attributable line by line even though the steps overlap.
 
+A **full run sweeps the evidence of steps the manifest no longer lists** — the log out
+of `var/test-suite/`, the snapshot out of `var/test-suite/artifacts/` — and prints an
+`=== swept: <N> step(s) no longer in the manifest ===` section when it removed
+anything. Re-running one step still touches nothing but its own evidence, exactly as
+before, because only a full run can tell "not in the plan" from "not there at all".
+The price this pays for: a log left behind by a deleted step answers a grep across the
+whole directory and reads as fresh, which on HIL-853 handed a reader the very line the
+fix under test had just removed — out of a demo `scripts/test-suite.php` does not
+contain at all. The `rc` ledger is never swept.
+
 ### A step that only passed on a retry says so
 
 Playwright retries twice in CI, so a flickering test leaves its step `ok` and the

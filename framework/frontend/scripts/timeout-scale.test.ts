@@ -95,6 +95,13 @@ it('says so in the reason when the override is not a number', () => {
   expect(deriveTimeoutScale(typo).reason).toContain('non-numeric')
 })
 
+it('lets load through when the override is not a number', () => {
+  const typo = { ...IDLE, override: 'yes', loadPerCpu: 2.25 }
+
+  expect(deriveTimeoutScale(typo)).toMatchObject({ factor: 2.5 })
+  expect(deriveTimeoutScale(typo).reason).toContain('load per cpu')
+})
+
 it('treats a blank override as no override', () => {
   const blank = { ...IDLE, override: '  ', loadPerCpu: 2.25 }
 
