@@ -13,9 +13,20 @@ table and conflict state machines — is unit-tested with **no browser** at all.
 Per-framework view layers test with vitest too:
 
 - the React slice uses vitest + `@testing-library/react`;
-- the Angular slice uses vitest via the Angular CLI's native unit-test builder
-  (and leans on e2e for any part too fiddly to drive in vitest — the core logic
-  is already covered framework-free).
+- the Angular slice uses vitest directly, mounting components through `TestBed`
+  in jsdom. The CLI's native unit-test builder is **not** used: it is marked
+  experimental, and it splits `@angular/common` across two module graphs, so the
+  DOM adapter is registered in one copy while `ɵgetDOM()` reads the other and
+  gets null.
+
+Because Angular's tests run against source, a declarable reaches the runtime
+uncompiled and Angular compiles it JIT — and JIT reads a directive's inputs off
+its decorators, which an initializer-based input such as `input()` does not have.
+So `framework/frontend/angular/vitest.config.ts` runs Angular's own
+`angularJitApplicationTransform` over the package's declarables, the same
+transform the Angular CLI applies to its JIT unit-test builds. Skip it and a
+mount looks like it works — the template compiles, the view renders — while the
+input is silently missing.
 
 ## End-to-end tests — Playwright, multi-context
 
