@@ -58,8 +58,6 @@ export interface HilosLogKeyRow {
 // A project binds its backend to these keys (Hilos::TABLES / PAGE_TABLES).
 const KEYS_TABLE = 'hilosLogKeys'
 const KEY_SLOT = 'stream'
-const KEYS_PAGE_SIZE = 25
-
 /** Server→client signal `type` carrying the screen header (PHP `SUBSCRIPTION_PAGE_HILOS_LOGS_KEYS`). */
 export const KEYS_HEADER_SIGNAL = 'subscription_page_hilos_logs_keys'
 
@@ -224,9 +222,7 @@ export function createHilosLogKeysTable(
         KEYS_TABLE,
         descriptor,
       ),
-    pageSize: KEYS_PAGE_SIZE,
     initialFilter,
-    initialOrder: [{ field: KEY_BYTES_FIELD, direction: 'desc' }],
   })
   const teardown: Array<() => void> = []
 
@@ -240,16 +236,7 @@ export function createHilosLogKeysTable(
           { page: HilosPages.LOGS_KEYS, tableKey: KEYS_TABLE },
           controller,
         ),
-        // Re-request the window whenever the socket (re)connects: the initial
-        // request below can run before the connection is open, and a reconnect is a
-        // fresh exchange that no longer remembers this connection's window.
-        context.connection.on('state', (state) => {
-          if (state === 'connected') {
-            controller.start()
-          }
-        }),
       )
-      controller.start()
     },
     dispose() {
       for (const off of teardown.splice(0)) {

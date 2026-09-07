@@ -89,6 +89,9 @@ function makeConnection(): {
 
       return () => {}
     },
+    registerTableWindow(): void {},
+    unregisterTableWindow(): void {},
+    tableWindowDescriptors: () => ({}),
     sendTableViewport(
       page: string,
       tableKey: string,

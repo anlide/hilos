@@ -72,6 +72,9 @@ final class SignalPayloadConstants
     /** @var string Payload field key for the place the last row of a table window sits at */
     public const string FIELD_LAST_ANCHOR = 'lastAnchor';
 
+    /** @var string Payload field key for the windows a tab already holds, told on a page subscription */
+    public const string FIELD_TABLE_WINDOWS = 'tableWindows';
+
     /** @var string Subscription payload key for page (same wire key as FIELD_PAGE) */
     public const string SUBSCRIPTION_PAGE_KEY = self::FIELD_PAGE;
 

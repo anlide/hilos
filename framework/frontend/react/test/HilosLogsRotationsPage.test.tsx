@@ -94,6 +94,9 @@ function makeConnection(): {
 
       return () => {}
     },
+    registerTableWindow(): void {},
+    unregisterTableWindow(): void {},
+    tableWindowDescriptors: () => ({}),
     sendTableViewport(): void {},
   } as unknown as HilosConnection
 

@@ -30,6 +30,7 @@ function fakeConnection() {
     // The manager drops the held page frames on every page change; this fake
     // buffers nothing, so there is nothing to drop.
     forgetPageFrames(): void {},
+    tableWindowDescriptors: () => ({}),
     on(event: string, listener: (payload: never) => void): () => void {
       // The manager subscribes `state` in its constructor; this fake never
       // replays transitions, so only `projectSignal` listeners are recorded.
@@ -126,6 +127,38 @@ describe('bindPageScope', () => {
     connection.emitPageResponse('main', { data: { greeting: 'hi' } })
 
     expect(scopes.page()?.data.signal('greeting').get()).toBe('hi')
+  })
+
+  it('lets the windows section past the scope store, unstored', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const pages = bindPageScope(
+      connection as unknown as HilosConnection,
+      scopes,
+    )
+
+    pages.subscribe('main')
+    connection.emitPageResponse('main', {
+      data: { greeting: 'hi' },
+      windows: {
+        settings: {
+          rows: [{ rowKey: 'a', slots: {} }],
+          sort: [],
+          limit: 10,
+          totalCount: 1,
+          totalExact: true,
+          firstAnchor: null,
+          lastAnchor: null,
+        },
+      },
+    })
+
+    // A window is held by the table's own controller, which normalizes its rows without
+    // storing them here: a copy in the scope would be a second holder of one window, and
+    // the two would part company on the first delta (HIL-642).
+    expect(scopes.page()?.data.signal('greeting').get()).toBe('hi')
+    expect(scopes.page()?.data.signal('windows').get()).toBeUndefined()
+    expect(scopes.page()?.tables.signal('settings').get()).toEqual([])
   })
 
   it('drops a page_response for a page other than the current one', () => {

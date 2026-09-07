@@ -94,7 +94,6 @@ export const DELIVERY_NOTIFICATION_TITLE_FIELD = 'notificationTitle'
 // (Hilos::TABLES / PAGE_TABLES / the deliveries page action).
 const DELIVERIES_TABLE = 'hilosNotificationDeliveries'
 const DELIVERY_SLOT = 'delivery'
-const DELIVERIES_PAGE_SIZE = 25
 const DELIVERY_RETRY_ACTION = 'communications_delivery_retry'
 /** The page's own actions, so an addressed failure notice for one is recognized as ours. */
 const DELIVERY_ACTIONS = new Set<string>([DELIVERY_RETRY_ACTION])
@@ -246,9 +245,7 @@ export function createHilosDeliveriesTable(
         DELIVERIES_TABLE,
         descriptor,
       ),
-    pageSize: DELIVERIES_PAGE_SIZE,
     initialFilter,
-    initialOrder: [{ field: DELIVERY_CREATED_AT_FIELD, direction: 'desc' }],
   })
   const teardown: Array<() => void> = []
 
@@ -276,16 +273,7 @@ export function createHilosDeliveriesTable(
           },
           controller,
         ),
-        // Re-request the window whenever the socket (re)connects: the initial
-        // request below can run before the connection is open, and a reconnect
-        // is a fresh exchange that no longer remembers this connection's window.
-        context.connection.on('state', (state) => {
-          if (state === 'connected') {
-            controller.start()
-          }
-        }),
       )
-      controller.start()
     },
     dispose() {
       for (const off of teardown.splice(0)) {

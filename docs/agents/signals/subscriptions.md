@@ -163,16 +163,24 @@ without it?** If yes, the rule does not apply. Three standing cases answer yes:
 The **first** window of a table is not one of them: a page is not complete
 without the first screen of rows of the table it shows.
 
-### Known deviation: the first table window
+### The first table window rides in the answer
 
-Today a viewport table does not flow through the `page_response` fan-out (see
-[table-subscription.md](../frontend/table-subscription.md)). The controller asks
-for its first window itself when the table mounts, and the server sends the
-`table_window` snapshot only in reply to a `table_viewport` request — a second
-round trip for a first render, which the rule above says it should not be. This
-is recorded as a known deviation with an owner, HIL-642, not as an exception: a
-rule that stays silent about a place where the code disagrees with it reads as a
-mistake in the rule.
+A viewport table's first window is a fifth section of the `page_response`
+payload, `windows` — one entry per table the page declares, keyed by table key,
+carrying the same rows and the same coordinates a `table_window` reply carries
+plus the order the window ran in. Nothing is asked for it and nothing waits on
+it: the subscription that opens the page also opens each of its windows, and
+the tab's controller reads its own out of that frame (see
+[table-subscription.md](../frontend/table-subscription.md)).
+
+The window a tab is already holding travels the other way in the same pair of
+frames: `page_subscribe` carries an optional `tableWindows` map, one descriptor
+per table key, and the server serves back the window each descriptor names.
+That is what makes a reconnect land on the window that was on the screen rather
+than on the first page of the set — the server forgot it with the accept key,
+and the tab is the only side that still knows. A page a tab is navigating to
+has no controllers bound yet and so reports none; one rule, two scenes, and no
+flag saying which is which.
 
 ### The one legal neighbor: a group subscription
 

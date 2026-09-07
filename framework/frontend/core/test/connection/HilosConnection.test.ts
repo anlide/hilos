@@ -583,8 +583,15 @@ describe('page frame buffer', () => {
     subscription_page_hilos_logs: z.looseObject({ node: z.string() }),
     subscription_page_hilos_log_presets: z.looseObject({ preset: z.string() }),
     subscription_page_error: z.looseObject({ page: z.string() }),
+    page_response: z.looseObject({ page: z.string() }),
     logs_lines_appended: z.looseObject({ line: z.string() }),
   }
+
+  // The answer to a subscription, the one page_response that opens a page's table windows.
+  const WINDOW_ANSWER =
+    '{"type":"page_response","data":{"page":"hilos_settings","payload":{"windows":' +
+    '{"settings":{"rows":[],"sort":[],"limit":10,"totalCount":0,"totalExact":true,' +
+    '"firstAnchor":null,"lastAnchor":null}}}}}'
 
   function connected(): HilosConnection {
     const { connection } = createConnection({ projectSchemas: PAGE_SCHEMAS })
@@ -606,6 +613,56 @@ describe('page frame buffer', () => {
 
     expect(received).toEqual([
       { type: 'subscription_page_hilos_logs', data: { node: 'one' } },
+    ])
+  })
+
+  it('replays the page_response a table binder registered too late for', () => {
+    const connection = connected()
+    MockWebSocket.last.message(WINDOW_ANSWER)
+
+    const received: { type: string; data: unknown }[] = []
+    connection.on('projectSignal', (signal) =>
+      received.push({ type: signal.type, data: signal.data }),
+    )
+
+    // The first window of every table rides in this frame since HIL-642, and a table's
+    // binder registers when its view mounts — which is after the frame has arrived. Without
+    // the replay the window is delivered to nobody and the table never draws a row.
+    expect(received).toHaveLength(1)
+    expect(received[0]?.type).toBe('page_response')
+  })
+
+  it('buffers no page_response that carries no window', () => {
+    const connection = connected()
+    MockWebSocket.last.message(WINDOW_ANSWER)
+    MockWebSocket.last.message(
+      '{"type":"page_response","data":{"page":"hilos_settings","payload":{"tables":{"settings":{"rows":[{"rowKey":"a","slots":{}}]}}}}}',
+    )
+
+    const received: unknown[] = []
+    connection.on('projectSignal', (signal) => received.push(signal.data))
+
+    // That name carries two frames: the answer to a subscription and a live flush of
+    // changed rows. Buffering by type alone, the flush would take the answer's place — and
+    // a replayed delta doubles what was already delivered, which is what this buffer is
+    // built to avoid.
+    expect(received).toEqual([
+      {
+        page: 'hilos_settings',
+        payload: {
+          windows: {
+            settings: {
+              rows: [],
+              sort: [],
+              limit: 10,
+              totalCount: 0,
+              totalExact: true,
+              firstAnchor: null,
+              lastAnchor: null,
+            },
+          },
+        },
+      },
     ])
   })
 

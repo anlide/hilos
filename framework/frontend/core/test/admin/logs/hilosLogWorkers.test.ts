@@ -12,7 +12,6 @@ import {
   HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
   HILOS_LOG_WORKER_TYPE_REGULAR,
   WORKERS_HEADER_SIGNAL,
-  WORKER_BYTES_FIELD,
   WORKER_FILTER_TYPE,
   LOGS_WORKERS_SIGNAL_SCHEMAS,
   type HilosLogWorkerRow,
@@ -73,6 +72,9 @@ function tableOnAStubConnection(): {
   }> = []
   const context: HilosLogWorkersContext = {
     connection: {
+      registerTableWindow(): void {},
+      unregisterTableWindow(): void {},
+      tableWindowDescriptors: () => ({}),
       sendTableViewport(
         page: string,
         tableKey: string,
@@ -134,17 +136,14 @@ describe('resolveHilosLogWorkerRow', () => {
 })
 
 describe('the worker table descriptor', () => {
-  it('opens on the heaviest stream, which is the question the screen is opened with', () => {
+  it('asks for nothing on its own — its first window arrives with the page', () => {
     const { table, sent } = tableOnAStubConnection()
 
-    table.controller.start()
-
-    expect(sent).toHaveLength(1)
-    expect(sent[0].tableKey).toBe('hilosLogWorkers')
-    expect(sent[0].descriptor.sort).toEqual([
-      { field: WORKER_BYTES_FIELD, direction: 'desc' },
-    ])
-    expect(sent[0].descriptor.limit).toBe(25)
+    // What the screen opens on — the heaviest stream first, twenty-five of them — is declared
+    // by HilosLogWorkersTable on the backend since HIL-642, and travels on the window itself.
+    // This side declares neither, so it has nothing to ask for until the reader asks.
+    expect(sent).toEqual([])
+    expect(table.controller.descriptor()).toBeNull()
   })
 
   it('sends the type filter to the server rather than narrowing the window here', () => {

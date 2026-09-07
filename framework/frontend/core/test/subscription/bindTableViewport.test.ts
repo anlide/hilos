@@ -3,11 +3,15 @@ import { bindTableViewport } from '../../src/subscription/bindTableViewport.js'
 import {
   type HilosConnection,
   type TableAnchor,
+  type TableWindowDescriptorSource,
 } from '../../src/connection/HilosConnection.js'
+import { SIGNAL_TYPE_PAGE_RESPONSE } from '../../src/protocol/constants.js'
+import { type PageResponseWire } from '../../src/protocol/scopePayload.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { type EntityRef } from '../../src/state/EntityStore.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
 import {
+  type TableSortOrder,
   type TableViewportDelta,
   type TableWindowSink,
 } from '../../src/table/TableViewportController.js'
@@ -17,6 +21,7 @@ import {
   type TableViewportOwnCreateSignal,
   type TableViewportDeltaSignal,
   type TableWindowSignal,
+  type ProjectSignal,
 } from '../../src/protocol/parseSignal.js'
 
 /** A connection double emitting the five table signals, with real unsubscribe. */
@@ -28,10 +33,19 @@ function fakeConnection() {
   const ownCreateListeners = new Set<
     (signal: TableViewportOwnCreateSignal) => void
   >()
+  const projectListeners = new Set<(signal: ProjectSignal) => void>()
+  const registered = new Map<string, TableWindowDescriptorSource>()
 
   return {
+    registered,
     on(event: string, listener: (signal: never) => void): () => void {
       switch (event) {
+        case 'projectSignal': {
+          const typed = listener as unknown as (signal: ProjectSignal) => void
+          projectListeners.add(typed)
+
+          return () => projectListeners.delete(typed)
+        }
         case 'tableWindow': {
           const typed = listener as unknown as (
             signal: TableWindowSignal,
@@ -74,6 +88,23 @@ function fakeConnection() {
         }
       }
     },
+    registerTableWindow(
+      tableKey: string,
+      source: TableWindowDescriptorSource,
+    ): void {
+      registered.set(tableKey, source)
+    },
+    unregisterTableWindow(tableKey: string): void {
+      registered.delete(tableKey)
+    },
+    emitPageResponse(data: PageResponseWire): void {
+      for (const listener of projectListeners) {
+        listener({
+          type: SIGNAL_TYPE_PAGE_RESPONSE,
+          data,
+        } as unknown as ProjectSignal)
+      }
+    },
     emitWindow(data: TableWindowSignal['data']): void {
       for (const listener of windowListeners) {
         listener({ data } as unknown as TableWindowSignal)
@@ -110,6 +141,8 @@ function fakeSink(): TableWindowSink & {
     totalExact: boolean
     firstAnchor: TableAnchor | null
     lastAnchor: TableAnchor | null
+    limit: number
+    sort: TableSortOrder | undefined
   }>
   deltas: TableViewportDelta[]
   counts: Array<{ totalCount: number; totalExact: boolean }>
@@ -128,6 +161,8 @@ function fakeSink(): TableWindowSink & {
     totalExact: boolean
     firstAnchor: TableAnchor | null
     lastAnchor: TableAnchor | null
+    limit: number
+    sort: TableSortOrder | undefined
   }> = []
   const deltas: TableViewportDelta[] = []
   const counts: Array<{ totalCount: number; totalExact: boolean }> = []
@@ -150,9 +185,44 @@ function fakeSink(): TableWindowSink & {
     counts,
     appends,
     ownCreates,
-    ingestWindow(rows, totalCount, totalExact, firstAnchor, lastAnchor): void {
-      windows.push({ rows, totalCount, totalExact, firstAnchor, lastAnchor })
+    ingestWindow(
+      rows,
+      totalCount,
+      totalExact,
+      firstAnchor,
+      lastAnchor,
+      limit,
+    ): void {
+      windows.push({
+        rows,
+        totalCount,
+        totalExact,
+        firstAnchor,
+        lastAnchor,
+        limit,
+        sort: undefined,
+      })
     },
+    ingestSubscriptionWindow(
+      rows,
+      totalCount,
+      totalExact,
+      firstAnchor,
+      lastAnchor,
+      limit,
+      sort,
+    ): void {
+      windows.push({
+        rows,
+        totalCount,
+        totalExact,
+        firstAnchor,
+        lastAnchor,
+        limit,
+        sort,
+      })
+    },
+    descriptor: () => null,
     ingestDelta(delta): void {
       deltas.push(delta)
     },
@@ -210,6 +280,83 @@ describe('bindTableViewport', () => {
     })
     const ref = sink.windows[0]?.rows[0]?.slots['user'] as EntityRef
     expect(scopes.entitySignal(ref).get()?.fields['name']).toBe('Ada')
+  })
+
+  it('routes the window that arrives inside the page answer, order and all', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitPageResponse({
+      page: 'main',
+      payload: {
+        windows: {
+          settings: {
+            rows: [{ rowKey: 'a', slots: { user: { id: 7, name: 'Ada' } } }],
+            sort: [{ field: 'key', direction: 'asc' }],
+            limit: 25,
+            totalCount: 12,
+            totalExact: true,
+            firstAnchor: { key: 'a' },
+            lastAnchor: { key: 'a' },
+          },
+        },
+      },
+    })
+
+    // The cold entry: no request was made and the window is here anyway, carrying the size
+    // and the order the table declares on the backend (HIL-642).
+    expect(sink.windows).toHaveLength(1)
+    expect(sink.windows[0]?.limit).toBe(25)
+    expect(sink.windows[0]?.sort).toEqual([{ field: 'key', direction: 'asc' }])
+    const ref = sink.windows[0]?.rows[0]?.slots['user'] as EntityRef
+    expect(scopes.entitySignal(ref).get()?.fields['name']).toBe('Ada')
+  })
+
+  it('drops a page answer that carries no window for this table', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitPageResponse({ page: 'main', payload: { data: {} } })
+    connection.emitPageResponse({
+      page: 'other',
+      payload: {
+        windows: {
+          settings: {
+            rows: [],
+            sort: [],
+            limit: 10,
+            totalCount: 0,
+            totalExact: true,
+            firstAnchor: null,
+            lastAnchor: null,
+          },
+        },
+      },
+    })
+
+    expect(sink.windows).toEqual([])
+  })
+
+  it('registers this table with the connection and drops it on unbind', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+
+    const unbind = bind(connection, scopes, sink)
+
+    // What the next page subscribe reports: the tab is the only side that still remembers
+    // its windows once the socket has died under it.
+    expect(connection.registered.get('settings')).toBe(sink)
+
+    unbind()
+    expect(connection.registered.has('settings')).toBe(false)
   })
 
   it('routes a row_updated delta to the sink', () => {

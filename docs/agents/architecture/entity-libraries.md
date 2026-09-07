@@ -111,9 +111,9 @@ Two ways are allowed, and a third is forbidden:
 - **Ask the holder.** The set arrives over a page subscription routed to the
   library — the page's `SUBSCRIPTION_AGENT_TYPE` names the library's agent type,
   which is how `AdminBotsPage` already reaches `LibraryAgent`. A table's first
-  window travels in the same subscription reply
-  ([../signals/subscriptions.md](../signals/subscriptions.md); the mechanics are
-  HIL-642).
+  window travels in the same subscription reply, in the `windows` section of its
+  payload ([../signals/subscriptions.md](../signals/subscriptions.md), "The
+  first table window rides in the answer").
 - **Read the database.** By key, or by a query. A single row a caller needs is
   fetched from the database and does not wake the holder.
 - **Never iterate a local collection as if it were the set.** The rows in this
@@ -568,7 +568,8 @@ each piece lands:
 Also outside it: the library base class and any framework code; the splitting of
 the leadership flag (HIL-667, landed); the cross-node return path to a client (HIL-668);
 edits to `BrowserContext` or any other existing reader; the mechanics of a
-table's first window (HIL-642).
+table's first window, which are the `windows` section of the subscription reply
+([../signals/subscriptions.md](../signals/subscriptions.md)).
 
 ## Anti-Patterns
 

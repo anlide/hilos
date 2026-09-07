@@ -87,7 +87,6 @@ export const USER_ONLINE_SESSION_COUNT_FIELD = 'onlineSessionCount'
 // carry the same row slots so both resolve through resolveHilosUserRow. A project
 // binds its backend tables to these keys.
 const HILOS_USERS_TABLE = 'hilosUsers'
-const HILOS_USERS_PAGE_SIZE = 10
 const USER_DETAIL_TABLE = 'userDetail'
 // Row slots: the user entity (typed `user` via pageEntityTypes) and the inline
 // runtime connection summary a project fills on its backend.
@@ -223,8 +222,6 @@ export function createHilosUsersTable<TUser extends HilosUserProfile>(
         HILOS_USERS_TABLE,
         descriptor,
       ),
-    pageSize: HILOS_USERS_PAGE_SIZE,
-    initialOrder: [{ field: 'id', direction: 'asc' }],
   })
   const teardown: Array<() => void> = []
 
@@ -241,16 +238,7 @@ export function createHilosUsersTable<TUser extends HilosUserProfile>(
           // collection's type so the row resolves through context.users.
           { entityTypes: { [USER_SLOT]: context.users.type } },
         ),
-        // Re-request the window whenever the socket (re)connects: the initial
-        // request below can run before the connection is open, and a reconnect is
-        // a fresh exchange that no longer remembers this connection's window.
-        context.connection.on('state', (state) => {
-          if (state === 'connected') {
-            controller.start()
-          }
-        }),
       )
-      controller.start()
     },
     dispose() {
       for (const off of teardown.splice(0)) {

@@ -80,7 +80,7 @@ final class SubscriptionRegistryTableViewportTest extends TestCase
         $this->assertFalse($viewport->hasRow('b'));
     }
 
-    public function testNavigatingToAnotherPageClearsTableViewports(): void
+    public function testSubscribingKeepsTheWindowsTheAnswerToThatSubscriptionOpened(): void
     {
         $registry = new SubscriptionRegistry();
         $registry->subscribeToPage('ak', 'page1', []);
@@ -88,7 +88,11 @@ final class SubscriptionRegistryTableViewportTest extends TestCase
 
         $registry->subscribeToPage('ak', 'page2', []);
 
-        $this->assertNull($registry->getTableViewport('ak', 'settings'));
+        // The subscription is recorded AFTER it has been answered, and the answer is where a
+        // page's windows are opened now (HIL-642): dropping them here would throw away the
+        // very windows the frame just delivered. Leaving a page is what drops its windows,
+        // and every way one page replaces another goes through the unsubscribe below.
+        $this->assertNotNull($registry->getTableViewport('ak', 'settings'));
     }
 
     public function testUnsubscribingFromThePageClearsTableViewports(): void

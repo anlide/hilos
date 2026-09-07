@@ -12,6 +12,16 @@ final class TableConstants
     /** Limit value meaning "return all rows" (no pagination limit). */
     public const int NO_LIMIT = 0;
 
+    /**
+     * Rows the first window carries for a table that declared no size of its own.
+     *
+     * The first window is built on the server now, so a size has to exist before any table
+     * states one; this is that size. It is a fallback and not a recommendation — a table whose
+     * rows are short, or whose page shows one line each, says so itself by declaring its own
+     * window size on its definition.
+     */
+    public const int DEFAULT_WINDOW_SIZE = 25;
+
     /** Order direction: ascending */
     public const string ORDER_ASC = 'asc';
 

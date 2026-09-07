@@ -6,6 +6,8 @@ namespace Hilos\Tables\Communications;
 
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -48,6 +50,31 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
 
     /** Wire slot the row payload rides under; must match the frontend fields slot. */
     private const string ROW_SLOT = 'field';
+
+    /**
+     * Declares how many rows the first window of the channel fields table carries.
+     *
+     * The table is global — one row per field of every channel — and the channel page narrows
+     * it to its own channel on the client, so the window has to hold every field of every
+     * channel at once. A channel has a handful of them and there are few channels, which is
+     * what makes a window this size the cheap answer rather than the extravagant one.
+     *
+     * @return int Rows the first window carries
+     */
+    public function windowSize(): int
+    {
+        return 500;
+    }
+
+    /**
+     * Declares the order the first window of the channel fields table runs in.
+     *
+     * @return ?TableSortOrderDTO First window ordered by field ascending
+     */
+    public function defaultSort(): ?TableSortOrderDTO
+    {
+        return TableSortOrderDTO::of(new TableSortDTO(HilosCommunicationsChannelFieldsTableRow::field));
+    }
 
     /**
      * Builds a field row mutation from a settings source change.

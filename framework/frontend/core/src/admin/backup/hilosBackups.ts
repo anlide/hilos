@@ -165,7 +165,6 @@ export type HilosBackupShipState = 'none' | 'pending' | 'shipped' | 'failed'
 // project binds its backend to these keys.
 const HILOS_BACKUPS_TABLE = 'hilosBackups'
 const BACKUP_SLOT = 'backup'
-const HILOS_BACKUPS_PAGE_SIZE = 10
 const BACKUP_CREATE_ACTION = 'backup_create'
 const BACKUP_DELETE_ACTION = 'backup_delete'
 const BACKUP_SET_KEEP_ACTION = 'backup_set_keep'
@@ -175,7 +174,6 @@ const BACKUP_CIRCLE_ADD_ACTION = 'backup_circle_add'
 const BACKUP_CIRCLE_REMOVE_ACTION = 'backup_circle_remove'
 const HILOS_BACKUP_CIRCLE_TABLE = 'hilosVerifierCircle'
 const HILOS_BACKUP_CIRCLE_SLOT = 'verifierCircle'
-const HILOS_BACKUP_CIRCLE_PAGE_SIZE = 10
 /** The page's own actions, so an addressed failure notice for one is recognized as ours. */
 const BACKUP_ACTIONS = new Set<string>([
   BACKUP_CREATE_ACTION,
@@ -1407,8 +1405,6 @@ export function createHilosBackupsTable(
         HILOS_BACKUPS_TABLE,
         descriptor,
       ),
-    pageSize: HILOS_BACKUPS_PAGE_SIZE,
-    initialOrder: [{ field: BACKUP_CREATED_AT_FIELD, direction: 'desc' }],
   })
   const teardown: Array<() => void> = []
 
@@ -1434,16 +1430,7 @@ export function createHilosBackupsTable(
           { page: HilosPages.BACKUP, tableKey: HILOS_BACKUPS_TABLE },
           controller,
         ),
-        // Re-request the window whenever the socket (re)connects: the initial
-        // request below can run before the connection is open, and a reconnect
-        // is a fresh exchange that no longer remembers this connection's window.
-        context.connection.on('state', (state) => {
-          if (state === 'connected') {
-            controller.start()
-          }
-        }),
       )
-      controller.start()
     },
     dispose() {
       for (const off of teardown.splice(0)) {
@@ -1486,8 +1473,6 @@ export function createHilosBackupsCircleTable(
         HILOS_BACKUP_CIRCLE_TABLE,
         descriptor,
       ),
-    pageSize: HILOS_BACKUP_CIRCLE_PAGE_SIZE,
-    initialOrder: [{ field: BACKUP_CIRCLE_IDENTIFIER_FIELD, direction: 'asc' }],
   })
   const teardown: Array<() => void> = []
 
@@ -1501,15 +1486,7 @@ export function createHilosBackupsCircleTable(
           { page: HilosPages.BACKUP, tableKey: HILOS_BACKUP_CIRCLE_TABLE },
           controller,
         ),
-        // Re-request the window whenever the socket (re)connects, for the reason the
-        // backup table does: a reconnect is a fresh exchange that remembers no window.
-        context.connection.on('state', (state) => {
-          if (state === 'connected') {
-            controller.start()
-          }
-        }),
       )
-      controller.start()
     },
     dispose() {
       for (const off of teardown.splice(0)) {

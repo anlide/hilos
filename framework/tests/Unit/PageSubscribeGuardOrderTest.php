@@ -27,6 +27,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
@@ -86,6 +87,29 @@ final class PageSubscribeGuardOrderTest extends TestCase
         $this->assertInstanceOf(SubscribeGuardOrderTestPage::class, $page);
         $this->assertSame(0, $page->payloadBuilds);
         $this->assertSubscriptionError(SubscribeGuardOrderTestPage::PAGE, 401, 'unauthorized');
+    }
+
+    public function testAGuardDenialOpensNoWindowAndKeepsNoReportOfOne(): void
+    {
+        Hilos::$browser = new SubscribeGuardOrderTestBrowser(null);
+        $factory = new SubscribeGuardOrderTestPageFactory(new SubscribeGuardOrderTestAgent());
+        $router = new PageSignalRouter($factory, new ActionRouteConfig());
+
+        $router->dispatchPageSubscribe(
+            new WebSocketPageSubscribeSignalDTO(
+                'ak-1',
+                SubscribeGuardOrderTestPage::PAGE,
+                tableWindows: ['settings' => new TableWindowDescriptorDTO(limit: 10)],
+            ),
+            'websocket',
+            SubscribeGuardOrderTestPage::PAGE,
+        );
+
+        // The windows of a page are opened by its answer (HIL-642), and a refused subscription
+        // has no answer: nothing is opened, and what the tab reported does not outlive the
+        // frame it came in — a later re-send of this page must not be built out of it.
+        $this->assertSame([], Hilos::$sr->getTableViewports('ak-1'));
+        $this->assertSame([], Hilos::$sr->takeReportedTableWindows('ak-1'));
     }
 
     public function testAPassingGuardLetsThePageAnswerAsBefore(): void

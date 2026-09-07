@@ -72,6 +72,32 @@ export const tableSectionSchema = z.preprocess(
 )
 
 /**
+ * One table's first window on the wire, as a page subscription answers with it.
+ *
+ * The same rows and the same coordinates a `table_window` reply carries — it is one window
+ * either way — plus the order it ran in, which the reply leaves out because the client asked
+ * for it there and here nobody did. The filter is deliberately absent: on a cold entry it is
+ * empty, and on a reconnect the tab sent it and still holds it, so a second source of truth
+ * about it could only disagree.
+ */
+export const tableWindowSectionSchema = z.looseObject({
+  rows: z.array(tableRowSchema),
+  sort: z.array(
+    z.looseObject({
+      field: z.string(),
+      direction: z.enum(['asc', 'desc']),
+    }),
+  ),
+  limit: z.number().int(),
+  totalCount: z.number().int(),
+  totalExact: z.boolean(),
+  firstAnchor: z.record(z.string(), z.unknown()).nullable(),
+  lastAnchor: z.record(z.string(), z.unknown()).nullable(),
+})
+
+export type TableWindowSectionWire = z.infer<typeof tableWindowSectionSchema>
+
+/**
  * A scope-shaped payload as the backend serializes it. Every section is
  * optional because empty sections are omitted on the wire (PHP would
  * serialize an empty map as a JSON array).
@@ -89,6 +115,9 @@ export const scopePayloadSchema = z.looseObject({
   data: z.record(z.string(), z.unknown()).optional(),
   lists: z.record(z.string(), listSectionSchema).optional(),
   tables: z.record(z.string(), tableSectionSchema).optional(),
+  // The fifth section, and the one the page scope does not store: a window is held by the
+  // table's own controller, and a copy of it in the scope would drift on the first delta.
+  windows: z.record(z.string(), tableWindowSectionSchema).optional(),
 })
 
 export type ScopePayloadWire = z.infer<typeof scopePayloadSchema>

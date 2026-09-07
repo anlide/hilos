@@ -25,8 +25,10 @@ use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceKind;
 use Hilos\Core\Browser\Config\BrowserSourceType;
+use Hilos\Core\Browser\DTO\BrowserTableWindow;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Database\Context\DbContext;
+use Hilos\HilosException;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
@@ -63,6 +65,7 @@ use Hilos\Core\Table\DTO\TableViewportAppendDTO;
 use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableViewportOwnCreateDTO;
+use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\TableConstants;
@@ -315,14 +318,30 @@ abstract class BrowserContext
         }
 
         $pageParams = $params->toArray();
+        $reportedWindows = Hilos::$sr->takeReportedTableWindows($acceptKey);
 
         $tables = [];
+        $windows = [];
         foreach ($this->pageBindings($page) as $pageBinding) {
             $browserKey = $pageBinding->browserKey;
 
-            if ($this->viewportTable($browserKey) !== null) {
-                // Viewport tables deliver their rows through the table_viewport /
-                // table_window cycle, not the subscription snapshot.
+            $viewportTable = $this->viewportTable($browserKey);
+            if ($viewportTable !== null) {
+                // A viewport table answers with a window rather than with the whole set, and
+                // that window now travels in this same frame: the second round trip it used to
+                // cost was the one known exception to "one subscription answers everything the
+                // page renders", and this leaf is the debt that rule named (HIL-641, HIL-642).
+                $window = $this->subscribeTableWindow(
+                    page: $page,
+                    acceptKey: $acceptKey,
+                    tableKey: $browserKey,
+                    table: $viewportTable,
+                    reported: $reportedWindows[$browserKey] ?? null,
+                );
+                if ($window !== null) {
+                    $windows[$browserKey] = $window;
+                }
+
                 continue;
             }
 
@@ -343,7 +362,7 @@ abstract class BrowserContext
             ];
         }
 
-        $payload = $this->pagePayloadFromBrowser($tables);
+        $payload = $this->pagePayloadFromBrowser($tables, $windows);
         if ($payload->isEmpty()) {
             return;
         }
@@ -384,6 +403,7 @@ abstract class BrowserContext
      * @param TableViewportSubscription $viewport Window descriptor; its delivered rows are updated
      * @return bool Whether the window was delivered to the connection
      * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
+     * @throws HilosException When the table's own sources refuse the reads its rows need
      * @throws InvalidArgumentException When the table-window signal cannot be named
      */
     public function sendTableWindow(string $page, string $acceptKey, TableViewportSubscription $viewport): bool
@@ -441,6 +461,61 @@ abstract class BrowserContext
             }
         }
 
+        $window = $this->buildTableWindow($table, $viewport, $page);
+        if ($window === null) {
+            return false;
+        }
+
+        $snapshot = $window->snapshot;
+
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::WORKER),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName(SignalTypeConstants::TABLE_WINDOW),
+            signalData: new WebSocketSignalData(
+                data: new TableWindowSignalData(
+                    page: $page,
+                    tableKey: $viewport->tableKey,
+                    rows: $window->rows,
+                    totalCount: $snapshot->totalCount,
+                    totalExact: $snapshot->totalExact,
+                    limit: $snapshot->limit,
+                    firstAnchor: $snapshot->firstAnchor,
+                    lastAnchor: $snapshot->lastAnchor,
+                ),
+                targetAcceptKey: $acceptKey,
+            ),
+        );
+
+        return true;
+    }
+
+    /**
+     * Runs one window and records what it delivered to the connection that asked for it.
+     *
+     * Both frames that carry a window end here — the page subscription's `windows` section and
+     * the table_window reply — because the work is the same on either road: ask the table for
+     * the window the descriptor names, put each row into its wire shape, and tell the viewport
+     * what this connection was given so a later delta can be judged against it. Two copies of
+     * this would drift apart at the first change to the row shape.
+     *
+     * A table that cannot build its window answers null rather than throwing: a window that
+     * does not arrive is a normal outcome on both roads — the page still ships without that
+     * section, and the viewport reply is refused — and the line in the log is the only place
+     * the refusal is said at all.
+     *
+     * @param ViewportTable $table Table the window is taken from
+     * @param TableViewportSubscription $viewport Window descriptor; its delivered rows are updated
+     * @param string $page Page the table belongs to, named in the failure line
+     * @return ?BrowserTableWindow The built window, or null when the table could not build it
+     * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
+     * @throws HilosException When the table's own sources refuse the reads its rows need
+     */
+    private function buildTableWindow(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        string $page,
+    ): ?BrowserTableWindow {
         try {
             $snapshot = $table->getPage($this->viewportQuery($viewport));
         } catch (Throwable $e) {
@@ -452,7 +527,7 @@ abstract class BrowserContext
                 . "page={$page}, error={$e->getMessage()}",
             );
 
-            return false;
+            return null;
         }
 
         $rows = [];
@@ -475,26 +550,113 @@ abstract class BrowserContext
             $snapshot->lastAnchor,
         );
 
-        Hilos::$sr->queueSignal(
-            signalSource: new SignalSource(SignalSource::WORKER),
-            signalType: new SignalType(SignalTypeConstants::WS_USER),
-            signalName: new SignalName(SignalTypeConstants::TABLE_WINDOW),
-            signalData: new WebSocketSignalData(
-                data: new TableWindowSignalData(
-                    page: $page,
-                    tableKey: $viewport->tableKey,
-                    rows: $rows,
-                    totalCount: $snapshot->totalCount,
-                    totalExact: $snapshot->totalExact,
-                    limit: $snapshot->limit,
-                    firstAnchor: $snapshot->firstAnchor,
-                    lastAnchor: $snapshot->lastAnchor,
-                ),
-                targetAcceptKey: $acceptKey,
-            ),
-        );
+        return new BrowserTableWindow($rows, $snapshot);
+    }
 
-        return true;
+    /**
+     * Opens one viewport table's window as part of answering a page subscription.
+     *
+     * The subscription is where a window is born now: a live change arriving between the
+     * subscription and the first render used to have nowhere to be addressed, because the
+     * viewport only existed once the client had asked for it. The window is recorded on the
+     * registry BEFORE the answer goes out, so that gap is closed rather than narrowed.
+     *
+     * Which window it is, is settled in three steps and the first one that answers wins: the
+     * descriptor this tab reported for the table, then the window this connection is already
+     * holding, then what the table declares for itself. The first is a tab coming back after a
+     * broken socket — it is the only side that still remembers what was on the screen. The
+     * second is a page re-sent to a connection that never went anywhere, where resetting the
+     * reader to the first page would be a window nobody asked for. The third is the cold entry.
+     *
+     * Nothing is thrown out of here: the page answers with the sections it could build, and a
+     * table that could not build its window is left out of the `windows` section entirely,
+     * which is the state the tab reads as "the window has not arrived yet" (HIL-781, HIL-943).
+     *
+     * @param string $page Page the table belongs to
+     * @param string $acceptKey Subscribing WebSocket accept key
+     * @param string $tableKey Table key the window is for
+     * @param ViewportTable $table Table the window is taken from
+     * @param ?TableWindowDescriptorDTO $reported Window this tab reported holding, or null when it reported none
+     * @return ?array<string, mixed> The `windows` section entry for this table, or null when it has none
+     */
+    private function subscribeTableWindow(
+        string $page,
+        string $acceptKey,
+        string $tableKey,
+        ViewportTable $table,
+        ?TableWindowDescriptorDTO $reported,
+    ): ?array {
+        $viewport = $this->subscriptionViewport($acceptKey, $tableKey, $table, $reported);
+        Hilos::$sr?->setTableViewport($acceptKey, $viewport);
+
+        try {
+            $window = $this->buildTableWindow($table, $viewport, $page);
+        } catch (Throwable $e) {
+            // Contained rather than propagated: this runs inside the page's own answer, and a
+            // row that refuses its payload would otherwise cost the subscriber the whole page
+            // instead of one table on it.
+            Logger::error(
+                "Browser window skipped a table whose rows refused their payload: table={$tableKey}, "
+                . "page={$page}, error={$e->getMessage()}",
+            );
+
+            return null;
+        }
+
+        if ($window === null) {
+            return null;
+        }
+
+        return [
+            TableWindowSignalData::rows => $window->rows,
+            TableWindowDescriptorDTO::SORT => $viewport->sort?->toArray() ?? [],
+            TableWindowSignalData::limit => $window->snapshot->limit,
+            TableWindowSignalData::totalCount => $window->snapshot->totalCount,
+            TableWindowSignalData::totalExact => $window->snapshot->totalExact,
+            TableWindowSignalData::firstAnchor => $window->snapshot->firstAnchor?->toArray(),
+            TableWindowSignalData::lastAnchor => $window->snapshot->lastAnchor?->toArray(),
+        ];
+    }
+
+    /**
+     * Settles which window a subscribing connection gets for one table.
+     *
+     * @param string $acceptKey Subscribing WebSocket accept key
+     * @param string $tableKey Table key the window is for
+     * @param ViewportTable $table Table whose own declaration answers for a cold entry
+     * @param ?TableWindowDescriptorDTO $reported Window this tab reported holding, or null when it reported none
+     * @return TableViewportSubscription Viewport the window is built from
+     */
+    private function subscriptionViewport(
+        string $acceptKey,
+        string $tableKey,
+        ViewportTable $table,
+        ?TableWindowDescriptorDTO $reported,
+    ): TableViewportSubscription {
+        if ($reported !== null) {
+            return new TableViewportSubscription(
+                tableKey: $tableKey,
+                filter: $reported->filter,
+                sort: $reported->sort,
+                limit: $reported->limit,
+                anchor: $reported->anchor,
+                anchorDirection: $reported->anchorDirection,
+                pageIndex: $reported->pageIndex,
+            );
+        }
+
+        $held = Hilos::$sr?->getTableViewport($acceptKey, $tableKey);
+        if ($held !== null) {
+            return $held;
+        }
+
+        // The three fields not named here are what HIL-787 already settled and nobody declares:
+        // no filter, no anchor and the edge of the set, which together are the first window.
+        return new TableViewportSubscription(
+            tableKey: $tableKey,
+            sort: $table->defaultSort(),
+            limit: $table->windowSize(),
+        );
     }
 
     /**
@@ -3653,9 +3815,10 @@ abstract class BrowserContext
      * from `sources` to `slots` on the wire.
      *
      * @param array<string, array<string, mixed>> $browserByKey Per-table rows and deletes keyed by table key
+     * @param array<string, array<string, mixed>> $windows First window per viewport-table key, already in wire shape
      * @return PagePayload Page payload split by section
      */
-    private function pagePayloadFromBrowser(array $browserByKey): PagePayload
+    private function pagePayloadFromBrowser(array $browserByKey, array $windows = []): PagePayload
     {
         $lists = [];
         $tables = [];
@@ -3709,7 +3872,7 @@ abstract class BrowserContext
             }
         }
 
-        return new PagePayload(data: $data, lists: $lists, tables: $tables);
+        return new PagePayload(data: $data, lists: $lists, tables: $tables, windows: $windows);
     }
 
     /**

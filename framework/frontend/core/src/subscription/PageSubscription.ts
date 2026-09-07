@@ -15,11 +15,15 @@ import {
 import {
   FIELD_PAGE,
   FIELD_PARAMS,
+  FIELD_TABLE_WINDOWS,
   FIELD_TYPE,
   SIGNAL_TYPE_PAGE_SUBSCRIBE,
   SIGNAL_TYPE_PAGE_UNSUBSCRIBE,
 } from '../protocol/constants.js'
-import { type ConnectionState } from '../connection/HilosConnection.js'
+import {
+  type ConnectionState,
+  type TableViewportDescriptor,
+} from '../connection/HilosConnection.js'
 import { type PageSubscriptionError } from '../protocol/pageError.js'
 import { type Scope, type ScopeManager } from '../state/ScopeManager.js'
 import {
@@ -41,6 +45,7 @@ export interface PageSubscriptionConnection {
   send(text: string): boolean
   on(event: 'state', listener: (state: ConnectionState) => void): () => void
   forgetPageFrames(): void
+  tableWindowDescriptors(): Record<string, TableViewportDescriptor>
 }
 
 export class PageSubscription {
@@ -383,12 +388,22 @@ export class PageSubscription {
     if (!this.current || !this.sessionAnswered) {
       return
     }
-    this.connection.send(
-      JSON.stringify({
-        [FIELD_TYPE]: SIGNAL_TYPE_PAGE_SUBSCRIBE,
-        [FIELD_PAGE]: this.current.pageKey,
-        [FIELD_PARAMS]: this.current.params,
-      }),
-    )
+    const frame: Record<string, unknown> = {
+      [FIELD_TYPE]: SIGNAL_TYPE_PAGE_SUBSCRIBE,
+      [FIELD_PAGE]: this.current.pageKey,
+      [FIELD_PARAMS]: this.current.params,
+    }
+    // The windows this tab is holding, asked of their controllers right now. On a reconnect
+    // those are the windows of the page on the screen, and reporting them is what brings the
+    // reader back to their place; on a navigation the new page's tables have not mounted yet,
+    // and whatever the page being left still has bound is reported for tables the page being
+    // entered does not declare — the server reads the map by its own bindings and passes over
+    // the rest. One rule, two scenes, and no flag saying which is which. An empty map is left
+    // out entirely, so an absent key and no windows say the same thing.
+    const windows = this.connection.tableWindowDescriptors()
+    if (Object.keys(windows).length > 0) {
+      frame[FIELD_TABLE_WINDOWS] = windows
+    }
+    this.connection.send(JSON.stringify(frame))
   }
 }

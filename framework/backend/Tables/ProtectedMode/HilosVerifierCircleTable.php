@@ -12,6 +12,8 @@ use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -71,6 +73,26 @@ final class HilosVerifierCircleTable extends TableDefinition implements SelfSnap
         BrowserSourceKey::TYPE => BrowserSourceType::DB,
         BrowserSourceKey::KEY => HilosDbContext::verifierCircle,
     ];
+
+    /**
+     * Declares how many rows the first window of the verifier circle carries.
+     *
+     * @return int Rows the first window carries
+     */
+    public function windowSize(): int
+    {
+        return 10;
+    }
+
+    /**
+     * Declares the order the first window of the verifier circle runs in.
+     *
+     * @return ?TableSortOrderDTO First window ordered by identifier ascending
+     */
+    public function defaultSort(): ?TableSortOrderDTO
+    {
+        return TableSortOrderDTO::of(new TableSortDTO(HilosVerifierCircleTableRow::identifier));
+    }
 
     /**
      * Builds a circle row mutation from a circle DB source change.

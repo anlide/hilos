@@ -63,6 +63,33 @@ final class PageResponseSignalDataTest extends TestCase
         $this->assertSame(['count' => 1], $restored->payload->data);
     }
 
+    public function testEverySectionSurvivesTheHopThatRebuildsTheFrame(): void
+    {
+        $sections = [
+            PagePayload::entities => ['author' => ['id' => 3]],
+            PagePayload::data => ['count' => 1],
+            PagePayload::lists => ['feed' => [PagePayload::items => []]],
+            PagePayload::tables => ['bots' => [PagePayload::rows => []]],
+            PagePayload::windows => ['settings' => [PagePayload::rows => []]],
+        ];
+
+        $restored = PageResponseSignalData::fromArray(
+            new PageResponseSignalData('admin_users', new PagePayload(
+                entities: $sections[PagePayload::entities],
+                data: $sections[PagePayload::data],
+                lists: $sections[PagePayload::lists],
+                tables: $sections[PagePayload::tables],
+                windows: $sections[PagePayload::windows],
+            ))->toArray(),
+        );
+
+        // This is the door the whole answer walks through on the worker-to-master hop, so a
+        // section this reader does not name is a section the client never sees. The windows
+        // section was lost exactly that way, and a page whose only section it was arrived as
+        // a bare page key with no payload at all.
+        $this->assertSame($sections, $restored->payload->toArray());
+    }
+
     public function testFromArrayDefaultsMissingSectionsToEmpty(): void
     {
         $restored = PageResponseSignalData::fromArray([PageResponseSignalData::page => 'main']);

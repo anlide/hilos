@@ -301,10 +301,11 @@ the leaf that wrote this page.
    behind it. That is why HIL-781 could fail with nobody to ask. The figure,
    its base class and its lifecycle are the epic's first leaves.
 
-What is **not** a precondition: HIL-642, which decides *when* the backend
-creates a window's subscription, not who owns it. If it puts the window's state
-into the connection process, the epic moves it into the holder afterwards; that
-is the cost of a move, not a wrong answer to the question this page answers.
+What is **not** a precondition: HIL-642, which decided *when* the backend
+creates a window's subscription, not who owns it. It landed with the window
+opened on the page subscription and its state in the connection process, so the
+epic moves that state into the holder afterwards; that is the cost of a move,
+not a wrong answer to the question this page answers.
 
 ## What This Approach Does Not Decide
 

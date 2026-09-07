@@ -132,8 +132,11 @@ export interface TableViewportRow<R> {
 /**
  * The sink the subscription wiring feeds a table's window snapshot and live
  * changes into — implemented by {@link TableViewportController} and held untyped
- * by the subscription wiring, since no ingest method depends on the row type `R`.
+ * by the subscription wiring, since nothing on it depends on the row type `R`.
  * A pending row delta gates on apply(); a count update and a tail append are live.
+ * It also answers the one question asked of a table rather than told to it — which
+ * window it is holding — because the wiring is what registers the table with the
+ * connection that reports its window on the next page subscribe.
  */
 export interface TableWindowSink {
   ingestWindow(
@@ -142,8 +145,19 @@ export interface TableWindowSink {
     totalExact: boolean,
     firstAnchor: TableAnchor | null,
     lastAnchor: TableAnchor | null,
+    limit: number,
+  ): void
+  ingestSubscriptionWindow(
+    rows: readonly TableRow[],
+    totalCount: number,
+    totalExact: boolean,
+    firstAnchor: TableAnchor | null,
+    lastAnchor: TableAnchor | null,
+    limit: number,
+    sort: TableSortOrder | undefined,
   ): void
   ingestDelta(delta: TableViewportDelta): void
+  descriptor(): TableViewportDescriptor | null
   ingestCount(totalCount: number, totalExact: boolean): void
   ingestAppend(row: TableRow, totalCount: number, totalExact: boolean): void
   ingestOwnCreate(
@@ -168,12 +182,8 @@ export interface TableViewportControllerOptions<R> {
    * server answers with a `table_window` the controller ingests.
    */
   sendViewport: (descriptor: TableViewportDescriptor) => void
-  /** Window size (rows per page); the descriptor's `limit`. Clamped to at least 1. */
-  pageSize: number
   /** Initial filter map; empty by default. */
   initialFilter?: Record<string, unknown>
-  /** Initial order; none by default (the backend's arrival order). */
-  initialOrder?: TableSortOrder
   /**
    * Orders of more than one column this table declares, in the sequence the
    * "Order" menu offers them. The backend holds a composite order against the
@@ -241,7 +251,28 @@ export class TableViewportController<R> implements TableWindowSink {
 
   private readonly searchSignal: ReadonlySignal<string>
 
-  private readonly pageSize: number
+  /**
+   * Window size, as the last window that arrived said it was.
+   *
+   * The size is declared by the table on the backend and travels on every window, so the
+   * controller reads it rather than holding an opinion of its own: two declarations of one
+   * quantity is how a footer comes to count rows a window never had. It is a signal because
+   * the page count and the footer are computed from it.
+   */
+  private readonly pageSizeSignal = createSignal(1)
+
+  /**
+   * The order the table opened in, as the first window that arrived said it was.
+   *
+   * "Home" for the sort cycle and for a reset — which used to be a client-side option and is
+   * now whatever the backend declared. Read off the first window rather than off every one:
+   * later windows carry the order the reader chose, and coming home to that would leave no
+   * way home at all.
+   */
+  private openingOrder: TableSortOrder | undefined = undefined
+
+  /** Whether {@link openingOrder} has been read off a window yet. */
+  private openingOrderKnown = false
 
   /** Pending content updates by row key — applied in place on apply(). */
   private readonly pendingUpdates = new Map<string, TableRow>()
@@ -291,13 +322,10 @@ export class TableViewportController<R> implements TableWindowSink {
   private readonly frameState: HilosTableFrameState
 
   constructor(private readonly options: TableViewportControllerOptions<R>) {
-    this.pageSize = Math.max(1, Math.trunc(options.pageSize))
     this.filterSignal = createSignal<Record<string, unknown>>({
       ...(options.initialFilter ?? {}),
     })
-    this.orderSignal = createSignal<TableSortOrder | undefined>(
-      options.initialOrder,
-    )
+    this.orderSignal = createSignal<TableSortOrder | undefined>(undefined)
     this.searchSignal = computedSignal(() => {
       const value = this.filterSignal.get()[SEARCH_FILTER_KEY]
 
@@ -322,14 +350,17 @@ export class TableViewportController<R> implements TableWindowSink {
     this.totalExact = this.totalExactSignal
     this.pageCount = computedSignal(() =>
       this.totalExactSignal.get()
-        ? Math.max(1, Math.ceil(this.totalCountSignal.get() / this.pageSize))
+        ? Math.max(
+            1,
+            Math.ceil(this.totalCountSignal.get() / this.pageSizeSignal.get()),
+          )
         : null,
     )
     this.hasNextPage = computedSignal(() => {
       const pageCount = this.pageCount.get()
 
       return pageCount === null
-        ? this.windowSignal.get().length >= this.pageSize
+        ? this.windowSignal.get().length >= this.pageSizeSignal.get()
         : this.pageSignal.get() < pageCount - 1
     })
     this.pendingCount = this.pendingCountSignal
@@ -367,7 +398,7 @@ export class TableViewportController<R> implements TableWindowSink {
       footer: computedSignal<HilosTableFooter>(() => {
         const shown = this.windowSignal.get().length
         const page = this.pageSignal.get()
-        const firstRow = shown === 0 ? 0 : page * this.pageSize + 1
+        const firstRow = shown === 0 ? 0 : page * this.pageSizeSignal.get() + 1
 
         return {
           firstRow,
@@ -441,10 +472,14 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
-   * Request the initial window — send the current descriptor so the backend
-   * replies the first `table_window`. Call once the table mounts.
+   * Ask the backend for this table's window again, unchanged.
+   *
+   * Not how a table opens — the first window arrives with the page's own answer since
+   * HIL-642 — but how a page refreshes one that nothing else would refresh: an action whose
+   * result the table cannot learn about live, such as a retry on the delivery journal, which
+   * has no deltas of its own. A table on a live source never needs this.
    */
-  start(): void {
+  refresh(): void {
     this.send()
   }
 
@@ -546,14 +581,14 @@ export class TableViewportController<R> implements TableWindowSink {
     const cycle: readonly (TableSortOrder | undefined)[] = [
       [{ field, direction: 'asc' }],
       [{ field, direction: 'desc' }],
-      this.options.initialOrder,
+      this.openingOrder,
     ]
     const shown = cycle.findIndex((state) => isSameOrder(state, current))
     const next = cycle.findIndex(
       (state, position) => position > shown && !isSameOrder(state, current),
     )
     const state = next < 0 ? cycle[0] : cycle[next]
-    if (isSameOrder(state, this.options.initialOrder)) {
+    if (isSameOrder(state, this.openingOrder)) {
       // The cycle came home, and coming home is one operation however it was
       // asked for — through the last click of the cycle here, or through the
       // reset a page offers on its own.
@@ -589,7 +624,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * here; a page is free to call it from a reset control of its own.
    */
   resetOrder(): void {
-    this.orderSignal.set(this.options.initialOrder)
+    this.orderSignal.set(this.openingOrder)
     this.resetAddress()
     this.changeWindow()
   }
@@ -672,6 +707,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param totalExact Whether that total is the size of the set rather than the ceiling it stopped at.
    * @param firstAnchor Place the first row sits at, or null when the window is empty.
    * @param lastAnchor Place the last row sits at, or null when the window is empty.
+   * @param limit How many rows the window carries — the size the backend served it at.
    */
   ingestWindow(
     rows: readonly TableRow[],
@@ -679,15 +715,60 @@ export class TableViewportController<R> implements TableWindowSink {
     totalExact: boolean,
     firstAnchor: TableAnchor | null,
     lastAnchor: TableAnchor | null,
+    limit: number,
   ): void {
     this.windowSignal.set(rows.slice())
     this.totalCountSignal.set(Math.max(0, totalCount))
     this.totalExactSignal.set(totalExact)
     this.firstAnchor = firstAnchor
     this.lastAnchor = lastAnchor
+    this.pageSizeSignal.set(Math.max(1, Math.trunc(limit)))
     this.placeholderKeysSignal.set(new Set())
     this.loadedSignal.set(true)
     this.clearPending()
+  }
+
+  /**
+   * Ingest the window that arrived with the page's own subscription answer (HIL-642).
+   *
+   * The same window as any other, and one thing besides: it says which order it ran in. This
+   * is the one frame that has to — a reply to a request echoes back an order the reader
+   * chose, while a cold entry runs in the order the table declares on the backend, and
+   * nothing on this side would otherwise know what that is. The first one to arrive also
+   * settles where a reset of the order goes home to.
+   *
+   * @param rows The window's rows, in display order.
+   * @param totalCount Total rows matching the filter.
+   * @param totalExact Whether that total is the size of the set rather than the ceiling it stopped at.
+   * @param firstAnchor Place the first row sits at, or null when the window is empty.
+   * @param lastAnchor Place the last row sits at, or null when the window is empty.
+   * @param limit How many rows the window carries — the size the backend served it at.
+   * @param sort The order the window ran in, or undefined when it ran in none.
+   */
+  ingestSubscriptionWindow(
+    rows: readonly TableRow[],
+    totalCount: number,
+    totalExact: boolean,
+    firstAnchor: TableAnchor | null,
+    lastAnchor: TableAnchor | null,
+    limit: number,
+    sort: TableSortOrder | undefined,
+  ): void {
+    this.orderSignal.set(sort)
+    if (!this.openingOrderKnown) {
+      // Where the sort cycle and a reset come home to: the order the table opened in, which
+      // is the backend's declaration and never a later choice of the reader's.
+      this.openingOrder = sort
+      this.openingOrderKnown = true
+    }
+    this.ingestWindow(
+      rows,
+      totalCount,
+      totalExact,
+      firstAnchor,
+      lastAnchor,
+      limit,
+    )
   }
 
   /**
@@ -766,7 +847,7 @@ export class TableViewportController<R> implements TableWindowSink {
       0,
       row,
     )
-    const evicted = rows.splice(this.pageSize)
+    const evicted = rows.splice(this.pageSizeSignal.get())
     this.windowSignal.set(rows)
     this.totalCountSignal.set(Math.max(0, totalCount))
     this.totalExactSignal.set(totalExact)
@@ -1015,8 +1096,23 @@ export class TableViewportController<R> implements TableWindowSink {
     this.pendingKindSignal.set(pendingKinds)
   }
 
+  /**
+   * The window this table is holding, or null while it is holding none.
+   *
+   * Asked when a page subscribes: a tab coming back after a broken socket is the only side
+   * that still remembers what was on the screen, so it reports its windows in that frame and
+   * the backend serves them back. A controller that has never received a window has nothing
+   * to report — it does not know its own size or order until one arrives — and says so; that
+   * is the cold entry, and the table's own declaration answers for it.
+   *
+   * @return The current descriptor, or null while no window has arrived.
+   */
+  descriptor(): TableViewportDescriptor | null {
+    return this.loadedSignal.get() ? this.currentDescriptor() : null
+  }
+
   /** The viewport descriptor for the current filter, order, size and address. */
-  private descriptor(): TableViewportDescriptor {
+  private currentDescriptor(): TableViewportDescriptor {
     const order = this.orderSignal.get()
 
     return {
@@ -1028,7 +1124,7 @@ export class TableViewportController<R> implements TableWindowSink {
               field: component.field,
               direction: component.direction,
             })),
-      limit: this.pageSize,
+      limit: this.pageSizeSignal.get(),
       anchor: this.anchor,
       anchorDirection: this.anchorDirection,
       pageIndex: this.pageIndex,
@@ -1047,6 +1143,6 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   private send(): void {
-    this.options.sendViewport(this.descriptor())
+    this.options.sendViewport(this.currentDescriptor())
   }
 }

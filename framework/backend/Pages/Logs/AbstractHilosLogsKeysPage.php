@@ -20,6 +20,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Log\ClusterLogIndex;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\LogKeySummary;
@@ -102,6 +103,7 @@ abstract class AbstractHilosLogsKeysPage extends AbstractHilosPage
      * @param PageAgentInterface $agent Hilos logs agent, for {@see PageAgentInterface::getAgentSignalSource()}
      * @throws InvalidArgumentException When the header or the table-window signal cannot be named
      * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
+     * @throws HilosException When a table's own sources refuse the reads its window rows need
      */
     public static function onAgentTick(PageAgentInterface $agent): void
     {

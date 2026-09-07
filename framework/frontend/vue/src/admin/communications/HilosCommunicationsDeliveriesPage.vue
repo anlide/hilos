@@ -140,7 +140,7 @@ async function retry(row: HilosDeliveryRow): Promise<void> {
   }
   retryPendingId.value = row.rowKey
   if (await runRetry(sendDeliveryRetry(Number(row.rowKey)))) {
-    deliveriesTable.start()
+    deliveriesTable.refresh()
   }
   retryPendingId.value = null
 }

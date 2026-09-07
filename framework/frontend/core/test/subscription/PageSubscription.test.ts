@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { PageSubscription } from '../../src/subscription/PageSubscription.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { type EntityRef } from '../../src/state/EntityStore.js'
-import { type ConnectionState } from '../../src/connection/HilosConnection.js'
+import {
+  type ConnectionState,
+  type TableViewportDescriptor,
+} from '../../src/connection/HilosConnection.js'
 
 /**
  * A connection double recording sent frames, replaying state changes, and
@@ -15,6 +18,8 @@ function fakeConnection(initialState: ConnectionState = 'connected') {
   return {
     state: initialState,
     sent,
+    /** The windows this connection's tables are holding, as the subscribe frame reports them. */
+    windows: {} as Record<string, TableViewportDescriptor>,
     forgotPageFrames: 0,
     forgetPageFrames(): void {
       this.forgotPageFrames += 1
@@ -38,6 +43,9 @@ function fakeConnection(initialState: ConnectionState = 'connected') {
 
       return () => {}
     },
+    tableWindowDescriptors(): Record<string, TableViewportDescriptor> {
+      return this.windows
+    },
   }
 }
 
@@ -55,6 +63,41 @@ describe('PageSubscription', () => {
     ])
     expect(pages.pageKey()).toBe('main')
     expect(scopes.page()?.key).toBe('main')
+  })
+
+  it('reports the windows its tables hold, and no key at all when they hold none', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.releaseOnSession()
+
+    pages.subscribe('main')
+    expect(connection.sent[0]).toEqual({
+      type: 'page_subscribe',
+      page: 'main',
+      params: {},
+    })
+
+    connection.windows = {
+      settings: {
+        filter: {},
+        sort: [{ field: 'key', direction: 'asc' }],
+        limit: 25,
+        anchor: null,
+        anchorDirection: 'after',
+        pageIndex: 2,
+      },
+    }
+    pages.subscribe('other')
+
+    // What separates a navigation from a reconnect without a flag saying which: on the first
+    // the new page's tables have not mounted, on the second they are holding their windows,
+    // and the server serves back whatever the frame reports (HIL-642).
+    expect(connection.sent[1]).toEqual({
+      type: 'page_subscribe',
+      page: 'other',
+      params: {},
+      tableWindows: connection.windows,
+    })
   })
 
   it('subscribing while disconnected sends when the new socket answers', () => {

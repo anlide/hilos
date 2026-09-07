@@ -21,6 +21,7 @@ import {
   SIGNAL_TYPE_ACTION,
   SIGNAL_TYPE_GROUP_SUBSCRIBE,
   SIGNAL_TYPE_GROUP_UNSUBSCRIBE,
+  SIGNAL_TYPE_PAGE_RESPONSE,
   SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
   SIGNAL_TYPE_TABLE_VIEWPORT,
   SESSION_ROTATE_COOKIE_SUFFIX,
@@ -110,6 +111,18 @@ export interface TableViewportDescriptor {
   readonly anchor: TableAnchor | null
   readonly anchorDirection: TableAnchorDirection
   readonly pageIndex: number | null
+}
+
+/**
+ * Something holding a table window that can say what window it is holding.
+ *
+ * Implemented by the table's own controller and asked at the moment a page subscribe goes
+ * out, so what the frame reports is the window as it is then rather than as it was when the
+ * table mounted.
+ */
+export interface TableWindowDescriptorSource {
+  /** @return The window this table is holding, or null while it is holding none. */
+  descriptor(): TableViewportDescriptor | null
 }
 
 /**
@@ -258,8 +271,41 @@ const FIRST_FRAME_HOLD_TIMEOUT_MS = 1500
  * replayed delta would double what was already delivered. The counter-example
  * is `'logs_lines_appended'` of the log viewer, which appends to what the view
  * already holds and therefore has no right to this name.
+ *
+ * The framework's own `page_response` is buffered beside them under one condition,
+ * and the condition is what keeps the rule above true of it. That name carries two
+ * different frames: the answer to a subscription, which is whole state, and a live
+ * flush, which is a delta of changed rows and removed keys. Only the first of them
+ * builds the windows of the page's tables, so a `windows` section is exactly the mark
+ * of the whole-state one — and buffering by that mark keeps a delta out of the buffer
+ * while keeping the answer in it.
+ *
+ * It has to be buffered at all since HIL-642, because the first window of every table
+ * rides in that answer and a table's binder registers when its view mounts — which is
+ * after the answer that carries its rows has already arrived.
  */
 const PAGE_FRAME_PREFIX = 'subscription_page_'
+
+/**
+ * Whether a `page_response` is the answer that opened this page's table windows.
+ *
+ * The one frame of that name a late listener has to be given, and the one that is whole
+ * state rather than a delta. The two are the same frame for a reason and not by luck: the
+ * windows are built where the page's whole answer is assembled, and a live flush has none
+ * to carry.
+ *
+ * @param data The frame's payload as the parse boundary left it.
+ * @return Whether the frame carries a windows section.
+ */
+function opensTableWindows(data: unknown): boolean {
+  const payload = (data as { payload?: { windows?: unknown } } | null)?.payload
+
+  return (
+    typeof payload?.windows === 'object' &&
+    payload.windows !== null &&
+    Object.keys(payload.windows).length > 0
+  )
+}
 
 /**
  * One Hilos WebSocket connection.
@@ -298,6 +344,23 @@ export class HilosConnection {
    * yet, and only the socket knows that.
    */
   private readonly awaitedReplies = new Set<string>()
+
+  /**
+   * The windows this connection's tables are holding right now, by table key.
+   *
+   * Kept here because a window belongs to a connection: the backend forgets one when the
+   * socket dies, and this is the side that still remembers. The page subscription asks the
+   * map when it builds its frame, so a re-subscribe after a reconnect comes back to the
+   * window that was on the screen instead of to the first page of the set (HIL-642).
+   *
+   * A source rather than a stored descriptor: a window changes on every paging step, and a
+   * copy taken at bind time would be the one thing on this side that is never current. The
+   * map holds who to ask, and asks at the moment the frame goes out.
+   */
+  private readonly tableWindowSources = new Map<
+    string,
+    TableWindowDescriptorSource
+  >()
   /** A rotation held back until the wire is quiet, and the timer that stops holding it. */
   private heldRotation: SessionRotation | null = null
   private heldRotationTimer: ReturnType<typeof setTimeout> | null = null
@@ -670,6 +733,52 @@ export class HilosConnection {
     return this.send(JSON.stringify(frame))
   }
 
+  /**
+   * Record that one table is holding a window on this connection, so a re-subscribe reports it.
+   *
+   * A second registration under the same key replaces the first: one table of one page has
+   * one window, and a view remounting is that same table asking again.
+   *
+   * @param tableKey The table key the window belongs to.
+   * @param source The controller to ask for the window at the moment a frame goes out.
+   */
+  registerTableWindow(
+    tableKey: string,
+    source: TableWindowDescriptorSource,
+  ): void {
+    this.tableWindowSources.set(tableKey, source)
+  }
+
+  /**
+   * Drop one table's window from the report — its view has unmounted and holds nothing.
+   *
+   * @param tableKey The table key to drop.
+   */
+  unregisterTableWindow(tableKey: string): void {
+    this.tableWindowSources.delete(tableKey)
+  }
+
+  /**
+   * The windows this connection's tables are holding, asked of each of them right now.
+   *
+   * A table that has never received a window reports none and is left out: it does not know
+   * its own size or order yet, and the honest answer for it is the cold entry, where the
+   * table's own backend declaration says what its first window is.
+   *
+   * @return One descriptor per table currently holding a window, by table key.
+   */
+  tableWindowDescriptors(): Record<string, TableViewportDescriptor> {
+    const descriptors: Record<string, TableViewportDescriptor> = {}
+    for (const [tableKey, source] of this.tableWindowSources) {
+      const descriptor = source.descriptor()
+      if (descriptor !== null) {
+        descriptors[tableKey] = descriptor
+      }
+    }
+
+    return descriptors
+  }
+
   private openSocket(): void {
     const generation = ++this.generation
     const socket = this.webSocketFactory(this.socketUrl())
@@ -784,6 +893,14 @@ export class HilosConnection {
    * @param signal The project signal just parsed off the wire.
    */
   private rememberPageFrame(signal: ProjectSignal): void {
+    if (signal.type === SIGNAL_TYPE_PAGE_RESPONSE) {
+      if (opensTableWindows(signal.data)) {
+        this.pageFrames.set(signal.type, signal)
+      }
+
+      return
+    }
+
     if (
       signal.type.startsWith(PAGE_FRAME_PREFIX) &&
       signal.type !== SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR

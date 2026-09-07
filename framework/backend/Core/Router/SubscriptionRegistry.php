@@ -51,8 +51,14 @@ final class SubscriptionRegistry
         }
 
         $this->pages[$acceptKey] = new PageSubscription($page, $params);
-        // A (re)subscribe reloads the page, so its table viewports no longer apply.
-        unset($this->tableViewports[$acceptKey]);
+        // The viewports are NOT dropped here, and the moment matters: this runs after the
+        // subscription has been answered, and the answer is now where a page's windows are
+        // opened (HIL-642). Dropping them here would throw away the windows the frame just
+        // delivered, leaving the tables with rows on the screen and no address for a live
+        // change. A page that is left drops its windows where it is left — unsubscribeFromPage()
+        // below and unsubscribeFromAll() — which covers every way one page replaces another;
+        // what remains is a connection re-subscribing the page it is already on, where the
+        // answer overwrites each of its windows with the one it just built.
         unset($this->pageDeliveryFailures[$acceptKey]);
     }
 

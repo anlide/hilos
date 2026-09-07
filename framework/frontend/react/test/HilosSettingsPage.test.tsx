@@ -65,22 +65,39 @@ function seededContext(rows: SettingSlot[]): HilosSettingsContext {
   // A connection double that answers each viewport request with a window built
   // from the seeded rows — the server-windowed table's data path in one hop.
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
+  // The window this table would be served, by whichever road it arrives on: the page's
+  // own answer at bind time, or a reply to a window the reader changed.
+  const serveWindow = (
+    page = 'hilos_settings',
+    tableKey = 'settings',
+  ): void => {
+    const data = {
+      page,
+      tableKey,
+      rows: rows.map((settings) => ({
+        rowKey: settings.key,
+        slots: { settings },
+      })),
+      totalCount: rows.length,
+      offset: 0,
+      limit: 10,
+    }
+    for (const listener of windowListeners) {
+      listener({ data })
+    }
+  }
+
   const connection = {
+    // The first window arrives with the page's own answer now (HIL-642), and binding is
+    // when that answer would have landed — so this double serves it there rather than in
+    // reply to a request the table no longer makes on mount.
+    registerTableWindow(): void {
+      serveWindow()
+    },
+    unregisterTableWindow(): void {},
+    tableWindowDescriptors: () => ({}),
     sendTableViewport(page: string, tableKey: string): boolean {
-      const data = {
-        page,
-        tableKey,
-        rows: rows.map((settings) => ({
-          rowKey: settings.key,
-          slots: { settings },
-        })),
-        totalCount: rows.length,
-        offset: 0,
-        limit: 10,
-      }
-      for (const listener of windowListeners) {
-        listener({ data })
-      }
+      serveWindow(page, tableKey)
 
       return true
     },

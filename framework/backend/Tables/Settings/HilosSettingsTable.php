@@ -10,6 +10,8 @@ use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -72,6 +74,26 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
         BrowserSourceKey::TYPE => BrowserSourceType::DB,
         BrowserSourceKey::KEY => HilosDbContext::settings,
     ];
+
+    /**
+     * Declares how many rows the first window of the settings table carries.
+     *
+     * @return int Rows the first window carries
+     */
+    public function windowSize(): int
+    {
+        return 10;
+    }
+
+    /**
+     * Declares the order the first window of the settings table runs in.
+     *
+     * @return ?TableSortOrderDTO First window ordered by key ascending
+     */
+    public function defaultSort(): ?TableSortOrderDTO
+    {
+        return TableSortOrderDTO::of(new TableSortDTO(HilosSettingTableRow::key));
+    }
 
     /**
      * Builds a settings table row mutation from a settings DB source change.

@@ -40,7 +40,12 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for BrowserContext::sendTableWindow (the self-snapshot window builder).
+ * Unit tests for BrowserContext::sendTableWindow, the viewport-request road to a window.
+ *
+ * The build itself is shared with the page subscription's own road since HIL-642, so what these
+ * pin is this road's share of it: the guards it re-checks, the page it re-sends when a delivery
+ * failure clears, and the table_window frame it answers with. The other road is pinned by
+ * {@see BrowserContextSubscribeWindowTest}.
  */
 final class BrowserContextTableWindowTest extends TestCase
 {

@@ -21,7 +21,6 @@ function makeController(): {
   const controller = new TableViewportController<Row>({
     resolve: (raw) => ({ name: String(raw.slots.name) }),
     sendViewport: (descriptor) => sent.push(descriptor),
-    pageSize: 10,
   })
 
   return { controller, sent }
@@ -51,6 +50,7 @@ describe('HilosViewportTable', () => {
       true,
       null,
       null,
+      10,
     )
     const { container } = renderTable(controller)
 
@@ -81,6 +81,7 @@ describe('HilosViewportTable', () => {
       true,
       null,
       null,
+      10,
     )
     controller.ingestDelta({
       kind: 'row_updated',
@@ -108,6 +109,7 @@ describe('HilosViewportTable', () => {
       true,
       null,
       null,
+      10,
     )
     controller.ingestDelta({
       kind: 'row_removed',
@@ -131,6 +133,7 @@ describe('HilosViewportTable', () => {
       true,
       null,
       null,
+      10,
     )
     controller.ingestCount(5, true)
     const { container } = renderTable(controller)
@@ -148,6 +151,7 @@ describe('HilosViewportTable', () => {
       true,
       null,
       null,
+      10,
     )
     const { container } = render(
       <HilosViewportTable

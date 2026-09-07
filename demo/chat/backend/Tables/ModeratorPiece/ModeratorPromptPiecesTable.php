@@ -16,6 +16,8 @@ use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -50,6 +52,26 @@ final class ModeratorPromptPiecesTable extends TableDefinition implements Viewpo
             ],
         ],
     ];
+
+    /**
+     * Declares how many rows the first window of the moderator prompt pieces table carries.
+     *
+     * @return int Rows the first window carries
+     */
+    public function windowSize(): int
+    {
+        return 10;
+    }
+
+    /**
+     * Declares the order the first window of the moderator prompt pieces table runs in.
+     *
+     * @return ?TableSortOrderDTO First window ordered by id ascending
+     */
+    public function defaultSort(): ?TableSortOrderDTO
+    {
+        return TableSortOrderDTO::of(new TableSortDTO(ModeratorPromptPieceTableRow::id));
+    }
 
     /**
      * Builds a moderator prompt piece row mutation from a source change.

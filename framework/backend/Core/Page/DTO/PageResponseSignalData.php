@@ -68,6 +68,12 @@ final class PageResponseSignalData extends BaseDTO implements SignalDataInterfac
      * arrived as something other than a map is a broken frame, and is no longer
      * quietly read as an empty one.
      *
+     * EVERY section of the payload is named here, and the list is the frame's real contract:
+     * this is not a reader of convenience but the door the whole answer walks through on the
+     * worker-to-master hop, so a section missing from it is a section the client never sees.
+     * A page whose only section is the one left out loses its payload entirely and arrives as
+     * a bare page key — which is how the windows section was lost on its first outing.
+     *
      * @param array<string, mixed> $data Source data in the `{page, payload}` wire form
      * @return static Restored DTO instance
      * @throws InvalidFormatException When the page key is missing, or the payload or a section is not a map
@@ -83,6 +89,7 @@ final class PageResponseSignalData extends BaseDTO implements SignalDataInterfac
                 data: self::optionalArray($payload, PagePayload::data) ?? [],
                 lists: self::optionalArray($payload, PagePayload::lists) ?? [],
                 tables: self::optionalArray($payload, PagePayload::tables) ?? [],
+                windows: self::optionalArray($payload, PagePayload::windows) ?? [],
             ),
         );
     }

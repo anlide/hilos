@@ -21,8 +21,6 @@ import { Users } from '../../types'
 // entity-ref slot (ChatDbContext::users, resolved through the Users collection).
 const USERS_TABLE = 'adminUsers'
 const USER_SLOT = 'users'
-const USERS_PAGE_SIZE = 10
-
 /**
  * The server-windowed controller for the admin users table: search, sort, and
  * paging change the viewport descriptor sent over the connection, and the backend
@@ -34,13 +32,11 @@ export const adminUsersTable = new TableViewportController<HilosUserRow>({
   resolve: (row) => resolveHilosUserRow(row, Users),
   sendViewport: (descriptor) =>
     connection.sendTableViewport(PAGE_ADMIN_USERS, USERS_TABLE, descriptor),
-  pageSize: USERS_PAGE_SIZE,
-  initialOrder: [{ field: 'id', direction: 'asc' }],
 })
 
 const teardown: Array<() => void> = []
 
-/** Bind the table to the connection and request the first window — call on mount. */
+/** Bind the table to the connection — call on mount. Its first window arrives with the page. */
 export function startAdminUsersTable(): void {
   teardown.push(
     bindTableViewport(
@@ -52,16 +48,7 @@ export function startAdminUsersTable(): void {
       // the row resolves through Users.
       { entityTypes: { [USER_SLOT]: Users.type } },
     ),
-    // Re-request the window whenever the socket (re)connects: the initial request
-    // below can run before the connection is open, and a reconnect is a fresh
-    // exchange that no longer remembers this connection's window.
-    connection.on('state', (state) => {
-      if (state === 'connected') {
-        adminUsersTable.start()
-      }
-    }),
   )
-  adminUsersTable.start()
 }
 
 /** Unbind from the connection — call on unmount. */

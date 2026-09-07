@@ -258,7 +258,7 @@ export class HilosCommunicationsDeliveriesPage {
     if (
       await this.retry.run(this.actions().sendDeliveryRetry(Number(row.rowKey)))
     ) {
-      this.deliveries().controller.start()
+      this.deliveries().controller.refresh()
     }
     this.retryPendingId.set(null)
   }

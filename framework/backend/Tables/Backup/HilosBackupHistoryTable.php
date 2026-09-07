@@ -15,6 +15,8 @@ use Hilos\Backup\Ship\BackupShipperFactory;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -23,6 +25,7 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
@@ -72,6 +75,26 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      * for every row of every snapshot.
      */
     private bool $codeMigrationIndexResolved = false;
+
+    /**
+     * Declares how many rows the first window of the backup history carries.
+     *
+     * @return int Rows the first window carries
+     */
+    public function windowSize(): int
+    {
+        return 10;
+    }
+
+    /**
+     * Declares the order the first window of the backup history runs in.
+     *
+     * @return ?TableSortOrderDTO First window ordered by createdAt descending
+     */
+    public function defaultSort(): ?TableSortOrderDTO
+    {
+        return TableSortOrderDTO::of(new TableSortDTO(HilosBackupTableRow::createdAt, TableConstants::ORDER_DESC));
+    }
 
     /**
      * Builds a backup row mutation from a runtime source change.

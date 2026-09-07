@@ -16,6 +16,7 @@ use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
@@ -63,6 +64,26 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
 
     /** Growth of a stream whose measuring window has not filled yet, as the ordering reads it. */
     private const int GROWTH_UNKNOWN = -1;
+
+    /**
+     * Declares how many rows the first window of the log keys table carries.
+     *
+     * @return int Rows the first window carries
+     */
+    public function windowSize(): int
+    {
+        return 25;
+    }
+
+    /**
+     * Declares the order the first window of the log keys table runs in.
+     *
+     * @return ?TableSortOrderDTO First window ordered by bytes descending
+     */
+    public function defaultSort(): ?TableSortOrderDTO
+    {
+        return TableSortOrderDTO::of(new TableSortDTO(HilosLogKeysTableRow::bytes, TableConstants::ORDER_DESC));
+    }
 
     /**
      * The stream list has no live per-row source; a window refresh is a re-projection.

@@ -24,8 +24,6 @@ import {
 // and its row's entity-ref slot (ChatDbContext::moderatorPromptPieces).
 const PIECES_TABLE = 'moderatorPromptPieces'
 const PIECES_SLOT = 'moderatorPromptPieces'
-const PIECES_PAGE_SIZE = 10
-
 /** The moderation rule sections, mirroring the backend ObjectModeratorPromptPiece. */
 export const MODERATOR_SECTIONS: readonly ModeratorSection[] = [
   'name_rule',
@@ -73,13 +71,11 @@ export const moderatorPiecesTable =
         PIECES_TABLE,
         descriptor,
       ),
-    pageSize: PIECES_PAGE_SIZE,
-    initialOrder: [{ field: 'id', direction: 'asc' }],
   })
 
 const teardown: Array<() => void> = []
 
-/** Bind the table to the connection and request the first window — call on mount. */
+/** Bind the table to the connection — call on mount. Its first window arrives with the page. */
 export function startModeratorPiecesTable(): void {
   teardown.push(
     bindTableViewport(
@@ -91,16 +87,7 @@ export function startModeratorPiecesTable(): void {
       // the row resolves through ModeratorPieces.
       { entityTypes: { [PIECES_SLOT]: ModeratorPieces.type } },
     ),
-    // Re-request the window whenever the socket (re)connects: the initial request
-    // below can run before the connection is open, and a reconnect is a fresh
-    // exchange that no longer remembers this connection's window.
-    connection.on('state', (state) => {
-      if (state === 'connected') {
-        moderatorPiecesTable.start()
-      }
-    }),
   )
-  moderatorPiecesTable.start()
 }
 
 /** Unbind from the connection — call on unmount. */

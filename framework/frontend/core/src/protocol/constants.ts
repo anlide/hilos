@@ -127,5 +127,11 @@ export const FIELD_ANCHOR_DIRECTION = 'anchorDirection'
 /** Viewport frame key carrying the page a jump asks for (PHP `SignalPayloadConstants::FIELD_PAGE_INDEX`). */
 export const FIELD_PAGE_INDEX = 'pageIndex'
 
+/**
+ * Subscribe frame key carrying the windows this tab is holding, by table key
+ * (PHP `SignalPayloadConstants::FIELD_TABLE_WINDOWS`).
+ */
+export const FIELD_TABLE_WINDOWS = 'tableWindows'
+
 /** Keepalive text frame the client sends (PHP `WebSocketConstants::KEEPALIVE_TEXT_PING`). */
 export const KEEPALIVE_TEXT_PING = 'ping'

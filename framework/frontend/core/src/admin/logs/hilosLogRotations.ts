@@ -76,8 +76,6 @@ export interface HilosLogRotationRow {
 // A project binds its backend to these keys (Hilos::TABLES / PAGE_TABLES).
 const ROTATIONS_TABLE = 'hilosLogRotations'
 const ROTATION_SLOT = 'batch'
-const ROTATIONS_PAGE_SIZE = 25
-
 /** Server→client signal `type` carrying the screen header (PHP `SUBSCRIPTION_PAGE_HILOS_LOGS_ROTATIONS`). */
 export const ROTATIONS_HEADER_SIGNAL = 'subscription_page_hilos_logs_rotations'
 
@@ -304,9 +302,7 @@ export function createHilosLogRotationsTable(
         ROTATIONS_TABLE,
         descriptor,
       ),
-    pageSize: ROTATIONS_PAGE_SIZE,
     initialFilter,
-    initialOrder: [{ field: ROTATION_BATCH_AT_FIELD, direction: 'desc' }],
   })
   const teardown: Array<() => void> = []
 
@@ -320,16 +316,7 @@ export function createHilosLogRotationsTable(
           { page: HilosPages.LOGS_ROTATIONS, tableKey: ROTATIONS_TABLE },
           controller,
         ),
-        // Re-request the window whenever the socket (re)connects: the initial
-        // request below can run before the connection is open, and a reconnect is a
-        // fresh exchange that no longer remembers this connection's window.
-        context.connection.on('state', (state) => {
-          if (state === 'connected') {
-            controller.start()
-          }
-        }),
       )
-      controller.start()
     },
     dispose() {
       for (const off of teardown.splice(0)) {

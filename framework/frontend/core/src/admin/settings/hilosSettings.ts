@@ -56,7 +56,6 @@ export interface HilosSettingRow {
 // A project binds its backend to these keys.
 const SETTINGS_TABLE = 'settings'
 const SETTINGS_SLOT = 'settings'
-const SETTINGS_PAGE_SIZE = 10
 const SETTING_ADD_ACTION = 'setting_add'
 const SETTING_UPDATE_ACTION = 'setting_update'
 const SETTING_DELETE_ACTION = 'setting_delete'
@@ -220,8 +219,6 @@ export function createHilosSettingsTable(
         SETTINGS_TABLE,
         descriptor,
       ),
-    pageSize: SETTINGS_PAGE_SIZE,
-    initialOrder: [{ field: SETTING_KEY_FIELD, direction: 'asc' }],
   })
   const teardown: Array<() => void> = []
 
@@ -235,16 +232,7 @@ export function createHilosSettingsTable(
           { page: HilosPages.SETTINGS, tableKey: SETTINGS_TABLE },
           controller,
         ),
-        // Re-request the window whenever the socket (re)connects: the initial
-        // request below can run before the connection is open, and a reconnect
-        // is a fresh exchange that no longer remembers this connection's window.
-        context.connection.on('state', (state) => {
-          if (state === 'connected') {
-            controller.start()
-          }
-        }),
       )
-      controller.start()
     },
     dispose() {
       for (const off of teardown.splice(0)) {

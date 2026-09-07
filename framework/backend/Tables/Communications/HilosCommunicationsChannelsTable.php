@@ -6,6 +6,8 @@ namespace Hilos\Tables\Communications;
 
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -46,6 +48,26 @@ class HilosCommunicationsChannelsTable extends TableDefinition implements SelfSn
 
     /** Wire slot the row payload rides under; must match the frontend channels slot. */
     private const string ROW_SLOT = 'channel';
+
+    /**
+     * Declares how many rows the first window of the channels table carries.
+     *
+     * @return int Rows the first window carries
+     */
+    public function windowSize(): int
+    {
+        return 50;
+    }
+
+    /**
+     * Declares the order the first window of the channels table runs in.
+     *
+     * @return ?TableSortOrderDTO First window ordered by channel ascending
+     */
+    public function defaultSort(): ?TableSortOrderDTO
+    {
+        return TableSortOrderDTO::of(new TableSortDTO(HilosCommunicationsChannelsTableRow::channel));
+    }
 
     /**
      * Builds a channels row mutation from a settings source change.

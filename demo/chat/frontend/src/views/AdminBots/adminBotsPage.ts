@@ -26,8 +26,6 @@ const BOT_SLOT = 'bots'
 const STATUS_SLOT = 'botAgentStatuses'
 const STATUS_FIELD = 'status'
 const STATUS_JOINED = 'joined'
-const BOTS_PAGE_SIZE = 10
-
 /** Read a row slot as an inline record, or undefined when it is not one. */
 function recordSlot(slot: unknown): Record<string, unknown> | undefined {
   return typeof slot === 'object' && slot !== null && !Array.isArray(slot)
@@ -71,13 +69,11 @@ export const botsTable = new TableViewportController<BotRow>({
   resolve: resolveBotRow,
   sendViewport: (descriptor) =>
     connection.sendTableViewport(PAGE_ADMIN_BOTS, BOTS_TABLE, descriptor),
-  pageSize: BOTS_PAGE_SIZE,
-  initialOrder: [{ field: 'name', direction: 'asc' }],
 })
 
 const teardown: Array<() => void> = []
 
-/** Bind the table to the connection and request the first window — call on mount. */
+/** Bind the table to the connection — call on mount. Its first window arrives with the page. */
 export function startBotsTable(): void {
   teardown.push(
     bindTableViewport(
@@ -89,16 +85,7 @@ export function startBotsTable(): void {
       // the row resolves through Bots.
       { entityTypes: { [BOT_SLOT]: Bots.type } },
     ),
-    // Re-request the window whenever the socket (re)connects: the initial request
-    // below can run before the connection is open, and a reconnect is a fresh
-    // exchange that no longer remembers this connection's window.
-    connection.on('state', (state) => {
-      if (state === 'connected') {
-        botsTable.start()
-      }
-    }),
   )
-  botsTable.start()
 }
 
 /** Unbind from the connection — call on unmount. */

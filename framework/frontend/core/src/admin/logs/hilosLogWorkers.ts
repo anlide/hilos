@@ -57,8 +57,6 @@ export interface HilosLogWorkerRow {
 // A project binds its backend to these keys (Hilos::TABLES / PAGE_TABLES).
 const WORKERS_TABLE = 'hilosLogWorkers'
 const WORKER_SLOT = 'stream'
-const WORKERS_PAGE_SIZE = 25
-
 /** Server→client signal `type` carrying the screen header (PHP `SUBSCRIPTION_PAGE_HILOS_LOGS_WORKERS`). */
 export const WORKERS_HEADER_SIGNAL = 'subscription_page_hilos_logs_workers'
 
@@ -210,9 +208,7 @@ export function createHilosLogWorkersTable(
         WORKERS_TABLE,
         descriptor,
       ),
-    pageSize: WORKERS_PAGE_SIZE,
     initialFilter,
-    initialOrder: [{ field: WORKER_BYTES_FIELD, direction: 'desc' }],
   })
   const teardown: Array<() => void> = []
 
@@ -226,16 +222,7 @@ export function createHilosLogWorkersTable(
           { page: HilosPages.LOGS_WORKERS, tableKey: WORKERS_TABLE },
           controller,
         ),
-        // Re-request the window whenever the socket (re)connects: the initial
-        // request below can run before the connection is open, and a reconnect is a
-        // fresh exchange that no longer remembers this connection's window.
-        context.connection.on('state', (state) => {
-          if (state === 'connected') {
-            controller.start()
-          }
-        }),
       )
-      controller.start()
     },
     dispose() {
       for (const off of teardown.splice(0)) {

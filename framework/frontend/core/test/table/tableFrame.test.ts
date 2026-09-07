@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { type TableViewportDescriptor } from '../../src/connection/HilosConnection.js'
+import {
+  type TableAnchor,
+  type TableViewportDescriptor,
+} from '../../src/connection/HilosConnection.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
 import { TableViewportController } from '../../src/table/TableViewportController.js'
 import { type HilosTableFrame } from '../../src/table/tableFrame.js'
@@ -13,12 +16,29 @@ function makeController(
   const controller = new TableViewportController<TableRow>({
     resolve: (row) => row,
     sendViewport: (descriptor) => sent.push(descriptor),
-    pageSize,
     initialFilter,
     frame,
   })
 
-  return { controller, sent }
+  // The window's size comes with the window since HIL-642, so a test that wants one hands it
+  // over the same way the page's answer does.
+  const open = (
+    rows: readonly TableRow[] = [],
+    totalCount = 0,
+    totalExact = true,
+    firstAnchor: TableAnchor | null = null,
+    lastAnchor: TableAnchor | null = null,
+  ): void =>
+    controller.ingestWindow(
+      rows,
+      totalCount,
+      totalExact,
+      firstAnchor,
+      lastAnchor,
+      pageSize,
+    )
+
+  return { controller, sent, open }
 }
 
 const backupsFrame: HilosTableFrame = {
@@ -175,7 +195,8 @@ describe('TableViewportController frame filters', () => {
   })
 
   it('sends one window when a filter value changes', () => {
-    const { controller, sent } = makeController(backupsFrame)
+    const { controller, sent, open } = makeController(backupsFrame)
+    open()
     controller.setFilter('kind', 'full')
 
     expect(sent).toHaveLength(1)
@@ -216,8 +237,8 @@ describe('TableViewportController frame filters', () => {
   })
 
   it('returns a window change to the first page and drops the anchor', () => {
-    const { controller, sent } = makeController(backupsFrame)
-    controller.ingestWindow([], 50, true, null, null)
+    const { controller, sent, open } = makeController(backupsFrame)
+    open([], 50, true, null, null)
     controller.setPage(2)
     controller.setFilters({ kind: 'full' })
 
@@ -250,8 +271,8 @@ function rows(count: number, from = 0): TableRow[] {
 
 describe('TableViewportController frame footer', () => {
   it('numbers the shown rows from one, and says a first page has nothing before it', () => {
-    const { controller } = makeController(backupsFrame)
-    controller.ingestWindow(rows(10), 128, true, null, null)
+    const { controller, open } = makeController(backupsFrame)
+    open(rows(10), 128, true, null, null)
 
     expect(controller.frame.footer.get()).toEqual({
       firstRow: 1,
@@ -266,10 +287,10 @@ describe('TableViewportController frame footer', () => {
   })
 
   it('moves the range with the page and opens the way back', () => {
-    const { controller } = makeController(backupsFrame)
-    controller.ingestWindow(rows(10), 128, true, null, null)
+    const { controller, open } = makeController(backupsFrame)
+    open(rows(10), 128, true, null, null)
     controller.setPage(2)
-    controller.ingestWindow(rows(10, 20), 128, true, null, null)
+    open(rows(10, 20), 128, true, null, null)
 
     const footer = controller.frame.footer.get()
     expect([footer.firstRow, footer.lastRow]).toEqual([21, 30])
@@ -278,8 +299,8 @@ describe('TableViewportController frame footer', () => {
   })
 
   it('gives a range of zeroes on an empty window', () => {
-    const { controller } = makeController(backupsFrame)
-    controller.ingestWindow([], 0, true, null, null)
+    const { controller, open } = makeController(backupsFrame)
+    open([], 0, true, null, null)
 
     const footer = controller.frame.footer.get()
     expect([footer.firstRow, footer.lastRow, footer.totalCount]).toEqual([
@@ -288,8 +309,8 @@ describe('TableViewportController frame footer', () => {
   })
 
   it('passes an inexact count on with no page count behind it', () => {
-    const { controller } = makeController(backupsFrame)
-    controller.ingestWindow(rows(10), 500, false, null, null)
+    const { controller, open } = makeController(backupsFrame)
+    open(rows(10), 500, false, null, null)
 
     const footer = controller.frame.footer.get()
     expect(footer.totalExact).toBe(false)
@@ -300,29 +321,29 @@ describe('TableViewportController frame footer', () => {
 
 describe('TableViewportController frame body', () => {
   it('walks loading -> empty -> empty_filtered -> rows', () => {
-    const { controller } = makeController(backupsFrame)
+    const { controller, open } = makeController(backupsFrame)
 
     expect(controller.frame.body.get()).toBe('loading')
 
-    controller.ingestWindow([], 0, true, null, null)
+    open([], 0, true, null, null)
 
     expect(controller.frame.body.get()).toBe('empty')
 
     controller.setFilter('kind', 'full')
-    controller.ingestWindow([], 0, true, null, null)
+    open([], 0, true, null, null)
 
     expect(controller.frame.body.get()).toBe('empty_filtered')
 
-    controller.ingestWindow(rows(3), 3, true, null, null)
+    open(rows(3), 3, true, null, null)
 
     expect(controller.frame.body.get()).toBe('rows')
   })
 
   it('calls an empty set under a search filtered, not empty', () => {
-    const { controller } = makeController(backupsFrame)
-    controller.ingestWindow([], 0, true, null, null)
+    const { controller, open } = makeController(backupsFrame)
+    open([], 0, true, null, null)
     controller.setSearch('nightly')
-    controller.ingestWindow([], 0, true, null, null)
+    open([], 0, true, null, null)
 
     expect(controller.frame.body.get()).toBe('empty_filtered')
   })

@@ -8,8 +8,9 @@ namespace Hilos\Core\Page\DTO;
  * PagePayload - The scope payload delivered to a subscribing client.
  *
  * Carries the page scope split by kind: `entities` (fragments per source key,
- * each with its id), plain `data`, `lists` (ordered item collections), and
- * `tables` (row collections). A page contributes the entity/data sections from
+ * each with its id), plain `data`, `lists` (ordered item collections),
+ * `tables` (row collections), and `windows` (the first window of each viewport
+ * table). A page contributes the entity/data sections from
  * AbstractPage::buildPagePayload(); the browser layer contributes lists/tables/
  * data from its kind-classified sources. The framework wraps the payload in a
  * PageResponseSignalData with the page key. Every section is a wire payload and
@@ -22,6 +23,15 @@ final class PagePayload
     public const string data = 'data';
     public const string lists = 'lists';
     public const string tables = 'tables';
+
+    /**
+     * Fifth section: the first window of every viewport table the page declares (HIL-642).
+     *
+     * A window is not a row set but a slice with coordinates, and it is held by the window
+     * controller rather than by the page scope, so it travels in a section of its own: put
+     * inside `tables`, it would be stored twice and drift apart on the first delta.
+     */
+    public const string windows = 'windows';
 
     /** Table section: the row set. */
     public const string rows = 'rows';
@@ -59,12 +69,14 @@ final class PagePayload
      * @param array<string, mixed> $data Plain page-data values per key
      * @param array<string, mixed> $lists Ordered list collections per list key
      * @param array<string, mixed> $tables Row collections per table key
+     * @param array<string, mixed> $windows First window per viewport-table key
      */
     public function __construct(
         public readonly array $entities = [],
         public readonly array $data = [],
         public readonly array $lists = [],
         public readonly array $tables = [],
+        public readonly array $windows = [],
     ) {
     }
 
@@ -78,7 +90,8 @@ final class PagePayload
         return $this->entities === []
             && $this->data === []
             && $this->lists === []
-            && $this->tables === [];
+            && $this->tables === []
+            && $this->windows === [];
     }
 
     /**
@@ -100,6 +113,9 @@ final class PagePayload
         }
         if ($this->tables !== []) {
             $payload[self::tables] = $this->tables;
+        }
+        if ($this->windows !== []) {
+            $payload[self::windows] = $this->windows;
         }
 
         return $payload;

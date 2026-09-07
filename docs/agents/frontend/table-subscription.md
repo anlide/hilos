@@ -80,6 +80,22 @@ what the first does. Ask for a neighbouring page this way and the count is paid 
 nothing — its boundary is already in hand, which is what `nextPage` / `prevPage`
 use and what `setPage` does not.
 
+### The first window is declared on the backend
+
+A table's **first** window is not declared by the client at all: its size and its
+order are stated on the table definition (`windowSize()`, `defaultSort()`), and
+the page subscription builds the window from them and answers with it. There is
+one declaration of each and one reader: the window says on arrival what size and
+what order it ran at, and the controller takes both from there rather than
+holding an opinion beside the backend's.
+
+A tab that is already holding a window reports it instead, in the `tableWindows`
+map of its `page_subscribe`, and the server serves back what the descriptor
+names. That is what a reconnect is: the same page, the same window, the reader's
+place kept. A controller that has never received a window reports none — it does
+not know its own size or order until one arrives — and the table's declaration
+answers for it, which is the same cold entry a second time.
+
 **Every declared order ends with the primary key**, so the order is total.
 Without that, a column with repeats (a status, a kind) lets two adjacent pages
 show one row twice and another not at all — and the server cannot say where an
@@ -521,6 +537,8 @@ and everything below is addressed to the one connection it concerns:
 
 | Frame | Direction | Carries |
 |---|---|---|
+| `page_subscribe` | client → server | `page`, `params`, and an optional `tableWindows`: a map of `tableKey` → the body of a `table_viewport` frame without its address — the windows this tab is already holding |
+| `page_response` | server → client, reply only | the page payload, whose fifth section `windows` is a map of `tableKey` → `rows`, `sort`, `limit`, `totalCount`, `totalExact`, `firstAnchor`, `lastAnchor` — the first window of each of the page's viewport tables |
 | `table_viewport` | client → server | `page`, `tableKey`, `filter`, `sort` (a **list** of `{field, direction}`, in the sequence they apply), `limit`, and then either `anchor` + `anchorDirection` or `pageIndex` — never both |
 | `table_window` | server → client, reply only | `page`, `tableKey`, `rows`, `limit`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor` |
 | `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed` / `row_stale`), `rowKey`, `row`, `staleSources` (`row_stale` only, in place of `row`) |
@@ -530,10 +548,19 @@ and everything below is addressed to the one connection it concerns:
 | `table_viewport_announce` | server → client, live | `page`, `tableKey`, `rowKey`, `placement` (`above` / `inside`), `totalCount`, `totalExact`, `pageCount` |
 | `table_progress` | server → client, live | `page`, `tableKey`, `scope` (`row` / `table` / `bulk`), `progressKey`, `rowKey`, `current`, `total`, `ended`, `detail` |
 
-The **full window snapshot travels only in reply to a `table_viewport` request** —
-a window change, a cold load, or a reconnect — and never on the live stream. A
-bulk action gets no frame type of its own: it is an ordinary `action` in the
-shape given above.
+A **full window snapshot never travels on the live stream**. It travels on one of
+two roads and no other: in reply to a `table_viewport` request, which is a window
+the reader changed, and in the `windows` section of the page's own
+`page_response`, which is the first window of every viewport table the page
+declares — a cold load and a reconnect alike. A bulk action gets no frame type of
+its own: it is an ordinary `action` in the shape given above.
+
+The `windows` section carries one key the reply does not, `sort`, and leaves out
+one the reply has no reason to carry either, `filter`. The order is there because
+nobody asked for it: a cold entry runs in the order the table declares on the
+backend, and the tab has no other way to learn what that is. The filter is absent
+because a second source of truth about it could only disagree — on a cold entry it
+is empty, and on a reconnect the tab sent it and still holds it.
 
 Naming a frame here does not clear the gate. The leaf that implements one still
 stops and asks before touching the signal constants, the DTOs, or the routes.
@@ -546,6 +573,10 @@ an address does not:
 | Concern | Where |
 |---|---|
 | the descriptor and the delivered keys | `framework/backend/Core/Router/TableViewportSubscription.php` |
+| the window a tab reports on its subscription | `framework/backend/Core/Table/DTO/TableWindowDescriptorDTO.php` |
+| opening each of a page's windows as it is subscribed | `framework/backend/Core/Browser/Context/BrowserContext.php` (`subscribeSnapshot`, `subscribeTableWindow`, `buildTableWindow`) |
+| what the first window of a table is | `framework/backend/Core/Table/Definition/TableDefinition.php` (`windowSize`, `defaultSort`) |
+| the windows a tab is holding, and the frame that reports them | `framework/frontend/core/src/connection/HilosConnection.ts`, `framework/frontend/core/src/subscription/PageSubscription.ts` |
 | judging a mutation against a window, and emitting the live frames | `framework/backend/Core/Browser/Context/BrowserContext.php` (`viewportPlacement`, `tryEmitViewportAppend`, `viewportTotalAfterMutation`, `rowDeltaForMutation`) |
 | placing one row against a window boundary, in the table's own key names | `framework/backend/Core/Table/Definition/ViewportTable.php` (`placeRowAgainst`) |
 | the `ORDER BY` and the window query | `framework/backend/Database/Object/Objects.php` |

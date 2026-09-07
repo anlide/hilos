@@ -253,6 +253,45 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
+     * Declares how many rows the first window of this table carries.
+     *
+     * The first window is built when the page is subscribed, before any view of it has mounted,
+     * so its size has to be known on this side: there is no client in that moment to ask. What
+     * used to be a `pageSize` option on the frontend controller is this declaration, and there
+     * is one of it rather than two — the window says its own size on arrival and the controller
+     * reads it from there.
+     *
+     * Every later window keeps whatever size its request carried, so this is the size of the
+     * first one and not a ceiling on the rest.
+     *
+     * @return int Rows the first window carries; TableConstants::DEFAULT_WINDOW_SIZE by default
+     */
+    public function windowSize(): int
+    {
+        return TableConstants::DEFAULT_WINDOW_SIZE;
+    }
+
+    /**
+     * Declares the order the first window of this table runs in.
+     *
+     * Null is a real declaration and means the rows arrive in the order the source hands them
+     * over — the same thing a table with no order declared has always done.
+     *
+     * A declaration here is held to the same vocabulary as any other order of this table: it
+     * travels as the window's order into {@see getPage()}, where {@see sortOrders()} and
+     * {@see sortableFields()} judge it exactly as they judge one a window asked for. A
+     * declaration naming a field outside the map costs the first window its ordering and says
+     * so in the log, which is what a table gets for declaring an order it does not serve; no
+     * second way of checking an order is introduced for the sake of this one.
+     *
+     * @return ?TableSortOrderDTO Order the first window runs in, or null for the source's own order
+     */
+    public function defaultSort(): ?TableSortOrderDTO
+    {
+        return null;
+    }
+
+    /**
      * Loads table data for the given table query.
      *
      * Each concrete table owns its row source and may combine DB, runtime,

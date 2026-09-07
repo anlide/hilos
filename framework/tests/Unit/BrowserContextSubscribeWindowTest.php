@@ -1,0 +1,488 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Tests\Unit;
+
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserPageBindings;
+use Hilos\Core\Browser\Config\BrowserPageConfig;
+use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
+use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\SignalNameInterface;
+use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSourceInterface;
+use Hilos\Core\Router\SignalTypeInterface;
+use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\Context\TableContext;
+use Hilos\Core\Table\Definition\SelfSnapshotTable;
+use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
+use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
+use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
+use Hilos\Core\Table\DTO\TableWindowSignalData;
+use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\TableConstants;
+use Hilos\Hilos;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * Unit tests for the first window a page subscription answers with (HIL-642).
+ *
+ * A viewport table used to be skipped by the subscription snapshot entirely and to arrive one
+ * round trip later, in reply to the client's own viewport frame. Now the subscription answers
+ * with it, in a section of its own, and the window is opened on the server before the answer
+ * leaves — which is what gives a live change born between the two something to be addressed to.
+ */
+final class BrowserContextSubscribeWindowTest extends TestCase
+{
+    public function tearDown(): void
+    {
+        Hilos::$sr = null;
+        Hilos::$table = null;
+
+        parent::tearDown();
+    }
+
+    public function testSubscribingAnswersWithTheFirstWindowInASectionOfItsOwn(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
+        Hilos::$table->configure();
+
+        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+
+        $this->assertSame(
+            [
+                TableWindowSignalData::rows => [
+                    [
+                        PagePayload::rowKey => 'a',
+                        PagePayload::slots => [SubscribeWindowUnitTable::SLOT => ['key' => 'a', 'label' => 'Alpha']],
+                    ],
+                    [
+                        PagePayload::rowKey => 'b',
+                        PagePayload::slots => [SubscribeWindowUnitTable::SLOT => ['key' => 'b', 'label' => 'Beta']],
+                    ],
+                ],
+                TableWindowDescriptorDTO::SORT => [
+                    [TableSortDTO::FIELD => 'key', TableSortDTO::DIRECTION => TableConstants::ORDER_ASC],
+                ],
+                TableWindowSignalData::limit => 2,
+                TableWindowSignalData::totalCount => 3,
+                TableWindowSignalData::totalExact => true,
+                TableWindowSignalData::firstAnchor => ['key' => 'a'],
+                TableWindowSignalData::lastAnchor => ['key' => 'b'],
+            ],
+            self::windowOf(self::answer(), SubscribeWindowUnitTable::TABLE),
+        );
+    }
+
+    public function testASubscriptionThatReportsNoWindowTakesTheSizeAndOrderTheTableDeclares(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
+        Hilos::$table->configure();
+
+        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+
+        // The cold entry: nothing was reported and nothing is held, so what the table says
+        // about its own first window is the whole answer.
+        $viewport = Hilos::$sr->getTableViewport('ak-1', SubscribeWindowUnitTable::TABLE);
+        $this->assertNotNull($viewport);
+        $this->assertSame(2, $viewport->limit);
+        $this->assertSame('key', $viewport->sort?->last()->field);
+        $this->assertSame(['a', 'b'], $viewport->rowIds());
+    }
+
+    public function testAReportedDescriptorBeatsWhatTheTableDeclares(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
+        Hilos::$table->configure();
+        Hilos::$sr->reportTableWindows('ak-1', [
+            SubscribeWindowUnitTable::TABLE => new TableWindowDescriptorDTO(
+                sort: TableSortOrderDTO::of(new TableSortDTO('key', TableConstants::ORDER_DESC)),
+                limit: 1,
+            ),
+        ]);
+
+        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+
+        // A tab coming back after a broken socket is the only side that still remembers what
+        // was on the screen, so what it reports outranks the table's own declaration.
+        $window = self::windowOf(self::answer(), SubscribeWindowUnitTable::TABLE);
+        $this->assertSame(1, $window[TableWindowSignalData::limit]);
+        $this->assertSame(['c'], array_column($window[TableWindowSignalData::rows], PagePayload::rowKey));
+    }
+
+    public function testTheWindowIsOnTheRegistryBeforeTheAnswerLeaves(): void
+    {
+        $router = new SubscribeWindowRecordingSignalRouter();
+        Hilos::$sr = $router;
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
+        Hilos::$table->configure();
+
+        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+
+        // The whole point of opening the window here rather than on the client's first frame:
+        // a change born between the subscription and the first render has an address only if
+        // the window already exists when the answer goes out.
+        $this->assertSame(['a', 'b'], $router->rowIdsWhenAnswerWasQueued);
+    }
+
+    public function testAPageWithNoViewportTableCarriesNoWindowsSection(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
+        Hilos::$table->configure();
+
+        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::OTHER_PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testATableThatCannotBuildItsWindowIsLeftOutAndSaidSoInTheLog(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
+        Hilos::$table->configure();
+
+        ob_start();
+        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::REFUSING_PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+        $logged = (string) ob_get_clean();
+
+        // The page still ships; the tab is left in the state it reads as "the window has not
+        // arrived yet", and the line in the log is the only place the refusal is said at all.
+        $this->assertStringContainsString('Browser window skipped a table', $logged);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    /**
+     * @return list<SubscribeWindowUnitRow> Three rows in the order the table hands them over
+     */
+    private static function threeRows(): array
+    {
+        return [
+            new SubscribeWindowUnitRow('a', 'Alpha'),
+            new SubscribeWindowUnitRow('b', 'Beta'),
+            new SubscribeWindowUnitRow('c', 'Gamma'),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed> Wire payload of the page_response the subscription queued
+     */
+    private static function answer(): array
+    {
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        self::assertNotNull($signal);
+        self::assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
+        self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        self::assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+
+        return $signal->data->data->toArray();
+    }
+
+    /**
+     * @param array<string, mixed> $answer Wire payload of a page_response
+     * @param string $tableKey Table whose window is read out of it
+     * @return array<string, mixed> The `windows` entry for that table
+     */
+    private static function windowOf(array $answer, string $tableKey): array
+    {
+        $payload = $answer[PageResponseSignalData::payload] ?? [];
+        self::assertIsArray($payload);
+        $windows = $payload[PagePayload::windows] ?? [];
+        self::assertIsArray($windows);
+        self::assertArrayHasKey($tableKey, $windows);
+        self::assertIsArray($windows[$tableKey]);
+
+        return $windows[$tableKey];
+    }
+}
+
+final class SubscribeWindowRecordingSignalRouter extends SignalRouter
+{
+    /** @var ?list<string> Rows the window held when the page answer was queued, or null while none was */
+    public ?array $rowIdsWhenAnswerWasQueued = null;
+
+    /**
+     * Records what the registry already held at the moment the page answer was queued.
+     *
+     * @param SignalSourceInterface $signalSource Signal source
+     * @param SignalTypeInterface $signalType Signal type
+     * @param SignalNameInterface $signalName Signal name
+     * @param SignalDataInterface $signalData Signal payload
+     */
+    public function queueSignal(
+        SignalSourceInterface $signalSource,
+        SignalTypeInterface $signalType,
+        SignalNameInterface $signalName,
+        SignalDataInterface $signalData,
+    ): void {
+        if ($signalName->getName() === SignalTypeConstants::PAGE_RESPONSE) {
+            $this->rowIdsWhenAnswerWasQueued
+                = $this->getTableViewport('ak-1', SubscribeWindowUnitTable::TABLE)?->rowIds();
+        }
+
+        parent::queueSignal($signalSource, $signalType, $signalName, $signalData);
+    }
+}
+
+final class SubscribeWindowUnitBrowserContext extends BrowserContext
+{
+    public const string PAGE = 'subscribe_window_unit_page';
+    public const string OTHER_PAGE = 'subscribe_window_unit_other_page';
+    public const string REFUSING_PAGE = 'subscribe_window_unit_refusing_page';
+    public const string SIGNAL = 'subscribe_window_unit_signal';
+
+    /**
+     * Resolves a page config for each of the three test pages.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @return ?BrowserPageConfig Page metadata, or null when absent
+     * @throws PageInternalErrorException When a page or source declaration is malformed
+     */
+    protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
+    {
+        if (!in_array($page, [self::PAGE, self::OTHER_PAGE, self::REFUSING_PAGE], true)) {
+            return null;
+        }
+
+        return BrowserPageConfig::fromArray([BrowserConfigKey::SIGNAL => self::SIGNAL]);
+    }
+
+    /**
+     * Binds the viewport table to the page under test and the refusing one to its own page.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @return BrowserPageBindings Page table bindings
+     */
+    protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
+    {
+        return match ($page) {
+            self::PAGE => BrowserPageBindings::fromArray([SubscribeWindowUnitTable::TABLE => []]),
+            self::REFUSING_PAGE => BrowserPageBindings::fromArray([SubscribeWindowRefusingTable::TABLE => []]),
+            default => BrowserPageBindings::empty(),
+        };
+    }
+}
+
+final class SubscribeWindowUnitTableContext extends TableContext
+{
+    /**
+     * @param list<SubscribeWindowUnitRow> $rows Snapshot rows the table returns
+     */
+    public function __construct(private readonly array $rows = [])
+    {
+    }
+
+    public function configure(): void
+    {
+        $this->register(SubscribeWindowUnitTable::TABLE, new SubscribeWindowUnitTable($this->rows));
+        $this->register(SubscribeWindowRefusingTable::TABLE, new SubscribeWindowRefusingTable());
+    }
+}
+
+final class SubscribeWindowUnitTable extends TableDefinition implements SelfSnapshotTable
+{
+    public const string TABLE = 'subscribeWindowUnitTable';
+    public const string SLOT = 'subscribeWindowUnitRows';
+
+    /**
+     * @param list<SubscribeWindowUnitRow> $rows Snapshot rows the table owns
+     */
+    public function __construct(private readonly array $rows = [])
+    {
+        parent::__construct();
+    }
+
+    /**
+     * @return int Two rows, so that a window smaller than the set is visible in the answer
+     */
+    public function windowSize(): int
+    {
+        return 2;
+    }
+
+    /**
+     * @return ?TableSortOrderDTO First window ordered by key ascending
+     */
+    public function defaultSort(): ?TableSortOrderDTO
+    {
+        return TableSortOrderDTO::of(new TableSortDTO('key'));
+    }
+
+    /**
+     * No source-change reaction in this fixture.
+     *
+     * @param SourceChange $change Source change (unused)
+     * @return ?TableRowMutationDTO Always null
+     */
+    public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
+    {
+        return null;
+    }
+
+    /**
+     * Serializes a row into its internal browser-row envelope.
+     *
+     * @param AbstractTableRow $row Self-snapshot row
+     * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
+     * @throws TableRowKeyMissingException When the row is a placeholder and carries no key
+     */
+    public function browserRow(AbstractTableRow $row): array
+    {
+        return [
+            BrowserPageSignalData::rowKey => $row->requireRowKey(),
+            BrowserPageSignalData::sources => [self::SLOT => $row->toArray()],
+        ];
+    }
+
+    /**
+     * Configures the row class so makeRows rebuilds typed rows from the filter output.
+     */
+    protected function init(): void
+    {
+        $this->setRowClass(SubscribeWindowUnitRow::class);
+    }
+
+    /**
+     * Applies the in-memory filter to the injected rows.
+     *
+     * @param TableQueryDTO $query Window query parameters
+     * @return TableSnapshotDTO Windowed snapshot
+     */
+    protected function query(TableQueryDTO $query): TableSnapshotDTO
+    {
+        $rows = array_map(static fn(SubscribeWindowUnitRow $row): array => $row->toArray(), $this->rows);
+
+        return $this->filterInMemory($rows, $query);
+    }
+}
+
+/**
+ * Table whose window build refuses, standing for a source that cannot be read at subscribe time.
+ */
+final class SubscribeWindowRefusingTable extends TableDefinition implements SelfSnapshotTable
+{
+    public const string TABLE = 'subscribeWindowRefusingTable';
+
+    /**
+     * No source-change reaction in this fixture.
+     *
+     * @param SourceChange $change Source change (unused)
+     * @return ?TableRowMutationDTO Always null
+     */
+    public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
+    {
+        return null;
+    }
+
+    /**
+     * Never reached: the window build refuses first.
+     *
+     * @param AbstractTableRow $row Self-snapshot row
+     * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
+     * @throws TableRowKeyMissingException When the row is a placeholder and carries no key
+     */
+    public function browserRow(AbstractTableRow $row): array
+    {
+        return [
+            BrowserPageSignalData::rowKey => $row->requireRowKey(),
+            BrowserPageSignalData::sources => [],
+        ];
+    }
+
+    /**
+     * @param TableQueryDTO $query Window query parameters
+     * @return TableSnapshotDTO Never returned
+     * @throws InvalidFormatException Always, standing for a source that refuses its read
+     */
+    protected function query(TableQueryDTO $query): TableSnapshotDTO
+    {
+        throw new InvalidFormatException('This table cannot read its rows');
+    }
+}
+
+final class SubscribeWindowUnitRow extends AbstractTableRow
+{
+    public function __construct(
+        public readonly string $key,
+        public readonly string $label,
+    ) {
+    }
+
+    public function getRowKey(): string
+    {
+        return $this->key;
+    }
+
+    /**
+     * @return string Payload key the row key travels under
+     */
+    public static function keyField(): string
+    {
+        return 'key';
+    }
+
+    /**
+     * @return array<string, mixed> Row fields
+     */
+    public function toArray(): array
+    {
+        return [
+            'key' => $this->key,
+            'label' => $this->label,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $data Source data
+     * @return static Row instance
+     * @throws InvalidFormatException When the payload is missing a field the row is built from
+     */
+    public static function fromArray(array $data): static
+    {
+        return new static(
+            self::requireString($data, 'key'),
+            self::requireString($data, 'label'),
+        );
+    }
+}

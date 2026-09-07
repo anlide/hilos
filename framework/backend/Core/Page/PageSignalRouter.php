@@ -45,6 +45,7 @@ use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -264,6 +265,11 @@ class PageSignalRouter
             // the PageSubscriptionException catch below, keeping the subscription alive
             // for live-promotion after sign-in or an admin grant.
             $params = new PageRouteParams($data->params);
+            // Held for the one reader that needs it and only until the answer is built: the
+            // windows this tab is holding decide which window each of the page's viewport
+            // tables answers with (HIL-642). Written before the guards rather than after,
+            // because a refusal has to clear it too, and the take does that.
+            Hilos::$sr?->reportTableWindows($data->acceptKey, $data->tableWindows);
             PageAccessGate::assert($pageInstance::class, $data->acceptKey);
             Hilos::$browser?->assertSubscriptionAccess($page, $data->acceptKey, $params);
             $pageInstance->onSubscribe($data->acceptKey, $params);
@@ -307,6 +313,12 @@ class PageSignalRouter
                 'internal_error',
                 self::SUBSCRIBE_INTERNAL_ERROR,
             );
+        } finally {
+            // The report does not outlive the frame it arrived in, whatever the verdict was:
+            // an answer takes it above, and a refusal drops it here. Left standing, it would
+            // still be there when this page is re-sent to the same connection later, and the
+            // window it names may by then be one the tab has moved on from.
+            Hilos::$sr?->takeReportedTableWindows($data->acceptKey);
         }
     }
 
@@ -485,6 +497,7 @@ class PageSignalRouter
      * @param string $source Signal source
      * @param string $name Signal name (page name)
      * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
+     * @throws HilosException When the table's own sources refuse the reads its window rows need
      * @throws InvalidArgumentException When the table-window signal cannot be named
      */
     public function dispatchTableViewport(WebSocketTableViewportSignalDTO $data, string $source, string $name): void

@@ -95,6 +95,16 @@ export interface ScopePayload {
 
   /** Table row collections by table key (the heavy windowed primitive). */
   tables?: Record<string, TableSection>
+
+  /**
+   * The first window of each viewport table, by table key (HIL-642).
+   *
+   * Declared so the wire schema and this type stay one shape, and ignored here on purpose:
+   * a window is held by the table's own controller, which normalizes its rows without
+   * storing them in the scope. A copy in the scope would be a second holder of one window,
+   * and the two would part company on the first delta.
+   */
+  windows?: Record<string, unknown>
 }
 
 export interface NormalizerOptions {

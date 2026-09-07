@@ -35,6 +35,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
+use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Hilos;
 use Hilos\Mail\HilosMailer;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -145,6 +146,19 @@ class SignalRouter
 
     /** @var SubscriptionRegistry Worker-local page and group subscription store */
     private SubscriptionRegistry $subscriptions;
+
+    /**
+     * @var array<string, TableWindowDescriptorDTO> Windows the subscribing tab reported, by table key
+     *
+     * One subscription's worth and no more: the map is read by the page's own answer, in the
+     * tick that read the frame, and it is gone the moment it is taken. A second connection's
+     * frame replaces it rather than joining it, because a frame is never half-answered — the
+     * answer to one subscribe is built before the next one is read.
+     */
+    private array $reportedTableWindows = [];
+
+    /** @var ?string Accept key those windows were reported by, or null when none are held */
+    private ?string $reportedTableWindowsAcceptKey = null;
 
     /**
      * @var string Identity of this process as the emitter of the DB syncs it sends.
@@ -554,6 +568,49 @@ class SignalRouter
     public function subscribeToPage(string $page, WebSocketPageSubscribeSignalDTO $data): void
     {
         $this->subscriptions->subscribeToPage($data->acceptKey, $page, $data->params);
+    }
+
+    /**
+     * Holds the windows a subscribing tab reported, until the answer to that subscription is built.
+     *
+     * The map is needed once, in this same tick, and by one reader: the browser context assembling
+     * the page's answer. So it is held rather than stored — the registry keeps what a connection
+     * IS subscribed to, and a window a tab used to have is not that. It is written where the
+     * subscribe frame is read and taken where the answer is built; the frame that wrote it takes
+     * it back at the end either way, so a refused subscription leaves nothing behind.
+     *
+     * @param string $acceptKey Accept key of the subscribing connection
+     * @param array<string, TableWindowDescriptorDTO> $tableWindows Windows the tab reported, by table key
+     */
+    public function reportTableWindows(string $acceptKey, array $tableWindows): void
+    {
+        $this->reportedTableWindows = $acceptKey === '' ? [] : $tableWindows;
+        $this->reportedTableWindowsAcceptKey = $acceptKey === '' ? null : $acceptKey;
+    }
+
+    /**
+     * Takes the windows a tab reported on the subscription now being answered.
+     *
+     * Answers an empty map to anyone else — a page re-sent to a connection that did not just
+     * subscribe, a subscription that reported nothing — which is the cold entry, and the honest
+     * answer for it: the table's own declaration says what its first window is. Asking on behalf
+     * of another connection takes nothing and clears nothing: the one map held belongs to the
+     * connection that reported it, and only its own answer may spend it.
+     *
+     * @param string $acceptKey Accept key the answer is being built for
+     * @return array<string, TableWindowDescriptorDTO> Windows that tab reported, by table key
+     */
+    public function takeReportedTableWindows(string $acceptKey): array
+    {
+        if ($this->reportedTableWindowsAcceptKey !== $acceptKey) {
+            return [];
+        }
+
+        $reported = $this->reportedTableWindows;
+        $this->reportedTableWindows = [];
+        $this->reportedTableWindowsAcceptKey = null;
+
+        return $reported;
     }
 
     /**

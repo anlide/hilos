@@ -10,6 +10,7 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\HilosException;
 
@@ -17,7 +18,8 @@ use Hilos\HilosException;
  * Contract for a table that can serve a server-windowed viewport.
  *
  * A viewport table delivers a window of typed rows for a connection's descriptor
- * (getPage), maps a source change to a row mutation (buildMutationForSourceEvent),
+ * (getPage), declares the size and the order of the first of those windows (windowSize,
+ * defaultSort), maps a source change to a row mutation (buildMutationForSourceEvent),
  * and serializes a typed row into its browser-row envelope (browserRow). Together
  * these let the BrowserContext answer a table_viewport request with a table_window
  * and stream point-wise table_viewport_delta updates scoped to the window's rows —
@@ -25,9 +27,9 @@ use Hilos\HilosException;
  * source-fanned table (the Hilos users table), independent of how the table
  * delivers its non-viewport page_response rows.
  *
- * getPage(), buildMutationForSourceEvent(), containsRow() and placeRowAgainst() are
- * already concrete on TableDefinition, so a TableDefinition subclass satisfies them by
- * inheritance and only browserRow() is feature-specific.
+ * getPage(), buildMutationForSourceEvent(), containsRow(), placeRowAgainst(), windowSize()
+ * and defaultSort() are already concrete on TableDefinition, so a TableDefinition subclass
+ * satisfies them by inheritance and only browserRow() is feature-specific.
  */
 interface ViewportTable
 {
@@ -38,6 +40,30 @@ interface ViewportTable
      * @return TableSnapshotDTO Window snapshot with typed rows and the total count
      */
     public function getPage(TableQueryDTO $query): TableSnapshotDTO;
+
+    /**
+     * Declares how many rows the first window of this table carries.
+     *
+     * The first window is built by the BrowserContext when the page is subscribed, so the size
+     * is asked of the table from outside it — which is why it stands in this contract and not
+     * only among the table's own protected declarations. It is already concrete on
+     * TableDefinition, so a subclass gets it for nothing and overrides it only to say a size of
+     * its own, the same way containsRow() is inherited here.
+     *
+     * @return int Rows the first window carries
+     */
+    public function windowSize(): int;
+
+    /**
+     * Declares the order the first window of this table runs in.
+     *
+     * Null means the rows arrive in the order the source hands them over. The declaration is
+     * judged by the same gate a client-chosen order passes, because it travels into getPage()
+     * as that window's order and nothing about it is trusted more for having come from here.
+     *
+     * @return ?TableSortOrderDTO Order the first window runs in, or null for the source's own order
+     */
+    public function defaultSort(): ?TableSortOrderDTO;
 
     /**
      * Answers whether one row belongs to the set a window query describes.

@@ -6,6 +6,8 @@ namespace Hilos\Tables\Logs;
 
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -14,6 +16,7 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\LogKeySummary;
@@ -63,6 +66,26 @@ final class HilosLogWorkersTable extends TableDefinition implements ViewportTabl
 
     /** Stands in for the node in a row key when the installation has no node id at all. */
     private const string ROW_KEY_NODELESS = '-';
+
+    /**
+     * Declares how many rows the first window of the log workers table carries.
+     *
+     * @return int Rows the first window carries
+     */
+    public function windowSize(): int
+    {
+        return 25;
+    }
+
+    /**
+     * Declares the order the first window of the log workers table runs in.
+     *
+     * @return ?TableSortOrderDTO First window ordered by bytes descending
+     */
+    public function defaultSort(): ?TableSortOrderDTO
+    {
+        return TableSortOrderDTO::of(new TableSortDTO(HilosLogWorkersTableRow::bytes, TableConstants::ORDER_DESC));
+    }
 
     /**
      * The stream list has no live per-row source; a window refresh is a re-projection.

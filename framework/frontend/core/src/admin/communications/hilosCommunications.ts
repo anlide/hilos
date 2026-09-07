@@ -85,13 +85,8 @@ export interface HilosChannelFieldRow {
 // backend to these keys (Hilos::TABLES / PAGE_TABLES).
 const CHANNELS_TABLE = 'hilosCommunicationsChannels'
 const CHANNELS_SLOT = 'channel'
-const CHANNELS_PAGE_SIZE = 50
 const FIELDS_TABLE = 'hilosCommunicationsChannelFields'
 const FIELDS_SLOT = 'field'
-// The fields table is global (one row per field of every channel); the channel
-// page filters it to its route channel client-side, so the window must hold every
-// field of every channel at once — a channel has a handful, and there are few.
-const FIELDS_PAGE_SIZE = 500
 const CHANNEL_SET_ACTION = 'communications_channel_set'
 const CHANNEL_RESET_ACTION = 'communications_channel_reset'
 const CHANNEL_TEST_ACTION = 'communications_channel_test'
@@ -268,10 +263,9 @@ export interface HilosChannelsTable {
 }
 
 /**
- * Bind a page-scoped viewport table and re-request its window on every
- * (re)connect. Shared by both communications tables: the initial request can run
- * before the socket opens, and a reconnect is a fresh exchange that no longer
- * remembers this connection's window.
+ * Bind a page-scoped viewport table to the connection. Shared by both communications
+ * tables, which differ only in their keys: the window itself arrives with the page and
+ * comes back the same way after a reconnect, so there is nothing to request here.
  *
  * @param context The project context (connection and scope stores).
  * @param page The page key the table is scoped to.
@@ -279,28 +273,20 @@ export interface HilosChannelsTable {
  * @param controller The controller ingesting the window and deltas.
  * @returns The unbind functions to run on dispose.
  */
-function bindReconnectingTable(
+function bindTable(
   context: HilosCommunicationsContext,
   page: string,
   tableKey: string,
   controller: TableViewportController<unknown>,
 ): Array<() => void> {
-  const teardown = [
+  return [
     bindTableViewport(
       context.connection,
       context.scopes,
       { page, tableKey },
       controller,
     ),
-    context.connection.on('state', (state) => {
-      if (state === 'connected') {
-        controller.start()
-      }
-    }),
   ]
-  controller.start()
-
-  return teardown
 }
 
 /**
@@ -322,15 +308,13 @@ export function createHilosChannelsTable(
         CHANNELS_TABLE,
         descriptor,
       ),
-    pageSize: CHANNELS_PAGE_SIZE,
-    initialOrder: [{ field: HilosChannelRowKey.channel, direction: 'asc' }],
   })
   let teardown: Array<() => void> = []
 
   return {
     controller,
     start() {
-      teardown = bindReconnectingTable(
+      teardown = bindTable(
         context,
         HilosPages.COMMUNICATIONS,
         CHANNELS_TABLE,
@@ -378,8 +362,6 @@ export function createHilosChannelFields(
         FIELDS_TABLE,
         descriptor,
       ),
-    pageSize: FIELDS_PAGE_SIZE,
-    initialOrder: [{ field: 'field', direction: 'asc' }],
   })
   let teardown: Array<() => void> = []
   const rows = computedSignal<readonly HilosChannelFieldRow[]>(() => {
@@ -395,7 +377,7 @@ export function createHilosChannelFields(
   return {
     rows,
     start() {
-      teardown = bindReconnectingTable(
+      teardown = bindTable(
         context,
         HilosPages.COMMUNICATIONS_CHANNEL,
         FIELDS_TABLE,

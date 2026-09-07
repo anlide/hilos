@@ -6,6 +6,8 @@ namespace Hilos\Tables\Communications;
 
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -91,6 +93,26 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
 
     /** Hard window cap applied when a caller asks for an unbounded snapshot of this unbounded table. */
     private const int DEFAULT_LIMIT = 50;
+
+    /**
+     * Declares how many rows the first window of the delivery journal carries.
+     *
+     * @return int Rows the first window carries
+     */
+    public function windowSize(): int
+    {
+        return 25;
+    }
+
+    /**
+     * Declares the order the first window of the delivery journal runs in.
+     *
+     * @return ?TableSortOrderDTO First window ordered by createdAt descending
+     */
+    public function defaultSort(): ?TableSortOrderDTO
+    {
+        return TableSortOrderDTO::of(new TableSortDTO(HilosNotificationDeliveryTableRow::createdAt, TableConstants::ORDER_DESC));
+    }
 
     /**
      * The delivery journal has no live per-row source; a window refresh is a re-query.

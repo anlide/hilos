@@ -57,36 +57,50 @@ function seededContext(users: UserSeed[]): HilosUsersContext {
   const scopes = new ScopeManager()
   scopes.openPage('hilos_users')
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
+  // The window this table would be served, by whichever road it arrives on: the page's
+  // own answer at bind time, or a reply to a window the reader changed.
+  const serveWindow = (page = 'hilos_users', tableKey = 'hilosUsers'): void => {
+    const data = {
+      page,
+      tableKey,
+      rows: users.map((user) => ({
+        rowKey: user.id,
+        slots: {
+          users: {
+            id: user.id,
+            name: user.name,
+            lastActivity: user.lastActivity,
+          },
+          connections: {
+            presence: user.presence,
+            onlineSessionCount: user.onlineSessionCount,
+          },
+        },
+      })),
+      totalCount: users.length,
+      offset: 0,
+      limit: 10,
+    }
+    for (const listener of windowListeners) {
+      listener({ data })
+    }
+  }
+
   const connection = {
     // The takeover dispatches over the lifecycle; this fake only has to accept it.
     sendAction(): boolean {
       return true
     },
+    // The first window arrives with the page's own answer now (HIL-642), and binding is
+    // when that answer would have landed — so this double serves it there rather than in
+    // reply to a request the table no longer makes on mount.
+    registerTableWindow(): void {
+      serveWindow()
+    },
+    unregisterTableWindow(): void {},
+    tableWindowDescriptors: () => ({}),
     sendTableViewport(page: string, tableKey: string): boolean {
-      const data = {
-        page,
-        tableKey,
-        rows: users.map((user) => ({
-          rowKey: user.id,
-          slots: {
-            users: {
-              id: user.id,
-              name: user.name,
-              lastActivity: user.lastActivity,
-            },
-            connections: {
-              presence: user.presence,
-              onlineSessionCount: user.onlineSessionCount,
-            },
-          },
-        })),
-        totalCount: users.length,
-        offset: 0,
-        limit: 10,
-      }
-      for (const listener of windowListeners) {
-        listener({ data })
-      }
+      serveWindow(page, tableKey)
 
       return true
     },

@@ -10,13 +10,16 @@
 // unmount.
 
 import { type HilosConnection } from '../connection/HilosConnection.js'
+import { SIGNAL_TYPE_PAGE_RESPONSE } from '../protocol/constants.js'
 import { type TableViewportDeltaSignalData } from '../protocol/envelope.js'
+import { type PageResponseWire } from '../protocol/scopePayload.js'
 import {
   normalizeTableRow,
   type NormalizerOptions,
 } from '../state/normalizer.js'
 import { type Scope, type ScopeManager } from '../state/ScopeManager.js'
 import {
+  type TableSortOrder,
   type TableViewportDelta,
   type TableWindowSink,
 } from '../table/TableViewportController.js'
@@ -71,8 +74,47 @@ export function bindTableViewport(
       data.totalExact,
       data.firstAnchor,
       data.lastAnchor,
+      data.limit,
     )
   })
+
+  // The sixth road into the same sink, and the one a cold entry arrives by: the page's own
+  // answer carries the first window of every table it declares, so nothing is asked for it
+  // and nothing waits a round trip for it (HIL-642). A frame for another page, or one whose
+  // payload has no section for this table, is dropped by the same test as the other five.
+  const unsubscribePageWindow = connection.on('projectSignal', (signal) => {
+    if (signal.type !== SIGNAL_TYPE_PAGE_RESPONSE) {
+      return
+    }
+    // Validated against pageResponseSchema at the parse boundary; this cast is the
+    // declared typed selector for that schema's output, as in bindPageScope.
+    const data = signal.data as PageResponseWire
+    if (data.page !== address.page) {
+      return
+    }
+    const window = data.payload?.windows?.[address.tableKey]
+    if (window === undefined) {
+      return
+    }
+    const scope = currentScope()
+    if (!scope) {
+      return
+    }
+    sink.ingestSubscriptionWindow(
+      window.rows.map((row) => normalizeTableRow(scope, row, options)),
+      window.totalCount,
+      window.totalExact,
+      window.firstAnchor,
+      window.lastAnchor,
+      window.limit,
+      toSortOrder(window.sort),
+    )
+  })
+
+  // The connection reports this window on its next page subscribe, so a tab coming back
+  // after a broken socket comes back to the window that was on the screen. It asks the
+  // controller at the moment the frame goes out rather than keeping a copy taken here.
+  connection.registerTableWindow(address.tableKey, sink)
 
   const unsubscribeDelta = connection.on('tableViewportDelta', (signal) => {
     const data = signal.data
@@ -136,11 +178,36 @@ export function bindTableViewport(
 
   return () => {
     unsubscribeWindow()
+    unsubscribePageWindow()
     unsubscribeDelta()
     unsubscribeCount()
     unsubscribeAppend()
     unsubscribeOwnCreate()
+    connection.unregisterTableWindow(address.tableKey)
   }
+}
+
+/**
+ * Read a wire order into the controller's, or undefined when the window ran in none.
+ *
+ * An empty list is no ordering rather than an order over nothing — the same reading the
+ * backend gives it — so the two sides agree on what an unsorted window looks like.
+ *
+ * @param sort The order as the frame carried it.
+ * @return The order, or undefined when the window ran in none.
+ */
+function toSortOrder(
+  sort:
+    | readonly { readonly field: string; readonly direction: 'asc' | 'desc' }[]
+    | null
+    | undefined,
+): TableSortOrder | undefined {
+  return sort === null || sort === undefined || sort.length === 0
+    ? undefined
+    : sort.map((component) => ({
+        field: component.field,
+        direction: component.direction,
+      }))
 }
 
 /** Reduce a raw addressed delta to the controller's normalized delta, or null when malformed. */

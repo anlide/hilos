@@ -164,7 +164,7 @@ export function HilosCommunicationsDeliveriesPage({
     }
     setRetryPendingId(row.rowKey)
     if (await retryAction.run(actions.sendDeliveryRetry(Number(row.rowKey)))) {
-      deliveries.controller.start()
+      deliveries.controller.refresh()
     }
     setRetryPendingId(null)
   }

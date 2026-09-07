@@ -6,6 +6,9 @@ import { gotoPage } from '../helpers/page'
 /** Name of the page-side hook {@link armSocketDrop} installs for {@link dropSocket}. */
 const DROP_SOCKET_HOOK = '__hilosE2eDropSocket'
 
+/** Wire key of the framework users table, the one table of the `/hilos/users` page. */
+const HILOS_USERS_TABLE = 'hilosUsers'
+
 // Admin tree navigation e2e: the framework dashboard lists the Hilos admin
 // sections, and every section / sub-page / deep link resolves over the live
 // socket with no document reload. Each `/hilos` page renders through the
@@ -113,12 +116,12 @@ function dropSocket(page: Page): Promise<void> {
 }
 
 // Identity-race e2e (HIL-599): an admin page whose socket drops comes back with
-// fresh rows and no false refusal. The reconnect is the whole point — the table
-// asks for its window the instant the socket reports `connected`, which is
-// before the new connection's identity has crossed the RT sync into the worker
-// serving /hilos/users. Judged against that missing answer, the request used to
-// be refused in silence (the window) or answered 401 (the subscription), so a
-// signed-in admin watched stale rows or was told to sign in again. The server
+// fresh rows and no false refusal. The reconnect is the whole point — the page
+// re-subscribes the instant the socket reports `connected`, reporting the window
+// each of its tables is holding, and that is before the new connection's identity
+// has crossed the RT sync into the worker serving /hilos/users. Judged against
+// that missing answer, the frame used to be refused in silence or answered 401,
+// so a signed-in admin watched stale rows or was told to sign in again. The server
 // now holds such a frame until the identity lands, and what proves it is the
 // answer arriving on the new socket rather than nothing at all.
 test('re-serves an admin page after a dropped socket, with no false refusal', async ({
@@ -127,7 +130,11 @@ test('re-serves an admin page after a dropped socket, with no false refusal', as
   await armSocketDrop(page)
   const frames: Array<{
     type?: string
-    data?: { page?: string; tableKey?: string; httpCode?: number }
+    data?: {
+      page?: string
+      httpCode?: number
+      payload?: { windows?: Record<string, unknown> }
+    }
   }> = []
   let sockets = 0
   page.on('websocket', (ws) => {
@@ -167,9 +174,11 @@ test('re-serves an admin page after a dropped socket, with no false refusal', as
     timeout: 15_000,
   })
 
-  // The window that comes back is the proof: it was requested in the race window
-  // and answered anyway, instead of being dropped by guards reading an identity
-  // that had not arrived.
+  // The window that comes back is the proof: since HIL-642 it rides the answer to
+  // the re-subscribe instead of a frame of its own, so what the poll waits for is a
+  // `page_response` carrying the users table in its `windows` section. That answers
+  // a subscribe sent inside the race window, instead of being dropped by guards
+  // reading an identity that had not arrived.
   await expect
     .poll(
       () =>
@@ -177,7 +186,9 @@ test('re-serves an admin page after a dropped socket, with no false refusal', as
           .slice(framesBeforeDrop)
           .some(
             (frame) =>
-              frame.type === 'table_window' && frame.data?.page === 'hilos_users',
+              frame.type === 'page_response' &&
+              frame.data?.page === 'hilos_users' &&
+              frame.data.payload?.windows?.[HILOS_USERS_TABLE] !== undefined,
           ),
       { timeout: 15_000 },
     )
