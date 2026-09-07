@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\Code\CodeSendTicket;
+use Hilos\Auth\Code\AuthCodeAgent;
+use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Registration\RegistrationReservationService;
+use Hilos\Auth\Verification\VerificationSendOutcome;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -19,6 +24,9 @@ use Hilos\Database\Database;
 use Hilos\Database\Object\Collection\Identities;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Random\RandomException;
 
 /**
  * Base of the seven groups the sign-in commands are split into (HIL-622).
@@ -68,6 +76,77 @@ abstract class AbstractLibraryCommands
         }
 
         return new ActingSession($acceptKey, $connection->sessionToken, $connection->userId);
+    }
+
+    /**
+     * Opens the send-progress line of this browser and names the send it will follow (HIL-826).
+     *
+     * The first state of the line is reported over the same frame every later one travels on,
+     * rather than drawn into the action reply: one path for all four states and one place that
+     * fans out. The cost is that the line arrives a tick after the code screen does, which is
+     * the shape the ticket asks for - two sources of truth on the first frame is what it avoids.
+     *
+     * The ticket goes back to the caller because the caller is what hands it to the transport;
+     * from there it comes back untouched with every step, and matching it against the line is
+     * the whole of the resend race.
+     *
+     * The session is named by the HASH of its token, which is what the line is keyed by and
+     * what a sender is allowed to know: whoever reports a step never holds the token itself.
+     *
+     * @param ActingSession $acting Browser that is about to be sent a code
+     * @param string $channel Channel the code travels over - `email` or a code channel key
+     * @return string Ticket of this send, to be handed to whoever carries it
+     * @throws RandomException When the platform CSPRNG cannot mint the ticket
+     * @throws InvalidArgumentException When the step frame cannot be named or queued
+     */
+    protected function openCodeSendLine(ActingSession $acting, string $channel): string
+    {
+        $ticket = CodeSendTicket::mint();
+
+        $this->library->sendToAgent(
+            HilosSignalConstants::HILOS_CODE_SEND_STEP,
+            CodeSendStepSignalData::queued(
+                $ticket,
+                StateProtectedModeRuntime::hashSessionToken($acting->sessionToken),
+                $channel,
+            ),
+        );
+
+        return $ticket;
+    }
+
+    /**
+     * Says what the send gate did to a code the line is already following (HIL-826).
+     *
+     * The line opens when the code is ORDERED, which is honest - at that moment it is queued -
+     * but a send the gate refuses never reaches a transport, so nothing would ever move it
+     * again. A person who pressed resend one second early would sit on the code screen reading
+     * "queued" about a letter nobody wrote.
+     *
+     * The mapping is the phone path's, and for its reasons ({@see AuthCodeAgent}): a cooldown
+     * hold means an earlier code went out and IS what the screen is waiting for, so the line
+     * says `sent`; a cap refusal means nothing is travelling at all, so it stops promising. A
+     * send that really went out is left alone - the transport carrying it reports the rest.
+     *
+     * @param string $ticket Ticket the line is following
+     * @param VerificationSendOutcome $outcome What the send gate answered
+     * @throws InvalidArgumentException When the step frame cannot be named or queued
+     */
+    protected function closeRefusedCodeSendLine(string $ticket, VerificationSendOutcome $outcome): void
+    {
+        if ($outcome->sent) {
+            return;
+        }
+
+        $this->library->sendToAgent(
+            HilosSignalConstants::HILOS_CODE_SEND_STEP,
+            CodeSendStepSignalData::step(
+                $ticket,
+                $outcome->capReached
+                    ? HilosCodeSendAttempt::STATE_FAILED
+                    : HilosCodeSendAttempt::STATE_SENT,
+            ),
+        );
     }
 
     /**

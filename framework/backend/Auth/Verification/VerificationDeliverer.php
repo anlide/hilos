@@ -20,6 +20,11 @@ use Hilos\Environment\Exception\EnvException;
  * What travels is a {@see VerificationDeliverable} rather than a bare string, because
  * one letter may carry two secrets (HIL-606): magic-link sign-in delivers a clickable
  * URL and the code a person on a second device types instead.
+ *
+ * Beside it travels an OPAQUE progress ticket (HIL-826), which is the whole of what the
+ * transport learns about who is waiting: it is handed back with every step the send reaches,
+ * and the sessions library turns it into a line on somebody's code screen. It is optional
+ * because most letters are not codes anybody is watching go.
  */
 interface VerificationDeliverer
 {
@@ -29,9 +34,16 @@ interface VerificationDeliverer
      * @param string $identifier Normalized target (lowercased email) the challenge was issued for
      * @param string $type Verification type (see VerificationType)
      * @param VerificationDeliverable $deliverable Plaintext content of the letter or message
+     * @param ?string $progressTicket Ticket the transport reports this send's steps against, or
+     *                                null when nobody is watching it (HIL-826)
      * @throws EnvException When the transport cannot read the env it shards the target by
      * @throws ValidationException When the challenge was issued for a blank target
      * @throws InvalidArgumentException When the transport's send signal cannot be named or queued
      */
-    public function deliver(string $identifier, string $type, VerificationDeliverable $deliverable): void;
+    public function deliver(
+        string $identifier,
+        string $type,
+        VerificationDeliverable $deliverable,
+        ?string $progressTicket = null,
+    ): void;
 }

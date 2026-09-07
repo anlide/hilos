@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library;
 
+use Hilos\Auth\Code\DTO\CodeSendProgressSignalData;
+use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Flow\AuthFlowIntent;
@@ -50,6 +52,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -224,6 +227,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * the write here. {@see HilosSignalConstants::HILOS_IMPERSONATE_DONE} is absent for the
      * same reason the two above are: it is the frame this library sends BACK, and the page
      * declares it.
+     *
+     * The twelfth has no fixed sender either (HIL-826): a step of a code send is reported by
+     * whoever is carrying it - a sign-in command placing the order, the per-channel mail queue,
+     * the code agent - and it arrives here because the line it moves is the session's.
+     * {@see HilosSignalConstants::HILOS_CODE_SEND_PROGRESS} is absent for the usual reason: it
+     * is what this library sends on to the browser.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
@@ -237,6 +246,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_ACCOUNT_MERGE => AccountMergeSignalData::class,
         HilosSignalConstants::HILOS_SESSION_TOAST_RAISE => RaiseSessionToastSignalData::class,
         HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => ImpersonateRequestSignalData::class,
+        HilosSignalConstants::HILOS_CODE_SEND_STEP => CodeSendStepSignalData::class,
     ];
 
     /**
@@ -499,6 +509,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->sweepRegistrationReservations();
         $this->sweepRegistrationWaiters();
         $this->sweepRecoveryWaiters();
+        $this->sweepCodeSendAttempts();
     }
 
     /**
@@ -790,7 +801,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             pendingAck: $this->sessionPendingAck($session),
             pendingAuthStep: $this->pendingAuthStepFor($session),
         ));
-        $this->publishSessionToasts(StateProtectedModeRuntime::hashSessionToken($session->token));
+        $sessionTokenHash = StateProtectedModeRuntime::hashSessionToken($session->token);
+        $this->publishSessionToasts($sessionTokenHash);
+        if ($this->hasSignInSurface()) {
+            $this->publishCodeSendProgress($sessionTokenHash);
+        }
     }
 
     /**
@@ -1911,6 +1926,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // drops it in the same order: a tab reconnecting a moment later must be told the
         // identifier step by the handshake, not parked again on a screen this call closes.
         Hilos::$db->sessions->findByToken($sessionToken)?->actions->releasePendingRegistration();
+        $this->dropCodeSendProgress($sessionToken);
 
         foreach ($parked as $acceptKey => $identifier) {
             Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
@@ -2029,8 +2045,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Routes one frame addressed to this library - seven from the users library, two back
      * over the project seam (HIL-622, HIL-710, HIL-729), one from whoever has something to
-     * say to a browser (HIL-768), and one from the framework's own Hilos users page, which
-     * holds the takeover's name and forwards its write here (HIL-824).
+     * say to a browser (HIL-768), one from the framework's own Hilos users page, which holds
+     * the takeover's name and forwards its write here (HIL-824), and one from whoever is
+     * carrying a code, each time the send moves (HIL-826).
      *
      * The switch is the framework's rather than a project's because what each frame means
      * is: the users library ends a ceremony by saying what happened, and the order this
@@ -2181,6 +2198,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_CODE_SEND_STEP:
+                if (!$data->data instanceof CodeSendStepSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        CodeSendStepSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->applyCodeSendStep($data->data);
+
+                return;
+
             default:
                 throw new AgentUnknownSignalException($name);
         }
@@ -2226,6 +2256,111 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $frame->destination,
         );
         $this->publishSessionToasts($frame->sessionTokenHash);
+    }
+
+    /**
+     * Moves one session's send-progress line, or drops the report on the floor (HIL-826).
+     *
+     * The one place a state of the line is written, whoever reported it. The report that OPENS
+     * the line is the one carrying a session and a channel; every later one carries the ticket
+     * alone, and the row it belongs to is found by that ticket - so a step of a send that has
+     * since been replaced, or of an attempt that died and spoke late, moves nothing and tells
+     * nobody.
+     *
+     * Which branch a frame takes is decided by what it CARRIES and not by its state, and the
+     * difference is not academic: `queued` is reported twice over one send's life - once by the
+     * caller ordering the code, and again by the mail queue when a retryable refusal puts the
+     * letter back in it (Flow F2). Reading the state instead would send that second report down
+     * the create path, where it names no session and is dropped, and the line would sit on
+     * `sending` for the rest of the wait.
+     *
+     * A report for a session with no live socket still opens the line, unlike a toast: the
+     * person is on the code screen, and a tab that reconnects a second later is told the line
+     * by its handshake. What has no reader is a toast about something already finished; this is
+     * about something still happening.
+     *
+     * @param CodeSendStepSignalData $frame The send that moved, and where it moved to
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When the progress frame cannot be named or queued
+     */
+    private function applyCodeSendStep(CodeSendStepSignalData $frame): void
+    {
+        $attempts = Hilos::$rt?->hilosCodeSendAttempts;
+        if ($attempts === null) {
+            return;
+        }
+
+        if ($frame->sessionTokenHash !== null && $frame->channel !== null) {
+            $attempts->actions->start($frame->sessionTokenHash, $frame->ticket, $frame->channel);
+            $this->publishCodeSendProgress($frame->sessionTokenHash);
+
+            return;
+        }
+
+        $sessionTokenHash = $attempts->actions->advance($frame->ticket, $frame->state, $frame->detail);
+        if ($sessionTokenHash === null) {
+            return;
+        }
+
+        $this->publishCodeSendProgress($sessionTokenHash);
+    }
+
+    /**
+     * Sends one session's whole send-progress line to every tab of it (HIL-826).
+     *
+     * Addressed by hash through {@see AbstractAgent::sendToSession()}, exactly as the toast
+     * stack is, and carrying the LINE rather than the step: a reconnect, a second tab and an
+     * ordinary move are then one sentence.
+     *
+     * Every handshake gets one, INCLUDING the empty one, for the reason
+     * {@see self::publishSessionToasts()} spells out - silence and "there is nothing on its
+     * way" look the same from here and mean opposite things to a browser. A tab that comes back
+     * to a registration whose send was let go must be told the line is gone, or it will sit
+     * under "sending" that nothing will ever move.
+     *
+     * @param string $sessionTokenHash Hash of the session cookie token being told
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When the frame cannot be named or queued
+     */
+    private function publishCodeSendProgress(string $sessionTokenHash): void
+    {
+        $attempts = Hilos::$rt?->hilosCodeSendAttempts;
+        if ($attempts === null) {
+            return;
+        }
+
+        $this->sendToSession(
+            HilosSignalConstants::HILOS_CODE_SEND_PROGRESS,
+            $sessionTokenHash,
+            CodeSendProgressSignalData::fromAttempt($attempts[$sessionTokenHash]),
+        );
+    }
+
+    /**
+     * Takes one session's send-progress line away, and says so (HIL-826).
+     *
+     * Called wherever the registration wait it belongs to is let go - the hold expiring and the
+     * person cancelling - because the line describes a code that the same movement has just
+     * made pointless. The empty frame goes out to the tabs that are still there; a session with
+     * none loses the row to {@see self::sweepCodeSendAttempts()} instead, with nobody to tell.
+     *
+     * @param string $sessionToken Session cookie token whose wait is over
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When the progress frame cannot be named or queued
+     */
+    private function dropCodeSendProgress(string $sessionToken): void
+    {
+        $attempts = Hilos::$rt?->hilosCodeSendAttempts;
+        if ($attempts === null) {
+            return;
+        }
+
+        $sessionTokenHash = StateProtectedModeRuntime::hashSessionToken($sessionToken);
+        if (!$attempts->actions->drop($sessionTokenHash)) {
+            return;
+        }
+
+        $this->publishCodeSendProgress($sessionTokenHash);
     }
 
     /**
@@ -3082,6 +3217,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // Cleared on THIS session's row alone, not on every session waiting on the
         // address - the narrowing HIL-608 made, kept when the memory moved onto the row.
         Hilos::$db->sessions->findByToken($sessionToken)?->actions->releasePendingRegistration();
+        $this->dropCodeSendProgress($sessionToken);
 
         foreach (array_unique($acceptKeys) as $acceptKey) {
             Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
@@ -3132,6 +3268,41 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
             }
         }
+    }
+
+    /**
+     * Drops the send-progress lines that have outlived their codes (HIL-826).
+     *
+     * The line's own reclamation, and it is deliberately NOT the rule the toast stacks settle
+     * by ({@see self::sweepSessionToasts()}): a toast lives only while somebody may be looking
+     * at it, so a session with no socket loses it, while the line has to SURVIVE having no
+     * socket. A reload drops every tab of a browser for a moment, and coming back to the same
+     * line is half of what the leaf is for. The waiter sweep beside this one is no model
+     * either - waits are parked per CONNECTION and the line is the session's, so releasing it
+     * with the first waiter of a two-tab browser would take the line off the second tab's
+     * screen mid-send.
+     *
+     * What is left is time. Past the challenge's own lifetime there is no code to enter any
+     * more, so a line still describing one is describing nothing; the same number the pending
+     * registrations are swept by ({@see self::sweepPendingRegistrations()}).
+     *
+     * Nothing is published for the rows it drops: a line that old belongs to a screen nobody
+     * is on, and a tab that comes back is told by its handshake - which is exactly why the
+     * empty frame is sent there.
+     *
+     * @throws EnvException When the verification TTL key is missing, outside the catalog, or of the wrong type
+     * @throws HilosException On runtime failure
+     */
+    private function sweepCodeSendAttempts(): void
+    {
+        $attempts = Hilos::$rt?->hilosCodeSendAttempts;
+        if ($attempts === null || count($attempts) === 0) {
+            return;
+        }
+
+        $attempts->actions->forgetStale(
+            Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int() * TimeConstants::MS_PER_SECOND,
+        );
     }
 
     /**

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\CodeChannel;
 
+use Hilos\Auth\Code\DTO\AuthCodeResultSignalData;
+use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
+
 /**
  * CodeChannelSend - what a channel answers about a code it was asked to deliver (HIL-492).
  *
@@ -14,15 +17,20 @@ namespace Hilos\Auth\CodeChannel;
  * code they are no longer looking at. A failed send is reported to the surface, which
  * offers the resend the person can decide to press.
  *
- * {@see detail} is a domain sentence for the agent log and never reaches the client:
- * the wire carries only a stable reason code, so no provider or network detail
- * escapes to a guest who is not even signed in.
+ * {@see detail} is a domain sentence, and since HIL-826 it reaches the person as well as the
+ * log - cut to its first line and capped on the way out
+ * ({@see CodeSendStepSignalData::step()}). The rule it replaces said the opposite, and said it
+ * for a good reason: a stable reason code cannot leak. What changed is what the leaf asks for
+ * - the refusal on the code screen must carry the provider's own words rather than "something
+ * went wrong", and no stable code of ours can hold words we did not write. The dialogue behind
+ * the sentence still stays in the agent log, and the outcome signal
+ * ({@see AuthCodeResultSignalData::reason}) still carries nothing but its stable code.
  */
 final readonly class CodeChannelSend
 {
     /**
      * @param bool $delivered Whether the transport accepted the code for delivery
-     * @param ?string $detail Domain failure sentence for the log, null when delivered
+     * @param ?string $detail Domain failure sentence for the log and the code screen, null when delivered
      */
     private function __construct(
         public bool $delivered,
@@ -43,7 +51,7 @@ final readonly class CodeChannelSend
     /**
      * Builds the outcome of a code the transport refused.
      *
-     * @param string $detail Domain failure sentence for the agent log
+     * @param string $detail Domain failure sentence for the agent log and the code screen
      * @return self Failed send
      */
     public static function failed(string $detail): self

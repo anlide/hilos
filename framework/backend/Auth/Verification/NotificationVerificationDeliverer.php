@@ -37,11 +37,17 @@ final class NotificationVerificationDeliverer implements VerificationDeliverer
      * @param string $identifier Normalized target the challenge was issued for
      * @param string $type Verification type (see VerificationType)
      * @param VerificationDeliverable $deliverable Plaintext content of the letter or message
+     * @param ?string $progressTicket Ticket the chosen transport reports this send's steps against
      * @throws EnvException When the target deliverer cannot shard the address
      */
-    public function deliver(string $identifier, string $type, VerificationDeliverable $deliverable): void
+    public function deliver(
+        string $identifier,
+        string $type,
+        VerificationDeliverable $deliverable,
+        ?string $progressTicket = null,
+    ): void
     {
-        $this->delivererFor($type)->deliver($identifier, $type, $deliverable);
+        $this->delivererFor($type)->deliver($identifier, $type, $deliverable, $progressTicket);
     }
 
     /**

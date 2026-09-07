@@ -33,9 +33,14 @@ import {
   AUTH_SURFACE_HEADING_ID,
   authAckToFlowPatch,
   authConvergeSignalSchema,
+  CODE_SEND_STATE_FAILED,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENDING,
+  CODE_SEND_STATE_SENT,
   createAuthActions,
   createAuthFlow,
   createOAuthLogin,
+  hilosCodeSendProgress,
   MAGIC_LINK_FLOW_METHOD,
   oauthTrip,
   oauthTripMessage,
@@ -177,6 +182,38 @@ const LINK_PROMPT_MESSAGE =
 const LINK_SENT_LEAD = "We've sent a sign-in link to"
 const LINK_SENT_TAIL = 'Open it to continue.'
 
+/**
+ * How the code screen says where the code has got to (HIL-826). The states
+ * travel as stable keys and the copy lives here, the way the outcome reasons
+ * already work; only the provider's refusal sentence comes off the wire as
+ * words, because they are not ours to phrase.
+ */
+const SEND_PROGRESS_COPY: Record<
+  string,
+  { icon: string; tone: string; text: (target: string) => string }
+> = {
+  [CODE_SEND_STATE_QUEUED]: {
+    icon: 'bi-hourglass-split',
+    tone: 'text-body-secondary',
+    text: () => 'Queued for sending…',
+  },
+  [CODE_SEND_STATE_SENDING]: {
+    icon: 'bi-arrow-repeat',
+    tone: 'text-primary',
+    text: (target) => `Sending to ${target}…`,
+  },
+  [CODE_SEND_STATE_SENT]: {
+    icon: 'bi-check-circle-fill',
+    tone: 'text-success',
+    text: (target) => `Sent to ${target}`,
+  },
+  [CODE_SEND_STATE_FAILED]: {
+    icon: 'bi-exclamation-triangle-fill',
+    tone: 'text-danger',
+    text: () => 'Could not send',
+  },
+}
+
 const auth = createAuthFlow({
   methods: context.methods,
   channels: context.channels,
@@ -186,6 +223,21 @@ const auth = createAuthFlow({
 })
 
 const gate = inject(hilosAuthGateKey, null)
+
+// The line is bound at boot (HIL-826), so what a mounting surface reads is the
+// value already held rather than the next frame to arrive - which is the whole
+// of the reload case, where the handshake was answered before this component
+// existed.
+// The machine is told at once and on every change, and it owns the lifetime:
+// what the line stops being about is a decision about the code, not about a tab.
+const reportedProgress = useSignal(hilosCodeSendProgress)
+watch(
+  reportedProgress,
+  (progress) => {
+    auth.reportSendProgress(progress)
+  },
+  { immediate: true },
+)
 
 const state = useSignal(auth.flow)
 const form = useSignal(auth.form)
@@ -278,6 +330,13 @@ const announcedNews = computed(() => {
       key: 'link_sent',
       text: `${LINK_SENT_LEAD} ${form.value.identifier}. ${LINK_SENT_TAIL}`,
     })
+  }
+  // The send line is news by nature - it changes under a person who is not
+  // touching anything - and it is the one thing on this screen that says why
+  // nothing has arrived yet.
+  const progress = sendProgress.value
+  if (progress !== null && state.value.step === 'code') {
+    news.push({ key: 'send_progress', text: progress.text })
   }
 
   return news
@@ -389,6 +448,32 @@ const primaryMethod = computed(() => {
   }
 
   return context.methods.find((method) => method.key === action.key) ?? null
+})
+
+/**
+ * The line under the identifier row: where the code being waited for has got to,
+ * or null when there is nothing to say (HIL-826).
+ *
+ * A missing line is a legal state and reads as silence, never as an error - the
+ * server takes it away with an empty frame, and a state this build has no words
+ * for is treated the same way rather than drawn as a raw key.
+ */
+const sendProgress = computed(() => {
+  const progress = state.value.sendProgress
+  if (progress === null) {
+    return null
+  }
+  const copy = SEND_PROGRESS_COPY[progress.state]
+  if (copy === undefined) {
+    return null
+  }
+  const text = copy.text(form.value.identifier)
+
+  return {
+    icon: copy.icon,
+    tone: copy.tone,
+    text: progress.detail === null ? text : `${text}: ${progress.detail}`,
+  }
 })
 
 /** The channel a delivered code went over, named on the code screen. */
@@ -757,6 +842,10 @@ let clock: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
   // Start every mount clean: the surface may be re-shown for a new gated action.
   auth.reset()
+  // Except for what the server is still saying (HIL-826): the reset empties the
+  // flow the line lives on, and the line is not this surface's to forget - it
+  // belongs to the session, and the frame that carried it may be minutes old.
+  auth.reportSendProgress(hilosCodeSendProgress.get())
   notice.value = null
   unavailableChannels.value = new Set()
 
@@ -1161,6 +1250,16 @@ onUnmounted(() => {
       >
         Sent via {{ deliveredChannel }}.
       </p>
+
+      <div
+        v-if="sendProgress"
+        class="d-flex align-items-center gap-2 small mb-3"
+        :class="sendProgress.tone"
+        data-id="auth-send-progress"
+      >
+        <i class="bi" :class="sendProgress.icon" aria-hidden="true" />
+        <span>{{ sendProgress.text }}</span>
+      </div>
 
       <!-- The letter went out with two ways back in it, so the screen says so
       before it asks for one: the link is still the shorter road for whoever can

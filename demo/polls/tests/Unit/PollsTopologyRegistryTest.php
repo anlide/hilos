@@ -168,6 +168,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 // The takeover the Hilos users page forwards: the page carries the ADMIN level
                 // that closes the action, and the session it rebinds is the library's (HIL-824).
                 HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_CODE_SEND_STEP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_NOTIFICATION_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
                 HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
                 // Sign-in's own frames (HIL-634). The users library waits for the throttle

@@ -15,6 +15,7 @@ use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
@@ -58,19 +59,22 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
     ];
 
     /**
-     * The two waits a sign-in parks a browser on: a registration in progress and a recovery.
+     * The two waits a sign-in parks a browser on, and the line that says how its code is
+     * travelling: a registration in progress, a recovery, and the send behind them (HIL-826).
      *
      * Declared here rather than by {@see AbstractSessionsLibraryAgent} because the collections
      * exist only where a sign-in surface does: {@see AuthFeature::mount()} mounts them and nothing
      * else does, so a library that claimed them in a project without one would read a collection
-     * that is not there on every tick. The users library stands beside this claim as a declared
-     * add/remove co-owner (HIL-685) rather than as a second full owner.
+     * that is not there on every tick. The users library stands beside the two waits as a declared
+     * add/remove co-owner (HIL-685) rather than as a second full owner; the progress line has no
+     * second writer at all - the transports carrying the code report to this library by frame.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_RT = [
         StateRegistrationWaiter::RT_COLLECTION => TruthSourceOperation::BY_KIND,
         StateRecoveryWaiter::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+        StateHilosCodeSendAttempt::RT_COLLECTION => TruthSourceOperation::BY_KIND,
     ];
 
     /**

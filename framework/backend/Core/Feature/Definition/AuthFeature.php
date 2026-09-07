@@ -15,12 +15,16 @@ use Hilos\Database\Entity\Item\PasskeyCredential;
 use Hilos\Database\Entity\Item\RegistrationReservation;
 use Hilos\Database\Entity\Item\UserVerification;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
+use Hilos\Runtime\State\Collection\HilosCodeSendAttempts as StateHilosCodeSendAttempts;
 use Hilos\Runtime\State\Collection\RecoveryWaiters as StateRecoveryWaiters;
 use Hilos\Runtime\State\Collection\RegistrationWaiters as StateRegistrationWaiters;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
+use Hilos\Runtime\View\Actions\Collection\HilosCodeSendAttemptsActions;
 use Hilos\Runtime\View\Actions\Collection\RecoveryWaitersActions;
 use Hilos\Runtime\View\Actions\Collection\RegistrationWaitersActions;
+use Hilos\Runtime\View\Collection\HilosCodeSendAttempts;
 use Hilos\Runtime\View\Collection\RecoveryWaiters;
 use Hilos\Runtime\View\Collection\RegistrationWaiters;
 use Hilos\Runtime\View\Context\RtContext;
@@ -47,7 +51,9 @@ use Hilos\Runtime\View\Context\RtContext;
  * The two parked-surface collections are mounted here rather than by the project for the
  * reason the registry exists: they are the sign-in flow's own rows, read wherever a waiting
  * tab is converged, and a project that mounted them by hand would be declaring the feature
- * twice - with the second declaration free to drift.
+ * twice - with the second declaration free to drift. The send-progress line stands with them
+ * for the same reason and one of its own (HIL-826): a project with no sign-in surface has no
+ * codes to send, so there is nothing for the line to describe.
  */
 final class AuthFeature extends FeatureDefinition
 {
@@ -79,7 +85,8 @@ final class AuthFeature extends FeatureDefinition
     }
 
     /**
-     * Carries the parked sign-in surfaces, declared beside the mount it describes.
+     * Carries the parked sign-in surfaces and the send-progress line, declared beside the mount
+     * it describes.
      *
      * @return bool Always true
      */
@@ -89,14 +96,15 @@ final class AuthFeature extends FeatureDefinition
     }
 
     /**
-     * Mounts the registration and recovery waits with their framework representation.
+     * Mounts the registration and recovery waits and the send-progress line with their framework
+     * representation.
      *
      * The representation is not optional decoration: the actions class is the only write
      * path that queues an RT sync, so a collection mounted without it would change in the
      * holder's worker and nowhere else.
      *
      * @param RtContext $context Runtime context being built
-     * @throws StateCollectionNotFoundException When a wait is represented before it is mounted
+     * @throws StateCollectionNotFoundException When a collection is represented before it is mounted
      */
     public function mount(RtContext $context): void
     {
@@ -111,6 +119,15 @@ final class AuthFeature extends FeatureDefinition
             StateRecoveryWaiter::RT_COLLECTION,
             RecoveryWaiters::class,
             RecoveryWaitersActions::class,
+        );
+        $context->mountFeatureCollection(
+            StateHilosCodeSendAttempt::RT_COLLECTION,
+            StateHilosCodeSendAttempts::init(),
+        );
+        $context->setRepresent(
+            StateHilosCodeSendAttempt::RT_COLLECTION,
+            HilosCodeSendAttempts::class,
+            HilosCodeSendAttemptsActions::class,
         );
     }
 }

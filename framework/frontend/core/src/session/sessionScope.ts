@@ -3,6 +3,10 @@
 // analog of bindPageScope — lifted from every project so the handshake plumbing
 // and the current-user selector live once
 // (docs/agents/frontend/bootstrap-structure.md).
+import {
+  SIGNAL_CODE_SEND_PROGRESS,
+  codeSendProgressSchema,
+} from '../auth/authSendProgress.js'
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import {
   scopePayloadSchema,
@@ -86,10 +90,18 @@ export const SESSION_ACK_SIGNED_IN = 'auth_signed_in'
  * the parse boundary validates what {@link bindSessionScope} ingests.
  * {@link createHilosConnection} merges it in, so a project never restates the
  * `{ handshake_response: scopePayloadSchema }` pair.
+ *
+ * The send-progress line rides here rather than with the auth-code bundle even
+ * though it is an auth frame (HIL-826). This bundle is merged INSIDE
+ * {@link createHilosConnection}, so every project gets it; the auth-code bundle is
+ * merged per project, and going that way would leave a demo without the line.
+ * What it has in common with the toast stack is what decides it: both are
+ * addressed to the SESSION, and a session is something every project carries.
  */
 export const SESSION_SIGNAL_SCHEMAS = {
   [SIGNAL_HANDSHAKE_RESPONSE]: scopePayloadSchema,
   [SIGNAL_SESSION_TOASTS]: sessionToastsSchema,
+  [SIGNAL_CODE_SEND_PROGRESS]: codeSendProgressSchema,
 }
 
 /** Where the current user sits in the session scope, and which field names it. */

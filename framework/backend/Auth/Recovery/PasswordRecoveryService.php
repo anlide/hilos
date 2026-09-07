@@ -63,6 +63,7 @@ final class PasswordRecoveryService
      * layer's and is not re-implemented here.
      *
      * @param string $email Normalized address to recover (lowercased)
+     * @param ?string $progressTicket Ticket the transport reports this letter's steps against (HIL-826)
      * @return ?VerificationSendOutcome Send verdict, or null when the address has no password to reset
      * @throws EmptyValueException When the address is empty
      * @throws RandomException When the platform CSPRNG cannot produce a code
@@ -74,14 +75,19 @@ final class PasswordRecoveryService
      * @throws InvalidArgumentException When the transport's send signal cannot be named or queued
      * @throws DbCollectionNotReadableException When nothing here reads the identities or verifications collection, or its readiness is on its way
      */
-    public function requestCode(string $email): ?VerificationSendOutcome
+    public function requestCode(string $email, ?string $progressTicket = null): ?VerificationSendOutcome
     {
         $userId = $this->passwordUserId($email);
         if ($userId === null) {
             return null;
         }
 
-        return new VerificationService()->issue(VerificationType::PASSWORD_RESET, $email, $userId);
+        return new VerificationService()->issue(
+            VerificationType::PASSWORD_RESET,
+            $email,
+            $userId,
+            $progressTicket,
+        );
     }
 
     /**

@@ -32,6 +32,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
 /**
@@ -214,6 +215,10 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
         // Registering parks the submitting connection as a waiter (HIL-415), so this
         // fixture owns that collection too even though the suite is about passwords.
         RtTruthSourceRegistry::register(StateRegistrationWaiter::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        // The send-progress line is the sessions library's too (HIL-826), and this fixture
+        // stands in for it: the wait being let go takes the line with it, and a writer with
+        // no claim is refused whether or not there is a row to take.
+        RtTruthSourceRegistry::register(StateHilosCodeSendAttempt::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);

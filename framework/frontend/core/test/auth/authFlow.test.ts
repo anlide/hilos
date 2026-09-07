@@ -56,6 +56,7 @@ const INITIAL_FLOW: AuthFlowState = {
   methodKey: null,
   identifierKind: 'unknown',
   channelKey: null,
+  sendProgress: null,
 }
 
 /**
@@ -1751,5 +1752,139 @@ describe('resuming an unfinished auth step', () => {
       step: 'code',
       intent: 'recovery',
     })
+  })
+})
+
+describe('the send-progress line (HIL-826)', () => {
+  it('holds the step the server reported', () => {
+    const flow = setup()
+
+    flow.reportSendProgress({
+      state: 'sending',
+      channel: 'email',
+      detail: null,
+    })
+
+    expect(flow.flow.get().sendProgress).toEqual({
+      state: 'sending',
+      channel: 'email',
+      detail: null,
+    })
+  })
+
+  it('takes the line away on an empty frame', () => {
+    const flow = setup()
+    flow.reportSendProgress({ state: 'sent', channel: 'email', detail: null })
+
+    flow.reportSendProgress(null)
+
+    // A code screen with no line is a legal state, read as "nothing to say" -
+    // which is exactly what the server means by the empty frame.
+    expect(flow.flow.get().sendProgress).toBeNull()
+  })
+
+  it('forgets the old line the moment a new ask goes out', async () => {
+    const flow = setup()
+    flow.reportSendProgress({ state: 'failed', channel: 'email', detail: 'no' })
+
+    await flow.submit()
+
+    // The line on screen was about the previous send. The server's own `queued`
+    // lands a tick later and says the same thing with authority; what must not
+    // happen is a refusal from the last attempt sitting under a fresh one.
+    expect(flow.flow.get().sendProgress).toBeNull()
+  })
+
+  it('forgets the line when the person walks back to the field', () => {
+    const flow = setup()
+    flow.reportSendProgress({ state: 'sent', channel: 'email', detail: null })
+
+    flow.backToIdentifier()
+
+    expect(flow.flow.get().sendProgress).toBeNull()
+  })
+})
+
+describe('the phone code screen opens at once (HIL-826, Design D7)', () => {
+  it('shows the code screen while the send is still being asked about', async () => {
+    let release = (): void => {}
+    const onSubmit = vi.fn(
+      async () =>
+        await new Promise<AuthFlowSubmitOutcome>((resolve) => {
+          release = () => resolve({ ok: true, next: { step: 'code' } })
+        }),
+    )
+    const flow = setup({
+      onSubmit,
+      onDetect: async (identifier) =>
+        detected({
+          identifier,
+          normalized: identifier,
+          kind: 'phone',
+          status: 'active',
+          methods: ['sms'],
+        }),
+    })
+    await typeAndDetect(flow, '+79991234567')
+
+    const sending = flow.chooseChannel('sms')
+
+    // The screen no longer waits for the transport's word: it says "queued",
+    // then "sending", and neither is a promise that a code exists.
+    expect(flow.flow.get()).toMatchObject({ step: 'code', channelKey: 'sms' })
+    // The wire is still given the step the send was ORDERED from - which action
+    // a submit becomes is keyed by it.
+    expect(onSubmit).toHaveBeenCalledWith(
+      'submit',
+      expect.objectContaining({ step: 'identifier' }),
+      expect.anything(),
+    )
+    release()
+    await sending
+  })
+
+  it('takes the person back when the channel cannot be reached', async () => {
+    const flow = setup({
+      onSubmit: async () => ({ ok: false, message: 'not this way' }),
+      onDetect: async (identifier) =>
+        detected({
+          identifier,
+          normalized: identifier,
+          kind: 'phone',
+          status: 'active',
+          methods: ['sms'],
+        }),
+    })
+    await typeAndDetect(flow, '+79991234567')
+
+    await flow.chooseChannel('sms')
+
+    // What is paid for opening early: the field comes back a second later, with
+    // the refusal on it, exactly as it did when the screen had not opened yet.
+    expect(flow.flow.get().step).toBe('identifier')
+    expect(flow.error.get()?.message).toBe('not this way')
+  })
+
+  it('takes a registering phone back to the terms, not to the field', async () => {
+    const flow = setup({
+      onSubmit: async () => ({ ok: false, message: 'not this way' }),
+      onDetect: async (identifier) =>
+        detected({
+          identifier,
+          normalized: identifier,
+          kind: 'phone',
+          status: 'none',
+          methods: [],
+        }),
+    })
+    await typeAndDetect(flow, '+79991234567')
+    await flow.chooseChannel('sms')
+    flow.setField('consentAccepted', true)
+
+    await flow.submit()
+
+    // The send was ordered from the terms screen, so that is where a refusal
+    // returns - going to the field would drop an accepted consent.
+    expect(flow.flow.get().step).toBe('consent')
   })
 })

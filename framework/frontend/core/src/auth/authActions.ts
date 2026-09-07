@@ -555,7 +555,13 @@ function submitCode(
 
 /**
  * Ask the backend to send a code to a phone over the chosen channel, and resolve
- * only once it says what became of it (HIL-492).
+ * once it says what became of it (HIL-492).
+ *
+ * The code screen is already open by the time this resolves (HIL-826): the machine
+ * opens it when the send is ordered, and the send-progress line on it says where the
+ * code has got to. So what this outcome still carries is the resend gate, the code's
+ * life, and the channel the code REALLY went over - and, when the send is refused,
+ * the message the person reads on the step the machine takes them back to.
  *
  * @param context The project auth context the wire dispatches over.
  * @param flow The current flow state (the chosen channel and the intent to keep).
@@ -578,7 +584,9 @@ async function sendPhoneCode(
   return {
     ok: true,
     // The channel comes off the OUTCOME and not off the click, so the code screen
-    // cannot name one that carried nothing.
+    // cannot name one that carried nothing. The step is named again rather than
+    // left out because a converge or a resume may have moved the flow while the
+    // messenger was being asked.
     next: { step: 'code', intent: flow.intent, channelKey: outcome.channel },
     resendAt: outcome.resendAt,
     expiresAt: outcome.expiresAt,
@@ -592,9 +600,9 @@ async function sendPhoneCode(
  * whether a channel can reach a number is a network round-trip for a messenger, so
  * the page action validates what costs nothing, hands the rest to the code agent
  * and acks "accepted"; the real answer lands later on
- * {@link AUTH_CODE_RESULT_SIGNAL}. Advancing on the ack would open a code screen
- * before any code existed — and, once channels can fail, a screen naming a message
- * that was never sent.
+ * {@link AUTH_CODE_RESULT_SIGNAL}. What the wait buys is no longer the code screen's
+ * opening - that happens at once now (HIL-826) - but everything the outcome alone
+ * knows: the channel the code went over, the resend gate, and the refusal.
  *
  * Ordering is why the subscription is registered BEFORE the dispatch: the outcome
  * can arrive while the ack is still in flight, and a listener attached afterwards
@@ -670,15 +678,16 @@ function requestPhoneCode(
 /**
  * Turn a code-request outcome reason into what the surface does about it.
  *
- * TWO arms advance to the code screen, not one. A fresh send obviously does — and
- * so does a send the cooldown held back, because that refusal means a code went to
- * this number moments ago and is still live: stranding the person on the identifier
- * step would hide the very code they are waiting to type.
+ * TWO arms KEEP the code screen, not one. A fresh send obviously does — and so does
+ * a send the cooldown held back, because that refusal means a code went to this
+ * number moments ago and is still live: taking the person off the code screen would
+ * hide the very code they are waiting to type.
  *
- * The genuine refusals stay where the person can act — pick another channel, fix
- * the number, or wait out the window. The wording is the client's: the backend
- * deliberately sends a stable reason code and no prose, so no provider or network
- * detail reaches a guest.
+ * The genuine refusals send them back to where they can act — pick another channel,
+ * fix the number, or wait out the window. The wording is the client's: the outcome
+ * signal deliberately carries a stable reason code and no prose. The provider's own
+ * sentence has a road of its own now (HIL-826) and it is the send-progress line, not
+ * this one.
  *
  * @param reason The stable reason code the outcome signal carried.
  * @returns Whether a code is in play, and the sentence to show when none is.

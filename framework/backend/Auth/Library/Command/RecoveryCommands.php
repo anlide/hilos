@@ -19,6 +19,7 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Random\RandomException;
 
 /**
@@ -69,10 +70,12 @@ final class RecoveryCommands extends AbstractLibraryCommands
         $acting = $this->acting($acceptKey);
 
         $email = strtolower($dto->email);
-        $outcome = new PasswordRecoveryService()->requestCode($email);
+        $ticket = $this->openCodeSendLine($acting, StateHilosCodeSendAttempt::CHANNEL_EMAIL);
+        $outcome = new PasswordRecoveryService()->requestCode($email, $ticket);
         if ($outcome === null) {
             throw new ValidationException(AuthMessages::NO_PASSWORD_TO_RESET);
         }
+        $this->closeRefusedCodeSendLine($ticket, $outcome);
 
         if ($outcome->capReached) {
             return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, AuthMessages::SEND_CAP);

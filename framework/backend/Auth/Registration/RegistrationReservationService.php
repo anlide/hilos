@@ -161,6 +161,7 @@ final class RegistrationReservationService
      * @param string $sessionToken Session cookie token of the browser leading this registration
      * @param string $identifier Normalized identifier (lowercased email)
      * @param ?string $plainSecret Plaintext credential the account will get, or null for a method that carries none
+     * @param ?string $progressTicket Ticket the transport reports this letter's steps against (HIL-826)
      * @return VerificationSendOutcome Whether the code went out, and the seconds until the next may
      * @throws EmptyValueException When identifier or session token is empty
      * @throws RandomException When the platform CSPRNG cannot produce a code
@@ -178,10 +179,16 @@ final class RegistrationReservationService
         string $sessionToken,
         string $identifier,
         ?string $plainSecret,
+        ?string $progressTicket = null,
     ): VerificationSendOutcome {
         $this->hold($type, $sessionToken, $identifier, $plainSecret);
 
-        return new VerificationService()->issue(VerificationType::REGISTER_CONFIRM, $identifier, null);
+        return new VerificationService()->issue(
+            VerificationType::REGISTER_CONFIRM,
+            $identifier,
+            null,
+            $progressTicket,
+        );
     }
 
     /**

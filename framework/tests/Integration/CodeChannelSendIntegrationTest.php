@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\DTO\AuthCodeResultSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
+use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Auth\CodeChannel\CodeChannel;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Verification\VerificationService;
@@ -22,6 +23,7 @@ use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerification
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 use Random\RandomException;
 
 /**
@@ -54,6 +56,9 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
     ];
 
     private const string ACCEPT_KEY = 'code-channel-test-accept-key';
+
+    /** Name of the send whose steps the agent reports; the line itself is HIL-826's. */
+    private const string PROGRESS_TICKET = 'a1b2c3d4e5f60718';
 
     /** Session token of the browser every case asks from, valid hex so a real row can carry it. */
     private const string SESSION_TOKEN = 'c0de00000000000000000000000000a1';
@@ -168,6 +173,48 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
             new VerificationService()->activeChannel(VerificationType::SMS_LOGIN, $phone),
             'A resend has to repeat the channel the person chose, so the mint records it',
         );
+    }
+
+    /**
+     * The line the person is watching is moved by the agent, and only ever by its ticket.
+     *
+     * The phone half of HIL-826, and it belongs beside the cases above rather than in a unit
+     * test: what is being pinned is that the steps come out of the SAME pass that probes,
+     * mints and delivers, in the order that pass takes them.
+     *
+     * @throws HilosException When a verification query fails
+     */
+    public function testTheLineIsToldSendingAndThenSentOverThePhonePath(): void
+    {
+        $channel = new CodeChannelTestChannel('carrier', reachable: true);
+        $agent = new CodeChannelTestAgent($channel);
+
+        $this->request($agent, $this->uniquePhone(), 'carrier');
+
+        // "queued" is absent on purpose: the command that ordered the code reported it before
+        // this agent ever saw the request, which is what keeps one path for all four states.
+        self::assertSame(
+            [HilosCodeSendAttempt::STATE_SENDING, HilosCodeSendAttempt::STATE_SENT],
+            $this->takeReportedSteps(),
+        );
+    }
+
+    /**
+     * A channel the registry does not carry stops the line promising instead of leaving it.
+     *
+     * The one arm that has no operation to speak from, and the one where a forgotten report
+     * would be visible to a person: the code screen opened when they picked the channel, so a
+     * line left on "queued" would go on saying a code is coming that nobody is sending.
+     *
+     * @throws HilosException When a verification query fails
+     */
+    public function testAChannelTheRegistryDoesNotCarryStopsTheLinePromising(): void
+    {
+        $agent = new CodeChannelTestAgent(new CodeChannelTestChannel('carrier', reachable: true));
+
+        $this->request($agent, $this->uniquePhone(), 'no-such-channel');
+
+        self::assertSame([HilosCodeSendAttempt::STATE_FAILED], $this->takeReportedSteps());
     }
 
     /**
@@ -327,6 +374,7 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
                 $phone,
                 $channel,
                 VerificationType::SMS_LOGIN,
+                self::PROGRESS_TICKET,
             )),
             '',
             HilosSignalConstants::HILOS_AUTH_CODE_SEND,
@@ -353,6 +401,33 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
         }
 
         return null;
+    }
+
+    /**
+     * Takes the states this send was reported to have reached off the queue.
+     *
+     * Steps carrying any other ticket are ignored rather than collected, which is the same
+     * question the owner asks of them - a line follows one send, and a report of another is
+     * not about it.
+     *
+     * @return list<string> States reported for {@see self::PROGRESS_TICKET}, in order
+     */
+    private function takeReportedSteps(): array
+    {
+        $states = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $payload = $signal->data;
+            if (!$payload instanceof AgentSignalData || !$payload->data instanceof CodeSendStepSignalData) {
+                continue;
+            }
+            if ($payload->data->ticket !== self::PROGRESS_TICKET) {
+                continue;
+            }
+
+            $states[] = $payload->data->state;
+        }
+
+        return $states;
     }
 
     /**

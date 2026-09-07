@@ -29,6 +29,25 @@ final class MailSendSignalDataTest extends TestCase
         $this->assertEquals($original, $restored);
     }
 
+    public function testTheProgressTicketSurvivesTheRoundTripAndIsOptional(): void
+    {
+        $watched = new MailSendSignalData(
+            to: 'user@example.com',
+            shardKey: 1,
+            subject: 'Hi',
+            text: 'plain',
+            progressTicket: 'a1b2c3d4e5f60718',
+        );
+
+        // The ticket is the only thing this subsystem learns about who ordered the letter
+        // (HIL-826), so it has to survive the boundary; a letter nobody is watching carries
+        // none, which is most of them.
+        self::assertEquals($watched, MailSendSignalData::fromArray($watched->toArray()));
+        self::assertNull(MailSendSignalData::fromArray(
+            new MailSendSignalData(to: 'user@example.com', shardKey: 1, subject: 'Hi', text: 'plain')->toArray(),
+        )->progressTicket);
+    }
+
     public function testInlineVariantRoundTripsThroughArray(): void
     {
         $original = new MailSendSignalData(

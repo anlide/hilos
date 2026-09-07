@@ -203,6 +203,18 @@ export {
   type AuthCodeResultSignalData,
 } from './auth/authCodeSignals.js'
 export {
+  SIGNAL_CODE_SEND_PROGRESS,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENDING,
+  CODE_SEND_STATE_SENT,
+  CODE_SEND_STATE_FAILED,
+  codeSendProgressSchema,
+  bindCodeSendProgress,
+  hilosCodeSendProgress,
+  type CodeSendProgress,
+  type CodeSendProgressSignalData,
+} from './auth/authSendProgress.js'
+export {
   AUTH_CONVERGE_SIGNAL,
   authConvergeSignalSchema,
   AUTH_CONVERGE_SIGNAL_SCHEMAS,

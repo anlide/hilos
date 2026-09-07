@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Mail\Delivery;
 
+use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -32,6 +34,7 @@ use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
 use Hilos\Notification\Delivery\DeliveryAttempt;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 
 /**
  * MailDeliveryChannelAgent - the sharded email delivery agent (HIL-197).
@@ -301,7 +304,11 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
             return;
         }
 
-        $this->rawSends[$this->rawNextId++] = new RawMailSend($message, $signal->templateKey);
+        $this->rawSends[$this->rawNextId++] = new RawMailSend(
+            $message,
+            $signal->templateKey,
+            $signal->progressTicket,
+        );
     }
 
     /**
@@ -349,6 +356,7 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 
             if ($attempt->isDelivered()) {
                 $attempt->close();
+                $this->reportCodeSendStep($send, HilosCodeSendAttempt::STATE_SENT, null);
                 unset($this->rawSends[$id]);
                 continue;
             }
@@ -360,10 +368,15 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 
             if ($permanent || $send->attempts >= $this->maxAttempts()) {
                 $this->logRawFailure($send, $error);
+                $this->reportCodeSendStep($send, HilosCodeSendAttempt::STATE_FAILED, $error);
                 unset($this->rawSends[$id]);
                 continue;
             }
             $send->nextAttemptMs = $nowMs + $this->rawBackoffMs($send->attempts);
+            // Back to the queue, which is where the letter honestly is: this refusal has
+            // retries left behind it, and a line that said "could not send" and then "sent"
+            // a second later would be flicker rather than news (HIL-826).
+            $this->reportCodeSendStep($send, HilosCodeSendAttempt::STATE_QUEUED, null);
         }
     }
 
@@ -384,6 +397,7 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 
             $send->attempts++;
             $send->attempt = new MailDeliveryAttempt($this->createTransport(), $send->message, $nowMs);
+            $this->reportCodeSendStep($send, HilosCodeSendAttempt::STATE_SENDING, null);
         }
     }
 
@@ -426,5 +440,40 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
     {
         $template = $send->templateKey ?? 'inline';
         $this->logAgentWarning("raw send to '{$send->message->to}' (template '{$template}') failed: {$error}");
+    }
+
+    /**
+     * Tells the sessions library where one watched letter has got to (HIL-826).
+     *
+     * The mail agent knows nothing about who is waiting and does not need to: it was handed an
+     * opaque ticket with the order and hands it back, and the library it reaches turns that
+     * into a line on somebody's code screen. A letter that arrived without a ticket is one
+     * nobody is watching - most of them - and reports nothing.
+     *
+     * The frame is queued rather than sent, like every other agent-to-agent word here, so a
+     * transport step never waits on a delivery.
+     *
+     * @param RawMailSend $send Send whose step is being reported
+     * @param string $state One of the four states on {@see HilosCodeSendAttempt}
+     * @param ?string $detail Transport's own error text on a refusal, null otherwise
+     */
+    private function reportCodeSendStep(RawMailSend $send, string $state, ?string $detail): void
+    {
+        $ticket = $send->progressTicket;
+        if ($ticket === null) {
+            return;
+        }
+
+        try {
+            $this->sendToAgent(
+                HilosSignalConstants::HILOS_CODE_SEND_STEP,
+                CodeSendStepSignalData::step($ticket, $state, $detail),
+            );
+        } catch (InvalidArgumentException $failure) {
+            // A step that cannot be named leaves the line where it was, which is a line one
+            // state behind rather than a letter unsent - so it is logged and not raised: the
+            // send itself is what this agent is answerable for.
+            $this->logAgentWarning('code send step could not be reported: ' . $failure->getMessage());
+        }
     }
 }

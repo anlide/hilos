@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Mail\Delivery;
 
+use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
@@ -20,6 +22,7 @@ use Hilos\Mail\MailTransportInterface;
 use Hilos\Mail\Template\MagicLinkMailTemplate;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -35,6 +38,12 @@ use RuntimeException;
  */
 final class MailDeliveryChannelAgentTest extends TestCase
 {
+    /** Name of the one send whose steps these cases watch; the line itself is HIL-826's. */
+    private const string PROGRESS_TICKET = 'a1b2c3d4e5f60718';
+
+    /** Sentence carried by the last step drained off the queue, or null when it carried none. */
+    private ?string $lastDetail = null;
+
     public function testRawSendDeliversInlineMessageThenDropsIt(): void
     {
         $transport = new ScriptedMailTransport(2, MailSendOutcome::delivered());
@@ -226,9 +235,173 @@ final class MailDeliveryChannelAgentTest extends TestCase
      * @param TestableMailAgent $agent Agent under test
      * @param MailSendSignalData $signal Raw-send payload
      */
+    public function testAWatchedLetterReportsQueuedNothingSendingAndSent(): void
+    {
+        $transport = new ScriptedMailTransport(1, MailSendOutcome::delivered());
+        $agent = new TestableMailAgent([$transport]);
+        $this->watchSignals();
+
+        $this->rawSend($agent, $this->watchedLetter());
+        // Nothing is reported on intake: "queued" is the caller's own report, sent the moment
+        // the code was ordered, so the line is already up before the letter reaches this pool.
+        self::assertSame([], $this->reportedSteps());
+
+        $agent->onTick();
+        $agent->onTick();
+        $agent->onTick();
+
+        self::assertSame(
+            [HilosCodeSendAttempt::STATE_SENDING, HilosCodeSendAttempt::STATE_SENT],
+            $this->reportedSteps(),
+        );
+    }
+
+    public function testARetryableRefusalPutsTheLineBackInTheQueue(): void
+    {
+        $transports = [
+            new ScriptedMailTransport(1, MailSendOutcome::failed('temporary greylist', false)),
+            new ScriptedMailTransport(1, MailSendOutcome::delivered()),
+        ];
+        $agent = new TestableMailAgent($transports);
+        $this->watchSignals();
+
+        $this->rawSend($agent, $this->watchedLetter());
+        for ($tick = 0; $tick < 6; $tick++) {
+            $agent->onTick();
+        }
+
+        // The whole of Flow F2: a refusal with retries left is not "could not send". Showing
+        // that and then "sent" a second later is flicker, and failed has to keep meaning the
+        // state a person can act on.
+        self::assertSame(
+            [
+                HilosCodeSendAttempt::STATE_SENDING,
+                HilosCodeSendAttempt::STATE_QUEUED,
+                HilosCodeSendAttempt::STATE_SENDING,
+                HilosCodeSendAttempt::STATE_SENT,
+            ],
+            $this->reportedSteps(),
+        );
+    }
+
+    public function testAPermanentRefusalCarriesTheProvidersFirstLineAndNoMore(): void
+    {
+        $transport = new ScriptedMailTransport(
+            1,
+            MailSendOutcome::failed("mailbox unavailable (550)\n<<< 550 5.1.1 no such user\n>>> QUIT", true),
+        );
+        $agent = new TestableMailAgent([$transport]);
+        $this->watchSignals();
+
+        $this->rawSend($agent, $this->watchedLetter());
+        $agent->onTick();
+        $agent->onTick();
+        $agent->onTick();
+
+        self::assertSame(
+            [HilosCodeSendAttempt::STATE_SENDING, HilosCodeSendAttempt::STATE_FAILED],
+            $this->reportedSteps(),
+        );
+        // The sentence a person can act on travels; the dialogue behind it stays in the log.
+        self::assertSame('mailbox unavailable (550)', $this->lastReportedDetail());
+    }
+
+    public function testALetterNobodyIsWatchingReportsNothing(): void
+    {
+        $transport = new ScriptedMailTransport(1, MailSendOutcome::delivered());
+        $agent = new TestableMailAgent([$transport]);
+        $this->watchSignals();
+
+        $this->rawSend($agent, new MailSendSignalData(
+            to: 'user@example.com',
+            shardKey: 1,
+            subject: 'Hi',
+            text: 'Body',
+        ));
+        $agent->onTick();
+        $agent->onTick();
+        $agent->onTick();
+
+        // Most letters are not codes: with no ticket there is no line, and a report with
+        // nothing to name would be a frame the owner drops anyway.
+        self::assertSame([], $this->reportedSteps());
+    }
+
     private function rawSend(TestableMailAgent $agent, MailSendSignalData $signal): void
     {
         $agent->onSignalAgent(new AgentSignalData($signal), 'src', HilosSignalConstants::HILOS_MAIL_SEND);
+    }
+
+    /**
+     * @return MailSendSignalData A letter carrying a code somebody is watching go
+     */
+    private function watchedLetter(): MailSendSignalData
+    {
+        return new MailSendSignalData(
+            to: 'user@example.com',
+            shardKey: 1,
+            subject: 'Hi',
+            text: 'Body',
+            progressTicket: self::PROGRESS_TICKET,
+        );
+    }
+
+    /**
+     * Puts a fresh router under the agent so its reports can be read back off the queue.
+     */
+    private function watchSignals(): void
+    {
+        Hilos::$sr = new SignalRouter();
+    }
+
+    /**
+     * Drains the queued frames and answers the states this send was reported to have reached.
+     *
+     * @return list<string> States reported for {@see self::PROGRESS_TICKET}, in order
+     */
+    private function reportedSteps(): array
+    {
+        $states = [];
+        foreach ($this->drainReports() as $frame) {
+            $states[] = $frame->state;
+        }
+
+        return $states;
+    }
+
+    /**
+     * @return ?string Sentence carried by the last report drained, or null when it carried none
+     */
+    private function lastReportedDetail(): ?string
+    {
+        return $this->lastDetail;
+    }
+
+    /**
+     * Takes every code-send step off the router queue, remembering the last sentence seen.
+     *
+     * The queue is drained rather than peeked because the assertions read it more than once
+     * and a frame counted twice would look like a step that happened twice.
+     *
+     * @return list<CodeSendStepSignalData> Steps reported since the last drain
+     */
+    private function drainReports(): array
+    {
+        $frames = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $data = $signal->data;
+            if (!$data instanceof AgentSignalData || !$data->data instanceof CodeSendStepSignalData) {
+                continue;
+            }
+            if ($data->data->ticket !== self::PROGRESS_TICKET) {
+                continue;
+            }
+
+            $frames[] = $data->data;
+            $this->lastDetail = $data->data->detail;
+        }
+
+        return $frames;
     }
 }
 

@@ -32,9 +32,14 @@ import {
   AUTH_SURFACE_HEADING_ID,
   authAckToFlowPatch,
   authConvergeSignalSchema,
+  CODE_SEND_STATE_FAILED,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENDING,
+  CODE_SEND_STATE_SENT,
   createAuthActions,
   createAuthFlow,
   createOAuthLogin,
+  hilosCodeSendProgress,
   MAGIC_LINK_FLOW_METHOD,
   oauthTrip,
   oauthTripMessage,
@@ -48,6 +53,7 @@ import {
   TELEGRAM_CODE_CHANNEL,
   toFlowPatch,
   type AuthFlowScreen,
+  type CodeSendProgress,
   type HilosAuthContext,
   type OAuthTripOutcome,
   type ProjectSignal,
@@ -163,6 +169,70 @@ const LINK_SENT_LEAD = "We've sent a sign-in link to"
 const LINK_SENT_TAIL = 'Open it to continue.'
 
 /**
+ * How the code screen says where the code has got to (HIL-826). The states
+ * travel as stable keys and the copy lives here, the way the outcome reasons
+ * already work; only the provider's refusal sentence comes off the wire as
+ * words, because they are not ours to phrase.
+ */
+const SEND_PROGRESS_COPY: Record<
+  string,
+  { icon: string; tone: string; text: (target: string) => string }
+> = {
+  [CODE_SEND_STATE_QUEUED]: {
+    icon: 'bi-hourglass-split',
+    tone: 'text-body-secondary',
+    text: () => 'Queued for sending…',
+  },
+  [CODE_SEND_STATE_SENDING]: {
+    icon: 'bi-arrow-repeat',
+    tone: 'text-primary',
+    text: (target) => `Sending to ${target}…`,
+  },
+  [CODE_SEND_STATE_SENT]: {
+    icon: 'bi-check-circle-fill',
+    tone: 'text-success',
+    text: (target) => `Sent to ${target}`,
+  },
+  [CODE_SEND_STATE_FAILED]: {
+    icon: 'bi-exclamation-triangle-fill',
+    tone: 'text-danger',
+    text: () => 'Could not send',
+  },
+}
+
+/**
+ * The line under the identifier row: where the code being waited for has got to,
+ * or null when there is nothing to say (HIL-826).
+ *
+ * A missing line is a legal state and reads as silence, never as an error - the
+ * server takes it away with an empty frame, and a state this build has no words
+ * for is treated the same way rather than drawn as a raw key.
+ *
+ * @param progress The reported step, or null when the session is owed no line.
+ * @param target The address or number the code is going to.
+ * @returns What to draw, or null when there is nothing to draw.
+ */
+function sendProgressLine(
+  progress: CodeSendProgress | null,
+  target: string,
+): { icon: string; tone: string; text: string } | null {
+  if (progress === null) {
+    return null
+  }
+  const copy = SEND_PROGRESS_COPY[progress.state]
+  if (copy === undefined) {
+    return null
+  }
+  const text = copy.text(target)
+
+  return {
+    icon: copy.icon,
+    tone: copy.tone,
+    text: progress.detail === null ? text : `${text}: ${progress.detail}`,
+  }
+}
+
+/**
  * A server moment read as the `m:ss` still to run, or null once it is spent.
  *
  * @param moment The local-scale epoch-ms moment, or null when nothing is armed.
@@ -274,6 +344,17 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   // has nothing to close.
   const gate = useContext(HilosAuthGateContext)
 
+  // The line is bound at boot (HIL-826), so what a mounting surface reads is the
+  // value already held rather than the next frame to arrive - which is the whole
+  // of the reload case, where the handshake was answered before this component
+  // existed. The machine is told at once and on every change, and it owns the
+  // lifetime: what the line stops being about is a decision about the code, not
+  // about a tab.
+  const reportedProgress = useSignal(hilosCodeSendProgress)
+  useEffect(() => {
+    auth.reportSendProgress(reportedProgress)
+  }, [auth, reportedProgress])
+
   const state = useSignal(auth.flow)
   const form = useSignal(auth.form)
   const detection = useSignal(auth.detection)
@@ -364,9 +445,23 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
         text: `${LINK_SENT_LEAD} ${form.identifier}. ${LINK_SENT_TAIL}`,
       })
     }
+    // The send line is news by nature - it changes under a person who is not
+    // touching anything - and it is the one thing on this screen that says why
+    // nothing has arrived yet.
+    const progress = sendProgressLine(state.sendProgress, form.identifier)
+    if (progress !== null && state.step === 'code') {
+      news.push({ key: 'send_progress', text: progress.text })
+    }
 
     return news
-  }, [linkPrompt, state.step, notice, screenKey, form.identifier])
+  }, [
+    linkPrompt,
+    state.step,
+    state.sendProgress,
+    notice,
+    screenKey,
+    form.identifier,
+  ])
 
   // The icon row above the field, and the passwordless exits that live next to
   // the password itself. Both are the machine's visible set split by placement —
@@ -459,6 +554,8 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
       ? null
       : (context.methods.find((method) => method.key === primaryAction.key) ??
         null)
+
+  const sendProgress = sendProgressLine(state.sendProgress, form.identifier)
 
   /** The channel a delivered code went over, named on the code screen. */
   const deliveredChannel =
@@ -666,6 +763,10 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     // Start every mount clean: the surface may be re-shown for a new gated
     // action.
     auth.reset()
+    // Except for what the server is still saying (HIL-826): the reset empties the
+    // flow the line lives on, and the line is not this surface's to forget - it
+    // belongs to the session, and the frame that carried it may be minutes old.
+    auth.reportSendProgress(hilosCodeSendProgress.get())
     setNotice(null)
     setUnavailableChannels(new Set())
 
@@ -1139,6 +1240,16 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
             >
               Sent via {deliveredChannel}.
             </p>
+          ) : null}
+
+          {sendProgress ? (
+            <div
+              className={`d-flex align-items-center gap-2 small mb-3 ${sendProgress.tone}`}
+              data-id="auth-send-progress"
+            >
+              <i className={`bi ${sendProgress.icon}`} aria-hidden="true" />
+              <span>{sendProgress.text}</span>
+            </div>
           ) : null}
 
           {/* The letter went out with two ways back in it, so the screen says so

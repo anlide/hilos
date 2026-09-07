@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Verification;
 
+use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Verification\VerificationType;
@@ -35,14 +36,25 @@ final class SmsVerificationDeliverer implements VerificationDeliverer
      * Only the code half is read: an SMS type never carries a link, and the only types
      * routed here are the SMS ones.
      *
+     * The progress ticket is accepted and goes no further (HIL-826). A code travelling over a
+     * phone channel has its steps reported by {@see AuthCodeAgent}, which is where the send
+     * actually happens; this deliverer only hands the message to the SMS pool and would have
+     * nothing to say about it afterwards.
+     *
      * @param string $identifier Normalized target E.164 number the challenge was issued for
      * @param string $type Verification type (see VerificationType)
      * @param VerificationDeliverable $deliverable Plaintext content of the message
+     * @param ?string $progressTicket Unused here - the code agent reports a phone send's steps
      * @throws EnvException When the SMS worker count is unreadable while sharding the number
      * @throws ValidationException When the challenge was issued for a blank number
      * @throws InvalidArgumentException When the SMS send signal cannot be named or queued
      */
-    public function deliver(string $identifier, string $type, VerificationDeliverable $deliverable): void
+    public function deliver(
+        string $identifier,
+        string $type,
+        VerificationDeliverable $deliverable,
+        ?string $progressTicket = null,
+    ): void
     {
         $templateKey = $this->templateKeyFor($type);
         if ($templateKey === null) {

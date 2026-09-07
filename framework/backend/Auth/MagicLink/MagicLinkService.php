@@ -78,6 +78,7 @@ final class MagicLinkService
      *
      * @param string $email Address to send the link to (normalized here)
      * @param string $sessionToken Session cookie token of the browser asking for the link
+     * @param ?string $progressTicket Ticket the transport reports this letter's steps against (HIL-826)
      * @return VerificationSendOutcome Whether the link went out, and the seconds until the next may
      * @throws EmptyValueException When the normalized address is empty
      * @throws RandomException When the platform CSPRNG cannot produce a token
@@ -91,15 +92,23 @@ final class MagicLinkService
      * @throws DbCollectionNotReadableException When nothing here reads the identities, reservations or verifications collection, or its readiness is
      *   on its way
      */
-    public function send(string $email, string $sessionToken): VerificationSendOutcome
-    {
+    public function send(
+        string $email,
+        string $sessionToken,
+        ?string $progressTicket = null,
+    ): VerificationSendOutcome {
         $identifier = mb_strtolower(trim($email));
 
         if ($this->identities()->findAccountIdByEmail($identifier) === null) {
             new RegistrationReservationService()->hold(IdentityType::MAGIC_LINK, $sessionToken, $identifier, null);
         }
 
-        return new VerificationService()->issue(VerificationType::MAGIC_LINK, $identifier, null);
+        return new VerificationService()->issue(
+            VerificationType::MAGIC_LINK,
+            $identifier,
+            null,
+            $progressTicket,
+        );
     }
 
     /**

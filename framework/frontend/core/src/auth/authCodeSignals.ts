@@ -7,9 +7,14 @@
 // Requesting a code became asynchronous for every channel: deciding whether a
 // channel can reach a number is a network round-trip on some of them, so the
 // action ack only means "accepted, working" and the real outcome arrives here.
-// SUCCESS travels on this signal too, unlike the OAuth result — the code screen
-// must open only once a code really went out, and it must name the channel it
-// went over rather than the one that was clicked.
+// SUCCESS travels on this signal too, unlike the OAuth result, and it names the
+// channel the code really went over rather than the one that was clicked.
+//
+// What it no longer decides is WHEN the code screen opens (HIL-826). The screen
+// opens the moment the send is ordered, as the email path always has, and the
+// send-progress line on it says queued, then sending; the old rule was
+// compensation for having no such line. A channel that turns out unreachable
+// rolls the person back to the step they sent from and is dimmed, as before.
 //
 // The name and the reason values are byte-equal to the backend
 // `HilosSignalConstants` / `AuthCodeResultSignalData` constants.
@@ -22,14 +27,15 @@ export const AUTH_CODE_RESULT_SIGNAL = 'hilos_auth_code_result'
 
 /**
  * `reason` marking a code that went out (PHP `AuthCodeResultSignalData::REASON_CODE_SENT`).
- * The only arm that advances the surface to the code screen.
+ * The arm that arms the resend gate and names the channel the code carried.
  */
 export const AUTH_CODE_REASON_SENT = 'code_sent'
 
 /**
  * `reason` marking a channel that cannot reach this number (PHP
  * `REASON_CHANNEL_UNAVAILABLE`). Nothing was minted and no cooldown was spent, so
- * the person may pick another channel and still get their first code.
+ * the person is taken back to the step they sent from, that channel is dimmed, and
+ * they still get their first code over another one.
  */
 export const AUTH_CODE_REASON_CHANNEL_UNAVAILABLE = 'code_channel_unavailable'
 

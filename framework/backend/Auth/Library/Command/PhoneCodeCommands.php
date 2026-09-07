@@ -25,6 +25,7 @@ use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Random\RandomException;
 
 /**
  * Signing in with a number and a code sent to it (HIL-280, HIL-622).
@@ -68,6 +69,7 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws ValidationException When the phone number is malformed or the channel cannot serve it
      * @throws InvalidArgumentException When the code-request signal cannot be named or queued
+     * @throws RandomException When the platform CSPRNG cannot mint the progress ticket
      * @throws HilosException When the project's channel registry cannot be resolved
      */
     public function requestPhoneCode(string $acceptKey, RequestPhoneCodeActionDTO $dto): void
@@ -99,6 +101,11 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
                 $phone,
                 $channel->name(),
                 VerificationType::SMS_LOGIN,
+                // The line opens HERE, before the agent has looked at the channel, because
+                // "in the queue" is true from this moment and the code screen is already
+                // open (HIL-826). The ticket rides along so the agent can move the line it
+                // did not create.
+                $this->openCodeSendLine($acting, $channel->name()),
             ),
         );
     }

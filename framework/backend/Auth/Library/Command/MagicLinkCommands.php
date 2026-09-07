@@ -24,6 +24,7 @@ use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Random\RandomException;
 
 /**
@@ -75,7 +76,9 @@ final class MagicLinkCommands extends AbstractLibraryCommands
         $acting = $this->acting($acceptKey);
 
         $email = strtolower($dto->email);
-        $outcome = new MagicLinkService()->send($email, $acting->sessionToken);
+        $ticket = $this->openCodeSendLine($acting, StateHilosCodeSendAttempt::CHANNEL_EMAIL);
+        $outcome = new MagicLinkService()->send($email, $acting->sessionToken, $ticket);
+        $this->closeRefusedCodeSendLine($ticket, $outcome);
 
         if ($outcome->capReached) {
             return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, AuthMessages::SEND_CAP);

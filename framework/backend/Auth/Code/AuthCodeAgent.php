@@ -10,6 +10,7 @@ use Hilos\API\DTO\AsyncHttpResponse;
 use Hilos\API\Exception\AsyncHttpException;
 use Hilos\Auth\Code\DTO\AuthCodeResultSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
+use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Auth\CodeChannel\CodeChannel;
 use Hilos\Auth\CodeChannel\CodeChannelProbe;
 use Hilos\Auth\MagicLink\MagicLinkService;
@@ -32,6 +33,7 @@ use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 use Hilos\Socket\SocketException;
 use Hilos\WiringRefusal;
 use Throwable;
@@ -160,6 +162,10 @@ class AuthCodeAgent extends AbstractAgent
             $this->logAgentWarning(
                 "code request refused: channel '{$request->channel}' does not serve type '{$request->type}'",
             );
+            // The line opened when the person picked the channel, and nothing is going to
+            // travel over it - so it stops promising here rather than sitting on "queued"
+            // until the next send replaces it (HIL-826).
+            $this->reportCodeSendStep($request, HilosCodeSendAttempt::STATE_FAILED, null);
             $this->report($request, AuthCodeResultSignalData::REASON_CHANNEL_UNAVAILABLE);
 
             return;
@@ -479,7 +485,13 @@ class AuthCodeAgent extends AbstractAgent
         $send = $operation->channel->readSend($response);
         if (!$send->delivered) {
             $this->logAgentWarning($this->describe($operation) . ' send refused: ' . ($send->detail ?? 'no detail'));
-            $this->finish($id, $operation, AuthCodeResultSignalData::REASON_SEND_FAILED, $operation->resendAt);
+            $this->finish(
+                $id,
+                $operation,
+                AuthCodeResultSignalData::REASON_SEND_FAILED,
+                $operation->resendAt,
+                $send->detail,
+            );
 
             return;
         }
@@ -509,10 +521,16 @@ class AuthCodeAgent extends AbstractAgent
         if ($request !== null) {
             if ($this->socketsInUse() < $this->maxConcurrentOperations()) {
                 $this->startRequest($operation, $request, $nowMs);
+                // Reported only once the attempt really opens: over the concurrency ceiling
+                // this method returns and is called again next tick, and the code is still
+                // exactly where the line already says it is - in the queue (HIL-826).
+                $this->reportCodeSendStep($operation->request, HilosCodeSendAttempt::STATE_SENDING, null);
             }
 
             return;
         }
+
+        $this->reportCodeSendStep($operation->request, HilosCodeSendAttempt::STATE_SENDING, null);
 
         try {
             $operation->channel->handoff($operation->request->identifier, $operation->request->type, $code);
@@ -640,10 +658,16 @@ class AuthCodeAgent extends AbstractAgent
      * @param AuthCodeOperation $operation Operation being finished
      * @param string $reason Stable outcome reason (see AuthCodeResultSignalData REASON_*)
      * @param ?int $resendAt Server moment a send is allowed again, in epoch ms, or null when waiting is not the answer
+     * @param ?string $detail Channel's own refusal sentence for the progress line, null on every other arm
      * @throws InvalidArgumentException When the outcome signal cannot be named or queued
      */
-    private function finish(int $id, AuthCodeOperation $operation, string $reason, ?int $resendAt = null): void
-    {
+    private function finish(
+        int $id,
+        AuthCodeOperation $operation,
+        string $reason,
+        ?int $resendAt = null,
+        ?string $detail = null,
+    ): void {
         $operation->closeClient();
         unset($this->operations[$id]);
 
@@ -652,7 +676,63 @@ class AuthCodeAgent extends AbstractAgent
             $this->rememberWait($operation);
         }
 
+        $this->reportCodeSendStep($operation->request, $this->lineStateFor($reason), $detail);
         $this->report($operation->request, $reason, $resendAt, $operation->expiresAt);
+    }
+
+    /**
+     * Says what one outcome means to the line on the code screen (HIL-826).
+     *
+     * Two of the five arms are not refusals of THIS send and still leave a code on its way,
+     * which is why the map is not "sent or failed": a rate-limited request is held back
+     * precisely because an earlier code already went out, and the screen the person is looking
+     * at is waiting for that one. The other three end with nothing travelling, and the line
+     * says so and stops promising - the reason itself is the surface's to word, which it
+     * already does by dimming the channel or refusing the cap out loud.
+     *
+     * @param string $reason Stable outcome reason (see AuthCodeResultSignalData REASON_*)
+     * @return string One of the four states on {@see HilosCodeSendAttempt}
+     */
+    private function lineStateFor(string $reason): string
+    {
+        return match ($reason) {
+            AuthCodeResultSignalData::REASON_CODE_SENT,
+            AuthCodeResultSignalData::REASON_RATE_LIMITED => HilosCodeSendAttempt::STATE_SENT,
+            default => HilosCodeSendAttempt::STATE_FAILED,
+        };
+    }
+
+    /**
+     * Tells the sessions library where this operation's code has got to (HIL-826).
+     *
+     * The phone twin of the mail queue's reporter, and it reaches the same owner over the same
+     * frame: this agent knows the session token but not the line, and the line is not its row
+     * to write. What travels is the opaque ticket the request arrived with.
+     *
+     * It takes a REQUEST rather than an operation for the reason {@see self::report()} does:
+     * one arm has no operation to speak from, because a channel the registry does not carry is
+     * refused at intake - and that refusal leaves a line saying a code is queued when none is.
+     *
+     * A step that cannot be named is logged and swallowed, for the reason
+     * {@see self::rememberWait()} gives about its own row: the code did go out, and turning a
+     * delivered code into an error over a frame nobody could name would be the worse lie.
+     *
+     * @param AuthCodeSendSignalData $request Request whose step is being reported
+     * @param string $state One of the four states on {@see HilosCodeSendAttempt}
+     * @param ?string $detail Channel's own refusal sentence, null on every other step
+     */
+    private function reportCodeSendStep(AuthCodeSendSignalData $request, string $state, ?string $detail): void
+    {
+        try {
+            $this->sendToAgent(
+                HilosSignalConstants::HILOS_CODE_SEND_STEP,
+                CodeSendStepSignalData::step($request->progressTicket, $state, $detail),
+            );
+        } catch (InvalidArgumentException $failure) {
+            $this->logAgentWarning(
+                "code send step over '{$request->channel}' could not be reported: " . $failure->getMessage(),
+            );
+        }
     }
 
     /**

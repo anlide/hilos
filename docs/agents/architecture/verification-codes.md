@@ -133,6 +133,86 @@ Also not covered here, and not covered anywhere yet: two *issues* racing each
 other (both voiding, both inserting), and a front end that submits the same code
 twice on its own.
 
+## What the Person Watching Is Told: The Send-Progress Line
+
+The code screen carries a live line saying where the code has got to — `queued`,
+`sending`, `sent`, or `failed` with the provider's own sentence (HIL-826). It is
+the answer to a screen that used to look identical whether the letter had left,
+was stuck behind a stalled mail server, or had been refused outright.
+
+**The line belongs to the browser SESSION, not to the socket.** It is one runtime
+row per session in `hilosCodeSendAttempts`, keyed by the hash of the session
+cookie token — the same key the toast stack and the freeze use — and delivered
+with `AbstractAgent::sendToSession()`. A reload and a second tab of that browser
+read the same line, and another browser reads nothing; those three fall out of the
+addressing rather than being three pieces of work. It is runtime and not durable
+on purpose: the line lives as long as the code does, and a restart that loses it
+loses a sentence about a code nobody can enter any more.
+
+**One writer, and the transports only report.** The sessions library agent owns
+the collection (`OWNS_RT` on the project's `SessionsLibraryAgent`, beside the two
+waits, because `AuthFeature::mount()` is what mounts it). Everything that carries
+a code — the sign-in commands, the per-channel mail queue, the code agent —
+reports its step over `HILOS_CODE_SEND_STEP` and writes nothing.
+
+**The mail subsystem learns nothing about auth.** The order for a letter carries
+an opaque progress ticket (`CodeSendTicket`, 16 hex, minted per SEND) which the
+mail agent keeps beside the message and hands back with every step. Reporting by
+recipient address instead was rejected: it would need a rule for which letters
+count as codes, and it would hand one browser's progress to every browser parked
+on that address.
+
+**A report is judged by its TICKET, not by its session.** `advance()` finds the
+row carrying that ticket or changes nothing. That is the whole of the resend race
+and of the late report of a dead attempt, with no moments compared: a resend mints
+a new ticket, so the previous attempt's refusal cannot paint over the send that
+replaced it.
+
+**A retryable refusal goes back to `queued`, not to `failed`.** The raw-send queue
+retries with a growing backoff, so `failed` is reserved for a permanent refusal or
+an exhausted attempt count. Showing "could not send" and then "sent" a second later
+is flicker; `failed` is the state a person acts on by pressing resend, and it has
+to keep meaning that.
+
+**The refusal carries the provider's own words**, cut to one sentence on the way
+out (`CodeSendStepSignalData::step()`: first line, whitespace collapsed, capped).
+This is a deliberate departure from the practice `AuthCodeResultSignalData` set —
+a stable reason code only, detail in the log — because a stable code cannot hold
+words we did not write. The dialogue behind the sentence still stays in the agent
+log, and the outcome signal still carries nothing but its reason code.
+
+**There is no timeout on a silent transport.** A dead mail agent leaves the line
+on `queued`, which is true: the letter IS queued. What ends the wait is the code
+expiring or the person pressing resend. Inventing "probably not delivered" would
+lie exactly where nothing is known.
+
+**An empty frame is legal and meaningful.** `state: null` takes the line away, and
+it is sent on every handshake — including when there is nothing to say — for the
+reason `publishSessionToasts()` gives: silence and "you are owed nothing" must not
+look the same to a browser. A code screen with no line reads as "nothing to say",
+never as an error.
+
+**On the frontend the line is bound at BOOT, not by the surface.** `bootHilos`
+calls `bindCodeSendProgress()` and the frame lands in `hilosCodeSendProgress`,
+which the auth surface reads; the machine is told through
+`AuthFlow.reportSendProgress()` and owns the lifetime from there. The binding
+cannot move into the surface, and that is the reload clause rather than a
+preference: the line is published on the HANDSHAKE, and on a gated page the
+surface mounts only once that handshake has been answered — a surface listening
+for itself would miss the one frame it exists to draw.
+
+**The phone path opens its code screen at once**, exactly as email always has
+(Design D7 of HIL-826). The old rule — open only once a code really went out —
+was compensation for having no line: "enter the code we sent via Telegram" was a
+promise the transport had not made. With the line the screen promises nothing, so
+a channel that turns out unreachable simply rolls the person back to the step they
+sent from and dims that channel, as it did before. What is paid: a person can see
+the code field and be taken back a second later.
+
+**The refusal is not proved by e2e**, and that is said out loud so its absence is
+not read as coverage: a stand cannot kill its mail transport until the emulated
+service gateway exists (HIL-919). It is proved by the mail agent's unit test.
+
 ## Where a Code Is Read on a Stand
 
 A stand delivers nothing to the outside world: every channel ends in the stand's
@@ -191,6 +271,15 @@ a stand that wants to read its SMS configures a gateway endpoint.
   toward the person is the anti-enumeration posture the whole service is built
   on; the distinction belongs in the log and nowhere else.
 - Do not read the cap as a spend guarantee when sizing anything that costs money.
+- Do not write the send-progress line from a transport. The sessions library owns
+  the collection; a second writer would make "who said this" unanswerable.
+- Do not match a reported step by session, address or moment. It is matched by
+  ticket, and a step whose ticket is not the one the line holds changes nothing.
+- Do not report `failed` for a refusal that still has retries behind it. That is a
+  return to `queued`, and the difference is the whole reason `failed` means
+  anything to a person.
+- Do not put a transport's raw error on the wire. One sentence goes out, cut by
+  `CodeSendStepSignalData::step()`; the dialogue stays in the agent log.
 
 ## Validation
 
@@ -203,3 +292,11 @@ The ceiling is pinned on that same fixture:
 above turned into a case, `testAnAttemptRefusedByTheCeilingLeavesTheRowUnchanged`
 holds the primitive, and `testTheRefusedWorkerStopsSeeingTheChallengeAsLive` holds
 the re-read of the mirror.
+
+The send-progress line is pinned by `CodeSendProgressLineTest` (the row's rule -
+start replaces, a stale ticket moves nothing, a retryable refusal loses the
+sentence), `CodeSendSignalDataTest` (both frames, including the empty one),
+`MailDeliveryChannelAgentTest` (the four reports of the mail queue) and
+`CodeChannelSendIntegrationTest` (the code agent's own pass). On the frontend,
+`core/src/auth/authSendProgress.test.ts` holds the parse boundary and
+`core/test/auth/authFlow.test.ts` holds the machine's lifetime for it.

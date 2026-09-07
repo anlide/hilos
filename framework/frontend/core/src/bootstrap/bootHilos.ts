@@ -24,6 +24,7 @@ import {
   sessionUserIsAdmin,
   type SessionScopeOptions,
 } from '../session/sessionScope.js'
+import { bindCodeSendProgress } from '../auth/authSendProgress.js'
 import { bindSessionToasts } from '../session/sessionToasts.js'
 import { hilosToasts } from '../state/toasts.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
@@ -87,6 +88,13 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   // (HIL-768), and a project without them is never sent a frame. One behavior
   // rather than a flag nobody would ever want off.
   bindSessionToasts(config.connection, hilosToasts)
+  // Bound here for the same reason and one sharper (HIL-826): the send-progress
+  // line is published on every HANDSHAKE, and on a gated page the auth surface
+  // only mounts once that handshake has been answered. A surface that listened
+  // for itself would miss the frame it exists to draw - which is the reload the
+  // leaf promises. No option either: a project with codes has the line, and one
+  // without them is never sent a frame.
+  bindCodeSendProgress(config.connection)
   if (config.notifications === true) {
     bindNotificationsScope(
       config.connection,

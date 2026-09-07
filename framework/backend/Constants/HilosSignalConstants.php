@@ -6,6 +6,8 @@ namespace Hilos\Constants;
 
 use Hilos\Auth\Code\DTO\AuthCodeResultSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
+use Hilos\Auth\Code\DTO\CodeSendProgressSignalData;
+use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
@@ -826,6 +828,31 @@ final class HilosSignalConstants
      * actually went over. Carried by {@see AuthCodeResultSignalData}.
      */
     public const string HILOS_AUTH_CODE_RESULT = 'hilos_auth_code_result';
+
+    /**
+     * Sessions library → every tab of one browser session: this is how the code is travelling
+     * (HIL-826).
+     *
+     * Addressed to the SESSION rather than to a socket, for the reason the toast stack is
+     * ({@see HILOS_SESSION_TOASTS}): the line has to read the same after a reload and in a
+     * second tab of that browser, and read nowhere else at all. It carries the whole line, so
+     * a reconnect and an ordinary step are one sentence; a frame with a null state is the
+     * legal one that takes the line away. Carried by {@see CodeSendProgressSignalData}.
+     */
+    public const string HILOS_CODE_SEND_PROGRESS = 'hilos_code_send_progress';
+
+    /**
+     * Whoever is carrying the code → the sessions library: the send has reached this step
+     * (HIL-826).
+     *
+     * The one door every state of the line is born through, including the `queued` the caller
+     * that ordered the code reports before any transport has seen it. The senders are the
+     * sign-in commands, the per-channel mail queue and the code agent, and none of them writes
+     * the line itself: it is the session's row, and the library that owns sessions owns it.
+     * The frame names the send by an opaque ticket, which is the whole of what the mail
+     * subsystem learns about auth. Carried by {@see CodeSendStepSignalData}.
+     */
+    public const string HILOS_CODE_SEND_STEP = 'hilos_code_send_step';
 
     // ── Hilos auth throttle: worker ⇄ throttle agent (agent signals) ─────────
     /**

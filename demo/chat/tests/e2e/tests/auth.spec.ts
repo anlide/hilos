@@ -404,6 +404,45 @@ test('turns a tampered sign-in link down on its own screen', async ({
   expect(await mailsTo(email)).toHaveLength(1)
 })
 
+test('says how the letter is going, to every tab of the browser and across a reload', async ({
+  page,
+  context,
+}) => {
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await submitRegistration(page, email)
+
+  // The line the person watches instead of guessing. It arrives over the socket a
+  // tick behind the screen, so waiting for its last state is also waiting for the
+  // whole chain to have run: the command reported "queued", the mail queue reported
+  // "sending", and the transport took the letter (HIL-826).
+  const sent = `Sent to ${email}`
+  await expect(page.getByTestId('auth-send-progress')).toContainText(sent)
+
+  // A reload keeps it, because the line belongs to the SESSION and not to the
+  // socket: the tab that comes back is told what it is owed by its handshake, the
+  // same frame that gives it the code screen back.
+  await page.reload()
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await expect(page.getByTestId('auth-code')).toBeVisible()
+  await expect(page.getByTestId('auth-send-progress')).toContainText(sent)
+
+  // And a second tab of the same browser reads the same line, having sent nothing
+  // and asked for nothing - which is the same addressing that keeps it away from
+  // every OTHER browser.
+  const second = await context.newPage()
+  await gotoPage(second, '/')
+  await expect(second.getByTestId('conn-state')).toHaveText('connected')
+  await second.getByTestId('message-signin').click()
+  await expect(second.getByTestId('auth-code')).toBeVisible()
+  await expect(second.getByTestId('auth-send-progress')).toContainText(sent)
+
+  // One letter for all of that: reading the line costs no send.
+  expect(await mailsTo(email)).toHaveLength(1)
+})
+
 test('converges a second waiting tab onto the registration the first one confirms', async ({
   page,
   context,

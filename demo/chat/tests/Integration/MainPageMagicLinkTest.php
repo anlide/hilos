@@ -48,6 +48,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
 /**
@@ -905,6 +906,10 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(ChatRtContext::userStates, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(StateRegistrationWaiter::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        // The send-progress line is the sessions library's too (HIL-826), and this fixture
+        // stands in for it: the wait being let go takes the line with it, and a writer with
+        // no claim is refused whether or not there is a row to take.
+        RtTruthSourceRegistry::register(StateHilosCodeSendAttempt::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);

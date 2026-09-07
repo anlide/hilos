@@ -44,11 +44,17 @@ final class MailVerificationDeliverer implements VerificationDeliverer
      * @param string $identifier Normalized target email the challenge was issued for
      * @param string $type Verification type (see VerificationType)
      * @param VerificationDeliverable $deliverable Plaintext content of the letter
+     * @param ?string $progressTicket Ticket the mail queue reports this letter's steps against
      * @throws EnvException When the mail worker count is unreadable while sharding the address
      * @throws ValidationException When the challenge was issued for a blank address
      * @throws InvalidArgumentException When the mail send signal cannot be named or queued
      */
-    public function deliver(string $identifier, string $type, VerificationDeliverable $deliverable): void
+    public function deliver(
+        string $identifier,
+        string $type,
+        VerificationDeliverable $deliverable,
+        ?string $progressTicket = null,
+    ): void
     {
         $templateKey = $this->templateKeyFor($type);
         if ($templateKey === null) {
@@ -60,6 +66,7 @@ final class MailVerificationDeliverer implements VerificationDeliverer
             shardKey: HilosMailer::shardKeyForAddress($identifier),
             templateKey: $templateKey,
             params: $this->paramsFor($deliverable),
+            progressTicket: $progressTicket,
         ));
     }
 

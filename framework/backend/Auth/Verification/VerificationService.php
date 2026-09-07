@@ -68,6 +68,8 @@ class VerificationService
      * @param string $type Verification type (see VerificationType)
      * @param string $identifier Normalized identifier (lowercased email)
      * @param ?int $userId Owning user id when known at issue time, else null
+     * @param ?string $progressTicket Ticket the transport reports this send's steps against, or
+     *                                null when nobody is watching it go (HIL-826)
      * @return VerificationSendOutcome Whether a code went out, and the seconds until the next may
      * @throws EmptyValueException When identifier is empty
      * @throws RandomException When the platform CSPRNG cannot produce a code
@@ -81,8 +83,12 @@ class VerificationService
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      * @throws DbCollectionNotReadableException When nothing here reads the verifications collection, or its readiness is on its way
      */
-    public function issue(string $type, string $identifier, ?int $userId): VerificationSendOutcome
-    {
+    public function issue(
+        string $type,
+        string $identifier,
+        ?int $userId,
+        ?string $progressTicket = null,
+    ): VerificationSendOutcome {
         if ($identifier === '') {
             throw new EmptyValueException('Verification identifier is required');
         }
@@ -108,6 +114,7 @@ class VerificationService
             $identifier,
             $type,
             $this->deliverableFor($identifier, $secret, $companionCode),
+            $progressTicket,
         );
 
         return VerificationSendOutcome::sent($cooldownSeconds);

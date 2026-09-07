@@ -49,6 +49,9 @@ final class MailSendSignalData extends BaseDTO implements SignalDataInterface
     /** Payload key: pool shard key derived from the recipient address. */
     public const string shardKey = 'shardKey';
 
+    /** Payload key: opaque progress ticket to report this send's steps against. */
+    public const string progressTicket = 'progressTicket';
+
     /**
      * @param string $to Recipient email address
      * @param int $shardKey Pool shard key derived from the recipient address
@@ -58,6 +61,8 @@ final class MailSendSignalData extends BaseDTO implements SignalDataInterface
      * @param ?string $templateKey Template key, or null for an inline message
      * @param array<string, mixed> $params Template render params
      * @param ?string $locale Render locale, or null for the project default
+     * @param ?string $progressTicket Ticket the send's steps are reported against, or null when
+     *                                nobody is watching this letter (HIL-826)
      * @throws ValidationException When the recipient address is blank, or the payload names
      *                             neither a template nor an inline subject and text
      */
@@ -70,6 +75,7 @@ final class MailSendSignalData extends BaseDTO implements SignalDataInterface
         public readonly ?string $templateKey = null,
         public readonly array $params = [],
         public readonly ?string $locale = null,
+        public readonly ?string $progressTicket = null,
     ) {
         // A blank address is a filled-in field, so the payload reader passes it by
         // contract; refused here instead, because the agent hands it straight to
@@ -99,6 +105,7 @@ final class MailSendSignalData extends BaseDTO implements SignalDataInterface
             self::templateKey => $this->templateKey,
             self::params => $this->params,
             self::locale => $this->locale,
+            self::progressTicket => $this->progressTicket,
         ];
     }
 
@@ -120,6 +127,7 @@ final class MailSendSignalData extends BaseDTO implements SignalDataInterface
             templateKey: self::optionalString($data, self::templateKey),
             params: self::requireArray($data, self::params),
             locale: self::optionalString($data, self::locale),
+            progressTicket: self::optionalString($data, self::progressTicket),
         );
     }
 }

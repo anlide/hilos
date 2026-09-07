@@ -58,7 +58,12 @@ final class RecordingVerificationDeliverer implements VerificationDeliverer
     /** @var list<string> Verification types delivered through this double. */
     public array $types = [];
 
-    public function deliver(string $identifier, string $type, VerificationDeliverable $deliverable): void
+    public function deliver(
+        string $identifier,
+        string $type,
+        VerificationDeliverable $deliverable,
+        ?string $progressTicket = null,
+    ): void
     {
         $this->types[] = $type;
     }

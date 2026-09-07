@@ -42,9 +42,14 @@ import {
   AUTH_SURFACE_HEADING_ID,
   authAckToFlowPatch,
   authConvergeSignalSchema,
+  CODE_SEND_STATE_FAILED,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENDING,
+  CODE_SEND_STATE_SENT,
   createAuthActions,
   createAuthFlow,
   createOAuthLogin,
+  hilosCodeSendProgress,
   oauthTrip,
   oauthTripMessage,
   oauthTripTitle,
@@ -69,6 +74,7 @@ import type {
   AuthFlowState,
   AuthStep,
   CodeChannelDescriptor,
+  CodeSendProgress,
   DetectionState,
   HilosAuthContext,
   ProjectSignal,
@@ -99,6 +105,7 @@ const INITIAL_FLOW: AuthFlowState = {
   methodKey: null,
   identifierKind: 'unknown',
   channelKey: null,
+  sendProgress: null,
 }
 
 const EMPTY_FORM: AuthFlowForm = {
@@ -204,6 +211,70 @@ const GENERIC_ERROR = 'That did not work. Please try again.'
 const LINK_PROMPT_MESSAGE =
   'That email already has an account. Sign in to finish linking it.'
 const LINK_SENT_LEAD = "We've sent a sign-in link to"
+
+/**
+ * How the code screen says where the code has got to (HIL-826). The states
+ * travel as stable keys and the copy lives here, the way the outcome reasons
+ * already work; only the provider's refusal sentence comes off the wire as
+ * words, because they are not ours to phrase.
+ */
+const SEND_PROGRESS_COPY: Record<
+  string,
+  { icon: string; tone: string; text: (target: string) => string }
+> = {
+  [CODE_SEND_STATE_QUEUED]: {
+    icon: 'bi-hourglass-split',
+    tone: 'text-body-secondary',
+    text: () => 'Queued for sending…',
+  },
+  [CODE_SEND_STATE_SENDING]: {
+    icon: 'bi-arrow-repeat',
+    tone: 'text-primary',
+    text: (target) => `Sending to ${target}…`,
+  },
+  [CODE_SEND_STATE_SENT]: {
+    icon: 'bi-check-circle-fill',
+    tone: 'text-success',
+    text: (target) => `Sent to ${target}`,
+  },
+  [CODE_SEND_STATE_FAILED]: {
+    icon: 'bi-exclamation-triangle-fill',
+    tone: 'text-danger',
+    text: () => 'Could not send',
+  },
+}
+
+/**
+ * The line under the identifier row: where the code being waited for has got to,
+ * or null when there is nothing to say (HIL-826).
+ *
+ * A missing line is a legal state and reads as silence, never as an error - the
+ * server takes it away with an empty frame, and a state this build has no words
+ * for is treated the same way rather than drawn as a raw key.
+ *
+ * @param progress The reported step, or null when the session is owed no line.
+ * @param target The address or number the code is going to.
+ * @returns What to draw, or null when there is nothing to draw.
+ */
+function sendProgressLine(
+  progress: CodeSendProgress | null,
+  target: string,
+): { icon: string; tone: string; text: string } | null {
+  if (progress === null) {
+    return null
+  }
+  const copy = SEND_PROGRESS_COPY[progress.state]
+  if (copy === undefined) {
+    return null
+  }
+  const text = copy.text(target)
+
+  return {
+    icon: copy.icon,
+    tone: copy.tone,
+    text: progress.detail === null ? text : `${text}: ${progress.detail}`,
+  }
+}
 const LINK_SENT_TAIL = 'Open it to continue.'
 
 /**
@@ -557,6 +628,17 @@ const LINK_SENT_TAIL = 'Open it to continue.'
             </p>
           }
 
+          @if (sendProgress(); as progress) {
+            <div
+              class="d-flex align-items-center gap-2 small mb-3"
+              [class]="progress.tone"
+              data-id="auth-send-progress"
+            >
+              <i class="bi" [class]="progress.icon" aria-hidden="true"></i>
+              <span>{{ progress.text }}</span>
+            </div>
+          }
+
           <!-- The letter went out with two ways back in it, so the screen says
           so before it asks for one: the link is still the shorter road for
           whoever can click it, and the field below is for whoever cannot. -->
@@ -848,6 +930,14 @@ export class HilosAuthSurface {
   // the trip's own and the flow parks in `external` for both of them.
   protected readonly trip = hilosSignal(oauthTrip)
 
+  // The line is bound at boot (HIL-826), so what a mounting surface reads is the
+  // value already held rather than the next frame to arrive - which is the whole
+  // of the reload case, where the handshake was answered before this component
+  // existed. The machine is told at once and on every change, and it owns the
+  // lifetime: what the line stops being about is a decision about the code, not
+  // about a tab.
+  private readonly reportedProgress = hilosSignal(hilosCodeSendProgress)
+
   protected readonly waitingTitle = computed(() => {
     const running = this.trip()
 
@@ -947,6 +1037,13 @@ export class HilosAuthSurface {
         key: 'link_sent',
         text: `${LINK_SENT_LEAD} ${this.form().identifier}. ${LINK_SENT_TAIL}`,
       })
+    }
+    // The send line is news by nature - it changes under a person who is not
+    // touching anything - and it is the one thing on this screen that says why
+    // nothing has arrived yet.
+    const progress = this.sendProgress()
+    if (progress !== null && this.state().step === 'code') {
+      news.push({ key: 'send_progress', text: progress.text })
     }
 
     return news
@@ -1072,6 +1169,17 @@ export class HilosAuthSurface {
     },
   )
 
+  /**
+   * The line under the identifier row: where the code has got to (HIL-826).
+   */
+  protected readonly sendProgress = computed<{
+    icon: string
+    tone: string
+    text: string
+  } | null>(() =>
+    sendProgressLine(this.state().sendProgress, this.form().identifier),
+  )
+
   /** The channel a delivered code went over, named on the code screen. */
   protected readonly deliveredChannel = computed<string | null>(() => {
     const key = this.state().channelKey
@@ -1093,6 +1201,13 @@ export class HilosAuthSurface {
   )
 
   constructor() {
+    // The line the boot binding holds, handed to the machine at once and on every
+    // change (HIL-826). Its own effect rather than a line in the mirroring one
+    // below, because it runs the other way: that one copies the machine OUT, and
+    // this one tells it what the server said.
+    effect(() => {
+      this.auth().reportSendProgress(this.reportedProgress())
+    })
     // The machine arrives through the context input (not at construction) and
     // carries core signals, so mirror them into the Angular signals above once
     // it is bound; the cleanup drops every subscription when the context is
@@ -1141,6 +1256,11 @@ export class HilosAuthSurface {
       // Start every mount clean: the surface may be re-shown for a new gated
       // action.
       auth.reset()
+      // Except for what the server is still saying (HIL-826): the reset empties
+      // the flow the line lives on, and the line is not this surface's to forget
+      // - it belongs to the session, and the frame that carried it may be
+      // minutes old.
+      auth.reportSendProgress(hilosCodeSendProgress.get())
       this.notice.set(null)
       this.unavailableChannels.set(new Set())
 

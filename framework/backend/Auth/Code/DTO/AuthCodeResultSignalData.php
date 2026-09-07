@@ -18,12 +18,15 @@ use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
  * {@see OAuthResultSignalData} established for an async outcome owed to a guest: no
  * account exists yet, so there is no user to fan out to and no session update to ride.
  *
- * SUCCESS travels here too, unlike the OAuth case, and that is the point of the
- * signal: the code screen must open only once a code really went out, and it must
- * name the channel it went over. Opening it on the click would be a promise the
- * transport has not made yet - and after a channel turns out unreachable, a screen
- * saying "enter the code we sent via Telegram" would be a lie about a message that
- * does not exist.
+ * SUCCESS travels here too, unlike the OAuth case, and it is what names the channel
+ * the code really went over. What it no longer decides is WHEN the code screen opens
+ * (HIL-826): the screen now opens the moment the send is ordered, as the email path
+ * always has, and the send-progress line on it says queued, then sending. The old
+ * rule - open only once a code really went out - was compensation for having no such
+ * line, because "enter the code we sent via Telegram" was a promise the transport had
+ * not made. The line makes the screen promise nothing, so the promise no longer has to
+ * be timed; a channel that turns out unreachable rolls the person back to the step they
+ * sent from and dims that channel, exactly as it did before.
  *
  * {@see reason} is a stable, non-sensitive code; why a transport failed stays in the
  * agent log. {@see resendAt} is filled on the arms where waiting is the answer -
@@ -34,12 +37,13 @@ use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
  */
 final class AuthCodeResultSignalData extends BaseDTO implements SignalDataInterface, WebSocketAcceptKeySignalDTO
 {
-    /** A code went out over {@see channel}: the surface opens the code screen and names it. */
+    /** A code went out over {@see channel}: the surface names it on the code screen. */
     public const string REASON_CODE_SENT = 'code_sent';
 
     /**
      * The channel cannot reach this identifier: nothing was minted and no cooldown was
-     * spent, so the surface dims this channel and the person may pick another one.
+     * spent, so the surface takes the person back to the step they sent from, dims this
+     * channel, and lets them pick another one.
      */
     public const string REASON_CHANNEL_UNAVAILABLE = 'code_channel_unavailable';
 

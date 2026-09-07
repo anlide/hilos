@@ -30,6 +30,11 @@ use Hilos\Core\Router\SignalDataInterface;
  * because the moment the memory is written is minutes after the ask and the socket
  * that asked may already be gone - which is precisely the case the memory exists for.
  *
+ * {@see progressTicket} is the third address and the smallest (HIL-826): the name of THIS
+ * send, which the agent hands back with every step it reaches so the person watching the code
+ * screen is told where their code has got to. Required, unlike the mail queue's, because a
+ * phone code is only ever asked for from the sign-in surface and the surface always watches.
+ *
  * No code and no secret ever rides this payload: it is the REQUEST for a code, minted
  * later and inside the agent.
  */
@@ -41,6 +46,7 @@ final class AuthCodeSendSignalData extends BaseDTO implements SignalDataInterfac
      * @param string $identifier Normalized identifier the code goes to (E.164 phone)
      * @param string $channel Code channel name the person chose (see CodeChannel::name())
      * @param string $type Verification type the code is minted for (see VerificationType)
+     * @param string $progressTicket Ticket the agent reports this send's steps against
      */
     public function __construct(
         public readonly string $acceptKey,
@@ -48,6 +54,7 @@ final class AuthCodeSendSignalData extends BaseDTO implements SignalDataInterfac
         public readonly string $identifier,
         public readonly string $channel,
         public readonly string $type,
+        public readonly string $progressTicket,
     ) {
     }
 
@@ -62,6 +69,7 @@ final class AuthCodeSendSignalData extends BaseDTO implements SignalDataInterfac
             'identifier' => $this->identifier,
             'channel' => $this->channel,
             'type' => $this->type,
+            'progressTicket' => $this->progressTicket,
         ];
     }
 
@@ -83,6 +91,7 @@ final class AuthCodeSendSignalData extends BaseDTO implements SignalDataInterfac
             identifier: self::requireString($data, 'identifier'),
             channel: self::requireString($data, 'channel'),
             type: self::requireString($data, 'type'),
+            progressTicket: self::requireString($data, 'progressTicket'),
         );
     }
 }

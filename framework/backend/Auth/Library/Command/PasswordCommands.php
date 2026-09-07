@@ -24,6 +24,7 @@ use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Random\RandomException;
 
 /**
@@ -151,8 +152,15 @@ final class PasswordCommands extends AbstractLibraryCommands
             );
         }
 
-        $outcome = new RegistrationReservationService()
-            ->reserve(IdentityType::PASSWORD, $acting->sessionToken, $email, $dto->password);
+        $ticket = $this->openCodeSendLine($acting, StateHilosCodeSendAttempt::CHANNEL_EMAIL);
+        $outcome = new RegistrationReservationService()->reserve(
+            IdentityType::PASSWORD,
+            $acting->sessionToken,
+            $email,
+            $dto->password,
+            $ticket,
+        );
+        $this->closeRefusedCodeSendLine($ticket, $outcome);
 
         $this->parkRegistrationWait($acting, $email);
 
@@ -211,7 +219,14 @@ final class PasswordCommands extends AbstractLibraryCommands
             );
         }
 
-        $outcome = new VerificationService()->issue(VerificationType::REGISTER_CONFIRM, $email, null);
+        $ticket = $this->openCodeSendLine($acting, StateHilosCodeSendAttempt::CHANNEL_EMAIL);
+        $outcome = new VerificationService()->issue(
+            VerificationType::REGISTER_CONFIRM,
+            $email,
+            null,
+            $ticket,
+        );
+        $this->closeRefusedCodeSendLine($ticket, $outcome);
         if ($outcome->sent) {
             $reservations->extendTo($acting->sessionToken);
         }

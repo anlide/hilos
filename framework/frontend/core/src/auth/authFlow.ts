@@ -40,6 +40,7 @@ import {
   createSignal,
   type ReadonlySignal,
 } from '../state/signal.js'
+import { type CodeSendProgress } from './authSendProgress.js'
 
 /**
  * What an identifier looks like. Drives which icon methods and code channels
@@ -94,6 +95,20 @@ export interface AuthFlowState {
   readonly identifierKind: IdentifierKind
   /** The chosen code delivery channel, or `null` before one is picked. */
   readonly channelKey: string | null
+  /**
+   * Where the code this screen is waiting for has got to, or `null` when there
+   * is nothing to say (HIL-826).
+   *
+   * The server's own line, reported by whoever is carrying the code and
+   * addressed to the browser SESSION — so it reads the same after a reload and
+   * in a second tab, and nobody else sees it at all. The machine does not act on
+   * it, for the reason it does not act on {@link AuthFlow.expiresAt}: what a
+   * send is doing is the server's answer, and the screen only says it.
+   *
+   * `null` is the state and not an absence to paper over: a code screen with no
+   * line is legal and reads as "nothing to say", never as an error.
+   */
+  readonly sendProgress: CodeSendProgress | null
 }
 
 /**
@@ -432,6 +447,21 @@ export interface AuthFlow {
    */
   resume(pending: PendingAuthStep | null): void
   /**
+   * Put the server's reported send step on the code screen, or take the line
+   * away with `null` (HIL-826).
+   *
+   * A verb rather than an option, and for the reason {@link resume} is one: the
+   * frame arrives on the project's connection, which the machine deliberately
+   * knows nothing about, so the surface that holds the socket reads it and hands
+   * it in. What the machine adds is the LIFETIME - the line belongs to the code
+   * the person is waiting for, so a new submit, a step back to the field and a
+   * cancelled ceremony all end it here, in one place, rather than in each of the
+   * three views.
+   *
+   * @param progress The reported step, or `null` when there is nothing to say.
+   */
+  reportSendProgress(progress: CodeSendProgress | null): void
+  /**
    * Update one form field, typed by the field's name (the boolean flags take a
    * boolean, not a string). Editing `identifier` restarts the flow, clears the
    * rest of the form — the ONLY thing that does (input preservation) — and
@@ -568,6 +598,7 @@ const INITIAL_FLOW: AuthFlowState = {
   methodKey: null,
   identifierKind: 'unknown',
   channelKey: null,
+  sendProgress: null,
 }
 
 /** An empty form — the starting and identifier-change reset value. */
@@ -1312,6 +1343,11 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     run: () => Promise<AuthFlowSubmitOutcome>,
   ): Promise<AuthFlowSubmitOutcome | undefined> {
     error.set(null)
+    // Every dispatch is a new ask, and the line on screen is about the old one
+    // (HIL-826). Cleared HERE rather than in each caller so a submit, a resend
+    // and a channel pick cannot drift apart on it; the server's own `queued`
+    // lands a tick later and says the same thing with authority.
+    flow.set({ ...flow.get(), sendProgress: null })
     pending.set(true)
     const seq = ++dispatchSeq
     try {
@@ -1327,6 +1363,42 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         pending.set(false)
       }
     }
+  }
+
+  /**
+   * Send a phone code with the code screen ALREADY open (HIL-826, Design D7).
+   *
+   * The screen used to wait for the transport to report success before opening,
+   * and that was compensation for having no progress line: "enter the code we
+   * sent via Telegram" was a promise the transport had not made. With the line
+   * the screen promises nothing - it says queued, then sending - so it opens the
+   * moment the send is ordered, exactly as the email path always has. One line,
+   * one screen, one behaviour for every channel.
+   *
+   * What is paid for it: a person can see the code field and be taken back a
+   * second later, which is what this rollback is. A channel that cannot be
+   * reached returns to the step the send was ordered from - the identifier field
+   * for a sign-in, the terms screen for a registration - and the surface dims
+   * that channel, exactly as it did when the screen had not opened yet. A server
+   * that NAMES where to go is obeyed instead: its answer is later than ours.
+   *
+   * @param from The step to return to when the send is refused.
+   */
+  async function sendPhoneCodeFrom(from: AuthStep): Promise<void> {
+    // The SENDING state is what the wire is given, and the moved one is what the
+    // person sees. They part on purpose: which action a submit becomes is keyed
+    // by the step it was ordered from, and handing the wire a state that has
+    // already hopped forward would turn a send into a confirm of an empty code.
+    const sending = flow.get()
+    flow.set({ ...sending, step: 'code' })
+    const outcome = await dispatch(() =>
+      options.onSubmit('submit', sending, form.get()),
+    )
+    if (outcome === undefined || outcome.ok || outcome.next !== undefined) {
+      return
+    }
+
+    flow.set({ ...flow.get(), step: from })
   }
 
   /** Whether the backend-armed cooldown still blocks sending a code. */
@@ -1454,6 +1526,14 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
 
         return
       }
+      if (state.step === 'consent' && state.identifierKind === 'phone') {
+        // A registration by phone sends from the terms screen, so the code
+        // screen opens from HERE the same way it does for a sign-in - and a
+        // refusal comes back to the terms, not to the field (HIL-826).
+        await sendPhoneCodeFrom('consent')
+
+        return
+      }
       await dispatch(() => options.onSubmit('submit', flow.get(), form.get()))
     },
     async resend(): Promise<void> {
@@ -1565,9 +1645,10 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       }
       // Choosing the channel IS sending the code: the key goes into the state
       // first (the code screen names it), then the send dispatches and the
-      // backend replies with the code step and the resend gate.
+      // backend replies with the resend gate. The screen itself opens now rather
+      // than on the transport's word (HIL-826) - see sendPhoneCodeFrom().
       flow.set({ ...state, channelKey: key })
-      await dispatch(() => options.onSubmit('submit', flow.get(), form.get()))
+      await sendPhoneCodeFrom(state.step)
     },
     startRecovery(): void {
       error.set(null)
@@ -1584,6 +1665,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         step: 'code',
         methodKey: null,
         channelKey: null,
+        sendProgress: null,
       })
     },
     backToIdentifier(): void {
@@ -1597,11 +1679,15 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         step: 'identifier',
         methodKey: null,
         channelKey: null,
+        sendProgress: null,
       })
       refreshDetect()
     },
     resumeHeldRegistration(): void {
       flow.set({ ...flow.get(), step: 'code', intent: 'register' })
+    },
+    reportSendProgress(progress: CodeSendProgress | null): void {
+      flow.set({ ...flow.get(), sendProgress: progress })
     },
     cancelMethod(): void {
       const state = flow.get()
@@ -1630,7 +1716,12 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       dispatchSeq += 1
       pending.set(false)
       error.set(null)
-      flow.set({ ...state, step: 'identifier', methodKey: null })
+      flow.set({
+        ...state,
+        step: 'identifier',
+        methodKey: null,
+        sendProgress: null,
+      })
       refreshDetect()
     },
     applyExternal(next: Partial<AuthFlowState>): void {

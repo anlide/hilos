@@ -26,8 +26,14 @@ final class LogVerificationDeliverer implements VerificationDeliverer
      * @param string $identifier Normalized target the challenge was issued for
      * @param string $type Verification type (see VerificationType)
      * @param VerificationDeliverable $deliverable Plaintext content of the letter or message
+     * @param ?string $progressTicket Unused here - a line in a log reaches no queue to report from
      */
-    public function deliver(string $identifier, string $type, VerificationDeliverable $deliverable): void
+    public function deliver(
+        string $identifier,
+        string $type,
+        VerificationDeliverable $deliverable,
+        ?string $progressTicket = null,
+    ): void
     {
         Logger::info(
             'Verification code issued (dev-stub delivery)',
