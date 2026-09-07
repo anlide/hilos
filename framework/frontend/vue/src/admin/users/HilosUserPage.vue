@@ -18,6 +18,7 @@ import {
 } from '@hilos/core'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosFormError from '../../HilosFormError.vue'
 import HilosModal from '../../HilosModal.vue'
 import LoadingButton from '../../LoadingButton.vue'
 import { useSignal } from '../../useSignal.js'
@@ -149,14 +150,19 @@ watch(error, (reason) => {
       :confirm-on-close="dirty"
       @cancel="closeEdit"
     >
+      <!-- The refusal is announced from here and not from the row that shows
+      it: a role arriving together with its text is not announced at all
+      (accessibility.md). The region lives inside the dialog because the dialog
+      is aria-modal, which hides the page under it from a screen reader. -->
       <div
-        v-if="error"
-        class="alert alert-danger"
+        class="visually-hidden"
         role="alert"
-        data-id="hilos-user-rename-error"
+        aria-live="assertive"
+        data-id="hilos-user-live-assertive"
       >
         {{ error }}
       </div>
+      <HilosFormError :message="error" data-id="hilos-user-rename-error" />
       <form @submit.prevent="submit">
         <label class="form-label" for="hilos-user-name-field">
           Display name

@@ -59,6 +59,7 @@ import {
   type ProjectSignal,
 } from '@hilos/core'
 
+import { HilosFormError } from '../HilosFormError.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { useSignal } from '../useSignal.js'
 import { HilosAuthGateContext } from './hilosAuthGateContext.js'
@@ -1037,11 +1038,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
             </div>
           ) : null}
 
-          {errorMessage ? (
-            <div className="alert alert-danger py-2" data-id="auth-error">
-              {errorMessage}
-            </div>
-          ) : null}
+          <HilosFormError message={errorMessage} dataId="auth-error" />
 
           {/* The main control is whatever the machine says it is: the submit, a
               passwordless method promoted to the button, or a code channel — for
@@ -1180,11 +1177,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
             </label>
           </div>
 
-          {errorMessage ? (
-            <div className="alert alert-danger py-2" data-id="auth-error">
-              {errorMessage}
-            </div>
-          ) : null}
+          <HilosFormError message={errorMessage} dataId="auth-error" />
 
           <LoadingButton
             type="submit"
@@ -1289,11 +1282,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
             ) : null}
           </div>
 
-          {errorMessage ? (
-            <div className="alert alert-danger py-2" data-id="auth-error">
-              {errorMessage}
-            </div>
-          ) : null}
+          <HilosFormError message={errorMessage} dataId="auth-error" />
 
           <LoadingButton
             type="submit"
@@ -1363,11 +1352,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
             </div>
           </div>
 
-          {errorMessage ? (
-            <div className="alert alert-danger py-2" data-id="auth-error">
-              {errorMessage}
-            </div>
-          ) : null}
+          <HilosFormError message={errorMessage} dataId="auth-error" />
 
           <LoadingButton
             type="submit"
@@ -1407,11 +1392,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
             </div>
           )}
 
-          {errorMessage ? (
-            <div className="alert alert-danger py-2" data-id="auth-error">
-              {errorMessage}
-            </div>
-          ) : null}
+          <HilosFormError message={errorMessage} dataId="auth-error" />
 
           {trip === null || trip.phase === 'authorizing' ? (
             <button

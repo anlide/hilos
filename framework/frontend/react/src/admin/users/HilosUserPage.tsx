@@ -17,6 +17,7 @@ import {
 import type { HilosUsersContext } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosFormError } from '../../HilosFormError.js'
 import { HilosModal } from '../../HilosModal.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { useSignal } from '../../useSignal.js'
@@ -176,15 +177,20 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
           </>
         )}
       >
-        {error ? (
-          <div
-            className="alert alert-danger"
-            role="alert"
-            data-id="hilos-user-rename-error"
-          >
-            {error}
-          </div>
-        ) : null}
+        {/* The refusal is announced from here and not from the row that shows
+            it: a role arriving together with its text is not announced at all
+            (accessibility.md). The region lives inside the dialog because the
+            dialog is aria-modal, which hides the page under it from a screen
+            reader. */}
+        <div
+          className="visually-hidden"
+          role="alert"
+          aria-live="assertive"
+          data-id="hilos-user-live-assertive"
+        >
+          {error}
+        </div>
+        <HilosFormError message={error} dataId="hilos-user-rename-error" />
         <form
           onSubmit={(event) => {
             event.preventDefault()

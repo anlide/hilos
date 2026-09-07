@@ -138,11 +138,19 @@ The rules to apply when building a view or an SDK component:
   status that should be announced uses `role="status" aria-live="polite"`. Use
   sparingly, and reserve `role="alert" aria-live="assertive"` for a failure: a
   toast earns the interrupt only at `error` severity, while `success` and `info`
-  go polite rather than cut into what the user is listening to. Four references,
+  go polite rather than cut into what the user is listening to. Six references,
   all of them permanent nodes: the page-change announcement and the connection
   indicator (`framework/frontend/vue/src/HilosLayout.vue`), the toast stack
-  (`framework/frontend/vue/src/HilosToastHost.vue`) and the sign-in screen
-  (`framework/frontend/vue/src/auth/HilosAuthSurface.vue`).
+  (`framework/frontend/vue/src/HilosToastHost.vue`), the sign-in screen
+  (`framework/frontend/vue/src/auth/HilosAuthSurface.vue`), the profile page
+  (`demo/chat/frontend/src/views/Profile/Profile.vue`) and the user-rename
+  dialog (`framework/frontend/vue/src/admin/users/HilosUserPage.vue`).
+- **The room belongs to the block, the voice to the surface.** A form's refusal
+  is drawn by `HilosFormError`, which holds its one line of room and carries no
+  role; the announcement comes from a live region that outlives the block — on
+  the surface, or inside the dialog when the dialog is `aria-modal` and the page
+  under it is not there to be read. A region living inside a form that swaps its
+  steps would die with its step, which is the very illness a live region cures.
 - **A timed notice is readable or it does not exist (2.2.1 Timing Adjustable).**
   A toast that expires before it is read is nothing to a screen-reader user, so
   the toast stack lives 20 seconds — an error does not expire until dismissed —

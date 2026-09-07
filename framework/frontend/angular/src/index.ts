@@ -60,6 +60,7 @@ export { HilosNotificationPreferences } from './HilosNotificationPreferences.js'
 export { HilosPushDeviceToggle } from './HilosPushDeviceToggle.js'
 export { HilosModal, type ModalActionsContext } from './HilosModal.js'
 export { HilosActionError } from './HilosActionError.js'
+export { HilosFormError } from './HilosFormError.js'
 export { HilosToastHost } from './HilosToastHost.js'
 export type { HilosToastCorner } from './hilosToastCorner.js'
 export {

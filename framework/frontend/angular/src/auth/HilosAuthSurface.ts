@@ -81,6 +81,7 @@ import type {
   ReadonlySignal,
 } from '@hilos/core'
 
+import { HilosFormError } from '../HilosFormError.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { hilosSignal } from '../hilosSignal.js'
 import { HILOS_AUTH_GATE } from './hilosAuthGateToken.js'
@@ -284,7 +285,7 @@ const LINK_SENT_TAIL = 'Open it to continue.'
 @Component({
   selector: 'hilos-auth-surface',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [LoadingButton],
+  imports: [HilosFormError, LoadingButton],
   template: `
     <section data-id="auth-surface" class="mx-auto" style="max-width: 24rem">
       <h2 [id]="headingId" class="h5 mb-3" data-id="auth-heading">
@@ -445,11 +446,7 @@ const LINK_SENT_TAIL = 'Open it to continue.'
             </div>
           }
 
-          @if (errorMessage(); as message) {
-            <div class="alert alert-danger py-2" data-id="auth-error">
-              {{ message }}
-            </div>
-          }
+          <hilos-form-error [message]="errorMessage()" dataId="auth-error" />
 
           <!-- The main control is whatever the machine says it is: the submit, a
           passwordless method promoted to the button, or a code channel — for a
@@ -565,11 +562,7 @@ const LINK_SENT_TAIL = 'Open it to continue.'
             </label>
           </div>
 
-          @if (errorMessage(); as message) {
-            <div class="alert alert-danger py-2" data-id="auth-error">
-              {{ message }}
-            </div>
-          }
+          <hilos-form-error [message]="errorMessage()" dataId="auth-error" />
 
           <button
             hilosLoadingButton
@@ -677,11 +670,7 @@ const LINK_SENT_TAIL = 'Open it to continue.'
             }
           </div>
 
-          @if (errorMessage(); as message) {
-            <div class="alert alert-danger py-2" data-id="auth-error">
-              {{ message }}
-            </div>
-          }
+          <hilos-form-error [message]="errorMessage()" dataId="auth-error" />
 
           <button
             hilosLoadingButton
@@ -745,11 +734,7 @@ const LINK_SENT_TAIL = 'Open it to continue.'
             </div>
           </div>
 
-          @if (errorMessage(); as message) {
-            <div class="alert alert-danger py-2" data-id="auth-error">
-              {{ message }}
-            </div>
-          }
+          <hilos-form-error [message]="errorMessage()" dataId="auth-error" />
 
           <button
             hilosLoadingButton
@@ -788,11 +773,7 @@ const LINK_SENT_TAIL = 'Open it to continue.'
           </div>
         }
 
-        @if (errorMessage(); as message) {
-          <div class="alert alert-danger py-2" data-id="auth-error">
-            {{ message }}
-          </div>
-        }
+        <hilos-form-error [message]="errorMessage()" dataId="auth-error" />
 
         @if (tripCancelable()) {
           <button

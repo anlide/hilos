@@ -123,3 +123,27 @@ test('the home page exposes a heading and presence as text', async ({
     page.getByTestId('participant').filter({ hasText: user.name }),
   ).toContainText('online')
 })
+
+test('the profile page carries its refusal voice before any refusal', async ({
+  page,
+}) => {
+  // The refusals of this page are announced from one permanent region rather
+  // than from the blocks that show them: a role that arrives together with its
+  // own text is not announced at all (HIL-647).
+  await signUp(page)
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+
+  const live = page.getByTestId('profile-live-assertive')
+  await expect(live).toHaveAttribute('role', 'alert')
+  await expect(live).toHaveAttribute('aria-live', 'assertive')
+  await expect(live).toHaveText('')
+
+  // The rename dialog does not borrow that region: HilosModal is aria-modal, so
+  // from inside the dialog the page under it is not there to be read, and the
+  // dialog carries a permanent region of its own.
+  await page.getByTestId('profile-edit').click()
+  const dialogLive = page.getByTestId('profile-rename-live-assertive')
+  await expect(dialogLive).toHaveAttribute('role', 'alert')
+  await expect(dialogLive).toHaveText('')
+})

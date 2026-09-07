@@ -59,6 +59,7 @@ import {
   type ProjectSignal,
 } from '@hilos/core'
 
+import HilosFormError from '../HilosFormError.vue'
 import LoadingButton from '../LoadingButton.vue'
 import { useSignal } from '../useSignal.js'
 import { hilosAuthGateKey } from './hilosAuthGateKey.js'
@@ -1063,13 +1064,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div
-        v-if="errorMessage"
-        class="alert alert-danger py-2"
-        data-id="auth-error"
-      >
-        {{ errorMessage }}
-      </div>
+      <HilosFormError :message="errorMessage" data-id="auth-error" />
 
       <!-- The main control is whatever the machine says it is: the submit, a
       passwordless method promoted to the button, or a code channel — for a phone
@@ -1190,13 +1185,7 @@ onUnmounted(() => {
         </label>
       </div>
 
-      <div
-        v-if="errorMessage"
-        class="alert alert-danger py-2"
-        data-id="auth-error"
-      >
-        {{ errorMessage }}
-      </div>
+      <HilosFormError :message="errorMessage" data-id="auth-error" />
 
       <LoadingButton
         type="submit"
@@ -1293,13 +1282,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div
-        v-if="errorMessage"
-        class="alert alert-danger py-2"
-        data-id="auth-error"
-      >
-        {{ errorMessage }}
-      </div>
+      <HilosFormError :message="errorMessage" data-id="auth-error" />
 
       <LoadingButton
         type="submit"
@@ -1365,13 +1348,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div
-        v-if="errorMessage"
-        class="alert alert-danger py-2"
-        data-id="auth-error"
-      >
-        {{ errorMessage }}
-      </div>
+      <HilosFormError :message="errorMessage" data-id="auth-error" />
 
       <LoadingButton
         type="submit"
@@ -1409,13 +1386,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div
-        v-if="errorMessage"
-        class="alert alert-danger py-2"
-        data-id="auth-error"
-      >
-        {{ errorMessage }}
-      </div>
+      <HilosFormError :message="errorMessage" data-id="auth-error" />
 
       <button
         v-if="trip === null || trip.phase === 'authorizing'"

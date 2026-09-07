@@ -20,6 +20,7 @@ import {
 import {
   ConflictActions,
   ConflictHeader,
+  HilosFormError,
   HilosModal,
   HilosNotificationPreferences,
   LoadingButton,
@@ -494,6 +495,38 @@ watch(editing, (open) => {
   }
 })
 
+// What the page's live region says, in the order the blocks stand on it from the
+// top down. More than one refusal can be true at once - a failed unlink and a
+// refused passkey are different blocks - so it is a list and not a sentence, each
+// line keyed by the block it came from, the way the sign-in card keys its news.
+// The two-step add-password wizard gives one key: its two blocks are two steps of
+// one refusal, and exactly one of them is alive at a time.
+// The rename and add-a-phone refusals are NOT here. They are drawn inside
+// dialogs, and HilosModal is aria-modal: while a dialog is open the page under it
+// is not there for a screen reader to read, so each of those two announces from a
+// region of its own inside its dialog.
+const announcedRefusals = computed(() => {
+  const refusals: { key: string; text: string }[] = []
+
+  if (unlinkError.value !== null) {
+    refusals.push({ key: 'unlink', text: unlinkError.value })
+  }
+  if (passkeyError.value !== null) {
+    refusals.push({ key: 'passkey', text: passkeyError.value })
+  }
+  if (linkError.value !== null) {
+    refusals.push({ key: 'oauth_link', text: linkError.value })
+  }
+  if (addPwError.value !== null) {
+    refusals.push({ key: 'add_password', text: addPwError.value })
+  }
+  if (passwordError.value !== null) {
+    refusals.push({ key: 'set_password', text: passwordError.value })
+  }
+
+  return refusals
+})
+
 // Conflict resolutions: each sets the baseline so the merge no longer conflicts.
 function acceptMine(): void {
   baseline.value = committed.value
@@ -517,6 +550,22 @@ function mergeBoth(): void {
 
 <template>
   <section v-if="isAuthenticated" data-id="profile-view">
+    <!-- One live region for everything the page itself refuses, and the refusal
+    rows below carry no role of their own: a role that arrives together with its
+    text is not announced at all (accessibility.md), and a region per block would
+    be nine regions competing for one voice. It is a list because more than one
+    refusal can be true at once. The two dialogs speak from their own regions -
+    aria-modal makes this one unreadable from inside them. -->
+    <div
+      class="visually-hidden"
+      role="alert"
+      aria-live="assertive"
+      data-id="profile-live-assertive"
+    >
+      <div v-for="item in announcedRefusals" :key="item.key">
+        {{ item.text }}
+      </div>
+    </div>
     <div class="d-flex flex-column gap-1 mb-4">
       <h1 class="h4 mb-0">Profile</h1>
       <p class="mb-0 text-body-secondary">Your account.</p>
@@ -654,27 +703,16 @@ function mergeBoth(): void {
       >
         No linked login methods.
       </p>
-      <div
-        v-if="unlinkError"
-        class="alert alert-danger mt-2 mb-0"
-        role="alert"
-        data-id="profile-unlink-error"
-      >
-        {{ unlinkError }}
-      </div>
+      <HilosFormError :message="unlinkError" data-id="profile-unlink-error" />
 
       <!-- Enroll a device passkey (HIL-284): runs the WebAuthn register ceremony
       for the signed-in user. Hidden where the browser lacks WebAuthn. The new
       credential appears in the list once list refresh lands (HIL-404). -->
       <div v-if="passkeySupported" class="mt-3" data-id="profile-passkey">
-        <div
-          v-if="passkeyError"
-          class="alert alert-danger py-2"
-          role="alert"
+        <HilosFormError
+          :message="passkeyError"
           data-id="profile-passkey-error"
-        >
-          {{ passkeyError }}
-        </div>
+        />
         <LoadingButton
           class="btn-outline-primary btn-sm"
           :loading="passkeyPending"
@@ -720,14 +758,10 @@ function mergeBoth(): void {
             {{ provider.label }}
           </LoadingButton>
         </div>
-        <div
-          v-if="linkError"
-          class="alert alert-danger mt-2 mb-0"
-          role="alert"
+        <HilosFormError
+          :message="linkError"
           data-id="profile-oauth-link-error"
-        >
-          {{ linkError }}
-        </div>
+        />
       </div>
     </div>
 
@@ -771,14 +805,10 @@ function mergeBoth(): void {
           >
             Send code
           </LoadingButton>
-          <div
-            v-if="addPwError"
-            class="alert alert-danger mt-2 mb-0"
-            role="alert"
+          <HilosFormError
+            :message="addPwError"
             data-id="profile-add-password-error"
-          >
-            {{ addPwError }}
-          </div>
+          />
         </form>
 
         <form v-else @submit.prevent="submitAddPasswordConfirm">
@@ -836,14 +866,10 @@ function mergeBoth(): void {
           >
             Set password
           </LoadingButton>
-          <div
-            v-if="addPwError"
-            class="alert alert-danger mt-2 mb-0"
-            role="alert"
+          <HilosFormError
+            :message="addPwError"
             data-id="profile-add-password-error"
-          >
-            {{ addPwError }}
-          </div>
+          />
         </form>
       </template>
 
@@ -898,14 +924,10 @@ function mergeBoth(): void {
         >
           {{ password.hasPassword ? 'Change password' : 'Set password' }}
         </LoadingButton>
-        <div
-          v-if="passwordError"
-          class="alert alert-danger mt-2 mb-0"
-          role="alert"
+        <HilosFormError
+          :message="passwordError"
           data-id="profile-set-password-error"
-        >
-          {{ passwordError }}
-        </div>
+        />
       </form>
     </div>
 
@@ -921,6 +943,18 @@ function mergeBoth(): void {
       <template #header>
         <ConflictHeader title="Change name" :conflict="conflict" />
       </template>
+
+      <!-- This dialog's own voice: the page region above is under the backdrop,
+      and the dialog is aria-modal, so from inside here that region is not there
+      to be read. -->
+      <div
+        class="visually-hidden"
+        role="alert"
+        aria-live="assertive"
+        data-id="profile-rename-live-assertive"
+      >
+        {{ error }}
+      </div>
 
       <form @submit.prevent="submit">
         <label class="form-label" for="profile-name-field">Display name</label>
@@ -945,13 +979,7 @@ function mergeBoth(): void {
           The name changed elsewhere to “{{ committed }}”. Choose how to
           resolve.
         </div>
-        <div
-          v-if="error"
-          class="alert alert-danger mt-2 mb-0"
-          data-id="profile-rename-error"
-        >
-          {{ error }}
-        </div>
+        <HilosFormError :message="error" data-id="profile-rename-error" />
       </form>
 
       <template #actions>
@@ -987,6 +1015,18 @@ function mergeBoth(): void {
         <h2 class="modal-title h5 mb-0">Add a phone</h2>
       </template>
 
+      <!-- This dialog's own voice, for the same reason the rename dialog has
+      one: aria-modal hides the page region from a reader inside the dialog. One
+      region for both steps - they are two steps of one refusal. -->
+      <div
+        class="visually-hidden"
+        role="alert"
+        aria-live="assertive"
+        data-id="profile-sms-live-assertive"
+      >
+        {{ smsError }}
+      </div>
+
       <form v-if="smsStep === 1" @submit.prevent="submitSmsRequest">
         <label class="form-label" for="profile-add-sms-phone"
           >Phone number</label
@@ -1001,14 +1041,7 @@ function mergeBoth(): void {
           data-id="profile-add-sms-phone"
         />
         <div class="form-text">We'll text you a one-time code.</div>
-        <div
-          v-if="smsError"
-          class="alert alert-danger mt-2 mb-0"
-          role="alert"
-          data-id="profile-add-sms-error"
-        >
-          {{ smsError }}
-        </div>
+        <HilosFormError :message="smsError" data-id="profile-add-sms-error" />
       </form>
 
       <form v-else @submit.prevent="submitSmsConfirm">
@@ -1026,14 +1059,7 @@ function mergeBoth(): void {
           data-id="profile-add-sms-code"
         />
         <div class="form-text">Enter the code sent to {{ smsPhone }}.</div>
-        <div
-          v-if="smsError"
-          class="alert alert-danger mt-2 mb-0"
-          role="alert"
-          data-id="profile-add-sms-error"
-        >
-          {{ smsError }}
-        </div>
+        <HilosFormError :message="smsError" data-id="profile-add-sms-error" />
       </form>
 
       <template #actions>

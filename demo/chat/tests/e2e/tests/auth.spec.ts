@@ -160,9 +160,26 @@ test('answers a wrong password inline, and an unknown address with the registrat
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
   // A known address reveals its password field and the wrong one is refused with
-  // the backend's own sentence, still gated.
-  await login(page, email, 'a different password')
+  // the backend's own sentence, still gated. The room the sentence lands in was
+  // taken before it existed (HIL-647), so nothing on the card moves: the slot
+  // keeps its height, the field the person is about to correct keeps its place,
+  // and so does the button they just pressed - the node the old block used to
+  // shove down, because it stood between the two.
+  await enterIdentifierAndPassword(page, email, 'a different password')
+  const slotIdle = await page.getByTestId('auth-error-slot').boundingBox()
+  const passwordIdle = await page.getByTestId('auth-password').boundingBox()
+  const submitIdle = await page.getByTestId('auth-submit').boundingBox()
+  await clickSubmit(page.getByTestId('auth-submit'))
   await expect(page.getByTestId('auth-error')).toHaveText('Incorrect password')
+  expect(
+    (await page.getByTestId('auth-error-slot').boundingBox())?.height,
+  ).toBe(slotIdle?.height)
+  expect((await page.getByTestId('auth-password').boundingBox())?.y).toBe(
+    passwordIdle?.y,
+  )
+  expect((await page.getByTestId('auth-submit').boundingBox())?.y).toBe(
+    submitIdle?.y,
+  )
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 
   // An address with no account is never given a sign-in to fail: the lookup in
@@ -174,6 +191,37 @@ test('answers a wrong password inline, and an unknown address with the registrat
   )
   await expect(page.getByTestId('auth-error')).toHaveCount(0)
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
+})
+
+test('holds the refusal to one line on a narrow screen', async ({ page }) => {
+  const email = uniqueEmail()
+
+  // 375 is the narrowest screen the frontend is built for, and the card (24rem)
+  // is wider than it: this is where a refusal used to take a second line, and
+  // where the truncation has to keep it to one.
+  await page.setViewportSize({ width: 375, height: 800 })
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await register(page, email)
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await logout(page)
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+
+  await enterIdentifierAndPassword(page, email, 'a different password')
+  const slotIdle = await page.getByTestId('auth-error-slot').boundingBox()
+  const submitIdle = await page.getByTestId('auth-submit').boundingBox()
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await expect(page.getByTestId('auth-error')).toHaveText('Incorrect password')
+
+  expect(
+    (await page.getByTestId('auth-error-slot').boundingBox())?.height,
+  ).toBe(slotIdle?.height)
+  expect((await page.getByTestId('auth-submit').boundingBox())?.y).toBe(
+    submitIdle?.y,
+  )
 })
 
 test('gates sending behind the surface, and returns the identity line to anonymous on logout', async ({

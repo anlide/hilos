@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { grantAdminToSelf } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
+import { openSignIn } from '../helpers/session'
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
@@ -113,4 +114,23 @@ test('the home page exposes a single top-level heading', async ({ page }) => {
   await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Polls')
+})
+
+test('the sign-in card holds room for a refusal before there is one', async ({
+  page,
+}) => {
+  // The room is taken by an invisible twin of the row, so the refusal has
+  // somewhere to land without moving the form (HIL-647). Angular has no
+  // component world of its own yet (HIL-848), so this is where its copy of the
+  // component is proved.
+  await gotoPage(page, '/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await openSignIn(page)
+
+  await expect(page.getByTestId('auth-error-slot')).toBeAttached()
+  await expect(page.getByTestId('auth-error-idle')).toHaveAttribute(
+    'aria-hidden',
+    'true',
+  )
+  await expect(page.getByTestId('auth-error')).toHaveCount(0)
 })

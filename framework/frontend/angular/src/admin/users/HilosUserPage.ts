@@ -32,6 +32,7 @@ import type {
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosFormError } from '../../HilosFormError.js'
 import { HilosModal } from '../../HilosModal.js'
 import { LoadingButton } from '../../LoadingButton.js'
 
@@ -39,7 +40,7 @@ import { LoadingButton } from '../../LoadingButton.js'
 @Component({
   selector: 'hilos-user-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosModal, LoadingButton],
+  imports: [HilosAdminPage, HilosFormError, HilosModal, LoadingButton],
   template: `
     <hilos-admin-page [page]="page">
       @if (detail(); as detail) {
@@ -95,15 +96,22 @@ import { LoadingButton } from '../../LoadingButton.js'
         [title]="editTitle()"
         [confirmOnClose]="dirty()"
       >
-        @if (renameError(); as error) {
-          <div
-            class="alert alert-danger"
-            role="alert"
-            data-id="hilos-user-rename-error"
-          >
-            {{ error }}
-          </div>
-        }
+        <!-- The refusal is announced from here and not from the row that shows
+        it: a role arriving together with its text is not announced at all
+        (accessibility.md). The region lives inside the dialog because the dialog
+        is aria-modal, which hides the page under it from a screen reader. -->
+        <div
+          class="visually-hidden"
+          role="alert"
+          aria-live="assertive"
+          data-id="hilos-user-live-assertive"
+        >
+          {{ renameError() }}
+        </div>
+        <hilos-form-error
+          [message]="renameError()"
+          dataId="hilos-user-rename-error"
+        />
         <form (submit)="submit($event)">
           <label class="form-label" for="hilos-user-name-field">
             Display name

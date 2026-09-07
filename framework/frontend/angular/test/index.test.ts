@@ -11,6 +11,7 @@ import {
   HilosAuthSurface,
   HilosBreadcrumb,
   HilosDashboardPage,
+  HilosFormError,
   HilosLayout,
   HilosLink,
   HilosMagicLinkPage,
@@ -46,6 +47,7 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosOAuthCallbackPage).toBeTypeOf('function')
   expect(HilosDashboardPage).toBeTypeOf('function')
   expect(HilosModal).toBeTypeOf('function')
+  expect(HilosFormError).toBeTypeOf('function')
   expect(HilosViewportTable).toBeTypeOf('function')
   expect(HilosSettingsPage).toBeTypeOf('function')
   expect(HilosUsersPage).toBeTypeOf('function')

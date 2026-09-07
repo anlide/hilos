@@ -259,6 +259,13 @@ Topic documents are referenced by filename; several are still being authored.
   only in the Bootstrap Sass layer (variables, maps, custom-utilities), each with
   a comment stating why Bootstrap utilities cannot achieve it. See
   [styling-rules.md](styling-rules.md).
+- **Showing a form's refusal never changes the form's height.** The room under
+  a form is taken before there is anything to say and is exactly one line tall:
+  the text is truncated, and the whole of it lives behind a button that stands
+  at every refusal. It is drawn by the SDK component `HilosFormError` (Vue,
+  React, Angular) — do not hand-write another copy. The row carries no role of
+  its own; the surface announces from its own permanent live region. See
+  [accessibility.md](accessibility.md).
 - **Full accessibility (WCAG 2.1 AA) in v1.** Focus-trap and focus-return in
   modals, full keyboard operability, ARIA roles and names, one heading per page,
   text alternatives for status color, and visible focus with adequate contrast
