@@ -2,7 +2,11 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { h } from 'vue'
 import { TableViewportController } from '@hilos/core'
-import type { HilosTableColumn, TableViewportDescriptor } from '@hilos/core'
+import type {
+  HilosTableColumn,
+  HilosTableFrame,
+  TableViewportDescriptor,
+} from '@hilos/core'
 
 import HilosViewportTable from './HilosViewportTable.vue'
 
@@ -22,7 +26,7 @@ const TWO_COLUMNS: HilosTableColumn[] = [
 
 // The controller is typed as unknown so the slot/controller line up with the
 // generic SFC, whose `R` @vue/test-utils does not infer from the prop value.
-function makeController(): {
+function makeController(frame?: HilosTableFrame): {
   controller: TableViewportController<unknown>
   sent: TableViewportDescriptor[]
 } {
@@ -30,6 +34,7 @@ function makeController(): {
   const controller = new TableViewportController<unknown>({
     resolve: (raw) => ({ name: String(raw.slots['name']) }),
     sendViewport: (descriptor) => sent.push(descriptor),
+    frame,
   })
 
   return { controller, sent }
@@ -195,5 +200,74 @@ describe('HilosViewportTable', () => {
     expect(wrapper.find('th').attributes('aria-sort')).toBe('descending')
     await wrapper.find('[data-id="hilos-table-sort-name"]').trigger('click')
     expect(wrapper.find('th').attributes('aria-sort')).toBe('none')
+  })
+})
+
+describe('HilosViewportTable with a declared frame', () => {
+  const FRAME: HilosTableFrame = {
+    title: 'Backups',
+    search: {},
+    columns: COLUMNS,
+  }
+
+  function mountDeclared(controller: TableViewportController<unknown>) {
+    return mount(HilosViewportTable, {
+      props: { controller, columns: COLUMNS, label: 'Users', searchable: true },
+      slots: {
+        row: (props: { row: unknown; rowKey: string }) =>
+          h('td', {}, (props.row as Row).name),
+      },
+    })
+  }
+
+  it('draws the declared bar and names the table by its visible title', () => {
+    const { controller } = makeController(FRAME)
+    const wrapper = mountDeclared(controller)
+
+    const title = wrapper.find('[data-id="hilos-table-title"]')
+    expect(title.text()).toBe('Backups')
+    expect(wrapper.find('table').attributes('aria-labelledby')).toBe(
+      title.attributes('id'),
+    )
+    expect(wrapper.find('caption').exists()).toBe(false)
+  })
+
+  it('draws the declared footer instead of the one built from props', () => {
+    const { controller } = makeController(FRAME)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      128,
+      true,
+      null,
+      null,
+      20,
+    )
+    const wrapper = mountDeclared(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-count"]').text()).toBe(
+      '1 – 1 of 128',
+    )
+    expect(wrapper.find('[data-id="hilos-table-page"]').exists()).toBe(false)
+  })
+
+  it('leaves the props-driven bar out, Apply button and all', () => {
+    const { controller } = makeController(FRAME)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      20,
+    )
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    const wrapper = mountDeclared(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-apply"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-id="hilos-table-search"]')).toHaveLength(1)
   })
 })

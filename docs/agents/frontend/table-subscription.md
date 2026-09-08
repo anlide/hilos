@@ -129,12 +129,12 @@ accumulated before the break is gone — the window that arrives outranks it.
 
 ## What the page declares
 
-> **The declaration below is in the core, and no table uses it yet (not in the
-> code yet — HIL-801, HIL-810, HIL-819).** A page declares its frame today and
-> nothing is drawn from it: the bar and the footer that render it are HIL-801
-> (Vue) and HIL-810 (React, Angular), and the framework's own pages move onto it
-> in HIL-819. Until then a view still takes its columns, its label, and its empty
-> text as props.
+> **The declaration below is drawn by Vue and by nobody else yet (not in the
+> code yet — HIL-810, HIL-819).** The Vue view renders the bar and the footer
+> from it; React and Angular are HIL-810, and the framework's own pages declare
+> no frame yet — they move onto it in HIL-819. So a view still takes its columns,
+> its label, and its empty text as props, and a table that declares nothing keeps
+> drawing the bar and the footer it drew before.
 
 **The page declares; the view draws.** The framework owns the whole bar above the
 table and the whole footer below it, and a page that wants a title, a filter, or
@@ -584,3 +584,6 @@ an address does not:
 | the frame a page declares | `framework/frontend/core/src/table/tableFrame.ts` |
 | routing the frames into it | `framework/frontend/core/src/subscription/bindTableViewport.ts` |
 | the thin view | `framework/frontend/{vue,react,angular}/src/HilosViewportTable.*` |
+| the bar the frame is drawn as | `framework/frontend/vue/src/HilosTableBar.vue` |
+| one control of one declared filter | `framework/frontend/vue/src/HilosTableFilterControl.vue` |
+| the footer under the table | `framework/frontend/vue/src/HilosTableFooter.vue` |

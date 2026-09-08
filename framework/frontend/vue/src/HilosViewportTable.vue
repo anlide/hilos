@@ -6,15 +6,22 @@ its slot — the layout never collapses. It holds NO table logic
 (multiframework-core.md): the controller owns the descriptor, pending, and Apply.
 Body cells come from the `#row` slot; the placeholder, header, paging, and the
 pending bar stay framework-owned. (Distinct from HilosTable, the client-side
-view.) -->
+view.)
+It draws its frame from what the page DECLARED (HilosTableBar, HilosTableFooter)
+when the controller carries a declaration, and from its own props when it does
+not — two epochs of the same table living side by side while the five framework
+pages have not moved onto the declaration yet (HIL-819). -->
+
 <script setup lang="ts" generic="R">
-import { computed } from 'vue'
+import { computed, useId } from 'vue'
 import type {
   HilosTableColumn,
   TableSort,
   TableViewportController,
 } from '@hilos/core'
 
+import HilosTableBar from './HilosTableBar.vue'
+import HilosTableFooter from './HilosTableFooter.vue'
 import { useSignal } from './useSignal.js'
 
 const props = withDefaults(
@@ -52,6 +59,16 @@ const props = withDefaults(
     dataId: 'hilos-viewport-table',
   },
 )
+
+// What the page declared about the frame, or null when it declared nothing —
+// the one switch between the two epochs of markup. It does not change over the
+// life of a table, so it is read once rather than wrapped in a signal.
+const declaration = props.controller.frame.declaration
+
+// The declared title names the table through aria-labelledby, so the id is
+// minted here — where both the bar that renders the heading and the table that
+// points at it can see it (Flow F9).
+const titleId = useId()
 
 const rows = useSignal(props.controller.rows)
 const search = useSignal(props.controller.search)
@@ -132,8 +149,18 @@ function onSearchInput(event: Event): void {
 
 <template>
   <div :data-id="dataId">
+    <HilosTableBar
+      v-if="declaration"
+      :controller="controller"
+      :title-id="titleId"
+    />
+
+    <!-- SCAFFOLD: the bar a table draws from props, kept while the five
+    framework pages still pass them. It goes with the props themselves when
+    those pages move onto the declaration (HIL-819); the Apply button of a
+    declared table belongs to the pending strip (HIL-793). -->
     <div
-      v-if="searchable || pendingCount > 0"
+      v-if="!declaration && (searchable || pendingCount > 0)"
       class="d-flex justify-content-between align-items-center gap-2 mb-3"
     >
       <input
@@ -166,8 +193,13 @@ function onSearchInput(event: Event): void {
     </div>
 
     <div class="table-responsive">
-      <table class="table table-striped table-hover align-middle mb-0">
-        <caption v-if="label" class="visually-hidden">
+      <table
+        class="table table-striped table-hover align-middle mb-0"
+        :aria-labelledby="declaration ? titleId : undefined"
+      >
+        <!-- A declared table already shows its name as a heading, and a hidden
+        caption repeating it would name the table twice (Flow F9). -->
+        <caption v-if="!declaration && label" class="visually-hidden">
           {{
             label
           }}
@@ -233,8 +265,12 @@ function onSearchInput(event: Event): void {
       </table>
     </div>
 
+    <HilosTableFooter v-if="declaration" :controller="controller" />
+
+    <!-- SCAFFOLD: the footer a table draws from its own comparisons, kept for
+    the same reason and going the same way as the bar above (HIL-819). -->
     <div
-      v-if="paginated"
+      v-if="!declaration && paginated"
       class="d-flex justify-content-between align-items-center mt-3"
     >
       <span class="text-muted small" data-id="hilos-table-count">
