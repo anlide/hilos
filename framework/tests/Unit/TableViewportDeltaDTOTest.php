@@ -37,6 +37,40 @@ final class TableViewportDeltaDTOTest extends TestCase
         $this->assertNull($restored->row);
     }
 
+    public function testRowMovedRoundTrip(): void
+    {
+        $row = ['rowKey' => 'a', 'sources' => ['settings' => ['key' => 'a']]];
+        $restored = TableViewportDeltaDTO::fromArray(
+            TableViewportDeltaDTO::rowMoved('p', 't', 'a', $row, 3)->toArray(),
+        );
+
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_MOVED, $restored->kind);
+        $this->assertSame('a', $restored->rowKey);
+        $this->assertSame($row, $restored->row);
+        $this->assertSame(3, $restored->position);
+    }
+
+    public function testRowMovedWithoutAPlaceCarriesNoPosition(): void
+    {
+        $moved = TableViewportDeltaDTO::rowMoved('p', 't', 'a', ['rowKey' => 'a'])->toArray();
+
+        // The table could not name a slot, and a zero would be one: the receiver applies the
+        // values where the row already is instead of moving it to the top.
+        $this->assertArrayNotHasKey(TableViewportDeltaDTO::position, $moved);
+        $this->assertNull(TableViewportDeltaDTO::fromArray($moved)->position);
+    }
+
+    public function testRowRemovedCarriesTheMovedOutReason(): void
+    {
+        $restored = TableViewportDeltaDTO::fromArray(
+            TableViewportDeltaDTO::rowRemoved('p', 't', 5, TableViewportDeltaDTO::REASON_MOVED_OUT)->toArray(),
+        );
+
+        // A row that left the window is told from one that left the set, because only the
+        // second of them moves the total.
+        $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $restored->reason);
+    }
+
     public function testToArrayOmitsKeysIrrelevantToTheKind(): void
     {
         $removed = TableViewportDeltaDTO::rowRemoved('p', 't', 5, TableViewportDeltaDTO::REASON_DELETED)->toArray();
@@ -44,6 +78,7 @@ final class TableViewportDeltaDTOTest extends TestCase
 
         $updated = TableViewportDeltaDTO::rowUpdated('p', 't', 5, ['rowKey' => 5])->toArray();
         $this->assertArrayNotHasKey(TableViewportDeltaDTO::reason, $updated);
+        $this->assertArrayNotHasKey(TableViewportDeltaDTO::position, $updated);
     }
 
     public function testOwnRoundTrip(): void

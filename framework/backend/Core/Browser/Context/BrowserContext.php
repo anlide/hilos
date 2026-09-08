@@ -516,8 +516,9 @@ abstract class BrowserContext
         TableViewportSubscription $viewport,
         string $page,
     ): ?BrowserTableWindow {
+        $query = $this->viewportQuery($viewport);
         try {
-            $snapshot = $table->getPage($this->viewportQuery($viewport));
+            $snapshot = $table->getPage($query);
         } catch (Throwable $e) {
             // The window simply does not arrive, and without this line nothing
             // anywhere says so: a row that refuses its own payload would trade
@@ -532,14 +533,17 @@ abstract class BrowserContext
 
         $rows = [];
         $wireRows = [];
+        $rowAnchors = [];
         foreach ($snapshot->rows as $row) {
             if (!$row instanceof AbstractTableRow) {
                 continue;
             }
             $browserRow = $table->browserRow($row);
             $wireRow = $this->browserRowToWire($browserRow);
+            $rowKey = (string) $browserRow[BrowserPageSignalData::rowKey];
             $rows[] = $wireRow;
-            $wireRows[(string) $browserRow[BrowserPageSignalData::rowKey]] = $wireRow;
+            $wireRows[$rowKey] = $wireRow;
+            $rowAnchors[$rowKey] = $table->anchorForRow($row, $query);
         }
 
         $viewport->recordWindow(
@@ -548,6 +552,7 @@ abstract class BrowserContext
             $snapshot->totalExact,
             $snapshot->firstAnchor,
             $snapshot->lastAnchor,
+            $rowAnchors,
         );
 
         return new BrowserTableWindow($rows, $snapshot);
@@ -2125,8 +2130,9 @@ abstract class BrowserContext
             return false;
         }
 
+        $query = $this->viewportQuery($viewport);
         try {
-            $snapshot = $table->getPage($this->viewportQuery($viewport));
+            $snapshot = $table->getPage($query);
         } catch (Throwable $e) {
             // False here means "not placed", and the author then gets the count path -
             // the same answer a row on another page gets. Without this line the two are
@@ -2144,6 +2150,7 @@ abstract class BrowserContext
 
         $rowKey = (string) $mutation->rowKey;
         $wireRows = [];
+        $rowAnchors = [];
         $position = null;
         $wireRow = null;
         foreach ($snapshot->rows as $row) {
@@ -2158,6 +2165,7 @@ abstract class BrowserContext
                 $wireRow = $windowWireRow;
             }
             $wireRows[$windowRowKey] = $windowWireRow;
+            $rowAnchors[$windowRowKey] = $table->anchorForRow($row, $query);
         }
 
         if ($position === null || $wireRow === null) {
@@ -2170,6 +2178,7 @@ abstract class BrowserContext
             $snapshot->totalExact,
             $snapshot->firstAnchor,
             $snapshot->lastAnchor,
+            $rowAnchors,
         );
 
         $this->queueAddressedTableSignal(
@@ -2227,7 +2236,8 @@ abstract class BrowserContext
         if ($viewport->hasRow((string) $mutation->rowKey)) {
             return false;
         }
-        $placement = $this->viewportPlacement($table, $viewport, $mutation, $this->viewportQuery($viewport));
+        $query = $this->viewportQuery($viewport);
+        $placement = $this->viewportPlacement($table, $viewport, $mutation, $query);
         if ($placement !== TableRowPlacement::Tail) {
             return false;
         }
@@ -2237,7 +2247,7 @@ abstract class BrowserContext
         $totalExact = $counted[TableConstants::RESULT_KEY_TOTAL_EXACT];
         $wireRow = $this->browserRowToWire($table->browserRow($mutation->row));
         $viewport->recordTotal($totalCount, $totalExact);
-        $viewport->recordRow((string) $mutation->rowKey, $wireRow);
+        $viewport->recordRow((string) $mutation->rowKey, $wireRow, $table->anchorForRow($mutation->row, $query));
 
         $this->queueAddressedTableSignal(
             SignalTypeConstants::TABLE_VIEWPORT_APPEND,
@@ -2317,6 +2327,120 @@ abstract class BrowserContext
         }
 
         return $this->viewportIsLastPageWithRoom($viewport) ? TableRowPlacement::Tail : TableRowPlacement::Below;
+    }
+
+    /**
+     * Reads where an edit leaves a row the window is already showing.
+     *
+     * The question is not the one {@see self::viewportPlacement()} answers about an arriving
+     * row: that one decides whether a row nobody sees may appear on its own, this one decides
+     * whether a row somebody is looking at stays where it is. Both read the same two boundaries
+     * of the delivered window, and both hand back a place rather than a verdict, so the caller
+     * is the only one that turns a place into a frame.
+     *
+     * The boundaries are the places the delivered rows stand at ({@see
+     * TableViewportSubscription::rowAnchors()}), which is what the window is, and not the
+     * anchors of the snapshot: a window collects rows after it was served — an appended tail
+     * row, a row re-sent by an earlier delta — and the snapshot's boundaries stop describing it.
+     *
+     * "Cannot say" is answered wherever a place would be a guess: a window with no order, a
+     * window whose rows were recorded without their places, a boundary the table could not name,
+     * and a comparison the table refused. The caller sends the row as moved without a position
+     * then, which is honest in both directions — the row is not claimed to have stayed, and it
+     * is not put at an index computed from nothing.
+     *
+     * @param ViewportTable $table Table the window is on
+     * @param TableViewportSubscription $viewport Connection's window
+     * @param TableRowMutationDTO $mutation Mutation the table built for the change
+     * @param TableQueryDTO $query Query this window was served by
+     * @return ?TableRowPlacement Where the edited row lands, or null when the window cannot say
+     */
+    private function viewportRowPlacementAfterUpdate(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        TableRowMutationDTO $mutation,
+        TableQueryDTO $query,
+    ): ?TableRowPlacement {
+        $row = $mutation->row;
+        if ($row === null || $query->sort === null) {
+            return null;
+        }
+
+        $anchors = $viewport->rowAnchors();
+        if ($anchors === []) {
+            return null;
+        }
+
+        $firstAnchor = reset($anchors);
+        $lastAnchor = end($anchors);
+        if ($firstAnchor === null || $lastAnchor === null) {
+            return null;
+        }
+
+        $againstFirst = $table->placeRowAgainst($row, $firstAnchor, $query);
+        if ($againstFirst === null) {
+            return null;
+        }
+        if ($againstFirst < 0) {
+            return TableRowPlacement::Above;
+        }
+
+        $againstLast = $table->placeRowAgainst($row, $lastAnchor, $query);
+        if ($againstLast === null) {
+            return null;
+        }
+
+        return $againstLast > 0 ? TableRowPlacement::Below : TableRowPlacement::Inside;
+    }
+
+    /**
+     * Counts which slot of the window an edited row lands in.
+     *
+     * The row is placed against the places of its NEIGHBOURS and never against its own former
+     * one, because the two questions have different answers: a size going from 1,1 GB to 1,4 GB
+     * between neighbours of 2 GB and 0,5 GB stands at a new place and in the same slot, and a
+     * window comparing the row with its past would mark it "will move" and then move it nowhere.
+     *
+     * The answer is the number of shown rows that stand above the edited one, which is that
+     * row's index once it is put back among them. It is asked only of a row that stays inside
+     * the window, so a count over the shown rows is the whole answer.
+     *
+     * @param ViewportTable $table Table the window is on
+     * @param TableViewportSubscription $viewport Connection's window
+     * @param TableRowMutationDTO $mutation Mutation the table built for the change
+     * @param TableQueryDTO $query Query this window was served by
+     * @return ?int Zero-based slot the row lands in, or null when a neighbour could not be placed against
+     */
+    private function viewportRowIndex(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        TableRowMutationDTO $mutation,
+        TableQueryDTO $query,
+    ): ?int {
+        $row = $mutation->row;
+        if ($row === null) {
+            return null;
+        }
+
+        $rowKey = (string) $mutation->rowKey;
+        $index = 0;
+        foreach ($viewport->rowAnchors() as $key => $anchor) {
+            if ((string) $key === $rowKey) {
+                continue;
+            }
+            if ($anchor === null) {
+                return null;
+            }
+            $against = $table->placeRowAgainst($row, $anchor, $query);
+            if ($against === null) {
+                return null;
+            }
+            if ($against > 0) {
+                $index++;
+            }
+        }
+
+        return $index;
     }
 
     /**
@@ -2551,6 +2675,15 @@ abstract class BrowserContext
      * row can leave a filtered set over a field the delivered row never carried, and
      * then the payload is the same while the total is not.
      *
+     * An update that does change the rendered row is then classified by what it does to the
+     * WINDOW, because that is what the gate holds — position and membership, not the fields of
+     * a record (HIL-793). A row that left the filtered set and a row that moved past an edge of
+     * the window are removals, told apart by their reason because only the first of them moves
+     * the count; a row that changed its slot inside the window is a move carrying that slot; and
+     * a row that stayed in its slot is the plain update, which the reader's screen applies at
+     * once. The window that cannot say — no order, no remembered places, a table that refused a
+     * comparison — sends the move without a slot rather than promising either answer.
+     *
      * @param TableViewportSubscription $viewport Connection's window; its delivered rows are updated in place
      * @param ViewportTable $table Viewport table the window is on
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
@@ -2595,13 +2728,90 @@ abstract class BrowserContext
             return null;
         }
 
-        $viewport->recordRow($rowKey, $wireRow);
+        $query = $this->viewportQuery($viewport);
+        try {
+            $contains = $table->containsRow($mutation->rowKey, $query);
+        } catch (Throwable $e) {
+            // A refused question is read as "cannot say" and the classification goes on, the
+            // same way the count reads it. Without this line the refusal looks exactly like an
+            // answered "the row is still in the set", and the row keeps a slot nothing checked.
+            Logger::error(
+                "Viewport delta kept a row after its set question failed: table={$viewport->tableKey}, "
+                    . "page={$page}, rowKey={$mutation->rowKey}, "
+                    . 'exception=' . $e::class . ", message={$e->getMessage()}, "
+                    . 'at=' . basename($e->getFile()) . ':' . $e->getLine(),
+            );
 
-        return TableViewportDeltaDTO::rowUpdated(
+            $contains = null;
+        }
+
+        if ($contains === false) {
+            $viewport->forgetRow($rowKey);
+
+            return TableViewportDeltaDTO::rowRemoved(
+                $page,
+                $browserKey,
+                $mutation->rowKey,
+                TableViewportDeltaDTO::REASON_LEFT_SET,
+                $mutation->live,
+                $own,
+            );
+        }
+
+        if ($query->sort === null) {
+            // A window in the source's own sequence has no place for a row to have moved from,
+            // so the edit is a value and nothing else. This is the leaf's own case (HIL-793):
+            // most of the framework's own pages declare no order at all, and holding their
+            // edits behind the gate raised a badge whose Apply changed nothing on the screen.
+            $viewport->recordRow($rowKey, $wireRow, $table->anchorForRow($mutation->row, $query));
+
+            return TableViewportDeltaDTO::rowUpdated(
+                $page,
+                $browserKey,
+                $mutation->rowKey,
+                $wireRow,
+                $mutation->live,
+                $own,
+            );
+        }
+
+        $placement = $this->viewportRowPlacementAfterUpdate($table, $viewport, $mutation, $query);
+        if ($placement === TableRowPlacement::Above || $placement === TableRowPlacement::Below) {
+            $viewport->forgetRow($rowKey);
+
+            return TableViewportDeltaDTO::rowRemoved(
+                $page,
+                $browserKey,
+                $mutation->rowKey,
+                TableViewportDeltaDTO::REASON_MOVED_OUT,
+                $mutation->live,
+                $own,
+            );
+        }
+
+        $slot = $placement === TableRowPlacement::Inside
+            ? $this->viewportRowIndex($table, $viewport, $mutation, $query)
+            : null;
+        $shownAt = array_search($rowKey, array_map(strval(...), array_keys($viewport->rowAnchors())), true);
+        $viewport->recordRow($rowKey, $wireRow, $table->anchorForRow($mutation->row, $query));
+
+        if ($slot !== null && $slot === $shownAt) {
+            return TableViewportDeltaDTO::rowUpdated(
+                $page,
+                $browserKey,
+                $mutation->rowKey,
+                $wireRow,
+                $mutation->live,
+                $own,
+            );
+        }
+
+        return TableViewportDeltaDTO::rowMoved(
             $page,
             $browserKey,
             $mutation->rowKey,
             $wireRow,
+            $slot,
             $mutation->live,
             $own,
         );

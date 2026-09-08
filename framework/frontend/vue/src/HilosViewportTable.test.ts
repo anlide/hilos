@@ -113,7 +113,7 @@ describe('HilosViewportTable', () => {
       10,
     )
     controller.ingestDelta({
-      kind: 'row_updated',
+      kind: 'row_moved',
       rowKey: 'a',
       row: { rowKey: 'a', slots: { name: 'new' } },
     })
@@ -261,7 +261,7 @@ describe('HilosViewportTable with a declared frame', () => {
       20,
     )
     controller.ingestDelta({
-      kind: 'row_updated',
+      kind: 'row_moved',
       rowKey: 'a',
       row: { rowKey: 'a', slots: { name: 'Alicia' } },
     })

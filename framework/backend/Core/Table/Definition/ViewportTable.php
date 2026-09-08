@@ -27,8 +27,8 @@ use Hilos\HilosException;
  * source-fanned table (the Hilos users table), independent of how the table
  * delivers its non-viewport page_response rows.
  *
- * getPage(), buildMutationForSourceEvent(), containsRow(), placeRowAgainst(), windowSize()
- * and defaultSort() are already concrete on TableDefinition, so a TableDefinition subclass
+ * getPage(), buildMutationForSourceEvent(), containsRow(), placeRowAgainst(), anchorForRow(),
+ * windowSize() and defaultSort() are already concrete on TableDefinition, so a TableDefinition subclass
  * satisfies them by inheritance and only browserRow() is feature-specific.
  */
 interface ViewportTable
@@ -115,6 +115,35 @@ interface ViewportTable
      * @return ?int Negative above the anchor, zero at it, positive below it, or null when this table cannot say
      */
     public function placeRowAgainst(AbstractTableRow $row, TableAnchorDTO $anchor, TableQueryDTO $query): ?int;
+
+    /**
+     * Names the place one row sits at in the order a window asked for.
+     *
+     * This is what lets a viewport remember where each delivered row stood, so that a later
+     * edit of that row is judged against the places of its neighbours instead of against its
+     * own former place. The difference is the whole question: a size going from 1,1 GB to
+     * 1,4 GB between neighbours of 2 GB and 0,5 GB names a new place for the row and leaves
+     * it standing exactly where it was, and a window comparing the row with its own past
+     * would promise a move that pressing Apply cannot deliver.
+     *
+     * The anchor is written by the table for the same reason {@see placeRowAgainst()} does the
+     * comparing: the key space of an anchor belongs to the row source (HIL-787), so a caller
+     * naming the place itself would be writing it in names the table's own boundaries are not
+     * written in — the delivery-logs table anchors by `created_at` where its row payload says
+     * `createdAt`.
+     *
+     * Null is a real answer and means "this table cannot say", in the two cases a place does
+     * not exist rather than fails to be found: a window that asked for no order is held in the
+     * row source's own sequence, and a row that carries no value for a field the order is
+     * settled by has no place in that order to name. A table anchoring in its own names
+     * overrides this against those names; leaving it is a full answer too, and its rows are
+     * then the ones a viewport cannot place.
+     *
+     * @param AbstractTableRow $row Row to name the place of
+     * @param TableQueryDTO $query Window query whose sort names the order the place is read in
+     * @return ?TableAnchorDTO Place the row sits at in that order, or null when this table cannot say
+     */
+    public function anchorForRow(AbstractTableRow $row, TableQueryDTO $query): ?TableAnchorDTO;
 
     /**
      * Builds a row mutation for one source change this table reacts to.

@@ -384,6 +384,59 @@ describe('bindTableViewport', () => {
     })
   })
 
+  it('routes a row_moved delta with the slot the server named', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitDelta({
+      page: 'main',
+      tableKey: 'settings',
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { value: 'x' } },
+      position: 3,
+    })
+
+    expect(sink.deltas[0]).toEqual({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { value: 'x' } },
+      position: 3,
+      live: false,
+      own: false,
+    })
+  })
+
+  it('reads a row_moved delta with no slot as a move with none', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitDelta({
+      page: 'main',
+      tableKey: 'settings',
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { value: 'x' } },
+    })
+
+    // The table could not name a place, and the absence travels as absence: a zero
+    // here would move the row to the top of the window on Apply.
+    expect(sink.deltas[0]).toEqual({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { value: 'x' } },
+      position: undefined,
+      live: false,
+      own: false,
+    })
+  })
+
   it('carries the backend own marker through to the sink', () => {
     const connection = fakeConnection()
     const scopes = new ScopeManager()

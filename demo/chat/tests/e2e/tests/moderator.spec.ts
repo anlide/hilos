@@ -104,7 +104,7 @@ test('reaches the moderation admin from the dashboard', async ({ page }) => {
   expect(new URL(page.url()).pathname).toBe('/hilos/app/moderator')
 })
 
-test('an edit in one tab hangs as pending in another until applied', async ({
+test('an edit in one tab lands at once in another, raising no Apply', async ({
   page,
 }) => {
   const stamp = Date.now()
@@ -134,19 +134,14 @@ test('an edit in one tab hangs as pending in another until applied', async ({
   await expect(page.locator('tbody tr', { hasText: edited })).toHaveCount(1)
   await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
 
-  // Tab B receives the edit from the other connection as a pending update over
-  // the source-fanout table: an Apply control appears and the row is tinted. A
-  // piece is an entity reference, so the cell text tracks the edit reactively
-  // (unlike settings, whose inline value holds old until applied) — but the
-  // pending gate still holds: the row keeps its place and waits for an explicit
-  // Apply. This is the source-fanout row-updated delta path settings can't cover.
-  await expect(tabB.getByTestId('hilos-table-apply')).toBeVisible()
-  await expect(tabB.locator('tbody tr', { hasText: edited })).toHaveClass(
-    /table-warning/,
-  )
-
-  // Applying clears the pending gate in place, with no document reload.
-  await tabB.getByTestId('hilos-table-apply').click()
+  // Tab B receives the edit from the other connection over the source-fanout table
+  // and shows it at once: the window is ordered by id, so the edit moved nothing,
+  // and the gate holds position and membership rather than the fields of a record
+  // (HIL-793). A piece is an entity reference, so the cell text tracks the edit
+  // reactively; what is new is that no Apply control stands behind it and the row
+  // is not tinted. This is the source-fanout row-updated delta path settings
+  // cannot cover.
+  await expect(tabB.locator('tbody tr', { hasText: edited })).toHaveCount(1)
   await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
   await expect(tabB.locator('tbody tr', { hasText: edited })).not.toHaveClass(
     /table-warning/,

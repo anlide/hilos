@@ -229,6 +229,19 @@ function toViewportDelta(
         live: data.live === true,
         own: data.own === true,
       }
+    case 'row_moved':
+      if (data.rowKey === undefined || data.row === undefined) {
+        return null
+      }
+
+      return {
+        kind: 'row_moved',
+        rowKey: String(data.rowKey),
+        row: normalizeTableRow(scope, data.row, options),
+        position: typeof data.position === 'number' ? data.position : undefined,
+        live: data.live === true,
+        own: data.own === true,
+      }
     case 'row_removed':
       if (data.rowKey === undefined) {
         return null

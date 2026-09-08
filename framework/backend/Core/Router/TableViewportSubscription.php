@@ -15,10 +15,13 @@ use Hilos\Core\Table\TableConstants;
  *
  * Holds the window descriptor a connection requested for a table (filter, sort, size, and the
  * anchor or page number it is addressed by) plus, for every row the server has actually delivered to that
- * connection, a digest of the delivered row. The digest is kept, never the row
- * body: it answers both questions the delta path asks - is this row in the window,
- * and is it still the row this connection was given - while the memory a window
- * costs stays fixed per row rather than growing with the payload.
+ * connection, a digest of the delivered row and the place that row stood at. The digest is
+ * kept, never the row body: it answers both questions the delta path asks - is this row in the
+ * window, and is it still the row this connection was given - while the memory a window
+ * costs stays fixed per row rather than growing with the payload. The place is kept beside it
+ * on the same terms: an anchor is the values of the fields the order is settled by, not a
+ * second copy of the row, and it is what lets an edit be judged against the places of the
+ * row's NEIGHBOURS rather than against its own former place (HIL-793).
  *
  * The descriptor is immutable; the delivered rows, the total count with the word on how exact
  * it is, and the two places the window sits between are updated as windows are served and as
@@ -30,6 +33,9 @@ final class TableViewportSubscription
 
     /** @var array<string, ?string> Digest of each delivered row, keyed by row-id key, in display order */
     private array $rowDigests = [];
+
+    /** @var array<string, ?TableAnchorDTO> Place each delivered row stood at, keyed by row-id key, in display order */
+    private array $rowAnchors = [];
 
     /** Total rows matching the filter at the last window build. */
     private int $totalCount = 0;
@@ -72,6 +78,8 @@ final class TableViewportSubscription
      * @param bool $totalExact Whether that total is the size of the set rather than the ceiling the count stopped at
      * @param ?TableAnchorDTO $firstAnchor Place the first delivered row sits at, or null when none was
      * @param ?TableAnchorDTO $lastAnchor Place the last delivered row sits at, or null when none was
+     * @param array<string, ?TableAnchorDTO> $rowAnchors Place each delivered row stands at, keyed by row-id key,
+     *     empty when the table was not asked or could not say
      */
     public function recordWindow(
         array $wireRows,
@@ -79,8 +87,10 @@ final class TableViewportSubscription
         bool $totalExact,
         ?TableAnchorDTO $firstAnchor,
         ?TableAnchorDTO $lastAnchor,
+        array $rowAnchors = [],
     ): void {
         $this->rowDigests = array_map(self::digest(...), $wireRows);
+        $this->rowAnchors = $rowAnchors;
         $this->totalCount = $totalCount;
         $this->totalExact = $totalExact;
         $this->firstAnchor = $firstAnchor;
@@ -92,10 +102,12 @@ final class TableViewportSubscription
      *
      * @param string $rowKey Row-id key
      * @param array{rowKey: int|string, slots: array<string, mixed>, staleSources?: list<string>} $wireRow Wire row delivered for that key
+     * @param ?TableAnchorDTO $anchor Place that row stands at, or null when the table could not say
      */
-    public function recordRow(string $rowKey, array $wireRow): void
+    public function recordRow(string $rowKey, array $wireRow, ?TableAnchorDTO $anchor = null): void
     {
         $this->rowDigests[$rowKey] = self::digest($wireRow);
+        $this->rowAnchors[$rowKey] = $anchor;
     }
 
     /**
@@ -146,7 +158,7 @@ final class TableViewportSubscription
      */
     public function forgetRow(string $rowKey): void
     {
-        unset($this->rowDigests[$rowKey]);
+        unset($this->rowDigests[$rowKey], $this->rowAnchors[$rowKey]);
     }
 
     /**
@@ -160,6 +172,20 @@ final class TableViewportSubscription
     public function rowIds(): array
     {
         return array_map(strval(...), array_keys($this->rowDigests));
+    }
+
+    /**
+     * Place each delivered row stands at, in display order.
+     *
+     * This is what an edit of a shown row is judged against: the places of the rows around it,
+     * read as they were delivered. A null place is a row the table could not name a place for,
+     * and it is kept rather than skipped so that the map stays in step with the display order.
+     *
+     * @return array<string, ?TableAnchorDTO> Place of each delivered row, keyed by row-id key
+     */
+    public function rowAnchors(): array
+    {
+        return $this->rowAnchors;
     }
 
     /**

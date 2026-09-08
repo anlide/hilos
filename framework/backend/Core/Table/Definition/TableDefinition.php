@@ -521,6 +521,44 @@ abstract class TableDefinition implements ArrayAccess
         return InMemoryTableFilter::compare($values, $anchor->values, $query->sort, $keyField);
     }
 
+    /**
+     * Names the place one row sits at in the order a window asked for.
+     *
+     * The default serves the table windowed in memory: its boundaries are its row payload's own
+     * fields, so the place is the values of the very fields that order and slice the window —
+     * {@see InMemoryTableFilter::anchorFields()} names them, and naming them here a second time
+     * would be a second description of one order.
+     *
+     * "Cannot say" is answered for a window that asked for no order, which is held in the row
+     * source's own sequence and has no place to read off values, and for a row missing a field
+     * the order is settled by, which has no place in that order at all. Both are the same
+     * silence {@see placeRowAgainst()} answers, and for the same reason: an anchor built out of
+     * the fields that happened to be there names a place computed from nothing, and the place
+     * decides whether a shown row is reported as having moved.
+     *
+     * @param AbstractTableRow $row Row to name the place of
+     * @param TableQueryDTO $query Window query whose sort names the order the place is read in
+     * @return ?TableAnchorDTO Place the row sits at in that order, or null when this table cannot say
+     */
+    public function anchorForRow(AbstractTableRow $row, TableQueryDTO $query): ?TableAnchorDTO
+    {
+        if ($query->sort === null) {
+            return null;
+        }
+
+        $rowClass = $this->getRowClass();
+        $keyField = $rowClass::keyField();
+        $values = $row->toArray();
+        $anchorFields = InMemoryTableFilter::anchorFields($query->sort, $keyField);
+        foreach ($anchorFields as $field) {
+            if (!array_key_exists($field, $values)) {
+                return null;
+            }
+        }
+
+        return TableAnchorDTO::fromRow($values, $anchorFields);
+    }
+
     // ── Actions property ─────────────────────────────────────────────────
 
     /**

@@ -174,7 +174,7 @@ test('a tab applies its own edit at once, with no pending gate', async ({
   expect(fullLoads).toBe(loadsAfterColdLoad)
 })
 
-test('an edit in one tab hangs as pending in another until applied', async ({
+test('an edit in one tab lands at once in another, raising no Apply', async ({
   page,
 }) => {
   await signUpAdmin(page)
@@ -195,14 +195,11 @@ test('an edit in one tab hangs as pending in another until applied', async ({
   await expect(rowA).toContainText('xx-test')
   await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
 
-  // Tab B receives the change as pending: a tinted row and an Apply control,
-  // while the row still shows the old value until applied.
-  await expect(tabB.getByTestId('hilos-table-apply')).toBeVisible()
-  await expect(rowB).toHaveClass(/table-warning/)
-  await expect(rowB).not.toContainText('xx-test')
-
-  // Applying resolves the pending change in place.
-  await tabB.getByTestId('hilos-table-apply').click()
+  // Tab B takes the change at once, with nothing to press: the window is ordered by
+  // key and a value carries no key, so the edit moved nothing, and the gate holds
+  // position and membership rather than the fields of a record (HIL-793). The
+  // settings value is inline rather than an entity reference, so this row is the
+  // proof the delta itself landed — it could not have changed any other way.
   await expect(rowB).toContainText('xx-test')
   await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
   await expect(rowB).not.toHaveClass(/table-warning/)
@@ -215,7 +212,7 @@ test('an edit in one tab hangs as pending in another until applied', async ({
   await tabB.close()
 })
 
-test('opening the edit dialog applies the pending change first', async ({
+test('the edit dialog opens on the value the other tab just wrote', async ({
   page,
 }) => {
   await signUpAdmin(page)
@@ -225,20 +222,25 @@ test('opening the edit dialog applies the pending change first', async ({
   await isolate(page, 'example_string')
   await isolate(tabB, 'example_string')
 
-  // Tab A sets a custom value; tab B sees it as pending.
+  const rowB = tabB.getByTestId('hilos-table-row-example_string')
+
+  // Tab A sets a custom value; tab B has it on screen before anyone opens a dialog.
   await page.getByTestId('hilos-settings-edit-example_string').click()
   await page.getByTestId('hilos-settings-edit-custom').check()
   await page.getByTestId('hilos-settings-edit-value').fill('hello-modal')
   await page.getByTestId('hilos-settings-edit-save').click()
-  await expect(tabB.getByTestId('hilos-table-apply')).toBeVisible()
+  await expect(rowB).toContainText('hello-modal')
 
-  // Opening tab B's edit dialog flushes the pending change first, so the dialog
-  // edits the latest committed value and the pending Apply control is gone.
+  // The dialog is armed from what the row holds, so it edits the value that
+  // arrived and never the one it replaced. Since HIL-793 there is nothing queued
+  // to flush on the way in — a value that leaves the row in its place is applied
+  // when it arrives, and applyAndResolve is left with the removals it still owns.
   await tabB.getByTestId('hilos-settings-edit-example_string').click()
   await expect(tabB.getByTestId('hilos-settings-edit-value')).toHaveValue(
     'hello-modal',
   )
   await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+  await tabB.getByTestId('modal-close').click()
 
   // Reset the key back to its catalog default.
   await page.getByTestId('hilos-settings-edit-example_string').click()

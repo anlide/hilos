@@ -4,11 +4,14 @@
 // (search / sort / paginate) change the viewport descriptor and are sent to the
 // server, which replies a table_window snapshot the controller displays.
 //
-// Edits and removals of the SHOWN rows arrive as table_viewport_delta and DO NOT
-// auto-apply: they accumulate as PENDING so the table never rearranges under the
-// user's hands. The user resolves them with apply() — updates land in place and a
-// removed row becomes a placeholder in its slot (the layout never collapses, no
-// row is pulled from the next page). Two live signals bypass the pending gate
+// Changes to the SHOWN rows arrive as table_viewport_delta, and what the gate holds
+// is POSITION and MEMBERSHIP, not the fields of a record: a value that left the row
+// where it stood (row_updated) lands at once and the row is highlighted for two
+// seconds, while a move (row_moved) and a removal (row_removed) accumulate as
+// PENDING so the table never rearranges under the user's hands. The user resolves
+// those with apply() — a moved row takes the slot the server named and a removed one
+// becomes a placeholder in its slot (the layout never collapses, no row is pulled
+// from the next page). Two live signals bypass the pending gate
 // because they disrupt nothing: table_viewport_count updates the total/page count
 // (navigation metadata), and table_viewport_append adds a row at the tail when the
 // window is the last page with room. An explicit window change discards pending
@@ -54,6 +57,15 @@ export type TableSortOrder = readonly TableSort[]
 const SEARCH_FILTER_KEY = 'search'
 
 /**
+ * How long a row stays marked as just changed, in milliseconds.
+ *
+ * The mark lives here and not in the three view packages because it is one behavior — a
+ * value landed, say so briefly — and three copies of a countdown drift into three
+ * different tables. The views only paint what this signal says (HIL-803, HIL-812).
+ */
+const HIGHLIGHT_MS = 2000
+
+/**
  * Whether two orders are the same state of the table — the same fields in the
  * same directions in the same sequence. An absent order (a table opened without
  * an initial one) is a state of its own, equal only to another absent order.
@@ -84,8 +96,12 @@ function isSameOrder(
  * One live pending row change scoped to the connection's window, normalized from
  * a `table_viewport_delta` signal (the row already reduced to references):
  *
- * - `row_updated` — a shown row's content changed; carries the new row;
- * - `row_removed` — a shown row was deleted or left the set; carries the reason;
+ * - `row_updated` — a shown row's content changed and its place did not; carries
+ *   the new row, and applies at once because nothing moved;
+ * - `row_moved` — an edit moves the shown row inside the window; carries the new
+ *   row and the slot it lands in, absent when the table could not name one;
+ * - `row_removed` — a shown row was deleted, left the set, or moved past an edge
+ *   of the window; carries the reason;
  * - `row_stale` — which of a shown row's sources stopped being kept up to date;
  *   carries the new list and nothing else.
  *
@@ -97,6 +113,17 @@ export type TableViewportDelta =
       readonly kind: 'row_updated'
       readonly rowKey: string
       readonly row: TableRow
+      /** The backend declared this change live: apply it now, never gate it. */
+      readonly live?: boolean
+      /** The backend tagged this receiver as the change's author: apply it now, resolving any queued pending. */
+      readonly own?: boolean
+    }
+  | {
+      readonly kind: 'row_moved'
+      readonly rowKey: string
+      readonly row: TableRow
+      /** Zero-based slot the row lands in, absent when the table could not name one. */
+      readonly position?: number
       /** The backend declared this change live: apply it now, never gate it. */
       readonly live?: boolean
       /** The backend tagged this receiver as the change's author: apply it now, resolving any queued pending. */
@@ -118,6 +145,15 @@ export type TableViewportDelta =
       readonly staleSources: readonly string[]
     }
 
+/**
+ * A delta that carries a change to a row rather than to its freshness — the three
+ * kinds the live and own doors apply at once, and the two the gate holds.
+ */
+type LiveViewportDelta = Extract<
+  TableViewportDelta,
+  { kind: 'row_updated' | 'row_moved' | 'row_removed' }
+>
+
 /** A displayed row: its key, the resolved view-model, and whether it is a removed placeholder. */
 export interface TableViewportRow<R> {
   readonly rowKey: string
@@ -126,7 +162,9 @@ export interface TableViewportRow<R> {
   /** True when an applied removal replaced the row with a placeholder in its slot. */
   readonly placeholder: boolean
   /** The kind of unapplied pending change waiting on this row, or null when none. */
-  readonly pending: 'update' | 'remove' | null
+  readonly pending: 'move' | 'remove' | null
+  /** True for the couple of seconds after the row took a new value or its new slot. */
+  readonly highlighted: boolean
 }
 
 /**
@@ -274,16 +312,35 @@ export class TableViewportController<R> implements TableWindowSink {
   /** Whether {@link openingOrder} has been read off a window yet. */
   private openingOrderKnown = false
 
-  /** Pending content updates by row key — applied in place on apply(). */
-  private readonly pendingUpdates = new Map<string, TableRow>()
+  /**
+   * Pending moves by row key — the new row and the slot it lands in, applied on apply().
+   *
+   * A move with no slot carries the row alone: the server could name no place, so apply()
+   * puts the values where the row already stands rather than at an index nobody computed.
+   */
+  private readonly pendingMoves = new Map<
+    string,
+    { readonly row: TableRow; readonly position?: number }
+  >()
 
   /** Pending removals by row key (value is the reason) — become placeholders on apply(). */
   private readonly pendingRemoved = new Map<string, string>()
 
-  /** Per-row pending kind ('update' | 'remove') driving the row highlight; rebuilt on every pending change. */
+  /** Per-row pending kind ('move' | 'remove') driving the row marking; rebuilt on every pending change. */
   private readonly pendingKindSignal = createSignal<
-    ReadonlyMap<string, 'update' | 'remove'>
+    ReadonlyMap<string, 'move' | 'remove'>
   >(new Map())
+
+  /** Row keys marked as just changed; the views paint them and the timers below clear them. */
+  private readonly highlightedKeysSignal = createSignal<ReadonlySet<string>>(
+    new Set(),
+  )
+
+  /** The running countdown of each highlighted row, so a re-highlight restarts one timer, not two. */
+  private readonly highlightTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >()
 
   /** The displayed rows resolved to view-models — what the view renders. */
   readonly rows: ReadonlySignal<readonly TableViewportRow<R>[]>
@@ -334,6 +391,7 @@ export class TableViewportController<R> implements TableWindowSink {
     this.rows = computedSignal(() => {
       const placeholders = this.placeholderKeysSignal.get()
       const pendingKinds = this.pendingKindSignal.get()
+      const highlighted = this.highlightedKeysSignal.get()
 
       return this.windowSignal.get().map((raw) => {
         const placeholder = placeholders.has(raw.rowKey)
@@ -343,6 +401,7 @@ export class TableViewportController<R> implements TableWindowSink {
           row: placeholder ? null : options.resolve(raw),
           placeholder,
           pending: placeholder ? null : (pendingKinds.get(raw.rowKey) ?? null),
+          highlighted: !placeholder && highlighted.has(raw.rowKey),
         }
       })
     })
@@ -694,9 +753,14 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /**
    * Ingest a window snapshot from the backend (`table_window`): replace the
-   * displayed rows and the total count, and drop any leftover pending and
-   * placeholders — the fresh window is authoritative. Called by the subscription
+   * displayed rows and the total count, and drop any leftover pending, placeholders
+   * and marks — the fresh window is authoritative. Called by the subscription
    * wiring; the rows are already normalized to references.
+   *
+   * The marks are put out here and not only where a window is asked for, because a
+   * window also arrives where nobody asked: a tab coming back after a broken socket
+   * gets its windows served back to it. A countdown started before that break would
+   * be pointing at a row of the window that replaced the one it was started for.
    *
    * A window is also the only thing that makes an inexact total exact again: it is the one
    * moment the set is read, so a window that stopped at the ceiling last time may well come
@@ -725,6 +789,7 @@ export class TableViewportController<R> implements TableWindowSink {
     this.pageSizeSignal.set(Math.max(1, Math.trunc(limit)))
     this.placeholderKeysSignal.set(new Set())
     this.loadedSignal.set(true)
+    this.clearHighlights()
     this.clearPending()
   }
 
@@ -854,7 +919,7 @@ export class TableViewportController<R> implements TableWindowSink {
 
     const placeholders = new Set(this.placeholderKeysSignal.get())
     for (const gone of [...evicted, row]) {
-      this.pendingUpdates.delete(gone.rowKey)
+      this.pendingMoves.delete(gone.rowKey)
       this.pendingRemoved.delete(gone.rowKey)
       placeholders.delete(gone.rowKey)
     }
@@ -863,15 +928,23 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
-   * Accumulate one live row delta as pending — never applied automatically. The
-   * delta is kept only when its row is in the current window (anchored by row-id).
-   * A backend-tagged own-change is the exception: the server marks the delta `own`
-   * for the connection that authored it, and it applies immediately via
+   * Take one live row delta: apply it now, or accumulate it as pending.
+   *
+   * What the gate holds is the POSITION and the MEMBERSHIP of the rows, so the kind
+   * decides. A `row_updated` is a value that left the row where it stood: it lands at
+   * once, highlighted, resolving anything queued for that row, and raises no badge —
+   * a badge whose Apply changes nothing on the screen is the defect this door closes.
+   * A `row_moved` and a `row_removed` wait, because both of them move the list under
+   * a reader who is aiming at it.
+   *
+   * A delta is kept only when its row is in the current window (anchored by row-id).
+   * A backend-tagged own-change is the exception to the gate: the server marks the
+   * delta `own` for the connection that authored it, and it applies immediately via
    * {@link applyOwnDelta}.
    *
-   * A freshness delta is taken before either of those doors and passes through
-   * neither: it changes no value, so there is nothing for the gate to hold, and
-   * nothing queued for the row may be resolved by it.
+   * A freshness delta is taken before any of those doors and passes through none of
+   * them: it changes no value, so there is nothing for the gate to hold, and nothing
+   * queued for the row may be resolved by it.
    *
    * @param delta The normalized viewport delta.
    */
@@ -886,28 +959,57 @@ export class TableViewportController<R> implements TableWindowSink {
 
       return
     }
-    if (
-      delta.own === true &&
-      (delta.kind === 'row_updated' || delta.kind === 'row_removed')
-    ) {
+    if (delta.own === true) {
       this.applyOwnDelta(delta)
 
       return
     }
     switch (delta.kind) {
       case 'row_updated':
+        this.applyRowValues(delta.rowKey, delta.row)
+
+        return
+      case 'row_moved':
         if (this.isInWindow(delta.rowKey)) {
           this.pendingRemoved.delete(delta.rowKey)
-          this.pendingUpdates.set(delta.rowKey, delta.row)
+          this.pendingMoves.set(delta.rowKey, {
+            row: delta.row,
+            position: delta.position,
+          })
         }
         break
       case 'row_removed':
         if (this.isInWindow(delta.rowKey)) {
-          this.pendingUpdates.delete(delta.rowKey)
+          this.pendingMoves.delete(delta.rowKey)
           this.pendingRemoved.set(delta.rowKey, delta.reason)
         }
         break
     }
+    this.refreshPendingSignals()
+  }
+
+  /**
+   * Put one shown row's new values in its slot and mark it as just changed.
+   *
+   * Everything queued for that row goes with them: the values that just landed are the
+   * later word, and holding an older move behind the gate would move the row on the next
+   * Apply to a slot computed for a row that no longer exists.
+   *
+   * @param rowKey The shown row whose values landed.
+   * @param row The row as the server rebuilt it.
+   */
+  private applyRowValues(rowKey: string, row: TableRow): void {
+    if (!this.isInWindow(rowKey)) {
+      return
+    }
+    this.windowSignal.set(
+      this.windowSignal
+        .get()
+        .map((shown) => (shown.rowKey === rowKey ? row : shown)),
+    )
+    this.pendingMoves.delete(rowKey)
+    this.pendingRemoved.delete(rowKey)
+    this.highlight(rowKey)
     this.refreshPendingSignals()
   }
 
@@ -943,9 +1045,12 @@ export class TableViewportController<R> implements TableWindowSink {
         .get()
         .map((row) => (row.rowKey === rowKey ? { ...row, staleSources } : row)),
     )
-    const queued = this.pendingUpdates.get(rowKey)
+    const queued = this.pendingMoves.get(rowKey)
     if (queued) {
-      this.pendingUpdates.set(rowKey, { ...queued, staleSources })
+      this.pendingMoves.set(rowKey, {
+        ...queued,
+        row: { ...queued.row, staleSources },
+      })
     }
   }
 
@@ -959,19 +1064,18 @@ export class TableViewportController<R> implements TableWindowSink {
    * status that ended has nothing to hold a place for. The count that accompanies
    * the change is already live.
    *
-   * @param delta The live delta (row_updated or row_removed).
+   * @param delta The live delta (row_updated, row_moved or row_removed).
    */
-  private applyLiveDelta(delta: TableViewportDelta): void {
-    this.pendingUpdates.delete(delta.rowKey)
+  private applyLiveDelta(delta: LiveViewportDelta): void {
+    this.pendingMoves.delete(delta.rowKey)
     this.pendingRemoved.delete(delta.rowKey)
 
-    if (delta.kind === 'row_updated') {
+    if (delta.kind === 'row_updated' || delta.kind === 'row_moved') {
       if (this.isInWindow(delta.rowKey)) {
         this.windowSignal.set(
-          this.windowSignal
-            .get()
-            .map((row) => (row.rowKey === delta.rowKey ? delta.row : row)),
+          this.placedWindow(delta.rowKey, delta.row, this.slotOf(delta)),
         )
+        this.highlight(delta.rowKey)
       }
     } else {
       this.windowSignal.set(
@@ -992,23 +1096,24 @@ export class TableViewportController<R> implements TableWindowSink {
    * removal already queued for the same row is dropped, and the row is updated in
    * place (or replaced by a placeholder).
    *
-   * @param delta The own-change echo (row_updated or row_removed).
+   * The author's own move takes its new slot as it lands, which is what the reader is
+   * looking at: they pressed the button, and the row standing still where the sort no
+   * longer puts it would be the surprise, not the movement.
+   *
+   * @param delta The own-change echo (row_updated, row_moved or row_removed).
    */
-  private applyOwnDelta(
-    delta: Extract<TableViewportDelta, { kind: 'row_updated' | 'row_removed' }>,
-  ): void {
+  private applyOwnDelta(delta: LiveViewportDelta): void {
     if (!this.isInWindow(delta.rowKey)) {
       return
     }
-    this.pendingUpdates.delete(delta.rowKey)
+    this.pendingMoves.delete(delta.rowKey)
     this.pendingRemoved.delete(delta.rowKey)
     const placeholders = new Set(this.placeholderKeysSignal.get())
-    if (delta.kind === 'row_updated') {
+    if (delta.kind === 'row_updated' || delta.kind === 'row_moved') {
       this.windowSignal.set(
-        this.windowSignal
-          .get()
-          .map((row) => (row.rowKey === delta.rowKey ? delta.row : row)),
+        this.placedWindow(delta.rowKey, delta.row, this.slotOf(delta)),
       )
+      this.highlight(delta.rowKey)
       placeholders.delete(delta.rowKey)
     } else {
       placeholders.add(delta.rowKey)
@@ -1028,20 +1133,26 @@ export class TableViewportController<R> implements TableWindowSink {
       return
     }
 
-    if (this.pendingUpdates.size > 0) {
-      this.windowSignal.set(
-        this.windowSignal
-          .get()
-          .map((row) => this.pendingUpdates.get(row.rowKey) ?? row),
-      )
-    }
-
     if (this.pendingRemoved.size > 0) {
       const placeholders = new Set(this.placeholderKeysSignal.get())
       for (const rowKey of this.pendingRemoved.keys()) {
         placeholders.add(rowKey)
       }
       this.placeholderKeysSignal.set(placeholders)
+    }
+
+    // Slots first, movement after: the placeholders of this same press are still standing
+    // in the window, so a slot the server named counts them exactly as the reader sees them.
+    // The moves themselves run by ascending slot, so each one lands against a window the
+    // earlier ones have already settled.
+    const moves = [...this.pendingMoves.entries()].sort(
+      ([, one], [, other]) =>
+        (one.position ?? Number.MAX_SAFE_INTEGER) -
+        (other.position ?? Number.MAX_SAFE_INTEGER),
+    )
+    for (const [rowKey, move] of moves) {
+      this.windowSignal.set(this.placedWindow(rowKey, move.row, move.position))
+      this.highlight(rowKey)
     }
 
     this.clearPending()
@@ -1069,26 +1180,116 @@ export class TableViewportController<R> implements TableWindowSink {
     return this.windowSignal.get().some((row) => row.rowKey === rowKey)
   }
 
-  /** Discard pending and placeholders, then request the new window. */
+  /**
+   * The slot a live or own delta lands in: the one it named, or none for a plain value.
+   *
+   * @param delta The delta being applied at once.
+   * @returns The slot the row takes, or undefined to leave it where it stands.
+   */
+  private slotOf(delta: LiveViewportDelta): number | undefined {
+    return delta.kind === 'row_moved' ? delta.position : undefined
+  }
+
+  /**
+   * The window with one row rewritten, and moved to a slot when one was named.
+   *
+   * A slot outside the window is pulled to its nearest edge rather than refused: the
+   * number is the row's place at the moment the frame was raised, and the window is
+   * authoritative only when it changes — clamping keeps the row visible where it was
+   * heading, and the next window settles the rest.
+   *
+   * @param rowKey The shown row to rewrite.
+   * @param row The row as the server rebuilt it.
+   * @param position The slot it lands in, or undefined to leave it where it stands.
+   * @returns The rows of the window after the change.
+   */
+  private placedWindow(
+    rowKey: string,
+    row: TableRow,
+    position: number | undefined,
+  ): readonly TableRow[] {
+    const rows = this.windowSignal
+      .get()
+      .map((shown) => (shown.rowKey === rowKey ? row : shown))
+    if (position === undefined) {
+      return rows
+    }
+
+    const from = rows.findIndex((shown) => shown.rowKey === rowKey)
+    if (from < 0) {
+      return rows
+    }
+    const moved = rows.slice()
+    moved.splice(from, 1)
+    moved.splice(
+      Math.min(Math.max(0, Math.trunc(position)), moved.length),
+      0,
+      row,
+    )
+
+    return moved
+  }
+
+  /**
+   * Mark one row as just changed, and start the countdown that unmarks it.
+   *
+   * A row marked again restarts its own countdown instead of collecting a second one:
+   * two timers on one row would take the mark off while the newer change is still fresh.
+   *
+   * @param rowKey The row that just took a value or a slot.
+   */
+  private highlight(rowKey: string): void {
+    const running = this.highlightTimers.get(rowKey)
+    if (running !== undefined) {
+      clearTimeout(running)
+    }
+    const highlighted = new Set(this.highlightedKeysSignal.get())
+    highlighted.add(rowKey)
+    this.highlightedKeysSignal.set(highlighted)
+    this.highlightTimers.set(
+      rowKey,
+      setTimeout(() => {
+        this.highlightTimers.delete(rowKey)
+        const left = new Set(this.highlightedKeysSignal.get())
+        if (left.delete(rowKey)) {
+          this.highlightedKeysSignal.set(left)
+        }
+      }, HIGHLIGHT_MS),
+    )
+  }
+
+  /** Take every mark off and stop its countdown — what a new window makes meaningless. */
+  private clearHighlights(): void {
+    for (const timer of this.highlightTimers.values()) {
+      clearTimeout(timer)
+    }
+    this.highlightTimers.clear()
+    if (this.highlightedKeysSignal.get().size > 0) {
+      this.highlightedKeysSignal.set(new Set())
+    }
+  }
+
+  /** Discard pending, placeholders and marks, then request the new window. */
   private changeWindow(): void {
     this.placeholderKeysSignal.set(new Set())
+    this.clearHighlights()
     this.clearPending()
     this.send()
   }
 
   private clearPending(): void {
-    this.pendingUpdates.clear()
+    this.pendingMoves.clear()
     this.pendingRemoved.clear()
     this.refreshPendingSignals()
   }
 
   private refreshPendingSignals(): void {
     this.pendingCountSignal.set(
-      this.pendingUpdates.size + this.pendingRemoved.size,
+      this.pendingMoves.size + this.pendingRemoved.size,
     )
-    const pendingKinds = new Map<string, 'update' | 'remove'>()
-    for (const rowKey of this.pendingUpdates.keys()) {
-      pendingKinds.set(rowKey, 'update')
+    const pendingKinds = new Map<string, 'move' | 'remove'>()
+    for (const rowKey of this.pendingMoves.keys()) {
+      pendingKinds.set(rowKey, 'move')
     }
     for (const rowKey of this.pendingRemoved.keys()) {
       pendingKinds.set(rowKey, 'remove')

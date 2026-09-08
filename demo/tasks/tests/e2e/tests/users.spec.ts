@@ -145,7 +145,7 @@ test.fixme('shows the connected user as online with a live session', async ({
   ).toHaveText('online')
 })
 
-test('a rename in one tab hangs as pending in another until applied', async ({
+test('a rename in one tab lands at once in another, raising no Apply', async ({
   page,
 }) => {
   await grantAdminToSelf(page)
@@ -165,17 +165,13 @@ test('a rename in one tab hangs as pending in another until applied', async ({
   await page.getByTestId('hilos-user-save').click()
   await expect(page.getByTestId('hilos-user-name')).toHaveText(newName)
 
-  // Tab B receives the rename from the other connection as a pending update: an
-  // Apply control and a tinted row. The user is an entity reference, so the name
-  // cell tracks the rename reactively; the pending gate still holds (the row
-  // keeps its place) until tab B applies. First two-window test on the React layer.
-  await expect(tabB.getByTestId('hilos-table-apply')).toBeVisible()
-  await expect(tabB.locator('tbody tr', { hasText: newName })).toHaveClass(
-    /table-warning/,
-  )
-
-  // Applying clears the pending gate in place.
-  await tabB.getByTestId('hilos-table-apply').click()
+  // Tab B receives the rename from the other connection and shows it at once: the
+  // window is ordered by id, so a rename moves nothing, and what the gate holds is
+  // the position and the membership of the rows rather than the fields of a record
+  // (HIL-793). The user is an entity reference, so the name cell tracks the rename
+  // reactively; what is new is that no Apply control is raised behind it, and no
+  // press is needed to make the screen true. First two-window test on the React layer.
+  await expect(tabB.locator('tbody tr', { hasText: newName })).toHaveCount(1)
   await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
   await expect(tabB.locator('tbody tr', { hasText: newName })).not.toHaveClass(
     /table-warning/,

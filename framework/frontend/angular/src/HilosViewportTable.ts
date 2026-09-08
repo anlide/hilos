@@ -268,11 +268,11 @@ export class HilosViewportTable<R> {
   )
 
   // A row with an unapplied pending change gets a subtle, theme-aware tint that
-  // stands out from the zebra striping: amber for a waiting update, red for a
+  // stands out from the zebra striping: amber for a waiting move, red for a
   // waiting removal. Bootstrap's contextual row classes carry their own
   // dark-mode variants, so they adapt to the active theme with no custom styles.
-  protected readonly pendingRowClass: Record<'update' | 'remove', string> = {
-    update: 'table-warning',
+  protected readonly pendingRowClass: Record<'move' | 'remove', string> = {
+    move: 'table-warning',
     remove: 'table-danger',
   }
 

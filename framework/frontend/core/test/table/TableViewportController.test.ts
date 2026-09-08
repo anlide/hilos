@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   type TableAnchor,
   type TableViewportDescriptor,
@@ -40,6 +40,10 @@ function makeController(pageSize = 10, initialOrder?: TableSortOrder) {
 }
 
 describe('TableViewportController', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('asks for nothing on its own — the first window arrives with the page', () => {
     const { controller, sent, open } = makeController()
 
@@ -390,6 +394,7 @@ describe('TableViewportController', () => {
         row: { rowKey: 'a', slots: {} },
         placeholder: false,
         pending: null,
+        highlighted: false,
       },
     ])
     expect(controller.totalCount.get()).toBe(42)
@@ -400,7 +405,7 @@ describe('TableViewportController', () => {
     const { controller, open } = makeController()
     open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
     controller.ingestDelta({
-      kind: 'row_updated',
+      kind: 'row_moved',
       rowKey: 'a',
       row: { rowKey: 'a', slots: { name: 'new' } },
     })
@@ -420,13 +425,13 @@ describe('TableViewportController', () => {
     })
   })
 
-  it('re-stamps a queued update, so Apply cannot take the mark off frozen values', () => {
+  it('re-stamps a queued move, so Apply cannot take the mark off frozen values', () => {
     const { controller, open } = makeController()
     open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
-    // The update was built and sent before the source went quiet, so it carries
+    // The move was built and sent before the source went quiet, so it carries
     // the freshness of that earlier moment.
     controller.ingestDelta({
-      kind: 'row_updated',
+      kind: 'row_moved',
       rowKey: 'a',
       row: { rowKey: 'a', slots: { name: 'new' } },
     })
@@ -523,7 +528,7 @@ describe('TableViewportController', () => {
     expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a'])
   })
 
-  it('accumulates a row update as pending without changing the rows', () => {
+  it('applies a value that left the row where it stood, raising no badge', () => {
     const { controller, open } = makeController()
     open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
     controller.ingestDelta({
@@ -532,18 +537,144 @@ describe('TableViewportController', () => {
       row: { rowKey: 'a', slots: { name: 'new' } },
     })
 
-    expect(controller.pendingCount.get()).toBe(1)
-    expect(controller.rows.get()[0]?.row).toEqual({
-      rowKey: 'a',
-      slots: { name: 'old' },
-    })
-
-    controller.apply()
+    // Nothing moved, so there is nothing to hold: the row takes the value and is
+    // marked as just changed, and no badge is raised for an Apply that would do
+    // nothing (HIL-793).
     expect(controller.pendingCount.get()).toBe(0)
     expect(controller.rows.get()[0]?.row).toEqual({
       rowKey: 'a',
       slots: { name: 'new' },
     })
+    expect(controller.rows.get()[0]?.highlighted).toBe(true)
+  })
+
+  it('a value landing resolves what was waiting on the same row', () => {
+    const { controller, open } = makeController()
+    open(
+      [
+        { rowKey: 'a', slots: { name: 'old' } },
+        { rowKey: 'b', slots: {} },
+      ],
+      2,
+      true,
+      null,
+      null,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'moving' } },
+      position: 1,
+    })
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'newest' } },
+    })
+
+    // The value is the later word about the row, and the slot the queued move named
+    // was computed for a row that no longer exists.
+    expect(controller.pendingCount.get()).toBe(0)
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a', 'b'])
+    expect(controller.rows.get()[0]?.row).toEqual({
+      rowKey: 'a',
+      slots: { name: 'newest' },
+    })
+  })
+
+  it('holds a move until Apply, then puts the row in the slot the server named', () => {
+    const { controller, open } = makeController()
+    open(
+      [
+        { rowKey: 'a', slots: { name: 'first' } },
+        { rowKey: 'b', slots: {} },
+        { rowKey: 'c', slots: {} },
+      ],
+      3,
+      true,
+      null,
+      null,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'last' } },
+      position: 2,
+    })
+
+    // A move is movement under the reader: nothing changes until they ask for it.
+    expect(controller.pendingCount.get()).toBe(1)
+    expect(controller.rows.get()[0]?.pending).toBe('move')
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+      'a',
+      'b',
+      'c',
+    ])
+
+    controller.apply()
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+      'b',
+      'c',
+      'a',
+    ])
+    expect(controller.rows.get()[2]?.row).toEqual({
+      rowKey: 'a',
+      slots: { name: 'last' },
+    })
+    expect(controller.rows.get()[2]?.highlighted).toBe(true)
+    expect(controller.pendingCount.get()).toBe(0)
+  })
+
+  it('a move with no slot updates the row where it already stands', () => {
+    const { controller, open } = makeController()
+    open(
+      [
+        { rowKey: 'a', slots: { name: 'old' } },
+        { rowKey: 'b', slots: {} },
+      ],
+      2,
+      true,
+      null,
+      null,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+    controller.apply()
+
+    // The table could not name a place, and an index nobody computed would move the
+    // row away from the one a reload gives it.
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a', 'b'])
+    expect(controller.rows.get()[0]?.row).toEqual({
+      rowKey: 'a',
+      slots: { name: 'new' },
+    })
+  })
+
+  it('applies a row that moved out of the window as a placeholder', () => {
+    const { controller, open } = makeController()
+    open(
+      [
+        { rowKey: 'a', slots: {} },
+        { rowKey: 'b', slots: {} },
+      ],
+      2,
+      true,
+      null,
+      null,
+    )
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'moved_out',
+    })
+    expect(controller.rows.get()[0]?.pending).toBe('remove')
+
+    controller.apply()
+    expect(controller.rows.get()[0]?.placeholder).toBe(true)
+    expect(controller.rows.get()).toHaveLength(2)
   })
 
   it('applies a removal as a placeholder in its slot', () => {
@@ -572,6 +703,7 @@ describe('TableViewportController', () => {
       row: null,
       placeholder: true,
       pending: null,
+      highlighted: false,
     })
     expect(rows[1]?.placeholder).toBe(false)
   })
@@ -648,7 +780,7 @@ describe('TableViewportController', () => {
       null,
     )
     controller.ingestDelta({
-      kind: 'row_updated',
+      kind: 'row_moved',
       rowKey: 'c',
       row: { rowKey: 'c', slots: { name: 'edited' } },
     })
@@ -710,9 +842,10 @@ describe('TableViewportController', () => {
     const { controller, open } = makeController()
     open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
     controller.ingestDelta({
-      kind: 'row_updated',
+      kind: 'row_moved',
       rowKey: 'z',
       row: { rowKey: 'z', slots: {} },
+      position: 0,
     })
 
     expect(controller.pendingCount.get()).toBe(0)
@@ -756,7 +889,7 @@ describe('TableViewportController', () => {
     open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
     // A concurrent change for the same row lands first as pending (not own)...
     controller.ingestDelta({
-      kind: 'row_updated',
+      kind: 'row_moved',
       rowKey: 'a',
       row: { rowKey: 'a', slots: { name: 'other' } },
     })
@@ -793,6 +926,7 @@ describe('TableViewportController', () => {
       row: null,
       placeholder: true,
       pending: null,
+      highlighted: false,
     })
   })
 
@@ -824,9 +958,9 @@ describe('TableViewportController', () => {
   it('queues an untagged delta as pending — only the server can grant own', () => {
     const { controller, open } = makeController()
     open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
-    // No own tag: another connection's edit gates as pending, never auto-applies.
+    // No own tag: another connection's move gates as pending, never auto-applies.
     controller.ingestDelta({
-      kind: 'row_updated',
+      kind: 'row_moved',
       rowKey: 'a',
       row: { rowKey: 'a', slots: { name: 'theirs' } },
     })
@@ -859,9 +993,10 @@ describe('TableViewportController', () => {
       null,
     )
     controller.ingestDelta({
-      kind: 'row_updated',
+      kind: 'row_moved',
       rowKey: 'a',
       row: { rowKey: 'a', slots: {} },
+      position: 2,
     })
     controller.ingestDelta({
       kind: 'row_removed',
@@ -870,7 +1005,7 @@ describe('TableViewportController', () => {
     })
 
     const rows = controller.rows.get()
-    expect(rows[0]?.pending).toBe('update')
+    expect(rows[0]?.pending).toBe('move')
     expect(rows[1]?.pending).toBe('remove')
     expect(rows[2]?.pending).toBeNull()
   })
@@ -879,7 +1014,7 @@ describe('TableViewportController', () => {
     const { controller, open } = makeController()
     open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
     controller.ingestDelta({
-      kind: 'row_updated',
+      kind: 'row_moved',
       rowKey: 'a',
       row: { rowKey: 'a', slots: { name: 'new' } },
     })
@@ -889,6 +1024,99 @@ describe('TableViewportController', () => {
       slots: { name: 'new' },
     })
     expect(controller.pendingCount.get()).toBe(0)
+  })
+
+  it('takes the mark off the row when its couple of seconds are up', () => {
+    vi.useFakeTimers()
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+    expect(controller.rows.get()[0]?.highlighted).toBe(true)
+
+    vi.advanceTimersByTime(2000)
+
+    // The value stays; only the mark that pointed at it goes.
+    expect(controller.rows.get()[0]?.highlighted).toBe(false)
+    expect(controller.rows.get()[0]?.row).toEqual({
+      rowKey: 'a',
+      slots: { name: 'new' },
+    })
+  })
+
+  it('a window change takes the marks off and stops their countdowns', () => {
+    vi.useFakeTimers()
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+
+    controller.setSearch('x')
+    expect(controller.rows.get()[0]?.highlighted).toBe(false)
+
+    // The countdown went with the mark: the rows of the window that arrives next are
+    // not the rows it was started for, and it must not reach into them.
+    open([{ rowKey: 'a', slots: { name: 'new' } }], 1, true, null, null)
+    vi.advanceTimersByTime(2000)
+    expect(controller.rows.get()[0]?.highlighted).toBe(false)
+  })
+
+  it('a window arriving on its own puts the marks out too', () => {
+    vi.useFakeTimers()
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+    expect(controller.rows.get()[0]?.highlighted).toBe(true)
+
+    // Nobody asked for this one: it is the window a tab gets served back after a broken
+    // socket, and the mark it would keep was started for the rows it replaced.
+    open([{ rowKey: 'a', slots: { name: 'newer' } }], 1, true, null, null)
+
+    expect(controller.rows.get()[0]?.highlighted).toBe(false)
+    vi.advanceTimersByTime(2000)
+    expect(controller.rows.get()[0]?.highlighted).toBe(false)
+  })
+
+  it('applies the author own move at once, in the slot the sort gives it', () => {
+    const { controller, open } = makeController()
+    open(
+      [
+        { rowKey: 'a', slots: { name: 'mine' } },
+        { rowKey: 'b', slots: {} },
+        { rowKey: 'c', slots: {} },
+      ],
+      3,
+      true,
+      null,
+      null,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'renamed' } },
+      position: 2,
+      own: true,
+    })
+
+    // They pressed the button and are looking at the result: the row standing where
+    // the sort no longer puts it would be the surprise, not the movement.
+    expect(controller.pendingCount.get()).toBe(0)
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+      'b',
+      'c',
+      'a',
+    ])
+    expect(controller.rows.get()[2]?.highlighted).toBe(true)
   })
 
   it('applyAndResolve returns null for a row whose removal it applies', () => {

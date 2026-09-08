@@ -34,6 +34,7 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -126,6 +127,142 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $context->flushToSignalRouter();
 
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAnEditThatKeepsTheRowsSlotAppliesAsAValue(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Tango'), self::row('zulu', 'Zulu')],
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike'), self::row('zulu', 'Zulu')],
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['label' => 'Tango']));
+        $context->flushToSignalRouter();
+
+        // The value moved and the list did not: Mike became Tango and still stands between
+        // Alpha and Zulu. This is the case the leaf exists for - a gate holding it raised a
+        // badge whose Apply changed nothing on the screen.
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $delta->kind);
+        $this->assertNull($delta->position);
+    }
+
+    public function testAnEditThatChangesTheRowsSlotMovesItInsideTheWindow(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Tango'), self::row('sierra', 'Sierra'), self::row('zulu', 'Zulu')],
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike'), self::row('sierra', 'Sierra'), self::row('zulu', 'Zulu')],
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['label' => 'Tango']));
+        $context->flushToSignalRouter();
+
+        // Alpha, Sierra, Tango, Zulu: the row passed one neighbour and lands in the third slot.
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_MOVED, $delta->kind);
+        $this->assertSame(2, $delta->position);
+    }
+
+    public function testAnEditThatTakesTheRowAboveTheWindowRemovesIt(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Aaron'), self::row('zulu', 'Zulu')],
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike'), self::row('zulu', 'Zulu')],
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['label' => 'Aaron']));
+        $context->flushToSignalRouter();
+
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
+        $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $delta->reason);
+
+        // The row left the window and not the set, so nothing about the count changed.
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAnEditThatTakesTheRowBelowTheWindowRemovesIt(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Zzz'), self::row('zulu', 'Zulu')],
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike'), self::row('zulu', 'Zulu')],
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['label' => 'Zzz']));
+        $context->flushToSignalRouter();
+
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
+        $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $delta->reason);
+    }
+
+    public function testAWindowWithNoOrderAppliesEveryEditAsAValue(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
+        $viewport->recordWindow(self::deliveredWindow([self::row('alpha', 'Alpha')]), 1, true, null, null);
+        $context = $this->bootWithViewport([self::row('alpha', 'Zulu')], $viewport);
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Zulu']));
+        $context->flushToSignalRouter();
+
+        // No order was asked for, so the window is held in the source's own sequence and the
+        // row has no place to have moved from. Five of the framework's own pages are such
+        // windows, and every foreign edit on them used to raise the badge.
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $this->nextDelta()->kind);
+    }
+
+    public function testAWindowThatRememberedNoPlacesMovesTheRowWithoutOne(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            sort: self::byLabel(TableConstants::ORDER_ASC),
+            limit: 10,
+        );
+        $viewport->recordWindow(self::deliveredWindow([self::row('alpha', 'Alpha')]), 1, true, null, null);
+        $context = $this->bootWithViewport([self::row('alpha', 'Zulu')], $viewport);
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Zulu']));
+        $context->flushToSignalRouter();
+
+        // Nothing here can say whether the row stayed: claiming it did would drift the window
+        // away from the set, and naming a slot would put the row where nobody computed.
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_MOVED, $delta->kind);
+        $this->assertNull($delta->position);
+    }
+
+    public function testARowThatLeftTheFilteredSetIsRemovedWithItsOwnReason(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike!')],
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike')],
+            inSet: false,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['label' => 'Mike!']));
+        $context->flushToSignalRouter();
+
+        // Membership is asked before place: a row out of the set has no place in the window
+        // to be judged by, and the reason is its own because only this one moves the count.
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
+        $this->assertSame(TableViewportDeltaDTO::REASON_LEFT_SET, $delta->reason);
+    }
+
+    public function testARefusedMembershipQuestionLetsThePlaceDecide(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Tango'), self::row('zulu', 'Zulu')],
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike'), self::row('zulu', 'Zulu')],
+            setQuestionFails: true,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['label' => 'Tango']));
+        $context->flushToSignalRouter();
+
+        // A table that cannot answer must not silence the delta: the classification goes on
+        // by place, and the refusal is said in the log rather than in the frame.
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $this->nextDelta()->kind);
     }
 
     public function testOwnUnchangedRowEmitsNothing(): void
@@ -682,6 +819,91 @@ final class BrowserContextViewportDeltaTest extends TestCase
     }
 
     /**
+     * Builds one row of these fixtures.
+     *
+     * @param string $key Row key
+     * @param string $label Label the ordered windows of these tests are held by
+     * @return ViewportDeltaUnitRow Fixture row
+     */
+    private static function row(string $key, string $label): ViewportDeltaUnitRow
+    {
+        return new ViewportDeltaUnitRow($key, $label);
+    }
+
+    /**
+     * Builds the one-column order over the field an edit can actually move.
+     *
+     * The windows sorted by row key cannot move a row at all: an update never rewrites the key
+     * a row is addressed by, so a place read off it is the place the row already had.
+     *
+     * @param string $direction Direction the order runs in
+     * @return TableSortOrderDTO Order over the row label
+     */
+    private static function byLabel(string $direction): TableSortOrderDTO
+    {
+        return TableSortOrderDTO::of(new TableSortDTO('label', $direction));
+    }
+
+    /**
+     * Builds the place one row of such a window stands at, in the order over the label.
+     *
+     * @param ViewportDeltaUnitRow $row Row standing in the window
+     * @return TableAnchorDTO Place that row stands at
+     */
+    private static function anchorOf(ViewportDeltaUnitRow $row): TableAnchorDTO
+    {
+        return new TableAnchorDTO(['label' => $row->label, 'key' => $row->key]);
+    }
+
+    /**
+     * Builds the places a window remembers for the rows it delivered, in display order.
+     *
+     * @param list<ViewportDeltaUnitRow> $rows Rows delivered to the connection, in display order
+     * @return array<string, ?TableAnchorDTO> Place of each delivered row, keyed by row-id key
+     */
+    private static function deliveredAnchors(array $rows): array
+    {
+        $anchors = [];
+        foreach ($rows as $row) {
+            $anchors[$row->key] = self::anchorOf($row);
+        }
+
+        return $anchors;
+    }
+
+    /**
+     * Boots a connection holding an ordered window it remembers the places of.
+     *
+     * @param list<ViewportDeltaUnitRow> $rows Table rows the fixture owns, as they are AFTER the edit
+     * @param list<ViewportDeltaUnitRow> $windowRows Rows the connection was delivered, in display order
+     * @param ?bool $inSet What the table answers about a row's membership, or null when it cannot say
+     * @param bool $setQuestionFails Whether the membership question refuses instead of answering
+     * @return ViewportDeltaUnitContext Booted browser context
+     */
+    private function bootOrdered(
+        array $rows,
+        array $windowRows,
+        ?bool $inSet = null,
+        bool $setQuestionFails = false,
+    ): ViewportDeltaUnitContext {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            sort: self::byLabel(TableConstants::ORDER_ASC),
+            limit: 10,
+        );
+        $viewport->recordWindow(
+            self::deliveredWindow($windowRows),
+            count($windowRows),
+            true,
+            self::anchorOf($windowRows[0]),
+            self::anchorOf($windowRows[count($windowRows) - 1]),
+            self::deliveredAnchors($windowRows),
+        );
+
+        return $this->bootWithViewport($rows, $viewport, $inSet, $setQuestionFails);
+    }
+
+    /**
      * Boots the registry, table, page subscription, and a recorded viewport.
      *
      * @param list<ViewportDeltaUnitRow> $rows Table rows the fixture owns
@@ -702,12 +924,18 @@ final class BrowserContextViewportDeltaTest extends TestCase
      *
      * @param list<ViewportDeltaUnitRow> $rows Table rows the fixture owns
      * @param TableViewportSubscription $viewport Viewport to register for the connection
+     * @param ?bool $inSet What the table answers about a row's membership, or null when it cannot say
+     * @param bool $setQuestionFails Whether the membership question refuses instead of answering
      * @return ViewportDeltaUnitContext Booted browser context
      */
-    private function bootWithViewport(array $rows, TableViewportSubscription $viewport): ViewportDeltaUnitContext
-    {
+    private function bootWithViewport(
+        array $rows,
+        TableViewportSubscription $viewport,
+        ?bool $inSet = null,
+        bool $setQuestionFails = false,
+    ): ViewportDeltaUnitContext {
         Hilos::$sr = new SignalRouter();
-        Hilos::$table = new ViewportDeltaUnitTableContext($rows);
+        Hilos::$table = new ViewportDeltaUnitTableContext($rows, $inSet, $setQuestionFails);
         Hilos::$table->configure();
         Hilos::$sr->subscribeToPage(
             ViewportDeltaUnitContext::PAGE,
@@ -836,14 +1064,22 @@ final class ViewportDeltaUnitTableContext extends TableContext
 {
     /**
      * @param list<ViewportDeltaUnitRow> $rows Snapshot rows the table owns
+     * @param ?bool $inSet What the table answers about a row's membership, or null when it cannot say
+     * @param bool $setQuestionFails Whether the membership question refuses instead of answering
      */
-    public function __construct(private readonly array $rows = [])
-    {
+    public function __construct(
+        private readonly array $rows = [],
+        private readonly ?bool $inSet = null,
+        private readonly bool $setQuestionFails = false,
+    ) {
     }
 
     public function configure(): void
     {
-        $this->register(ViewportDeltaUnitTable::TABLE, new ViewportDeltaUnitTable($this->rows));
+        $this->register(
+            ViewportDeltaUnitTable::TABLE,
+            new ViewportDeltaUnitTable($this->rows, $this->inSet, $this->setQuestionFails),
+        );
     }
 }
 
@@ -855,10 +1091,32 @@ final class ViewportDeltaUnitTable extends TableDefinition implements SelfSnapsh
 
     /**
      * @param list<ViewportDeltaUnitRow> $rows Snapshot rows the table owns
+     * @param ?bool $inSet What this table answers about a row's membership, or null when it cannot say
+     * @param bool $setQuestionFails Whether the membership question refuses instead of answering
      */
-    public function __construct(private readonly array $rows = [])
-    {
+    public function __construct(
+        private readonly array $rows = [],
+        private readonly ?bool $inSet = null,
+        private readonly bool $setQuestionFails = false,
+    ) {
         parent::__construct();
+    }
+
+    /**
+     * Answers whether one row belongs to the set, from what the fixture was told to say.
+     *
+     * @param string|int $rowKey Row key to place against the set (ignored: the fixture states the answer)
+     * @param TableQueryDTO $query Window query whose search and filters describe the set
+     * @return ?bool Whether the row is in the set, or null when this table cannot answer
+     * @throws HilosException When the fixture was told to refuse the question
+     */
+    public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
+    {
+        if ($this->setQuestionFails) {
+            throw new HilosException('the fixture refuses the set question');
+        }
+
+        return $this->inSet;
     }
 
     /**

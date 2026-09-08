@@ -153,12 +153,16 @@ export type TableWindowSignalData = z.infer<typeof tableWindowSignalDataSchema>
 
 /**
  * Payload of the framework table viewport delta (`type: 'table_viewport_delta'`,
- * PHP `TableViewportDeltaDTO`): the addressed live PENDING row change for one
- * table, discriminated by `kind` (`row_updated` / `row_removed` / `row_stale`). A
+ * PHP `TableViewportDeltaDTO`): the addressed live row change for one table,
+ * discriminated by `kind` (`row_updated` / `row_moved` / `row_removed` / `row_stale`). A
  * row rides the `{rowKey, slots}` shape; `kind` and `reason` stay loose strings so a
  * newer backend kind survives parsing. Count and append changes ride their own live
- * signals; this carries only row edits, removals and freshness marks, never
- * auto-applied.
+ * signals; this carries only row edits, moves, removals and freshness marks.
+ *
+ * What waits for the reader is decided by the kind, and by the server: a value that
+ * left the row where it stood (`row_updated`) applies at once, while a move and a
+ * removal wait. `position` is the slot a moved row lands in and travels only with
+ * `row_moved`, absent when the table could not name one.
  *
  * `row_stale` carries `staleSources` in place of a row: which of the row's sources
  * stopped being kept up to date, with the list replacing whatever the row held and an
@@ -171,6 +175,7 @@ export const tableViewportDeltaSignalDataSchema = z.looseObject({
   rowKey: z.union([z.string(), z.number()]).optional(),
   row: tableRowFragmentSchema.optional(),
   reason: z.string().optional(),
+  position: z.number().int().optional(),
   staleSources: z.array(z.string()).optional(),
   live: z.boolean().optional(),
   own: z.boolean().optional(),
