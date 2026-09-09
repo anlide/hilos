@@ -51,12 +51,6 @@ use Hilos\WiringRefusal;
 final class UsersLibraryAgent extends AbstractUsersLibraryAgent
 {
     /**
-     * @var list<string> The people it answers about, owned by the poll agent that writes them,
-     *     on top of everything the framework library reads.
-     */
-    public const array READS_DB = [...parent::READS_DB, PollsDbContext::users, PollsDbContext::userRenames];
-
-    /**
      * The account set and the rename journal, both written from this library's OWN process.
      *
      * The account set is the claim the framework library cannot make: which collection the user

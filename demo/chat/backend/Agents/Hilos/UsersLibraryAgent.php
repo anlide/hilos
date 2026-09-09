@@ -84,18 +84,6 @@ use Random\RandomException;
 final class UsersLibraryAgent extends AbstractUsersLibraryAgent
 {
     /**
-     * @var list<string> The people it answers about and writes, the identities a profile submit
-     *     adds or drops, and the room's log of who was renamed, on top of everything the
-     *     framework library reads.
-     */
-    public const array READS_DB = [
-        ...parent::READS_DB,
-        ChatDbContext::users,
-        ChatDbContext::events,
-        ChatDbContext::eventUserRenames,
-    ];
-
-    /**
      * The chat tables this library writes from its OWN process, the account set among them.
      *
      * The account set is the claim the framework library cannot make: which collection the user
@@ -131,15 +119,12 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * row somebody else brought into being. The same shape of co-ownership the delivery journal
      * has.
      *
+     * It reads those rows for the same work: a profile submit names its person by the connection
+     * that sent it, and the rename parks its moderation phase on that row.
+     *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_RT = [ChatRtContext::connections => [TruthSourceOperation::Update]];
-
-    /**
-     * @var list<string> The sockets it acts for: a profile submit names its person by the
-     *     connection that sent it, and the rename parks its moderation phase on that row.
-     */
-    public const array READS_RT = [...parent::READS_RT, ChatRtContext::connections];
 
     /**
      * The chat's own profile submits, on top of every sign-in command the framework declares.

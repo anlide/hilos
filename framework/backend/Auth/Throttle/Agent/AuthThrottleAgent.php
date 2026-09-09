@@ -53,13 +53,6 @@ use Throwable;
 final class AuthThrottleAgent extends AbstractAgent
 {
     /**
-     * @var list<string> The durable blocks it writes the ladder's verdicts into. Read rather than
-     *     claimed: the table is written from more than this agent's process - a block outlives the
-     *     node that set it - so the agent is one of its readers and says so.
-     */
-    public const array READS_DB = [HilosDbContext::authBlocks];
-
-    /**
      * The durable half of the counters, which the ladder writes its verdicts into.
      *
      * Claimed here rather than by the users library, although the library is what the throttled

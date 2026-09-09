@@ -43,9 +43,6 @@ use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
  */
 final class PollsAgent extends AbstractAgent
 {
-    /** @var list<string> The guest rows behind the people it serves, owned by the users library */
-    public const array READS_DB = [PollsDbContext::guests];
-
     /**
      * @var array<string, list<TruthSourceOperation>> The accounts it serves and the guest rows
      *     behind them, so their changes fan out to the browser. The guest table is this agent's

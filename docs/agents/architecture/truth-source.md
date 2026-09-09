@@ -54,6 +54,27 @@ agent claims does not belong in them: the claim holds the copy already, and two
 lists for one fact would have to be kept in step. What belongs there is what the
 agent reads out of a collection another agent owns.
 
+That holds for a narrow claim too, and this is the case that looks like an
+exception. A holder of one operation over a collection somebody else owns reads
+like a reader — it may update a row it never creates — and still an entry beside
+its claim buys it nothing. The interest a claim raises leaves the worker anyway:
+the report built once `onStart()` has returned carries every source interest to
+the master unconditionally (`WorkerManager::notifyRtSourcesRegistered()`), and
+that report is the one moment an interest taken by a claim over a database
+collection travels at all. On the database side there are no rows on their way to
+wait for — the answer to an interest is a bare acknowledgement
+(`WorkerClient::handleWorkerSourceInterestMessage()`) and the worker reads the
+rows out of the database itself. On the runtime side the only borrowed narrow
+claim in the tree is over a `connections` collection, which a process holds from
+the moment it mounts its runtime context
+(`RtContext::declareProcessWideReads()`), and that hold is waited on before the
+first agent is built (`WorkerManager::handleWorkerRegistered()`).
+
+The boundary is worth naming while it is empty: a narrow claim over somebody
+else's runtime collection that the process does NOT hold from mounting would
+have no wait at all — not from the claim, which is ready at once, and not from a
+process-wide list that does not name it. Nothing in the tree holds one today.
+
 The declaration of ownership is a map, `OWNS_DB`, from a database collection key
 to the operations the owner may perform on its rows, written on the class beside
 `READS_DB`. The runtime half is `OWNS_RT`, the same shape over runtime collection

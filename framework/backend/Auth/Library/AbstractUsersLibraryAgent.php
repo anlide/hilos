@@ -99,12 +99,6 @@ use Random\RandomException;
 abstract class AbstractUsersLibraryAgent extends AbstractAgent
 {
     /**
-     * @var list<string> The credentials its passkey commands enrol and check against
-     *     ({@see PasskeyCommands}), which no page topology names and which nothing else declares.
-     */
-    public const array READS_DB = [HilosDbContext::passkeyCredentials];
-
-    /**
      * The proofs an account is reached by: its ways in, the codes that check them, the holds a
      * registration takes, the credentials a passkey enrols - and the one column of a session row
      * a parked wait is written into.
