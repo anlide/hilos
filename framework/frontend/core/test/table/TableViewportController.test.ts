@@ -395,6 +395,7 @@ describe('TableViewportController', () => {
         placeholder: false,
         pending: null,
         highlighted: false,
+        selected: false,
       },
     ])
     expect(controller.totalCount.get()).toBe(42)
@@ -704,6 +705,7 @@ describe('TableViewportController', () => {
       placeholder: true,
       pending: null,
       highlighted: false,
+      selected: false,
     })
     expect(rows[1]?.placeholder).toBe(false)
   })
@@ -927,6 +929,7 @@ describe('TableViewportController', () => {
       placeholder: true,
       pending: null,
       highlighted: false,
+      selected: false,
     })
   })
 

@@ -89,6 +89,11 @@ export {
   type HilosTableSearch,
 } from './table/tableFrame.js'
 export {
+  type HilosTableSelectionHeader,
+  type HilosTableSelectionState,
+  type HilosTableSelectionTarget,
+} from './table/tableSelection.js'
+export {
   createLoadingButtonState,
   DEFAULT_SPINNER_DELAY_MS,
   type LoadingButtonState,

@@ -37,6 +37,11 @@ import {
   type HilosTableFrame,
   type HilosTableFrameState,
 } from './tableFrame.js'
+import {
+  type HilosTableSelectionHeader,
+  type HilosTableSelectionState,
+  type HilosTableSelectionTarget,
+} from './tableSelection.js'
 /** Sort direction for the active sort field. */
 export type SortDirection = 'asc' | 'desc'
 
@@ -165,6 +170,12 @@ export interface TableViewportRow<R> {
   readonly pending: 'move' | 'remove' | null
   /** True for the couple of seconds after the row took a new value or its new slot. */
   readonly highlighted: boolean
+  /**
+   * True when this row is marked for a bulk action. The view draws the checkbox
+   * off the same row it draws the cells off; there is no second source for
+   * whether a row is marked, and a placeholder is never one.
+   */
+  readonly selected: boolean
 }
 
 /**
@@ -282,6 +293,27 @@ export class TableViewportController<R> implements TableWindowSink {
     new Set(),
   )
 
+  /**
+   * The row keys the reader marked, held RAW — keys that left the window are not
+   * swept out of it, and nothing here is ever shown directly.
+   *
+   * What is shown as marked is this set intersected with the live rows of the
+   * window, which is what makes every "a row that left drops out of the marks"
+   * case fall out of one rule instead of five: a live removal, an applied pending
+   * removal, an own echo and a row pushed past the edge by an own insert all end
+   * the same way, and the counter falls by itself because it counts that same
+   * intersection.
+   */
+  private readonly selectedKeysSignal = createSignal<ReadonlySet<string>>(
+    new Set(),
+  )
+
+  /**
+   * Whether the choice is the filter CONDITION rather than a list of keys — the
+   * second kind of selection, entered by its own button and never by paging.
+   */
+  private readonly allByFilterSignal = createSignal(false)
+
   private readonly pendingCountSignal = createSignal(0)
 
   /** Request id of the last own-create ingested, or null when it was not tracked. */
@@ -378,6 +410,9 @@ export class TableViewportController<R> implements TableWindowSink {
   /** The readable frame state, built once from the declaration and the window signals. */
   private readonly frameState: HilosTableFrameState
 
+  /** The readable selection state, built once over the window signals the same way. */
+  private readonly selectionState: HilosTableSelectionState
+
   constructor(private readonly options: TableViewportControllerOptions<R>) {
     this.filterSignal = createSignal<Record<string, unknown>>({
       ...(options.initialFilter ?? {}),
@@ -392,6 +427,8 @@ export class TableViewportController<R> implements TableWindowSink {
       const placeholders = this.placeholderKeysSignal.get()
       const pendingKinds = this.pendingKindSignal.get()
       const highlighted = this.highlightedKeysSignal.get()
+      const selectedKeys = this.selectedKeysSignal.get()
+      const allByFilter = this.allByFilterSignal.get()
 
       return this.windowSignal.get().map((raw) => {
         const placeholder = placeholders.has(raw.rowKey)
@@ -402,6 +439,8 @@ export class TableViewportController<R> implements TableWindowSink {
           placeholder,
           pending: placeholder ? null : (pendingKinds.get(raw.rowKey) ?? null),
           highlighted: !placeholder && highlighted.has(raw.rowKey),
+          selected:
+            !placeholder && (allByFilter || selectedKeys.has(raw.rowKey)),
         }
       })
     })
@@ -483,6 +522,37 @@ export class TableViewportController<R> implements TableWindowSink {
           : 'empty'
       }),
     }
+    // A table has marks exactly when its page declared bulk operations: one sign,
+    // the one that already exists. A second one ("this table is selectable") would
+    // drift from it and give a table with no operations a column leading nowhere.
+    const selectionEnabled = (declaration?.bulkActions?.length ?? 0) > 0
+    const selectedRows = computedSignal(() =>
+      this.rows.get().filter((row) => row.selected),
+    )
+    this.selectionState = {
+      enabled: selectionEnabled,
+      target: computedSignal<HilosTableSelectionTarget | null>(() => {
+        if (!selectionEnabled) {
+          return null
+        }
+        if (this.allByFilterSignal.get()) {
+          return { kind: 'filter', filter: { ...this.filterSignal.get() } }
+        }
+        const rowKeys = selectedRows.get().map((row) => row.rowKey)
+
+        return rowKeys.length === 0 ? null : { kind: 'rows', rowKeys }
+      }),
+      count: computedSignal(() => selectedRows.get().length),
+      header: computedSignal<HilosTableSelectionHeader>(() => {
+        const live = this.rows.get().filter((row) => !row.placeholder).length
+        const marked = selectedRows.get().length
+        if (live === 0 || marked === 0) {
+          return 'none'
+        }
+
+        return marked === live ? 'all' : 'some'
+      }),
+    }
   }
 
   /** The current search query (empty string when unset). */
@@ -514,6 +584,20 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   get frame(): HilosTableFrameState {
     return this.frameState
+  }
+
+  /**
+   * The marks a view draws its selection panel and its checkboxes from, and a
+   * bulk action reads to learn what it runs over. A table whose page declared no
+   * bulk operations still has this to read — `enabled` is then false, the four
+   * inputs stay silent, and the state reads empty.
+   *
+   * SCAFFOLD: read by the selection panel and the checkbox column, which are
+   * HIL-801 (Vue) and HIL-810 (React, Angular), and by the bulk action itself,
+   * which is HIL-799. No table declares bulk operations until HIL-819.
+   */
+  get selection(): HilosTableSelectionState {
+    return this.selectionState
   }
 
   /** The current zero-based page index. */
@@ -791,6 +875,16 @@ export class TableViewportController<R> implements TableWindowSink {
     this.loadedSignal.set(true)
     this.clearHighlights()
     this.clearPending()
+    // A window also arrives where nobody changed one — a refresh a page asked for,
+    // a re-subscribe after a broken socket — and there the marks stay: the raw keys
+    // are narrowed to the rows that came, and the condition is untouched, being about
+    // the filter, which did not move. A window CHANGE has already cleared both.
+    const arrived = new Set(rows.map((row) => row.rowKey))
+    this.selectedKeysSignal.set(
+      new Set(
+        [...this.selectedKeysSignal.get()].filter((key) => arrived.has(key)),
+      ),
+    )
   }
 
   /**
@@ -918,12 +1012,18 @@ export class TableViewportController<R> implements TableWindowSink {
     this.totalExactSignal.set(totalExact)
 
     const placeholders = new Set(this.placeholderKeysSignal.get())
+    // The mark goes with everything else held under these keys, and for the same
+    // reason: the row pushed past the edge is gone, and a key coming back as a
+    // fresh row must not arrive already marked — nobody marked THIS row.
+    const selected = new Set(this.selectedKeysSignal.get())
     for (const gone of [...evicted, row]) {
       this.pendingMoves.delete(gone.rowKey)
       this.pendingRemoved.delete(gone.rowKey)
       placeholders.delete(gone.rowKey)
+      selected.delete(gone.rowKey)
     }
     this.placeholderKeysSignal.set(placeholders)
+    this.selectedKeysSignal.set(selected)
     this.refreshPendingSignals()
   }
 
@@ -1176,8 +1276,128 @@ export class TableViewportController<R> implements TableWindowSink {
     return raw ? this.options.resolve(raw) : null
   }
 
+  /**
+   * Mark one row or take the mark off it — the one input behind a row checkbox,
+   * called with the state the box is in rather than with "toggle": the view holds
+   * a real checkbox and knows that state, while two inputs would disagree on a
+   * click that lands on the row and on the keyboard.
+   *
+   * A key that is not a LIVE row of the window is refused: a placeholder is the
+   * trace of a row that left, and there is nothing in it to mark.
+   *
+   * Taking a box off while the choice is the CONDITION leaves the condition: what
+   * remains is the window named row by row, minus this one. It is not "everything
+   * matching the filter except this row", because a condition carries no
+   * exceptions and the request has no way to say one; and it is not "clear
+   * everything", which would be a dead click after which the reader starts over.
+   * The counter says the number of the page at once, so the state itself tells the
+   * reader what it has become.
+   *
+   * Silent on a table that declared no bulk operations, the way {@link setPage}
+   * is silent while the total is a ceiling — an input with no meaning does
+   * nothing rather than throwing.
+   *
+   * @param rowKey The row the checkbox belongs to.
+   * @param selected The state the checkbox is now in.
+   */
+  selectRow(rowKey: string, selected: boolean): void {
+    if (!this.selectionState.enabled || !this.isLiveRow(rowKey)) {
+      return
+    }
+    if (this.allByFilterSignal.get()) {
+      if (selected) {
+        // The row is in the choice already: the condition covers everything.
+        return
+      }
+      this.allByFilterSignal.set(false)
+      this.selectedKeysSignal.set(
+        new Set(this.liveRowKeys().filter((key) => key !== rowKey)),
+      )
+
+      return
+    }
+    const keys = new Set(this.selectedKeysSignal.get())
+    if (selected) {
+      keys.add(rowKey)
+    } else {
+      keys.delete(rowKey)
+    }
+    this.selectedKeysSignal.set(keys)
+  }
+
+  /**
+   * Mark every live row of the window, or take the marks off them — the header
+   * checkbox, one input for both directions. It takes the rows of the current
+   * window and nothing else: an action over rows that are not on screen is "all
+   * matching the filter", and that has a button of its own.
+   *
+   * Silent on a table that declared no bulk operations.
+   *
+   * @param selected Whether the window's rows are being marked or unmarked.
+   */
+  selectWindow(selected: boolean): void {
+    if (!this.selectionState.enabled) {
+      return
+    }
+    this.allByFilterSignal.set(false)
+    this.selectedKeysSignal.set(
+      selected ? new Set(this.liveRowKeys()) : new Set(),
+    )
+  }
+
+  /**
+   * Choose everything the filter matches — the second kind of selection, entered
+   * by its own button. It is a CONDITION and not a list of keys: over a large set
+   * there is no exact row count, so a list would have to promise a number nobody
+   * counted, and the request carries one or the other and never both.
+   *
+   * The keys marked one by one are forgotten as it is entered: the choice is now
+   * a different thing, and keeping a list underneath it would be two answers to
+   * one question. Every live row of the window shows as marked, because "all"
+   * includes the visible ones and three views should not each decide that.
+   *
+   * Silent on a table that declared no bulk operations.
+   */
+  selectAllByFilter(): void {
+    if (!this.selectionState.enabled) {
+      return
+    }
+    this.allByFilterSignal.set(true)
+    this.selectedKeysSignal.set(new Set())
+  }
+
+  /**
+   * Take off every mark, of either kind — the "Clear" button of the selection
+   * panel, which is one button on the mockup and answers for both the list of
+   * keys and the condition.
+   *
+   * The one input of the four that needs no guard: on a table with no bulk
+   * operations there is nothing marked, and clearing it changes nothing.
+   */
+  clearSelection(): void {
+    this.allByFilterSignal.set(false)
+    this.selectedKeysSignal.set(new Set())
+  }
+
   private isInWindow(rowKey: string): boolean {
     return this.windowSignal.get().some((row) => row.rowKey === rowKey)
+  }
+
+  /** Whether the key is a row of the window that is still standing — not a placeholder. */
+  private isLiveRow(rowKey: string): boolean {
+    return (
+      this.isInWindow(rowKey) && !this.placeholderKeysSignal.get().has(rowKey)
+    )
+  }
+
+  /** The keys of the window's live rows, in window order. */
+  private liveRowKeys(): readonly string[] {
+    const placeholders = this.placeholderKeysSignal.get()
+
+    return this.windowSignal
+      .get()
+      .map((row) => row.rowKey)
+      .filter((rowKey) => !placeholders.has(rowKey))
   }
 
   /**
@@ -1269,11 +1489,20 @@ export class TableViewportController<R> implements TableWindowSink {
     }
   }
 
-  /** Discard pending, placeholders and marks, then request the new window. */
+  /**
+   * Discard pending, placeholders, marks and the selection, then request the new
+   * window.
+   *
+   * The one place a selection is cleared, and every input that changes a window
+   * goes through here — search, filters, their reset, sort, a declared order, its
+   * reset, a page jump and the two neighbours — so the rule cannot be forgotten by
+   * whoever adds the next one.
+   */
   private changeWindow(): void {
     this.placeholderKeysSignal.set(new Set())
     this.clearHighlights()
     this.clearPending()
+    this.clearSelection()
     this.send()
   }
 

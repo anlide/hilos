@@ -439,7 +439,15 @@ record and over twenty never stand side by side.
   deleted" without names is a message after which the reader has to go looking.
 - A table may declare **no** bulk actions, and then it has no selection column at
   all. Which edge that column sits on is the project's choice, and within one
-  installation it is the same edge everywhere.
+  installation it is the same edge everywhere — a choice of the VIEW, which draws
+  the column; the core declares no edge, having nowhere to draw one and no reader
+  for it.
+- **The selection is state of the window controller**, next to the pending changes
+  and the placeholders, because every rule above is a rule about the window. It
+  reads as one of the two shapes the request carries — the row keys, or the filter
+  condition — and as the count and the header checkbox a panel is drawn from; the
+  keys are held raw and shown as their intersection with the live rows, which is
+  what makes a row that left drop out of the selection on its own.
 
 ## Per-source staleness
 
@@ -582,6 +590,7 @@ an address does not:
 | the `ORDER BY` and the window query | `framework/backend/Database/Object/Objects.php` |
 | the headless state machine | `framework/frontend/core/src/table/TableViewportController.ts` |
 | the frame a page declares | `framework/frontend/core/src/table/tableFrame.ts` |
+| the selection a table holds | `framework/frontend/core/src/table/tableSelection.ts` |
 | routing the frames into it | `framework/frontend/core/src/subscription/bindTableViewport.ts` |
 | the thin view | `framework/frontend/{vue,react,angular}/src/HilosViewportTable.*` |
 | the bar the frame is drawn as | `framework/frontend/vue/src/HilosTableBar.vue` |
