@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createHilosToastStore } from './toasts.js'
+import { createHilosToastStore } from '../../src/state/toasts.js'
 import type {
   HilosSessionToast,
   HilosToastStore,
   HilosToastViewer,
-} from './toasts.js'
+} from '../../src/state/toasts.js'
 
 // A card is only really on screen once a host has drawn it and reported how tall
 // it is, so almost every case here needs a stand-in host. The window is 600px, a

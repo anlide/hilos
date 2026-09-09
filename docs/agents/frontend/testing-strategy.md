@@ -28,6 +28,60 @@ transform the Angular CLI applies to its JIT unit-test builds. Skip it and a
 mount looks like it works — the template compiles, the view renders — while the
 input is silently missing.
 
+### Where a unit test file lives
+
+A test sits next to its module if and only if that module is a Vue SFC; every
+other test lives in its package's `test/` mirror. The check is the extension of
+the file under test, not the package it sits in.
+
+    framework/frontend/vue/src/admin/logs/HilosLogsViewPage.vue
+      -> framework/frontend/vue/src/admin/logs/HilosLogsViewPage.test.ts
+    framework/frontend/core/src/auth/passkeyCeremony.ts
+      -> framework/frontend/core/test/auth/passkeyCeremony.test.ts
+
+The SFC is the one format where template and logic live in a single file, are
+compiled by a plugin, and are edited in one commit — the test mounts that very
+file, so a mirror would leave the component's own folder silent about whether it
+is covered. A `.ts` or `.tsx` module has no such tie: it is imported by name and
+its test lives its own life. That is why React components — `.tsx`, and mounted
+much as Vue's are — still test from the mirror.
+
+The shape of the mirror differs per package, and neither shape is guessable from
+the other. In `core` the mirror repeats the module's path under `src/`. In
+`react`, `angular`, `vue` and `prerender` the mirror is flat, however deep the
+module sits: `react/src/admin/logs/HilosLogsViewPage.tsx` ->
+`react/test/HilosLogsViewPage.test.tsx`. The reason is size and subject:
+`core`'s mirror holds around sixty files whose folders carry the subject, while
+a view package's test answers for one component, and a flat `test/` reads as a
+table of contents of what is covered.
+
+A test that covers a scenario rather than a single module goes in the folder of
+its subject and is named after the scenario:
+`framework/frontend/core/test/auth/oauthTrip.test.ts`,
+`framework/frontend/core/test/connection/sessionRotation.test.ts`,
+`framework/frontend/core/test/subscription/coldEntryWindow.test.ts`.
+
+`framework/frontend/scripts` and `framework/frontend/codestyle` have no `src/`
+at all: they are flat packages, and a test sits beside its module in the package
+root (`codestyle/wireKeyCase.ts` -> `codestyle/wireKeyCase.test.ts`). They are
+full vitest projects all the same — both are listed in
+`framework/frontend/vitest.config.ts`.
+
+The environment comes from the package config, not from the file: `vue` runs
+happy-dom, `react` and `angular` run jsdom, and every other package runs with
+no browser at all (`framework/frontend/core/vitest.config.ts` sets no
+environment). A `core` test that does need a DOM declares it on its own first
+line, `// @vitest-environment happy-dom` — two files do so today,
+`framework/frontend/core/test/auth/oauthTrip.test.ts` and
+`framework/frontend/core/test/auth/passkeyCeremony.test.ts`.
+
+Browser APIs are stubbed in place rather than mocked as modules: `vi.spyOn` for
+functions (`framework/frontend/core/test/auth/oauthTrip.test.ts:187`) and
+`Object.defineProperty` for read-only host objects
+(`framework/frontend/core/test/auth/passkeyCeremony.test.ts:94`). `vi.mock` is
+used on the frontend only to replace a whole package, and it appears exactly
+once — `framework/frontend/prerender/test/discovery-unrouted.test.ts:6`.
+
 ## End-to-end tests — Playwright, multi-context
 
 End-to-end uses **Playwright**, with **one** test driving **N** browser contexts

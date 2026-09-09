@@ -4,7 +4,7 @@ import {
   PROTECTED_MODE_HINT_STORAGE_KEY,
   readProtectedModeHint,
   writeProtectedModeHint,
-} from './maintenanceHint.js'
+} from '../../src/connection/maintenanceHint.js'
 
 /** The smallest thing that answers like `localStorage`, plus a switch to make it refuse. */
 function fakeStorage(options: { throws?: boolean } = {}): Storage {

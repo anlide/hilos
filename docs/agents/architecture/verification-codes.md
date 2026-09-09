@@ -298,5 +298,5 @@ start replaces, a stale ticket moves nothing, a retryable refusal loses the
 sentence), `CodeSendSignalDataTest` (both frames, including the empty one),
 `MailDeliveryChannelAgentTest` (the four reports of the mail queue) and
 `CodeChannelSendIntegrationTest` (the code agent's own pass). On the frontend,
-`core/src/auth/authSendProgress.test.ts` holds the parse boundary and
+`core/test/auth/authSendProgress.test.ts` holds the parse boundary and
 `core/test/auth/authFlow.test.ts` holds the machine's lifetime for it.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { type HilosConnection } from '../connection/HilosConnection.js'
+import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import {
   bindCodeSendProgress,
   CODE_SEND_STATE_FAILED,
@@ -9,8 +9,8 @@ import {
   codeSendProgressSchema,
   hilosCodeSendProgress,
   SIGNAL_CODE_SEND_PROGRESS,
-} from './authSendProgress.js'
-import { SESSION_SIGNAL_SCHEMAS } from '../session/sessionScope.js'
+} from '../../src/auth/authSendProgress.js'
+import { SESSION_SIGNAL_SCHEMAS } from '../../src/session/sessionScope.js'
 
 describe('code send progress frame', () => {
   it('parses a reported step with the provider sentence', () => {

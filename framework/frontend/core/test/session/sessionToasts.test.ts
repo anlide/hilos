@@ -3,17 +3,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   HilosConnection,
   type WebSocketLike,
-} from '../connection/HilosConnection.js'
-import { createHilosToastStore } from '../state/toasts.js'
-import type { HilosSessionToast, HilosToastStore } from '../state/toasts.js'
+} from '../../src/connection/HilosConnection.js'
+import { createHilosToastStore } from '../../src/state/toasts.js'
+import type {
+  HilosSessionToast,
+  HilosToastStore,
+} from '../../src/state/toasts.js'
 import {
   bindSessionToasts,
   SIGNAL_SESSION_TOASTS,
   TOAST_ACTION_DISMISS,
   TOAST_ACTION_EXPIRED,
   TOAST_ACTION_READING,
-} from './sessionToasts.js'
-import { SESSION_SIGNAL_SCHEMAS } from './sessionScope.js'
+} from '../../src/session/sessionToasts.js'
+import { SESSION_SIGNAL_SCHEMAS } from '../../src/session/sessionScope.js'
 
 /** Scripted stand-in for the browser WebSocket; the test drives it explicitly. */
 class MockWebSocket implements WebSocketLike {

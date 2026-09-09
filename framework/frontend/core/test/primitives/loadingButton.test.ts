@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_SPINNER_DELAY_MS,
   createLoadingButtonState,
-} from './loadingButton.js'
+} from '../../src/primitives/loadingButton.js'
 
 describe('createLoadingButtonState', () => {
   beforeEach(() => {

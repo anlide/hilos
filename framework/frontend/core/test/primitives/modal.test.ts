@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { createModalController } from './modal.js'
+import { createModalController } from '../../src/primitives/modal.js'
 
 function setup(
   flags: {

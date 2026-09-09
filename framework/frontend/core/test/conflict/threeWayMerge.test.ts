@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { threeWayMerge } from './threeWayMerge.js'
+import { threeWayMerge } from '../../src/conflict/threeWayMerge.js'
 
 describe('threeWayMerge', () => {
   it('reports unchanged when neither side moved', () => {

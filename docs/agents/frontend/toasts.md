@@ -273,7 +273,7 @@ an error waits indefinitely. See [accessibility.md](accessibility.md).
 ## Validation
 
 - Unit owns the clock, the pause, the cap and the merge:
-  `core/src/state/toasts.test.ts` covers the store; the host's pause events
+  `core/test/state/toasts.test.ts` covers the store; the host's pause events
   and live-region wiring live in `react/test/HilosToastHost.test.tsx`. A
   feature that pushes needs no store test of its own.
 - **Not e2e, on purpose.** The lifetime, the pause and the cap are timing, and
