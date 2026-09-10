@@ -11,6 +11,9 @@ Exported as part of the public SDK surface (index.ts) and kept intentionally: no
 in-repo consumer mounts one today (the settings page dropped its free "add a
 setting" dialog — data-model.md, "Cataloged tables"), but it stays a tier-1
 building block for any catalog/option select — live API, not dead code.
+The primitive ships in all three view layers at parity; what differs is only the
+form the look is substituted through — slots here, render props in React,
+projected templates in Angular (multiframework-core.md).
 Bootstrap classes only — no CSS of its own. -->
 <script setup lang="ts" generic="V extends string | number">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue'
@@ -172,10 +175,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
       </slot>
     </button>
     <ul
-      v-show="open"
       :id="menuId"
       ref="menu"
-      class="dropdown-menu show w-100"
+      class="dropdown-menu w-100"
+      :class="{ show: open }"
       role="listbox"
       :aria-label="menuAriaLabel"
       data-id="hilos-dropdown-menu"
@@ -209,9 +212,11 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         </slot>
       </li>
       <li v-if="options.length === 0">
-        <span class="dropdown-item disabled text-body-secondary">{{
-          emptyText
-        }}</span>
+        <span
+          class="dropdown-item disabled text-body-secondary"
+          data-id="hilos-dropdown-empty"
+          >{{ emptyText }}</span
+        >
       </li>
     </ul>
   </div>

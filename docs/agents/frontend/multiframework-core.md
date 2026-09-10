@@ -112,10 +112,10 @@ slice that exercises the core's hardest seams — connect / auth → subscribe �
 conformance demos**, kept green in CI.
 
 The SDK **primitives** are the exception: the reusable toolkit (`LoadingButton`,
-`HilosModal`, `HilosViewportTable`, the conflict and breadcrumb views) *is* built in all
-three view layers at full parity, because a React or Angular adopter needs the
-real component, not a stub. The bound demo is minimal; the primitive it binds is
-complete.
+`HilosModal`, `HilosViewportTable`, `HilosDropdown`, the conflict and breadcrumb
+views) *is* built in all three view layers at full parity, because a React or
+Angular adopter needs the real component, not a stub. The bound demo is minimal;
+the primitive it binds is complete.
 Two thin extra consumers *prove* the core is agnostic; a Vue-only codebase cannot
 (one consumer hides leaked assumptions). These demos are the simplest of the
 project's planned demos, so they double as real demos and as portability proofs.

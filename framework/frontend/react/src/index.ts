@@ -141,6 +141,8 @@ export {
   HilosViewportTable,
   type HilosViewportTableProps,
 } from './HilosViewportTable.js'
+export { HilosDropdown, type HilosDropdownProps } from './HilosDropdown.js'
+export type { HilosDropdownOption } from './hilosDropdown.js'
 export {
   HilosAuthSurface,
   type HilosAuthSurfaceProps,

@@ -4,6 +4,7 @@ import { expect, it } from 'vitest'
 import {
   HilosAuthGateContext,
   HilosAuthSurface,
+  HilosDropdown,
   HilosLayout,
   HilosLink,
   HilosMagicLinkPage,
@@ -20,6 +21,7 @@ it('exports the @hilos/react public surface', () => {
   expect(HilosLink).toBeTypeOf('function')
   expect(HilosView).toBeTypeOf('function')
   expect(HilosLayout).toBeTypeOf('function')
+  expect(HilosDropdown).toBeTypeOf('function')
   expect(HilosRouterContext).toBeTypeOf('object')
   expect(HilosAuthGateContext).toBeTypeOf('object')
   expect(HilosAuthSurface).toBeTypeOf('function')

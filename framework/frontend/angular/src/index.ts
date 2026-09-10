@@ -69,4 +69,10 @@ export {
   HilosViewportTable,
   type ViewportTableRowContext,
 } from './HilosViewportTable.js'
+export {
+  HilosDropdown,
+  type DropdownToggleContext,
+  type DropdownOptionContext,
+} from './HilosDropdown.js'
+export type { HilosDropdownOption } from './hilosDropdownOption.js'
 export type { HilosTableColumn } from '@hilos/core'
