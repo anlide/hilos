@@ -206,6 +206,14 @@ final class SortGateUnitTable extends TableDefinition
     }
 
     /**
+     * @return array<string, string> Searched fields, so the gate lets a term through to the query
+     */
+    protected function searchableFields(): array
+    {
+        return [SortGateUnitRow::LABEL => 'row_label'];
+    }
+
+    /**
      * @return array<string, TableSortOrderDTO> Composite orders injected by the test
      */
     protected function sortOrders(): array

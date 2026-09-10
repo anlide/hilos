@@ -8,6 +8,7 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableSearchTerm;
 use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveryTableRow;
@@ -17,8 +18,9 @@ use PHPUnit\Framework\TestCase;
  * Unit tests for the delivery-logs table's SQL window assembly (HIL-201).
  *
  * Exercises the pure WHERE/ORDER BY builders (no database): the channel/status/period
- * filters and the type/recipient search each contribute a bound `?` placeholder, an
- * invalid status is ignored, a numeric search also matches the recipient id, and the
+ * filters and the declared search each contribute a bound `?` placeholder, an invalid
+ * status is ignored, the search runs over the fields the table declares and escapes the
+ * wildcards a reader types, a numeric search also matches the recipient id, and the
  * ORDER BY follows the column the table's own map allowed, defaulting to newest first.
  */
 final class HilosNotificationDeliveriesTableTest extends TestCase
@@ -86,20 +88,37 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
         self::assertSame([], $params);
     }
 
-    public function testTextSearchMatchesTypeAndTitle(): void
+    public function testTextSearchRunsOverTheDeclaredFields(): void
     {
-        [$where, $params] = $this->table()->exposedBuildWhere(new TableQueryDTO(search: 'welcome'));
+        $table = $this->table();
 
-        self::assertSame(' WHERE (n.type LIKE ? OR n.title LIKE ?)', $where);
-        self::assertSame(['%welcome%', '%welcome%'], $params);
+        [$where, $params] = $table->exposedBuildWhere($table->scopeSearch(new TableQueryDTO(search: 'welcome')));
+
+        $like = TableSearchTerm::LIKE_COMPARISON;
+        self::assertSame(" WHERE (n.type {$like} OR n.title {$like} OR nd.last_error {$like})", $where);
+        self::assertSame(['%welcome%', '%welcome%', '%welcome%'], $params);
     }
 
     public function testNumericSearchAlsoMatchesRecipientId(): void
     {
-        [$where, $params] = $this->table()->exposedBuildWhere(new TableQueryDTO(search: '42'));
+        $table = $this->table();
 
-        self::assertSame(' WHERE (n.type LIKE ? OR n.title LIKE ? OR n.user_id = ?)', $where);
-        self::assertSame(['%42%', '%42%', 42], $params);
+        [$where, $params] = $table->exposedBuildWhere($table->scopeSearch(new TableQueryDTO(search: '42')));
+
+        $like = TableSearchTerm::LIKE_COMPARISON;
+        self::assertSame(" WHERE (n.type {$like} OR n.title {$like} OR nd.last_error {$like} OR n.user_id = ?)", $where);
+        self::assertSame(['%42%', '%42%', '%42%', 42], $params);
+    }
+
+    public function testATypedWildcardIsSearchedForLiterally(): void
+    {
+        $table = $this->table();
+
+        [, $params] = $table->exposedBuildWhere($table->scopeSearch(new TableQueryDTO(search: ' 50% _off ')));
+
+        // The edges are trimmed, the inner space is kept, and both wildcards are escaped: this
+        // finds the row whose text really says "50% _off" instead of matching nearly everything.
+        self::assertSame(['%50!% !_off%', '%50!% !_off%', '%50!% !_off%'], $params);
     }
 
     public function testOrderByDefaultsToNewestFirst(): void

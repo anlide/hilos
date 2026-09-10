@@ -9,6 +9,8 @@ use Countable;
 use Generator;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Actions\Collection\DbActions;
@@ -546,6 +548,8 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      * @throws DatabaseException On query or connection error
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
+     * @throws TableSearchNotSupportedException When a term arrives with no searchable fields declared
+     * @throws TableSearchFieldUnknownException When a declared field names no column of the entity
      */
     public function queryPage(TableQueryDTO $query): array
     {
@@ -580,6 +584,8 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      * @param string|int $rowKey Row key to place against the set
      * @return bool Whether the row is in the set
      * @throws DatabaseException On query or connection error
+     * @throws TableSearchNotSupportedException When a term arrives with no searchable fields declared
+     * @throws TableSearchFieldUnknownException When a declared field names no column of the entity
      */
     public function containsRow(TableQueryDTO $query, string|int $rowKey): bool
     {
@@ -602,6 +608,8 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      * @throws DatabaseException On query or connection error
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
+     * @throws TableSearchNotSupportedException When a term arrives with no searchable fields declared
+     * @throws TableSearchFieldUnknownException When a declared field names no column of the entity
      */
     public function queryPageItems(TableQueryDTO $query): array
     {

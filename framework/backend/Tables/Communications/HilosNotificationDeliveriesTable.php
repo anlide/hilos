@@ -13,6 +13,7 @@ use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\TableSearchTerm;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\Row\AbstractTableRow;
@@ -38,7 +39,7 @@ use Hilos\Notification\Delivery\DeliveryStatus;
  * live per-row deltas: {@see buildMutationForSourceEvent()} returns null and the
  * frontend refreshes by re-requesting the window.
  *
- * The channel/status/period filters and the type/recipient search ride the open
+ * The channel/status/period filters and the declared search ride the open
  * viewport filter map ({@see TableQueryDTO::$filter}); a preset channel filter is
  * how the per-channel route opens the otherwise cross-cutting journal.
  *
@@ -156,6 +157,27 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     }
 
     /**
+     * Declares what a delivery row is searched by: the notification behind it and the error it left.
+     *
+     * These rows are read by a hand-written join of two tables, so each column is qualified with
+     * the alias it belongs to - the notification's own fields under `n`, the delivery's under `nd`.
+     *
+     * The recipient is searched too and is not declared here: it is matched by identity when the
+     * term is a number, and a declaration says only which fields are read, not how. It moves in
+     * when the declaration learns to carry the second question.
+     *
+     * @return array<string, string> Searched fields mapped to their qualified columns
+     */
+    protected function searchableFields(): array
+    {
+        return [
+            HilosNotificationDeliveryTableRow::notificationType => 'n.' . EntityNotification::type,
+            HilosNotificationDeliveryTableRow::notificationTitle => 'n.' . EntityNotification::title,
+            HilosNotificationDeliveryTableRow::lastError => 'nd.' . EntityNotificationDelivery::last_error,
+        ];
+    }
+
+    /**
      * Serves one window of the journal from SQL: the joined page plus the total count.
      *
      * The window is placed by the same keyset condition the ORM path uses, so a deep page of
@@ -259,7 +281,7 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
      * Builds the WHERE clause and its bound parameters from the query filters.
      *
      * Pure string/parameter assembly (no I/O): a channel/status equality, a
-     * created_at period range, and a type/title/recipient search, each contributing
+     * created_at period range, and the search over the declared fields, each contributing
      * a `?` placeholder so values are always bound, never inlined.
      *
      * @param TableQueryDTO $query Window query
@@ -294,15 +316,17 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
             $params[] = $this->endOfDayBound($to);
         }
 
-        $search = $query->search !== null ? trim($query->search) : null;
-        if ($search !== null && $search !== '') {
-            $like = '%' . $search . '%';
-            $searchConditions = [
-                'n.' . EntityNotification::type . ' LIKE ?',
-                'n.' . EntityNotification::title . ' LIKE ?',
-            ];
-            $params[] = $like;
-            $params[] = $like;
+        $search = TableSearchTerm::normalize($query->search);
+        if ($search !== null && $query->searchableFields !== []) {
+            $pattern = TableSearchTerm::likePattern($search);
+            $searchConditions = [];
+            foreach ($query->searchableFields as $column) {
+                $searchConditions[] = $column . ' ' . TableSearchTerm::LIKE_COMPARISON;
+                $params[] = $pattern;
+            }
+            // The recipient answers to a number and not to a piece of text, which is a second way
+            // of searching a column and not a second column: the declaration above carries which
+            // fields are read, and this stays written out until it can carry the how as well.
             if (ctype_digit($search)) {
                 $searchConditions[] = 'n.' . EntityNotification::user_id . ' = ?';
                 $params[] = (int) $search;

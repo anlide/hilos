@@ -11,6 +11,9 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
+use Hilos\Core\Table\TableSearchTerm;
 use Hilos\Core\Table\TableWindowPlan;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableSortWhitelist;
@@ -351,44 +354,49 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     }
 
     /**
-     * Returns entity column names eligible for full-text search.
-     * Override in subclasses to restrict searchable columns.
-     * Default: all columns from the entity.
-     *
-     * @return list<string> Entity column names
-     */
-    public function getSearchableColumns(): array
-    {
-        $objectClass = static::OBJECT_CLASS;
-        $entityClass = $objectClass::ENTITY_CLASS;
-        return $entityClass::_columns;
-    }
-
-    /**
      * Builds the WHERE condition the window's search term stands for.
      *
      * One description of the search, read by the window and by the question about a single row
      * alike: a second copy of these LIKE clauses would drift from this one without anything
      * failing, and the drift would surface as a counter that disagrees with the rows on screen.
      *
-     * @param TableQueryDTO $query Window query carrying the search term
+     * The columns are the ones the query carries, which is the table's own declaration and not
+     * this layer's guess: a table knows what a reader is looking for, while everything the object
+     * layer could work out for itself is "every column of the entity" - the timestamps, the flags
+     * and the foreign keys included. A term arriving with nothing declared to search by is refused
+     * here as well as at the table boundary, because the alternative is a set silently wider than
+     * the one the reader asked for.
+     *
+     * @param TableQueryDTO $query Window query carrying the search term and the fields it reads
      * @return array{0: string, 1: list<SqlParam>} Raw WHERE clause, empty when nothing is searched, and its params
+     * @throws TableSearchNotSupportedException When a term arrives with no searchable fields declared
+     * @throws TableSearchFieldUnknownException When a declared field names no column of this entity
      */
     private function searchCondition(TableQueryDTO $query): array
     {
-        $search = $query->search;
-        if ($search === null || $search === '') {
+        $search = TableSearchTerm::normalize($query->search);
+        if ($search === null) {
             return ['', []];
         }
 
-        $likeParts = [];
-        $filtersParam = [];
-        foreach ($this->getSearchableColumns() as $column) {
-            $likeParts[] = "`{$column}` LIKE ?";
-            $filtersParam[] = SqlParam::string("%{$search}%");
+        $objectClass = static::OBJECT_CLASS;
+        $entityClass = $objectClass::ENTITY_CLASS;
+        if ($query->searchableFields === []) {
+            throw new TableSearchNotSupportedException($entityClass);
         }
 
-        return $likeParts === [] ? ['', []] : ['(' . implode(' OR ', $likeParts) . ')', $filtersParam];
+        $pattern = TableSearchTerm::likePattern($search);
+        $likeParts = [];
+        $filtersParam = [];
+        foreach ($query->searchableFields as $field => $column) {
+            if (!in_array($column, $entityClass::_columns, true)) {
+                throw new TableSearchFieldUnknownException($entityClass, $field, $column);
+            }
+            $likeParts[] = "`{$column}` " . TableSearchTerm::LIKE_COMPARISON;
+            $filtersParam[] = SqlParam::string($pattern);
+        }
+
+        return ['(' . implode(' OR ', $likeParts) . ')', $filtersParam];
     }
 
     /**
@@ -403,6 +411,8 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * @param string|int $rowKey Primary key value of the row to place against it
      * @return bool Whether the row is in the set
      * @throws DatabaseException If the database query fails
+     * @throws TableSearchNotSupportedException When a term arrives with no searchable fields declared
+     * @throws TableSearchFieldUnknownException When a declared field names no column of this entity
      */
     public function containsRow(TableQueryDTO $query, string|int $rowKey): bool
     {
@@ -455,6 +465,8 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      *     totalExact (bool), firstAnchor (?TableAnchorDTO), lastAnchor (?TableAnchorDTO)
      * @throws DatabaseException If database query fails
      * @throws InvalidArgumentException When an order direction is neither SqlSortDirection::ASC nor ::DESC
+     * @throws TableSearchNotSupportedException When a term arrives with no searchable fields declared
+     * @throws TableSearchFieldUnknownException When a declared field names no column of this entity
      */
     public function queryPage(TableQueryDTO $query): array
     {

@@ -18,6 +18,8 @@ use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\ViewportTable;
@@ -202,6 +204,8 @@ final class BotsTable extends TableDefinition implements ViewportTable
      * @param TableQueryDTO $query Window query parameters
      * @return TableSnapshotDTO Bot table window
      * @throws DatabaseException When bot query execution fails
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
@@ -240,6 +244,23 @@ final class BotsTable extends TableDefinition implements ViewportTable
             priority: $bot->priority,
             status: $bot->agentStatus?->status,
         );
+    }
+
+    /**
+     * Declares what a bot row is searched by: everything about it written in words.
+     *
+     * @return array<string, string> Searched fields mapped to themselves, these rows being searched in memory
+     */
+    protected function searchableFields(): array
+    {
+        return [
+            BotTableRow::name => BotTableRow::name,
+            BotTableRow::description => BotTableRow::description,
+            BotTableRow::style => BotTableRow::style,
+            BotTableRow::topics => BotTableRow::topics,
+            BotTableRow::personality => BotTableRow::personality,
+            BotTableRow::status => BotTableRow::status,
+        ];
     }
 
     /**

@@ -16,6 +16,8 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\ViewportTable;
@@ -141,6 +143,8 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      *
      * @param TableQueryDTO $query Table query parameters
      * @return TableSnapshotDTO Backup table snapshot
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
@@ -160,6 +164,21 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
         }
 
         return $this->filterInMemory($rows, $query);
+    }
+
+    /**
+     * Declares what a backup row is searched by: where it was taken, what of, and how it ended.
+     *
+     * @return array<string, string> Searched fields mapped to themselves, these rows being searched in memory
+     */
+    protected function searchableFields(): array
+    {
+        return [
+            HilosBackupTableRow::env => HilosBackupTableRow::env,
+            HilosBackupTableRow::scope => HilosBackupTableRow::scope,
+            HilosBackupTableRow::status => HilosBackupTableRow::status,
+            HilosBackupTableRow::failureReason => HilosBackupTableRow::failureReason,
+        ];
     }
 
     /**

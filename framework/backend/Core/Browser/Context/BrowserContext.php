@@ -2593,7 +2593,7 @@ abstract class BrowserContext
         }
 
         try {
-            $contains = $table->containsRow($mutation->rowKey, $query);
+            $contains = $table->containsRow($mutation->rowKey, $table->scopeSearch($query));
         } catch (Throwable $e) {
             // The count stands still on a refused question, exactly as it does on a row nobody
             // can place - and without this line the two would look the same from outside, which
@@ -2730,7 +2730,7 @@ abstract class BrowserContext
 
         $query = $this->viewportQuery($viewport);
         try {
-            $contains = $table->containsRow($mutation->rowKey, $query);
+            $contains = $table->containsRow($mutation->rowKey, $table->scopeSearch($query));
         } catch (Throwable $e) {
             // A refused question is read as "cannot say" and the classification goes on, the
             // same way the count reads it. Without this line the refusal looks exactly like an

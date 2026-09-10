@@ -199,6 +199,18 @@ names the ones it left alone, is the bulk-action contract below.
   search and no command palette. A keystroke is an explicit window change →
   loading → the backend returns the window, the same path as any sort or
   paginate (debounce is an implementation detail).
+- **The table declares which of its fields the search reads**, the way it
+  declares its sort vocabulary: `searchableFields()` is a `wire field => column`
+  map, and one declaration serves every path — the ORM window, a table's own SQL,
+  and the in-memory filter. An empty declaration is a full one and means this
+  table has no search: a term arriving at it is refused out loud, because both
+  silent answers (the same window back, or an empty one) look like something else
+  that already happens.
+- **A match stays a substring one and costs a full pass.** The term is compared
+  with `%term%` over the declared fields joined by OR, so no index is under it and
+  the whole set is read on every window. That is deliberate and named: the
+  declaration is what a future index would stand on, and until then the promise is
+  the fields, not the speed. Wildcards a reader types stand for themselves.
 - **A facet is a number beside a filter option**, not a filter of its own: it
   says how many rows would remain if that option were chosen, and the server
   computes it in one grouped query rather than by trying the options. On a large

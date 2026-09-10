@@ -7,6 +7,8 @@ namespace Hilos\Tables\Communications;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -138,6 +140,8 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
      * @throws DatabaseException When persisted settings cannot be read
      * @throws SettingException When settings catalog metadata or value is invalid
      * @throws EnvException When an env-backed field value is invalid for its type
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
@@ -149,6 +153,25 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
         }
 
         return $this->filterInMemory($rows, $query);
+    }
+
+    /**
+     * Declares what a channel-field row is searched by, the configured value included.
+     *
+     * The value is safe to search here because a secret one never reaches the browser in the first
+     * place - the class docblock above says where that is decided - so the search reads what the
+     * reader is looking at and nothing they cannot see.
+     *
+     * @return array<string, string> Searched fields mapped to themselves, these rows being searched in memory
+     */
+    protected function searchableFields(): array
+    {
+        return [
+            HilosCommunicationsChannelFieldsTableRow::channel => HilosCommunicationsChannelFieldsTableRow::channel,
+            HilosCommunicationsChannelFieldsTableRow::field => HilosCommunicationsChannelFieldsTableRow::field,
+            HilosCommunicationsChannelFieldsTableRow::label => HilosCommunicationsChannelFieldsTableRow::label,
+            HilosCommunicationsChannelFieldsTableRow::value => HilosCommunicationsChannelFieldsTableRow::value,
+        ];
     }
 
     /**

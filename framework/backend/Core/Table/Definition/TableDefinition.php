@@ -19,12 +19,15 @@ use Hilos\Core\Table\Exception\TableActionsNotConfiguredException;
 use Hilos\Core\Table\Exception\TableOffsetSetNotSupportedException;
 use Hilos\Core\Table\Exception\TableOffsetUnsetNotSupportedException;
 use Hilos\Core\Table\Exception\TablePropertyNotFoundException;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Item\TableItem;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\Row\GenericTableRow;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableSearchTerm;
 use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
@@ -224,6 +227,32 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
+     * Declares which fields of this table's rows the search reads.
+     *
+     * An empty map is a full declaration and means this table has no search: a window that asks it
+     * to search anyway is refused out loud rather than served a set that quietly ignores the term.
+     * Every table shown today declares its own map, so the refusal is reachable only by a new table
+     * whose author has not written one yet - which is who it is for.
+     *
+     * The map is `wire row-field name => column`, the shape {@see sortableFields()} is written in,
+     * and it is read from both ends: the database searches by its values and the in-memory filter
+     * by its keys, so the keys are the names a row payload is keyed by and nothing else. How far a
+     * value may go depends on who runs the query, exactly as it does for a sorted column - a table
+     * assembling its own SQL may qualify it with its own alias (`nd.created_at`), while a table
+     * whose rows come from the ORM must name a bare column of its entity.
+     *
+     * What belongs in it is what a reader looks at and searches by with a word: names, titles,
+     * keys they read, the text of an error. Counters, sizes, durations, dates and flags do not,
+     * because nobody looks for a row by typing part of a number they never saw.
+     *
+     * @return array<string, string> Searched fields mapped to their columns; empty by default
+     */
+    protected function searchableFields(): array
+    {
+        return [];
+    }
+
+    /**
      * Declares the orders of more than one column this table serves, each under a key of its own.
      *
      * A composite order is offered, never assembled: the reader picks one of these and cannot
@@ -316,6 +345,8 @@ abstract class TableDefinition implements ArrayAccess
      * @throws DatabaseException When query execution fails
      * @throws LogicException When the collection class constants are not configured
      * @throws InvalidArgumentException When the object type does not match the collection
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
     protected function queryDbCollection(DbCollection $collection, TableQueryDTO $query): TableSnapshotDTO
     {
@@ -361,6 +392,8 @@ abstract class TableDefinition implements ArrayAccess
      * @param TableQueryDTO $query Window query whose search describes the set
      * @return ?bool Whether the row is in the set, or null when the collection cannot answer
      * @throws DatabaseException When query execution fails
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
     protected function containsRowInDbCollection(
         DbCollection $collection,
@@ -378,9 +411,15 @@ abstract class TableDefinition implements ArrayAccess
      * payload does not carry that field cannot be told apart by the tie-breaker, so the window
      * says so once rather than once per row: an in-memory set runs to thousands of them.
      *
+     * The declared searched fields are held against the same set for the same reason, and are
+     * refused rather than warned about: a row set that carries none of a declared field searches
+     * narrower than the table promised, and nothing about the shorter answer says so.
+     *
      * @param list<array<string, mixed>> $rows All rows the table holds
      * @param TableQueryDTO $query Query parameters
      * @return TableSnapshotDTO Filtered/sorted/paginated snapshot
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
     protected function filterInMemory(array $rows, TableQueryDTO $query): TableSnapshotDTO
     {
@@ -394,7 +433,40 @@ abstract class TableDefinition implements ArrayAccess
             ]);
         }
 
+        $this->holdSearchFields($rows, $query);
+
         return InMemoryTableFilter::apply($rows, $query, $keyField);
+    }
+
+    /**
+     * Holds the fields a search runs over against the rows it is about to run over.
+     *
+     * Nothing is checked when no term arrived, because an unsearched window is not the place to
+     * judge a declaration, and the whole check costs one pass per declared field over rows that
+     * are in hand already - the first row carrying the field ends it.
+     *
+     * @param list<array<string, mixed>> $rows All rows the table holds
+     * @param TableQueryDTO $query Query parameters
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     */
+    private function holdSearchFields(array $rows, TableQueryDTO $query): void
+    {
+        if (TableSearchTerm::normalize($query->search) === null) {
+            return;
+        }
+        if ($query->searchableFields === []) {
+            throw new TableSearchNotSupportedException(static::class);
+        }
+        if ($rows === []) {
+            return;
+        }
+
+        foreach (array_keys($query->searchableFields) as $field) {
+            if (!array_any($rows, static fn(array $row): bool => array_key_exists($field, $row))) {
+                throw new TableSearchFieldUnknownException(static::class, $field, $field);
+            }
+        }
     }
 
     /**
@@ -406,6 +478,32 @@ abstract class TableDefinition implements ArrayAccess
     public function getFullSnapshot(): TableSnapshotDTO
     {
         return $this->getPage(new TableQueryDTO());
+    }
+
+    /**
+     * Puts the fields this table declares the search over into the query, or refuses the search.
+     *
+     * This is the one place the declaration is read, and it is read late - on the query, not at
+     * startup - because an empty map is a legitimate declaration and no gate could tell it from a
+     * forgotten one. A window that carries no term is handed back untouched, so a table with no
+     * search is only ever refused when something actually asked it to search.
+     *
+     * @param TableQueryDTO $query Window query the search travels in
+     * @return TableQueryDTO Query carrying the declared fields, or the same one when nothing is searched
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     */
+    public function scopeSearch(TableQueryDTO $query): TableQueryDTO
+    {
+        if (TableSearchTerm::normalize($query->search) === null) {
+            return $query;
+        }
+
+        $searchableFields = $this->searchableFields();
+        if ($searchableFields === []) {
+            throw new TableSearchNotSupportedException(static::class);
+        }
+
+        return $query->withSearchScope($searchableFields);
     }
 
     /**
@@ -422,8 +520,13 @@ abstract class TableDefinition implements ArrayAccess
      * have been offered, and then against {@see sortableFields()}, which is where each of its
      * components turns into a column.
      *
+     * The search passes {@see scopeSearch()} in the same breath and for the same reason: whichever
+     * way the rows are read, the fields the term is compared with are the ones this table declared
+     * and no others.
+     *
      * @param TableQueryDTO $query Window query parameters
      * @return TableSnapshotDTO Window snapshot with typed rows and metadata
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws HilosException When the concrete table cannot read its row source
      */
     public function getPage(TableQueryDTO $query): TableSnapshotDTO
@@ -443,7 +546,7 @@ abstract class TableDefinition implements ArrayAccess
             );
         }
 
-        $result = $this->query($query);
+        $result = $this->query($this->scopeSearch($query));
 
         return new TableSnapshotDTO(
             rows: $this->makeRows($result->rows),

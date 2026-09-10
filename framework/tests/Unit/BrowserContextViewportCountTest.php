@@ -293,6 +293,14 @@ final class CountingUnitTable extends TableDefinition implements SelfSnapshotTab
     }
 
     /**
+     * @return array<string, string> Searched fields, so a searching window reaches this table at all
+     */
+    protected function searchableFields(): array
+    {
+        return ['key' => 'key'];
+    }
+
+    /**
      * Answers whether one row belongs to the searched set, from the fixture's own list.
      *
      * @param string|int $rowKey Row key to place against the set

@@ -16,6 +16,8 @@ use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DatabaseException;
@@ -153,6 +155,8 @@ final class HilosUsersTable extends AbstractHilosUsersTable
      * @return TableSnapshotDTO Hilos users table snapshot
      * @throws DatabaseException When user query execution fails
      * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
@@ -165,6 +169,21 @@ final class HilosUsersTable extends AbstractHilosUsersTable
             ),
             query: $query,
         );
+    }
+
+    /**
+     * Declares what a user row is searched by: the name this demo adds to the shared row.
+     *
+     * The base row carries nothing written in words - a key, two flags and two counts - so the
+     * declaration belongs here, where the name is, rather than on the table every demo shares.
+     *
+     * @return array<string, string> Searched fields mapped to themselves, these rows being searched in memory
+     */
+    protected function searchableFields(): array
+    {
+        return [
+            HilosUserTableRow::name => HilosUserTableRow::name,
+        ];
     }
 
     /**

@@ -31,6 +31,8 @@ readonly class TableQueryDTO
      * @param ?TableAnchorDTO $anchor Place the window is taken from, or null for the edge of the set
      * @param TableAnchorDirection $anchorDirection Side of the anchor, and which edge a null anchor means
      * @param ?int $pageIndex Zero-based page to jump to, or null when the window is paged by anchor
+     * @param array<string, string> $searchableFields Fields the search reads, `wire row-field name => column`,
+     *     as the table declared them; empty until the table's own declaration is put in
      */
     public function __construct(
         public ?string $search = null,
@@ -40,7 +42,33 @@ readonly class TableQueryDTO
         public ?TableAnchorDTO $anchor = null,
         public TableAnchorDirection $anchorDirection = TableAnchorDirection::After,
         public ?int $pageIndex = null,
+        public array $searchableFields = [],
     ) {
+    }
+
+    /**
+     * Returns the same window with the fields its table declared the search over.
+     *
+     * The whole map travels, both halves of it: a query run against the database searches by its
+     * values, which are columns, and one filtered in memory searches by its keys, which are the
+     * fields a row is keyed by. Carrying one half would mean the other is worked out a second time
+     * somewhere, and two readings of one declaration are two ways for it to drift.
+     *
+     * @param array<string, string> $searchableFields Fields the search reads, `wire row-field name => column`
+     * @return self Same window, searched over the declared fields
+     */
+    public function withSearchScope(array $searchableFields): self
+    {
+        return new self(
+            $this->search,
+            $this->sort,
+            $this->limit,
+            $this->filter,
+            $this->anchor,
+            $this->anchorDirection,
+            $this->pageIndex,
+            $searchableFields,
+        );
     }
 
     /**
@@ -63,6 +91,7 @@ readonly class TableQueryDTO
             $this->anchor,
             $this->anchorDirection,
             $this->pageIndex,
+            $this->searchableFields,
         );
     }
 }

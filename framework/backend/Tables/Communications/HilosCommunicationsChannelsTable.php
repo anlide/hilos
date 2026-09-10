@@ -7,6 +7,8 @@ namespace Hilos\Tables\Communications;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -125,6 +127,8 @@ class HilosCommunicationsChannelsTable extends TableDefinition implements SelfSn
      * @throws DatabaseException When persisted settings cannot be read
      * @throws SettingException When settings catalog metadata or value is invalid
      * @throws EnvException When an env-backed field value is invalid for its type
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
@@ -134,6 +138,20 @@ class HilosCommunicationsChannelsTable extends TableDefinition implements SelfSn
         }
 
         return $this->filterInMemory($rows, $query);
+    }
+
+    /**
+     * Declares what a channel row is searched by: the names it is known under and the driver behind it.
+     *
+     * @return array<string, string> Searched fields mapped to themselves, these rows being searched in memory
+     */
+    protected function searchableFields(): array
+    {
+        return [
+            HilosCommunicationsChannelsTableRow::channel => HilosCommunicationsChannelsTableRow::channel,
+            HilosCommunicationsChannelsTableRow::label => HilosCommunicationsChannelsTableRow::label,
+            HilosCommunicationsChannelsTableRow::driver => HilosCommunicationsChannelsTableRow::driver,
+        ];
     }
 
     /**

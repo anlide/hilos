@@ -8,6 +8,7 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
@@ -27,8 +28,8 @@ use Hilos\HilosException;
  * source-fanned table (the Hilos users table), independent of how the table
  * delivers its non-viewport page_response rows.
  *
- * getPage(), buildMutationForSourceEvent(), containsRow(), placeRowAgainst(), anchorForRow(),
- * windowSize() and defaultSort() are already concrete on TableDefinition, so a TableDefinition subclass
+ * getPage(), scopeSearch(), buildMutationForSourceEvent(), containsRow(), placeRowAgainst(),
+ * anchorForRow(), windowSize() and defaultSort() are already concrete on TableDefinition, so a TableDefinition subclass
  * satisfies them by inheritance and only browserRow() is feature-specific.
  */
 interface ViewportTable
@@ -40,6 +41,21 @@ interface ViewportTable
      * @return TableSnapshotDTO Window snapshot with typed rows and the total count
      */
     public function getPage(TableQueryDTO $query): TableSnapshotDTO;
+
+    /**
+     * Puts the fields this table declares the search over into a query, or refuses the search.
+     *
+     * {@see getPage()} does this to its own query, so it stands in this contract for the one
+     * caller that reaches a row source without going through a window: the question about a single
+     * row a live count asks ({@see containsRow()}). Both have to describe the same set, and a
+     * search scoped for one of them and not the other is exactly the drift that shows up as a
+     * counter disagreeing with the rows on screen.
+     *
+     * @param TableQueryDTO $query Window query the search travels in
+     * @return TableQueryDTO Query carrying the declared fields, or the same one when nothing is searched
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     */
+    public function scopeSearch(TableQueryDTO $query): TableQueryDTO;
 
     /**
      * Declares how many rows the first window of this table carries.

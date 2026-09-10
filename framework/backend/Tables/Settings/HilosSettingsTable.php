@@ -11,6 +11,8 @@ use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -239,6 +241,8 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
      * @return TableSnapshotDTO Settings table snapshot
      * @throws DatabaseException When settings rows or referenced defaults cannot be read
      * @throws SettingException When catalog default metadata is invalid
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
@@ -259,6 +263,19 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
         }
 
         return $this->filterInMemory($rows, $query);
+    }
+
+    /**
+     * Declares what a settings row is searched by: its key, and the value standing against it.
+     *
+     * @return array<string, string> Searched fields mapped to themselves, these rows being searched in memory
+     */
+    protected function searchableFields(): array
+    {
+        return [
+            HilosSettingTableRow::key => HilosSettingTableRow::key,
+            HilosSettingTableRow::value => HilosSettingTableRow::value,
+        ];
     }
 
     /**

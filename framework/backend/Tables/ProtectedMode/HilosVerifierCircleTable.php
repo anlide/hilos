@@ -13,6 +13,8 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -179,6 +181,8 @@ final class HilosVerifierCircleTable extends TableDefinition implements SelfSnap
      * @throws DatabaseException When the circle or identity lookup fails
      * @throws LogicException When a collection's class constants are not configured
      * @throws InvalidArgumentException When a loaded object type does not match its collection
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
@@ -188,6 +192,19 @@ final class HilosVerifierCircleTable extends TableDefinition implements SelfSnap
         }
 
         return $this->filterInMemory($rows, $query);
+    }
+
+    /**
+     * Declares what a circle row is searched by: the identity, and the kind of identity it is.
+     *
+     * @return array<string, string> Searched fields mapped to themselves, these rows being searched in memory
+     */
+    protected function searchableFields(): array
+    {
+        return [
+            HilosVerifierCircleTableRow::identityType => HilosVerifierCircleTableRow::identityType,
+            HilosVerifierCircleTableRow::identifier => HilosVerifierCircleTableRow::identifier,
+        ];
     }
 
     /**

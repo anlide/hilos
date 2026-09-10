@@ -17,6 +17,8 @@ use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\ViewportTable;
@@ -117,6 +119,8 @@ final class ModeratorPromptPiecesTable extends TableDefinition implements Viewpo
      * @param TableQueryDTO $query Window query whose search describes the set
      * @return ?bool Whether the piece is in the set, or null when the collection cannot answer
      * @throws DatabaseException When the prompt piece query fails
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field names no column of the entity
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
@@ -158,6 +162,22 @@ final class ModeratorPromptPiecesTable extends TableDefinition implements Viewpo
     {
         return [
             ModeratorPromptPieceTableRow::section => EntityModeratorPromptPiece::section,
+        ];
+    }
+
+    /**
+     * Declares what a prompt-piece row is searched by: its section and the text of the piece.
+     *
+     * These rows come from the ORM, so each field names a bare column of the entity - the one the
+     * search runs its comparison against.
+     *
+     * @return array<string, string> Searched fields mapped to their entity columns
+     */
+    protected function searchableFields(): array
+    {
+        return [
+            ModeratorPromptPieceTableRow::section => EntityModeratorPromptPiece::section,
+            ModeratorPromptPieceTableRow::promptPiece => EntityModeratorPromptPiece::prompt_piece,
         ];
     }
 

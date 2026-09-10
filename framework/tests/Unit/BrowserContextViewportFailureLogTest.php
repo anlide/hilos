@@ -430,6 +430,14 @@ final class ViewportFailureLogUnitTable extends TableDefinition implements SelfS
     }
 
     /**
+     * @return array<string, string> Searched fields, so a searching window reaches this table at all
+     */
+    protected function searchableFields(): array
+    {
+        return ['label' => 'label'];
+    }
+
+    /**
      * Configures the row class so makeRows rebuilds typed rows from the filter output.
      */
     protected function init(): void

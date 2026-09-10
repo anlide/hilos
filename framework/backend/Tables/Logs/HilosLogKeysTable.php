@@ -7,6 +7,8 @@ namespace Hilos\Tables\Logs;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
@@ -136,6 +138,24 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
     }
 
     /**
+     * Declares what a stream row is searched by: the key that is the file's name, the node it
+     * runs on, and the class of process behind it.
+     *
+     * The weight, the batch count and the growth are numbers an operator reads and nobody types
+     * part of, so they stay out: a short term matching them would match nearly every row.
+     *
+     * @return array<string, string> Searched fields mapped to themselves, these rows being searched in memory
+     */
+    protected function searchableFields(): array
+    {
+        return [
+            HilosLogKeysTableRow::key => HilosLogKeysTableRow::key,
+            HilosLogKeysTableRow::node => HilosLogKeysTableRow::node,
+            HilosLogKeysTableRow::streamClass => HilosLogKeysTableRow::streamClass,
+        ];
+    }
+
+    /**
      * Serves one window of the stream list out of the cluster picture.
      *
      * The rows are projected by key before anything narrows them, so a window that asked for no
@@ -144,20 +164,24 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
      *
      * @param TableQueryDTO $query Window query (search, filters, sort, size, address)
      * @return TableSnapshotDTO Window snapshot with raw rows and the total count
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
         $rows = $this->narrow($this->collectRows(), $query);
 
-        // The search is spent above, on the two names this screen searches by; handing it on
-        // would search the byte weights and the batch counts as well.
+        // Only the order is rewritten here - growth sorts by the number the row carries beside it -
+        // and the search travels on with the fields it was scoped to.
         $ordering = new TableQueryDTO(
+            search: $query->search,
             sort: self::orderingSort($query->sort),
             limit: $query->limit,
             filter: $query->filter,
             anchor: $query->anchor,
             anchorDirection: $query->anchorDirection,
             pageIndex: $query->pageIndex,
+            searchableFields: $query->searchableFields,
         );
 
         return $this->filterInMemory($rows, $ordering);
@@ -239,7 +263,7 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
     }
 
     /**
-     * Applies the node filter, the class filter and the search this screen answers to.
+     * Applies the node filter and the class filter this screen answers to.
      *
      * @param list<array<string, mixed>> $rows Rows of the whole cluster
      * @param TableQueryDTO $query Window query
@@ -265,49 +289,9 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
             ));
         }
 
-        $search = $query->search === null ? '' : trim($query->search);
-        if ($search === '') {
-            return $rows;
-        }
-
-        $needle = mb_strtolower($search);
-
-        return array_values(array_filter(
-            $rows,
-            static fn(array $row): bool => self::matches($row, $needle),
-        ));
+        return $rows;
     }
 
-    /**
-     * Whether one row answers the search term.
-     *
-     * Two fields and not the whole payload: the key, which is the file's name, and the node. The
-     * weight, the batch count and the growth are numbers an operator reads, not names they search
-     * by, and searching them would make every short term match nearly every row.
-     *
-     * @param array<string, mixed> $row Row payload
-     * @param string $needle Search term, already lowercased
-     * @return bool True when the row carries the term
-     */
-    private static function matches(array $row, string $needle): bool
-    {
-        $haystacks = [(string) $row[HilosLogKeysTableRow::key]];
-
-        // A single-node installation has no node name at all, which is a field to skip and not an
-        // empty one to search.
-        $node = $row[HilosLogKeysTableRow::node];
-        if (is_string($node)) {
-            $haystacks[] = $node;
-        }
-
-        foreach ($haystacks as $haystack) {
-            if (str_contains(mb_strtolower($haystack), $needle)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     /**
      * Reads one string filter value from the open filter map.

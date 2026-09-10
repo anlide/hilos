@@ -17,6 +17,8 @@ use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\ViewportTable;
@@ -223,6 +225,8 @@ final class AdminUsersTable extends TableDefinition implements ViewportTable
      * @return TableSnapshotDTO Admin users table snapshot
      * @throws DatabaseException When user query execution fails
      * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
@@ -255,6 +259,18 @@ final class AdminUsersTable extends TableDefinition implements ViewportTable
             onlineSessionCount: $summary->onlineSessionCount,
             presence: $summary->presence,
         );
+    }
+
+    /**
+     * Declares what a user row is searched by: the name, which is all of it a reader reads.
+     *
+     * @return array<string, string> Searched fields mapped to themselves, these rows being searched in memory
+     */
+    protected function searchableFields(): array
+    {
+        return [
+            AdminUserTableRow::name => AdminUserTableRow::name,
+        ];
     }
 
     /**

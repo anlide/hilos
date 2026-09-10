@@ -43,6 +43,12 @@ final class InMemoryTableFilter
      * hand, so counting them costs nothing to save. Reporting the ceiling here would be lying
      * about a number the filter is holding.
      *
+     * The search reads the fields the table declared it over and no others, which is what makes
+     * the answer here the same as the one a database-backed table gives: the caller carries the
+     * declaration in the query, and the keys of it are the payload fields a row is keyed by.
+     * {@see TableDefinition::filterInMemory()} is what holds a declaration against the set before
+     * the search runs, so an unreachable field is refused rather than quietly searched past.
+     *
      * @param list<array<string, mixed>> $rows All rows to filter
      * @param TableQueryDTO $query Query parameters
      * @param string $keyField Payload field the row key travels under, used to settle the sort
@@ -50,11 +56,14 @@ final class InMemoryTableFilter
      */
     public static function apply(array $rows, TableQueryDTO $query, string $keyField): TableSnapshotDTO
     {
-        if ($query->search !== null && $query->search !== '') {
-            $search = mb_strtolower($query->search);
-            $rows = array_values(array_filter($rows, static function (array $row) use ($search): bool {
-                return array_any($row, fn($value) => $value !== null && str_contains(mb_strtolower((string) $value), $search));
-            }));
+        $search = TableSearchTerm::normalize($query->search);
+        if ($search !== null && $query->searchableFields !== []) {
+            $needle = mb_strtolower($search);
+            $fields = array_keys($query->searchableFields);
+            $rows = array_values(array_filter(
+                $rows,
+                static fn(array $row): bool => self::matchesSearch($row, $fields, $needle),
+            ));
         }
 
         $order = $query->sort;
@@ -74,6 +83,30 @@ final class InMemoryTableFilter
             firstAnchor: $window === [] ? null : TableAnchorDTO::fromRow($window[0], $anchorFields),
             lastAnchor: $window === [] ? null : TableAnchorDTO::fromRow($window[count($window) - 1], $anchorFields),
         );
+    }
+
+    /**
+     * Whether one row answers the search term in a field the table declared the search over.
+     *
+     * The comparison is case-insensitive on both sides, which is what the database does with its
+     * own collation, and a field the row has no value for matches nothing rather than matching an
+     * empty string.
+     *
+     * @param array<string, mixed> $row Row of the set being searched
+     * @param list<string> $fields Payload fields the table declared the search over
+     * @param string $needle Search term, already lowercased
+     * @return bool Whether the row belongs to the searched set
+     */
+    private static function matchesSearch(array $row, array $fields, string $needle): bool
+    {
+        foreach ($fields as $field) {
+            $value = $row[$field] ?? null;
+            if ($value !== null && str_contains(mb_strtolower((string) $value), $needle)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
