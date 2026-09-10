@@ -28,6 +28,15 @@ use Hilos\Core\Router\DTO\ActionReplyDTO;
  *
  * `kind` has no `unknown`: an identifier that classifies as neither an address nor
  * a number is a validation error of the action, not a detection result.
+ *
+ * A `none` that registers nobody also says WHY (HIL-830). An empty `registerable`
+ * used to mean two different things at once - a project that closed registration on
+ * purpose, and a deployment that simply has no way to send a code - and the surface,
+ * seeing only the empty list, blamed a decision nobody had taken. The reason is
+ * resolved here, on the side that knows both facts, and never by the surface
+ * comparing flags. It rides `none` alone: a held or owned identifier is not up for
+ * registration at all, and a slot that was always null there would eventually be read
+ * as "cause unknown".
  */
 final class IdentifierDetection extends ActionReplyDTO
 {
@@ -45,6 +54,12 @@ final class IdentifierDetection extends ActionReplyDTO
 
     /** An account exists behind the identifier: the surface signs in. */
     public const string STATUS_ACTIVE = 'active';
+
+    /** Registration is not offered because the project enabled no way to register. */
+    public const string BLOCK_CLOSED = 'closed';
+
+    /** Registration is not offered because this installation cannot deliver a code. */
+    public const string BLOCK_NO_CHANNEL = 'no_channel';
 
     /** Wire key for the verbatim echo of the looked-up identifier. */
     private const string FIELD_IDENTIFIER = 'identifier';
@@ -64,6 +79,9 @@ final class IdentifierDetection extends ActionReplyDTO
     /** Wire key for the method keys registration is open with. */
     private const string FIELD_REGISTERABLE = 'registerable';
 
+    /** Wire key for why registration is not offered on a free identifier. */
+    private const string FIELD_REGISTRATION_BLOCK = 'registrationBlock';
+
     /**
      * @param string $identifier Identifier exactly as it was submitted
      * @param string $normalized Identifier in its canonical form
@@ -71,6 +89,7 @@ final class IdentifierDetection extends ActionReplyDTO
      * @param string $status Account status (see self::STATUS_*)
      * @param list<string> $methods Method keys of the existing account (see AuthMethodKey)
      * @param list<string> $registerable Method keys registration is open with (see AuthMethodKey)
+     * @param ?string $registrationBlock Why registration is not offered (see self::BLOCK_*), or null when it is
      */
     private function __construct(
         public readonly string $identifier,
@@ -79,6 +98,7 @@ final class IdentifierDetection extends ActionReplyDTO
         public readonly string $status,
         public readonly array $methods,
         public readonly array $registerable,
+        public readonly ?string $registrationBlock = null,
     ) {
     }
 
@@ -89,11 +109,17 @@ final class IdentifierDetection extends ActionReplyDTO
      * @param string $normalized Identifier in its canonical form
      * @param string $kind Classification (see self::KIND_*)
      * @param list<string> $registerable Method keys registration is open with (see AuthMethodKey)
+     * @param ?string $registrationBlock Why registration is not offered (see self::BLOCK_*), or null when it is
      * @return static Detection with status `none`
      */
-    public static function free(string $identifier, string $normalized, string $kind, array $registerable): static
-    {
-        return new static($identifier, $normalized, $kind, self::STATUS_NONE, [], $registerable);
+    public static function free(
+        string $identifier,
+        string $normalized,
+        string $kind,
+        array $registerable,
+        ?string $registrationBlock = null,
+    ): static {
+        return new static($identifier, $normalized, $kind, self::STATUS_NONE, [], $registerable, $registrationBlock);
     }
 
     /**
@@ -134,7 +160,8 @@ final class IdentifierDetection extends ActionReplyDTO
      *     status: string,
      *     methods: list<string>,
      *     registerable: list<string>,
-     * } Wire form; both lists are always present, empty where the status has none
+     *     registrationBlock: ?string,
+     * } Wire form; both lists and the block are always present, empty or null where the status has none
      */
     public function toArray(): array
     {
@@ -145,6 +172,7 @@ final class IdentifierDetection extends ActionReplyDTO
             self::FIELD_STATUS => $this->status,
             self::FIELD_METHODS => $this->methods,
             self::FIELD_REGISTERABLE => $this->registerable,
+            self::FIELD_REGISTRATION_BLOCK => $this->registrationBlock,
         ];
     }
 
@@ -162,6 +190,7 @@ final class IdentifierDetection extends ActionReplyDTO
             self::requireString($data, self::FIELD_STATUS),
             self::requireMethodKeys($data, self::FIELD_METHODS),
             self::requireMethodKeys($data, self::FIELD_REGISTERABLE),
+            self::optionalString($data, self::FIELD_REGISTRATION_BLOCK),
         );
     }
 

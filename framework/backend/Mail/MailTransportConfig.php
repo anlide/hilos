@@ -77,6 +77,31 @@ final class MailTransportConfig
     }
 
     /**
+     * Decides whether these settings resolve to the file transport rather than a relay.
+     *
+     * The rule lives here rather than in {@see MailTransportFactory} because two
+     * callers now need it and only one of them builds a transport: the factory picks
+     * the class to send with, and the auth layer asks whether a one-time code mailed
+     * from this installation would reach anybody at all - a .eml written to a
+     * directory reaches nobody, so an address is not a way to deliver a code when
+     * this answers true (HIL-830).
+     *
+     * @return bool True for an explicit `file` selection or auto-selection with no SMTP host
+     */
+    public function usesFileTransport(): bool
+    {
+        if ($this->transport === MailTransportFactory::TRANSPORT_FILE) {
+            return true;
+        }
+
+        if ($this->transport === MailTransportFactory::TRANSPORT_SMTP) {
+            return false;
+        }
+
+        return $this->smtpHost === '';
+    }
+
+    /**
      * @param string $value Security mode read from MAIL_SMTP_SECURITY
      * @return SmtpSecurity Matched transport-security mode
      * @throws MailConfigException When the value is not a recognized mode

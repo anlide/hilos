@@ -227,6 +227,14 @@ export interface IdentifierDetection {
   readonly methods: readonly string[]
   /** The method keys registration is open with (consulted for `none`). */
   readonly registerable: readonly string[]
+  /**
+   * Why registration is not offered, or `null` when it is (HIL-830). Read only
+   * for `none`, and only ever alongside an empty `registerable`: `closed` is a
+   * decision somebody made, `no_channel` is this installation having nothing to
+   * send a code with. The surface says a different sentence for each, and
+   * resolving which is the backend's — never a comparison of flags here.
+   */
+  readonly registrationBlock: 'closed' | 'no_channel' | null
 }
 
 /**

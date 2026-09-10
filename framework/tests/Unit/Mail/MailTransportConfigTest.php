@@ -93,6 +93,28 @@ final class MailTransportConfigTest extends TestCase
         self::assertSame(5000, $config->timeoutMs);
     }
 
+    /**
+     * The file/relay decision is the config's own, and it is what the auth layer asks.
+     *
+     * Three inputs, one rule (HIL-830): a forced `file` beats a configured relay, a
+     * forced `smtp` beats a missing one, and with neither forced the host decides.
+     */
+    public function testTheFileTransportDecisionIsTheConfigsOwn(): void
+    {
+        self::assertTrue(
+            new MailTransportConfig('no-reply@example.com', '/tmp', MailTransportFactory::TRANSPORT_FILE, 'smtp.example.com')
+                ->usesFileTransport(),
+        );
+        self::assertFalse(
+            new MailTransportConfig('no-reply@example.com', '/tmp', MailTransportFactory::TRANSPORT_SMTP)
+                ->usesFileTransport(),
+        );
+        self::assertTrue(new MailTransportConfig('no-reply@example.com', '/tmp')->usesFileTransport());
+        self::assertFalse(
+            new MailTransportConfig('no-reply@example.com', '/tmp', smtpHost: 'smtp.example.com')->usesFileTransport(),
+        );
+    }
+
     public function testUnknownSecurityModeThrows(): void
     {
         putenv('MAIL_SMTP_SECURITY=quantum');

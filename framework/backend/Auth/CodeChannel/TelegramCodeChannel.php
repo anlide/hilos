@@ -57,6 +57,27 @@ final class TelegramCodeChannel extends CodeChannel
     }
 
     /**
+     * Whether a Gateway token is configured at all.
+     *
+     * The installation-wide half of the no-token case {@see reaches()} already answers
+     * per number: without a token there is no Gateway, so this channel delivers to
+     * nobody and must not count towards what the surface offers (HIL-830). Reading the
+     * token is an env lookup and nothing else, which is the whole of what the contract
+     * allows here; an unreadable env catalog answers configured, so a misread never
+     * withdraws a working channel.
+     *
+     * @return bool True when the Telegram Gateway has a token to call with
+     */
+    public function isConfigured(): bool
+    {
+        try {
+            return TelegramGatewayConfig::resolve()->isConfigured();
+        } catch (EnvException) {
+            return true;
+        }
+    }
+
+    /**
      * Delivers codes of the SMS-delivered types, the same set the phone flows use.
      *
      * The type names the FLOW (a phone login), not the transport, which is why a

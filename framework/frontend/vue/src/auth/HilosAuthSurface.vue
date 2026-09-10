@@ -48,6 +48,7 @@ import {
   PASSKEY_FLOW_METHOD,
   PASSWORD_METHOD_KEY,
   PASSWORD_MIN_LENGTH,
+  sessionCodeDelivery,
   sessionPendingAck,
   sessionPendingAuthStep,
   SMS_CODE_CHANNEL,
@@ -257,6 +258,10 @@ const expiresAt = useSignal(auth.expiresAt)
 // stale copy of state the framework already owns.
 const resumable = useSignal(sessionPendingAuthStep(context.scopes))
 const ack = useSignal(sessionPendingAck(context.scopes))
+// What this installation can send a one-time code to, read the same way and for
+// the same reason (HIL-830): the browser half cannot know the backend's mail and
+// channel configuration, so it is told rather than asked to have an opinion.
+const codeDelivery = useSignal(sessionCodeDelivery(context.scopes))
 
 // Set on mount when an OAuth email collision armed a pending link (HIL-282): the
 // account already exists, so the surface pre-fills its address and shows a
@@ -397,7 +402,12 @@ const identifierHint = computed(() => {
     return null
   }
   if (form.value.identifier.trim() === '') {
-    return 'Your email address or phone number.'
+    // Silence unless NEITHER kind can be reached: a deployment with mail and no
+    // phone channel would otherwise lie to whoever was about to type the kind
+    // that works, and the partial case is named after the kind is known.
+    return codeDelivery.value.email || codeDelivery.value.phone
+      ? 'Your email address or phone number.'
+      : 'Your email address or phone number. New accounts cannot be created here — there is nothing to send a code with.'
   }
   if (state.value.identifierKind === 'unknown') {
     return 'That does not look like an email address or a phone number yet.'
@@ -407,8 +417,15 @@ const identifierHint = computed(() => {
     return null
   }
   if (result.status === 'none') {
-    return result.registerable.length > 0
-      ? 'No account yet — this creates one.'
+    if (result.registerable.length > 0) {
+      return 'No account yet — this creates one.'
+    }
+
+    // Two reasons, two sentences: a locked door somebody locked, and a
+    // deployment that simply has nothing to send with. Which one it is was
+    // resolved on the backend, never by comparing flags here (HIL-830).
+    return result.registrationBlock === 'no_channel'
+      ? 'No account for this, and there is nothing to send a code with.'
       : 'No account for this, and registration is closed.'
   }
   // A held address has no account to describe — it has a code in flight, and

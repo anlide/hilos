@@ -11,6 +11,9 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\HilosException;
+use Hilos\Sms\Delivery\SmsDeliveryChannel;
+use Hilos\Sms\SmsChannelConfig;
 
 /**
  * SmsCodeChannel - the SMS code channel (HIL-492).
@@ -58,6 +61,34 @@ final class SmsCodeChannel extends CodeChannel
     public function isPrimary(): bool
     {
         return true;
+    }
+
+    /**
+     * Whether the SMS subsystem behind this channel talks to a gateway rather than a file.
+     *
+     * The stub provider writes the message to a .txt and reports it sent, which is a
+     * development convenience and not a delivery: a stranger signing in never sees
+     * that file, so an installation left on the stub has nothing to send a phone code
+     * with (HIL-830). The predicate is the SMS subsystem's own - a second rule here
+     * would be a copy of it that could drift.
+     *
+     * Resolved rather than read from env because an administrator may have moved the
+     * endpoint in settings, and the settings collection this reads is already in the
+     * worker's memory - no query and no socket, which is what the contract asks. The
+     * catch is the whole framework family on purpose: a bad env value, an invalid
+     * settings row and a process that never declared the settings read all mean the
+     * same thing here - the answer could not be worked out - and the contract says
+     * that answers configured.
+     *
+     * @return bool True when the resolved SMS config points at a real gateway
+     */
+    public function isConfigured(): bool
+    {
+        try {
+            return !SmsChannelConfig::resolve(new SmsDeliveryChannel())->usesStub();
+        } catch (HilosException) {
+            return true;
+        }
     }
 
     /**

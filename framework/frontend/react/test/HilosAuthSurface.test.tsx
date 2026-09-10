@@ -36,6 +36,10 @@ import { HilosAuthSurface } from '../src/auth/HilosAuthSurface.js'
 /** The dispatch calls one mounted surface made, in order. */
 type Dispatched = Array<{ action: string; payload: Record<string, unknown> }>
 
+// The session slot the surface reads the delivery answer from — the default of
+// `sessionCodeDelivery` (sessionScope.ts).
+const CODE_DELIVERY_SLOT = 'codeDelivery'
+
 /**
  * A context whose lookup answers with an account that exists and carries
  * `methods`; every other dispatch is recorded and resolved with nothing.
@@ -70,6 +74,7 @@ function contextAnswering(
               status: 'active',
               methods,
               registerable: [],
+              registrationBlock: null,
             }
           : undefined
 
@@ -102,6 +107,56 @@ function contextAnswering(
       privacyPath: '/privacy',
     }),
   }
+}
+
+/**
+ * A context whose lookup answers a FREE address that cannot be registered, and
+ * names why (HIL-830). Both reasons produce the same empty `registerable`, which
+ * is exactly why the surface is not allowed to guess between them.
+ *
+ * @param registrationBlock Why registration is not offered on this deployment.
+ * @returns The context to mount with.
+ */
+function freeIdentifierContext(
+  registrationBlock: 'closed' | 'no_channel',
+): HilosAuthContext {
+  const connection = {
+    on: vi.fn().mockReturnValue(() => undefined),
+  } as unknown as HilosConnection
+  const actions = {
+    dispatch: (action: string, payload: Record<string, unknown>) => {
+      const identifier = String(payload['identifier'] ?? '')
+      const reply =
+        action === AUTH_ACTION_DETECT_IDENTIFIER
+          ? {
+              identifier,
+              normalized: identifier,
+              kind: 'email',
+              status: 'none',
+              methods: [],
+              registerable: [],
+              registrationBlock,
+            }
+          : undefined
+
+      return {
+        requestId: 'req-free',
+        loading: createSignal(false),
+        done: Promise.resolve({ reply }),
+      } as unknown as ActionHandle
+    },
+  } as unknown as ActionLifecycle
+
+  return createHilosAuthContext({
+    connection,
+    scopes: new ScopeManager(),
+    actions,
+    methods: [PASSWORD_FLOW_METHOD],
+    channels: [],
+    oauthProviders: [],
+    termsPath: '/terms',
+    privacyPath: '/privacy',
+  })
 }
 
 function byId(id: string): HTMLElement | null {
@@ -285,6 +340,74 @@ describe('HilosAuthSurface', () => {
     // News belongs to the region now; the plaque that shows it is a colored
     // line and nothing more.
     expect(byId('auth-link-sent')?.getAttribute('role')).toBeNull()
+  })
+
+  it('declines registration on an empty field when neither kind can be reached', async () => {
+    const { context } = contextAnswering([PASSWORD_METHOD_KEY])
+    render(<HilosAuthSurface context={context} />)
+
+    // Never told: what an installation that predates the key looks like. The
+    // partial case reads the same on purpose - the kind that works is still
+    // worth typing, and it is named after the kind is known.
+    expect(byId('auth-identifier-hint')?.textContent).toBe(
+      'Your email address or phone number.',
+    )
+
+    await act(async () => {
+      context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+        email: true,
+        phone: false,
+      })
+    })
+    await flush()
+
+    expect(byId('auth-identifier-hint')?.textContent).toBe(
+      'Your email address or phone number.',
+    )
+
+    await act(async () => {
+      context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+        email: false,
+        phone: false,
+      })
+    })
+    await flush()
+
+    expect(byId('auth-identifier-hint')?.textContent).toBe(
+      'Your email address or phone number. New accounts cannot be created here — there is nothing to send a code with.',
+    )
+    // Sign-in and the providers need no channel, so the field itself stays.
+    expect(byId('auth-identifier')).not.toBeNull()
+  })
+
+  it('blames the missing channel rather than a decision nobody took', async () => {
+    vi.useFakeTimers()
+    render(<HilosAuthSurface context={freeIdentifierContext('no_channel')} />)
+
+    type('auth-identifier', 'nobody@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+
+    expect(byId('auth-identifier-hint')?.textContent).toBe(
+      'No account for this, and there is nothing to send a code with.',
+    )
+  })
+
+  it('keeps its own sentence for a registration somebody closed', async () => {
+    vi.useFakeTimers()
+    render(<HilosAuthSurface context={freeIdentifierContext('closed')} />)
+
+    type('auth-identifier', 'nobody@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+
+    expect(byId('auth-identifier-hint')?.textContent).toBe(
+      'No account for this, and registration is closed.',
+    )
   })
 
   it('refuses a registry with no method at all, at wiring time', () => {

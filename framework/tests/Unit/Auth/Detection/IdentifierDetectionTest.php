@@ -12,11 +12,13 @@ use PHPUnit\Framework\TestCase;
 /**
  * Unit tests for the identifier-lookup reply the surface reveals from (HIL-414).
  *
- * What is guarded here is the shape, not the lookup: the six keys the frontend
+ * What is guarded here is the shape, not the lookup: the seven keys the frontend
  * `IdentifierDetection` interface declares are always present, the verbatim echo
  * survives normalization, and each status carries only the method list that makes
  * sense for it — a `pending` hold naming a way in, or a `none` naming an account's
- * methods, would both send the surface somewhere the backend refuses to follow.
+ * methods, would both send the surface somewhere the backend refuses to follow. The
+ * seventh key is the reason registration is not offered (HIL-830), and it rides
+ * `none` alone for the same reason the two lists are kept apart.
  */
 final class IdentifierDetectionTest extends TestCase
 {
@@ -38,6 +40,35 @@ final class IdentifierDetectionTest extends TestCase
         self::assertSame(IdentifierDetection::STATUS_NONE, $detection->status);
         self::assertSame([], $detection->methods);
         self::assertSame([AuthMethodKey::PASSWORD, AuthMethodKey::MAGIC_LINK], $detection->registerable);
+        self::assertNull($detection->registrationBlock, 'Something registerable is not blocked by anything');
+    }
+
+    /**
+     * A free identifier with nothing registerable names WHICH of the two reasons emptied it.
+     */
+    public function testFreeIdentifierCarriesTheReasonRegistrationIsNotOffered(): void
+    {
+        $closed = IdentifierDetection::free(
+            self::TYPED_EMAIL,
+            self::NORMALIZED_EMAIL,
+            IdentifierDetection::KIND_EMAIL,
+            [],
+            IdentifierDetection::BLOCK_CLOSED,
+        );
+        $noChannel = IdentifierDetection::free(
+            self::TYPED_EMAIL,
+            self::NORMALIZED_EMAIL,
+            IdentifierDetection::KIND_EMAIL,
+            [],
+            IdentifierDetection::BLOCK_NO_CHANNEL,
+        );
+
+        // Both answer the same empty list, which is exactly why the reason exists: before
+        // it the surface saw only the emptiness and blamed a decision nobody had taken.
+        self::assertSame([], $closed->registerable);
+        self::assertSame([], $noChannel->registerable);
+        self::assertSame(IdentifierDetection::BLOCK_CLOSED, $closed->registrationBlock);
+        self::assertSame(IdentifierDetection::BLOCK_NO_CHANNEL, $noChannel->registrationBlock);
     }
 
     /**
@@ -54,6 +85,7 @@ final class IdentifierDetectionTest extends TestCase
         self::assertSame(IdentifierDetection::STATUS_PENDING, $detection->status);
         self::assertSame([], $detection->methods);
         self::assertSame([], $detection->registerable);
+        self::assertNull($detection->registrationBlock, 'A hold is not a refused registration');
     }
 
     /**
@@ -71,10 +103,11 @@ final class IdentifierDetectionTest extends TestCase
         self::assertSame(IdentifierDetection::STATUS_ACTIVE, $detection->status);
         self::assertSame([AuthMethodKey::SMS], $detection->methods);
         self::assertSame([], $detection->registerable);
+        self::assertNull($detection->registrationBlock, 'An owned identifier is not up for registration at all');
     }
 
     /**
-     * The wire form carries all six keys, and the echo is what was asked, not what it normalized to.
+     * The wire form carries all seven keys, and the echo is what was asked, not what it normalized to.
      */
     public function testWireFormCarriesEveryKeyAndTheVerbatimEcho(): void
     {
@@ -92,6 +125,7 @@ final class IdentifierDetectionTest extends TestCase
             'status' => IdentifierDetection::STATUS_ACTIVE,
             'methods' => [AuthMethodKey::PASSWORD],
             'registerable' => [],
+            'registrationBlock' => null,
         ], $detection->toArray());
     }
 
@@ -106,7 +140,8 @@ final class IdentifierDetectionTest extends TestCase
             self::TYPED_EMAIL,
             self::NORMALIZED_EMAIL,
             IdentifierDetection::KIND_EMAIL,
-            [AuthMethodKey::MAGIC_LINK],
+            [],
+            IdentifierDetection::BLOCK_NO_CHANNEL,
         );
 
         self::assertSame($detection->toArray(), IdentifierDetection::fromArray($detection->toArray())->toArray());
@@ -128,6 +163,7 @@ final class IdentifierDetectionTest extends TestCase
             'status' => IdentifierDetection::STATUS_ACTIVE,
             'methods' => [17],
             'registerable' => [],
+            'registrationBlock' => null,
         ]);
     }
 }

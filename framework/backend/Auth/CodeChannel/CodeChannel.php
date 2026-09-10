@@ -95,6 +95,32 @@ abstract class CodeChannel
     }
 
     /**
+     * Whether this channel is configured well enough to deliver anything at all.
+     *
+     * The addressless twin of {@see reaches()}: that one answers about one identifier
+     * and settles only after a person picked a channel, while this one answers about
+     * the INSTALLATION and is asked before anything is typed - which is what lets the
+     * surface decline to walk someone into a registration whose code could never be
+     * sent (HIL-830).
+     *
+     * The contract is load-bearing and narrower than the rest of this class: cheap, no
+     * network, and it does not throw. A channel that cannot work the answer out
+     * answers true, the same fail-open the surface takes when the answer is missing
+     * altogether - an extra invitation is what every deployment had before this
+     * existed, while a wrong false silently withdraws registration from a working one.
+     *
+     * The framework default is true because a registered channel is a project's
+     * statement that it wants to send over it; a channel with configuration that can
+     * be absent (a token, an endpoint) overrides.
+     *
+     * @return bool True when this installation could send over this channel
+     */
+    public function isConfigured(): bool
+    {
+        return true;
+    }
+
+    /**
      * Whether this channel delivers codes for a verification type.
      *
      * The guard that keeps a channel out of a flow it was never meant for: the

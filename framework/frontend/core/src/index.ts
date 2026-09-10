@@ -130,10 +130,12 @@ export {
   sessionImpersonatedByName,
   sessionPendingAck,
   sessionPendingAuthStep,
+  sessionCodeDelivery,
   SESSION_ACK_PASSWORD_CHANGED,
   SESSION_ACK_REGISTERED,
   SESSION_ACK_SIGNED_IN,
   SESSION_SIGNAL_SCHEMAS,
+  type CodeDelivery,
   type PendingAuthStep,
   type SessionScopeOptions,
 } from './session/sessionScope.js'

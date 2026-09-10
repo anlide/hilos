@@ -28,6 +28,9 @@ final class HandshakeResponseSignalDataTest extends TestCase
         'expiresAt' => 1_700_000_600_000,
     ];
 
+    /** A deployment that can mail a code but has no phone channel - the asymmetric case. */
+    private const array CODE_DELIVERY = ['email' => true, 'phone' => false];
+
     public function testImplementsSignalDataInterface(): void
     {
         $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7');
@@ -53,6 +56,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'pendingAck' => null,
                     'serverTimeMs' => null,
                     'pendingAuthStep' => null,
+                    'codeDelivery' => null,
                 ],
             ],
             $data->toArray(),
@@ -84,6 +88,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'pendingAck' => null,
                     'serverTimeMs' => null,
                     'pendingAuthStep' => null,
+                    'codeDelivery' => null,
                 ],
             ],
             $data->toArray(),
@@ -126,6 +131,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'pendingAck' => null,
                     'serverTimeMs' => null,
                     'pendingAuthStep' => null,
+                    'codeDelivery' => null,
                 ],
             ],
             $data->toArray(),
@@ -160,6 +166,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'pendingAck' => SessionAck::REGISTERED,
                 'serverTimeMs' => null,
                 'pendingAuthStep' => null,
+                'codeDelivery' => null,
             ],
             $data->toArray()['data'],
         );
@@ -212,13 +219,14 @@ final class HandshakeResponseSignalDataTest extends TestCase
     public function testSessionContextTravelsInTheDataSection(): void
     {
         $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7')
-            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP);
+            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP, self::CODE_DELIVERY);
 
         $this->assertSame(
             [
                 'pendingAck' => null,
                 'serverTimeMs' => self::SERVER_TIME_MS,
                 'pendingAuthStep' => self::PENDING_AUTH_STEP,
+                'codeDelivery' => self::CODE_DELIVERY,
             ],
             $data->toArray()['data'],
         );
@@ -229,7 +237,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
         // The two re-address different halves of the same response and are applied
         // in this order on every send path, so the clock has to outlive the ack.
         $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7')
-            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP)
+            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP, self::CODE_DELIVERY)
             ->withPendingAck(SessionAck::SIGNED_IN);
 
         $this->assertSame(self::SERVER_TIME_MS, $data->serverTimeMs);
@@ -242,20 +250,21 @@ final class HandshakeResponseSignalDataTest extends TestCase
         // The anonymous branch is the one that matters here: a session halfway
         // through registration or recovery has no user yet.
         $data = new HandshakeResponseSignalData()
-            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP);
+            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP, self::CODE_DELIVERY);
 
         $restored = HandshakeResponseSignalData::fromArray($data->toArray());
 
         $this->assertNull($restored->selfId);
         $this->assertSame(self::SERVER_TIME_MS, $restored->serverTimeMs);
         $this->assertSame(self::PENDING_AUTH_STEP, $restored->pendingAuthStep);
+        $this->assertSame(self::CODE_DELIVERY, $restored->codeDelivery);
         $this->assertSame($data->toArray(), $restored->toArray());
     }
 
     public function testRoundtripRejectsAnAuthStepNodeWithoutItsIdentifier(): void
     {
         $payload = new HandshakeResponseSignalData()
-            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP)
+            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP, self::CODE_DELIVERY)
             ->toArray();
         unset($payload['data']['pendingAuthStep']['identifier']);
 
@@ -270,9 +279,24 @@ final class HandshakeResponseSignalDataTest extends TestCase
         // cannot tell a code screen from a new-password one, which is the whole point
         // of the node reaching a tab that submitted nothing.
         $payload = new HandshakeResponseSignalData()
-            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP)
+            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP, self::CODE_DELIVERY)
             ->toArray();
         unset($payload['data']['pendingAuthStep']['step']);
+
+        $this->expectException(InvalidFormatException::class);
+
+        HandshakeResponseSignalData::fromArray($payload);
+    }
+
+    public function testRoundtripRejectsADeliveryNodeMissingAKind(): void
+    {
+        // Half an answer is worse than none: the surface reads a missing node as
+        // "everything is deliverable", so a node arriving without one of its two
+        // flags has to be refused rather than read as a false (HIL-830).
+        $payload = new HandshakeResponseSignalData()
+            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP, self::CODE_DELIVERY)
+            ->toArray();
+        unset($payload['data']['codeDelivery']['phone']);
 
         $this->expectException(InvalidFormatException::class);
 

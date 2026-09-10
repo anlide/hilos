@@ -6,6 +6,7 @@ namespace Hilos\Core\Agent;
 
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
+use Hilos\Auth\Verification\CodeDeliveryAvailability;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\ActionHostInterface;
@@ -384,8 +385,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * The project answers who the session is - the display names come from its own user
      * store, and while impersonating, the administrator behind the takeover - and this
      * stamps on what no project can know: the server clock the browser measures its own
-     * offset against, the registration step the session left unfinished, and the success
-     * ack the socket still owes (HIL-486, HIL-422).
+     * offset against, the registration step the session left unfinished, whether this
+     * installation can deliver a one-time code at all, and the success ack the socket
+     * still owes (HIL-486, HIL-422, HIL-830).
      *
      * It lives here, and every send path goes through it, so that no project can ship a
      * response without the stamp. That guarantee used to come from a final method on the
@@ -409,7 +411,11 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
             $signalName,
             $acceptKey,
             $identity
-                ->withSessionContext(TimeHelper::nowMs(), $state->pendingAuthStep)
+                ->withSessionContext(
+                    TimeHelper::nowMs(),
+                    $state->pendingAuthStep,
+                    new CodeDeliveryAvailability()->toArray(),
+                )
                 ->withPendingAck($state->pendingAck),
         );
     }

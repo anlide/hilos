@@ -49,6 +49,34 @@ const SERVER_TIME_MS_KEY = 'serverTimeMs'
 const PENDING_AUTH_STEP_KEY = 'pendingAuthStep'
 
 /**
+ * Plain session-scope key carrying what this installation can deliver a
+ * one-time code to (HIL-830). Fixed for the same reason as the two keys above:
+ * the backend writes it on every handshake and no project names it.
+ */
+const CODE_DELIVERY_KEY = 'codeDelivery'
+
+/**
+ * What an installation with nothing configured is READ as, key by key. A
+ * missing or unreadable answer must not withdraw registration from a working
+ * deployment, so the fallback is what every deployment did before the key
+ * existed: offer everything, and meet whatever wall there is further in.
+ */
+const CODE_DELIVERY_FALLBACK: CodeDelivery = { email: true, phone: true }
+
+/**
+ * What this installation can deliver a one-time code to (HIL-830). Two answers
+ * and not one flag: mail wired with no phone channel, and the reverse, are both
+ * ordinary deployments, and a surface told a single boolean would withdraw the
+ * path that works along with the one that does not.
+ */
+export interface CodeDelivery {
+  /** Whether a code sent to an email address would reach anybody. */
+  readonly email: boolean
+  /** Whether a code sent to a phone number would reach anybody. */
+  readonly phone: boolean
+}
+
+/**
  * The authentication step a session stands on and has not finished, as the
  * handshake reports it (HIL-486, HIL-648). `intent` names which flow it belongs
  * to and `step` which screen of it, so one node describes a registration and a
@@ -368,6 +396,49 @@ function readPendingAuthStep(value: unknown): PendingAuthStep | null {
     channel,
     expiresAt: toLocal(expiresAt),
   }
+}
+
+/**
+ * What this installation can deliver a one-time code to (HIL-830). Read before
+ * anything is typed, which is the whole point of it riding the handshake: a
+ * deployment with nothing to send with declines to offer a registration instead
+ * of walking somebody to a code screen that will never fill.
+ *
+ * Deliberately NOT the null-on-garbage rule {@link sessionPendingAuthStep}
+ * takes. A half-written auth step is better dropped, because the fallback is the
+ * identifier field the person came from; an unreadable delivery answer falls
+ * back the other way, because the cost of the two mistakes is not symmetric —
+ * an extra invitation is what every deployment had before this key, and a wrong
+ * refusal silently locks registration on a working one.
+ *
+ * @param scopes The application's scope-partitioned stores.
+ */
+export function sessionCodeDelivery(
+  scopes: ScopeManager,
+): ReadonlySignal<CodeDelivery> {
+  const slot = scopes.session.data.signal(CODE_DELIVERY_KEY)
+
+  return computedSignal(() => readCodeDelivery(slot.get()))
+}
+
+/**
+ * Read the delivery answer the handshake delivered, falling back to "everything
+ * is deliverable" for an absent, malformed or half-written node.
+ *
+ * @param value The raw session-scope slot.
+ */
+function readCodeDelivery(value: unknown): CodeDelivery {
+  if (value === null || typeof value !== 'object') {
+    return CODE_DELIVERY_FALLBACK
+  }
+  const node = value as Record<string, unknown>
+  const email = node['email']
+  const phone = node['phone']
+  if (typeof email !== 'boolean' || typeof phone !== 'boolean') {
+    return CODE_DELIVERY_FALLBACK
+  }
+
+  return { email, phone }
 }
 
 /**

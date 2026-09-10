@@ -10,8 +10,10 @@ namespace Hilos\Mail;
  * Turns a {@see MailTransportConfig} into a concrete {@see MailTransportInterface}: an
  * explicit `smtp` or `file` selection wins, and with no selection it auto-picks the file
  * transport whenever no SMTP host is configured — so a project without a relay still
- * produces a verifiable .eml artifact instead of failing to send. The factory is pure;
- * reading env into the config happens at the facade boundary.
+ * produces a verifiable .eml artifact instead of failing to send. That selection rule
+ * is the config's own ({@see MailTransportConfig::usesFileTransport()}), because the
+ * auth layer asks the same question without ever building a transport. The factory is
+ * pure; reading env into the config happens at the facade boundary.
  */
 final class MailTransportFactory
 {
@@ -29,29 +31,10 @@ final class MailTransportFactory
      */
     public function create(MailTransportConfig $config): MailTransportInterface
     {
-        if ($this->usesFileTransport($config)) {
+        if ($config->usesFileTransport()) {
             return new FileMailTransport($config->fileDir, $config->fromAddress, $config->fromName);
         }
 
         return new SmtpMailTransport($config);
-    }
-
-    /**
-     * Decides whether the config resolves to the file transport.
-     *
-     * @param MailTransportConfig $config Resolved transport settings
-     * @return bool True for an explicit `file` selection or auto-selection with no SMTP host
-     */
-    private function usesFileTransport(MailTransportConfig $config): bool
-    {
-        if ($config->transport === self::TRANSPORT_FILE) {
-            return true;
-        }
-
-        if ($config->transport === self::TRANSPORT_SMTP) {
-            return false;
-        }
-
-        return $config->smtpHost === '';
     }
 }

@@ -57,6 +57,7 @@ import {
   PASSKEY_FLOW_METHOD,
   PASSWORD_METHOD_KEY,
   PASSWORD_MIN_LENGTH,
+  sessionCodeDelivery,
   sessionPendingAck,
   sessionPendingAuthStep,
   SMS_CODE_CHANNEL,
@@ -74,6 +75,7 @@ import type {
   AuthFlowState,
   AuthStep,
   CodeChannelDescriptor,
+  CodeDelivery,
   CodeSendProgress,
   DetectionState,
   HilosAuthContext,
@@ -858,6 +860,12 @@ export class HilosAuthSurface {
   private readonly pendingAck = computed(() =>
     sessionPendingAck(this.context().scopes),
   )
+  // What this installation can send a one-time code to, derived the same way and
+  // for the same reason (HIL-830): the browser half cannot know the backend's
+  // mail and channel configuration, so it is told rather than asked.
+  private readonly codeDeliverySignal = computed(() =>
+    sessionCodeDelivery(this.context().scopes),
+  )
 
   // Taken at field-initializer time because DI is available at construction
   // where an input is not, and optional because the surface must work with no
@@ -879,6 +887,12 @@ export class HilosAuthSurface {
   protected readonly resendAvailableAt = signal<number | null>(null)
   protected readonly expiresAt = signal<number | null>(null)
   protected readonly ack = signal<string | null>(null)
+  // Everything deliverable until a handshake says otherwise, which is what an
+  // unanswered installation has always behaved like.
+  protected readonly codeDelivery = signal<CodeDelivery>({
+    email: true,
+    phone: true,
+  })
 
   // Set on mount when an OAuth email collision armed a pending link (HIL-282):
   // the account already exists, so the surface pre-fills its address and shows a
@@ -1085,7 +1099,14 @@ export class HilosAuthSurface {
       return null
     }
     if (this.form().identifier.trim() === '') {
-      return 'Your email address or phone number.'
+      // Silence unless NEITHER kind can be reached: a deployment with mail and
+      // no phone channel would otherwise lie to whoever was about to type the
+      // kind that works, and the partial case is named after the kind is known.
+      const delivery = this.codeDelivery()
+
+      return delivery.email || delivery.phone
+        ? 'Your email address or phone number.'
+        : 'Your email address or phone number. New accounts cannot be created here — there is nothing to send a code with.'
     }
     if (this.state().identifierKind === 'unknown') {
       return 'That does not look like an email address or a phone number yet.'
@@ -1095,8 +1116,15 @@ export class HilosAuthSurface {
       return null
     }
     if (result.status === 'none') {
-      return result.registerable.length > 0
-        ? 'No account yet — this creates one.'
+      if (result.registerable.length > 0) {
+        return 'No account yet — this creates one.'
+      }
+
+      // Two reasons, two sentences: a locked door somebody locked, and a
+      // deployment that simply has nothing to send with. Which one it is was
+      // resolved on the backend, never by comparing flags here (HIL-830).
+      return result.registrationBlock === 'no_channel'
+        ? 'No account for this, and there is nothing to send a code with.'
         : 'No account for this, and registration is closed.'
     }
     // A held address has no account to describe — it has a code in flight, and
@@ -1217,6 +1245,7 @@ export class HilosAuthSurface {
         bind(auth.resendAvailableAt, this.resendAvailableAt),
         bind(auth.expiresAt, this.expiresAt),
         bind(this.pendingAck(), this.ack),
+        bind(this.codeDeliverySignal(), this.codeDelivery),
       ]
       onCleanup(() => {
         for (const unsubscribe of subscriptions) {

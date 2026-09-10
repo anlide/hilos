@@ -104,6 +104,7 @@ function detected(
     status: 'active',
     methods: ['password'],
     registerable: ['password'],
+    registrationBlock: null,
     ...overrides,
   }
 }

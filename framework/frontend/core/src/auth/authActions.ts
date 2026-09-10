@@ -111,6 +111,10 @@ const identifierDetectionSchema = z.object({
   status: z.enum(['none', 'pending', 'active']),
   methods: z.array(z.string()),
   registerable: z.array(z.string()),
+  // Present on every reply and non-null only for `none` (HIL-830), so it is read
+  // as a nullable rather than an optional: an absent key would mean a backend
+  // that predates the field, and the surface has nothing to say about that.
+  registrationBlock: z.enum(['closed', 'no_channel']).nullable(),
 })
 
 /**

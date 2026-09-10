@@ -7,6 +7,7 @@ namespace Hilos\Auth\Detection;
 use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\PhoneNumber;
 use Hilos\Auth\Registration\RegistrationReservationService;
+use Hilos\Auth\Verification\CodeDeliveryAvailability;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Context\HilosDbContext;
@@ -44,6 +45,12 @@ use Hilos\Hilos;
  * them, so a method switched off (or never wired) cannot be named to a surface
  * that has nowhere to send it. The registry of enabled methods is HIL-427; until
  * it exists a project assembles the set itself.
+ *
+ * A second intersection stands beside it, and it is the framework's own rather than
+ * the project's: what this installation can DELIVER a one-time code to (HIL-830).
+ * The two are asked separately and both answers are kept, because a free identifier
+ * with nothing registerable has to say which of them emptied the list - a project's
+ * decision to close registration, or a deployment with no transport under it.
  *
  * One class of key is dropped no matter what a project enables: `oauth:*` never
  * appears in an answer (HIL-419). Provider buttons live on an empty field and are
@@ -120,7 +127,15 @@ final class IdentifierDetector
             return IdentifierDetection::held($identifier, $normalized, $kind);
         }
 
-        return IdentifierDetection::free($identifier, $normalized, $kind, $this->registerableMethods($kind));
+        $registerable = $this->registerableMethods($kind, new CodeDeliveryAvailability());
+
+        return IdentifierDetection::free(
+            $identifier,
+            $normalized,
+            $kind,
+            $registerable,
+            $this->registrationBlock($kind, $registerable),
+        );
     }
 
     /**
@@ -267,10 +282,62 @@ final class IdentifierDetector
     /**
      * Lists the enabled methods a free identifier can be registered with.
      *
+     * Intersected with what this installation can actually deliver to (HIL-830): every
+     * registration on this path proves the identifier by a code before the account
+     * exists, so a method whose code has nowhere to go does not create an account - it
+     * walks the person to a screen that waits forever. Offering it would be the wall
+     * the leaf exists to remove, one step later.
+     *
      * @param string $kind Classification (see IdentifierDetection::KIND_*)
+     * @param CodeDeliveryAvailability $delivery What this installation can send a code to
      * @return list<string> Enabled method keys registration is open with, in project order
      */
-    private function registerableMethods(string $kind): array
+    private function registerableMethods(string $kind, CodeDeliveryAvailability $delivery): array
+    {
+        if (!$delivery->canDeliverTo($kind)) {
+            return [];
+        }
+
+        return $this->enabledMethodsFor($kind);
+    }
+
+    /**
+     * Says why registration is not offered for a free identifier, or that it is.
+     *
+     * Closed WINS when both are true. A project that enabled no way to register made a
+     * decision; missing delivery is a circumstance, and explaining a deliberately
+     * locked door by the circumstance names the wrong cause to whoever reads the
+     * sentence.
+     *
+     * The delivery answer is not asked again: an empty list under a kind the project
+     * DID enable something for can have been emptied by nothing else.
+     *
+     * @param string $kind Classification (see IdentifierDetection::KIND_*)
+     * @param list<string> $registerable What registration is open with after both intersections
+     * @return ?string Reason (see IdentifierDetection::BLOCK_*), or null when registration is offered
+     */
+    private function registrationBlock(string $kind, array $registerable): ?string
+    {
+        if ($registerable !== []) {
+            return null;
+        }
+
+        return $this->enabledMethodsFor($kind) === []
+            ? IdentifierDetection::BLOCK_CLOSED
+            : IdentifierDetection::BLOCK_NO_CHANNEL;
+    }
+
+    /**
+     * Lists the methods this project enabled for registering an identifier of a kind.
+     *
+     * What the PROJECT offers, before any question about whether the plumbing under it
+     * exists - the two are kept apart so the empty answer can name which of them
+     * emptied it.
+     *
+     * @param string $kind Classification (see IdentifierDetection::KIND_*)
+     * @return list<string> Enabled method keys for that kind, in project order
+     */
+    private function enabledMethodsFor(string $kind): array
     {
         $offered = $kind === IdentifierDetection::KIND_EMAIL
             ? [AuthMethodKey::PASSWORD, AuthMethodKey::MAGIC_LINK]

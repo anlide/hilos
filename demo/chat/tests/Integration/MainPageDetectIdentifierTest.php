@@ -76,6 +76,11 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
             $this->assertSame(IdentifierDetection::KIND_EMAIL, $detection->kind);
             $this->assertSame([], $detection->methods);
             $this->assertSame([AuthMethodKey::PASSWORD, AuthMethodKey::MAGIC_LINK], $detection->registerable);
+            // Nothing is withheld on a stand that has a relay and a gateway, so the
+            // reason slot is empty - and the slot travelling at all is what tells the
+            // surface apart from a deployment that closed registration (HIL-830).
+            $this->assertNull($detection->registrationBlock);
+            $this->assertArrayHasKey('registrationBlock', $detection->toArray());
         } finally {
             $this->cleanUp();
         }

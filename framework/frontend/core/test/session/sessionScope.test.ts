@@ -7,6 +7,7 @@ import {
   sessionImpersonating,
   sessionImpersonatedByName,
   sessionPendingAck,
+  sessionCodeDelivery,
   SESSION_ACK_REGISTERED,
   SESSION_SIGNAL_SCHEMAS,
 } from '../../src/session/sessionScope.js'
@@ -233,5 +234,48 @@ describe('sessionScope', () => {
       applyServerTime(Date.now())
       vi.useRealTimers()
     }
+  })
+
+  it('reads what the installation can deliver a code to, per kind', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const delivery = sessionCodeDelivery(scopes)
+
+    // Before any handshake there is nothing to read, and nothing to read must
+    // never be read as a withdrawn registration (HIL-830).
+    expect(delivery.get()).toStrictEqual({ email: true, phone: true })
+
+    connection.emitHandshakeResponse({
+      data: { codeDelivery: { email: true, phone: false } },
+    })
+
+    expect(delivery.get()).toStrictEqual({ email: true, phone: false })
+
+    connection.emitHandshakeResponse({
+      data: { codeDelivery: { email: false, phone: false } },
+    })
+
+    expect(delivery.get()).toStrictEqual({ email: false, phone: false })
+  })
+
+  it('falls back to everything deliverable when the answer is unreadable', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const delivery = sessionCodeDelivery(scopes)
+
+    // A half-written node is the case the two rules part on: the auth step drops
+    // to null and the surface falls back to the identifier field, while a
+    // delivery answer falls the other way rather than lock a working deployment.
+    connection.emitHandshakeResponse({
+      data: { codeDelivery: { email: false } },
+    })
+
+    expect(delivery.get()).toStrictEqual({ email: true, phone: true })
+
+    connection.emitHandshakeResponse({ data: { codeDelivery: null } })
+
+    expect(delivery.get()).toStrictEqual({ email: true, phone: true })
   })
 })

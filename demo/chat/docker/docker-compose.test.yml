@@ -260,6 +260,15 @@ services:
       - DB_DATABASE=${MYSQL_TEST_DATABASE:-hilos-demo-chat-test}
       - DB_USERNAME=${MYSQL_USER:-hilos}
       - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+      # The same delivery selection the daemon service above runs with (HIL-830).
+      # Nothing here sends — the PHPUnit suites hand codes to the logging deliverer —
+      # but the identifier lookup now asks whether this installation COULD deliver one,
+      # and answers no registration at all when it could not. Left unset, the suite
+      # would be measuring a deployment nobody runs: the app half of this stand has a
+      # relay and a gateway, and only the CLI entrypoint into it would not.
+      - MAIL_TRANSPORT=smtp
+      - MAIL_SMTP_HOST=mailpit-test
+      - SMS_ENDPOINT_URL=http://stand-gateway-test:18000/sms/send
     profiles:
       - cli
     depends_on:

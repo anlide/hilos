@@ -46,6 +46,19 @@ use Hilos\Core\Router\SignalDataInterface;
  * against that. Both keys are written for an anonymous session too: an anonymous
  * session is exactly the one that may be halfway through such a flow, and it needs
  * the clock to draw that step's expiry.
+ *
+ * `codeDelivery` joins them (HIL-830): whether this installation can deliver a
+ * one-time code to an email address and whether it can deliver one to a phone number.
+ * It rides the handshake because the surface has to know it BEFORE anything is typed
+ * — a deployment with nothing to send with should decline to offer registration
+ * rather than walk somebody to a code screen for a letter that cannot be sent — and
+ * because it is derived from env and the code-channel registry, neither of which
+ * changes under a live process, so a fresh connection learns a new truth by itself and
+ * no "configuration changed" signal exists. It reaches an anonymous session, which is
+ * the only one it concerns, for the same reason the auth step does. A response that
+ * carries it as null is one that never passed the framework's stamp; the surface reads
+ * that as "everything is deliverable", which is what every deployment did before the
+ * key existed.
  */
 final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -59,6 +72,9 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string pendingAck = 'pendingAck';
     public const string serverTimeMs = 'serverTimeMs';
     public const string pendingAuthStep = 'pendingAuthStep';
+    public const string codeDelivery = 'codeDelivery';
+    public const string email = 'email';
+    public const string phone = 'phone';
     public const string identifier = 'identifier';
     public const string kind = 'kind';
     public const string intent = 'intent';
@@ -89,6 +105,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param ?int $serverTimeMs Server "now" in epoch milliseconds, or null before the session context is stamped
      * @param ?array{identifier: string, kind: string, intent: string, step: string, channel: ?string, expiresAt: int} $pendingAuthStep
      *     Authentication step the session stands on, or null when it stands on none
+     * @param ?array{email: bool, phone: bool} $codeDelivery What this installation can deliver a one-time
+     *     code to, or null before the session context is stamped
      */
     public function __construct(
         public readonly ?int $selfId = null,
@@ -99,6 +117,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         public readonly ?string $pendingAck = null,
         public readonly ?int $serverTimeMs = null,
         public readonly ?array $pendingAuthStep = null,
+        public readonly ?array $codeDelivery = null,
     ) {
     }
 
@@ -124,6 +143,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             pendingAck: $pendingAck,
             serverTimeMs: $this->serverTimeMs,
             pendingAuthStep: $this->pendingAuthStep,
+            codeDelivery: $this->codeDelivery,
         );
     }
 
@@ -140,9 +160,10 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param int $serverTimeMs Server "now" in epoch milliseconds
      * @param ?array{identifier: string, kind: string, intent: string, step: string, channel: ?string, expiresAt: int} $pendingAuthStep
      *     Authentication step the session stands on, or null when it stands on none
+     * @param array{email: bool, phone: bool} $codeDelivery What this installation can deliver a one-time code to
      * @return self The same response carrying that session context
      */
-    public function withSessionContext(int $serverTimeMs, ?array $pendingAuthStep): self
+    public function withSessionContext(int $serverTimeMs, ?array $pendingAuthStep, array $codeDelivery): self
     {
         return new self(
             selfId: $this->selfId,
@@ -153,6 +174,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             pendingAck: $this->pendingAck,
             serverTimeMs: $serverTimeMs,
             pendingAuthStep: $pendingAuthStep,
+            codeDelivery: $codeDelivery,
         );
     }
 
@@ -183,6 +205,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 self::pendingAck => $this->pendingAck,
                 self::serverTimeMs => $this->serverTimeMs,
                 self::pendingAuthStep => $this->pendingAuthStep,
+                self::codeDelivery => $this->codeDelivery,
             ],
         ];
     }
@@ -217,11 +240,13 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         $pendingAck = self::optionalString($section, self::pendingAck);
         $serverTimeMs = self::optionalInt($section, self::serverTimeMs);
         $pendingAuthStep = self::readPendingAuthStep($section);
+        $codeDelivery = self::readCodeDelivery($section);
         if ($currentUser === null) {
             return new static(
                 pendingAck: $pendingAck,
                 serverTimeMs: $serverTimeMs,
                 pendingAuthStep: $pendingAuthStep,
+                codeDelivery: $codeDelivery,
             );
         }
 
@@ -234,6 +259,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             pendingAck: $pendingAck,
             serverTimeMs: $serverTimeMs,
             pendingAuthStep: $pendingAuthStep,
+            codeDelivery: $codeDelivery,
         );
     }
 
@@ -263,6 +289,31 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             self::step => self::requireString($node, self::step),
             self::channel => self::optionalString($node, self::channel),
             self::expiresAt => self::requireInt($node, self::expiresAt),
+        ];
+    }
+
+    /**
+     * Reads what this installation can deliver a one-time code to.
+     *
+     * An absent node stays absent rather than becoming a pair of flags: this is the
+     * parse boundary and it reports what arrived. The reading that turns a missing
+     * answer into "everything is deliverable" belongs to the surface, which is the
+     * only place that knows what to do with not being told (HIL-830).
+     *
+     * @param array<string, mixed> $section Plain data section of the response
+     * @return ?array{email: bool, phone: bool} Node, or null when absent
+     * @throws InvalidFormatException When a present node lacks a flag or holds a non-boolean
+     */
+    private static function readCodeDelivery(array $section): ?array
+    {
+        $node = self::optionalArray($section, self::codeDelivery);
+        if ($node === null) {
+            return null;
+        }
+
+        return [
+            self::email => self::requireBool($node, self::email),
+            self::phone => self::requireBool($node, self::phone),
         ];
     }
 }

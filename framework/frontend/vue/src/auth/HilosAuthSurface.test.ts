@@ -42,6 +42,10 @@ import { hilosAuthGateKey } from './hilosAuthGateKey.js'
 // `sessionPendingAck`, which is what the surface asks for (sessionScope.ts).
 const PENDING_ACK_SLOT = 'pendingAck'
 
+// The session slot the surface reads the delivery answer from — the default of
+// `sessionCodeDelivery` (sessionScope.ts), the same way the ack is read.
+const CODE_DELIVERY_SLOT = 'codeDelivery'
+
 /** The dispatch calls one mounted surface made, in order. */
 type Dispatched = Array<{ action: string; payload: Record<string, unknown> }>
 
@@ -76,6 +80,7 @@ function passwordOnlyContext(refuseLogin = false): {
               status: 'active',
               methods: [PASSWORD_METHOD_KEY],
               registerable: [],
+              registrationBlock: null,
             }
           : undefined
 
@@ -134,6 +139,7 @@ function magicLinkContext(): {
               status: 'active',
               methods: [PASSWORD_METHOD_KEY, MAGIC_LINK_METHOD_KEY],
               registerable: [],
+              registrationBlock: null,
             }
           : undefined
 
@@ -158,6 +164,56 @@ function magicLinkContext(): {
       privacyPath: '/privacy',
     }),
   }
+}
+
+/**
+ * A context whose lookup answers a FREE address that cannot be registered, and
+ * names why (HIL-830). Both reasons produce the same empty `registerable`, which
+ * is exactly why the surface is not allowed to guess between them.
+ *
+ * @param registrationBlock Why registration is not offered on this deployment.
+ * @returns The context to mount with.
+ */
+function freeIdentifierContext(
+  registrationBlock: 'closed' | 'no_channel',
+): HilosAuthContext {
+  const connection = {
+    on: vi.fn().mockReturnValue(() => undefined),
+  } as unknown as HilosConnection
+  const actions = {
+    dispatch: (action: string, payload: Record<string, unknown>) => {
+      const identifier = String(payload['identifier'] ?? '')
+      const reply =
+        action === AUTH_ACTION_DETECT_IDENTIFIER
+          ? {
+              identifier,
+              normalized: identifier,
+              kind: 'email',
+              status: 'none',
+              methods: [],
+              registerable: [],
+              registrationBlock,
+            }
+          : undefined
+
+      return {
+        requestId: 'req-free',
+        loading: createSignal(false),
+        done: Promise.resolve({ reply }),
+      } as unknown as ActionHandle
+    },
+  } as unknown as ActionLifecycle
+
+  return createHilosAuthContext({
+    connection,
+    scopes: new ScopeManager(),
+    actions,
+    methods: [PASSWORD_FLOW_METHOD],
+    channels: [],
+    oauthProviders: [],
+    termsPath: '/terms',
+    privacyPath: '/privacy',
+  })
 }
 
 /**
@@ -398,6 +454,77 @@ describe('HilosAuthSurface', () => {
     expect(
       wrapper.find('[data-id="auth-link-sent"]').attributes('role'),
     ).toBeUndefined()
+  })
+
+  it('says nothing extra on an empty field while either kind can be reached', async () => {
+    const { context } = passwordOnlyContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    // Never told: what an installation that predates the key looks like.
+    expect(wrapper.find('[data-id="auth-identifier-hint"]').text()).toBe(
+      'Your email address or phone number.',
+    )
+
+    // Told that half of it works. The partial case is deliberately silent here -
+    // the kind that works is still worth typing, and it is named after it is.
+    context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+      email: true,
+      phone: false,
+    })
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-identifier-hint"]').text()).toBe(
+      'Your email address or phone number.',
+    )
+  })
+
+  it('declines registration on an empty field when neither kind can be reached', async () => {
+    const { context } = passwordOnlyContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+      email: false,
+      phone: false,
+    })
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-identifier-hint"]').text()).toBe(
+      'Your email address or phone number. New accounts cannot be created here — there is nothing to send a code with.',
+    )
+    // Sign-in and the providers need no channel, so the field itself stays.
+    expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
+  })
+
+  it('blames the missing channel rather than a decision nobody took', async () => {
+    vi.useFakeTimers()
+    const context = freeIdentifierContext('no_channel')
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('nobody@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-identifier-hint"]').text()).toBe(
+      'No account for this, and there is nothing to send a code with.',
+    )
+  })
+
+  it('keeps its own sentence for a registration somebody closed', async () => {
+    vi.useFakeTimers()
+    const context = freeIdentifierContext('closed')
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('nobody@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-identifier-hint"]').text()).toBe(
+      'No account for this, and registration is closed.',
+    )
   })
 
   it('refuses a registry with no method at all, at wiring time', () => {

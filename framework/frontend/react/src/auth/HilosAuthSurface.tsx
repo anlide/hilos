@@ -47,6 +47,7 @@ import {
   PASSKEY_FLOW_METHOD,
   PASSWORD_METHOD_KEY,
   PASSWORD_MIN_LENGTH,
+  sessionCodeDelivery,
   sessionPendingAck,
   sessionPendingAuthStep,
   SMS_CODE_CHANNEL,
@@ -339,6 +340,13 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     [context],
   )
   const pendingAck = useMemo(() => sessionPendingAck(context.scopes), [context])
+  // What this installation can send a one-time code to, derived the same way and
+  // for the same reason (HIL-830): the browser half cannot know the backend's
+  // mail and channel configuration, so it is told rather than asked.
+  const codeDeliverySignal = useMemo(
+    () => sessionCodeDelivery(context.scopes),
+    [context],
+  )
 
   // The gate defaults to null on purpose: on a 401 this surface stands IN PLACE
   // of the page, where there may be no provider at all, and then Continue simply
@@ -369,6 +377,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   const resendAvailableAt = useSignal(auth.resendAvailableAt)
   const expiresAt = useSignal(auth.expiresAt)
   const ack = useSignal(pendingAck)
+  const codeDelivery = useSignal(codeDeliverySignal)
 
   // Set on mount when an OAuth email collision armed a pending link (HIL-282):
   // the account already exists, so the surface pre-fills its address and shows a
@@ -513,7 +522,12 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
       return null
     }
     if (form.identifier.trim() === '') {
-      return 'Your email address or phone number.'
+      // Silence unless NEITHER kind can be reached: a deployment with mail and
+      // no phone channel would otherwise lie to whoever was about to type the
+      // kind that works, and the partial case is named after the kind is known.
+      return codeDelivery.email || codeDelivery.phone
+        ? 'Your email address or phone number.'
+        : 'Your email address or phone number. New accounts cannot be created here — there is nothing to send a code with.'
     }
     if (state.identifierKind === 'unknown') {
       return 'That does not look like an email address or a phone number yet.'
@@ -522,8 +536,15 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
       return null
     }
     if (detected.status === 'none') {
-      return detected.registerable.length > 0
-        ? 'No account yet — this creates one.'
+      if (detected.registerable.length > 0) {
+        return 'No account yet — this creates one.'
+      }
+
+      // Two reasons, two sentences: a locked door somebody locked, and a
+      // deployment that simply has nothing to send with. Which one it is was
+      // resolved on the backend, never by comparing flags here (HIL-830).
+      return detected.registrationBlock === 'no_channel'
+        ? 'No account for this, and there is nothing to send a code with.'
         : 'No account for this, and registration is closed.'
     }
     // A held address has no account to describe — it has a code in flight, and
