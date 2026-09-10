@@ -819,10 +819,12 @@ final class MainPageRegisterTest extends IntegrationTestCase
      * only a broken row could have - and letting the landing raise after the user row was
      * inserted. That shape stopped existing with the credential itself: the password now
      * arrives WITH the landing, so every failure the surface can still reach is answered
-     * by a guard in front of the transaction rather than inside it. What is left to pin is
-     * the guarantee itself, asserted through the row rather than the connection state: an
-     * unrolled transaction is invisible from the outside, but the user row it would have
-     * left is not.
+     * by a guard in front of the transaction rather than inside it. The transaction itself -
+     * the row inserted and rolled back, the connection left with nothing open - is proven
+     * where it lives, past the guards, by the two refusal cases of the framework's
+     * RegistrationLandingIntegrationTest (framework/tests/Integration, HIL-992). What this
+     * case pins is the demo's own reachable refusal, asserted through the row: whichever
+     * guard answers it, no user row may be left behind.
      *
      * @throws HilosException When setup or the handling fails
      */
