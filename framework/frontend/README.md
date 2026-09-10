@@ -16,7 +16,7 @@ lives in the project on the host bind-mount, so the IDE resolves the packages.
 Run from the repo root:
 
 ```
-docker compose -f framework/docker/docker-compose.yml \
+docker compose -f framework/docker/docker-compose.frontend.yml \
   run --rm hilos-frontend-cli <command>
 ```
 

@@ -29,7 +29,7 @@ declare(strict_types=1);
  *                key it carries in the file — hence
  *                `hilos-framework_hilos-framework-test-network` for the key
  *                `hilos-framework-test-network` at
- *                `framework/docker/docker-compose.yml:281`. Empty on a `project` stand, which
+ *                `framework/docker/docker-compose.yml:266`. Empty on a `project` stand, which
  *                finds its networks by project label.
  */
 
@@ -40,8 +40,17 @@ return [
         'composeFile' => 'framework/docker/docker-compose.yml',
         'project' => 'hilos-framework',
         'mode' => 'profile',
-        'profiles' => ['test', 'frontend'],
+        'profiles' => ['test'],
         'networks' => ['hilos-framework_hilos-framework-test-network'],
+    ],
+    [
+        'id' => 'frontend',
+        'cwd' => '.',
+        'composeFile' => 'framework/docker/docker-compose.frontend.yml',
+        'project' => 'hilos-frontend',
+        'mode' => 'project',
+        'profiles' => [],
+        'networks' => [],
     ],
     [
         'id' => 'chat',

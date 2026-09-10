@@ -11,7 +11,6 @@
 #   ollama-gpu-amd      local Ollama (AMD ROCm)
 #   agent-host          dev-only unified agent host (code guardian), port 9309
 #   preview             in-tailnet preview lane: dnsmasq split-DNS + Caddy proxy
-#   frontend            Node CLI runner for the frontend SDK
 #   test                MySQL + CLI runner + backup receiver for framework PHPUnit
 #
 # Usage examples (from repo root):
@@ -160,20 +159,6 @@ services:
       - "127.0.0.1:9099:8099"
     restart: unless-stopped
     profiles: [control]
-
-  # --- Frontend SDK Node CLI runner ------------------------------------------
-  # Install, build, lint and unit tests run here — never on the host Node.
-  # node_modules lands in the project via the bind-mount, where PhpStorm sees it.
-  hilos-frontend-cli:
-    image: node:22-bookworm-slim
-    container_name: hilos-frontend-cli
-    volumes:
-      - ../..:/hilos
-    working_dir: /hilos/framework/frontend
-    environment:
-      # Silence npm's update-notifier; the version is pinned by the image.
-      NPM_CONFIG_UPDATE_NOTIFIER: "false"
-    profiles: [frontend]
 
   # --- Framework test stack: MySQL + CLI runner + receiver (PHPUnit) ---------
   # Isolated from demo test stacks by host port (33062). hilos-cli-test has no

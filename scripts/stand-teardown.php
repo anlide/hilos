@@ -80,6 +80,13 @@ function tearDownStands(string $root, array $stands): array
  * lookups: the answer cannot change while the teardown runs, and asking compose three times
  * would cost three subprocesses for one fact.
  *
+ * A stand whose own declaration is broken is dropped and then left alone, and the problem is
+ * asked for BEFORE the first residue lookup rather than at the end where the report is
+ * assembled. The order carries the guard: the lookup a broken declaration produces is the
+ * dangerous one — a `profile` stand naming no network asks docker for every network on the box,
+ * and the removal that follows would take the owner's preview lanes with it. Deciding afterwards
+ * would decide after the harm.
+ *
  * @param string $root Repository root.
  * @param array{id: string, cwd: string, composeFile: string, project: string, mode: string,
  *     profiles: array<int, string>, networks: array<int, string>} $stand
@@ -90,6 +97,19 @@ function tearDownStands(string $root, array $stands): array
 function tearDownStand(string $root, array $stand): array
 {
     $services = standServices($root, $stand);
+
+    $problem = standProblem($stand, $services);
+    if ($problem !== '') {
+        runTeardownCommand(standDownCommand($stand), $root . '/' . $stand['cwd']);
+
+        return [
+            'id' => $stand['id'],
+            'problem' => $problem,
+            'removedContainers' => [],
+            'removedNetworks' => [],
+            'residue' => ['containers' => [], 'networks' => []],
+        ];
+    }
 
     $before = standResidue($stand, $services);
     runTeardownCommand(standDownCommand($stand), $root . '/' . $stand['cwd']);
@@ -106,7 +126,7 @@ function tearDownStand(string $root, array $stand): array
 
     return [
         'id' => $stand['id'],
-        'problem' => standProblem($stand, $services),
+        'problem' => $problem,
         'removedContainers' => array_values(array_diff($before['containers'], $after['containers'])),
         'removedNetworks' => array_values(array_diff($before['networks'], $after['networks'])),
         'residue' => $after,
@@ -137,17 +157,30 @@ function standServices(string $root, array $stand): ?array
 /**
  * What is wrong with the stand's own declaration, or an empty string when nothing is.
  *
- * One case fills it: a `profile` stand whose profiles match no service in its compose file — a
- * typo in a profile name, or a profile that was renamed in the file and not here. That state is
- * indistinguishable from a clean box by every other signal there is, because compose drops
- * nothing and exits zero, and each residue lookup then honestly finds nothing. The stand stays
- * up, and the run that trips over it reads its own leftovers as a red step.
+ * Two cases fill it, and both answer the one question of whether docker can be asked about this
+ * stand at all — which is why they share a report line:
  *
- * @param array{composeFile: string, profiles: array<int, string>} $stand
+ * A `profile` stand whose profiles match no service in its compose file: a typo in a profile
+ * name, or a profile that was renamed in the file and not here. That state is indistinguishable
+ * from a clean box by every other signal there is, because compose drops nothing and exits zero,
+ * and each residue lookup then honestly finds nothing. The stand stays up, and the run that
+ * trips over it reads its own leftovers as a red step.
+ *
+ * A `profile` stand that named no network: its network lookup is built as one filter per name,
+ * so an empty list degenerates into `docker network ls` with no filter at all — every network on
+ * the box, handed to the removal that follows. The `mode` clause is not decoration: an empty
+ * `networks` is the normal, correct declaration for a `project` stand, which finds its networks
+ * by the project label instead.
+ *
+ * @param array{composeFile: string, mode: string, profiles: array<int, string>,
+ *     networks: array<int, string>} $stand
  * @param array<int, string>|null $services What the stand's profiles resolved to.
  */
 function standProblem(array $stand, ?array $services): string
 {
+    if ($stand['mode'] === 'profile' && $stand['networks'] === []) {
+        return 'profiles ' . implode(', ', $stand['profiles']) . ' declare no network in ' . $stand['composeFile'];
+    }
     if ($services !== []) {
         return '';
     }

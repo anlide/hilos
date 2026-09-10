@@ -20,9 +20,9 @@ require_once __DIR__ . '/../../../scripts/stand-teardown.php';
  * it, a residue lookup by project label alone would hand the preview containers to `docker rm`,
  * and profiles matching no service take nothing down while exiting zero.
  *
- * Whether the registry agrees with the compose file — that `test` and `frontend` still name
- * services — is not answerable here and is not tried: it needs docker. The teardown answers it at
- * the moment it matters, by reporting a problem instead of a clean stand.
+ * Whether the registry agrees with the compose file — that `test` still names services — is not
+ * answerable here and is not tried: it needs docker. The teardown answers it at the moment it
+ * matters, by reporting a problem instead of a clean stand.
  *
  * The file under test is a plain script rather than a class, so it is required by path, the same
  * way `scripts/down-stands.php` requires it.
@@ -40,15 +40,30 @@ final class StandTeardownTest extends TestCase
         'networks' => [],
     ];
 
-    /** The framework stand: two profiles inside a compose file that also holds the preview lane. */
+    /** The framework stand: one profile inside a compose file that also holds the preview lane. */
     private const array PROFILE_STAND = [
         'id' => 'framework',
         'cwd' => '.',
         'composeFile' => 'framework/docker/docker-compose.yml',
         'project' => 'hilos-framework',
         'mode' => 'profile',
-        'profiles' => ['test', 'frontend'],
+        'profiles' => ['test'],
         'networks' => ['hilos-framework_hilos-framework-test-network'],
+    ];
+
+    /**
+     * The same stand with its networks forgotten — the shape a careless edit of the registry
+     * leaves behind. A copy rather than an edit of the one above, which six other cases need
+     * whole.
+     */
+    private const array PROFILE_STAND_WITHOUT_NETWORK = [
+        'id' => 'framework',
+        'cwd' => '.',
+        'composeFile' => 'framework/docker/docker-compose.yml',
+        'project' => 'hilos-framework',
+        'mode' => 'profile',
+        'profiles' => ['test'],
+        'networks' => [],
     ];
 
     /** Every stand the run knows about, in the shape the teardown reads. */
@@ -86,6 +101,24 @@ final class StandTeardownTest extends TestCase
         }
     }
 
+    /**
+     * The frontend CLI runner is a stand of its own, in its own compose project. Back inside the
+     * framework project it was a service of the framework stand, whose teardown then killed the
+     * container the frontend steps were running in — the step reported rc=137 and no reason.
+     */
+    public function testTheFrontendRunnerHasItsOwnStand(): void
+    {
+        $stands = require __DIR__ . '/../../../scripts/test-stands.php';
+
+        $byId = array_column($stands, null, 'id');
+        $this->assertArrayHasKey('framework', $byId);
+        $this->assertNotContains('frontend', $byId['framework']['profiles']);
+        $this->assertArrayHasKey('frontend', $byId);
+        $this->assertSame('hilos-frontend', $byId['frontend']['project']);
+        $this->assertSame('project', $byId['frontend']['mode']);
+        $this->assertSame('framework/docker/docker-compose.frontend.yml', $byId['frontend']['composeFile']);
+    }
+
     /** A demo stand goes down as a whole project, orphans included. */
     public function testDropsADemoStandAsAWholeProject(): void
     {
@@ -103,7 +136,8 @@ final class StandTeardownTest extends TestCase
     {
         $command = standDownCommand(self::PROFILE_STAND);
 
-        $this->assertStringContainsString("--profile 'test' --profile 'frontend'", $command);
+        $this->assertStringContainsString("--profile 'test'", $command);
+        $this->assertStringNotContainsString("--profile 'frontend'", $command);
         $this->assertStringContainsString('down --remove-orphans', $command);
         $this->assertStringNotContainsString('--profile "*"', $command);
     }
@@ -115,7 +149,7 @@ final class StandTeardownTest extends TestCase
 
         $this->assertNotNull($command);
         $this->assertStringContainsString("-f 'framework/docker/docker-compose.yml'", $command);
-        $this->assertStringContainsString("--profile 'test' --profile 'frontend'", $command);
+        $this->assertStringContainsString("--profile 'test'", $command);
         $this->assertStringContainsString('config --services', $command);
     }
 
@@ -256,14 +290,14 @@ final class StandTeardownTest extends TestCase
     {
         $result = [
             'id' => 'framework',
-            'problem' => 'profiles test, frontend match no service in framework/docker/docker-compose.yml',
+            'problem' => 'profiles test match no service in framework/docker/docker-compose.yml',
             'removedContainers' => [],
             'removedNetworks' => [],
             'residue' => ['containers' => [], 'networks' => []],
         ];
 
         $this->assertSame(
-            'stands: framework — CANNOT ASK: profiles test, frontend match no service'
+            'stands: framework — CANNOT ASK: profiles test match no service'
                 . ' in framework/docker/docker-compose.yml',
             describeTeardown($result),
         );
@@ -273,9 +307,39 @@ final class StandTeardownTest extends TestCase
     public function testNamesTheProfilesThatMatchedNoService(): void
     {
         $this->assertSame(
-            'profiles test, frontend match no service in framework/docker/docker-compose.yml',
+            'profiles test match no service in framework/docker/docker-compose.yml',
             standProblem(self::PROFILE_STAND, []),
         );
+    }
+
+    /**
+     * A `profile` stand that named no network is a problem even though its profiles resolved: its
+     * network lookup would carry no filter, and every network on the box would answer it.
+     */
+    public function testNamesTheProfileStandThatDeclaredNoNetwork(): void
+    {
+        $this->assertSame(
+            'profiles test declare no network in framework/docker/docker-compose.yml',
+            standProblem(self::PROFILE_STAND_WITHOUT_NETWORK, ['mysql-framework-test']),
+        );
+    }
+
+    /**
+     * Every stand's network lookup narrows to something. The registry is read rather than copied
+     * into a constant here, because what this guards against is an edit to the registry, and a
+     * copy would keep passing while the real list degenerated.
+     */
+    public function testEveryStandsNetworkLookupIsFiltered(): void
+    {
+        $stands = require __DIR__ . '/../../../scripts/test-stands.php';
+
+        foreach ($stands as $stand) {
+            $this->assertStringContainsString(
+                '--filter',
+                standResidueNetworksCommand($stand),
+                'stand ' . $stand['id'] . ' asks docker for every network on the box',
+            );
+        }
     }
 
     /** A stand whose profiles resolved, and a stand with no profiles to resolve, both report none. */

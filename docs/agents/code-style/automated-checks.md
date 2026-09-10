@@ -459,7 +459,7 @@ a second baseline erases the first. Each rule keeps its fixture test, which is
 the only thing proving the checker still fires.
 
 ```bash
-docker compose -f framework/docker/docker-compose.yml run --rm \
+docker compose -f framework/docker/docker-compose.frontend.yml run --rm \
   -e CODESTYLE_BASELINE_UPDATE=1 hilos-frontend-cli npm run test
 ```
 
