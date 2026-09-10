@@ -48,6 +48,15 @@ Topic documents are referenced by filename; several are still being authored.
   violation**. Secrets never go in localStorage (it cannot be made httpOnly);
   non-secret UI state may. The source of truth is a server-side session in
   Hilos's own store, not PHP `$_SESSION`. See [wire-protocol.md](wire-protocol.md).
+- **A value left in this browser is declared where it is written.** Anything the
+  frontend puts in session storage, local storage or a cookie carries a
+  `browserValue({ store, key, label })` declaration in the same module, beside the
+  key it names. The core collects the framework's declarations and a project hands
+  in its own; the erase on `/privacy` sweeps that list, which is only better than a
+  hand-written one if a declaration cannot be left out. Writing without declaring
+  is a **violation**. Checked automatically: `BROWSER-VALUE-DECLARED`, see
+  [automated-checks.md](../code-style/automated-checks.md). See
+  [core-and-connection.md](core-and-connection.md).
 - **Connection identity is a server-assigned connId.** The per-connection id is
   minted server-side at accept time and held in a `connId ↔ socket` map; the
   client never sends a connection id. An incoming frame's connection is

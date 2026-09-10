@@ -22,6 +22,7 @@ import {
   BASELINE_UPDATE_FLAG,
   type ReportedViolations,
 } from './baseline.js'
+import { checkRepository as checkBrowserValueDeclared } from './browserValueDeclared.js'
 import { checkRepository as checkE2ePageGoto } from './e2eGoto.js'
 import { checkRepository as checkStyleInline } from './inlineStyle.js'
 import { checkRepository as checkStyleSheetHome } from './styleSheetHome.js'
@@ -41,6 +42,7 @@ const REPOSITORY_ROOT = join(
  * no registration of the id is needed beside the checker's own.
  */
 const RULES = [
+  checkBrowserValueDeclared,
   checkE2ePageGoto,
   checkStyleInline,
   checkStyleSheetHome,

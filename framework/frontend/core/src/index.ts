@@ -117,6 +117,19 @@ export {
   licenseLanguageLabel,
   renderLicenseCsv,
 } from './license/licenseInventory.js'
+// The /privacy page's headless half, next to the /license page's above it: the
+// declaring form a project declares its own keys with, the framework's collected
+// list, and the sweep the erase block runs.
+export {
+  browserValue,
+  type HilosBrowserValue,
+  type HilosBrowserValueContext,
+} from './browser/browserValue.js'
+export {
+  BROWSER_ERASE_ACTION,
+  eraseBrowserValues,
+  HILOS_BROWSER_VALUES,
+} from './browser/browserValues.js'
 export {
   PageSubscription,
   type PageSubscriptionConnection,

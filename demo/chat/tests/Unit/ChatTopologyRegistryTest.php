@@ -83,6 +83,7 @@ use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Constants\HilosPageConstants;
+use Hilos\Auth\Session\DTO\BrowserEraseActionDTO;
 use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
 use Hilos\Auth\Session\DTO\DismissSessionToastActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
@@ -614,6 +615,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::ADD_PASSWORD_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
             ChatSignalConstants::ADD_PASSWORD_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LOGOUT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_BROWSER_ERASE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_IMPERSONATE_STOP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_TOAST_DISMISS => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -669,6 +671,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::ADD_PASSWORD_REQUEST => RequestAddPasswordActionDTO::class,
             ChatSignalConstants::ADD_PASSWORD_CONFIRM => ConfirmAddPasswordActionDTO::class,
             HilosSignalConstants::HILOS_LOGOUT => LogoutActionDTO::class,
+            HilosSignalConstants::HILOS_BROWSER_ERASE => BrowserEraseActionDTO::class,
             HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
             HilosSignalConstants::HILOS_IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
             HilosSignalConstants::HILOS_TOAST_DISMISS => DismissSessionToastActionDTO::class,

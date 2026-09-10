@@ -336,7 +336,7 @@ export class HilosConnection {
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null
   private latchedBuild: string | undefined
   /** Session cookie name from the last welcome; the auxiliary cookie's name derives from it. */
-  private sessionCookieName: string | undefined
+  private sessionCookieNameValue: string | undefined
   /**
    * Correlation ids of the tracked actions this socket has sent and not seen answered.
    * The transport's own count of what is still on the wire — the reply lifecycle keeps
@@ -478,6 +478,18 @@ export class HilosConnection {
   }
 
   /**
+   * The session cookie name this deployment uses, once a welcome has named it.
+   *
+   * Deployment configuration rather than a constant, which is why it is read from
+   * here at all: the names of the cookies derived from it — the rotation ticket's,
+   * today — cannot be written out anywhere. Undefined until the first welcome, and
+   * a caller that finds it undefined has nothing to name rather than a default.
+   */
+  get sessionCookieName(): string | undefined {
+    return this.sessionCookieNameValue
+  }
+
+  /**
    * Present a verifier's pass and go back in with it.
    *
    * Admission is decided on the 101, in the same place and by the same rule as the
@@ -504,6 +516,20 @@ export class HilosConnection {
     this.presentedPass = trimmed
     writeStoredProtectedModePass(trimmed)
     this.reconnectNow()
+  }
+
+  /**
+   * Drop the presented pass, here and in storage: it opens nothing any more.
+   *
+   * Public because the erase on /privacy needs exactly this and nothing more. The
+   * storage mirror is a declared browser value and the sweep takes it, but the live
+   * connection also holds the pass in memory and re-presents it on every reconnect
+   * ({@link socketUrl}) — erasing only the mirror would buy the admission back on
+   * the socket that comes next.
+   */
+  forgetProtectedModePass(): void {
+    this.presentedPass = undefined
+    writeStoredProtectedModePass(undefined)
   }
 
   /**
@@ -917,7 +943,7 @@ export class HilosConnection {
       this.emitter.emit('buildMismatch', { expected, received: signal.build })
     }
     if (signal.sessionCookieName !== undefined) {
-      this.sessionCookieName = signal.sessionCookieName
+      this.sessionCookieNameValue = signal.sessionCookieName
     }
     // A reconnect lands here: the welcome is how a connection that came back
     // learns the freeze it slept through, or that it is over.
@@ -946,7 +972,7 @@ export class HilosConnection {
    * anonymous one, and staying put costs only the rotation.
    */
   private handleSessionRotate(signal: SessionRotateSignal): void {
-    const cookieName = this.sessionCookieName
+    const cookieName = this.sessionCookieNameValue
     if (cookieName === undefined) {
       return
     }
@@ -1096,12 +1122,6 @@ export class HilosConnection {
     const separator = this.url.includes('?') ? '&' : '?'
 
     return `${this.url}${separator}${PROTECTED_MODE_PASS_PARAM}=${encodeURIComponent(this.presentedPass)}`
-  }
-
-  /** Drops the presented pass, here and in storage: it opens nothing any more. */
-  private forgetProtectedModePass(): void {
-    this.presentedPass = undefined
-    writeStoredProtectedModePass(undefined)
   }
 
   private scheduleReconnect(): void {

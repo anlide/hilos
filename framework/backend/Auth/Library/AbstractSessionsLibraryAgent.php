@@ -25,6 +25,7 @@ use Hilos\Auth\Recovery\PasswordRecoveryService;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Registration\RegistrationReservationSweeper;
 use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
+use Hilos\Auth\Session\DTO\BrowserEraseActionDTO;
 use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
 use Hilos\Auth\Session\DTO\DismissSessionToastActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateDoneSignalData;
@@ -274,9 +275,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * for it (HIL-768): closed, counted down, being read. They sit here for the plainest
      * version of the same reason - the stack they answer about is stored on the session, and
      * an answer given in one tab has to reach the others.
+     *
+     * {@see HilosSignalConstants::HILOS_BROWSER_ERASE} passes both halves the way the sign-out
+     * does, and its page could not own it for a third reason besides: /privacy is public, so
+     * the person clicking may have no account at all - and the session it ends they have
+     * regardless (HIL-839).
      */
     public const array AGENT_ACTIONS = [
         HilosSignalConstants::HILOS_LOGOUT => LogoutActionDTO::class,
+        HilosSignalConstants::HILOS_BROWSER_ERASE => BrowserEraseActionDTO::class,
         HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
         HilosSignalConstants::HILOS_IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
         HilosSignalConstants::HILOS_TOAST_DISMISS => DismissSessionToastActionDTO::class,
@@ -1703,6 +1710,101 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Ends this browser's session and hands it a new one: the server half of the erase (HIL-839).
+     *
+     * Three moves that already existed, in the order the leaf argues for. The sign-out first,
+     * through the one seam every other way of losing a person goes through. Then the
+     * half-finished registration this browser was holding, if it was holding one - and that
+     * is two writes rather than the one the plan named, because the session's own memory of
+     * the flow and the HOLD ON THE ADDRESS are separate records:
+     * {@see SessionActions::releasePendingRegistration()} says nothing about the address by
+     * its own contract, and the address is what somebody else is waiting for. A browser that
+     * has just asked to be forgotten must not go on reserving one.
+     *
+     * Last, the replacement. A NEW row rather than a renamed one: a rename would carry this
+     * row's memory onto the new cookie - when the browser first appeared, what it was last
+     * doing, the address it started a registration with - and clearing that memory would mean
+     * a hand-written list of columns to blank, which is the very failure the leaf exists to
+     * remove one level up. A fresh row cannot go stale. What becomes of the old one is
+     * nothing, deliberately: it is anonymous, no browser holds its token any more, and it
+     * ages out on its own expiry. Erasing what the SERVER remembers is a different promise
+     * with a different owner (HIL-302).
+     *
+     * The ANSWER rides the rotation frame rather than the sign-out one, and it has to: a guest
+     * session is signed out by a no-op that publishes no frame at all, so an answer left on
+     * that half would never reach the browser most likely to have pressed the button.
+     *
+     * @param string $sessionToken Session cookie token of the browser being erased
+     * @param string $acceptKey Accept key of the connection that pressed the button
+     * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
+     * @throws InvalidArgumentException When the state frame cannot be named
+     * @throws RandomException When the platform's secure random source refuses a mint
+     * @throws SessionTokenExhaustedException When every attempt hit a token already in use
+     * @throws HilosException On database or runtime failure
+     */
+    private function eraseBrowser(string $sessionToken, string $acceptKey, ?string $requestId): void
+    {
+        $this->deauthenticateSession($sessionToken);
+
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+        if ($session !== null && $session->pendingRegistrationIdentifier !== null) {
+            $session->actions->releasePendingRegistration();
+            new RegistrationReservationService()->release($sessionToken);
+        }
+
+        $token = $this->mintAnonymousSession();
+
+        // The connection that acted is left out of the drops for the reason a sign-in leaves
+        // it out: it is the rightful holder of the one-time ticket and reconnects itself once
+        // it has written the cookie. Its siblings are dropped and come back anonymous on that
+        // same new cookie, which is what the copy on the page promises them.
+        $keysToDrop = array_values(array_filter(
+            $this->sessionConnectionKeys($sessionToken),
+            static fn(string $key): bool => $key !== $acceptKey,
+        ));
+
+        $this->publishSessionState(new SessionStateSignalData(
+            sessionToken: $token,
+            userId: null,
+            acceptKeys: [$acceptKey],
+            rotationTicket: $this->announceRotation($token, $keysToDrop),
+            requestId: $requestId,
+            action: HilosSignalConstants::HILOS_BROWSER_ERASE,
+        ));
+    }
+
+    /**
+     * Creates the anonymous session an erased browser is handed, and returns its token.
+     *
+     * Retried on a token another session already holds, bounded and exhausting into an
+     * exception, exactly as {@see self::rotateSessionToken()} is and for the same reason: a
+     * 128-bit collision is a theoretical event, and carrying on with the old token "so the
+     * person gets something" would hand back the identifier the erase was asked to change.
+     *
+     * @return string Token the new anonymous session answers to
+     * @throws RandomException When the platform's secure random source refuses a mint
+     * @throws SessionTokenExhaustedException When every attempt hit a token already in use
+     * @throws HilosException On database or runtime failure
+     */
+    private function mintAnonymousSession(): string
+    {
+        for ($attempt = 0; $attempt < self::TOKEN_MINT_ATTEMPTS; $attempt++) {
+            $candidate = SessionToken::mint();
+            try {
+                Hilos::$db->sessions->actions->createAnonymous($candidate);
+
+                return $candidate;
+            } catch (DuplicateValueException) {
+                // Another session holds the minted value; mint again.
+            }
+        }
+
+        throw new SessionTokenExhaustedException(
+            'Anonymous session mint failed: ' . self::TOKEN_MINT_ATTEMPTS . ' minted tokens were already in use'
+        );
+    }
+
+    /**
      * Reverts every session of a user to anonymous EXCEPT one (HIL-416).
      *
      * What a finished password recovery owes the account. A password is reset when
@@ -2626,6 +2728,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * the tabs agreeing is the answer, and a tab that only heard about its own click would be
      * the disagreement again.
      *
+     * The erase on /privacy (HIL-839) is the fourth of the frame-answered kind, and the one
+     * that needs the frame most: it ends this browser's session and mints a replacement, so
+     * the answer travels with the ticket the browser trades for its new cookie.
+     *
      * STARTING a takeover is no longer among them (HIL-824): it is closed by more than "you
      * have a session", so the name stands on {@see AbstractHilosUsersPage} and only the write
      * arrives here, on {@see HilosSignalConstants::HILOS_IMPERSONATE_REQUEST}.
@@ -2655,6 +2761,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     throw new InvalidActionPayloadException($action, LogoutActionDTO::class, $dto);
                 }
                 $this->deauthenticateSession($sessionToken, $this->currentActionRequestId(), $action);
+
+                return null;
+
+            case HilosSignalConstants::HILOS_BROWSER_ERASE:
+                if (!$dto instanceof BrowserEraseActionDTO) {
+                    throw new InvalidActionPayloadException($action, BrowserEraseActionDTO::class, $dto);
+                }
+                $this->eraseBrowser($sessionToken, $acceptKey, $this->currentActionRequestId());
 
                 return null;
 

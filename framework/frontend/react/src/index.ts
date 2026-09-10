@@ -44,6 +44,10 @@ export {
   HilosLicensePage,
   type HilosLicensePageProps,
 } from './public/HilosLicensePage.js'
+export {
+  HilosPrivacyPage,
+  type HilosPrivacyPageProps,
+} from './public/HilosPrivacyPage.js'
 export { LoadingButton, type LoadingButtonProps } from './LoadingButton.js'
 export {
   HilosBreadcrumb,

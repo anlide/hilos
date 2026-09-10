@@ -31,6 +31,19 @@ test('the license page is prerendered with the build inventory in it', async ({
   expect(html).toContain('anlide/hilos')
 })
 
+test('the privacy page is prerendered with the erase block whole', async ({
+  request,
+}) => {
+  const res = await request.get('/privacy')
+  expect(res.status()).toBe(200)
+  const html = await res.text()
+  // The block is a declaration and a click handler, never a read of the browser,
+  // so it renders whole on a machine that has none — button included, inert until
+  // the SPA mounts.
+  expect(html).toContain('data-id="privacy-erase"')
+  expect(html).toContain('Erase and sign out')
+})
+
 test('robots.txt and sitemap.xml advertise the public surface', async ({
   request,
 }) => {

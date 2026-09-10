@@ -600,6 +600,21 @@ final class HilosSignalConstants
     public const string HILOS_LOGOUT = 'hilos_logout';
 
     /**
+     * Client → sessions library: erase everything this browser holds and end its session (HIL-839).
+     *
+     * The server half of the erase on /privacy, and page-independent for the same reason
+     * {@see self::HILOS_LOGOUT} is: the control sits on a public page a guest reaches as
+     * readily as a signed-in person, and what it ends is the BROWSER session, which a guest
+     * has like anybody else. The payload is empty, so a client can only ever erase its own.
+     *
+     * It is not a second sign-out. Signing out leaves the session row and its cookie in
+     * place, anonymous, so a browser that "erased everything" would walk away carrying the
+     * identifier it arrived with; this ends that session and hands the browser a new one,
+     * through the rotation a sign-in already uses.
+     */
+    public const string HILOS_BROWSER_ERASE = 'hilos_browser_erase';
+
+    /**
      * Client → Hilos users page: make this admin session act as another user (HIL-729,
      * moved onto the page by HIL-824).
      *

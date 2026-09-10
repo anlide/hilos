@@ -253,6 +253,7 @@ final class TasksTopologyRegistryTest extends TestCase
             // its own for none of them. STARTING a takeover is not among them since HIL-824:
             // only an administrator may, and an ADMIN level is a thing only a page carries.
             HilosSignalConstants::HILOS_LOGOUT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_BROWSER_ERASE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_IMPERSONATE_STOP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             // The tabs of one session answering about the toasts the server raised for it

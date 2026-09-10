@@ -35,6 +35,7 @@
 // callback that finds no opener (the main window was closed while the person was at
 // the provider) finishes the exchange in its own document, and the callback URL
 // carries only `code` + `state`.
+import { browserValue } from '../browser/browserValue.js'
 import { ActionError } from '../connection/actionLifecycle.js'
 import { type ProjectSignal } from '../protocol/parseSignal.js'
 import { sessionUserId } from '../session/sessionScope.js'
@@ -199,6 +200,13 @@ export class OAuthWindowBlockedError extends Error {
  * tab inherits a copy of it, which is what makes the cold path work at all.
  */
 const OAUTH_PROVIDER_STORAGE_KEY = 'hilos.oauth.provider'
+
+/** The key above, declared so /privacy can erase it (`browser/browserValue.ts`). */
+export const OAUTH_PROVIDER_BROWSER_VALUE = browserValue({
+  store: 'session',
+  key: OAUTH_PROVIDER_STORAGE_KEY,
+  label: 'The sign-in provider a login in progress was started with',
+})
 
 /** The generic message shown when an OAuth login cannot be completed. */
 const OAUTH_FAILED_MESSAGE = 'OAuth login failed. Please try again.'

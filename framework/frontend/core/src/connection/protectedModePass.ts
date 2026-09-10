@@ -11,9 +11,17 @@
 // sessionStorage rather than a cookie for the lifetime: one tab, gone when it
 // closes, whereas a cookie is domain-wide and would outlive the freeze it
 // belongs to.
+import { browserValue } from '../browser/browserValue.js'
 
 /** sessionStorage key the presented pass is mirrored under. */
 export const PROTECTED_MODE_PASS_STORAGE_KEY = 'hilos.protectedMode.pass'
+
+/** The key above, declared so /privacy can erase it (`browser/browserValue.ts`). */
+export const PROTECTED_MODE_PASS_BROWSER_VALUE = browserValue({
+  store: 'session',
+  key: PROTECTED_MODE_PASS_STORAGE_KEY,
+  label: 'The maintenance pass this tab was let in with',
+})
 
 /**
  * Read the pass this tab has presented, if any.

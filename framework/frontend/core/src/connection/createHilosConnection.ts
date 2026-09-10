@@ -9,8 +9,10 @@ import { LOGS_OVERVIEW_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogsOverview.js
 import { LOGS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogRotations.js'
 import { LOGS_VIEWER_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogViewer.js'
 import { LOGS_WORKERS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogWorkers.js'
+import { browserValue } from '../browser/browserValue.js'
 import { NOTIFICATION_SIGNAL_SCHEMAS } from '../notifications/notificationCenter.js'
 import { NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS } from '../notifications/notificationPreferences.js'
+import { SESSION_ROTATE_COOKIE_SUFFIX } from '../protocol/constants.js'
 import { type ProjectSignalSchemas } from '../protocol/parseSignal.js'
 import { SESSION_SIGNAL_SCHEMAS } from '../session/sessionScope.js'
 import { GROUP_SIGNAL_SCHEMAS } from '../protocol/groupError.js'
@@ -90,8 +92,45 @@ function writeRotationCookie(rotation: SessionRotation): void {
     `; Path=/; SameSite=Strict; Max-Age=${ROTATE_COOKIE_MAX_AGE_SECONDS}${secure}`
 }
 
-/** The same-origin `/ws` endpoint: `wss` under https, `ws` otherwise. */
+/**
+ * The cookie above, declared so /privacy can erase it (`browser/browserValue.ts`).
+ *
+ * Its name is not a constant on either side: it derives from the session cookie
+ * name this deployment chose, which the welcome frame announces — hence a key
+ * built from the context rather than written out. A browser that has not been
+ * welcomed yet names no cookie and the entry is skipped.
+ *
+ * Declared even though the ticket lives thirty seconds and the master clears it on
+ * the handshake that spends it: an entry excused for being short-lived would be a
+ * hole in the guard, which judges write sites and knows nothing of lifetimes.
+ */
+export const SESSION_ROTATE_BROWSER_VALUE = browserValue({
+  store: 'cookie',
+  key: (context) =>
+    context.sessionCookieName === undefined
+      ? undefined
+      : `${context.sessionCookieName}${SESSION_ROTATE_COOKIE_SUFFIX}`,
+  label: 'A one-time ticket for renewing the sign-in cookie',
+})
+
+/**
+ * The same-origin `/ws` endpoint: `wss` under https, `ws` otherwise.
+ *
+ * Answers the empty string where there is no document to take an origin from.
+ * This factory is called at module scope by a project's connection singleton, and
+ * that singleton is imported — through the public pages that hand it to the
+ * framework — by the server renderer that prerenders them at build time, where
+ * `location` does not exist at all. Nothing there ever opens the connection, so
+ * the empty string is unreachable in any run that would use it; a bare read of
+ * `location`, on the other hand, takes the whole build down (HIL-839).
+ *
+ * @returns The same-origin endpoint, or the empty string with no document.
+ */
 function sameOriginWebSocketUrl(): string {
+  if (typeof location === 'undefined') {
+    return ''
+  }
+
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
 
   return `${scheme}://${location.host}/ws`

@@ -9,9 +9,17 @@
 // (protectedModePass.ts), and for the opposite reason: an admission must die
 // with the tab, while a hint is worth nothing unless it outlives it — the flash
 // being fixed happens on a fresh load.
+import { browserValue } from '../browser/browserValue.js'
 
 /** localStorage key the maintenance hint is kept under. */
 export const PROTECTED_MODE_HINT_STORAGE_KEY = 'hilos.protectedMode.hint'
+
+/** The key above, declared so /privacy can erase it (`browser/browserValue.ts`). */
+export const PROTECTED_MODE_HINT_BROWSER_VALUE = browserValue({
+  store: 'local',
+  key: PROTECTED_MODE_HINT_STORAGE_KEY,
+  label: 'A note that this site was last seen under maintenance',
+})
 
 /**
  * Whether this browser last saw maintenance running on this node.

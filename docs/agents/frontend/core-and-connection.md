@@ -210,6 +210,41 @@ surfaced only by the banner.
   place. The URL is the source of truth for the page subscription on cold load.
   The subscription mechanics are in [wire-protocol.md](wire-protocol.md).
 
+## What this browser keeps
+
+Every value the frontend leaves in the visitor's browser is **declared where it
+is written**, with `browserValue({ store, key, label })` from
+`@hilos/core` — beside the constant naming the key, in the module that does the
+writing. The core collects the framework's declarations into `HILOS_BROWSER_VALUES`;
+a project hands its own to the privacy page as an input, the way it hands the
+connection its own signal schemas.
+
+The point of the declaration is the erase block on `/privacy`: it sweeps the
+registry rather than a list somebody typed out, and `eraseBrowserValues()` is
+that sweep. A list typed out by hand is wrong the first time anybody adds a key,
+and wrong silently — so a list assembled from declarations is only worth more
+than it if a declaration cannot be left out. That is the
+`BROWSER-VALUE-DECLARED` guard's whole job: a frontend source that writes to
+session storage, to local storage or to a cookie and declares nothing fails the
+code-style guard ([automated-checks.md](../code-style/automated-checks.md)).
+
+The label is part of the declaration because the confirmation modal has to name
+what goes, and a raw key name says nothing to a person; it is written in English,
+following `HILOS_FOOTER_LINKS`. A key the deployment names rather than the
+framework — the rotation ticket's cookie, whose name derives from the session
+cookie name the welcome announces — is declared as a function of the context
+instead of a string, and is skipped while nothing has named it.
+
+**The session cookie is not in the registry, and could not be.** It is HttpOnly
+and can only be set on the 101, so no sweep in the browser can reach it; an entry
+the erase cannot honor would be a lie in the list. It is dealt with on the server
+half of the erase, which ends this browser's session and hands it a new one — so
+the cookie value does change, by the same rotation machinery a sign-in uses.
+
+Nothing here is read at render time. A declaration is data and the sweep is a
+click handler, which is what lets `/privacy` be prerendered with the erase block
+whole and inert until the SPA mounts.
+
 ## SSG and the SPA shell
 
 The authenticated, real-time area is a pure SPA shell (skeletons fill it as data

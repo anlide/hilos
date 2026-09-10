@@ -110,3 +110,18 @@ describe('createHilosConnection', () => {
     expect(onBuildMismatch).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('createHilosConnection with no document', () => {
+  it('builds, the way the prerender build imports it', () => {
+    // This very test file runs with no browser at all, which is the environment
+    // the check is about: a project's connection singleton is created at module
+    // scope, and the server renderer that prerenders the public pages imports
+    // that module through them. A bare read of `location` there took the whole
+    // build down (HIL-839).
+    expect(typeof location).toBe('undefined')
+
+    const { connection } = createHilosConnection()
+
+    expect(connection).toBeInstanceOf(HilosConnection)
+  })
+})
