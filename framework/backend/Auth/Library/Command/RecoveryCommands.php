@@ -4,18 +4,19 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\Exception\PasswordUnchangedException;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Library\DTO\CompletePasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmPasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\RequestPasswordResetActionDTO;
-use Hilos\Auth\PasswordPolicy;
 use Hilos\Auth\Recovery\PasswordRecoveryService;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -169,6 +170,16 @@ final class RecoveryCommands extends AbstractLibraryCommands
      * code makes of a second device saving second. The winner has already changed the
      * password by then, so the loser is sent to sign in with it.
      *
+     * A third way, and the only one that moves the surface NOWHERE: the password typed is
+     * the one the account already has (HIL-654). It is refused rather than accepted with a
+     * "password changed" nobody's password changed for, and the person stays on the screen
+     * they are on to type a different one - their code is still unspent, because the seam
+     * judges the password before the spend. That is why this catches the refusal instead
+     * of letting the family through as the length refusal does: this one is an ordinary
+     * answer of the form, and a form the frontend cannot pre-check, since only the server
+     * can compare against a hash. The length it can and does pre-check, so reaching it at
+     * all means a client that ignored its own contract.
+     *
      * The force-logout is the point of resetting a password at all: it is done when access
      * has leaked, so the reset takes the account back rather than adding one more live
      * session to it.
@@ -177,7 +188,7 @@ final class RecoveryCommands extends AbstractLibraryCommands
      * @param CompletePasswordResetActionDTO $dto Parsed complete payload (password)
      * @return ?AuthFlowOutcome The rollback the losing session gets, or null when the session holder answers
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
-     * @throws ValidationException When the new password is too short
+     * @throws ValueTooShortException When the new password is too short
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When the secret write or the runtime read fails
      */
@@ -195,11 +206,12 @@ final class RecoveryCommands extends AbstractLibraryCommands
             );
         }
 
-        if (strlen($dto->password) < PasswordPolicy::MIN_LENGTH) {
-            throw new ValidationException('Password must be at least ' . PasswordPolicy::MIN_LENGTH . ' characters');
+        try {
+            $userId = new PasswordRecoveryService()->complete($email, $dto->password);
+        } catch (PasswordUnchangedException $exception) {
+            return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_PASSWORD_UNCHANGED, $exception->getMessage());
         }
 
-        $userId = new PasswordRecoveryService()->complete($email, $dto->password);
         if ($userId === null) {
             return AuthFlowOutcome::rejectTo(
                 AuthFlowOutcome::CODE_PASSWORD_ALREADY_CHANGED,

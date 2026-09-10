@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Recovery;
 
+use Hilos\Auth\Exception\PasswordUnchangedException;
+use Hilos\Auth\PasswordPolicy;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Auth\Verification\VerificationSendOutcome;
@@ -11,6 +13,7 @@ use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
@@ -139,9 +142,16 @@ final class PasswordRecoveryService
      *
      * The one operation that ends a recovery, and the order inside it is the mechanism:
      * the identity is resolved first (so a code is never spent on an account that
-     * cannot receive the password), then the code is spent, and only then is the secret
-     * written. Spending it is what settles the address for everyone else waiting on it
-     * - the challenge is the recovery's single-use ticket, and there is exactly one.
+     * cannot receive the password), the password is judged, then the code is spent, and
+     * only then is the secret written. Spending it is what settles the address for
+     * everyone else waiting on it - the challenge is the recovery's single-use ticket,
+     * and there is exactly one.
+     *
+     * The rule sits BEFORE the spend and inside this method on purpose (HIL-654). A
+     * refused password must not cost the person their code: they are on the new-password
+     * screen, their grant is intact, and all they owe is another password - not another
+     * letter. Keeping the call here rather than in the caller is what makes that a
+     * property of the operation instead of a habit every caller has to remember.
      *
      * A null answer means this session is too late: another one already finished the
      * reset, or the code expired while the password screen sat open. The caller owes
@@ -152,6 +162,8 @@ final class PasswordRecoveryService
      * @param string $email Normalized address being recovered (lowercased)
      * @param string $newPassword New plaintext password to store
      * @return ?int User the password now belongs to, or null when the reset can no longer be completed
+     * @throws ValueTooShortException When the new password is shorter than the policy minimum
+     * @throws PasswordUnchangedException When the new password is the account's current one
      * @throws DatabaseException When an identity or verification query fails
      * @throws LogicException When the identities or verifications object collection is unavailable
      * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
@@ -165,6 +177,8 @@ final class PasswordRecoveryService
         if ($userId === null || $identity === null) {
             return null;
         }
+
+        PasswordPolicy::assertValid($newPassword, $identity->verifyPassword($newPassword));
 
         if (!new VerificationService()->consumeActive(VerificationType::PASSWORD_RESET, $email)) {
             return null;

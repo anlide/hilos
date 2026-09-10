@@ -93,6 +93,52 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
     }
 
     /**
+     * A change to the password already in force is refused, and nothing is announced.
+     *
+     * The defect this list was filed for (HIL-654), seen from the profile door. The submit
+     * used to be accepted: the form said the password was changed, the tabs were told so by
+     * the signal, and the account went on holding exactly the secret its owner had just
+     * decided to stop using. So the assertion that matters as much as the refusal is the
+     * silent one at the end - an operation that changed nothing announces nothing.
+     *
+     * @throws HilosException When setup fails
+     */
+    public function testChangePasswordToTheCurrentOneIsRejected(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'set-same-ak');
+
+        try {
+            $this->register($agent, 'set-same-ak', $email);
+
+            $rejected = false;
+            try {
+                $this->usersLibrary()->onAgentAction(
+                    'set-same-ak',
+                    ChatSignalConstants::SET_PASSWORD,
+                    new SetPasswordActionDTO(self::PASSWORD, self::PASSWORD),
+                );
+            } catch (ValidationException $exception) {
+                $rejected = true;
+                $this->assertSame('That is already your password, choose a different one', $exception->getMessage());
+            }
+            $this->assertTrue($rejected, 'The password already in force must be rejected');
+
+            $identity = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email);
+            $this->assertNotNull($identity);
+            $this->assertTrue($identity->verifyPassword(self::PASSWORD), 'The account keeps the password it had');
+
+            $this->assertNull(
+                $this->takeQueuedWebSocketSignal(ChatSignalConstants::PASSWORD_UPDATED),
+                'Nothing changed, so the tabs are told nothing',
+            );
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
      * A change with the wrong current password is refused and rewrites nothing.
      *
      * @throws HilosException When setup fails

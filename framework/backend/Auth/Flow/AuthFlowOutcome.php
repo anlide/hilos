@@ -53,6 +53,9 @@ final class AuthFlowOutcome extends ActionReplyDTO
     /** Another session finished the recovery this one was on: the password is already the new one. */
     public const string CODE_PASSWORD_ALREADY_CHANGED = 'password_already_changed';
 
+    /** The new password typed into a reset is the account's current one: the surface stays put. */
+    public const string CODE_PASSWORD_UNCHANGED = 'password_unchanged';
+
     /** Wire key for the success flag. */
     private const string FIELD_OK = 'ok';
 

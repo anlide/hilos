@@ -21,6 +21,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
@@ -381,7 +382,7 @@ final class PasswordCommands extends AbstractLibraryCommands
      * @param CompleteRegistrationActionDTO $dto Parsed complete payload (password)
      * @return ?AuthFlowOutcome Where the surface goes next, or null when the session holder answers
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
-     * @throws ValidationException When the password is too short
+     * @throws ValueTooShortException When the password is too short
      * @throws EmptyValueException When the display name the new account is created with is empty
      * @throws InvalidFormatException When the proved address is not a valid identifier
      * @throws InvalidArgumentException When the landing frame cannot be named or queued
@@ -401,9 +402,11 @@ final class PasswordCommands extends AbstractLibraryCommands
             );
         }
 
-        if (strlen($dto->password) < PasswordPolicy::MIN_LENGTH) {
-            throw new ValidationException('Password must be at least ' . PasswordPolicy::MIN_LENGTH . ' characters');
-        }
+        // Nothing to be unchanged from: this submit mints a NEW account, so there is no
+        // current password of its own for the new one to already be. Whether the ADDRESS
+        // gained an account meanwhile is a different question, and the block below is the
+        // one that asks it.
+        PasswordPolicy::assertValid($dto->password, false);
 
         // Asked once more, for the reason it is asked at the code: the hold keeps a second
         // REGISTRATION off the address, not an account that arrived by another road while

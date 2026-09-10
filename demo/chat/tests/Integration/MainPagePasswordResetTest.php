@@ -416,6 +416,56 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
     }
 
     /**
+     * The password the account already has is refused, and the code survives the refusal.
+     *
+     * The defect this list was filed for (HIL-654), seen from the reset door: the screen
+     * said "password changed" for a submit that changed nothing, and a person who reset
+     * BECAUSE the secret had leaked was left with the leaked one still working.
+     *
+     * The second half of the test is the half that costs something to get right. A refusal
+     * that spent the single-use code would fix the lie by making the person ask for a new
+     * letter, so the rule is asked before the spend: the grant stays, the surface stays put
+     * (no step to move to), and the very next submit with a different password lands.
+     *
+     * @throws HilosException When setup or reset handling fails
+     */
+    public function testTheCurrentPasswordIsRefusedWithoutSpendingTheCode(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedUserWithPassword($email);
+        $this->openSession($agent, 'unchanged-ak');
+
+        try {
+            $this->requestReset($agent, 'unchanged-ak', $email);
+            $this->seedKnownCode($email);
+            $this->confirm($agent, 'unchanged-ak', $email, self::CODE);
+
+            $outcome = $this->complete($agent, 'unchanged-ak', self::OLD_PASSWORD);
+
+            $this->assertFalse($outcome->ok);
+            $this->assertSame(AuthFlowOutcome::CODE_PASSWORD_UNCHANGED, $outcome->code);
+            $this->assertNull($outcome->step, 'The refusal leaves the person on the password screen');
+            $this->assertTrue(
+                password_verify(self::OLD_PASSWORD, (string)$this->readSecret($email)),
+                'A refused save writes nothing',
+            );
+
+            $this->assertTrue(
+                Hilos::$rt->hilosRecoveryWaiters['unchanged-ak']?->codeAccepted,
+                'The refusal does not cost the person their code',
+            );
+
+            $second = $this->complete($agent, 'unchanged-ak', self::NEW_PASSWORD);
+
+            $this->assertTrue($second->ok, 'The same grant still saves a different password');
+            $this->assertTrue(password_verify(self::NEW_PASSWORD, (string)$this->readSecret($email)));
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
      * Saving signs this session in and logs every other session of the user out.
      *
      * @throws HilosException When setup or reset handling fails

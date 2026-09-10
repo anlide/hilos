@@ -25,6 +25,7 @@ use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Auth\Detection\IdentifierDetector;
+use Hilos\Auth\Exception\PasswordUnchangedException;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\IdentityCommands;
 use Hilos\Auth\OAuth\OAuthService;
@@ -43,6 +44,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\PageAccessLevel;
@@ -532,10 +534,19 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * search (HIL-692): an account holds one, and asking for it by account is what makes
      * "your password is changed" true even for data written before the rule.
      *
+     * The framework's password gate is asked LAST on the change branch, after the current
+     * password has been checked, and the order is the security property (HIL-654). It can
+     * answer "that is already your password", so a form that asked it first would hand the
+     * account's password to anybody who guessed it in the NEW field, without ever having
+     * to type the current one. The cost of the right order is a smaller one: a submit with
+     * both a wrong current password and a short new one is told about the current one.
+     *
      * @param string $acceptKey Accept key
      * @param SetPasswordActionDTO $dto Set-password DTO (new password + optional current)
      * @throws ItemNotFoundForUpdateException When the user session is missing
-     * @throws ValidationException When the new password is too weak, the current password is wrong, or the user has no verified email
+     * @throws ValueTooShortException When the new password is shorter than the policy minimum
+     * @throws PasswordUnchangedException When the new password is the one the account already has
+     * @throws ValidationException When the current password is wrong or the user has no verified email
      * @throws InvalidArgumentException When the password-updated signal cannot be named or queued
      * @throws HilosException When an identity read or secret write query fails
      */
@@ -543,15 +554,12 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     {
         $userId = $this->requireUserId($acceptKey);
 
-        if (strlen($dto->newPassword) < PasswordPolicy::MIN_LENGTH) {
-            throw new ValidationException('Password must be at least ' . PasswordPolicy::MIN_LENGTH . ' characters');
-        }
-
         $passwordIdentity = Hilos::$db->identities->findPasswordByUser($userId);
         if ($passwordIdentity !== null) {
             if ($dto->currentPassword === '' || !$passwordIdentity->verifyPassword($dto->currentPassword)) {
                 throw new ValidationException('Current password is incorrect');
             }
+            PasswordPolicy::assertValid($dto->newPassword, $passwordIdentity->verifyPassword($dto->newPassword));
             $passwordIdentity->setPassword($dto->newPassword);
             $mode = PasswordUpdatedSignalData::MODE_CHANGED;
         } else {
@@ -559,6 +567,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
             if ($email === null) {
                 throw new ValidationException('Confirm an email address first');
             }
+            PasswordPolicy::assertValid($dto->newPassword, false);
             Hilos::$db->identities->createPasswordIdentity($userId, $email, $dto->newPassword)->markVerified();
             $mode = PasswordUpdatedSignalData::MODE_ADDED;
         }
@@ -713,8 +722,9 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * @param string $acceptKey Accept key
      * @param ConfirmAddPasswordActionDTO $dto Add-password confirm DTO (email, code, new password)
      * @throws ItemNotFoundForUpdateException When the user session is missing
-     * @throws ValidationException When the password is too weak, the account already has a
-     *     password, the code is invalid/expired, or the email is already in use
+     * @throws ValueTooShortException When the password is shorter than the policy minimum
+     * @throws ValidationException When the account already has a password, the code is
+     *     invalid/expired, or the email is already in use
      * @throws InvalidArgumentException When the password-updated signal cannot be named or queued
      * @throws HilosException When a verification or identity query fails
      */
@@ -722,9 +732,9 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     {
         $userId = $this->requireUserId($acceptKey);
 
-        if (strlen($dto->newPassword) < PasswordPolicy::MIN_LENGTH) {
-            throw new ValidationException('Password must be at least ' . PasswordPolicy::MIN_LENGTH . ' characters');
-        }
+        // Nothing to be unchanged from: this flow only ever adds a password to an account
+        // that has none, which is what the refusal below it enforces.
+        PasswordPolicy::assertValid($dto->newPassword, false);
 
         if (Hilos::$db->identities->findPasswordByUser($userId) !== null) {
             throw new ValidationException('This account already has a password');
